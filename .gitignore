@@ -1,0 +1,27 @@
+# Environment files (Secrets & Tokens)
+.env
+.env.local
+*.env
+
+# Dependency directories
+node_modules/
+vendor/
+
+# Build outputs
+dist/
+build/
+*.exe
+*.out
+backend/api_server
+
+# IDE & OS files
+.DS_Store
+.vscode/
+.idea/
+
+# Local databases & browser profile data
+*.db
+*.db-journal
+backend/data/browser-profiles/
+backend/storage/uploads/
+storage/uploads/

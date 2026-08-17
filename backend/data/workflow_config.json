@@ -1,0 +1,49 @@
+{
+  "nodes": [
+    {
+      "enabled": true,
+      "id": "input-trigger",
+      "x": -96,
+      "y": 183
+    },
+    {
+      "enabled": true,
+      "id": "ai-chatgpt",
+      "model": "gpt-4o",
+      "x": 352,
+      "y": -6
+    },
+    {
+      "enabled": true,
+      "id": "ai-gemini",
+      "model": "gemini-1.5-pro",
+      "x": 350,
+      "y": 300
+    },
+    {
+      "enabled": true,
+      "id": "content-path",
+      "model": "gemini-1.5-pro",
+      "x": 756,
+      "y": 380
+    },
+    {
+      "enabled": true,
+      "id": "image-path",
+      "model": "gpt-4o",
+      "x": 752,
+      "y": -43
+    },
+    {
+      "enabled": true,
+      "id": "output-publish",
+      "x": 1137,
+      "y": 188
+    }
+  ],
+  "panOffset": {
+    "x": 78,
+    "y": 82
+  },
+  "zoom": 0.9
+}

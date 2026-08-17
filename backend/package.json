@@ -1,0 +1,9 @@
+{
+  "name": "estate-automate-backend-scripts",
+  "version": "1.0.0",
+  "private": true,
+  "main": "scripts/browser_server.js",
+  "dependencies": {
+    "playwright": "^1.40.0"
+  }
+}
