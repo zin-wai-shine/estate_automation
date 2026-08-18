@@ -1319,19 +1319,10 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
     }).catch(() => {});
     await imagePage.waitForTimeout(1000);
 
-    // Check if coordinates were passed from vision analyzer
-    if (targetCoordinates && typeof targetCoordinates.x === 'number') {
-      try {
-        await imagePage.mouse.click(targetCoordinates.x, targetCoordinates.y);
-        await imagePage.waitForTimeout(2000);
-        photoOpened = await imagePage.evaluate(() => {
-          return Boolean(document.querySelector('[role="dialog"], [data-pagelet*="MediaViewer"]'));
-        });
-      } catch (e) {}
-    }
-
-    if (!photoOpened) {
-      photoOpened = await imagePage.evaluate(() => {
+    // Step 2A: Try DOM-based target post first property image discovery
+    let clickTarget = null;
+    try {
+      clickTarget = await imagePage.evaluate(() => {
         const postContainers = Array.from(
           document.querySelectorAll('div[role="dialog"] div[role="article"], div[role="article"], div[data-pagelet*="FeedUnit"], div[role="main"]')
         );
@@ -1351,12 +1342,76 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
 
         if (candidateImgs.length > 0) {
           const targetImg = candidateImgs[0];
-          const clickable = targetImg.closest('a') || targetImg;
-          clickable.click();
-          return true;
+          const rect = targetImg.getBoundingClientRect();
+          return {
+            found: true,
+            x: Math.round(rect.x + rect.width / 2),
+            y: Math.round(rect.y + rect.height / 2),
+            width: rect.width,
+            height: rect.height
+          };
+        }
+        return null;
+      });
+    } catch (e) {}
+
+    // Check if coordinates were passed from vision analyzer or DOM
+    let clickX = null;
+    let clickY = null;
+
+    if (clickTarget && clickTarget.x > 0 && clickTarget.y > 0) {
+      clickX = clickTarget.x;
+      clickY = clickTarget.y;
+    } else if (targetCoordinates && typeof targetCoordinates.x === 'number') {
+      clickX = targetCoordinates.x;
+      clickY = targetCoordinates.y;
+    }
+
+    // Step 2B: Execute mouse movement and click with verification retry
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      if (clickX && clickY) {
+        try {
+          console.log(`[IMAGE] Moving mouse to center (${clickX}, ${clickY}) and clicking (attempt ${attempt}/3)...`);
+          await imagePage.mouse.move(clickX, clickY);
+          await imagePage.waitForTimeout(250);
+          await imagePage.mouse.click(clickX, clickY);
+          await imagePage.waitForTimeout(2000);
+        } catch (e) {}
+      }
+
+      // Check if Photo Viewer modal opened
+      photoOpened = await imagePage.evaluate(() => {
+        const modal = document.querySelector('[role="dialog"], [data-pagelet*="MediaViewer"]');
+        if (modal) {
+          const img = modal.querySelector('img[src*="scontent"], img[src*="fbcdn"]');
+          return Boolean(img);
         }
         return false;
       });
+
+      if (photoOpened) {
+        break;
+      }
+
+      // Fallback DOM element click if coordinate click did not open modal
+      if (!photoOpened) {
+        try {
+          await imagePage.evaluate(() => {
+            const post = document.querySelector('div[role="dialog"] div[role="article"], div[role="article"], div[data-pagelet*="FeedUnit"], div[role="main"]');
+            if (post) {
+              const photoLink = post.querySelector('a[href*="/photo"], a[href*="/photos/"], a[href*="fbid="], img[src*="scontent"]');
+              if (photoLink) {
+                photoLink.click();
+              }
+            }
+          });
+          await imagePage.waitForTimeout(2000);
+          photoOpened = await imagePage.evaluate(() => {
+            return Boolean(document.querySelector('[role="dialog"], [data-pagelet*="MediaViewer"]'));
+          });
+          if (photoOpened) break;
+        } catch (e) {}
+      }
     }
 
     if (photoOpened) {
@@ -1364,7 +1419,7 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
       console.log('[IMAGE] Opening photo viewer');
       await imagePage.waitForTimeout(2500);
     } else {
-      console.warn('[IMAGE] Could not automatically trigger photo viewer from container.');
+      console.warn('[IMAGE] Could not automatically trigger photo viewer modal.');
     }
 
     // Step 3 to 7: Download photos from Facebook photo viewer modal

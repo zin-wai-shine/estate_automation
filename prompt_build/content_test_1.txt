@@ -1,629 +1,538 @@
-## Objective
+## Problem
 
-Fix the Facebook image-download process so it does NOT guess or accidentally download unrelated Facebook images.
-
-The existing **content-capture process must become the source of truth for identifying the correct property image gallery**.
-
-Do not change the existing content-capture behavior that has already been implemented.
-
-The content-capture process already:
-
-* Opens the target Facebook post
-* Centers the post
-* Uses the appropriate zoom
-* Takes Screenshot 1
-* Uses AI to determine whether more content exists
-* Scrolls when necessary
-* Takes additional screenshots
-* AI reads the screenshots together
-* Detects when property images appear
-* Stops when the target post content has been captured
-
-Use that information to start the image-download process.
-
----
-
-# 1. Do NOT Guess Images From the Facebook Page
-
-The image downloader must NOT do this:
+The current workflow can correctly scroll until the property images become visible, but then returns:
 
 ```text
-Open Facebook post
-    ↓
-Find all <img>
-    ↓
-Pick image URLs
-    ↓
-Download them
-```
-
-This is causing incorrect images to be downloaded.
-
-Facebook contains many unrelated images:
-
-* Profile pictures
-* Facebook UI images
-* Recommended content
-* Comment images
-* Ads
-* Other posts
-* Icons
-* Thumbnails
-
-Do not use those as the source for the property gallery.
-
----
-
-# 2. Content Capture Identifies the Property Images
-
-During the existing content-capture process, AI will eventually see something like:
-
-```text
-Screenshot 1
-────────────────────
-Property title
-Property description
-Price
-Location
-Contact
-────────────────────
-
-Screenshot 2
-────────────────────
-Property image 1
-Property image 2
-Property image 3
-────────────────────
-```
-
-AI must identify which visible images belong to the target property post.
-
-The AI should return the location of the first property image.
-
-For example:
-
-```json id="xqj1qa"
-{
-  "property_images_found": true,
-  "first_property_image": {
-    "x": 482,
-    "y": 624,
-    "width": 420,
-    "height": 420
-  }
-}
-```
-
-The exact coordinate format can depend on the browser/screenshot implementation.
-
----
-
-# 3. The First Property Image Becomes the Target
-
-Once AI identifies the first property image:
-
-```text id="8h48av"
-FIRST PROPERTY IMAGE
-        ↓
-Target image coordinate
-        ↓
-Save target information
-```
-
-Store enough information for OpenClaw to locate the image again in the browser.
-
-Prefer a robust target description such as:
-
-```text id="8y15rj"
-Screenshot:
-capture_002.png
-
-Bounding box:
-x
-y
-width
-height
-
-Image:
-first property image
-```
-
-If possible, also store:
-
-* DOM bounding box
-* Image element reference
-* Relative position inside target post
-* Screenshot coordinates
-
-Do not rely only on an absolute screen coordinate if the page can move.
-
----
-
-# 4. Important: Do Not Download From the Screenshot
-
-The screenshot is used to **identify the correct image**, not necessarily as the final image source.
-
-Do NOT use:
-
-```text id="6zv8mw"
-Screenshot crop
-    ↓
-save as property image
-```
-
-unless there is no other option.
-
-Instead:
-
-```text id="m4x8za"
-AI identifies first image
-        ↓
-OpenClaw targets that image in Facebook
-        ↓
-Click image
-        ↓
-Facebook Photo Viewer
-        ↓
-Obtain actual high-resolution image
-        ↓
-Download
-```
-
-The screenshot is therefore the **navigation/identification layer**.
-
-The Facebook Photo Viewer is the **image-download layer**.
-
----
-
-# 5. Start Image Download Only After Content Capture Finds Images
-
-The process should be:
-
-```text id="u6m50f"
-CONTENT CAPTURE
-      ↓
-Target post detected
-      ↓
-Screenshot 1
-      ↓
-AI analysis
-      ↓
-Scroll
-      ↓
-Screenshot 2
-      ↓
-AI analysis
-      ↓
-Property images detected
-      ↓
-Save first property image target
-      ↓
-Content capture can finish
-```
-
-Then start:
-
-```text id="1v6o3j"
-IMAGE DOWNLOADER
-      ↓
-Open target Facebook post
-      ↓
-Locate first property image
-      ↓
-Click it
-```
-
----
-
-# 6. Use a Fresh Browser for Image Download
-
-Keep the browser separation from the existing workflow.
-
-### Browser Session 1
-
-Existing content capture:
-
-```text id="0dyw0c"
-Open browser
-    ↓
-Find target post
-    ↓
-Capture content
-    ↓
-Scroll
-    ↓
-Identify property image
-    ↓
-Save first-image target information
-    ↓
-Close browser
-```
-
-### Browser Session 2
-
-Image downloader:
-
-```text id="r6f0ja"
-Open fresh browser
-    ↓
-Normal desktop viewport
-    ↓
-Open same Facebook post
-    ↓
-Locate first property image
-    ↓
-Click it
-    ↓
-Photo Viewer
-```
-
-Do not mix the two sessions.
-
----
-
-# 7. Locate the First Image in Session 2
-
-When Session 2 opens the same post, use the information obtained from Session 1 to find the first property image.
-
-Do NOT simply click the first `<img>` on the page.
-
-Instead, identify the image belonging to the target post.
-
-Possible matching signals:
-
-1. Same target post
-2. Same relative position inside the post
-3. Same visual image
-4. Same image dimensions/aspect ratio
-5. AI visual confirmation
-6. DOM/image bounding box if available
-
-If necessary, take a fresh screenshot in Session 2 and have AI confirm:
-
-```text
-Is this the same first property image identified during content capture?
-```
-
-Only click after confirmation.
-
----
-
-# 8. Click the First Property Image
-
-Once the correct first property image is located:
-
-```text id="c1p8y7"
-Open target Facebook post
-        ↓
-Locate FIRST PROPERTY IMAGE
-        ↓
-AI/OpenClaw confirms target
-        ↓
-Click image
-        ↓
-Facebook Photo Viewer opens
-```
-
-Wait until the photo viewer is fully loaded.
-
----
-
-# 9. Download From Photo Viewer
-
-Once the photo viewer opens:
-
-```text id="f9b3qh"
-Current image
-    ↓
-Identify actual high-resolution image resource
-    ↓
-Download image
-    ↓
-Save property-001.jpg
-```
-
-Do not download the image from the original post thumbnail if a higher-resolution viewer resource is available.
-
----
-
-# 10. Navigate Through the Gallery
-
-After downloading the first image:
-
-```text id="6yqf2a"
-property-001.jpg
-       ↓
-Click Facebook Photo Viewer → Next
-       ↓
-Wait for next image
-       ↓
-Verify image changed
-       ↓
-Download
-       ↓
-property-002.jpg
-       ↓
-Next
-       ↓
-...
-```
-
-Continue through the gallery.
-
----
-
-# 11. Verify Every New Image
-
-Do not assume clicking Next succeeded.
-
-After clicking Next:
-
-```text id="cr2t7d"
-Click Next
-    ↓
-Wait
-    ↓
-Verify current image changed
-```
-
-Use one or more:
-
-* Image URL changed
-* Image resource changed
-* Image dimensions changed
-* Visual fingerprint changed
-* SHA-256 changed after download
-
-Only download when the new image is confirmed.
-
----
-
-# 12. Stop at the End of the Property Gallery
-
-The gallery may loop back to the first image.
-
-Therefore store image hashes:
-
-```text id="5s8t4y"
-Image 1 → AAA
-Image 2 → BBB
-Image 3 → CCC
-Image 4 → DDD
-Image 5 → AAA
-```
-
-When:
-
-```text id="g1zv8p"
-current image hash already exists
-```
-
-the gallery has looped back.
-
-Stop.
-
-```text id="p1v1w7"
-Gallery complete
-```
-
----
-
-# 13. Important Distinction
-
-There are now two separate responsibilities.
-
-### Content Capture
-
-Answers:
-
-> **Where is the property image/gallery in this Facebook post?**
-
-```text id="9g2o1a"
-AI
-+
-Screenshots
-+
-Scroll
-        ↓
-First property image identified
-```
-
-### Image Downloader
-
-Answers:
-
-> **How do I download all images from that identified gallery?**
-
-```text id="x6b5kq"
-First property image
-        ↓
-Click
-        ↓
-Photo Viewer
-        ↓
-Download
-        ↓
-Next
-        ↓
-Download
-        ↓
-...
-```
-
-Do not make the image downloader independently guess which images belong to the post.
-
----
-
-# 14. Recommended Data Passed Between the Two Processes
-
-After content capture finishes, produce an image-target object similar to:
-
-```json id="q6w6n5"
-{
-  "post_url": "TARGET_FACEBOOK_POST_URL",
-  "property_images_found": true,
-  "first_property_image": {
-    "screenshot": "capture_002.png",
-    "x": 482,
-    "y": 624,
-    "width": 420,
-    "height": 420
-  }
-}
-```
-
-If a more reliable identifier is available, also include it:
-
-```json id="q5i2db"
-{
-  "post_url": "TARGET_FACEBOOK_POST_URL",
-  "property_images_found": true,
-  "first_property_image": {
-    "screenshot": "capture_002.png",
-    "bbox": {
-      "x": 482,
-      "y": 624,
-      "width": 420,
-      "height": 420
-    },
-    "relative_post_position": {
-      "x": 120,
-      "y": 1840
-    },
-    "visual_confirmation_required": true
-  }
-}
-```
-
-The exact fields can be adapted to the current implementation.
-
----
-
-# 15. If No Property Image Is Found
-
-If AI analyzes all screenshots and determines:
-
-```text id="2o1iq4"
-property_images_found = false
-```
-
-do not start the image downloader.
-
-Simply return:
-
-```text id="6utp4p"
 No property image gallery detected.
 ```
 
-This prevents the system from accidentally downloading unrelated Facebook images.
+or OpenClaw does not know how to click the property image.
+
+The problem is that AI visual detection and browser interaction are currently disconnected.
+
+Fix this by making the process:
+
+```text
+AI identifies image
+        ↓
+OpenClaw locates image on CURRENT screen
+        ↓
+OpenClaw moves mouse to image
+        ↓
+OpenClaw clicks image
+        ↓
+Verify Facebook Photo Viewer opened
+```
+
+Do NOT rely only on a coordinate from an earlier screenshot.
 
 ---
 
-# 16. Complete Workflow
+# 1. AI Must Analyze the CURRENT Screenshot
 
-```text id="9i7f8e"
-                FACEBOOK POST URL
-                       ↓
-              ┌─────────────────┐
-              │ CONTENT CAPTURE │
-              └─────────────────┘
-                       ↓
-                Find target post
-                       ↓
-                  Screenshot 1
-                       ↓
-                    AI reads
-                       ↓
-                More content?
-                   ↓       ↓
-                 YES       NO
-                   ↓        ↓
-                Scroll     Finish
-                   ↓
-               Screenshot 2
-                   ↓
-          AI reads Screenshot 1
-              + Screenshot 2
-                   ↓
-            Property image found?
-                   ↓
-                  YES
-                   ↓
-          Identify FIRST image
-                   ↓
-        Save image target information
-                   ↓
-              Finish capture
-                   ↓
-              Close Browser 1
-                   ↓
-              ┌─────────────────┐
-              │ IMAGE DOWNLOADER│
-              └─────────────────┘
-                   ↓
-              Open Browser 2
-                   ↓
-            Open same post
-                   ↓
-        Locate identified FIRST image
-                   ↓
-               Click image
-                   ↓
-             Photo Viewer opens
-                   ↓
-              Download Image 1
-                   ↓
-                 Next
-                   ↓
-              Download Image 2
-                   ↓
-                 Next
-                   ↓
-                    ...
-                   ↓
-          First image appears again
-                   ↓
-                  STOP
-                   ↓
-             Close Browser 2
+When the content-capture process scrolls and property images become visible, take a fresh screenshot.
+
+Send that screenshot to the vision model.
+
+Ask AI specifically:
+
+> Identify the first visible property image that belongs to the target Facebook post. Ignore Facebook profile images, icons, ads, comments, recommended posts, and unrelated images.
+
+AI should return a structured result such as:
+
+```json
+{
+  "property_image_found": true,
+  "first_property_image": {
+    "x": 510,
+    "y": 620,
+    "width": 420,
+    "height": 420,
+    "center_x": 720,
+    "center_y": 830
+  }
+}
+```
+
+The coordinates are coordinates on the CURRENT screenshot.
+
+---
+
+# 2. Use Screenshot Coordinates to Click
+
+OpenClaw must use the coordinates from the CURRENT screenshot.
+
+Do not use coordinates from an earlier screenshot after the page has moved.
+
+For example:
+
+```text
+Current screenshot:
+1440 × 900
+
+AI identifies:
+x = 510
+y = 620
+width = 420
+height = 420
+
+Center:
+x = 720
+y = 830
+```
+
+OpenClaw should:
+
+```text
+Move mouse → 720,830
+        ↓
+Pause briefly
+        ↓
+Click
+```
+
+Prefer clicking the **center area of the image**, not its edge.
+
+---
+
+# 3. Important: Account for Browser Chrome
+
+Make sure AI coordinates refer to the actual screenshot coordinate system used by OpenClaw.
+
+If the screenshot contains:
+
+```text
+Browser toolbar
+Facebook page
+```
+
+do not accidentally treat browser-relative coordinates as page-relative coordinates.
+
+Use the exact coordinate system returned by the screenshot tool.
+
+If OpenClaw uses a different coordinate system, convert:
+
+```text
+Screenshot coordinates
+        ↓
+Browser viewport coordinates
+        ↓
+Mouse coordinates
+```
+
+Do not guess this offset.
+
+---
+
+# 4. Verify Before Clicking
+
+Before clicking, OpenClaw should move the cursor to the detected image and optionally take a small verification screenshot.
+
+Check:
+
+```text
+Is the cursor currently over the identified property image?
+```
+
+If yes:
+
+```text
+CLICK
+```
+
+If no:
+
+```text
+Re-analyze current screenshot
 ```
 
 ---
 
-## Critical Rule
+# 5. Verify the Click Worked
 
-**The content-capture screenshots determine WHICH image to click.**
+Never assume that clicking means the photo viewer opened.
 
-**The Facebook Photo Viewer determines WHICH images to download.**
-
-Do not let the image downloader independently search the Facebook page for images.
-
-The final architecture must therefore be:
+After clicking:
 
 ```text
-AI sees property image
-        ↓
-AI identifies FIRST property image
-        ↓
-OpenClaw targets that exact image
-        ↓
 Click
+ ↓
+Wait for Facebook
+ ↓
+Capture current screen
+ ↓
+AI/browser detection
+```
+
+Determine whether the Facebook photo viewer opened.
+
+Successful result:
+
+```text
+Photo viewer
++
+Large property image
++
+Next/previous navigation
+```
+
+If viewer opened:
+
+```text
+IMAGE_VIEWER_OPEN = true
+```
+
+Continue to image downloading.
+
+---
+
+# 6. If Click Failed
+
+If the viewer did not open:
+
+```text
+IMAGE_VIEWER_OPEN = false
+```
+
+do NOT immediately continue to Next.
+
+Instead:
+
+```text
+Take fresh screenshot
         ↓
+AI identifies first property image again
+        ↓
+Get new coordinates
+        ↓
+Move mouse
+        ↓
+Click again
+```
+
+Maximum retry:
+
+```text
+3 attempts
+```
+
+After 3 failures:
+
+```text
+Image click failed
+```
+
+Stop the image-download process safely.
+
+---
+
+# 7. Do Not Require AI to Identify an Entire "Gallery"
+
+This is important.
+
+The AI does NOT need to identify:
+
+```text
+Gallery
+Image 1
+Image 2
+Image 3
+Image 4
+```
+
+before clicking.
+
+It only needs to identify:
+
+> **The first property image that can be clicked to open Facebook's photo viewer.**
+
+Once the viewer opens:
+
+```text
 Facebook Photo Viewer
         ↓
-Download current image
+Next
         ↓
 Next
         ↓
+Next
+```
+
+the browser handles the gallery.
+
+Therefore use:
+
+```text
+AI → Find FIRST property image
+```
+
+not:
+
+```text
+AI → Find entire gallery
+```
+
+---
+
+# 8. Better Detection Question
+
+Do not ask AI:
+
+```text
+"Are there property images?"
+```
+
+Ask:
+
+```text
+"Locate the first clickable property photo belonging to the target Facebook post. Return its bounding box in the current screenshot."
+```
+
+This makes the task much more actionable.
+
+Expected response:
+
+```json
+{
+  "found": true,
+  "bbox": {
+    "x": 480,
+    "y": 540,
+    "width": 430,
+    "height": 430
+  },
+  "center": {
+    "x": 695,
+    "y": 755
+  }
+}
+```
+
+---
+
+# 9. If There Are Multiple Images
+
+Example:
+
+```text
+┌───────────────────────────────┐
+│                               │
+│ [ IMAGE 1 ] [ IMAGE 2 ]       │
+│                               │
+│ [ IMAGE 3 ] [ IMAGE 4 ]       │
+│                               │
+└───────────────────────────────┘
+```
+
+AI should select:
+
+```text
+IMAGE 1
+```
+
+because it is the first property photo.
+
+Return:
+
+```json
+{
+  "found": true,
+  "target": "first_property_image",
+  "bbox": {
+    "x": 300,
+    "y": 500,
+    "width": 400,
+    "height": 400
+  }
+}
+```
+
+OpenClaw clicks the center.
+
+---
+
+# 10. If the Image Is Partially Visible
+
+If only part of the first property image is visible:
+
+```text
+┌──────────────────────────┐
+│                          │
+│      PROPERTY IMAGE      │
+│                          │
+│──────────────────────────│
+│ partially below screen   │
+└──────────────────────────┘
+```
+
+Do NOT click immediately if the clickable area is unreliable.
+
+Instead:
+
+```text
+AI detects image partially visible
+        ↓
+Scroll slightly
+        ↓
+Take new screenshot
+        ↓
+AI finds image again
+        ↓
+Image is sufficiently visible
+        ↓
+Click center
+```
+
+This makes the click much more reliable.
+
+---
+
+# 11. Recommended Image Click Flow
+
+Implement exactly this:
+
+```text
+Content Capture
+      ↓
+Scroll
+      ↓
+Property image becomes visible
+      ↓
+CURRENT SCREENSHOT
+      ↓
+AI:
+"Find first clickable property image"
+      ↓
+AI returns bounding box
+      ↓
+OpenClaw calculates center
+      ↓
+Move mouse to center
+      ↓
+Optional hover verification
+      ↓
+Click
+      ↓
+Wait
+      ↓
+Verify Photo Viewer
+   ┌─────────────┐
+   │             │
+  YES            NO
+   │             │
+   ↓             ↓
+Download       Re-screenshot
+Image 1        + re-detect
+   │             │
+   ↓             ↓
+Next           Retry
+   ↓
 Download
-        ↓
+   ↓
 Next
-        ↓
+   ↓
 ...
+```
+
+---
+
+# 12. Even Better: Use DOM + AI Together
+
+If the Facebook image is available as a clickable DOM element, prefer DOM targeting over raw coordinates.
+
+The ideal hierarchy is:
+
+```text
+1. DOM clickable image
         ↓
-First image detected again
+2. Current screenshot + AI bounding box
         ↓
+3. Mouse coordinate click
+```
+
+For example, if OpenClaw can inspect the current page and find an image element inside the target post:
+
+```text
+Target Post
+   ↓
+Clickable image element
+   ↓
+Get bounding box
+   ↓
+Click center
+```
+
+This is more reliable than screen coordinates.
+
+AI should then be used as the **visual confirmation layer**, not the only mechanism.
+
+---
+
+# 13. Critical Rule
+
+The system should NOT say:
+
+```text
+No property image gallery detected
+```
+
+just because the AI cannot understand the word "gallery".
+
+The actual question is:
+
+```text
+Can we identify the FIRST CLICKABLE PROPERTY IMAGE
+on the CURRENT SCREEN?
+```
+
+If yes:
+
+```text
+found = true
+```
+
+Then OpenClaw clicks it.
+
+---
+
+# Final Expected Behavior
+
+```text
+Facebook Post
+      ↓
+Content capture
+      ↓
+Scroll
+      ↓
+Property images appear
+      ↓
+Take CURRENT screenshot
+      ↓
+AI finds FIRST property image
+      ↓
+Return bounding box
+      ↓
+OpenClaw targets CURRENT coordinates
+      ↓
+Click center of image
+      ↓
+Photo Viewer opens
+      ↓
+Download image 1
+      ↓
+Click Next
+      ↓
+Download image 2
+      ↓
+Click Next
+      ↓
+Download image 3
+      ↓
+...
+      ↓
+First image appears again
+      ↓
 STOP
 ```
 
-This should eliminate the current problem where the downloader selects the **wrong Facebook image**.
+**The key change is: don't ask AI to find a "gallery." Ask AI to find the *first clickable property photo in the current screenshot*. Then let OpenClaw physically click that image and let Facebook's Photo Viewer handle the rest of the gallery.**

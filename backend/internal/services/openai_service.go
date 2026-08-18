@@ -89,7 +89,10 @@ type PropertyImageCoordinate struct {
 }
 
 type PropertyImageDetectionResult struct {
-	Images []PropertyImageCoordinate `json:"images"`
+	Found              bool                      `json:"found"`
+	PropertyImageFound bool                      `json:"property_image_found"`
+	FirstPropertyImage *PropertyImageCoordinate  `json:"first_property_image,omitempty"`
+	Images             []PropertyImageCoordinate `json:"images"`
 }
 
 type ImageAnalysisResult struct {
@@ -989,44 +992,55 @@ func (s *OpenAIService) DetectTargetPostImageCoordinates(ctx context.Context, im
 
 	systemPrompt := `You are analyzing a Facebook property listing screenshot.
 
-Identify ONLY the property listing images that belong to the target Facebook post.
+Locate the FIRST clickable property photo belonging strictly to the target Facebook post in this CURRENT screenshot.
 
 Ignore:
-- Facebook profile pictures
-- group logos
-- page logos
-- sidebar images
-- advertisements
-- suggested posts
-- comments
-- reaction icons
-- navigation icons
-- unrelated posts
-- unrelated images
+- Facebook profile pictures and avatars
+- Group logos and page logos
+- Sidebar images and navigation icons
+- Advertisements and sponsored widgets
+- Comments and reaction icons
+- Suggested posts and other unrelated posts
+- Unrelated images
 
-For each property image visible inside the target post, return its bounding box and center coordinate.
-
-Use the ORIGINAL screenshot pixel coordinate system (1920x1080).
+Return the bounding box and center coordinate of the first property image in the current screenshot pixel coordinate system (1920x1080).
 
 Return JSON only:
 {
+  "found": true,
+  "property_image_found": true,
+  "first_property_image": {
+    "index": 1,
+    "x": 510,
+    "y": 620,
+    "width": 420,
+    "height": 420,
+    "center_x": 720,
+    "center_y": 830,
+    "confidence": 0.98
+  },
   "images": [
     {
       "index": 1,
-      "x": 580,
-      "y": 660,
-      "width": 680,
-      "height": 340,
-      "center_x": 920,
+      "x": 510,
+      "y": 620,
+      "width": 420,
+      "height": 420,
+      "center_x": 720,
       "center_y": 830,
       "confidence": 0.98
     }
   ]
 }
 
-Only return actual property images.`
+If no clickable property photos are visible on this screenshot, return:
+{
+  "found": false,
+  "property_image_found": false,
+  "images": []
+}`
 
-	userPrompt := "Identify the bounding boxes and center coordinates of all property photos belonging strictly to the target post in this 1920x1080 screenshot."
+	userPrompt := "Locate the first clickable property photo belonging to the target Facebook post. Return its bounding box and center coordinates in this current screenshot."
 
 	reqBody := map[string]interface{}{
 		"model": s.Model,
@@ -1093,6 +1107,18 @@ Only return actual property images.`
 	var result PropertyImageDetectionResult
 	if err := json.Unmarshal([]byte(openAIResp.Choices[0].Message.Content), &result); err != nil {
 		return nil, fmt.Errorf("failed to parse image coordinates JSON: %w", err)
+	}
+
+	// Normalize result fields
+	if result.FirstPropertyImage != nil && len(result.Images) == 0 {
+		result.Images = append(result.Images, *result.FirstPropertyImage)
+	}
+	if len(result.Images) > 0 && result.FirstPropertyImage == nil {
+		result.FirstPropertyImage = &result.Images[0]
+	}
+	if len(result.Images) > 0 || result.FirstPropertyImage != nil {
+		result.Found = true
+		result.PropertyImageFound = true
 	}
 
 	return &result, nil
