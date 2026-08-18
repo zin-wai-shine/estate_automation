@@ -1213,14 +1213,7 @@ async function executeTestImport(targetUrl, userId = '1') {
 // Session 2 — New Independent Image Downloader Module
 // ==================================================
 /**
- * Runs a completely isolated Session 2 browser instance for image downloading:
- * 1. Closes Session 1 browser completely
- * 2. Launches fresh browser with standard desktop viewport (1440x900) & 100% zoom
- * 3. Opens target Facebook post directly
- * 4. Finds first property photo & opens photo viewer modal
- * 5. Downloads highest-quality images, calculates SHA-256 hash, clicks Next
- * 6. Detects duplicate hash (carousel loop end) and stops
- * 7. Closes Session 2 browser completely
+ * Downloads property photos directly from target Facebook post photo viewer
  */
 async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', maxImages = 30, targetCoordinates = null) {
   let effectiveTargetUrl = targetUrl;
@@ -1228,93 +1221,38 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
     effectiveTargetUrl = currentBrowserPage.url();
   }
 
-  // Session 1 Finish & Complete Close
-  console.log('[CONTENT] Existing capture completed');
-  if (currentBrowserContext) {
-    try {
-      await currentBrowserContext.close();
-    } catch (e) {}
-    currentBrowserContext = null;
-    currentBrowserPage = null;
-  }
-  console.log('[CONTENT] Browser closed');
-
-  if (!effectiveTargetUrl || effectiveTargetUrl === 'about:blank') {
-    return {
-      success: false,
-      error: 'TARGET_URL_MISSING',
-      message: 'No valid Facebook target post URL provided for image downloader.',
-      images: [],
-    };
+  // Ensure persistent browser is running (reuse existing active session & scroll position)
+  if (!currentBrowserContext || !currentBrowserPage || currentBrowserPage.isClosed()) {
+    console.log('[IMAGE] Launching persistent browser session...');
+    await launchPersistentBrowser(userId);
+    if (effectiveTargetUrl && effectiveTargetUrl !== 'about:blank') {
+      await currentBrowserPage.goto(effectiveTargetUrl, { waitUntil: 'domcontentloaded', timeout: 35000 });
+      await currentBrowserPage.waitForTimeout(2500);
+    }
+  } else {
+    console.log('[IMAGE] Reusing active persistent browser session (preserving current scroll & target post position)');
   }
 
-  console.log('\n==================================================');
-  console.log('[IMAGE] Starting new browser session');
-  console.log('[IMAGE] Viewport: 1440x900');
-  console.log('[IMAGE] Opening target Facebook post');
-
-  const profilePath = path.join(PROFILES_DIR, 'facebook', String(userId));
-  fs.mkdirSync(profilePath, { recursive: true });
-  repairChromePreferences(profilePath);
-
-  let imageContext = null;
-  let imagePage = null;
+  const imagePage = currentBrowserPage;
   const downloadedImages = [];
   const seenHashes = new Set();
   const seenUrls = new Set();
 
   try {
-    const isMac = process.platform === 'darwin';
-    const launchArgs = [
-      '--window-size=1440,900',
-      '--disable-profile-error-dialogs',
-      '--no-first-run',
-      '--no-default-browser-check',
-      '--password-store=basic',
-      '--use-mock-keychain',
-      '--disable-infobars',
-      '--disable-component-update',
-      '--disable-background-networking',
-      '--disable-client-side-phishing-detection',
-      '--disable-features=Translate,OptimizationHints,MediaRouter,DestroyProfileOnBrowserClose,LensOverlay,HttpsUpgrades',
-    ];
-
-    if (!isMac) {
-      launchArgs.push('--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage');
-    }
-
-    imageContext = await chromium.launchPersistentContext(profilePath, {
-      headless: false,
-      args: launchArgs,
-      ignoreDefaultArgs: ['--enable-automation'],
-      viewport: { width: 1440, height: 900 },
-      userAgent:
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    });
-
-    const pages = imageContext.pages();
-    imagePage = pages.length > 0 ? pages[0] : await imageContext.newPage();
-    await imagePage.bringToFront().catch(() => {});
-
-    // Step 1: Open target Facebook post
-    await imagePage.goto(effectiveTargetUrl, {
-      waitUntil: 'domcontentloaded',
-      timeout: 35000,
-    });
-    await imagePage.waitForTimeout(3000); // Wait for post and images to load
-
-    // Step 2: Locate and open identified FIRST property image in the target post
-    console.log('[IMAGE] Locating identified FIRST property image');
+    // Step 2: Locate first property image or use provided AI cell coordinates
+    console.log('[IMAGE] Locating identified FIRST property image cell');
     let photoOpened = false;
 
-    // Find first property photo link or img element
+    // Discover DOM photo target if coordinates not explicitly provided
+    let clickX = targetCoordinates && typeof targetCoordinates.x === 'number' ? targetCoordinates.x : null;
+    let clickY = targetCoordinates && typeof targetCoordinates.y === 'number' ? targetCoordinates.y : null;
+
     const photoTarget = await imagePage.evaluate(() => {
       const postContainers = Array.from(
         document.querySelectorAll('div[role="dialog"] div[role="article"], div[role="article"], div[data-pagelet*="FeedUnit"], div[role="main"]')
       );
       const container = postContainers[0] || document.body;
 
-      // 1. Look for photo anchors inside the target post
       const photoAnchors = Array.from(
         container.querySelectorAll('a[href*="/photo"], a[href*="fbid="], a[href*="/photos/"]')
       ).filter((a) => {
@@ -1335,7 +1273,6 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
         };
       }
 
-      // 2. Look for property img elements inside the target post
       const candidateImgs = Array.from(container.querySelectorAll('img')).filter((img) => {
         const src = img.src || '';
         const alt = img.alt || '';
@@ -1364,207 +1301,181 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
       return null;
     });
 
-    // Scroll photo into center view
-    await imagePage.evaluate(() => {
-      const post = document.querySelector('div[role="dialog"] div[role="article"], div[role="article"], div[data-pagelet*="FeedUnit"], div[role="main"]') || document.body;
-      const target = post.querySelector('a[href*="/photo"], a[href*="fbid="], img[src*="scontent"]');
-      if (target) {
-        target.scrollIntoView({ behavior: 'instant', block: 'center' });
-      }
-    }).catch(() => {});
-    await imagePage.waitForTimeout(800);
-
-    // Get fresh coordinates after scrolling into view
-    let clickX = null;
-    let clickY = null;
-    try {
-      const freshTarget = await imagePage.evaluate(() => {
-        const post = document.querySelector('div[role="dialog"] div[role="article"], div[role="article"], div[data-pagelet*="FeedUnit"], div[role="main"]') || document.body;
-        const target = post.querySelector('a[href*="/photo"], a[href*="fbid="], img[src*="scontent"]');
-        if (target) {
-          const rect = target.getBoundingClientRect();
-          return {
-            x: Math.round(rect.x + rect.width / 2),
-            y: Math.round(rect.y + rect.height / 2),
-          };
-        }
-        return null;
-      });
-      if (freshTarget && freshTarget.x > 0 && freshTarget.y > 0) {
-        clickX = freshTarget.x;
-        clickY = freshTarget.y;
-      }
-    } catch (e) {}
-
-    if (!clickX && targetCoordinates && typeof targetCoordinates.x === 'number') {
-      clickX = targetCoordinates.x;
-      clickY = targetCoordinates.y;
-    } else if (!clickX && photoTarget && photoTarget.x > 0) {
+    if (!clickX && photoTarget && photoTarget.x > 0) {
       clickX = photoTarget.x;
       clickY = photoTarget.y;
     }
 
-    // Step 2B: Move mouse to click_position, wait 0.5 seconds, click once, and verify Photo Viewer
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      if (clickX && clickY) {
+    if (clickX && clickY) {
+      // INJECT HUGE VISUAL ARROW & CLICK TARGET INDICATOR INTO LIVE BROWSER DOM
+      console.log(`[IMAGE] Displaying HUGE ARROW at click target (${clickX}, ${clickY}) in live browser...`);
+      await imagePage.evaluate(({ x, y }) => {
+        // Remove existing indicator
+        const oldInd = document.getElementById('openclaw-click-indicator');
+        if (oldInd) oldInd.remove();
+
+        const indicator = document.createElement('div');
+        indicator.id = 'openclaw-click-indicator';
+        indicator.style.position = 'fixed';
+        indicator.style.left = `${x}px`;
+        indicator.style.top = `${y}px`;
+        indicator.style.transform = 'translate(-50%, -100%)';
+        indicator.style.zIndex = '2147483647';
+        indicator.style.pointerEvents = 'none';
+        indicator.style.display = 'flex';
+        indicator.style.flexDirection = 'column';
+        indicator.style.alignItems = 'center';
+        indicator.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+
+        indicator.innerHTML = `
+          <div style="
+            background: linear-gradient(135deg, #EF4444, #DC2626);
+            color: #FFFFFF;
+            font-weight: 800;
+            font-size: 15px;
+            padding: 8px 16px;
+            border-radius: 8px;
+            box-shadow: 0 8px 25px rgba(239, 68, 68, 0.8), 0 0 0 3px #FFFFFF;
+            white-space: nowrap;
+            margin-bottom: 6px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            letter-spacing: 0.5px;
+          ">
+            🎯 OPENCLAW CLICK TARGET (${x}, ${y})
+          </div>
+          <div style="
+            font-size: 64px;
+            line-height: 1;
+            color: #EF4444;
+            filter: drop-shadow(0 4px 12px rgba(239, 68, 68, 0.9)) drop-shadow(0 0 3px #FFFFFF);
+            animation: bounceArrowAnim 0.5s infinite alternate ease-in-out;
+          ">
+            ⬇️
+          </div>
+          <div style="
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            border: 3px solid #EF4444;
+            background: rgba(239, 68, 68, 0.4);
+            box-shadow: 0 0 20px rgba(239, 68, 68, 1);
+            transform: translateY(8px);
+          "></div>
+          <style>
+            @keyframes bounceArrowAnim {
+              from { transform: translateY(0px) scale(1); }
+              to { transform: translateY(-12px) scale(1.18); }
+            }
+          </style>
+        `;
+
+        document.body.appendChild(indicator);
+      }, { x: clickX, y: clickY }).catch(() => {});
+
+      // Pause 1.2 seconds so user can see the huge arrow in live browser
+      await imagePage.waitForTimeout(1200);
+
+      // Move mouse and click
+      for (let attempt = 1; attempt <= 3; attempt++) {
         try {
-          console.log(`[IMAGE] Moving mouse to click_position (${clickX}, ${clickY})... (Attempt ${attempt}/3)`);
+          console.log(`[IMAGE] Moving mouse to target (${clickX}, ${clickY})... (Attempt ${attempt}/3)`);
           await imagePage.mouse.move(clickX, clickY);
-          // Wait 0.5 seconds
           await imagePage.waitForTimeout(500);
-          console.log('[IMAGE] Clicking once on first property photo...');
+          console.log('[IMAGE] Clicking once on first property photo cell...');
           await imagePage.mouse.click(clickX, clickY);
-          // Wait for Facebook response
           await imagePage.waitForTimeout(2500);
         } catch (e) {}
+
+        photoOpened = await imagePage.evaluate(() => {
+          const modal = document.querySelector('[role="dialog"], [data-pagelet*="MediaViewer"]');
+          const isPhotoUrl = window.location.href.includes('/photo') || window.location.href.includes('fbid=');
+          const hasLargeImg = Boolean(document.querySelector('img[data-visualcompletion="media-vc-image"], [role="dialog"] img[src*="scontent"], img[src*="scontent"]'));
+          return Boolean((modal || isPhotoUrl) && hasLargeImg);
+        });
+
+        if (photoOpened) {
+          console.log('[IMAGE] IMAGE_VIEWER_OPEN = true');
+          break;
+        }
+
+        console.log(`[IMAGE] Click verification failed on attempt ${attempt}/3. Retrying...`);
+        if (photoTarget && photoTarget.href && photoTarget.href.includes('facebook.com')) {
+          try {
+            console.log(`[IMAGE] Navigating directly to photo viewer URL: ${photoTarget.href}`);
+            await imagePage.goto(photoTarget.href, { waitUntil: 'domcontentloaded', timeout: 25000 });
+            await imagePage.waitForTimeout(2500);
+            photoOpened = await imagePage.evaluate(() => {
+              return window.location.href.includes('/photo') || Boolean(document.querySelector('[role="dialog"], [data-pagelet*="MediaViewer"]'));
+            });
+            if (photoOpened) {
+              console.log('[IMAGE] IMAGE_VIEWER_OPEN = true');
+              break;
+            }
+          } catch (e) {}
+        }
       }
 
-      // Verify the click result:
-      // SUCCESS: Facebook Photo Viewer opened, Large property image displayed, Dark overlay background, Next/previous navigation
-      photoOpened = await imagePage.evaluate(() => {
-        const modal = document.querySelector('[role="dialog"], [data-pagelet*="MediaViewer"]');
-        const isPhotoUrl = window.location.href.includes('/photo') || window.location.href.includes('fbid=');
-        const hasLargeImg = Boolean(document.querySelector('img[data-visualcompletion="media-vc-image"], [role="dialog"] img[src*="scontent"], img[src*="scontent"]'));
-        return Boolean((modal || isPhotoUrl) && hasLargeImg);
-      });
-
-      if (photoOpened) {
-        console.log('[IMAGE] IMAGE_VIEWER_OPEN = true');
-        break;
-      }
-
-      // If unsuccessful on this attempt, re-evaluate and try fallback
-      console.log(`[IMAGE] Click verification failed on attempt ${attempt}/3. Retrying...`);
-      if (photoTarget && photoTarget.href && photoTarget.href.includes('facebook.com')) {
-        try {
-          console.log(`[IMAGE] Navigating directly to photo viewer URL: ${photoTarget.href}`);
-          await imagePage.goto(photoTarget.href, { waitUntil: 'domcontentloaded', timeout: 25000 });
-          await imagePage.waitForTimeout(2500);
-          photoOpened = await imagePage.evaluate(() => {
-            return window.location.href.includes('/photo') || Boolean(document.querySelector('[role="dialog"], [data-pagelet*="MediaViewer"]'));
-          });
-          if (photoOpened) {
-            console.log('[IMAGE] IMAGE_VIEWER_OPEN = true');
-            break;
-          }
-        } catch (e) {}
-      }
+      // Clean up visual indicator
+      await imagePage.evaluate(() => {
+        const ind = document.getElementById('openclaw-click-indicator');
+        if (ind) ind.remove();
+      }).catch(() => {});
     }
 
     if (photoOpened) {
       console.log('[IMAGE] First property photo found');
       console.log('[IMAGE] Opening photo viewer');
-      await imagePage.waitForTimeout(2000);
+      await imagePage.waitForTimeout(1500);
     } else {
       console.warn('[IMAGE] Could not automatically trigger photo viewer modal.');
     }
 
-    // Step 3 to 7: Download photos from Facebook photo viewer modal
+    // Step 3: Gallery Downloading Loop
+    const getActiveViewerImage = async () => {
+      return await imagePage.evaluate(() => {
+        const modal = document.querySelector('[role="dialog"], [data-pagelet*="MediaViewer"]') || document.body;
+        const candidates = Array.from(modal.querySelectorAll('img')).filter((img) => {
+          const src = img.src || '';
+          if (!src.includes('scontent') && !src.includes('fbcdn')) return false;
+          if (src.includes('/static.xx/') || src.includes('/rsrc.php/') || src.includes('/emoji/')) return false;
+          if (img.width < 250 || img.height < 250) return false;
+          return true;
+        });
+
+        if (candidates.length === 0) return null;
+        candidates.sort((a, b) => (b.naturalWidth || b.width) * (b.naturalHeight || b.height) - (a.naturalWidth || a.width) * (a.naturalHeight || a.height));
+        const best = candidates[0];
+        return {
+          source_url: best.currentSrc || best.src,
+          width: best.naturalWidth || best.width,
+          height: best.naturalHeight || best.height,
+        };
+      });
+    };
+
     let count = 0;
     let isFinished = false;
 
-    // Helper to get highest quality image currently displayed in the photo viewer
-    const getActiveViewerImage = async () => {
-      for (let retry = 0; retry < 15; retry++) {
-        const res = await imagePage.evaluate(() => {
-          const modal =
-            document.querySelector('[role="dialog"], [data-pagelet*="MediaViewer"]') ||
-            document.body;
-          const candidateImgs = Array.from(modal.querySelectorAll('img')).filter((img) => {
-            const src = img.src || '';
-            if (!src || (src.startsWith('data:') && src.length < 500)) return false;
-            if (
-              src.includes('/static.xx/') ||
-              src.includes('/rsrc.php/') ||
-              src.includes('/emoji/') ||
-              src.includes('emoji.php')
-            )
-              return false;
-            if (
-              src.includes('p50x50') ||
-              src.includes('p60x60') ||
-              src.includes('s50x50') ||
-              src.includes('p32x32') ||
-              src.includes('p100x100')
-            )
-              return false;
-            return true;
-          });
-
-          if (candidateImgs.length === 0) return null;
-
-          // Find the largest image by area (the main displayed photo)
-          let bestImg = candidateImgs[0];
-          let maxArea =
-            (bestImg.naturalWidth || bestImg.width || 0) *
-            (bestImg.naturalHeight || bestImg.height || 0);
-
-          for (let i = 1; i < candidateImgs.length; i++) {
-            const area =
-              (candidateImgs[i].naturalWidth || candidateImgs[i].width || 0) *
-              (candidateImgs[i].naturalHeight || candidateImgs[i].height || 0);
-            if (area > maxArea) {
-              maxArea = area;
-              bestImg = candidateImgs[i];
-            }
-          }
-
-          let highestSrc = bestImg.src;
-          if (bestImg.srcset) {
-            const parts = bestImg.srcset.split(',').map((s) => s.trim().split(' '));
-            let maxW = 0;
-            parts.forEach(([url, descriptor]) => {
-              const w = descriptor ? parseInt(descriptor.replace('w', ''), 10) : 0;
-              if (w > maxW) {
-                maxW = w;
-                highestSrc = url;
-              }
-            });
-          }
-
-          return {
-            source_url: highestSrc,
-            width: bestImg.naturalWidth || bestImg.width || 1440,
-            height: bestImg.naturalHeight || bestImg.height || 900,
-          };
-        });
-
-        if (res && res.source_url) {
-          return res;
-        }
-        await imagePage.waitForTimeout(250);
-      }
-      return null;
-    };
-
     while (count < maxImages && !isFinished) {
-      // 1. Get current photo resource
       const imageResource = await getActiveViewerImage();
 
       if (!imageResource || !imageResource.source_url) {
-        console.warn(`[IMAGE] No valid image resource found on step ${count + 1}`);
-        isFinished = true;
+        console.log('[IMAGE] No visible photo found in viewer.');
         break;
       }
 
-      // 2. Calculate SHA-256 Hash
-      const crypto = require('crypto');
-      const sha256 = crypto
-        .createHash('sha256')
-        .update(`${imageResource.source_url}_${imageResource.width}x${imageResource.height}`)
-        .digest('hex');
+      count++;
+      const sha256 = generateImageHash(imageResource.source_url, count);
 
-      // 3. Detect End of Gallery / Duplicates (Loop detection)
-      if (seenHashes.has(sha256) || seenUrls.has(imageResource.source_url)) {
-        console.log('[IMAGE] Duplicate image detected');
-        console.log('[IMAGE] First image detected again');
-        console.log('[IMAGE] STOP');
+      if (seenHashes.has(sha256)) {
+        console.log(`[IMAGE] Duplicate image detected (${sha256.slice(0, 10)}). Loop complete.`);
         console.log('[IMAGE] Gallery complete');
         isFinished = true;
         break;
       }
 
-      count++;
       seenHashes.add(sha256);
       seenUrls.add(imageResource.source_url);
 
@@ -1591,11 +1502,10 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
         break;
       }
 
-      // 4. Click Next Photo
+      // Click Next Photo
       console.log('[IMAGE] Clicking Next');
       const prevUrl = imageResource.source_url;
 
-      // Click Next button if present
       await imagePage.evaluate(() => {
         const nextBtns = Array.from(
           document.querySelectorAll(
@@ -1607,7 +1517,6 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
           return;
         }
 
-        // Fallback: Click right navigation area of photo viewer
         const viewer = document.querySelector('[role="dialog"], [data-pagelet*="MediaViewer"]') || document.body;
         const rightArea = viewer.querySelector('div[role="button"][tabindex="0"]:last-child');
         if (rightArea) {
@@ -1615,10 +1524,8 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
         }
       }).catch(() => {});
 
-      // Focus viewer and press ArrowRight
       await imagePage.keyboard.press('ArrowRight');
 
-      // 5. Wait for the photo to ACTUALLY transition to a different image
       let photoTransitioned = false;
       for (let waitStep = 0; waitStep < 18; waitStep++) {
         await imagePage.waitForTimeout(200);
@@ -1628,7 +1535,6 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
           break;
         }
 
-        // Retry right arrow press at step 4 and step 8
         if (waitStep === 4 || waitStep === 8) {
           await imagePage.keyboard.press('ArrowRight');
           await imagePage.mouse.click(1200, 500).catch(() => {});
@@ -1646,13 +1552,6 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
     }
   } catch (err) {
     console.error(`[IMAGE] Error during image download: ${err.message}`);
-  } finally {
-    if (imageContext) {
-      try {
-        await imageContext.close();
-      } catch (e) {}
-    }
-    console.log('[IMAGE] Browser closed');
   }
 
   return {
