@@ -88,9 +88,23 @@ type PropertyImageCoordinate struct {
 	Confidence float64 `json:"confidence"`
 }
 
+type ImageBBox struct {
+	X      int `json:"x"`
+	Y      int `json:"y"`
+	Width  int `json:"width"`
+	Height int `json:"height"`
+}
+
+type ClickPosition struct {
+	X int `json:"x"`
+	Y int `json:"y"`
+}
+
 type PropertyImageDetectionResult struct {
 	Found              bool                      `json:"found"`
 	PropertyImageFound bool                      `json:"property_image_found"`
+	ImageBBox          *ImageBBox                `json:"image_bbox,omitempty"`
+	ClickPosition      *ClickPosition            `json:"click_position,omitempty"`
 	FirstPropertyImage *PropertyImageCoordinate  `json:"first_property_image,omitempty"`
 	Images             []PropertyImageCoordinate `json:"images"`
 }
@@ -1008,39 +1022,21 @@ Return the bounding box and center coordinate of the first property image in the
 Return JSON only:
 {
   "found": true,
-  "property_image_found": true,
-  "first_property_image": {
-    "index": 1,
+  "image_bbox": {
     "x": 510,
     "y": 620,
     "width": 420,
-    "height": 420,
-    "center_x": 720,
-    "center_y": 830,
-    "confidence": 0.98
-  },
-  "images": [
-    {
-      "index": 1,
-      "x": 510,
-      "y": 620,
-      "width": 420,
-      "height": 420,
-      "center_x": 720,
-      "center_y": 830,
-      "confidence": 0.98
-    }
-  ]
+    "height": 420
+  }
 }
 
 If no clickable property photos are visible on this screenshot, return:
 {
   "found": false,
-  "property_image_found": false,
-  "images": []
+  "image_bbox": null
 }`
 
-	userPrompt := "Locate the first clickable property photo belonging to the target Facebook post. Return its bounding box and center coordinates in this current screenshot."
+	userPrompt := "Identify the first visible clickable property photo belonging to the target Facebook post in this screenshot. Return its bounding box."
 
 	reqBody := map[string]interface{}{
 		"model": s.Model,
@@ -1109,16 +1105,60 @@ If no clickable property photos are visible on this screenshot, return:
 		return nil, fmt.Errorf("failed to parse image coordinates JSON: %w", err)
 	}
 
-	// Normalize result fields
-	if result.FirstPropertyImage != nil && len(result.Images) == 0 {
-		result.Images = append(result.Images, *result.FirstPropertyImage)
-	}
-	if len(result.Images) > 0 && result.FirstPropertyImage == nil {
-		result.FirstPropertyImage = &result.Images[0]
-	}
-	if len(result.Images) > 0 || result.FirstPropertyImage != nil {
+	// Calculate safe click position inside the upper-left quadrant (0.25 offset)
+	if result.ImageBBox != nil && result.ImageBBox.Width > 0 && result.ImageBBox.Height > 0 {
 		result.Found = true
 		result.PropertyImageFound = true
+		clickX := result.ImageBBox.X + int(float64(result.ImageBBox.Width)*0.25)
+		clickY := result.ImageBBox.Y + int(float64(result.ImageBBox.Height)*0.25)
+		result.ClickPosition = &ClickPosition{
+			X: clickX,
+			Y: clickY,
+		}
+		result.FirstPropertyImage = &PropertyImageCoordinate{
+			Index:      1,
+			X:          result.ImageBBox.X,
+			Y:          result.ImageBBox.Y,
+			Width:      result.ImageBBox.Width,
+			Height:     result.ImageBBox.Height,
+			CenterX:    clickX,
+			CenterY:    clickY,
+			Confidence: 0.98,
+		}
+		result.Images = []PropertyImageCoordinate{*result.FirstPropertyImage}
+	} else if result.FirstPropertyImage != nil {
+		result.Found = true
+		result.PropertyImageFound = true
+		result.ImageBBox = &ImageBBox{
+			X:      result.FirstPropertyImage.X,
+			Y:      result.FirstPropertyImage.Y,
+			Width:  result.FirstPropertyImage.Width,
+			Height: result.FirstPropertyImage.Height,
+		}
+		clickX := result.FirstPropertyImage.X + int(float64(result.FirstPropertyImage.Width)*0.25)
+		clickY := result.FirstPropertyImage.Y + int(float64(result.FirstPropertyImage.Height)*0.25)
+		result.ClickPosition = &ClickPosition{
+			X: clickX,
+			Y: clickY,
+		}
+		result.Images = []PropertyImageCoordinate{*result.FirstPropertyImage}
+	} else if len(result.Images) > 0 {
+		img := result.Images[0]
+		result.Found = true
+		result.PropertyImageFound = true
+		result.ImageBBox = &ImageBBox{
+			X:      img.X,
+			Y:      img.Y,
+			Width:  img.Width,
+			Height: img.Height,
+		}
+		clickX := img.X + int(float64(img.Width)*0.25)
+		clickY := img.Y + int(float64(img.Height)*0.25)
+		result.ClickPosition = &ClickPosition{
+			X: clickX,
+			Y: clickY,
+		}
+		result.FirstPropertyImage = &img
 	}
 
 	return &result, nil

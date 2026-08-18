@@ -1404,50 +1404,51 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
       clickY = photoTarget.y;
     }
 
-    // Step 2B: Move mouse to center and click
-    if (clickX && clickY) {
-      try {
-        console.log(`[IMAGE] Moving mouse to first photo center (${clickX}, ${clickY}) and clicking...`);
-        await imagePage.mouse.move(clickX, clickY);
-        await imagePage.waitForTimeout(200);
-        await imagePage.mouse.click(clickX, clickY);
-        await imagePage.waitForTimeout(2500);
-      } catch (e) {}
-    }
+    // Step 2B: Move mouse to click_position, wait 0.5 seconds, click once, and verify Photo Viewer
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      if (clickX && clickY) {
+        try {
+          console.log(`[IMAGE] Moving mouse to click_position (${clickX}, ${clickY})... (Attempt ${attempt}/3)`);
+          await imagePage.mouse.move(clickX, clickY);
+          // Wait 0.5 seconds
+          await imagePage.waitForTimeout(500);
+          console.log('[IMAGE] Clicking once on first property photo...');
+          await imagePage.mouse.click(clickX, clickY);
+          // Wait for Facebook response
+          await imagePage.waitForTimeout(2500);
+        } catch (e) {}
+      }
 
-    // Verify if photo viewer modal or photo URL is opened
-    photoOpened = await imagePage.evaluate(() => {
-      const hasModal = Boolean(document.querySelector('[role="dialog"], [data-pagelet*="MediaViewer"]'));
-      const isPhotoUrl = window.location.href.includes('/photo') || window.location.href.includes('fbid=');
-      return hasModal || isPhotoUrl;
-    });
-
-    // Fallback: If modal didn't open yet, try DOM click or direct navigation to photo href
-    if (!photoOpened) {
-      console.log('[IMAGE] Modal not detected from click. Trying DOM click & direct photo link navigation...');
-      try {
-        await imagePage.evaluate(() => {
-          const post = document.querySelector('div[role="dialog"] div[role="article"], div[role="article"], div[data-pagelet*="FeedUnit"], div[role="main"]') || document.body;
-          const photoLink = post.querySelector('a[href*="/photo"], a[href*="fbid="], img[src*="scontent"]');
-          if (photoLink) {
-            photoLink.click();
-          }
-        });
-        await imagePage.waitForTimeout(2000);
-      } catch (e) {}
-
+      // Verify the click result:
+      // SUCCESS: Facebook Photo Viewer opened, Large property image displayed, Dark overlay background, Next/previous navigation
       photoOpened = await imagePage.evaluate(() => {
-        return Boolean(document.querySelector('[role="dialog"], [data-pagelet*="MediaViewer"]') || window.location.href.includes('/photo'));
+        const modal = document.querySelector('[role="dialog"], [data-pagelet*="MediaViewer"]');
+        const isPhotoUrl = window.location.href.includes('/photo') || window.location.href.includes('fbid=');
+        const hasLargeImg = Boolean(document.querySelector('img[data-visualcompletion="media-vc-image"], [role="dialog"] img[src*="scontent"], img[src*="scontent"]'));
+        return Boolean((modal || isPhotoUrl) && hasLargeImg);
       });
-    }
 
-    if (!photoOpened && photoTarget && photoTarget.href && photoTarget.href.includes('facebook.com')) {
-      console.log(`[IMAGE] Opening photo viewer directly via URL: ${photoTarget.href}`);
-      try {
-        await imagePage.goto(photoTarget.href, { waitUntil: 'domcontentloaded', timeout: 25000 });
-        await imagePage.waitForTimeout(3000);
-        photoOpened = true;
-      } catch (e) {}
+      if (photoOpened) {
+        console.log('[IMAGE] IMAGE_VIEWER_OPEN = true');
+        break;
+      }
+
+      // If unsuccessful on this attempt, re-evaluate and try fallback
+      console.log(`[IMAGE] Click verification failed on attempt ${attempt}/3. Retrying...`);
+      if (photoTarget && photoTarget.href && photoTarget.href.includes('facebook.com')) {
+        try {
+          console.log(`[IMAGE] Navigating directly to photo viewer URL: ${photoTarget.href}`);
+          await imagePage.goto(photoTarget.href, { waitUntil: 'domcontentloaded', timeout: 25000 });
+          await imagePage.waitForTimeout(2500);
+          photoOpened = await imagePage.evaluate(() => {
+            return window.location.href.includes('/photo') || Boolean(document.querySelector('[role="dialog"], [data-pagelet*="MediaViewer"]'));
+          });
+          if (photoOpened) {
+            console.log('[IMAGE] IMAGE_VIEWER_OPEN = true');
+            break;
+          }
+        } catch (e) {}
+      }
     }
 
     if (photoOpened) {

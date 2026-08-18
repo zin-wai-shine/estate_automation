@@ -717,17 +717,11 @@ export const TestingView: React.FC = () => {
       if (!hasAnyImagesInCaptures) {
         addLog('IMAGE_DOWNLOAD', 'No property image gallery detected.');
       } else {
-        // Locate screenshot containing property images
-        let targetScreenshotForCoords = lastScreenshotBase64;
-        const imgAnalysisIdx = allAnalyses.findIndex(
-          (a) => a.property_images_visible || a.relevant_images_visible || (a.visible_property_image_count && a.visible_property_image_count > 0)
-        );
-        if (imgAnalysisIdx >= 0 && allCapturedScreenshots[imgAnalysisIdx]) {
-          targetScreenshotForCoords = allCapturedScreenshots[imgAnalysisIdx];
-        }
+        // 1. Load the LAST successful content-capture screenshot
+        const targetScreenshotForCoords = lastScreenshotBase64;
 
-        addLog('IMAGE_STEP_01', '[IMAGE_STEP_01] Target post received from existing content extraction');
-        addLog('IMAGE_STEP_02', '[IMAGE_STEP_02] Sending content-capture screenshot to AI to identify FIRST property image target...');
+        addLog('IMAGE_STEP_01', '[IMAGE_STEP_01] Loading LAST content-capture screenshot for first property photo detection');
+        addLog('IMAGE_STEP_02', '[IMAGE_STEP_02] Analyzing screenshot to locate first visible property photo...');
 
         try {
           let firstCoords: { x: number; y: number } | null = null;
@@ -738,13 +732,25 @@ export const TestingView: React.FC = () => {
           });
           const coordsData = await coordsResp.json();
 
-          if (coordsData.result && coordsData.result.images && coordsData.result.images.length > 0) {
-            setAiImageCoords(coordsData.result.images);
-            const firstImg = coordsData.result.images[0];
-            firstCoords = { x: firstImg.center_x, y: firstImg.center_y };
-            addLog('IMAGE_STEP_03', `[IMAGE_STEP_03] AI identified FIRST property image at X: ${firstImg.center_x}, Y: ${firstImg.center_y} (Saved target information)`);
+          if (coordsData.result && (coordsData.result.click_position || (coordsData.result.images && coordsData.result.images.length > 0))) {
+            if (coordsData.result.images) {
+              setAiImageCoords(coordsData.result.images);
+            }
+            if (coordsData.result.click_position) {
+              firstCoords = { x: coordsData.result.click_position.x, y: coordsData.result.click_position.y };
+            } else if (coordsData.result.images && coordsData.result.images.length > 0) {
+              const firstImg = coordsData.result.images[0];
+              firstCoords = { x: firstImg.center_x, y: firstImg.center_y };
+            }
+            if (coordsData.result.image_bbox) {
+              const bbox = coordsData.result.image_bbox;
+              addLog('IMAGE_STEP_03', `[IMAGE_STEP_03] First property photo bbox: { x: ${bbox.x}, y: ${bbox.y}, w: ${bbox.width}, h: ${bbox.height} }`);
+            }
+            if (firstCoords) {
+              addLog('IMAGE_CLICK', `[IMAGE_CLICK] Calculated safe click position: (X: ${firstCoords.x}, Y: ${firstCoords.y})`);
+            }
           } else {
-            addLog('IMAGE_STEP_03', '[IMAGE_STEP_03] Using primary target post image element.');
+            addLog('IMAGE_STEP_03', '[IMAGE_STEP_03] Target post property photo located via DOM container.');
           }
 
           // Trigger Session 2 Image Downloader in fresh browser
