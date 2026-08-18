@@ -1004,33 +1004,41 @@ func (s *OpenAIService) DetectTargetPostImageCoordinates(ctx context.Context, im
 		cleanDataURL = fmt.Sprintf("data:image/jpeg;base64,%s", imageBase64)
 	}
 
-	systemPrompt := `You are analyzing a Facebook property listing screenshot (1920x1080 resolution).
+	systemPrompt := `You are an expert computer vision system analyzing a 1920x1080 Facebook desktop screenshot.
 
-Locate the FIRST PROPERTY PHOTO CELL in the target post (the top-left photo inside the post photo collage/grid).
+Your task is to identify the EXACT pixel bounding box of the FIRST REAL PROPERTY PHOTO (the top-left photo inside the post's image gallery/collage).
 
-Critical accuracy requirements:
-- Identify the EXACT rectangle bounding box of the top-left image cell itself.
-- Do NOT include the outer post border, header, text, dark background, or other photo cells in the collage.
-- Only return the bounding box of the actual first photo rectangle.
+CRITICAL DISTINCTION RULES:
+1. TEXT IS NOT A PHOTO:
+   - Do NOT select post text, hashtags (#...), phone numbers, author headers, caption lines, or "See translation".
+   - In Facebook posts, description text is located at the top. The photo gallery begins BELOW the text.
+2. TARGET ONLY PHOTOGRAPHIC PIXELS:
+   - Identify the actual colorful photographic rectangle showing real estate (e.g. rooms, sofa, living area, balcony, bed, kitchen, condo exterior/interior).
+   - In a multi-photo post collage, find the TOP-LEFT photo cell.
+3. BOUNDING BOX ACCURACY:
+   - x: left edge of the photo
+   - y: top edge of the photo (strictly below all text)
+   - width: width of the photo cell
+   - height: height of the photo cell
 
 Return JSON only:
 {
   "found": true,
   "image_bbox": {
-    "x": 630,
-    "y": 260,
-    "width": 330,
-    "height": 280
+    "x": integer_left_x,
+    "y": integer_top_y,
+    "width": integer_width,
+    "height": integer_height
   }
 }
 
-If no property photos are visible on this screenshot, return:
+If no property photo is visible on screen (e.g. only text visible or need to scroll), return:
 {
   "found": false,
   "image_bbox": null
 }`
 
-	userPrompt := "Identify the exact bounding box of the first property photo cell (top-left photo in the grid) inside the Facebook post."
+	userPrompt := "Find the exact bounding box of the first property photo (top-left real photo cell, strictly ignoring all text above it)."
 
 	reqBody := map[string]interface{}{
 		"model": s.Model,

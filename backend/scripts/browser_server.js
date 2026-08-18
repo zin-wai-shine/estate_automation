@@ -1379,7 +1379,13 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
       return null;
     });
 
-    if (!clickX && photoTarget && photoTarget.x > 0) {
+    if (photoTarget && photoTarget.x > 0 && photoTarget.y > 0) {
+      if (!clickX || !clickY || clickY < photoTarget.y - 50) {
+        console.log(`[IMAGE] Refined click target to verified DOM photo element center: (${photoTarget.x}, ${photoTarget.y})`);
+        clickX = photoTarget.x;
+        clickY = photoTarget.y;
+      }
+    } else if (!clickX && photoTarget && photoTarget.x > 0) {
       clickX = photoTarget.x;
       clickY = photoTarget.y;
     }
