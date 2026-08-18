@@ -200,6 +200,7 @@ export const TestingView: React.FC = () => {
   const [activeCaptureIndex, setActiveCaptureIndex] = useState<number>(0);
   const [firstPhotoTarget, setFirstPhotoTarget] = useState<FirstPhotoTargetInfo | null>(null);
   const [isTargetingPhoto, setIsTargetingPhoto] = useState<boolean>(false);
+  const [photoTargetMode, setPhotoTargetMode] = useState<'auto' | 'manual'>('auto');
 
   const handleSelectZoom = async (zoomVal: string) => {
     setSelectedZoom(zoomVal);
@@ -1903,7 +1904,68 @@ export const TestingView: React.FC = () => {
                 </div>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                {/* Auto / Manual Mode Switch Toggle */}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    backgroundColor: 'var(--bg-secondary)',
+                    padding: '0.2rem',
+                    borderRadius: '0.5rem',
+                    border: '1px solid var(--border-color)',
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPhotoTargetMode('auto');
+                      addLog('MODE', 'Photo Targeting & Click mode switched to: AUTO (Runs automatically)');
+                    }}
+                    style={{
+                      padding: '0.25rem 0.65rem',
+                      borderRadius: '0.375rem',
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      border: 'none',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.3rem',
+                      backgroundColor: photoTargetMode === 'auto' ? '#10B981' : 'transparent',
+                      color: photoTargetMode === 'auto' ? '#FFFFFF' : 'var(--text-muted)',
+                      boxShadow: photoTargetMode === 'auto' ? '0 1px 4px rgba(16, 185, 129, 0.4)' : 'none',
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
+                    ⚡ Auto
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPhotoTargetMode('manual');
+                      addLog('MODE', 'Photo Targeting & Click mode switched to: MANUAL (User triggered)');
+                    }}
+                    style={{
+                      padding: '0.25rem 0.65rem',
+                      borderRadius: '0.375rem',
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      border: 'none',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.3rem',
+                      backgroundColor: photoTargetMode === 'manual' ? '#3B82F6' : 'transparent',
+                      color: photoTargetMode === 'manual' ? '#FFFFFF' : 'var(--text-muted)',
+                      boxShadow: photoTargetMode === 'manual' ? '0 1px 4px rgba(59, 130, 246, 0.4)' : 'none',
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
+                    🖐️ Manual
+                  </button>
+                </div>
+
                 {firstPhotoTarget?.click_position && (
                   <span
                     style={{
@@ -1912,7 +1974,7 @@ export const TestingView: React.FC = () => {
                       fontWeight: 700,
                       color: '#3B82F6',
                       backgroundColor: 'rgba(59, 130, 246, 0.12)',
-                      padding: '0.2rem 0.6rem',
+                      padding: '0.25rem 0.6rem',
                       borderRadius: '0.375rem',
                       border: '1px solid rgba(59, 130, 246, 0.3)',
                     }}
@@ -1920,22 +1982,24 @@ export const TestingView: React.FC = () => {
                     🎯 Cell Center: ({firstPhotoTarget.click_position.x}, {firstPhotoTarget.click_position.y})
                   </span>
                 )}
+
                 <Button
                   variant="primary"
                   size="sm"
                   disabled={isTargetingPhoto || isTesting}
                   onClick={handleRunFirstPhotoTargetAndClick}
                   style={{
-                    backgroundColor: '#3B82F6',
-                    borderColor: '#2563EB',
+                    backgroundColor: photoTargetMode === 'auto' ? '#10B981' : '#3B82F6',
+                    borderColor: photoTargetMode === 'auto' ? '#059669' : '#2563EB',
                     fontSize: '0.75rem',
                     fontWeight: 600,
                     display: 'flex',
                     alignItems: 'center',
                     gap: '0.35rem',
+                    boxShadow: photoTargetMode === 'auto' ? '0 2px 8px rgba(16, 185, 129, 0.3)' : '0 2px 8px rgba(59, 130, 246, 0.3)',
                   }}
                 >
-                  <FiCrosshair /> {isTargetingPhoto ? 'Targeting & Clicking...' : 'Run Photo Targeting & Click Test'}
+                  <FiCrosshair /> {isTargetingPhoto ? 'Targeting & Clicking...' : photoTargetMode === 'auto' ? 'Run Photo Targeting (Auto)' : 'Run Photo Targeting & Click Test'}
                 </Button>
               </div>
             </div>
