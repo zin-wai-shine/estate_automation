@@ -329,18 +329,18 @@ function parseFacebookPostId(urlStr) {
   return '';
 }
 
-// Configured Browser Zoom Level (Default: 80%, Target: ~80%)
-const DEFAULT_CONFIGURED_BROWSER_ZOOM = 80;
+// Configured Browser Zoom Level (Default: 100%, Target: 100%)
+const DEFAULT_CONFIGURED_BROWSER_ZOOM = 100;
 
-// Discrete Chrome zoom levels: 100% -> 90% -> 80% -> 75% -> 67% -> 50%
-const CHROME_DISCRETE_ZOOM_LEVELS = [100, 90, 80, 75, 67, 50];
+// Discrete Chrome zoom levels: 100% -> 95% -> 90% -> 85% -> 80%
+const CHROME_DISCRETE_ZOOM_LEVELS = [100, 95, 90, 85, 80];
 
 /**
- * Real Chrome Browser Page Zoom Manager (~80% Target Initial Zoom)
+ * Real Chrome Browser Page Zoom Manager (100% Default Target Initial Zoom)
  * Sequence:
  * 1. [ZOOM] Facebook page loaded
  * 2. [ZOOM] Current browser zoom: XX%
- * 3. [ZOOM] Target initial zoom: ~80%
+ * 3. [ZOOM] Target initial zoom: ~100%
  * 4. [ZOOM] Applying real Chrome zoom out
  * 5. [ZOOM] Browser zoom verified: XX%
  * 6. [ZOOM] Target post visible: YES
@@ -354,17 +354,17 @@ async function applyAndVerifyAbsoluteBrowserZoom(page, configuredZoom = DEFAULT_
     };
   }
 
-  let targetPercent = 80;
+  let targetPercent = 100;
   if (typeof configuredZoom === 'number') {
     targetPercent = configuredZoom;
   } else if (typeof configuredZoom === 'string') {
-    targetPercent = parseInt(configuredZoom, 10) || 80;
+    targetPercent = parseInt(configuredZoom, 10) || 100;
   } else if (configuredZoom && configuredZoom.zoom_level) {
-    targetPercent = parseInt(configuredZoom.zoom_level, 10) || 80;
+    targetPercent = parseInt(configuredZoom.zoom_level, 10) || 100;
   }
 
-  // Clamped to safety boundaries (50% - 100%)
-  if (targetPercent < 50) targetPercent = 50;
+  // Clamped to safety boundaries (80% - 100%)
+  if (targetPercent < 80) targetPercent = 80;
   if (targetPercent > 100) targetPercent = 100;
 
   const targetScale = targetPercent / 100.0;

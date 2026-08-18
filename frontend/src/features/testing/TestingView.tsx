@@ -166,7 +166,7 @@ interface PropertyImageCoord {
 
 export const TestingView: React.FC = () => {
   const [urlInput, setUrlInput] = useState<string>('');
-  const [selectedZoom, setSelectedZoom] = useState<string>('80');
+  const [selectedZoom, setSelectedZoom] = useState<string>('100');
   const [isTesting, setIsTesting] = useState<boolean>(false);
   const [currentStage, setCurrentStage] = useState<string>('IDLE');
   const [sessionStatus, setSessionStatus] = useState<string>('CONNECTED');
@@ -978,7 +978,7 @@ export const TestingView: React.FC = () => {
                       padding: '0.25rem',
                     }}
                   >
-                    {['50', '60', '65', '75', '80', '90', '100'].map((z) => (
+                    {['80', '85', '90', '95', '100'].map((z) => (
                       <div
                         key={z}
                         onClick={() => handleSelectZoom(z)}
@@ -995,7 +995,7 @@ export const TestingView: React.FC = () => {
                           justifyContent: 'space-between',
                         }}
                       >
-                        <span>{z}% {z === '80' ? '(Default)' : ''}</span>
+                        <span>{z}% {z === '100' ? '(Default)' : ''}</span>
                         {selectedZoom === z && <FiCheck style={{ fontSize: '0.75rem' }} />}
                       </div>
                     ))}
