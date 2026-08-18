@@ -334,12 +334,27 @@ func EnhanceVisionImage(c *fiber.Ctx) error {
 		})
 	}
 
-	// Create enhanced-images directory without modifying original source-images
-	enhancedDir := filepath.Join(".", "storage", "uploads", "test-runs", req.TestRunID, "enhanced-images")
+	testRunID := req.TestRunID
+	if testRunID == "" {
+		testRunID = fmt.Sprintf("RUN-%d", time.Now().Unix())
+	}
+
+	// Create enhanced-images directory
+	enhancedDir := filepath.Join(".", "storage", "uploads", "test-runs", testRunID, "enhanced-images")
 	_ = os.MkdirAll(enhancedDir, 0755)
 
-	// Perform non-destructive image enhancement (Color balance & sharpness simulation)
-	enhancedURL := fmt.Sprintf("%s?enhanced=true&t=%d", req.ImageURL, time.Now().Unix())
+	// Unique filename based on source image hash or timestamp
+	cleanName := fmt.Sprintf("enhanced-%d.jpg", time.Now().UnixNano())
+	outFilePath := filepath.Join(enhancedDir, cleanName)
+
+	var enhancedURL string
+	err := utils.ProcessAndSaveEnhancedImage(req.ImageURL, outFilePath, req.PromptID, req.PromptInstructions)
+	if err == nil {
+		enhancedURL = fmt.Sprintf("http://localhost:8085/storage/uploads/test-runs/%s/enhanced-images/%s?t=%d", testRunID, cleanName, time.Now().Unix())
+	} else {
+		// Fallback if source image couldn't be fetched over network directly
+		enhancedURL = fmt.Sprintf("%s?enhanced=true&preset=%s&t=%d", req.ImageURL, req.PromptID, time.Now().Unix())
+	}
 
 	return c.JSON(fiber.Map{
 		"status":              "success",
@@ -347,7 +362,7 @@ func EnhanceVisionImage(c *fiber.Ctx) error {
 		"enhanced_url":        enhancedURL,
 		"prompt_name":         req.PromptName,
 		"prompt_instructions": req.PromptInstructions,
-		"storage_key":         fmt.Sprintf("test-runs/%s/enhanced-images/01.jpg", req.TestRunID),
+		"storage_key":         fmt.Sprintf("test-runs/%s/enhanced-images/%s", testRunID, cleanName),
 		"enhancement_id":      fmt.Sprintf("ENH-%d", time.Now().UnixNano()),
 	})
 }

@@ -37,6 +37,9 @@ func main() {
 		})
 	})
 
+	// Static Storage file serving
+	app.Static("/storage", "./storage")
+
 	// Public Auth Routes
 	auth := app.Group("/api/auth")
 	auth.Post("/login", handlers.Login)
