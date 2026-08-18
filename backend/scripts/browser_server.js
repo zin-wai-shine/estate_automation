@@ -1298,16 +1298,21 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
     effectiveTargetUrl = currentBrowserPage.url();
   }
 
-  // Ensure persistent browser is running (reuse existing active session & scroll position)
+  // Ensure persistent browser is running (strictly preserve current live scroll & post position - NO RELOAD)
   if (!currentBrowserContext || !currentBrowserPage || currentBrowserPage.isClosed()) {
     console.log('[IMAGE] Launching persistent browser session...');
     await launchPersistentBrowser(userId);
     if (effectiveTargetUrl && effectiveTargetUrl !== 'about:blank') {
       await currentBrowserPage.goto(effectiveTargetUrl, { waitUntil: 'domcontentloaded', timeout: 35000 });
       await currentBrowserPage.waitForTimeout(2500);
+      // Scroll post into photo view
+      await currentBrowserPage.evaluate(() => {
+        const dialog = document.querySelector('div[role="dialog"], div[role="article"]');
+        if (dialog) dialog.scrollBy({ top: 500, behavior: 'instant' });
+      }).catch(() => {});
     }
   } else {
-    console.log('[IMAGE] Reusing active persistent browser session (preserving current scroll & target post position)');
+    console.log('[IMAGE] Preserving current browser session & live scroll position (NO RELOAD)');
   }
 
   const imagePage = currentBrowserPage;
