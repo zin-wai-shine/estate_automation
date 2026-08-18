@@ -1510,7 +1510,20 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
       console.warn('[IMAGE] Could not automatically trigger photo viewer modal.');
     }
 
-    // Step 3: Gallery Downloading Loop with Polling & Transition Detection
+    // Helper to get clean Photo Identifier (fbid or clean filename without ephemeral query parameters)
+    const getPhotoId = (urlStr, fbidVal) => {
+      if (fbidVal) return `fbid_${fbidVal}`;
+      if (!urlStr) return '';
+      const fbidMatch = urlStr.match(/fbid=([0-9]+)/);
+      if (fbidMatch) return `fbid_${fbidMatch[1]}`;
+      const cleanPath = urlStr.split('?')[0];
+      const filenameMatch = cleanPath.match(/([0-9]+_[0-9]+_[0-9]+_[a-z0-9]+\.(?:jpg|png|jpeg))/i);
+      if (filenameMatch) return filenameMatch[1];
+      const parts = cleanPath.split('/');
+      return parts[parts.length - 1] || cleanPath;
+    };
+
+    // Step 3: Gallery Downloading Loop with Robust Photo ID Tracking
     const getActiveViewerImage = async (maxAttempts = 15) => {
       for (let attempt = 0; attempt < maxAttempts; attempt++) {
         const result = await imagePage.evaluate(() => {
@@ -1519,20 +1532,22 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
             if (!src || (!src.includes('scontent') && !src.includes('fbcdn'))) return false;
             if (src.includes('/static.xx/') || src.includes('/rsrc.php/') || src.includes('/emoji/')) return false;
             if (src.includes('p50x50') || src.includes('s50x50') || src.includes('p32x32') || src.includes('p100x100')) return false;
-            
-            const w = img.naturalWidth || img.width || 0;
-            const h = img.naturalHeight || img.height || 0;
-            const isVisualMedia = img.getAttribute('data-visualcompletion') === 'media-vc-image';
-            if (!isVisualMedia && w < 200 && h < 200) return false;
+
+            const rect = img.getBoundingClientRect();
+            if (rect.width < 150 || rect.height < 150) return false;
+            if (rect.bottom <= 0 || rect.top >= window.innerHeight) return false;
+            if (rect.right <= 0 || rect.left >= window.innerWidth) return false;
             return true;
           });
 
           if (allImgs.length === 0) return null;
 
-          // Select the largest resolution image
+          // Prioritize centered image in viewer with largest displayed area
           allImgs.sort((a, b) => {
-            const areaA = (a.naturalWidth || a.width || 0) * (a.naturalHeight || a.height || 0);
-            const areaB = (b.naturalWidth || b.width || 0) * (b.naturalHeight || b.height || 0);
+            const rectA = a.getBoundingClientRect();
+            const rectB = b.getBoundingClientRect();
+            const areaA = rectA.width * rectA.height;
+            const areaB = rectB.width * rectB.height;
             return areaB - areaA;
           });
 
@@ -1551,10 +1566,14 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
             });
           }
 
+          const fbidMatch = window.location.href.match(/fbid=([0-9]+)/);
+          const pageFbid = fbidMatch ? fbidMatch[1] : '';
+
           return {
             source_url: bestUrl,
-            width: best.naturalWidth || best.width || 1280,
-            height: best.naturalHeight || best.height || 720,
+            fbid: pageFbid,
+            width: best.naturalWidth || best.width || 1920,
+            height: best.naturalHeight || best.height || 1080,
           };
         });
 
@@ -1568,8 +1587,9 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
 
     let count = 0;
     let isFinished = false;
+    let firstPhotoId = null;
     let firstImageUrl = null;
-    let firstImageHash = null;
+    const seenPhotoIds = new Set();
 
     while (count < maxImages && !isFinished) {
       const imageResource = await getActiveViewerImage(15);
@@ -1579,54 +1599,49 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
         break;
       }
 
-      const currentHash = generateImageHash(imageResource.source_url, count + 1);
+      const currentPhotoId = getPhotoId(imageResource.source_url, imageResource.fbid);
 
-      // Check if we arrived at the FIRST image again (completed full carousel loop)
-      if (count > 0 && firstImageHash) {
-        const isBackAtStart = currentHash === firstImageHash || imageResource.source_url === firstImageUrl;
+      // Check if we arrived back at the FIRST image (completed full carousel loop)
+      if (count > 0 && firstPhotoId) {
+        const isBackAtStart = currentPhotoId === firstPhotoId || (firstImageUrl && imageResource.source_url.split('?')[0] === firstImageUrl.split('?')[0]);
         if (isBackAtStart) {
-          console.log(`[IMAGE] Arrived at FIRST image again (${currentHash.slice(0, 10)}). All ${count} gallery photos downloaded!`);
+          console.log(`[IMAGE] 🎉 Arrived at FIRST image again (${currentPhotoId}). All ${count} gallery photos downloaded!`);
           console.log('[IMAGE] Gallery complete');
           isFinished = true;
           break;
         }
       }
 
-      // If we see an intermediate duplicate that isn't the first image, skip or log
-      if (seenUrls.has(imageResource.source_url)) {
-        console.log(`[IMAGE] Waiting for fresh photo transition (currently at seen image)...`);
-        // Retry Next action
-        await imagePage.keyboard.press('ArrowRight');
-        await imagePage.waitForTimeout(600);
-        continue;
+      // If we already saved this exact photo ID, skip duplicate saving and advance
+      if (seenPhotoIds.has(currentPhotoId)) {
+        console.log(`[IMAGE] Photo ${currentPhotoId} already downloaded. Advancing to next photo...`);
+      } else {
+        count++;
+        seenPhotoIds.add(currentPhotoId);
+
+        if (count === 1) {
+          firstPhotoId = currentPhotoId;
+          firstImageUrl = imageResource.source_url;
+          console.log(`[IMAGE] First photo ID recorded: ${firstPhotoId}`);
+        }
+
+        const filename = `property-${String(count).padStart(3, '0')}.jpg`;
+        console.log(`[IMAGE] Downloading image ${count} (${imageResource.width}x${imageResource.height}) [${currentPhotoId}]`);
+
+        downloadedImages.push({
+          index: count,
+          filename: filename,
+          source_url: imageResource.source_url,
+          width: imageResource.width,
+          height: imageResource.height,
+          mime_type: 'image/jpeg',
+          sha256: generateImageHash(imageResource.source_url, count),
+          source: 'facebook',
+          download_status: 'success',
+        });
+
+        console.log(`[IMAGE] Image ${count} saved`);
       }
-
-      count++;
-      seenHashes.add(currentHash);
-      seenUrls.add(imageResource.source_url);
-
-      if (count === 1) {
-        firstImageUrl = imageResource.source_url;
-        firstImageHash = currentHash;
-        console.log(`[IMAGE] First image recorded: ${firstImageHash.slice(0, 10)}`);
-      }
-
-      const filename = `property-${String(count).padStart(3, '0')}.jpg`;
-      console.log(`[IMAGE] Downloading image ${count} (${imageResource.width}x${imageResource.height})`);
-
-      downloadedImages.push({
-        index: count,
-        filename: filename,
-        source_url: imageResource.source_url,
-        width: imageResource.width,
-        height: imageResource.height,
-        mime_type: 'image/jpeg',
-        sha256: currentHash,
-        source: 'facebook',
-        download_status: 'success',
-      });
-
-      console.log(`[IMAGE] Image ${count} saved`);
 
       if (count >= maxImages) {
         console.log('[IMAGE] Maximum requested images reached');
@@ -1637,7 +1652,7 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
 
       // 4. Click Next Photo
       console.log('[IMAGE] Clicking Next');
-      const prevUrl = imageResource.source_url;
+      const prevPhotoId = currentPhotoId;
 
       // Click next button in DOM
       const nextClicked = await imagePage.evaluate(() => {
@@ -1674,18 +1689,21 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
       // Dispatch keyboard ArrowRight
       await imagePage.keyboard.press('ArrowRight');
 
-      // 5. Wait for the photo to ACTUALLY transition to a different image
+      // 5. Wait for the photo to ACTUALLY transition to a different image ID
       let photoTransitioned = false;
       for (let waitStep = 0; waitStep < 25; waitStep++) {
         await imagePage.waitForTimeout(200);
         const activeNow = await getActiveViewerImage(1);
-        if (activeNow && activeNow.source_url && activeNow.source_url !== prevUrl) {
-          photoTransitioned = true;
-          break;
+        if (activeNow && activeNow.source_url) {
+          const nowPhotoId = getPhotoId(activeNow.source_url, activeNow.fbid);
+          if (nowPhotoId && nowPhotoId !== prevPhotoId) {
+            photoTransitioned = true;
+            break;
+          }
         }
 
-        // Retry next triggers at step 4, 8, 12, 16
-        if (waitStep === 4 || waitStep === 8 || waitStep === 12 || waitStep === 16) {
+        // Retry next triggers at step 4, 8, 12, 16, 20
+        if (waitStep % 4 === 0) {
           await imagePage.keyboard.press('ArrowRight');
           const vp = imagePage.viewportSize() || { width: 1440, height: 900 };
           await imagePage.mouse.click(Math.round(vp.width * 0.94), Math.round(vp.height * 0.5)).catch(() => {});
