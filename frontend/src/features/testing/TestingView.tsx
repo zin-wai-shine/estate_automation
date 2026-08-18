@@ -30,6 +30,7 @@ import {
   FiChevronLeft,
   FiChevronRight,
   FiX,
+  FiRefreshCw,
 } from 'react-icons/fi';
 
 interface RegionBoundingBox {
@@ -355,6 +356,32 @@ export const TestingView: React.FC = () => {
 
   const [selectedPromptId, setSelectedPromptId] = useState<string>(() => loadAllPromptTemplates().contentTemplates[0]?.id || 'facebook_rent');
   const [selectedImagePromptId, setSelectedImagePromptId] = useState<string>(() => loadAllPromptTemplates().imagePrompts[0]?.id || 'bright_airy');
+
+  // Dual Image Prompt Mode: 'PRESET' (Dropdown) vs 'CUSTOM' (Manual Textarea / Pasted)
+  const [imagePromptMode, setImagePromptMode] = useState<'PRESET' | 'CUSTOM'>('PRESET');
+  const [customImagePromptText, setCustomImagePromptText] = useState<string>(
+    () => loadAllPromptTemplates().imagePrompts[0]?.instructions || ''
+  );
+  const [isCustomPromptEditorOpen, setIsCustomPromptEditorOpen] = useState<boolean>(false);
+
+  // Helper to get active prompt (Preset vs Custom)
+  const getActiveImagePrompt = () => {
+    if (imagePromptMode === 'CUSTOM' && customImagePromptText.trim()) {
+      return {
+        id: 'custom_manual',
+        name: '✏️ Custom Manual Prompt',
+        instructions: customImagePromptText.trim(),
+        desc: customImagePromptText.length > 60 ? customImagePromptText.slice(0, 60) + '...' : customImagePromptText,
+      };
+    }
+    const chosen = imageEnhancePrompts.find((p) => p.id === selectedImagePromptId) || imageEnhancePrompts[0];
+    return {
+      id: chosen.id,
+      name: chosen.name,
+      instructions: chosen.instructions || (chosen as any).templateText || chosen.desc || '',
+      desc: chosen.desc,
+    };
+  };
 
   // Keep both dropdowns synchronized with Prompt Templates library
   useEffect(() => {
@@ -699,8 +726,9 @@ export const TestingView: React.FC = () => {
   // STAGE 5: Enhance Image (Single) with Real-Time ChatGPT Studio Interface
   const handleEnhanceImage = async (imgUrl: string, promptId?: string) => {
     if (!activeTestRun) return;
-    const chosenPrompt = imageEnhancePrompts.find((p) => p.id === (promptId || selectedImagePromptId)) || imageEnhancePrompts[0];
-    const instructionText = chosenPrompt.instructions || (chosenPrompt as any).templateText || chosenPrompt.desc || '';
+    const activePrompt = getActiveImagePrompt();
+    const chosenPrompt = promptId ? imageEnhancePrompts.find((p) => p.id === promptId) || activePrompt : activePrompt;
+    const instructionText = chosenPrompt.instructions;
     const photoIndex = (activeTestRun.images?.findIndex((i) => i.public_url === imgUrl) ?? 0) + 1;
 
     // Open Real-time ChatGPT-Style Studio Modal immediately
@@ -838,8 +866,8 @@ export const TestingView: React.FC = () => {
     }
 
     setIsBatchEnhancing(true);
-    const chosenPrompt = imageEnhancePrompts.find((p) => p.id === selectedImagePromptId) || imageEnhancePrompts[0];
-    const instructionText = chosenPrompt.instructions || (chosenPrompt as any).templateText || chosenPrompt.desc || '';
+    const chosenPrompt = getActiveImagePrompt();
+    const instructionText = chosenPrompt.instructions;
     addLog('ENHANCE_BATCH', `✨ Starting Batch AI Enhancement for ${images.length} photos with "${chosenPrompt.name}"...`);
 
     for (let i = 0; i < images.length; i++) {
@@ -3114,9 +3142,63 @@ export const TestingView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Controls: Prompt Selector, Enhance All, Download All */}
+              {/* Controls: Prompt Selector & Mode Toggle, Enhance All, Download All */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
-                {/* Enhancement Preset Dropdown */}
+                {/* Prompt Mode Toggle Tabs */}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    padding: '2px',
+                    borderRadius: '0.5rem',
+                    backgroundColor: 'var(--bg-secondary)',
+                    border: '1px solid var(--border-color)',
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setImagePromptMode('PRESET')}
+                    style={{
+                      padding: '0.3rem 0.65rem',
+                      fontSize: '0.71875rem',
+                      fontWeight: 600,
+                      borderRadius: '0.375rem',
+                      border: 'none',
+                      backgroundColor: imagePromptMode === 'PRESET' ? '#3B82F6' : 'transparent',
+                      color: imagePromptMode === 'PRESET' ? '#FFFFFF' : 'var(--text-muted)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.3rem',
+                    }}
+                  >
+                    <span>📋 Preset</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setImagePromptMode('CUSTOM');
+                      setIsCustomPromptEditorOpen(true);
+                    }}
+                    style={{
+                      padding: '0.3rem 0.65rem',
+                      fontSize: '0.71875rem',
+                      fontWeight: 600,
+                      borderRadius: '0.375rem',
+                      border: 'none',
+                      backgroundColor: imagePromptMode === 'CUSTOM' ? '#8B5CF6' : 'transparent',
+                      color: imagePromptMode === 'CUSTOM' ? '#FFFFFF' : 'var(--text-muted)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.3rem',
+                    }}
+                  >
+                    <span>✏️ Custom / Paste</span>
+                  </button>
+                </div>
+
+                {/* Enhancement Preset Dropdown (Shown in PRESET mode or as template selector) */}
                 <div style={{ position: 'relative' }}>
                   <button
                     type="button"
@@ -3163,6 +3245,7 @@ export const TestingView: React.FC = () => {
                           key={preset.id}
                           onClick={() => {
                             setSelectedImagePromptId(preset.id);
+                            setCustomImagePromptText(preset.instructions || (preset as any).templateText || preset.desc || '');
                             setIsImagePromptDropdownOpen(false);
                           }}
                           style={{
@@ -3190,6 +3273,30 @@ export const TestingView: React.FC = () => {
                     </div>
                   )}
                 </div>
+
+                {/* Toggle Prompt Editor Button */}
+                <button
+                  type="button"
+                  onClick={() => setIsCustomPromptEditorOpen(!isCustomPromptEditorOpen)}
+                  style={{
+                    height: '34px',
+                    padding: '0 0.65rem',
+                    backgroundColor: isCustomPromptEditorOpen ? 'rgba(139, 92, 246, 0.15)' : 'var(--bg-secondary)',
+                    color: isCustomPromptEditorOpen ? '#A78BFA' : 'var(--text-secondary)',
+                    border: `1px solid ${isCustomPromptEditorOpen ? '#8B5CF6' : 'var(--border-color)'}`,
+                    borderRadius: '0.5rem',
+                    fontSize: '0.71875rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.35rem',
+                  }}
+                  title="View, edit, or paste manual prompt text"
+                >
+                  <FiEdit2 />
+                  <span>{isCustomPromptEditorOpen ? 'Hide Prompt Box' : 'Edit / Paste Prompt'}</span>
+                </button>
 
                 {/* Enhance All Photos Button */}
                 <Button
@@ -3240,6 +3347,132 @@ export const TestingView: React.FC = () => {
                 </Button>
               </div>
             </div>
+
+            {/* ✏️ CUSTOM / PASTED PROMPT EDITOR PANEL (EXPANDABLE) */}
+            {isCustomPromptEditorOpen && (
+              <div
+                style={{
+                  marginBottom: '1.25rem',
+                  padding: '0.875rem',
+                  borderRadius: '0.5rem',
+                  backgroundColor: '#0E1015',
+                  border: imagePromptMode === 'CUSTOM' ? '1px solid rgba(139, 92, 246, 0.5)' : '1px solid var(--border-color)',
+                  boxShadow: '0 4px 15px rgba(0, 0, 0, 0.3)',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: imagePromptMode === 'CUSTOM' ? '#A78BFA' : '#3B82F6', textTransform: 'uppercase' }}>
+                      {imagePromptMode === 'CUSTOM' ? '✏️ Active Custom / Manual Prompt' : '📋 Template Preset Prompt Instructions'}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: '0.65625rem',
+                        padding: '0.1rem 0.4rem',
+                        borderRadius: '0.25rem',
+                        backgroundColor: imagePromptMode === 'CUSTOM' ? 'rgba(139, 92, 246, 0.2)' : 'rgba(59, 130, 246, 0.15)',
+                        color: imagePromptMode === 'CUSTOM' ? '#C4B5FD' : '#93C5FD',
+                        fontFamily: 'monospace',
+                      }}
+                    >
+                      {customImagePromptText.length} characters
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const text = await navigator.clipboard.readText();
+                          if (text) {
+                            setCustomImagePromptText(text);
+                            setImagePromptMode('CUSTOM');
+                            addLog('PROMPT', 'Pasted custom prompt from clipboard');
+                          }
+                        } catch (e) {
+                          addLog('PROMPT_ERR', 'Could not read clipboard. Please paste directly into the box.');
+                        }
+                      }}
+                      style={{
+                        padding: '0.25rem 0.6rem',
+                        fontSize: '0.6875rem',
+                        fontWeight: 600,
+                        borderRadius: '0.25rem',
+                        border: '1px solid rgba(139, 92, 246, 0.4)',
+                        backgroundColor: 'rgba(139, 92, 246, 0.15)',
+                        color: '#C4B5FD',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.3rem',
+                      }}
+                    >
+                      <FiCopy /> Paste from Clipboard
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const chosen = imageEnhancePrompts.find((p) => p.id === selectedImagePromptId) || imageEnhancePrompts[0];
+                        setCustomImagePromptText(chosen.instructions || (chosen as any).templateText || chosen.desc || '');
+                        setImagePromptMode('PRESET');
+                        addLog('PROMPT', `Reset prompt to preset: ${chosen.name}`);
+                      }}
+                      style={{
+                        padding: '0.25rem 0.6rem',
+                        fontSize: '0.6875rem',
+                        fontWeight: 600,
+                        borderRadius: '0.25rem',
+                        border: '1px solid var(--border-color)',
+                        backgroundColor: 'var(--bg-secondary)',
+                        color: 'var(--text-secondary)',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.3rem',
+                      }}
+                    >
+                      <FiRefreshCw /> Reset to Selected Preset
+                    </button>
+                  </div>
+                </div>
+
+                <textarea
+                  rows={4}
+                  value={customImagePromptText}
+                  onChange={(e) => {
+                    setCustomImagePromptText(e.target.value);
+                    setImagePromptMode('CUSTOM');
+                  }}
+                  placeholder="Paste or type your custom photo enhancement / retouching prompt here..."
+                  style={{
+                    width: '100%',
+                    backgroundColor: '#05070A',
+                    color: 'var(--text-primary)',
+                    border: '1px solid rgba(255, 255, 255, 0.12)',
+                    borderRadius: '0.375rem',
+                    padding: '0.65rem 0.75rem',
+                    fontSize: '0.78125rem',
+                    fontFamily: 'monospace',
+                    lineHeight: 1.5,
+                    resize: 'vertical',
+                    outline: 'none',
+                  }}
+                />
+
+                <div style={{ marginTop: '0.4rem', fontSize: '0.6875rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>
+                    💡 {imagePromptMode === 'CUSTOM'
+                      ? 'Custom mode active: When clicking "Enhance" or "Enhance All", this exact edited/pasted prompt will be sent to the model.'
+                      : 'Preset mode active: Using template preset above. Edit this box or paste text anytime to switch to custom mode.'}
+                  </span>
+                  <span style={{ color: imagePromptMode === 'CUSTOM' ? '#A78BFA' : '#3B82F6', fontWeight: 600 }}>
+                    {imagePromptMode === 'CUSTOM' ? '● Using Custom Prompt' : '● Using Preset'}
+                  </span>
+                </div>
+              </div>
+            )}
 
             {/* AI Image Coordinates Table (if detected) */}
             {aiImageCoords.length > 0 && (
@@ -4138,52 +4371,92 @@ export const TestingView: React.FC = () => {
                   overflowY: 'auto',
                 }}
               >
-                {/* Prompt Box */}
+                {/* Prompt Box with In-Modal Editing & Copy */}
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
                     <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase' }}>
-                      🤖 AI Prompt Sent to Model
+                      🤖 AI Enhancement Prompt
                     </label>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigator.clipboard.writeText(studioModal.promptText);
-                        addLog('COPY', 'Copied enhancement prompt to clipboard');
-                      }}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(studioModal.promptText);
+                          addLog('COPY', 'Copied enhancement prompt to clipboard');
+                        }}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: '#60A5FA',
+                          fontSize: '0.6875rem',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.25rem',
+                        }}
+                      >
+                        <FiCopy /> Copy
+                      </button>
+                    </div>
+                  </div>
+
+                  {studioModal.isProcessing ? (
+                    <div
                       style={{
-                        background: 'none',
-                        border: 'none',
-                        color: '#60A5FA',
-                        fontSize: '0.6875rem',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.25rem',
+                        padding: '0.75rem',
+                        backgroundColor: 'var(--bg-secondary)',
+                        borderRadius: '0.5rem',
+                        border: '1px solid var(--border-color)',
+                        fontSize: '0.75rem',
+                        color: 'var(--text-primary)',
+                        lineHeight: '1.4',
+                        maxHeight: '110px',
+                        overflowY: 'auto',
+                        whiteSpace: 'pre-wrap',
                       }}
                     >
-                      <FiCopy /> Copy Prompt
-                    </button>
-                  </div>
-                  <div
-                    style={{
-                      padding: '0.75rem',
-                      backgroundColor: 'var(--bg-secondary)',
-                      borderRadius: '0.5rem',
-                      border: '1px solid var(--border-color)',
-                      fontSize: '0.75rem',
-                      color: 'var(--text-primary)',
-                      lineHeight: '1.4',
-                      maxHeight: '120px',
-                      overflowY: 'auto',
-                      whiteSpace: 'pre-wrap',
-                    }}
-                  >
-                    {studioModal.promptText}
-                  </div>
+                      {studioModal.promptText}
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                      <textarea
+                        rows={3}
+                        value={studioModal.promptText}
+                        onChange={(e) => setStudioModal((prev) => (prev ? { ...prev, promptText: e.target.value } : prev))}
+                        placeholder="Edit or paste manual prompt..."
+                        style={{
+                          width: '100%',
+                          backgroundColor: '#05070A',
+                          color: 'var(--text-primary)',
+                          border: '1px solid rgba(255, 255, 255, 0.15)',
+                          borderRadius: '0.375rem',
+                          padding: '0.5rem',
+                          fontSize: '0.75rem',
+                          fontFamily: 'monospace',
+                          lineHeight: 1.4,
+                          resize: 'vertical',
+                          outline: 'none',
+                        }}
+                      />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        leftIcon={<FiRefreshCw />}
+                        onClick={() => {
+                          setCustomImagePromptText(studioModal.promptText);
+                          setImagePromptMode('CUSTOM');
+                          handleEnhanceImage(studioModal.imgUrl);
+                        }}
+                        style={{ height: '26px', fontSize: '0.6875rem', borderColor: '#3B82F6', color: '#60A5FA' }}
+                      >
+                        Re-run with this Prompt
+                      </Button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Real-time Thought Terminal */}
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: '160px' }}>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: '150px' }}>
                   <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', marginBottom: '0.35rem' }}>
                     ⚡ Real-time Execution Steps
                   </label>
