@@ -1595,28 +1595,43 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
       console.log('[IMAGE] Clicking Next');
       const prevUrl = imageResource.source_url;
 
+      // Click Next button if present
       await imagePage.evaluate(() => {
         const nextBtns = Array.from(
           document.querySelectorAll(
-            '[aria-label="Next photo"], [aria-label="Next"], [aria-label="ถัดไป"], [aria-label="Next Picture"], div[role="button"][aria-label*="Next"]'
+            '[aria-label="Next photo"], [aria-label="Next"], [aria-label="ถัดไป"], [aria-label="Next Picture"], [aria-label="Next image"], div[role="button"][aria-label*="Next"], div[role="button"][aria-label*="ถัดไป"]'
           )
         );
         if (nextBtns.length > 0) {
           nextBtns[0].click();
+          return;
+        }
+
+        // Fallback: Click right navigation area of photo viewer
+        const viewer = document.querySelector('[role="dialog"], [data-pagelet*="MediaViewer"]') || document.body;
+        const rightArea = viewer.querySelector('div[role="button"][tabindex="0"]:last-child');
+        if (rightArea) {
+          rightArea.click();
         }
       }).catch(() => {});
 
-      // Also press ArrowRight for reliable navigation
+      // Focus viewer and press ArrowRight
       await imagePage.keyboard.press('ArrowRight');
 
       // 5. Wait for the photo to ACTUALLY transition to a different image
       let photoTransitioned = false;
-      for (let waitStep = 0; waitStep < 20; waitStep++) {
+      for (let waitStep = 0; waitStep < 18; waitStep++) {
         await imagePage.waitForTimeout(200);
         const activeNow = await getActiveViewerImage();
         if (activeNow && activeNow.source_url && activeNow.source_url !== prevUrl) {
           photoTransitioned = true;
           break;
+        }
+
+        // Retry right arrow press at step 4 and step 8
+        if (waitStep === 4 || waitStep === 8) {
+          await imagePage.keyboard.press('ArrowRight');
+          await imagePage.mouse.click(1200, 500).catch(() => {});
         }
       }
 

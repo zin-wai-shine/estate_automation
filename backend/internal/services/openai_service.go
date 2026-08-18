@@ -1004,39 +1004,33 @@ func (s *OpenAIService) DetectTargetPostImageCoordinates(ctx context.Context, im
 		cleanDataURL = fmt.Sprintf("data:image/jpeg;base64,%s", imageBase64)
 	}
 
-	systemPrompt := `You are analyzing a Facebook property listing screenshot.
+	systemPrompt := `You are analyzing a Facebook property listing screenshot (1920x1080 resolution).
 
-Locate the FIRST clickable property photo belonging strictly to the target Facebook post in this CURRENT screenshot.
+Locate the FIRST PROPERTY PHOTO CELL in the target post (the top-left photo inside the post photo collage/grid).
 
-Ignore:
-- Facebook profile pictures and avatars
-- Group logos and page logos
-- Sidebar images and navigation icons
-- Advertisements and sponsored widgets
-- Comments and reaction icons
-- Suggested posts and other unrelated posts
-- Unrelated images
-
-Return the bounding box and center coordinate of the first property image in the current screenshot pixel coordinate system (1920x1080).
+Critical accuracy requirements:
+- Identify the EXACT rectangle bounding box of the top-left image cell itself.
+- Do NOT include the outer post border, header, text, dark background, or other photo cells in the collage.
+- Only return the bounding box of the actual first photo rectangle.
 
 Return JSON only:
 {
   "found": true,
   "image_bbox": {
-    "x": 510,
-    "y": 620,
-    "width": 420,
-    "height": 420
+    "x": 630,
+    "y": 260,
+    "width": 330,
+    "height": 280
   }
 }
 
-If no clickable property photos are visible on this screenshot, return:
+If no property photos are visible on this screenshot, return:
 {
   "found": false,
   "image_bbox": null
 }`
 
-	userPrompt := "Identify the first visible clickable property photo belonging to the target Facebook post in this screenshot. Return its bounding box."
+	userPrompt := "Identify the exact bounding box of the first property photo cell (top-left photo in the grid) inside the Facebook post."
 
 	reqBody := map[string]interface{}{
 		"model": s.Model,
@@ -1105,15 +1099,15 @@ If no clickable property photos are visible on this screenshot, return:
 		return nil, fmt.Errorf("failed to parse image coordinates JSON: %w", err)
 	}
 
-	// Calculate safe click position inside the upper-left quadrant (0.25 offset)
+	// Calculate EXACT CELL CENTER (x + width/2, y + height/2)
 	if result.ImageBBox != nil && result.ImageBBox.Width > 0 && result.ImageBBox.Height > 0 {
 		result.Found = true
 		result.PropertyImageFound = true
-		clickX := result.ImageBBox.X + int(float64(result.ImageBBox.Width)*0.25)
-		clickY := result.ImageBBox.Y + int(float64(result.ImageBBox.Height)*0.25)
+		centerX := result.ImageBBox.X + (result.ImageBBox.Width / 2)
+		centerY := result.ImageBBox.Y + (result.ImageBBox.Height / 2)
 		result.ClickPosition = &ClickPosition{
-			X: clickX,
-			Y: clickY,
+			X: centerX,
+			Y: centerY,
 		}
 		result.FirstPropertyImage = &PropertyImageCoordinate{
 			Index:      1,
@@ -1121,8 +1115,8 @@ If no clickable property photos are visible on this screenshot, return:
 			Y:          result.ImageBBox.Y,
 			Width:      result.ImageBBox.Width,
 			Height:     result.ImageBBox.Height,
-			CenterX:    clickX,
-			CenterY:    clickY,
+			CenterX:    centerX,
+			CenterY:    centerY,
 			Confidence: 0.98,
 		}
 		result.Images = []PropertyImageCoordinate{*result.FirstPropertyImage}
@@ -1135,11 +1129,11 @@ If no clickable property photos are visible on this screenshot, return:
 			Width:  result.FirstPropertyImage.Width,
 			Height: result.FirstPropertyImage.Height,
 		}
-		clickX := result.FirstPropertyImage.X + int(float64(result.FirstPropertyImage.Width)*0.25)
-		clickY := result.FirstPropertyImage.Y + int(float64(result.FirstPropertyImage.Height)*0.25)
+		centerX := result.FirstPropertyImage.X + (result.FirstPropertyImage.Width / 2)
+		centerY := result.FirstPropertyImage.Y + (result.FirstPropertyImage.Height / 2)
 		result.ClickPosition = &ClickPosition{
-			X: clickX,
-			Y: clickY,
+			X: centerX,
+			Y: centerY,
 		}
 		result.Images = []PropertyImageCoordinate{*result.FirstPropertyImage}
 	} else if len(result.Images) > 0 {
@@ -1152,11 +1146,11 @@ If no clickable property photos are visible on this screenshot, return:
 			Width:  img.Width,
 			Height: img.Height,
 		}
-		clickX := img.X + int(float64(img.Width)*0.25)
-		clickY := img.Y + int(float64(img.Height)*0.25)
+		centerX := img.X + (img.Width / 2)
+		centerY := img.Y + (img.Height / 2)
 		result.ClickPosition = &ClickPosition{
-			X: clickX,
-			Y: clickY,
+			X: centerX,
+			Y: centerY,
 		}
 		result.FirstPropertyImage = &img
 	}

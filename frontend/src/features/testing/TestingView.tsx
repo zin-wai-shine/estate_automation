@@ -957,8 +957,8 @@ export const TestingView: React.FC = () => {
         };
 
         const clickPos = coordsData.result.click_position || {
-          x: Math.round(bbox.x + bbox.width * 0.25),
-          y: Math.round(bbox.y + bbox.height * 0.25),
+          x: Math.round(bbox.x + bbox.width / 2),
+          y: Math.round(bbox.y + bbox.height / 2),
         };
 
         setFirstPhotoTarget({
@@ -970,8 +970,8 @@ export const TestingView: React.FC = () => {
           status: 'LOCATED',
         });
 
-        addLog('AI_TARGET_03', `[STEP 3] ✓ Top-Left Property Photo Bounding Box: { x: ${bbox.x}, y: ${bbox.y}, width: ${bbox.width}, height: ${bbox.height} }`);
-        addLog('AI_TARGET_03', `[STEP 3] 🎯 Calculated Safe Click Coordinate Point (upper-left 0.25 area): (X: ${clickPos.x}, Y: ${clickPos.y})`);
+        addLog('AI_TARGET_03', `[STEP 3] ✓ First Property Image Cell Bounding Box: { x: ${bbox.x}, y: ${bbox.y}, width: ${bbox.width}, height: ${bbox.height} }`);
+        addLog('AI_TARGET_03', `[STEP 3] 🎯 Calculated First Image Cell Center Point: (X: ${clickPos.x}, Y: ${clickPos.y})`);
 
         addLog('AI_TARGET_04', `[STEP 4] OpenClaw moving mouse to (${clickPos.x}, ${clickPos.y}), waiting 0.5s, clicking once...`);
         const extractResp = await fetch('http://localhost:8085/api/facebook/test/extract-images', {
@@ -1898,7 +1898,7 @@ export const TestingView: React.FC = () => {
                     First Property Photo AI Targeting & OpenClaw Click Session
                   </h3>
                   <span style={{ fontSize: '0.71875rem', color: 'var(--text-muted)' }}>
-                    Visual Bounding Box & Upper-Left Safe Click Point (0.25 Offset)
+                    Visual Bounding Box & Exact First Image Cell Center Point (X + W/2, Y + H/2)
                   </span>
                 </div>
               </div>
@@ -1917,7 +1917,7 @@ export const TestingView: React.FC = () => {
                       border: '1px solid rgba(59, 130, 246, 0.3)',
                     }}
                   >
-                    🎯 Click Point: ({firstPhotoTarget.click_position.x}, {firstPhotoTarget.click_position.y})
+                    🎯 Cell Center: ({firstPhotoTarget.click_position.x}, {firstPhotoTarget.click_position.y})
                   </span>
                 )}
                 <Button
@@ -1947,11 +1947,11 @@ export const TestingView: React.FC = () => {
               </span>
               <span style={{ color: 'var(--text-muted)' }}>➔</span>
               <span style={{ color: 'var(--text-primary)', backgroundColor: 'var(--bg-secondary)', padding: '0.25rem 0.55rem', borderRadius: '0.25rem', border: '1px solid var(--border-color)' }}>
-                🤖 2. AI Detects Top-Left Photo
+                🤖 2. AI Detects Top-Left Photo Cell
               </span>
               <span style={{ color: 'var(--text-muted)' }}>➔</span>
               <span style={{ color: 'var(--text-primary)', backgroundColor: 'var(--bg-secondary)', padding: '0.25rem 0.55rem', borderRadius: '0.25rem', border: '1px solid var(--border-color)' }}>
-                📐 3. Compute (x + 0.25w, y + 0.25h)
+                📐 3. Compute Cell Center (x + w/2, y + h/2)
               </span>
               <span style={{ color: 'var(--text-muted)' }}>➔</span>
               <span style={{ color: 'var(--text-primary)', backgroundColor: 'var(--bg-secondary)', padding: '0.25rem 0.55rem', borderRadius: '0.25rem', border: '1px solid var(--border-color)' }}>
