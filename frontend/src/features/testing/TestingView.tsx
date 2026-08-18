@@ -722,99 +722,90 @@ export const TestingView: React.FC = () => {
         addLog('PIPELINE', `🎉 Saved test run record (${finalCleanText.length} chars)`);
       }
 
-      // IMAGE DOWNLOAD PIPELINE: Session 1 identifies property images -> Session 2 downloads via Photo Viewer
-      const hasAnyImagesInCaptures = allAnalyses.some(
-        (a) => a.property_images_visible || a.relevant_images_visible || (a.visible_property_image_count && a.visible_property_image_count > 0)
-      );
-
-      if (!hasAnyImagesInCaptures) {
-        addLog('IMAGE_DOWNLOAD', 'No property image gallery detected.');
-      } else {
-        // 1. Load the LAST successful content-capture screenshot
-        const targetScreenshotForCoords = lastScreenshotBase64;
-
-        addLog('IMAGE_STEP_01', '[IMAGE_STEP_01] Loading LAST content-capture screenshot for first property photo detection');
-        addLog('IMAGE_STEP_02', '[IMAGE_STEP_02] Analyzing screenshot to locate first visible property photo...');
-
+      // AUTO PHOTO TARGETING & IMAGE DOWNLOAD PIPELINE
+      if (photoTargetMode === 'auto') {
+        addLog('AI_TARGET_AUTO', '⚡ [AUTO MODE] Automatically launching First Property Photo AI Targeting & Image Download...');
+        // Pass last screenshot for immediate targeting
         try {
-          let firstCoords: { x: number; y: number } | null = null;
-          const coordsResp = await fetch('http://localhost:8085/api/facebook/test/detect-image-coordinates', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ screenshot_base64: targetScreenshotForCoords }),
-          });
-          const coordsData = await coordsResp.json();
+          const targetScreenshotForCoords = lastScreenshotBase64 || capturedScreenshot;
+          if (targetScreenshotForCoords) {
+            addLog('AI_TARGET_01', '[STEP 1] Loading LAST screenshot to locate first property photo...');
+            addLog('AI_TARGET_02', '[STEP 2] Sending screenshot to OpenAI Vision to detect top-left first property photo...');
 
-          if (coordsData.result && (coordsData.result.click_position || (coordsData.result.images && coordsData.result.images.length > 0))) {
-            if (coordsData.result.images) {
-              setAiImageCoords(coordsData.result.images);
+            let coordsResp = await fetch('http://localhost:8085/api/facebook/test/detect-image-coordinates', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ screenshot_base64: targetScreenshotForCoords }),
+            });
+            let coordsData = await coordsResp.json();
+
+            if (coordsData.result && (coordsData.result.click_position || coordsData.result.image_bbox || (coordsData.result.images && coordsData.result.images.length > 0))) {
+              if (coordsData.result.images) {
+                setAiImageCoords(coordsData.result.images);
+              }
+              const bbox = coordsData.result.image_bbox || {
+                x: coordsData.result.images?.[0]?.x || 500,
+                y: coordsData.result.images?.[0]?.y || 500,
+                width: coordsData.result.images?.[0]?.width || 400,
+                height: coordsData.result.images?.[0]?.height || 400,
+              };
+
+              const clickPos = coordsData.result.click_position || {
+                x: Math.round(bbox.x + bbox.width / 2),
+                y: Math.round(bbox.y + bbox.height / 2),
+              };
+
+              setFirstPhotoTarget({
+                found: true,
+                image_bbox: bbox,
+                click_position: clickPos,
+                screenshot_base64: targetScreenshotForCoords,
+                detected_at: new Date().toLocaleTimeString(),
+                status: 'LOCATED',
+              });
+
+              addLog('AI_TARGET_03', `[STEP 3] ✓ First Property Image Cell Bounding Box: { x: ${bbox.x}, y: ${bbox.y}, width: ${bbox.width}, height: ${bbox.height} }`);
+              addLog('AI_TARGET_03', `[STEP 3] 🎯 Calculated First Image Cell Center Point: (X: ${clickPos.x}, Y: ${clickPos.y})`);
+              addLog('AI_TARGET_04', `[STEP 4] OpenClaw moving mouse to (${clickPos.x}, ${clickPos.y}), waiting 0.5s, clicking once...`);
+
+              const extractResp = await fetch('http://localhost:8085/api/facebook/test/extract-images', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  target_url: navResult?.current_url || urlInput,
+                  max_images: 30,
+                  image_coordinates: clickPos,
+                }),
+              });
+              const extractData = await extractResp.json();
+
+              if (extractData.result && extractData.result.images && extractData.result.images.length > 0) {
+                addLog('AI_TARGET_05', `[STEP 5] 🎉 SUCCESS: Photo Viewer opened! Downloaded ${extractData.result.images.length} full-resolution property photos.`);
+                const extractedImages = extractData.result.images.map((img: any) => ({
+                  id: img.index,
+                  original_order: img.index,
+                  filename: img.filename || `property-${String(img.index).padStart(3, '0')}.jpg`,
+                  public_url: img.source_url,
+                  width: img.width,
+                  height: img.height,
+                  file_size: img.file_size || 1827345,
+                  checksum: img.sha256 ? `SHA256-${img.sha256.slice(0, 10)}` : `MD5-${img.index}`,
+                }));
+                if (finalRun) {
+                  finalRun.images = extractedImages;
+                  finalRun.images_downloaded_count = extractedImages.length;
+                  setActiveTestRun({ ...finalRun });
+                }
+              }
+            } else {
+              addLog('AI_TARGET_INFO', 'No property photos detected on current view.');
             }
-            if (coordsData.result.click_position) {
-              firstCoords = { x: coordsData.result.click_position.x, y: coordsData.result.click_position.y };
-            } else if (coordsData.result.images && coordsData.result.images.length > 0) {
-              const firstImg = coordsData.result.images[0];
-              firstCoords = { x: firstImg.center_x, y: firstImg.center_y };
-            }
-            if (coordsData.result.image_bbox) {
-              const bbox = coordsData.result.image_bbox;
-              addLog('IMAGE_STEP_03', `[IMAGE_STEP_03] First property photo bbox: { x: ${bbox.x}, y: ${bbox.y}, w: ${bbox.width}, h: ${bbox.height} }`);
-            }
-            if (firstCoords) {
-              addLog('IMAGE_CLICK', `[IMAGE_CLICK] Calculated safe click position: (X: ${firstCoords.x}, Y: ${firstCoords.y})`);
-            }
-          } else {
-            addLog('IMAGE_STEP_03', '[IMAGE_STEP_03] Target post property photo located via DOM container.');
           }
-
-          // Trigger Session 2 Image Downloader in fresh browser
-          addLog('IMAGE_DOWNLOAD', '[IMAGE_DOWNLOAD] Starting fresh Session 2 browser to download from Photo Viewer...');
-          const imgResp = await fetch('http://localhost:8085/api/facebook/test/extract-images', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              target_url: navResult?.current_url || urlInput,
-              max_images: 30,
-              image_coordinates: firstCoords,
-            }),
-          });
-          const imgData = await imgResp.json();
-
-        if (imgData.result && imgData.result.images && imgData.result.images.length > 0) {
-          const extractedImages = imgData.result.images.map((img: any) => ({
-            id: img.index,
-            original_order: img.index,
-            filename: img.filename || `${String(img.index).padStart(3, '0')}.jpg`,
-            public_url: img.source_url,
-            width: img.width,
-            height: img.height,
-            file_size: img.file_size || 1827345,
-            checksum: img.sha256 ? `SHA256-${img.sha256.slice(0, 10)}` : `MD5-${img.index}`,
-          }));
-
-          imgData.result.images.forEach((img: any) => {
-            const fileName = img.filename || `${String(img.index).padStart(3, '0')}.jpg`;
-            addLog('IMAGE_RESOURCE', `[IMAGE_RESOURCE] Image resource detected for ${fileName} (${img.width}x${img.height})`);
-            addLog('DOWNLOAD', `[DOWNLOAD] Image ${img.index} downloaded (${fileName})`);
-            addLog('NEXT', `[NEXT] Moving to image ${img.index + 1}`);
-            if (img.sha256) {
-              addLog('IMAGE_HASH', `[IMAGE_HASH] Current hash: ${img.sha256.slice(0, 16)}...`);
-            }
-          });
-
-          addLog('IMAGE_DUPLICATE', '[IMAGE_DUPLICATE] Current hash already downloaded. Carousel end detected.');
-          addLog('COMPLETE', `[COMPLETE] Image sequence completed. Total unique property images: ${extractedImages.length}`);
-
-          if (finalRun) {
-            finalRun.images = extractedImages;
-            finalRun.images_downloaded_count = extractedImages.length;
-            setActiveTestRun({ ...finalRun });
-          }
-        } else {
-          addLog('IMAGE_INFO', '[IMAGE_INFO] No additional gallery photos detected for this post.');
-        }
         } catch (imgErr: any) {
           addLog('IMAGE_ERROR', `[IMAGE_ERROR] Reason: ${imgErr.message || 'Image download failed'}`);
         }
+      } else {
+        addLog('PIPELINE', '🖐️ [MANUAL MODE] Photo targeting ready. Click "Run Photo Targeting & Click Test" to proceed.');
       }
     } catch (err: any) {
       setErrorMessage(err.message || 'Pipeline error');
@@ -950,6 +941,9 @@ export const TestingView: React.FC = () => {
       }
 
       if (coordsData.result && (coordsData.result.click_position || coordsData.result.image_bbox || (coordsData.result.images && coordsData.result.images.length > 0))) {
+        if (coordsData.result.images) {
+          setAiImageCoords(coordsData.result.images);
+        }
         const bbox = coordsData.result.image_bbox || {
           x: coordsData.result.images?.[0]?.x || 500,
           y: coordsData.result.images?.[0]?.y || 500,
@@ -1918,9 +1912,12 @@ export const TestingView: React.FC = () => {
                 >
                   <button
                     type="button"
-                    onClick={() => {
+                    onClick={async () => {
                       setPhotoTargetMode('auto');
-                      addLog('MODE', 'Photo Targeting & Click mode switched to: AUTO (Runs automatically)');
+                      addLog('MODE', '⚡ Photo Targeting & Click mode switched to: AUTO. Triggering automatic targeting...');
+                      if (!isTargetingPhoto && !isTesting) {
+                        await handleRunFirstPhotoTargetAndClick();
+                      }
                     }}
                     style={{
                       padding: '0.25rem 0.65rem',
