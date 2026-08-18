@@ -170,12 +170,19 @@ You MUST determine whether ANY part of the target post remains below the current
 - Post container extending below the visible area
 
 PHOTO GALLERY & POST COMPLETION RULES:
-1. If only description text is visible and NO property images have been captured yet in the sequence:
+1. Real estate posts have property images attached below the description.
+2. If NO property photos/images have been captured yet anywhere in the screenshot sequence:
+   - You MUST set "property_images_visible": false
+   - You MUST set "relevant_images_visible": false
    - You MUST set "more_images_below": true
    - You MUST set "more_content_below": true
    - You MUST set "target_post_complete": false
-2. Only set "target_post_complete": true when:
-   - The property photo gallery has been reached AND fully displayed, OR the post's Like/Comment/Share bar is clearly visible showing the actual bottom of the post.
+   - DO NOT mark target_post_complete as true until the property photos section has been reached and photographed!
+3. Once property images ARE visible in the sequence:
+   - Set "property_images_visible": true
+   - Set "relevant_images_visible": true
+   - Check if additional property images or the post footer (Like/Comment bar) continue below.
+   - Set "target_post_complete": true ONLY when all property images have been captured and the bottom of the post is reached.
 
 If property images belong to the target post: DO NOT crop them out. They are valid post content.
 Only identify unwanted_image_present if there is unrelated Facebook UI / advertisement / spam image that is not part of the target property listing.
