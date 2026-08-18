@@ -1307,117 +1307,153 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
     console.log('[IMAGE] Locating identified FIRST property image');
     let photoOpened = false;
 
-    // Scroll target post and photos into view
+    // Find first property photo link or img element
+    const photoTarget = await imagePage.evaluate(() => {
+      const postContainers = Array.from(
+        document.querySelectorAll('div[role="dialog"] div[role="article"], div[role="article"], div[data-pagelet*="FeedUnit"], div[role="main"]')
+      );
+      const container = postContainers[0] || document.body;
+
+      // 1. Look for photo anchors inside the target post
+      const photoAnchors = Array.from(
+        container.querySelectorAll('a[href*="/photo"], a[href*="fbid="], a[href*="/photos/"]')
+      ).filter((a) => {
+        const href = a.href || '';
+        if (href.includes('/user/') || href.includes('/profile.php') || href.includes('/groups/members')) return false;
+        return true;
+      });
+
+      if (photoAnchors.length > 0) {
+        const a = photoAnchors[0];
+        const rect = a.getBoundingClientRect();
+        return {
+          href: a.href,
+          x: Math.round(rect.x + rect.width / 2),
+          y: Math.round(rect.y + rect.height / 2),
+          width: rect.width,
+          height: rect.height,
+        };
+      }
+
+      // 2. Look for property img elements inside the target post
+      const candidateImgs = Array.from(container.querySelectorAll('img')).filter((img) => {
+        const src = img.src || '';
+        const alt = img.alt || '';
+        const parentHref = (img.closest('a') ? img.closest('a').href : '') || '';
+
+        if (!src.includes('scontent') && !src.includes('fbcdn')) return false;
+        if (src.includes('/static.xx/') || src.includes('/rsrc.php/') || src.includes('/emoji/')) return false;
+        if (alt.toLowerCase().includes('profile') || alt.toLowerCase().includes('avatar') || parentHref.includes('/user/')) return false;
+        if (src.includes('p50x50') || src.includes('s50x50') || src.includes('p32x32') || src.includes('p100x100')) return false;
+        return true;
+      });
+
+      if (candidateImgs.length > 0) {
+        const targetImg = candidateImgs[0];
+        const parentLink = targetImg.closest('a');
+        const rect = targetImg.getBoundingClientRect();
+        return {
+          href: parentLink ? parentLink.href : '',
+          x: Math.round(rect.x + rect.width / 2),
+          y: Math.round(rect.y + rect.height / 2),
+          width: rect.width,
+          height: rect.height,
+        };
+      }
+
+      return null;
+    });
+
+    // Scroll photo into center view
     await imagePage.evaluate(() => {
-      const post = document.querySelector('div[role="dialog"] div[role="article"], div[role="article"], div[data-pagelet*="FeedUnit"], div[role="main"]');
-      if (post) {
-        const photoEl = post.querySelector('a[href*="/photo"], a[href*="/photos/"], a[href*="fbid="], img[src*="scontent"]');
-        if (photoEl) {
-          photoEl.scrollIntoView({ behavior: 'instant', block: 'center' });
-        }
+      const post = document.querySelector('div[role="dialog"] div[role="article"], div[role="article"], div[data-pagelet*="FeedUnit"], div[role="main"]') || document.body;
+      const target = post.querySelector('a[href*="/photo"], a[href*="fbid="], img[src*="scontent"]');
+      if (target) {
+        target.scrollIntoView({ behavior: 'instant', block: 'center' });
       }
     }).catch(() => {});
-    await imagePage.waitForTimeout(1000);
+    await imagePage.waitForTimeout(800);
 
-    // Step 2A: Try DOM-based target post first property image discovery
-    let clickTarget = null;
+    // Get fresh coordinates after scrolling into view
+    let clickX = null;
+    let clickY = null;
     try {
-      clickTarget = await imagePage.evaluate(() => {
-        const postContainers = Array.from(
-          document.querySelectorAll('div[role="dialog"] div[role="article"], div[role="article"], div[data-pagelet*="FeedUnit"], div[role="main"]')
-        );
-        const container = postContainers[0] || document.body;
-
-        const candidateImgs = Array.from(container.querySelectorAll('img')).filter((img) => {
-          const src = img.src || '';
-          const alt = img.alt || '';
-          const parentHref = (img.closest('a') ? img.closest('a').href : '') || '';
-
-          if (!src.includes('scontent') && !src.includes('fbcdn')) return false;
-          if (src.includes('/static.xx/') || src.includes('/rsrc.php/') || src.includes('/emoji/')) return false;
-          if (alt.toLowerCase().includes('profile') || alt.toLowerCase().includes('avatar') || parentHref.includes('/user/')) return false;
-          if (src.includes('p50x50') || src.includes('s50x50') || src.includes('p32x32') || src.includes('p100x100')) return false;
-          return true;
-        });
-
-        if (candidateImgs.length > 0) {
-          const targetImg = candidateImgs[0];
-          const rect = targetImg.getBoundingClientRect();
+      const freshTarget = await imagePage.evaluate(() => {
+        const post = document.querySelector('div[role="dialog"] div[role="article"], div[role="article"], div[data-pagelet*="FeedUnit"], div[role="main"]') || document.body;
+        const target = post.querySelector('a[href*="/photo"], a[href*="fbid="], img[src*="scontent"]');
+        if (target) {
+          const rect = target.getBoundingClientRect();
           return {
-            found: true,
             x: Math.round(rect.x + rect.width / 2),
             y: Math.round(rect.y + rect.height / 2),
-            width: rect.width,
-            height: rect.height
           };
         }
         return null;
       });
+      if (freshTarget && freshTarget.x > 0 && freshTarget.y > 0) {
+        clickX = freshTarget.x;
+        clickY = freshTarget.y;
+      }
     } catch (e) {}
 
-    // Check if coordinates were passed from vision analyzer or DOM
-    let clickX = null;
-    let clickY = null;
-
-    if (clickTarget && clickTarget.x > 0 && clickTarget.y > 0) {
-      clickX = clickTarget.x;
-      clickY = clickTarget.y;
-    } else if (targetCoordinates && typeof targetCoordinates.x === 'number') {
+    if (!clickX && targetCoordinates && typeof targetCoordinates.x === 'number') {
       clickX = targetCoordinates.x;
       clickY = targetCoordinates.y;
+    } else if (!clickX && photoTarget && photoTarget.x > 0) {
+      clickX = photoTarget.x;
+      clickY = photoTarget.y;
     }
 
-    // Step 2B: Execute mouse movement and click with verification retry
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      if (clickX && clickY) {
-        try {
-          console.log(`[IMAGE] Moving mouse to center (${clickX}, ${clickY}) and clicking (attempt ${attempt}/3)...`);
-          await imagePage.mouse.move(clickX, clickY);
-          await imagePage.waitForTimeout(250);
-          await imagePage.mouse.click(clickX, clickY);
-          await imagePage.waitForTimeout(2000);
-        } catch (e) {}
-      }
+    // Step 2B: Move mouse to center and click
+    if (clickX && clickY) {
+      try {
+        console.log(`[IMAGE] Moving mouse to first photo center (${clickX}, ${clickY}) and clicking...`);
+        await imagePage.mouse.move(clickX, clickY);
+        await imagePage.waitForTimeout(200);
+        await imagePage.mouse.click(clickX, clickY);
+        await imagePage.waitForTimeout(2500);
+      } catch (e) {}
+    }
 
-      // Check if Photo Viewer modal opened
+    // Verify if photo viewer modal or photo URL is opened
+    photoOpened = await imagePage.evaluate(() => {
+      const hasModal = Boolean(document.querySelector('[role="dialog"], [data-pagelet*="MediaViewer"]'));
+      const isPhotoUrl = window.location.href.includes('/photo') || window.location.href.includes('fbid=');
+      return hasModal || isPhotoUrl;
+    });
+
+    // Fallback: If modal didn't open yet, try DOM click or direct navigation to photo href
+    if (!photoOpened) {
+      console.log('[IMAGE] Modal not detected from click. Trying DOM click & direct photo link navigation...');
+      try {
+        await imagePage.evaluate(() => {
+          const post = document.querySelector('div[role="dialog"] div[role="article"], div[role="article"], div[data-pagelet*="FeedUnit"], div[role="main"]') || document.body;
+          const photoLink = post.querySelector('a[href*="/photo"], a[href*="fbid="], img[src*="scontent"]');
+          if (photoLink) {
+            photoLink.click();
+          }
+        });
+        await imagePage.waitForTimeout(2000);
+      } catch (e) {}
+
       photoOpened = await imagePage.evaluate(() => {
-        const modal = document.querySelector('[role="dialog"], [data-pagelet*="MediaViewer"]');
-        if (modal) {
-          const img = modal.querySelector('img[src*="scontent"], img[src*="fbcdn"]');
-          return Boolean(img);
-        }
-        return false;
+        return Boolean(document.querySelector('[role="dialog"], [data-pagelet*="MediaViewer"]') || window.location.href.includes('/photo'));
       });
+    }
 
-      if (photoOpened) {
-        break;
-      }
-
-      // Fallback DOM element click if coordinate click did not open modal
-      if (!photoOpened) {
-        try {
-          await imagePage.evaluate(() => {
-            const post = document.querySelector('div[role="dialog"] div[role="article"], div[role="article"], div[data-pagelet*="FeedUnit"], div[role="main"]');
-            if (post) {
-              const photoLink = post.querySelector('a[href*="/photo"], a[href*="/photos/"], a[href*="fbid="], img[src*="scontent"]');
-              if (photoLink) {
-                photoLink.click();
-              }
-            }
-          });
-          await imagePage.waitForTimeout(2000);
-          photoOpened = await imagePage.evaluate(() => {
-            return Boolean(document.querySelector('[role="dialog"], [data-pagelet*="MediaViewer"]'));
-          });
-          if (photoOpened) break;
-        } catch (e) {}
-      }
+    if (!photoOpened && photoTarget && photoTarget.href && photoTarget.href.includes('facebook.com')) {
+      console.log(`[IMAGE] Opening photo viewer directly via URL: ${photoTarget.href}`);
+      try {
+        await imagePage.goto(photoTarget.href, { waitUntil: 'domcontentloaded', timeout: 25000 });
+        await imagePage.waitForTimeout(3000);
+        photoOpened = true;
+      } catch (e) {}
     }
 
     if (photoOpened) {
       console.log('[IMAGE] First property photo found');
       console.log('[IMAGE] Opening photo viewer');
-      await imagePage.waitForTimeout(2500);
+      await imagePage.waitForTimeout(2000);
     } else {
       console.warn('[IMAGE] Could not automatically trigger photo viewer modal.');
     }
@@ -1426,13 +1462,10 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
     let count = 0;
     let isFinished = false;
 
-    while (count < maxImages && !isFinished) {
-      count++;
-
-      // Wait with polling for image in photo viewer to settle and load
-      let imageResource = null;
-      for (let retry = 0; retry < 12; retry++) {
-        imageResource = await imagePage.evaluate(() => {
+    // Helper to get highest quality image currently displayed in the photo viewer
+    const getActiveViewerImage = async () => {
+      for (let retry = 0; retry < 15; retry++) {
+        const res = await imagePage.evaluate(() => {
           const modal =
             document.querySelector('[role="dialog"], [data-pagelet*="MediaViewer"]') ||
             document.body;
@@ -1459,7 +1492,7 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
 
           if (candidateImgs.length === 0) return null;
 
-          // Select the best image
+          // Find the largest image by area (the main displayed photo)
           let bestImg = candidateImgs[0];
           let maxArea =
             (bestImg.naturalWidth || bestImg.width || 0) *
@@ -1495,26 +1528,32 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
           };
         });
 
-        if (imageResource && imageResource.source_url) {
-          break;
+        if (res && res.source_url) {
+          return res;
         }
-        await imagePage.waitForTimeout(300);
+        await imagePage.waitForTimeout(250);
       }
+      return null;
+    };
+
+    while (count < maxImages && !isFinished) {
+      // 1. Get current photo resource
+      const imageResource = await getActiveViewerImage();
 
       if (!imageResource || !imageResource.source_url) {
-        console.warn(`[IMAGE] No valid image resource found on step ${count}`);
+        console.warn(`[IMAGE] No valid image resource found on step ${count + 1}`);
         isFinished = true;
         break;
       }
 
-      // Calculate SHA-256 Hash
+      // 2. Calculate SHA-256 Hash
       const crypto = require('crypto');
       const sha256 = crypto
         .createHash('sha256')
         .update(`${imageResource.source_url}_${imageResource.width}x${imageResource.height}`)
         .digest('hex');
 
-      // Step 8: Detect End of Gallery / Duplicates (Loop detection)
+      // 3. Detect End of Gallery / Duplicates (Loop detection)
       if (seenHashes.has(sha256) || seenUrls.has(imageResource.source_url)) {
         console.log('[IMAGE] Duplicate image detected');
         console.log('[IMAGE] First image detected again');
@@ -1524,6 +1563,7 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
         break;
       }
 
+      count++;
       seenHashes.add(sha256);
       seenUrls.add(imageResource.source_url);
 
@@ -1550,43 +1590,43 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
         break;
       }
 
-      // Step 5: Click Next
+      // 4. Click Next Photo
       console.log('[IMAGE] Clicking Next');
       const prevUrl = imageResource.source_url;
 
-      const nextClicked = await imagePage.evaluate(() => {
+      await imagePage.evaluate(() => {
         const nextBtns = Array.from(
           document.querySelectorAll(
-            '[aria-label="Next photo"], [aria-label="Next"], [aria-label="ถัดไป"], [aria-label="Next Picture"]'
+            '[aria-label="Next photo"], [aria-label="Next"], [aria-label="ถัดไป"], [aria-label="Next Picture"], div[role="button"][aria-label*="Next"]'
           )
         );
         if (nextBtns.length > 0) {
           nextBtns[0].click();
-          return true;
         }
-        return false;
-      });
+      }).catch(() => {});
 
-      if (!nextClicked) {
-        await imagePage.keyboard.press('ArrowRight');
-      }
+      // Also press ArrowRight for reliable navigation
+      await imagePage.keyboard.press('ArrowRight');
 
-      // Wait until the displayed image has actually changed
-      let changed = false;
-      for (let waitStep = 0; waitStep < 15; waitStep++) {
+      // 5. Wait for the photo to ACTUALLY transition to a different image
+      let photoTransitioned = false;
+      for (let waitStep = 0; waitStep < 20; waitStep++) {
         await imagePage.waitForTimeout(200);
-        const currentSrc = await imagePage.evaluate(() => {
-          const modal = document.querySelector('[role="dialog"]') || document.body;
-          const img = modal.querySelector('img[src*="scontent"], img[src*="fbcdn"]');
-          return img ? img.src : '';
-        });
-        if (currentSrc && currentSrc !== prevUrl) {
-          changed = true;
+        const activeNow = await getActiveViewerImage();
+        if (activeNow && activeNow.source_url && activeNow.source_url !== prevUrl) {
+          photoTransitioned = true;
           break;
         }
       }
 
-      await imagePage.waitForTimeout(600);
+      if (!photoTransitioned) {
+        console.log('[IMAGE] Photo did not change after Next action. Reached end of photo gallery.');
+        console.log('[IMAGE] Gallery complete');
+        isFinished = true;
+        break;
+      }
+
+      await imagePage.waitForTimeout(400);
     }
   } catch (err) {
     console.error(`[IMAGE] Error during image download: ${err.message}`);
