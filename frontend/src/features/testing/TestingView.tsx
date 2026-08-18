@@ -187,6 +187,7 @@ export const TestingView: React.FC = () => {
   const [allCapturedScreenshots, setAllCapturedScreenshots] = useState<string[]>([]);
   const [allCroppedImages, setAllCroppedImages] = useState<string[]>([]);
   const [allAnalyses, setAllAnalyses] = useState<VisionAnalysisResult[]>([]);
+  const [activeCaptureIndex, setActiveCaptureIndex] = useState<number>(0);
 
   const handleSelectZoom = async (zoomVal: string) => {
     setSelectedZoom(zoomVal);
@@ -452,6 +453,7 @@ export const TestingView: React.FC = () => {
     setAllCapturedScreenshots([]);
     setAllCroppedImages([]);
     setAllAnalyses([]);
+    setActiveCaptureIndex(0);
     setIsTesting(true);
     setTimelineStep(1);
     addLog('START', `Initiating Facebook Visual Diagnostic extraction test for: ${targetUrl}`);
@@ -573,6 +575,7 @@ export const TestingView: React.FC = () => {
         accumulatedScreenshots.push(originalHighResScreenshot);
         setCapturedScreenshot(originalHighResScreenshot);
         setAllCapturedScreenshots((prev) => [...prev, originalHighResScreenshot]);
+        setActiveCaptureIndex(accumulatedScreenshots.length - 1);
 
         addLog('CAPTURE', `[CAPTURE] Screenshot ${screenshotCount} captured`);
         if (screenshotCount > 1) {
@@ -1122,29 +1125,29 @@ export const TestingView: React.FC = () => {
             <span
               style={{
                 fontSize: '0.75rem',
-                fontWeight: 700,
+                fontWeight: 600,
                 color: navResult.success && navResult.current_url !== 'about:blank' ? '#10B981' : '#EF4444',
                 backgroundColor: navResult.success && navResult.current_url !== 'about:blank' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
-                padding: '0.2rem 0.5rem',
+                padding: '0.2rem 0.55rem',
                 borderRadius: '0.25rem',
               }}
             >
-              {navResult.success && navResult.current_url !== 'about:blank' ? 'NAVIGATION SUCCESS' : 'NAVIGATION FAILED'}
+              {navResult.success && navResult.current_url !== 'about:blank' ? 'Navigation Success' : 'Navigation Failed'}
             </span>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem' }}>
             <div style={{ padding: '0.75rem', borderRadius: '0.5rem', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
               <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', display: 'block' }}>Browser Status</span>
-              <span style={{ fontSize: '0.84375rem', fontWeight: 700, color: '#10B981', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                <FiCheckCircle /> CONNECTED
+              <span style={{ fontSize: '0.84375rem', fontWeight: 600, color: '#10B981', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                <FiCheckCircle /> Connected
               </span>
             </div>
 
             <div style={{ padding: '0.75rem', borderRadius: '0.5rem', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
               <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', display: 'block' }}>Controlled Page</span>
-              <span style={{ fontSize: '0.84375rem', fontWeight: 700, color: '#10B981' }}>
-                READY
+              <span style={{ fontSize: '0.84375rem', fontWeight: 600, color: '#10B981' }}>
+                Ready
               </span>
             </div>
 
@@ -1153,7 +1156,7 @@ export const TestingView: React.FC = () => {
               <span
                 style={{
                   fontSize: '0.78125rem',
-                  fontWeight: 700,
+                  fontWeight: 600,
                   color: navResult.current_url === 'about:blank' ? '#EF4444' : 'var(--accent-primary)',
                   fontFamily: 'monospace',
                   overflow: 'hidden',
@@ -1167,8 +1170,8 @@ export const TestingView: React.FC = () => {
 
             <div style={{ padding: '0.75rem', borderRadius: '0.5rem', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
               <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', display: 'block' }}>Facebook Status</span>
-              <span style={{ fontSize: '0.84375rem', fontWeight: 700, color: navResult.facebook_status === 'AUTHENTICATED' ? '#10B981' : '#F59E0B' }}>
-                {navResult.facebook_status}
+              <span style={{ fontSize: '0.84375rem', fontWeight: 600, color: navResult.facebook_status === 'AUTHENTICATED' ? '#10B981' : '#F59E0B' }}>
+                {navResult.facebook_status === 'AUTHENTICATED' ? 'Authenticated' : navResult.facebook_status}
               </span>
             </div>
           </div>
@@ -1179,256 +1182,316 @@ export const TestingView: React.FC = () => {
         </div>
       )}
 
-      {/* DIRECT ORIGINAL SCREENSHOT PIPELINE CARDS (ALL CAPTURES SHOWN TOGETHER) */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.75rem' }}>
-        {(allCapturedScreenshots.length > 0 ? allCapturedScreenshots : [capturedScreenshot]).map((shot, idx) => {
-          const cropped = allCroppedImages[idx] || (idx === 0 ? aiAnalysis?.cropped_content_image : null);
-          const analysis = allAnalyses[idx] || (idx === 0 ? aiAnalysis : null);
-          const totalShots = Math.max(allCapturedScreenshots.length, 1);
+      {/* SCREENSHOT PAGINATION & PREVIEW SECTION */}
+      {(() => {
+        const shotsList = allCapturedScreenshots.length > 0 ? allCapturedScreenshots : [capturedScreenshot];
+        const totalShots = shotsList.length;
+        const safeIndex = Math.min(Math.max(0, activeCaptureIndex), totalShots - 1);
+        const shot = shotsList[safeIndex];
+        const cropped = allCroppedImages[safeIndex] || (safeIndex === 0 ? aiAnalysis?.cropped_content_image : null);
+        const analysis = allAnalyses[safeIndex] || (safeIndex === 0 ? aiAnalysis : null);
 
-          return (
-            <div
-              key={idx}
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '0.875rem',
-                backgroundColor: totalShots > 1 ? 'rgba(255, 255, 255, 0.02)' : 'transparent',
-                border: totalShots > 1 ? '1px solid var(--border-color)' : 'none',
-                borderRadius: '0.875rem',
-                padding: totalShots > 1 ? '1.25rem' : '0',
-              }}
-            >
-              {totalShots > 1 && (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}>
-                  <span
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {/* PAGINATION / SELECTOR BAR (WHEN MULTIPLE CAPTURES EXIST) */}
+            {totalShots > 1 && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  backgroundColor: 'var(--bg-surface)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '0.75rem',
+                  padding: '0.5rem 0.875rem',
+                  boxShadow: 'var(--shadow-sm)',
+                  flexWrap: 'wrap',
+                  gap: '0.625rem',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                    Capture Sequence ({totalShots}):
+                  </span>
+                  <div style={{ display: 'flex', gap: '0.375rem', flexWrap: 'wrap' }}>
+                    {shotsList.map((_, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => setActiveCaptureIndex(i)}
+                        style={{
+                          padding: '0.3rem 0.65rem',
+                          fontSize: '0.75rem',
+                          fontWeight: safeIndex === i ? 700 : 500,
+                          color: safeIndex === i ? '#FFF' : 'var(--text-primary)',
+                          backgroundColor: safeIndex === i ? 'var(--accent-primary)' : 'var(--bg-secondary)',
+                          border: safeIndex === i ? '1px solid var(--accent-primary)' : '1px solid var(--border-color)',
+                          borderRadius: '0.375rem',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.3rem',
+                          transition: 'all 0.15s ease',
+                        }}
+                      >
+                        <span>Capture #{i + 1}</span>
+                        <span style={{ fontSize: '0.6875rem', opacity: 0.85 }}>
+                          {i === 0 ? '(Top)' : `(+${i * 650}px)`}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <button
+                    type="button"
+                    disabled={safeIndex <= 0}
+                    onClick={() => setActiveCaptureIndex((p) => Math.max(0, p - 1))}
                     style={{
-                      fontSize: '0.875rem',
-                      fontWeight: 800,
-                      color: '#3B82F6',
-                      backgroundColor: 'rgba(59, 130, 246, 0.12)',
-                      padding: '0.25rem 0.75rem',
+                      padding: '0.3rem 0.65rem',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      color: safeIndex <= 0 ? 'var(--text-muted)' : 'var(--text-primary)',
+                      backgroundColor: 'var(--bg-secondary)',
+                      border: '1px solid var(--border-color)',
                       borderRadius: '0.375rem',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '0.35rem',
+                      cursor: safeIndex <= 0 ? 'not-allowed' : 'pointer',
                     }}
                   >
-                    📸 CAPTURE #{idx + 1} {idx === 0 ? '(Top / Initial View)' : `(Scrolled Section +${idx * 500}px)`}
-                  </span>
+                    &larr; Prev
+                  </button>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>
-                    Capture {idx + 1} of {totalShots}
+                    {safeIndex + 1} / {totalShots}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={safeIndex >= totalShots - 1}
+                    onClick={() => setActiveCaptureIndex((p) => Math.min(totalShots - 1, p + 1))}
+                    style={{
+                      padding: '0.3rem 0.65rem',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      color: safeIndex >= totalShots - 1 ? 'var(--text-muted)' : 'var(--text-primary)',
+                      backgroundColor: 'var(--bg-secondary)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: '0.375rem',
+                      cursor: safeIndex >= totalShots - 1 ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    Next &rarr;
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* THREE PREVIEW CARDS FOR CURRENT CAPTURE */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.25rem' }}>
+              {/* CARD A: ORIGINAL FACEBOOK SCREENSHOT */}
+              <div
+                style={{
+                  backgroundColor: 'var(--bg-surface)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '0.75rem',
+                  padding: '1rem',
+                  boxShadow: 'var(--shadow-sm)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.625rem', gap: '0.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', minWidth: 0, flex: 1 }}>
+                    <FiCamera style={{ color: '#3B82F6', flexShrink: 0 }} />
+                    <h3 style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      Original Facebook Screenshot {totalShots > 1 ? `(#${safeIndex + 1})` : ''}
+                    </h3>
+                  </div>
+                  <span style={{ fontSize: '0.65625rem', color: '#3B82F6', backgroundColor: 'rgba(59, 130, 246, 0.12)', padding: '0.15rem 0.45rem', borderRadius: '0.25rem', fontWeight: 600, flexShrink: 0, whiteSpace: 'nowrap' }}>
+                    1920 × 1080 High-Res
                   </span>
                 </div>
-              )}
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.25rem' }}>
-                {/* CARD A: ORIGINAL FACEBOOK SCREENSHOT */}
                 <div
                   style={{
-                    backgroundColor: 'var(--bg-surface)',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: '0.75rem',
-                    padding: '1rem',
-                    boxShadow: 'var(--shadow-sm)',
+                    width: '100%',
+                    minHeight: '260px',
+                    backgroundColor: '#0D0E11',
+                    borderRadius: '0.5rem',
+                    overflow: 'hidden',
                     display: 'flex',
-                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    border: '1px solid var(--border-color)',
                   }}
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.625rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-                      <FiCamera style={{ color: '#3B82F6' }} />
-                      <h3 style={{ fontSize: '0.84375rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-                        ORIGINAL FACEBOOK SCREENSHOT {totalShots > 1 ? `(#${idx + 1})` : ''}
-                      </h3>
+                  {shot ? (
+                    <img
+                      src={shot}
+                      alt={`Original Facebook Screenshot #${safeIndex + 1}`}
+                      style={{ width: '100%', height: 'auto', display: 'block' }}
+                    />
+                  ) : (
+                    <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', textAlign: 'center', padding: '1.5rem' }}>
+                      No full screenshot captured yet.
                     </div>
-                    <span style={{ fontSize: '0.625rem', color: '#3B82F6', backgroundColor: 'rgba(59, 130, 246, 0.12)', padding: '0.1rem 0.4rem', borderRadius: '0.25rem', fontWeight: 700 }}>
-                      1920 × 1080 High-Res
-                    </span>
-                  </div>
+                  )}
+                </div>
+              </div>
 
-                  <div
-                    style={{
-                      width: '100%',
-                      minHeight: '260px',
-                      backgroundColor: '#0D0E11',
-                      borderRadius: '0.5rem',
-                      overflow: 'hidden',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      border: '1px solid var(--border-color)',
-                    }}
-                  >
-                    {shot ? (
+              {/* CARD B: AI CROPPED CONTENT IMAGE */}
+              <div
+                style={{
+                  backgroundColor: 'var(--bg-surface)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '0.75rem',
+                  padding: '1rem',
+                  boxShadow: 'var(--shadow-sm)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.625rem', gap: '0.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', minWidth: 0, flex: 1 }}>
+                    <FiCpu style={{ color: '#8B5CF6', flexShrink: 0 }} />
+                    <h3 style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      AI Cropped Content Image {totalShots > 1 ? `(#${safeIndex + 1})` : ''}
+                    </h3>
+                  </div>
+                  <span style={{ fontSize: '0.65625rem', color: '#8B5CF6', backgroundColor: 'rgba(139, 92, 246, 0.12)', padding: '0.15rem 0.45rem', borderRadius: '0.25rem', fontWeight: 600, flexShrink: 0, whiteSpace: 'nowrap' }}>
+                    {cropped ? 'Isolated Text Section' : 'Awaiting AI Crop'}
+                  </span>
+                </div>
+
+                <div
+                  style={{
+                    width: '100%',
+                    minHeight: '260px',
+                    backgroundColor: '#0D0E11',
+                    borderRadius: '0.5rem',
+                    overflow: 'hidden',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    border: '1px solid var(--border-color)',
+                  }}
+                >
+                  {cropped ? (
+                    <img
+                      src={cropped}
+                      alt={`AI Cropped Content Image #${safeIndex + 1}`}
+                      style={{ width: '100%', maxHeight: '420px', display: 'block', objectFit: 'contain' }}
+                    />
+                  ) : shot ? (
+                    <img
+                      src={shot}
+                      alt={`AI Vision Input #${safeIndex + 1}`}
+                      style={{ width: '100%', height: 'auto', display: 'block', objectFit: 'contain' }}
+                    />
+                  ) : (
+                    <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', textAlign: 'center', padding: '1.5rem' }}>
+                      No cropped content image generated yet. Run test to capture & crop.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* CARD C: OPTIONAL TARGET DETECTION OVERLAY */}
+              <div
+                style={{
+                  backgroundColor: 'var(--bg-surface)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '0.75rem',
+                  padding: '1rem',
+                  boxShadow: 'var(--shadow-sm)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.625rem', gap: '0.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', minWidth: 0, flex: 1 }}>
+                    <FiEye style={{ color: '#10B981', flexShrink: 0 }} />
+                    <h3 style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      Target Post Detected {totalShots > 1 ? `(#${safeIndex + 1})` : ''}
+                    </h3>
+                  </div>
+                  <span style={{ fontSize: '0.65625rem', color: '#10B981', backgroundColor: 'rgba(16, 185, 129, 0.12)', padding: '0.15rem 0.45rem', borderRadius: '0.25rem', fontWeight: 600, flexShrink: 0, whiteSpace: 'nowrap' }}>
+                    Visual Diagnostic Overlay
+                  </span>
+                </div>
+
+                <div
+                  style={{
+                    position: 'relative',
+                    width: '100%',
+                    minHeight: '260px',
+                    backgroundColor: '#0D0E11',
+                    borderRadius: '0.5rem',
+                    overflow: 'hidden',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    border: '1px solid var(--border-color)',
+                  }}
+                >
+                  {shot ? (
+                    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
                       <img
                         src={shot}
-                        alt={`Original Facebook Screenshot #${idx + 1}`}
+                        alt={`Target Post Bounding Box Overlay #${safeIndex + 1}`}
                         style={{ width: '100%', height: 'auto', display: 'block' }}
                       />
-                    ) : (
-                      <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', textAlign: 'center', padding: '1.5rem' }}>
-                        No full screenshot captured yet.
-                      </div>
-                    )}
-                  </div>
-                </div>
 
-                {/* CARD B: AI CROPPED CONTENT IMAGE */}
-                <div
-                  style={{
-                    backgroundColor: 'var(--bg-surface)',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: '0.75rem',
-                    padding: '1rem',
-                    boxShadow: 'var(--shadow-sm)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.625rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-                      <FiCpu style={{ color: '#8B5CF6' }} />
-                      <h3 style={{ fontSize: '0.84375rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-                        AI CROPPED CONTENT IMAGE {totalShots > 1 ? `(#${idx + 1})` : ''}
-                      </h3>
+                      {analysis?.target_region ? (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            top: `${Math.max(1, ((analysis.target_region.y || 20) / 1080) * 100)}%`,
+                            left: `${((analysis.target_region.x || 500) / 1920) * 100}%`,
+                            width: `${((analysis.target_region.width || 720) / 1920) * 100}%`,
+                            height: `${Math.min(97, ((analysis.target_region.height || 1020) / 1080) * 100)}%`,
+                            border: '3px solid #10B981',
+                            backgroundColor: 'rgba(16, 185, 129, 0.10)',
+                            pointerEvents: 'none',
+                            borderRadius: '6px',
+                            boxShadow: '0 0 15px rgba(16, 185, 129, 0.4)',
+                          }}
+                        >
+                          <span style={{ position: 'absolute', top: '-22px', left: '4px', backgroundColor: '#10B981', color: '#FFF', fontSize: '0.625rem', padding: '0.15rem 0.45rem', borderRadius: '3px', fontWeight: 700 }}>
+                            Target Post Container (AI Bounding Box)
+                          </span>
+                        </div>
+                      ) : (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            top: '2%',
+                            left: '26%',
+                            width: '48%',
+                            height: '80%',
+                            border: '3px solid #10B981',
+                            backgroundColor: 'rgba(16, 185, 129, 0.10)',
+                            pointerEvents: 'none',
+                            borderRadius: '6px',
+                            boxShadow: '0 0 15px rgba(16, 185, 129, 0.4)',
+                          }}
+                        >
+                          <span style={{ position: 'absolute', top: '-22px', left: '4px', backgroundColor: '#10B981', color: '#FFF', fontSize: '0.625rem', padding: '0.15rem 0.45rem', borderRadius: '3px', fontWeight: 700 }}>
+                            Target Post Container (AI Bounding Box)
+                          </span>
+                        </div>
+                      )}
                     </div>
-                    <span style={{ fontSize: '0.625rem', color: '#8B5CF6', backgroundColor: 'rgba(139, 92, 246, 0.12)', padding: '0.1rem 0.4rem', borderRadius: '0.25rem', fontWeight: 700 }}>
-                      {cropped ? 'Isolated Text Section' : 'Awaiting AI Crop'}
-                    </span>
-                  </div>
-
-                  <div
-                    style={{
-                      width: '100%',
-                      minHeight: '260px',
-                      backgroundColor: '#0D0E11',
-                      borderRadius: '0.5rem',
-                      overflow: 'hidden',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      border: '1px solid var(--border-color)',
-                    }}
-                  >
-                    {cropped ? (
-                      <img
-                        src={cropped}
-                        alt={`AI Cropped Content Image #${idx + 1}`}
-                        style={{ width: '100%', maxHeight: '420px', display: 'block', objectFit: 'contain' }}
-                      />
-                    ) : shot ? (
-                      <img
-                        src={shot}
-                        alt={`AI Vision Input #${idx + 1}`}
-                        style={{ width: '100%', height: 'auto', display: 'block', objectFit: 'contain' }}
-                      />
-                    ) : (
-                      <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', textAlign: 'center', padding: '1.5rem' }}>
-                        No cropped content image generated yet. Run test to capture & crop.
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* CARD C: OPTIONAL TARGET DETECTION OVERLAY */}
-                <div
-                  style={{
-                    backgroundColor: 'var(--bg-surface)',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: '0.75rem',
-                    padding: '1rem',
-                    boxShadow: 'var(--shadow-sm)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.625rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-                      <FiEye style={{ color: '#10B981' }} />
-                      <h3 style={{ fontSize: '0.84375rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-                        TARGET POST DETECTED {totalShots > 1 ? `(#${idx + 1})` : ''}
-                      </h3>
+                  ) : (
+                    <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', textAlign: 'center', padding: '1.5rem' }}>
+                      No diagnostic overlay available. Run test to capture & analyze.
                     </div>
-                    <span style={{ fontSize: '0.625rem', color: '#10B981', backgroundColor: 'rgba(16, 185, 129, 0.12)', padding: '0.1rem 0.4rem', borderRadius: '0.25rem', fontWeight: 700 }}>
-                      Visual Diagnostic Overlay
-                    </span>
-                  </div>
-
-                  <div
-                    style={{
-                      position: 'relative',
-                      width: '100%',
-                      minHeight: '260px',
-                      backgroundColor: '#0D0E11',
-                      borderRadius: '0.5rem',
-                      overflow: 'hidden',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      border: '1px solid var(--border-color)',
-                    }}
-                  >
-                    {shot ? (
-                      <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-                        <img
-                          src={shot}
-                          alt={`Target Post Bounding Box Overlay #${idx + 1}`}
-                          style={{ width: '100%', height: 'auto', display: 'block' }}
-                        />
-
-                        {analysis?.target_region ? (
-                          <div
-                            style={{
-                              position: 'absolute',
-                              top: `${Math.max(1, ((analysis.target_region.y || 20) / 1080) * 100)}%`,
-                              left: `${((analysis.target_region.x || 500) / 1920) * 100}%`,
-                              width: `${((analysis.target_region.width || 720) / 1920) * 100}%`,
-                              height: `${Math.min(97, ((analysis.target_region.height || 1020) / 1080) * 100)}%`,
-                              border: '3px solid #10B981',
-                              backgroundColor: 'rgba(16, 185, 129, 0.10)',
-                              pointerEvents: 'none',
-                              borderRadius: '6px',
-                              boxShadow: '0 0 15px rgba(16, 185, 129, 0.4)',
-                            }}
-                          >
-                            <span style={{ position: 'absolute', top: '-24px', left: '4px', backgroundColor: '#10B981', color: '#FFF', fontSize: '0.625rem', padding: '0.15rem 0.5rem', borderRadius: '3px', fontWeight: 800 }}>
-                              TARGET POST CONTAINER (AI BOUNDING CROP)
-                            </span>
-                          </div>
-                        ) : (
-                          <div
-                            style={{
-                              position: 'absolute',
-                              top: '2%',
-                              left: '26%',
-                              width: '48%',
-                              height: '80%',
-                              border: '3px solid #10B981',
-                              backgroundColor: 'rgba(16, 185, 129, 0.10)',
-                              pointerEvents: 'none',
-                              borderRadius: '6px',
-                              boxShadow: '0 0 15px rgba(16, 185, 129, 0.4)',
-                            }}
-                          >
-                            <span style={{ position: 'absolute', top: '-24px', left: '4px', backgroundColor: '#10B981', color: '#FFF', fontSize: '0.625rem', padding: '0.15rem 0.5rem', borderRadius: '3px', fontWeight: 800 }}>
-                              TARGET POST CONTAINER (AI BOUNDING CROP)
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', textAlign: 'center', padding: '1.5rem' }}>
-                        No diagnostic overlay available. Run test to capture & analyze.
-                      </div>
-                    )}
-                  </div>
+                  )}
                 </div>
               </div>
             </div>
-          );
-        })}
-      </div>
+          </div>
+        );
+      })()}
 
       {/* Structured AI Analysis Result Panel */}
       <div
