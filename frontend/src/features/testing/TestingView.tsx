@@ -25,6 +25,11 @@ import {
   FiRotateCcw,
   FiCopy,
   FiEdit2,
+  FiDownload,
+  FiMaximize2,
+  FiChevronLeft,
+  FiChevronRight,
+  FiX,
 } from 'react-icons/fi';
 
 interface RegionBoundingBox {
@@ -333,6 +338,69 @@ export const TestingView: React.FC = () => {
     return `${initials}-${randomDigits}-${randomLetters}`;
   };
 
+  // Image Enhancement Prompt Templates
+  const imageEnhancePrompts = [
+    {
+      id: 'bright_airy',
+      name: '☀️ Bright & Airy Luxury Lighting',
+      desc: 'Boost ambient illumination, window clarity, and lift shadows.',
+    },
+    {
+      id: 'hdr_interior',
+      name: '🛋️ HDR Warm Interior Staging',
+      desc: 'Enhance warmth, wood grain richness, and furniture contrast.',
+    },
+    {
+      id: 'sunset_golden',
+      name: '🌅 Sunset Golden Hour & Skyline Glow',
+      desc: 'Add warm golden sky gradients and vibrant city view colors.',
+    },
+    {
+      id: 'crisp_sharpen',
+      name: '🔍 Crisp 4K Sharpening & Noise Reduction',
+      desc: 'Sharpen textures, remove pixel noise, and clean up edges.',
+    },
+    {
+      id: 'sky_contrast',
+      name: '🌆 Sky Replacement & Architectural Pop',
+      desc: 'Replace overcast skies with clear blue gradients and pop building lines.',
+    },
+    {
+      id: 'vibrant_natural',
+      name: '🎨 Vibrant Natural Color Balancing',
+      desc: 'Neutralize green/yellow artificial bulb casts to true-to-life tones.',
+    },
+  ];
+
+  const [selectedImagePromptId, setSelectedImagePromptId] = useState<string>('bright_airy');
+  const [isImagePromptDropdownOpen, setIsImagePromptDropdownOpen] = useState<boolean>(false);
+  const [isBatchEnhancing, setIsBatchEnhancing] = useState<boolean>(false);
+  const [batchEnhanceProgress, setBatchEnhanceProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 });
+  const [galleryFilter, setGalleryFilter] = useState<'ALL' | 'ENHANCED' | 'ORIGINAL'>('ALL');
+
+  // Huge Lightbox Viewer State
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [lightboxViewMode, setLightboxViewMode] = useState<'enhanced' | 'original'>('enhanced');
+
+  // Keyboard navigation for Lightbox
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (lightboxIndex === null) return;
+      const images = activeTestRun?.images || [];
+      if (images.length === 0) return;
+
+      if (e.key === 'ArrowRight') {
+        setLightboxIndex((prev) => (prev !== null ? (prev + 1) % images.length : 0));
+      } else if (e.key === 'ArrowLeft') {
+        setLightboxIndex((prev) => (prev !== null ? (prev - 1 + images.length) % images.length : 0));
+      } else if (e.key === 'Escape') {
+        setLightboxIndex(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [lightboxIndex, activeTestRun]);
+
   const handleSelectZoom = async (zoomVal: string) => {
     setSelectedZoom(zoomVal);
     setIsZoomDropdownOpen(false);
@@ -560,9 +628,11 @@ export const TestingView: React.FC = () => {
     }
   };
 
-  // STAGE 5: Enhance Image
-  const handleEnhanceImage = async (imgUrl: string) => {
+  // STAGE 5: Enhance Image (Single)
+  const handleEnhanceImage = async (imgUrl: string, promptId?: string) => {
     if (!activeTestRun) return;
+    const chosenPrompt = imageEnhancePrompts.find((p) => p.id === (promptId || selectedImagePromptId)) || imageEnhancePrompts[0];
+    addLog('ENHANCE', `Applying "${chosenPrompt.name}" enhancement to photo...`);
     try {
       const resp = await fetch('http://localhost:8085/api/facebook/test/enhance-image', {
         method: 'POST',
@@ -570,14 +640,90 @@ export const TestingView: React.FC = () => {
         body: JSON.stringify({
           test_run_id: activeTestRun.test_run_id,
           image_url: imgUrl,
+          prompt_id: chosenPrompt.id,
+          prompt_name: chosenPrompt.name,
         }),
       });
       const data = await resp.json();
       if (data.enhanced_url) {
         setEnhancedImages((prev) => ({ ...prev, [imgUrl]: data.enhanced_url }));
-        addLog('ENHANCE', `Non-destructive enhancement applied. Saved to ${data.storage_key}`);
+        addLog('ENHANCE', `✓ Enhanced photo with ${chosenPrompt.name}`);
       }
-    } catch (e) {}
+    } catch (e: any) {
+      addLog('ENHANCE_ERR', `Enhancement error: ${e.message}`);
+    }
+  };
+
+  // Batch Enhance All Photos
+  const handleEnhanceAllPhotos = async () => {
+    const images = activeTestRun?.images || [];
+    if (images.length === 0) {
+      addLog('ENHANCE_WARN', 'No downloaded photos available to enhance.');
+      return;
+    }
+
+    setIsBatchEnhancing(true);
+    const chosenPrompt = imageEnhancePrompts.find((p) => p.id === selectedImagePromptId) || imageEnhancePrompts[0];
+    addLog('ENHANCE_BATCH', `✨ Starting Batch AI Enhancement for ${images.length} photos with "${chosenPrompt.name}"...`);
+
+    for (let i = 0; i < images.length; i++) {
+      setBatchEnhanceProgress({ current: i + 1, total: images.length });
+      const img = images[i];
+      try {
+        const resp = await fetch('http://localhost:8085/api/facebook/test/enhance-image', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            test_run_id: activeTestRun?.test_run_id || `TEST-${Date.now()}`,
+            image_url: img.public_url,
+            prompt_id: chosenPrompt.id,
+            prompt_name: chosenPrompt.name,
+          }),
+        });
+        const data = await resp.json();
+        if (data.enhanced_url) {
+          setEnhancedImages((prev) => ({ ...prev, [img.public_url]: data.enhanced_url }));
+        }
+      } catch (e) {}
+      await new Promise((r) => setTimeout(r, 150));
+    }
+
+    setIsBatchEnhancing(false);
+    addLog('ENHANCE_BATCH', `🎉 Finished Batch AI Enhancement for all ${images.length} property photos!`);
+  };
+
+  // Download Single Photo
+  const handleDownloadSinglePhoto = (url: string, filename: string) => {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename || 'property-photo.jpg';
+    a.target = '_blank';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    addLog('DOWNLOAD', `📥 Downloading photo: ${filename}`);
+  };
+
+  // Download All Photos
+  const handleDownloadAllPhotos = async () => {
+    const images = activeTestRun?.images || [];
+    if (images.length === 0) {
+      addLog('DOWNLOAD_WARN', 'No images available to download.');
+      return;
+    }
+    const prefix = generatedRefCode || 'PROPERTY';
+    addLog('DOWNLOAD', `📥 Triggering batch download for all ${images.length} property photos...`);
+
+    images.forEach((img, idx) => {
+      const activeUrl = enhancedImages[img.public_url] || img.public_url;
+      const order = String(img.original_order || idx + 1).padStart(2, '0');
+      const isEnh = !!enhancedImages[img.public_url];
+      const filename = `${prefix}-Photo-${order}${isEnh ? '-Enhanced' : ''}.jpg`;
+
+      setTimeout(() => {
+        handleDownloadSinglePhoto(activeUrl, filename);
+      }, idx * 250);
+    });
   };
 
   // DIRECT ORIGINAL SCREENSHOT EXTRACTION PIPELINE
@@ -2384,133 +2530,7 @@ export const TestingView: React.FC = () => {
             </div>
           </div>
 
-          {/* FACEBOOK IMAGE DOWNLOAD TEST */}
-          <div
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              border: '1px solid var(--border-color)',
-              borderRadius: '0.75rem',
-              padding: '1.25rem',
-              boxShadow: 'var(--shadow-sm)',
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.875rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <FiImage style={{ color: '#10B981' }} />
-                <h3 style={{ fontSize: '0.90625rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-                  FACEBOOK IMAGE DOWNLOAD TEST
-                </h3>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <span style={{ fontSize: '0.71875rem', color: '#10B981', backgroundColor: 'rgba(16, 185, 129, 0.12)', padding: '0.15rem 0.5rem', borderRadius: '0.25rem', fontWeight: 700 }}>
-                  {activeTestRun.images?.length || 0} Property Photos Downloaded
-                </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleRetryImageDownload}
-                  style={{ fontSize: '0.6875rem', height: '26px', padding: '0 0.5rem' }}
-                >
-                  Retry Image Download
-                </Button>
-              </div>
-            </div>
 
-            {/* AI Image Coordinates Table */}
-            {aiImageCoords.length > 0 && (
-              <div style={{ marginBottom: '1.25rem', padding: '0.875rem', borderRadius: '0.5rem', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
-                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#3B82F6', textTransform: 'uppercase', display: 'block', marginBottom: '0.5rem' }}>
-                  AI Calculated Property Image Coordinates (Original 1920x1080 Viewport)
-                </span>
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', fontSize: '0.71875rem', borderCollapse: 'collapse', textAlign: 'left' }}>
-                    <thead>
-                      <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
-                        <th style={{ padding: '0.4rem' }}>Image Index</th>
-                        <th style={{ padding: '0.4rem' }}>Bounding Box (X, Y, W, H)</th>
-                        <th style={{ padding: '0.4rem' }}>Center Click Coordinate (X, Y)</th>
-                        <th style={{ padding: '0.4rem' }}>AI Confidence</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {aiImageCoords.map((coord) => (
-                        <tr key={coord.index} style={{ borderBottom: '1px solid var(--border-color)', fontFamily: 'monospace' }}>
-                          <td style={{ padding: '0.4rem', color: '#10B981', fontWeight: 700 }}>IMAGE {coord.index}</td>
-                          <td style={{ padding: '0.4rem' }}>{coord.x}, {coord.y}, {coord.width}, {coord.height}</td>
-                          <td style={{ padding: '0.4rem', color: '#3B82F6', fontWeight: 700 }}>({coord.center_x}, {coord.center_y})</td>
-                          <td style={{ padding: '0.4rem', color: '#8B5CF6' }}>{(coord.confidence * 100).toFixed(0)}%</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            {/* Pipeline Step Progress Tracker */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginBottom: '1rem', flexWrap: 'wrap', fontSize: '0.6875rem', fontWeight: 700 }}>
-              <span style={{ color: '#10B981', backgroundColor: 'rgba(16, 185, 129, 0.12)', padding: '0.2rem 0.5rem', borderRadius: '0.25rem' }}>Target Post</span> ➔ 
-              <span style={{ color: '#10B981', backgroundColor: 'rgba(16, 185, 129, 0.12)', padding: '0.2rem 0.5rem', borderRadius: '0.25rem' }}>Media Detection</span> ➔ 
-              <span style={{ color: '#10B981', backgroundColor: 'rgba(16, 185, 129, 0.12)', padding: '0.2rem 0.5rem', borderRadius: '0.25rem' }}>Image 1 Downloaded</span> ➔ 
-              <span style={{ color: '#10B981', backgroundColor: 'rgba(16, 185, 129, 0.12)', padding: '0.2rem 0.5rem', borderRadius: '0.25rem' }}>Next Image</span> ➔ 
-              <span style={{ color: '#8B5CF6', backgroundColor: 'rgba(139, 92, 246, 0.12)', padding: '0.2rem 0.5rem', borderRadius: '0.25rem' }}>Completed</span>
-            </div>
-
-            {activeTestRun.images && activeTestRun.images.length > 0 ? (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '0.875rem' }}>
-                {activeTestRun.images.map((img) => (
-                  <div
-                    key={img.id}
-                    style={{
-                      borderRadius: '0.5rem',
-                      overflow: 'hidden',
-                      border: '1px solid var(--border-color)',
-                      backgroundColor: 'var(--bg-secondary)',
-                      padding: '0.75rem',
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.6875rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                      <span style={{ color: '#10B981' }}>[✓] Image {String(img.original_order).padStart(2, '0')}</span>
-                      <span style={{ color: '#3B82F6', fontSize: '0.625rem', backgroundColor: 'rgba(59, 130, 246, 0.12)', padding: '0.1rem 0.35rem', borderRadius: '0.25rem' }}>
-                        Downloaded
-                      </span>
-                    </div>
-
-                    <div style={{ height: '150px', width: '100%', overflow: 'hidden', borderRadius: '0.375rem', position: 'relative', marginBottom: '0.5rem' }}>
-                      <img
-                        src={enhancedImages[img.public_url] || img.public_url}
-                        alt={`Image ${img.original_order}`}
-                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                      />
-                      {enhancedImages[img.public_url] && (
-                        <div style={{ position: 'absolute', top: '6px', right: '6px', backgroundColor: '#10B981', color: '#FFF', fontSize: '0.625rem', padding: '0.1rem 0.35rem', borderRadius: '0.25rem', fontWeight: 700 }}>
-                          ENHANCED
-                        </div>
-                      )}
-                    </div>
-
-                    <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                      <span>Resolution: 1920 × 1080</span>
-                      <span>Size: ~1.8 MB</span>
-                    </div>
-
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleEnhanceImage(img.public_url)}
-                      style={{ width: '100%', fontSize: '0.6875rem', height: '28px' }}
-                    >
-                      {enhancedImages[img.public_url] ? 'Re-Enhance Image' : 'Enhance Image'}
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
-                No target post images extracted yet. Click "Run Full Test" to execute content and image extraction.
-              </div>
-            )}
-          </div>
 
           {/* AI CONTENT TRANSFORMATION & PROMPT FORMATTER SESSION */}
           <div
@@ -2892,7 +2912,715 @@ export const TestingView: React.FC = () => {
               </div>
             </div>
           </div>
+
+          {/* ✨ AI IMAGE ENHANCEMENT & PHOTO STUDIO SESSION */}
+          <div
+            style={{
+              backgroundColor: 'var(--bg-surface)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '0.75rem',
+              padding: '1.25rem',
+              boxShadow: 'var(--shadow-sm)',
+            }}
+          >
+            {/* Header: Title, Preset Selector & Global Actions */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.125rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <FiImage style={{ color: '#3B82F6', fontSize: '1.125rem' }} />
+                <div>
+                  <h3 style={{ fontSize: '0.90625rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+                    AI IMAGE ENHANCEMENT & PHOTO STUDIO
+                  </h3>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: '0.15rem 0 0 0' }}>
+                    Select AI enhancement prompt, batch polish photos, inspect in full-screen lightbox, and download all assets.
+                  </p>
+                </div>
+              </div>
+
+              {/* Controls: Prompt Selector, Enhance All, Download All */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                {/* Enhancement Preset Dropdown */}
+                <div style={{ position: 'relative' }}>
+                  <button
+                    type="button"
+                    onClick={() => setIsImagePromptDropdownOpen(!isImagePromptDropdownOpen)}
+                    disabled={isBatchEnhancing}
+                    style={{
+                      height: '34px',
+                      padding: '0 0.75rem',
+                      backgroundColor: 'var(--bg-secondary)',
+                      color: 'var(--text-primary)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: '0.5rem',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                      cursor: 'pointer',
+                      boxShadow: 'var(--shadow-sm)',
+                    }}
+                  >
+                    <span>{imageEnhancePrompts.find((p) => p.id === selectedImagePromptId)?.name || 'Select Enhancement Style'}</span>
+                    <FiChevronDown style={{ color: 'var(--text-muted)' }} />
+                  </button>
+
+                  {isImagePromptDropdownOpen && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: 'calc(100% + 4px)',
+                        right: 0,
+                        width: '340px',
+                        backgroundColor: '#16181D',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '0.5rem',
+                        boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
+                        zIndex: 100,
+                        overflow: 'hidden',
+                        padding: '0.35rem',
+                      }}
+                    >
+                      {imageEnhancePrompts.map((preset) => (
+                        <div
+                          key={preset.id}
+                          onClick={() => {
+                            setSelectedImagePromptId(preset.id);
+                            setIsImagePromptDropdownOpen(false);
+                          }}
+                          style={{
+                            padding: '0.5rem 0.65rem',
+                            borderRadius: '0.375rem',
+                            cursor: 'pointer',
+                            backgroundColor: selectedImagePromptId === preset.id ? 'rgba(59, 130, 246, 0.15)' : 'transparent',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.2rem',
+                            marginBottom: '0.2rem',
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: selectedImagePromptId === preset.id ? '#60A5FA' : 'var(--text-primary)' }}>
+                              {preset.name}
+                            </span>
+                            {selectedImagePromptId === preset.id && <FiCheck style={{ color: '#60A5FA', fontSize: '0.75rem' }} />}
+                          </div>
+                          <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                            {preset.desc}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Enhance All Photos Button */}
+                <Button
+                  variant="primary"
+                  size="sm"
+                  leftIcon={isBatchEnhancing ? <FiLoader style={{ animation: 'spin 1s linear infinite' }} /> : <FiZap />}
+                  onClick={handleEnhanceAllPhotos}
+                  disabled={isBatchEnhancing || !activeTestRun?.images || activeTestRun.images.length === 0}
+                  style={{
+                    backgroundColor: '#3B82F6',
+                    borderColor: '#2563EB',
+                    height: '34px',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    boxShadow: '0 2px 8px rgba(59, 130, 246, 0.3)',
+                  }}
+                >
+                  {isBatchEnhancing
+                    ? `Enhancing (${batchEnhanceProgress.current}/${batchEnhanceProgress.total})...`
+                    : '✨ Enhance All Photos'}
+                </Button>
+
+                {/* Download All Photos Button */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  leftIcon={<FiDownload />}
+                  onClick={handleDownloadAllPhotos}
+                  disabled={!activeTestRun?.images || activeTestRun.images.length === 0}
+                  style={{
+                    height: '34px',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    borderColor: '#10B981',
+                    color: '#10B981',
+                  }}
+                >
+                  📥 Download All ({activeTestRun?.images?.length || 0})
+                </Button>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleRetryImageDownload}
+                  style={{ height: '34px', fontSize: '0.75rem' }}
+                >
+                  🔄 Retry Download
+                </Button>
+              </div>
+            </div>
+
+            {/* AI Image Coordinates Table (if detected) */}
+            {aiImageCoords.length > 0 && (
+              <div style={{ marginBottom: '1rem', padding: '0.75rem', borderRadius: '0.5rem', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                <span style={{ fontSize: '0.71875rem', fontWeight: 700, color: '#3B82F6', textTransform: 'uppercase', display: 'block', marginBottom: '0.35rem' }}>
+                  AI Calculated Property Image Coordinates (1920x1080 Viewport)
+                </span>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', fontSize: '0.6875rem', borderCollapse: 'collapse', textAlign: 'left' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
+                        <th style={{ padding: '0.3rem' }}>Index</th>
+                        <th style={{ padding: '0.3rem' }}>Bounding Box (X, Y, W, H)</th>
+                        <th style={{ padding: '0.3rem' }}>Center Click Coordinate</th>
+                        <th style={{ padding: '0.3rem' }}>Confidence</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {aiImageCoords.map((coord) => (
+                        <tr key={coord.index} style={{ borderBottom: '1px solid var(--border-color)', fontFamily: 'monospace' }}>
+                          <td style={{ padding: '0.3rem', color: '#10B981', fontWeight: 700 }}>IMAGE {coord.index}</td>
+                          <td style={{ padding: '0.3rem' }}>{coord.x}, {coord.y}, {coord.width}, {coord.height}</td>
+                          <td style={{ padding: '0.3rem', color: '#3B82F6', fontWeight: 700 }}>({coord.center_x}, {coord.center_y})</td>
+                          <td style={{ padding: '0.3rem', color: '#8B5CF6' }}>{(coord.confidence * 100).toFixed(0)}%</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Filter & Counter Bar */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setGalleryFilter('ALL')}
+                  style={{
+                    padding: '0.25rem 0.65rem',
+                    borderRadius: '0.375rem',
+                    fontSize: '0.71875rem',
+                    fontWeight: 600,
+                    border: '1px solid var(--border-color)',
+                    backgroundColor: galleryFilter === 'ALL' ? 'var(--text-primary)' : 'var(--bg-secondary)',
+                    color: galleryFilter === 'ALL' ? 'var(--bg-surface)' : 'var(--text-muted)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  All Photos ({activeTestRun?.images?.length || 0})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGalleryFilter('ENHANCED')}
+                  style={{
+                    padding: '0.25rem 0.65rem',
+                    borderRadius: '0.375rem',
+                    fontSize: '0.71875rem',
+                    fontWeight: 600,
+                    border: '1px solid var(--border-color)',
+                    backgroundColor: galleryFilter === 'ENHANCED' ? '#3B82F6' : 'var(--bg-secondary)',
+                    color: galleryFilter === 'ENHANCED' ? '#FFFFFF' : 'var(--text-muted)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  ✨ Enhanced ({Object.keys(enhancedImages).length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGalleryFilter('ORIGINAL')}
+                  style={{
+                    padding: '0.25rem 0.65rem',
+                    borderRadius: '0.375rem',
+                    fontSize: '0.71875rem',
+                    fontWeight: 600,
+                    border: '1px solid var(--border-color)',
+                    backgroundColor: galleryFilter === 'ORIGINAL' ? '#10B981' : 'var(--bg-secondary)',
+                    color: galleryFilter === 'ORIGINAL' ? '#FFFFFF' : 'var(--text-muted)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Original ({(activeTestRun?.images?.length || 0) - Object.keys(enhancedImages).length})
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.71875rem', color: 'var(--text-muted)' }}>
+                <span>💡 Click any photo to inspect in huge full-screen lightbox</span>
+              </div>
+            </div>
+
+            {/* Gallery Grid */}
+            {activeTestRun?.images && activeTestRun.images.length > 0 ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '0.875rem' }}>
+                {activeTestRun.images
+                  .filter((img) => {
+                    const isEnh = !!enhancedImages[img.public_url];
+                    if (galleryFilter === 'ENHANCED') return isEnh;
+                    if (galleryFilter === 'ORIGINAL') return !isEnh;
+                    return true;
+                  })
+                  .map((img, idx) => {
+                    const isEnh = !!enhancedImages[img.public_url];
+                    const activeUrl = enhancedImages[img.public_url] || img.public_url;
+                    const realIndex = activeTestRun.images?.findIndex((i) => i.id === img.id) ?? idx;
+
+                    return (
+                      <div
+                        key={img.id}
+                        style={{
+                          borderRadius: '0.5rem',
+                          overflow: 'hidden',
+                          border: '1px solid var(--border-color)',
+                          backgroundColor: 'var(--bg-secondary)',
+                          padding: '0.75rem',
+                          transition: 'transform 0.15s ease, border-color 0.15s ease',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '0.5rem',
+                        }}
+                      >
+                        {/* Card Header */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.6875rem', fontWeight: 700 }}>
+                          <span style={{ color: 'var(--text-primary)' }}>
+                            [✓] Photo {String(img.original_order || realIndex + 1).padStart(2, '0')}
+                          </span>
+                          <span
+                            style={{
+                              fontSize: '0.625rem',
+                              padding: '0.15rem 0.45rem',
+                              borderRadius: '0.25rem',
+                              backgroundColor: isEnh ? 'rgba(59, 130, 246, 0.15)' : 'rgba(16, 185, 129, 0.12)',
+                              color: isEnh ? '#60A5FA' : '#10B981',
+                              border: `1px solid ${isEnh ? 'rgba(59, 130, 246, 0.3)' : 'rgba(16, 185, 129, 0.3)'}`,
+                            }}
+                          >
+                            {isEnh ? '✨ ENHANCED' : 'ORIGINAL'}
+                          </span>
+                        </div>
+
+                        {/* Image Thumbnail with Huge View Click Trigger */}
+                        <div
+                          onClick={() => {
+                            setLightboxIndex(realIndex);
+                            setLightboxViewMode(isEnh ? 'enhanced' : 'original');
+                          }}
+                          style={{
+                            height: '160px',
+                            width: '100%',
+                            overflow: 'hidden',
+                            borderRadius: '0.375rem',
+                            position: 'relative',
+                            cursor: 'pointer',
+                            backgroundColor: '#0D0E11',
+                          }}
+                          title="Click to view large in full-screen Lightbox"
+                        >
+                          <img
+                            src={activeUrl}
+                            alt={`Property Photo ${img.original_order || realIndex + 1}`}
+                            style={{ width: '100%', height: '100%', objectFit: 'cover', transition: 'transform 0.2s ease' }}
+                          />
+
+                          {/* Magnify Overlay on Hover */}
+                          <div
+                            style={{
+                              position: 'absolute',
+                              bottom: '6px',
+                              right: '6px',
+                              backgroundColor: 'rgba(0, 0, 0, 0.75)',
+                              color: '#FFFFFF',
+                              padding: '0.2rem 0.45rem',
+                              borderRadius: '0.25rem',
+                              fontSize: '0.65rem',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.25rem',
+                              backdropFilter: 'blur(4px)',
+                            }}
+                          >
+                            <FiMaximize2 /> Large View
+                          </div>
+                        </div>
+
+                        {/* Resolution & Specs */}
+                        <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between' }}>
+                          <span>1920 × 1080</span>
+                          <span>~1.8 MB</span>
+                        </div>
+
+                        {/* Action Buttons: Enhance & Download */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem', marginTop: '0.2rem' }}>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleEnhanceImage(img.public_url)}
+                            style={{
+                              fontSize: '0.6875rem',
+                              height: '28px',
+                              borderColor: isEnh ? '#3B82F6' : 'var(--border-color)',
+                              color: isEnh ? '#3B82F6' : 'var(--text-primary)',
+                            }}
+                          >
+                            {isEnh ? 'Re-Enhance' : 'Enhance'}
+                          </Button>
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            leftIcon={<FiDownload />}
+                            onClick={() => {
+                              const prefix = generatedRefCode || 'PROPERTY';
+                              const order = String(img.original_order || realIndex + 1).padStart(2, '0');
+                              handleDownloadSinglePhoto(activeUrl, `${prefix}-Photo-${order}${isEnh ? '-Enhanced' : ''}.jpg`);
+                            }}
+                            style={{ fontSize: '0.6875rem', height: '28px' }}
+                          >
+                            Download
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            ) : (
+              <div style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
+                No target post photos extracted yet. Run the extraction test pipeline above to download property photos.
+              </div>
+            )}
+          </div>
         </div>
+      )}
+
+      {/* 🌟 HUGE INTERACTIVE FULL-SCREEN LIGHTBOX MODAL */}
+      {lightboxIndex !== null && activeTestRun?.images && activeTestRun.images[lightboxIndex] && (
+        (() => {
+          const imagesList = activeTestRun.images;
+          const currImg = imagesList[lightboxIndex];
+          if (!currImg) return null;
+          const isEnh = !!enhancedImages[currImg.public_url];
+          const activeUrl =
+            lightboxViewMode === 'enhanced' && isEnh
+              ? enhancedImages[currImg.public_url]
+              : currImg.public_url;
+
+          return (
+            <div
+              style={{
+                position: 'fixed',
+                inset: 0,
+                zIndex: 9999,
+                backgroundColor: 'rgba(5, 7, 12, 0.94)',
+                backdropFilter: 'blur(10px)',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between',
+                padding: '1.25rem',
+                boxSizing: 'border-box',
+              }}
+              onClick={(e) => {
+                if (e.target === e.currentTarget) {
+                  setLightboxIndex(null);
+                }
+              }}
+            >
+              {/* Top Bar: Title, Preset Info, View Mode Switch, Download & Close */}
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  width: '100%',
+                  padding: '0.5rem 1rem',
+                  backgroundColor: 'rgba(22, 24, 30, 0.85)',
+                  borderRadius: '0.625rem',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  backdropFilter: 'blur(8px)',
+                  flexWrap: 'wrap',
+                  gap: '0.75rem',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#FFFFFF' }}>
+                    Photo {lightboxIndex + 1} of {imagesList.length}
+                  </span>
+                  {generatedRefCode && (
+                    <span style={{ fontSize: '0.75rem', color: '#A78BFA', backgroundColor: 'rgba(139, 92, 246, 0.2)', padding: '0.2rem 0.5rem', borderRadius: '0.25rem', fontFamily: 'monospace', fontWeight: 700 }}>
+                      🏷️ {generatedRefCode}
+                    </span>
+                  )}
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    Preset: {imageEnhancePrompts.find((p) => p.id === selectedImagePromptId)?.name}
+                  </span>
+                </div>
+
+                {/* View Mode Toggle: Enhanced vs Original */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  {isEnh && (
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                        borderRadius: '0.375rem',
+                        padding: '0.2rem',
+                        border: '1px solid rgba(255, 255, 255, 0.12)',
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setLightboxViewMode('enhanced')}
+                        style={{
+                          padding: '0.25rem 0.65rem',
+                          borderRadius: '0.25rem',
+                          fontSize: '0.75rem',
+                          fontWeight: 700,
+                          border: 'none',
+                          cursor: 'pointer',
+                          backgroundColor: lightboxViewMode === 'enhanced' ? '#3B82F6' : 'transparent',
+                          color: lightboxViewMode === 'enhanced' ? '#FFFFFF' : 'var(--text-muted)',
+                          transition: 'all 0.15s ease',
+                        }}
+                      >
+                        ✨ Enhanced View
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setLightboxViewMode('original')}
+                        style={{
+                          padding: '0.25rem 0.65rem',
+                          borderRadius: '0.25rem',
+                          fontSize: '0.75rem',
+                          fontWeight: 700,
+                          border: 'none',
+                          cursor: 'pointer',
+                          backgroundColor: lightboxViewMode === 'original' ? '#10B981' : 'transparent',
+                          color: lightboxViewMode === 'original' ? '#FFFFFF' : 'var(--text-muted)',
+                          transition: 'all 0.15s ease',
+                        }}
+                      >
+                        🖼️ Original View
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Download Current Button */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const prefix = generatedRefCode || 'PROPERTY';
+                      const order = String(currImg.original_order || lightboxIndex + 1).padStart(2, '0');
+                      handleDownloadSinglePhoto(activeUrl, `${prefix}-Photo-${order}-${lightboxViewMode}.jpg`);
+                    }}
+                    style={{
+                      padding: '0.35rem 0.75rem',
+                      borderRadius: '0.375rem',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      border: '1px solid rgba(16, 185, 129, 0.4)',
+                      backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                      color: '#10B981',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
+                    }}
+                  >
+                    <FiDownload /> Download Photo
+                  </button>
+
+                  {/* Close Button */}
+                  <button
+                    type="button"
+                    onClick={() => setLightboxIndex(null)}
+                    style={{
+                      width: '32px',
+                      height: '32px',
+                      borderRadius: '0.375rem',
+                      border: '1px solid rgba(255, 255, 255, 0.15)',
+                      backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                      color: '#FFFFFF',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '1rem',
+                    }}
+                    title="Close (Esc)"
+                  >
+                    <FiX />
+                  </button>
+                </div>
+              </div>
+
+              {/* Center Area: Left Nav Arrow + Huge Photo + Right Nav Arrow */}
+              <div
+                style={{
+                  position: 'relative',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flex: 1,
+                  width: '100%',
+                  overflow: 'hidden',
+                  margin: '0.75rem 0',
+                }}
+              >
+                {/* Previous Arrow Button */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setLightboxIndex((prev) => (prev !== null ? (prev - 1 + imagesList.length) % imagesList.length : 0));
+                  }}
+                  style={{
+                    position: 'absolute',
+                    left: '1rem',
+                    zIndex: 10,
+                    width: '48px',
+                    height: '48px',
+                    borderRadius: '50%',
+                    backgroundColor: 'rgba(20, 23, 30, 0.8)',
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    color: '#FFFFFF',
+                    fontSize: '1.5rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+                    transition: 'transform 0.15s ease, background-color 0.15s ease',
+                  }}
+                  title="Previous Photo (Left Arrow Key)"
+                >
+                  <FiChevronLeft />
+                </button>
+
+                {/* Huge Photo Display */}
+                <div
+                  style={{
+                    position: 'relative',
+                    maxWidth: '88vw',
+                    maxHeight: '75vh',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <img
+                    src={activeUrl}
+                    alt={`Huge View Photo ${lightboxIndex + 1}`}
+                    style={{
+                      maxWidth: '100%',
+                      maxHeight: '75vh',
+                      objectFit: 'contain',
+                      borderRadius: '0.5rem',
+                      boxShadow: '0 12px 40px rgba(0,0,0,0.8)',
+                      border: '1px solid rgba(255, 255, 255, 0.12)',
+                    }}
+                  />
+
+                  {/* Status Overlay Badge on Top Left */}
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: '12px',
+                      left: '12px',
+                      backgroundColor: lightboxViewMode === 'enhanced' && isEnh ? '#3B82F6' : '#10B981',
+                      color: '#FFFFFF',
+                      fontSize: '0.71875rem',
+                      fontWeight: 700,
+                      padding: '0.25rem 0.6rem',
+                      borderRadius: '0.375rem',
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
+                    }}
+                  >
+                    {lightboxViewMode === 'enhanced' && isEnh ? '✨ ENHANCED (ACTIVE)' : 'ORIGINAL PHOTOGRAPHY'}
+                  </div>
+                </div>
+
+                {/* Next Arrow Button */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setLightboxIndex((prev) => (prev !== null ? (prev + 1) % imagesList.length : 0));
+                  }}
+                  style={{
+                    position: 'absolute',
+                    right: '1rem',
+                    zIndex: 10,
+                    width: '48px',
+                    height: '48px',
+                    borderRadius: '50%',
+                    backgroundColor: 'rgba(20, 23, 30, 0.8)',
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    color: '#FFFFFF',
+                    fontSize: '1.5rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+                    transition: 'transform 0.15s ease, background-color 0.15s ease',
+                  }}
+                  title="Next Photo (Right Arrow Key)"
+                >
+                  <FiChevronRight />
+                </button>
+              </div>
+
+              {/* Bottom Thumbnail Strip */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.5rem',
+                  overflowX: 'auto',
+                  padding: '0.5rem',
+                  backgroundColor: 'rgba(22, 24, 30, 0.75)',
+                  borderRadius: '0.5rem',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  maxWidth: '90vw',
+                  margin: '0 auto',
+                }}
+              >
+                {imagesList.map((img, idx) => {
+                  const thumbUrl = enhancedImages[img.public_url] || img.public_url;
+                  const isSelected = idx === lightboxIndex;
+
+                  return (
+                    <div
+                      key={img.id}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setLightboxIndex(idx);
+                      }}
+                      style={{
+                        width: '60px',
+                        height: '45px',
+                        borderRadius: '0.25rem',
+                        overflow: 'hidden',
+                        cursor: 'pointer',
+                        border: isSelected ? '2px solid #3B82F6' : '1px solid rgba(255, 255, 255, 0.2)',
+                        opacity: isSelected ? 1 : 0.6,
+                        transform: isSelected ? 'scale(1.08)' : 'scale(1)',
+                        transition: 'all 0.15s ease',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <img src={thumbUrl} alt={`Thumb ${idx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()
       )}
 
       {/* Live Navigation & Execution Audit Log */}
