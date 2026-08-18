@@ -9,8 +9,8 @@ import (
 	"image"
 	"image/draw"
 	"image/jpeg"
-	_ "image/png"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"strings"
@@ -1276,19 +1276,15 @@ func (s *OpenAIService) EnhancePropertyImageWithAI(ctx context.Context, imageURL
 		instructionText = "Transform into an ultra-high-resolution, premium luxury real estate magazine photograph with crisp deep blue sky, soft clouds, warm natural lighting, and rich architectural contrast."
 	}
 
-	// STEP 1: Use GPT-4o Vision to craft a precise architectural prompt from the source photo
-	analysisSystemPrompt := `You are an elite architectural photographer and luxury interior designer for Architectural Digest.
-Analyze the provided property photograph and generate a comprehensive, highly descriptive image generation prompt for DALL-E 3.
+	// STEP 1: Use GPT-4o Vision to analyze the original image and produce targeted editing instructions
+	analysisSystemPrompt := `You are an elite architectural photo retoucher and image editor.
+Analyze the provided property photograph and generate precise image editing and photo restoration instructions for an image-to-image editing model.
 
-CRITICAL ENHANCEMENT RULES (MUST FOLLOW):
-1. ROOM & ARCHITECTURE: Maintain the exact room layout, camera perspective, balcony sliding glass door, TV console on left, sofa on right, marble coffee table in center, and air conditioner placement.
-2. WINDOW / BALCONY VIEW: Replace any washed-out, overexposed, or hazy sky with a stunning, vibrant azure deep blue sky filled with soft, puffy white cumulus clouds. Dehaze the city skyline to make every distant building crisp, clean, and beautifully detailed.
-3. LIGHTING & SUNLIGHT: Cast warm natural golden sunlight streaming through the balcony window onto the right wall and light-toned wood floor. Add warm ambient glow from the ceiling downlight.
-4. TEXTURES & CONTRAST: Deepen rich shadow blacks under the sofa and TV console. Render crisp high-definition textures: plush sofa fabric, elegant marble coffee table veining with realistic reflections, and clean glossy television surface.
-5. STYLE: Ultra-photorealistic 8k architectural interior photography, rich dynamic range, no overexposure, no blown-out whites, no haze, no watermarks, no distorted furniture.
-6. USER INSTRUCTION: ` + instructionText + ` (Preset: ` + promptName + `).
-
-Output ONLY the finalized DALL-E 3 prompt text. No introduction, no markdown backticks.`
+Instructions:
+1. Preserve 100% of the authentic scene: room layout, architecture, furniture, textures, and items.
+2. Formulate specific image editing instructions to restore clarity, dynamic range, window sky blue/clouds, dehaze city view, balance lighting, and sharpen textures.
+3. User instruction: ` + instructionText + ` (Preset: ` + promptName + `).
+4. Output ONLY the concise photo editing instructions.`
 
 	var messages []interface{}
 	if formattedImageURL != "" {
@@ -1302,7 +1298,7 @@ Output ONLY the finalized DALL-E 3 prompt text. No introduction, no markdown bac
 				"content": []interface{}{
 					map[string]interface{}{
 						"type": "text",
-						"text": "Analyze this property photo and generate the ultimate photorealistic luxury enhancement prompt.",
+						"text": "Analyze this original property photo and output image-to-image editing instructions to enhance quality, sky, and lighting while preserving the authentic scene.",
 					},
 					map[string]interface{}{
 						"type": "image_url",
@@ -1322,7 +1318,7 @@ Output ONLY the finalized DALL-E 3 prompt text. No introduction, no markdown bac
 			},
 			map[string]interface{}{
 				"role":    "user",
-				"content": fmt.Sprintf("Generate an ultra-photorealistic luxury real estate architectural photograph: %s. %s", promptName, instructionText),
+				"content": fmt.Sprintf("Generate image-to-image editing instructions: %s. %s", promptName, instructionText),
 			},
 		}
 	}
@@ -1330,8 +1326,8 @@ Output ONLY the finalized DALL-E 3 prompt text. No introduction, no markdown bac
 	chatReqBody := map[string]interface{}{
 		"model":       "gpt-4o",
 		"messages":    messages,
-		"temperature": 0.5,
-		"max_tokens":  600,
+		"temperature": 0.3,
+		"max_tokens":  500,
 	}
 
 	chatBytes, err := json.Marshal(chatReqBody)
@@ -1348,7 +1344,7 @@ Output ONLY the finalized DALL-E 3 prompt text. No introduction, no markdown bac
 
 	chatResp, err := s.Client.Do(httpReq)
 	if err != nil {
-		return "", fmt.Errorf("OpenAI Vision failed: %w", err)
+		return "", fmt.Errorf("OpenAI Vision analysis failed: %w", err)
 	}
 	defer chatResp.Body.Close()
 
@@ -1362,84 +1358,123 @@ Output ONLY the finalized DALL-E 3 prompt text. No introduction, no markdown bac
 	}
 	_ = json.Unmarshal(chatBodyBytes, &chatResult)
 
-	var dallEPrompt string
+	var editingPrompt string
 	if len(chatResult.Choices) > 0 && chatResult.Choices[0].Message.Content != "" {
-		dallEPrompt = strings.TrimSpace(chatResult.Choices[0].Message.Content)
+		editingPrompt = strings.TrimSpace(chatResult.Choices[0].Message.Content)
 	} else {
-		dallEPrompt = fmt.Sprintf("Ultra-photorealistic 8k architectural digest luxury real estate photograph. %s. %s. Soft natural ambient daylight, immaculate interior staging, warm lighting.", promptName, instructionText)
+		editingPrompt = fmt.Sprintf("Enhance photo clarity, dynamic range, window sky view, and architectural lighting while preserving original scene: %s. %s", promptName, instructionText)
 	}
 
-	// STEP 2: Call DALL-E 3 API to generate the ultra-photorealistic luxury image
-	dalleReqBody := map[string]interface{}{
-		"model":   "dall-e-3",
-		"prompt":  dallEPrompt,
-		"n":       1,
-		"size":    "1792x1024",
-		"quality": "hd",
-		"style":   "natural",
+	// STEP 2: Call OpenAI Image Editing Model (images/edits) passing the original image directly
+	// Prepare image bytes as PNG/JPEG multipart form
+	var rawImageBytes []byte
+	if strings.HasPrefix(imageURLOrBase64, "data:image/") {
+		parts := strings.SplitN(imageURLOrBase64, ",", 2)
+		if len(parts) == 2 {
+			rawImageBytes, _ = base64.StdEncoding.DecodeString(parts[1])
+		}
+	} else if strings.HasPrefix(imageURLOrBase64, "http://") || strings.HasPrefix(imageURLOrBase64, "https://") {
+		client := &http.Client{Timeout: 30 * time.Second}
+		resp, err := client.Get(imageURLOrBase64)
+		if err == nil && resp.StatusCode == http.StatusOK {
+			rawImageBytes, _ = io.ReadAll(resp.Body)
+			resp.Body.Close()
+		}
+	} else if strings.HasPrefix(imageURLOrBase64, "/") || strings.HasPrefix(imageURLOrBase64, "./") {
+		rawImageBytes, _ = os.ReadFile(imageURLOrBase64)
 	}
 
-	dalleBytes, err := json.Marshal(dalleReqBody)
+	if len(rawImageBytes) == 0 {
+		return "", fmt.Errorf("could not load original image bytes for image editing model")
+	}
+
+	// Build multipart/form-data for OpenAI Image Edits API
+	bodyBuf := &bytes.Buffer{}
+	mpWriter := multipart.NewWriter(bodyBuf)
+
+	// Image file part
+	imagePart, err := mpWriter.CreateFormFile("image", "original_image.png")
 	if err != nil {
-		return "", fmt.Errorf("failed to encode DALL-E request: %w", err)
+		return "", fmt.Errorf("failed to create form file: %w", err)
+	}
+	if _, err := imagePart.Write(rawImageBytes); err != nil {
+		return "", fmt.Errorf("failed to write image bytes: %w", err)
 	}
 
-	dalleHttpReq, err := http.NewRequestWithContext(ctx, "POST", "https://api.openai.com/v1/images/generations", bytes.NewBuffer(dalleBytes))
+	// Prompt part
+	if err := mpWriter.WriteField("prompt", editingPrompt); err != nil {
+		return "", fmt.Errorf("failed to write prompt: %w", err)
+	}
+
+	// Model preference: gpt-image-1 / image editing model
+	_ = mpWriter.WriteField("model", "gpt-image-1")
+	_ = mpWriter.WriteField("n", "1")
+	_ = mpWriter.WriteField("size", "1024x1024")
+
+	if err := mpWriter.Close(); err != nil {
+		return "", fmt.Errorf("failed to close multipart writer: %w", err)
+	}
+
+	editReq, err := http.NewRequestWithContext(ctx, "POST", "https://api.openai.com/v1/images/edits", bodyBuf)
 	if err != nil {
-		return "", fmt.Errorf("failed to create DALL-E request: %w", err)
+		return "", fmt.Errorf("failed to create image edit request: %w", err)
 	}
-	dalleHttpReq.Header.Set("Content-Type", "application/json")
-	dalleHttpReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", s.APIKey))
+	editReq.Header.Set("Content-Type", mpWriter.FormDataContentType())
+	editReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", s.APIKey))
 
-	dalleClient := &http.Client{Timeout: 90 * time.Second}
-	dalleResp, err := dalleClient.Do(dalleHttpReq)
+	editClient := &http.Client{Timeout: 90 * time.Second}
+	editResp, err := editClient.Do(editReq)
 	if err != nil {
-		return "", fmt.Errorf("DALL-E 3 generation failed: %w", err)
+		return "", fmt.Errorf("Image editing model request failed: %w", err)
 	}
-	defer dalleResp.Body.Close()
+	defer editResp.Body.Close()
 
-	dalleBodyBytes, _ := io.ReadAll(dalleResp.Body)
-	var dalleResult struct {
+	editBodyBytes, _ := io.ReadAll(editResp.Body)
+	var editResult struct {
 		Data []struct {
-			URL string `json:"url"`
+			URL     string `json:"url"`
+			B64JSON string `json:"b64_json"`
 		} `json:"data"`
 		Error *struct {
 			Message string `json:"message"`
 		} `json:"error"`
 	}
 
-	if err := json.Unmarshal(dalleBodyBytes, &dalleResult); err != nil {
-		return "", fmt.Errorf("failed to parse DALL-E 3 response: %w", err)
+	if err := json.Unmarshal(editBodyBytes, &editResult); err != nil {
+		return "", fmt.Errorf("failed to parse image editing response: %w", err)
 	}
 
-	if dalleResult.Error != nil && dalleResult.Error.Message != "" {
-		return "", fmt.Errorf("DALL-E 3 error: %s", dalleResult.Error.Message)
+	if editResult.Error != nil && editResult.Error.Message != "" {
+		return "", fmt.Errorf("Image editing model error: %s", editResult.Error.Message)
 	}
 
-	if len(dalleResult.Data) == 0 || dalleResult.Data[0].URL == "" {
-		return "", fmt.Errorf("DALL-E 3 returned no image URL")
+	if len(editResult.Data) == 0 || (editResult.Data[0].URL == "" && editResult.Data[0].B64JSON == "") {
+		return "", fmt.Errorf("image editing model returned no image data")
 	}
 
-	generatedURL := dalleResult.Data[0].URL
-
-	// STEP 3: Download and persist generated image to local disk
-	dlResp, err := http.Get(generatedURL)
-	if err != nil {
-		return generatedURL, nil // Return direct URL if download fails
-	}
-	defer dlResp.Body.Close()
-
-	outFile, err := os.Create(outFilePath)
-	if err != nil {
-		return generatedURL, nil
-	}
-	defer outFile.Close()
-
-	_, err = io.Copy(outFile, dlResp.Body)
-	if err != nil {
-		return generatedURL, nil
+	// STEP 3: Persist edited image to disk
+	if editResult.Data[0].B64JSON != "" {
+		decBytes, err := base64.StdEncoding.DecodeString(editResult.Data[0].B64JSON)
+		if err == nil {
+			_ = os.WriteFile(outFilePath, decBytes, 0644)
+			return fmt.Sprintf("file://%s", outFilePath), nil
+		}
 	}
 
-	return generatedURL, nil
+	if editResult.Data[0].URL != "" {
+		dlResp, err := http.Get(editResult.Data[0].URL)
+		if err == nil {
+			defer dlResp.Body.Close()
+			outFile, err := os.Create(outFilePath)
+			if err == nil {
+				defer outFile.Close()
+				_, _ = io.Copy(outFile, dlResp.Body)
+			}
+		}
+		return editResult.Data[0].URL, nil
+	}
+
+	return "", fmt.Errorf("failed to save edited image")
 }
+
 
