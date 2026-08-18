@@ -709,43 +709,56 @@ export const TestingView: React.FC = () => {
         addLog('PIPELINE', `🎉 Saved test run record (${finalCleanText.length} chars)`);
       }
 
-      // NEW AI VISION IMAGE COORDINATE CALCULATION & DOWNLOAD PIPELINE
-      addLog('IMAGE_STEP_01', '[IMAGE_STEP_01] Target post received from existing content extraction');
-      addLog('IMAGE_STEP_02', '[IMAGE_STEP_02] Sending original 1920x1080 screenshot to OpenAI Vision for property image coordinate calculation...');
+      // IMAGE DOWNLOAD PIPELINE: Session 1 identifies property images -> Session 2 downloads via Photo Viewer
+      const hasAnyImagesInCaptures = allAnalyses.some(
+        (a) => a.property_images_visible || a.relevant_images_visible || (a.visible_property_image_count && a.visible_property_image_count > 0)
+      );
 
-      try {
-        // Step A: OpenAI Vision calculates bounding boxes and center coordinates for target post images
-        let firstCoords: { x: number; y: number } | null = null;
-        const coordsResp = await fetch('http://localhost:8085/api/facebook/test/detect-image-coordinates', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ screenshot_base64: lastScreenshotBase64 }),
-        });
-        const coordsData = await coordsResp.json();
-
-        if (coordsData.result && coordsData.result.images && coordsData.result.images.length > 0) {
-          setAiImageCoords(coordsData.result.images);
-          const firstImg = coordsData.result.images[0];
-          firstCoords = { x: firstImg.center_x, y: firstImg.center_y };
-          addLog('IMAGE_STEP_03', `[IMAGE_STEP_03] OpenAI Vision located ${coordsData.result.images.length} property images in target post.`);
-          addLog('IMAGE_CLICK', `[IMAGE_CLICK] Index: 1 X: ${firstImg.center_x} Y: ${firstImg.center_y}`);
-        } else {
-          addLog('IMAGE_STEP_03', '[IMAGE_STEP_03] Fallback to primary target post image element.');
+      if (!hasAnyImagesInCaptures) {
+        addLog('IMAGE_DOWNLOAD', 'No property image gallery detected.');
+      } else {
+        // Locate screenshot containing property images
+        let targetScreenshotForCoords = lastScreenshotBase64;
+        const imgAnalysisIdx = allAnalyses.findIndex(
+          (a) => a.property_images_visible || a.relevant_images_visible || (a.visible_property_image_count && a.visible_property_image_count > 0)
+        );
+        if (imgAnalysisIdx >= 0 && allCapturedScreenshots[imgAnalysisIdx]) {
+          targetScreenshotForCoords = allCapturedScreenshots[imgAnalysisIdx];
         }
 
-        // Step B: Trigger OpenClaw click at coordinates & download unique images
-        addLog('VIEWER', '[VIEWER] Facebook photo viewer modal verified.');
+        addLog('IMAGE_STEP_01', '[IMAGE_STEP_01] Target post received from existing content extraction');
+        addLog('IMAGE_STEP_02', '[IMAGE_STEP_02] Sending content-capture screenshot to AI to identify FIRST property image target...');
 
-        const imgResp = await fetch('http://localhost:8085/api/facebook/test/extract-images', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            target_url: navResult?.current_url || urlInput,
-            max_images: 30,
-            image_coordinates: firstCoords,
-          }),
-        });
-        const imgData = await imgResp.json();
+        try {
+          let firstCoords: { x: number; y: number } | null = null;
+          const coordsResp = await fetch('http://localhost:8085/api/facebook/test/detect-image-coordinates', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ screenshot_base64: targetScreenshotForCoords }),
+          });
+          const coordsData = await coordsResp.json();
+
+          if (coordsData.result && coordsData.result.images && coordsData.result.images.length > 0) {
+            setAiImageCoords(coordsData.result.images);
+            const firstImg = coordsData.result.images[0];
+            firstCoords = { x: firstImg.center_x, y: firstImg.center_y };
+            addLog('IMAGE_STEP_03', `[IMAGE_STEP_03] AI identified FIRST property image at X: ${firstImg.center_x}, Y: ${firstImg.center_y} (Saved target information)`);
+          } else {
+            addLog('IMAGE_STEP_03', '[IMAGE_STEP_03] Using primary target post image element.');
+          }
+
+          // Trigger Session 2 Image Downloader in fresh browser
+          addLog('IMAGE_DOWNLOAD', '[IMAGE_DOWNLOAD] Starting fresh Session 2 browser to download from Photo Viewer...');
+          const imgResp = await fetch('http://localhost:8085/api/facebook/test/extract-images', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              target_url: navResult?.current_url || urlInput,
+              max_images: 30,
+              image_coordinates: firstCoords,
+            }),
+          });
+          const imgData = await imgResp.json();
 
         if (imgData.result && imgData.result.images && imgData.result.images.length > 0) {
           const extractedImages = imgData.result.images.map((img: any) => ({
@@ -780,8 +793,9 @@ export const TestingView: React.FC = () => {
         } else {
           addLog('IMAGE_INFO', '[IMAGE_INFO] No additional gallery photos detected for this post.');
         }
-      } catch (imgErr: any) {
-        addLog('IMAGE_ERROR', `[IMAGE_ERROR] Reason: ${imgErr.message || 'Image download failed'}`);
+        } catch (imgErr: any) {
+          addLog('IMAGE_ERROR', `[IMAGE_ERROR] Reason: ${imgErr.message || 'Image download failed'}`);
+        }
       }
     } catch (err: any) {
       setErrorMessage(err.message || 'Pipeline error');

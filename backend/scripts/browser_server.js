@@ -1303,22 +1303,37 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
     });
     await imagePage.waitForTimeout(3000); // Wait for post and images to load
 
-    // Step 2: Find the first property photo in the target post
+    // Step 2: Locate and open identified FIRST property image in the target post
+    console.log('[IMAGE] Locating identified FIRST property image');
     let photoOpened = false;
+
+    // Scroll target post and photos into view
+    await imagePage.evaluate(() => {
+      const post = document.querySelector('div[role="dialog"] div[role="article"], div[role="article"], div[data-pagelet*="FeedUnit"], div[role="main"]');
+      if (post) {
+        const photoEl = post.querySelector('a[href*="/photo"], a[href*="/photos/"], a[href*="fbid="], img[src*="scontent"]');
+        if (photoEl) {
+          photoEl.scrollIntoView({ behavior: 'instant', block: 'center' });
+        }
+      }
+    }).catch(() => {});
+    await imagePage.waitForTimeout(1000);
 
     // Check if coordinates were passed from vision analyzer
     if (targetCoordinates && typeof targetCoordinates.x === 'number') {
       try {
         await imagePage.mouse.click(targetCoordinates.x, targetCoordinates.y);
         await imagePage.waitForTimeout(2000);
-        photoOpened = true;
+        photoOpened = await imagePage.evaluate(() => {
+          return Boolean(document.querySelector('[role="dialog"], [data-pagelet*="MediaViewer"]'));
+        });
       } catch (e) {}
     }
 
     if (!photoOpened) {
       photoOpened = await imagePage.evaluate(() => {
         const postContainers = Array.from(
-          document.querySelectorAll('div[role="article"], div[data-pagelet*="FeedUnit"], div[role="main"]')
+          document.querySelectorAll('div[role="dialog"] div[role="article"], div[role="article"], div[data-pagelet*="FeedUnit"], div[role="main"]')
         );
         const container = postContainers[0] || document.body;
 
@@ -1447,6 +1462,8 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
       // Step 8: Detect End of Gallery / Duplicates (Loop detection)
       if (seenHashes.has(sha256) || seenUrls.has(imageResource.source_url)) {
         console.log('[IMAGE] Duplicate image detected');
+        console.log('[IMAGE] First image detected again');
+        console.log('[IMAGE] STOP');
         console.log('[IMAGE] Gallery complete');
         isFinished = true;
         break;
