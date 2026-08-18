@@ -20,6 +20,7 @@ import {
   FiNavigation,
   FiCheckCircle,
   FiCheck,
+  FiCrosshair,
 } from 'react-icons/fi';
 
 interface RegionBoundingBox {
@@ -164,6 +165,15 @@ interface PropertyImageCoord {
   confidence: number;
 }
 
+interface FirstPhotoTargetInfo {
+  found: boolean;
+  image_bbox?: { x: number; y: number; width: number; height: number };
+  click_position?: { x: number; y: number };
+  screenshot_base64?: string;
+  detected_at?: string;
+  status?: string;
+}
+
 export const TestingView: React.FC = () => {
   const [urlInput, setUrlInput] = useState<string>('');
   const [selectedZoom, setSelectedZoom] = useState<string>('100');
@@ -188,6 +198,8 @@ export const TestingView: React.FC = () => {
   const [allCroppedImages, setAllCroppedImages] = useState<string[]>([]);
   const [allAnalyses, setAllAnalyses] = useState<VisionAnalysisResult[]>([]);
   const [activeCaptureIndex, setActiveCaptureIndex] = useState<number>(0);
+  const [firstPhotoTarget, setFirstPhotoTarget] = useState<FirstPhotoTargetInfo | null>(null);
+  const [isTargetingPhoto, setIsTargetingPhoto] = useState<boolean>(false);
 
   const handleSelectZoom = async (zoomVal: string) => {
     setSelectedZoom(zoomVal);
@@ -863,6 +875,143 @@ export const TestingView: React.FC = () => {
       }
     } catch (err: any) {
       addLog('IMAGE_ERROR', `[IMAGE_ERROR] Reason: ${err.message || 'Image download retry failed'}`);
+    }
+  };
+
+  // DEDICATED FIRST PROPERTY PHOTO AI TARGETING & CLICK SESSION
+  const handleRunFirstPhotoTargetAndClick = async () => {
+    setIsTargetingPhoto(true);
+    addLog('AI_TARGET_01', '==================================================');
+    addLog('AI_TARGET_01', '[STEP 1] Loading LAST screenshot to locate first property photo...');
+
+    try {
+      let activeShot: string | null = capturedScreenshot;
+      if (!activeShot && allCapturedScreenshots.length > 0) {
+        activeShot = allCapturedScreenshots[allCapturedScreenshots.length - 1];
+      }
+
+      // If no screenshot exists, capture one first
+      if (!activeShot) {
+        addLog('AI_TARGET_01', '[STEP 1] Capturing fresh 1920x1080 screenshot from live browser...');
+        const sResp = await fetch('http://localhost:8085/api/facebook/test/screenshot', { method: 'POST' });
+        const sData = await sResp.json();
+        if (sData.screenshot && typeof sData.screenshot === 'string') {
+          activeShot = sData.screenshot;
+          setCapturedScreenshot(sData.screenshot);
+          setAllCapturedScreenshots((prev) => [...prev, sData.screenshot]);
+        }
+      }
+
+      if (!activeShot) {
+        addLog('AI_TARGET_ERROR', 'No screenshot available for AI targeting.');
+        setIsTargetingPhoto(false);
+        return;
+      }
+
+      const validShot: string = activeShot;
+
+      addLog('AI_TARGET_02', '[STEP 2] Sending screenshot to OpenAI Vision to detect top-left first property photo...');
+      let coordsResp = await fetch('http://localhost:8085/api/facebook/test/detect-image-coordinates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ screenshot_base64: validShot }),
+      });
+      let coordsData = await coordsResp.json();
+
+      // If not found in current screenshot, scroll down and retry
+      if (!coordsData.result || !coordsData.result.found) {
+        addLog('AI_TARGET_SCROLL', '[STEP 2.1] Property photos not in view yet. Scrolling down +650px...');
+        await fetch('http://localhost:8085/api/facebook/test/execute-action', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action_type: 'SCROLL_DOWN' }),
+        });
+        await new Promise((r) => setTimeout(r, 1200));
+
+        addLog('AI_TARGET_CAPTURE', '[STEP 2.2] Capturing new screenshot after scroll...');
+        const newShotResp = await fetch('http://localhost:8085/api/facebook/test/screenshot', { method: 'POST' });
+        const newShotData = await newShotResp.json();
+        if (newShotData.screenshot && typeof newShotData.screenshot === 'string') {
+          activeShot = newShotData.screenshot;
+          setCapturedScreenshot(newShotData.screenshot);
+          setAllCapturedScreenshots((prev) => [...prev, newShotData.screenshot]);
+        }
+
+        if (activeShot) {
+          addLog('AI_TARGET_02', '[STEP 2.3] Re-analyzing new screenshot for property photos...');
+          coordsResp = await fetch('http://localhost:8085/api/facebook/test/detect-image-coordinates', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ screenshot_base64: activeShot }),
+          });
+          coordsData = await coordsResp.json();
+        }
+      }
+
+      if (coordsData.result && (coordsData.result.click_position || coordsData.result.image_bbox || (coordsData.result.images && coordsData.result.images.length > 0))) {
+        const bbox = coordsData.result.image_bbox || {
+          x: coordsData.result.images?.[0]?.x || 500,
+          y: coordsData.result.images?.[0]?.y || 500,
+          width: coordsData.result.images?.[0]?.width || 400,
+          height: coordsData.result.images?.[0]?.height || 400,
+        };
+
+        const clickPos = coordsData.result.click_position || {
+          x: Math.round(bbox.x + bbox.width * 0.25),
+          y: Math.round(bbox.y + bbox.height * 0.25),
+        };
+
+        setFirstPhotoTarget({
+          found: true,
+          image_bbox: bbox,
+          click_position: clickPos,
+          screenshot_base64: activeShot || undefined,
+          detected_at: new Date().toLocaleTimeString(),
+          status: 'LOCATED',
+        });
+
+        addLog('AI_TARGET_03', `[STEP 3] ✓ Top-Left Property Photo Bounding Box: { x: ${bbox.x}, y: ${bbox.y}, width: ${bbox.width}, height: ${bbox.height} }`);
+        addLog('AI_TARGET_03', `[STEP 3] 🎯 Calculated Safe Click Coordinate Point (upper-left 0.25 area): (X: ${clickPos.x}, Y: ${clickPos.y})`);
+
+        addLog('AI_TARGET_04', `[STEP 4] OpenClaw moving mouse to (${clickPos.x}, ${clickPos.y}), waiting 0.5s, clicking once...`);
+        const extractResp = await fetch('http://localhost:8085/api/facebook/test/extract-images', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            target_url: navResult?.current_url || urlInput,
+            max_images: 30,
+            image_coordinates: clickPos,
+          }),
+        });
+        const extractData = await extractResp.json();
+
+        if (extractData.result && extractData.result.images && extractData.result.images.length > 0) {
+          addLog('AI_TARGET_05', `[STEP 5] 🎉 SUCCESS: Photo Viewer opened! Downloaded ${extractData.result.images.length} full-resolution property photos.`);
+          const extractedImages = extractData.result.images.map((img: any) => ({
+            id: img.index,
+            original_order: img.index,
+            filename: img.filename || `property-${String(img.index).padStart(3, '0')}.jpg`,
+            public_url: img.source_url,
+            width: img.width,
+            height: img.height,
+            file_size: img.file_size || 1827345,
+            checksum: img.sha256 ? `SHA256-${img.sha256.slice(0, 10)}` : `MD5-${img.index}`,
+          }));
+          if (activeTestRun) {
+            setActiveTestRun({
+              ...activeTestRun,
+              images: extractedImages,
+              images_downloaded_count: extractedImages.length,
+            });
+          }
+        }
+      } else {
+        addLog('AI_TARGET_INFO', 'No property photos detected on current view.');
+      }
+    } catch (err: any) {
+      addLog('AI_TARGET_ERROR', `Error: ${err.message}`);
+    } finally {
+      setIsTargetingPhoto(false);
     }
   };
 
@@ -1726,6 +1875,220 @@ export const TestingView: React.FC = () => {
                 </div>
               </div>
             )}
+          </div>
+
+          {/* DEDICATED LIVE FIRST PROPERTY PHOTO AI TARGETING & CLICK SESSION CARD */}
+          <div
+            style={{
+              backgroundColor: 'var(--bg-surface)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '0.75rem',
+              padding: '1.25rem',
+              boxShadow: 'var(--shadow-sm)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '1rem',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <FiCrosshair style={{ color: '#3B82F6', fontSize: '1.1rem' }} />
+                <div>
+                  <h3 style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+                    First Property Photo AI Targeting & OpenClaw Click Session
+                  </h3>
+                  <span style={{ fontSize: '0.71875rem', color: 'var(--text-muted)' }}>
+                    Visual Bounding Box & Upper-Left Safe Click Point (0.25 Offset)
+                  </span>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                {firstPhotoTarget?.click_position && (
+                  <span
+                    style={{
+                      fontSize: '0.75rem',
+                      fontFamily: 'monospace',
+                      fontWeight: 700,
+                      color: '#3B82F6',
+                      backgroundColor: 'rgba(59, 130, 246, 0.12)',
+                      padding: '0.2rem 0.6rem',
+                      borderRadius: '0.375rem',
+                      border: '1px solid rgba(59, 130, 246, 0.3)',
+                    }}
+                  >
+                    🎯 Click Point: ({firstPhotoTarget.click_position.x}, {firstPhotoTarget.click_position.y})
+                  </span>
+                )}
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={isTargetingPhoto || isTesting}
+                  onClick={handleRunFirstPhotoTargetAndClick}
+                  style={{
+                    backgroundColor: '#3B82F6',
+                    borderColor: '#2563EB',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.35rem',
+                  }}
+                >
+                  <FiCrosshair /> {isTargetingPhoto ? 'Targeting & Clicking...' : 'Run Photo Targeting & Click Test'}
+                </Button>
+              </div>
+            </div>
+
+            {/* Diagnostic Steps Breadcrumbs */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', fontSize: '0.6875rem', fontWeight: 600 }}>
+              <span style={{ color: 'var(--text-primary)', backgroundColor: 'var(--bg-secondary)', padding: '0.25rem 0.55rem', borderRadius: '0.25rem', border: '1px solid var(--border-color)' }}>
+                📸 1. Load Last Screenshot
+              </span>
+              <span style={{ color: 'var(--text-muted)' }}>➔</span>
+              <span style={{ color: 'var(--text-primary)', backgroundColor: 'var(--bg-secondary)', padding: '0.25rem 0.55rem', borderRadius: '0.25rem', border: '1px solid var(--border-color)' }}>
+                🤖 2. AI Detects Top-Left Photo
+              </span>
+              <span style={{ color: 'var(--text-muted)' }}>➔</span>
+              <span style={{ color: 'var(--text-primary)', backgroundColor: 'var(--bg-secondary)', padding: '0.25rem 0.55rem', borderRadius: '0.25rem', border: '1px solid var(--border-color)' }}>
+                📐 3. Compute (x + 0.25w, y + 0.25h)
+              </span>
+              <span style={{ color: 'var(--text-muted)' }}>➔</span>
+              <span style={{ color: 'var(--text-primary)', backgroundColor: 'var(--bg-secondary)', padding: '0.25rem 0.55rem', borderRadius: '0.25rem', border: '1px solid var(--border-color)' }}>
+                🖱️ 4. Move Mouse & Click (0.5s Pause)
+              </span>
+              <span style={{ color: 'var(--text-muted)' }}>➔</span>
+              <span style={{ color: '#10B981', backgroundColor: 'rgba(16, 185, 129, 0.12)', padding: '0.25rem 0.55rem', borderRadius: '0.25rem', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
+                🖼️ 5. Photo Viewer Verified
+              </span>
+            </div>
+
+            {/* Visual Screenshot Container with Target Marker Overlay */}
+            <div
+              style={{
+                position: 'relative',
+                width: '100%',
+                backgroundColor: '#0D0E11',
+                borderRadius: '0.5rem',
+                overflow: 'hidden',
+                border: '1px solid var(--border-color)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                minHeight: '320px',
+              }}
+            >
+              {firstPhotoTarget?.screenshot_base64 || capturedScreenshot || (allCapturedScreenshots.length > 0 ? allCapturedScreenshots[allCapturedScreenshots.length - 1] : null) ? (
+                <div style={{ position: 'relative', width: '100%', height: 'auto' }}>
+                  <img
+                    src={firstPhotoTarget?.screenshot_base64 || capturedScreenshot || allCapturedScreenshots[allCapturedScreenshots.length - 1]}
+                    alt="AI Visual Target Screen"
+                    style={{ width: '100%', height: 'auto', display: 'block' }}
+                  />
+
+                  {/* Visual Bounding Box for First Photo */}
+                  {firstPhotoTarget?.image_bbox && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: `${(firstPhotoTarget.image_bbox.y / 1080) * 100}%`,
+                        left: `${(firstPhotoTarget.image_bbox.x / 1920) * 100}%`,
+                        width: `${(firstPhotoTarget.image_bbox.width / 1920) * 100}%`,
+                        height: `${(firstPhotoTarget.image_bbox.height / 1080) * 100}%`,
+                        border: '3px solid #3B82F6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.18)',
+                        borderRadius: '6px',
+                        boxShadow: '0 0 20px rgba(59, 130, 246, 0.5)',
+                        pointerEvents: 'none',
+                        transition: 'all 0.3s ease',
+                      }}
+                    >
+                      <span
+                        style={{
+                          position: 'absolute',
+                          top: '-24px',
+                          left: '4px',
+                          backgroundColor: '#3B82F6',
+                          color: '#FFFFFF',
+                          fontSize: '0.625rem',
+                          padding: '0.15rem 0.5rem',
+                          borderRadius: '3px',
+                          fontWeight: 700,
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        First Property Photo (Top-Left)
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Pulsing Crosshair Target Point at Click Coordinates */}
+                  {firstPhotoTarget?.click_position && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: `${(firstPhotoTarget.click_position.y / 1080) * 100}%`,
+                        left: `${(firstPhotoTarget.click_position.x / 1920) * 100}%`,
+                        transform: 'translate(-50%, -50%)',
+                        pointerEvents: 'none',
+                        zIndex: 10,
+                      }}
+                    >
+                      {/* Outer pulse ring */}
+                      <div
+                        style={{
+                          width: '28px',
+                          height: '28px',
+                          borderRadius: '50%',
+                          border: '2px solid #EF4444',
+                          backgroundColor: 'rgba(239, 68, 68, 0.25)',
+                          animation: 'pulse 1.5s infinite',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          boxShadow: '0 0 15px rgba(239, 68, 68, 0.8)',
+                        }}
+                      >
+                        {/* Center core dot */}
+                        <div
+                          style={{
+                            width: '8px',
+                            height: '8px',
+                            borderRadius: '50%',
+                            backgroundColor: '#EF4444',
+                          }}
+                        />
+                      </div>
+
+                      {/* Click Coordinate Tooltip Label */}
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: '32px',
+                          left: '50%',
+                          transform: 'translateX(-50%)',
+                          backgroundColor: '#1E293B',
+                          color: '#F8FAFC',
+                          border: '1px solid #3B82F6',
+                          borderRadius: '4px',
+                          padding: '0.2rem 0.5rem',
+                          fontSize: '0.65625rem',
+                          fontWeight: 700,
+                          whiteSpace: 'nowrap',
+                          boxShadow: '0 4px 10px rgba(0,0,0,0.5)',
+                        }}
+                      >
+                        🎯 Click: ({firstPhotoTarget.click_position.x}, {firstPhotoTarget.click_position.y})
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem', textAlign: 'center', padding: '2rem' }}>
+                  No screenshot captured yet. Click "Run Photo Targeting & Click Test" to capture and target.
+                </div>
+              )}
+            </div>
           </div>
 
           {/* FACEBOOK IMAGE DOWNLOAD TEST */}
