@@ -1,12 +1,18 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { chromium } = require('playwright');
 
 const PORT = 9223;
 const PROFILES_DIR = process.env.BROWSER_PROFILES_DIR || '/data/browser-profiles';
 const SCREENSHOTS_DIR = path.join(PROFILES_DIR, '..', 'screenshots');
 fs.mkdirSync(SCREENSHOTS_DIR, { recursive: true });
+
+function generateImageHash(url, index = 0) {
+  if (!url) return `hash-${index}-${Date.now()}`;
+  return crypto.createHash('sha256').update(String(url)).digest('hex');
+}
 
 let currentBrowserContext = null;
 let currentBrowserPage = null;
