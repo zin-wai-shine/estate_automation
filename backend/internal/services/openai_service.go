@@ -1165,3 +1165,80 @@ If no property photo is visible on screen (e.g. only text visible or need to scr
 
 	return &result, nil
 }
+
+// TransformContentWithPrompt uses OpenAI to transform raw property listing content into a chosen format/template
+func (s *OpenAIService) TransformContentWithPrompt(ctx context.Context, rawContent string, promptInstructions string) (string, error) {
+	if strings.TrimSpace(rawContent) == "" {
+		return "", fmt.Errorf("raw content is empty")
+	}
+
+	if s.APIKey == "" {
+		return rawContent, nil
+	}
+
+	systemPrompt := `You are an expert real estate copywriter and content transformation engine.
+
+Your task is to take the provided RAW PROPERTY POST CONTENT and transform it according to the user's specific FORMATTING INSTRUCTIONS and TEMPLATE.
+
+CRITICAL RULES:
+1. PRESERVE ACCURACY: Keep all real estate factual details completely accurate (property name, prices, rents, deposit requirements, bedroom/bathroom counts, square meters, floor number, BTS/MRT stations, amenities, contact phone numbers, WhatsApp, and Line IDs).
+2. ADAPT TO FORMAT: Apply the requested style, tone, emoji placement, structure, call-to-action (CTA), and language requested in the instructions.
+3. HIGH ENGAGEMENT: Make the output clean, highly readable, engaging, and ready for publication.
+4. RETURN CLEAN CONTENT ONLY: Do not output markdown meta-explanations like "Here is your transformed copy:". Output ONLY the final transformed post text directly.`
+
+	userPrompt := fmt.Sprintf("FORMAT INSTRUCTIONS & TEMPLATE:\n%s\n\nRAW EXTRACTED PROPERTY CONTENT:\n%s", promptInstructions, rawContent)
+
+	reqBody := map[string]interface{}{
+		"model": s.Model,
+		"messages": []map[string]interface{}{
+			{
+				"role":    "system",
+				"content": systemPrompt,
+			},
+			{
+				"role":    "user",
+				"content": userPrompt,
+			},
+		},
+		"temperature": 0.4,
+		"max_tokens":  2500,
+	}
+
+	jsonBytes, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.openai.com/v1/chat/completions", bytes.NewBuffer(jsonBytes))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", s.APIKey))
+
+	resp, err := s.Client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("OPENAI_TRANSFORM_FAILED: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	var openAIResp struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+
+	if err := json.Unmarshal(respBytes, &openAIResp); err != nil || len(openAIResp.Choices) == 0 {
+		return "", fmt.Errorf("invalid response from OpenAI: %w", err)
+	}
+
+	return strings.TrimSpace(openAIResp.Choices[0].Message.Content), nil
+}

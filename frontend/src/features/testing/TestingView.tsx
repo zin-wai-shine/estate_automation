@@ -23,6 +23,8 @@ import {
   FiCrosshair,
   FiTrash2,
   FiRotateCcw,
+  FiCopy,
+  FiEdit2,
 } from 'react-icons/fi';
 
 interface RegionBoundingBox {
@@ -203,6 +205,53 @@ export const TestingView: React.FC = () => {
   const [firstPhotoTarget, setFirstPhotoTarget] = useState<FirstPhotoTargetInfo | null>(null);
   const [isTargetingPhoto, setIsTargetingPhoto] = useState<boolean>(false);
   const [photoTargetMode, setPhotoTargetMode] = useState<'auto' | 'manual'>('auto');
+
+  // AI Content Transformation State
+  const promptTemplates = [
+    {
+      id: 'facebook_rent',
+      name: 'Facebook Rental Listing Copy (Thai/English)',
+      category: 'Facebook Rent',
+      instructions:
+        'Generate an attractive, structured Facebook real estate rental listing in Thai with key English highlights. Include high-converting title, price, location, room specifications, BTS/MRT landmarks, amenities, and Line ID / WhatsApp CTA.',
+    },
+    {
+      id: 'facebook_sale',
+      name: 'Facebook Property Sale Copy Template',
+      category: 'Facebook Sale',
+      instructions:
+        'Write a professional, high-converting Facebook sales copy for property investment. Highlight investment yield, BTS access, selling price, ownership transfer fee terms, and direct agent contact CTA.',
+    },
+    {
+      id: 'tiktok_script',
+      name: 'TikTok Short Video Script & Hook Generator',
+      category: 'TikTok Script',
+      instructions:
+        'Create a viral 15-30 second TikTok video script for this property listing. Start with a high-curiosity 3-second hook, deliver 3 visual highlights (room, view, amenities), and conclude with clear Line ID CTA.',
+    },
+    {
+      id: 'english_expat',
+      name: 'English Translation & Expat Listing Format',
+      category: 'English Expat',
+      instructions:
+        'Translate and refine this Thai real estate post into flawless, professional English tailored for expats and international tenants. Preserve all precise prices, condo specs, and contact details.',
+    },
+    {
+      id: 'bullet_specs',
+      name: 'Clean Structured Bullet Specs (Quick Overview)',
+      category: 'Bullet Specs',
+      instructions:
+        'Extract all property specifications and format them into clean, structured bullet points: Project Name, Type, Floor, Size (sqm), Beds/Baths, Rent/Sale Price, Deposit Terms, Facilities, Nearby Locations, and Contact Information.',
+    },
+  ];
+
+  const [selectedPromptId, setSelectedPromptId] = useState<string>('facebook_rent');
+  const [transformedContent, setTransformedContent] = useState<string>('');
+  const [isTransforming, setIsTransforming] = useState<boolean>(false);
+  const [isPromptDropdownOpen, setIsPromptDropdownOpen] = useState<boolean>(false);
+  const [isCopiedRaw, setIsCopiedRaw] = useState<boolean>(false);
+  const [isCopiedTransformed, setIsCopiedTransformed] = useState<boolean>(false);
+  const [isEditingTransformed, setIsEditingTransformed] = useState<boolean>(false);
 
   const handleSelectZoom = async (zoomVal: string) => {
     setSelectedZoom(zoomVal);
@@ -1006,6 +1055,45 @@ export const TestingView: React.FC = () => {
     }
   };
 
+  // AI CONTENT TRANSFORMATION HANDLER
+  const handleTransformContent = async (overridePromptId?: string, overrideRawText?: string) => {
+    const promptId = overridePromptId || selectedPromptId;
+    const chosenTemplate = promptTemplates.find((t) => t.id === promptId) || promptTemplates[0];
+
+    const rawText = overrideRawText || activeTestRun?.extracted_content || '';
+    if (!rawText.trim()) {
+      addLog('TRANSFORM_WARN', 'No extracted content available to transform.');
+      return;
+    }
+
+    setIsTransforming(true);
+    addLog('TRANSFORM_START', `✨ Transforming content with prompt: "${chosenTemplate.name}"...`);
+
+    try {
+      const resp = await fetch('http://localhost:8085/api/facebook/test/transform-content', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          raw_content: rawText,
+          template_name: chosenTemplate.name,
+          prompt_instructions: chosenTemplate.instructions,
+        }),
+      });
+
+      const data = await resp.json();
+      if (data.status === 'success' && data.transformed_content) {
+        setTransformedContent(data.transformed_content);
+        addLog('TRANSFORM_SUCCESS', `✓ Content transformed successfully into "${chosenTemplate.name}" (${data.character_count} chars)`);
+      } else {
+        addLog('TRANSFORM_ERROR', `Transformation failed: ${data.message || 'Unknown error'}`);
+      }
+    } catch (err: any) {
+      addLog('TRANSFORM_ERROR', `Transformation network error: ${err.message}`);
+    } finally {
+      setIsTransforming(false);
+    }
+  };
+
   // CLEAN ALL / RESET TEST PIPELINE FOR NEW RUN
   const handleCleanAll = () => {
     setUrlInput('');
@@ -1027,7 +1115,12 @@ export const TestingView: React.FC = () => {
     setActiveCaptureIndex(0);
     setFirstPhotoTarget(null);
     setIsTargetingPhoto(false);
-    addLog('RESET', '🧹 All test data, screenshots, analyses, and inputs cleared. Ready for next test.');
+    setTransformedContent('');
+    setIsTransforming(false);
+    setIsEditingTransformed(false);
+    setIsCopiedRaw(false);
+    setIsCopiedTransformed(false);
+    addLog('RESET', '🧹 All test data, screenshots, analyses, inputs, and transformed content cleared. Ready for next test.');
   };
 
   const handleStopTest = () => {
@@ -2329,6 +2422,347 @@ export const TestingView: React.FC = () => {
                 No target post images extracted yet. Click "Run Full Test" to execute content and image extraction.
               </div>
             )}
+          </div>
+
+          {/* AI CONTENT TRANSFORMATION & PROMPT FORMATTER SESSION */}
+          <div
+            style={{
+              backgroundColor: 'var(--bg-surface)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '0.75rem',
+              padding: '1.25rem',
+              boxShadow: 'var(--shadow-sm)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <FiZap style={{ color: '#8B5CF6', fontSize: '1.125rem' }} />
+                <div>
+                  <h3 style={{ fontSize: '0.90625rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+                    AI CONTENT TRANSFORMATION & PROMPT FORMATTER
+                  </h3>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: '0.15rem 0 0 0' }}>
+                    Transform raw extracted property details with custom prompt templates for multi-channel publishing.
+                  </p>
+                </div>
+              </div>
+
+              {/* Template Dropdown & Transform Button */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                <div style={{ position: 'relative' }}>
+                  <button
+                    type="button"
+                    onClick={() => setIsPromptDropdownOpen(!isPromptDropdownOpen)}
+                    disabled={isTransforming}
+                    style={{
+                      height: '34px',
+                      padding: '0 0.75rem',
+                      backgroundColor: 'var(--bg-secondary)',
+                      color: 'var(--text-primary)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: '0.5rem',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                      cursor: 'pointer',
+                      boxShadow: 'var(--shadow-sm)',
+                    }}
+                  >
+                    <span>{promptTemplates.find((t) => t.id === selectedPromptId)?.name || 'Select Prompt Format'}</span>
+                    <FiChevronDown style={{ color: 'var(--text-muted)' }} />
+                  </button>
+
+                  {isPromptDropdownOpen && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: 'calc(100% + 4px)',
+                        right: 0,
+                        width: '320px',
+                        backgroundColor: '#16181D',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '0.5rem',
+                        boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
+                        zIndex: 100,
+                        overflow: 'hidden',
+                        padding: '0.35rem',
+                      }}
+                    >
+                      {promptTemplates.map((template) => (
+                        <div
+                          key={template.id}
+                          onClick={() => {
+                            setSelectedPromptId(template.id);
+                            setIsPromptDropdownOpen(false);
+                          }}
+                          style={{
+                            padding: '0.5rem 0.65rem',
+                            borderRadius: '0.375rem',
+                            cursor: 'pointer',
+                            backgroundColor: selectedPromptId === template.id ? 'rgba(139, 92, 246, 0.15)' : 'transparent',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.2rem',
+                            marginBottom: '0.2rem',
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: selectedPromptId === template.id ? '#A78BFA' : 'var(--text-primary)' }}>
+                              {template.name}
+                            </span>
+                            {selectedPromptId === template.id && <FiCheck style={{ color: '#A78BFA', fontSize: '0.75rem' }} />}
+                          </div>
+                          <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                            {template.category}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <Button
+                  variant="primary"
+                  size="sm"
+                  leftIcon={isTransforming ? <FiLoader style={{ animation: 'spin 1s linear infinite' }} /> : <FiZap />}
+                  onClick={() => handleTransformContent()}
+                  disabled={isTransforming || !activeTestRun?.extracted_content}
+                  style={{
+                    backgroundColor: '#8B5CF6',
+                    borderColor: '#7C3AED',
+                    height: '34px',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    boxShadow: '0 2px 8px rgba(139, 92, 246, 0.3)',
+                  }}
+                >
+                  {isTransforming ? 'Transforming...' : 'Transform with AI'}
+                </Button>
+              </div>
+            </div>
+
+            {/* Side-by-Side 2-Column Grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1rem' }}>
+              {/* Left Column: Raw Extracted Post Content */}
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  backgroundColor: 'var(--bg-secondary)',
+                  borderRadius: '0.5rem',
+                  border: '1px solid var(--border-color)',
+                  overflow: 'hidden',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '0.65rem 0.875rem',
+                    borderBottom: '1px solid var(--border-color)',
+                    backgroundColor: 'rgba(255, 255, 255, 0.02)',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <FiFileText style={{ color: 'var(--text-secondary)', fontSize: '0.8125rem' }} />
+                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                      Raw Extracted Post Content
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                      {activeTestRun?.extracted_content?.length || 0} chars
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (activeTestRun?.extracted_content) {
+                          navigator.clipboard.writeText(activeTestRun.extracted_content);
+                          setIsCopiedRaw(true);
+                          setTimeout(() => setIsCopiedRaw(false), 2000);
+                        }
+                      }}
+                      style={{
+                        padding: '0.2rem 0.45rem',
+                        fontSize: '0.6875rem',
+                        borderRadius: '0.25rem',
+                        border: '1px solid var(--border-color)',
+                        backgroundColor: 'var(--bg-surface)',
+                        color: isCopiedRaw ? '#10B981' : 'var(--text-secondary)',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.25rem',
+                      }}
+                    >
+                      {isCopiedRaw ? <FiCheck /> : <FiCopy />}
+                      <span>{isCopiedRaw ? 'Copied' : 'Copy'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    padding: '0.875rem',
+                    fontSize: '0.78125rem',
+                    fontFamily: 'monospace',
+                    lineHeight: 1.6,
+                    color: 'var(--text-primary)',
+                    maxHeight: '340px',
+                    overflowY: 'auto',
+                    whiteSpace: 'pre-wrap',
+                    backgroundColor: '#0D0E11',
+                    minHeight: '180px',
+                  }}
+                >
+                  {activeTestRun?.extracted_content || (
+                    <span style={{ color: 'var(--text-muted)' }}>
+                      No raw content available yet. Run extraction pipeline to fetch post content.
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Right Column: AI Transformed Output */}
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  backgroundColor: 'var(--bg-secondary)',
+                  borderRadius: '0.5rem',
+                  border: '1px solid var(--border-color)',
+                  overflow: 'hidden',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '0.65rem 0.875rem',
+                    borderBottom: '1px solid var(--border-color)',
+                    backgroundColor: 'rgba(139, 92, 246, 0.05)',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <FiZap style={{ color: '#8B5CF6', fontSize: '0.8125rem' }} />
+                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#A78BFA' }}>
+                      AI Transformed Output
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    {transformedContent && (
+                      <span style={{ fontSize: '0.6875rem', color: '#A78BFA', fontFamily: 'monospace' }}>
+                        {transformedContent.length} chars
+                      </span>
+                    )}
+
+                    {transformedContent && (
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingTransformed(!isEditingTransformed)}
+                        style={{
+                          padding: '0.2rem 0.45rem',
+                          fontSize: '0.6875rem',
+                          borderRadius: '0.25rem',
+                          border: '1px solid var(--border-color)',
+                          backgroundColor: isEditingTransformed ? 'rgba(139, 92, 246, 0.2)' : 'var(--bg-surface)',
+                          color: isEditingTransformed ? '#A78BFA' : 'var(--text-secondary)',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.25rem',
+                        }}
+                      >
+                        <FiEdit2 />
+                        <span>{isEditingTransformed ? 'Done' : 'Edit'}</span>
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (transformedContent) {
+                          navigator.clipboard.writeText(transformedContent);
+                          setIsCopiedTransformed(true);
+                          setTimeout(() => setIsCopiedTransformed(false), 2000);
+                        }
+                      }}
+                      disabled={!transformedContent}
+                      style={{
+                        padding: '0.2rem 0.45rem',
+                        fontSize: '0.6875rem',
+                        borderRadius: '0.25rem',
+                        border: '1px solid var(--border-color)',
+                        backgroundColor: 'var(--bg-surface)',
+                        color: isCopiedTransformed ? '#10B981' : transformedContent ? '#A78BFA' : 'var(--text-muted)',
+                        cursor: transformedContent ? 'pointer' : 'default',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.25rem',
+                      }}
+                    >
+                      {isCopiedTransformed ? <FiCheck /> : <FiCopy />}
+                      <span>{isCopiedTransformed ? 'Copied' : 'Copy'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    padding: '0.875rem',
+                    fontSize: '0.78125rem',
+                    fontFamily: 'monospace',
+                    lineHeight: 1.6,
+                    color: 'var(--text-primary)',
+                    maxHeight: '340px',
+                    overflowY: 'auto',
+                    whiteSpace: 'pre-wrap',
+                    backgroundColor: '#0D0E11',
+                    minHeight: '180px',
+                    position: 'relative',
+                  }}
+                >
+                  {isTransforming ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: '160px', gap: '0.75rem', color: '#A78BFA' }}>
+                      <FiLoader style={{ fontSize: '1.5rem', animation: 'spin 1s linear infinite' }} />
+                      <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>
+                        Transforming content with {promptTemplates.find((t) => t.id === selectedPromptId)?.name}...
+                      </span>
+                    </div>
+                  ) : isEditingTransformed ? (
+                    <textarea
+                      rows={10}
+                      value={transformedContent}
+                      onChange={(e) => setTransformedContent(e.target.value)}
+                      style={{
+                        width: '100%',
+                        backgroundColor: 'transparent',
+                        color: 'var(--text-primary)',
+                        border: 'none',
+                        outline: 'none',
+                        fontSize: '0.78125rem',
+                        fontFamily: 'monospace',
+                        lineHeight: 1.6,
+                        resize: 'vertical',
+                      }}
+                    />
+                  ) : transformedContent ? (
+                    transformedContent
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: '160px', color: 'var(--text-muted)', textAlign: 'center', gap: '0.5rem' }}>
+                      <FiZap style={{ fontSize: '1.25rem', opacity: 0.5 }} />
+                      <span>Select a prompt format above and click "Transform with AI" to generate modified marketing copy.</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}

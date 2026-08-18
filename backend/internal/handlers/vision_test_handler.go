@@ -493,3 +493,43 @@ func GetVisionTestLogs(c *fiber.Ctx) error {
 		"logs":        logs,
 	})
 }
+
+type TransformContentRequest struct {
+	RawContent         string `json:"raw_content"`
+	TemplateName       string `json:"template_name"`
+	PromptInstructions string `json:"prompt_instructions"`
+}
+
+// TransformContent handles POST /api/facebook/test/transform-content
+func TransformContent(c *fiber.Ctx) error {
+	var req TransformContentRequest
+	if err := c.BodyParser(&req); err != nil || strings.TrimSpace(req.RawContent) == "" {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{
+			"status":     "error",
+			"error_code": "EMPTY_RAW_CONTENT",
+			"message":    "Raw property content is required for AI transformation",
+		})
+	}
+
+	instructions := strings.TrimSpace(req.PromptInstructions)
+	if instructions == "" {
+		instructions = "Format into an engaging, structured Facebook real estate rental/sale post with relevant emojis, clear bullet specs (Size, Beds/Baths, Price, Location, Amenities), and Line ID / WhatsApp CTA."
+	}
+
+	openAISvc := services.NewOpenAIService()
+	transformed, err := openAISvc.TransformContentWithPrompt(c.Context(), req.RawContent, instructions)
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+			"status":     "error",
+			"error_code": "TRANSFORMATION_FAILED",
+			"message":    fmt.Sprintf("Failed to transform content: %v", err),
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"status":              "success",
+		"template_name":       req.TemplateName,
+		"transformed_content": transformed,
+		"character_count":     len([]rune(transformed)),
+	})
+}
