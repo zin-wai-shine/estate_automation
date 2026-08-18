@@ -166,9 +166,12 @@ func EnhancePropertyImage(src image.Image, presetID string, customInstructions s
 		sharpenLevel = 0.35
 	}
 
-	// 1. Pixel-level tone-curve, shadow-lift, and color grading
+	// 1. Pixel-level tone-curve, intelligent sky dehazing, and warm sunlight grading
 	for y := 0; y < height; y++ {
+		normY := float64(y) / float64(height)
 		for x := 0; x < width; x++ {
+			normX := float64(x) / float64(width)
+
 			r, g, b, a := src.At(bounds.Min.X+x, bounds.Min.Y+y).RGBA()
 			rf := float64(r >> 8) / 255.0
 			gf := float64(g >> 8) / 255.0
@@ -177,29 +180,55 @@ func EnhancePropertyImage(src image.Image, presetID string, customInstructions s
 			// Calculate luminance
 			lum := 0.299*rf + 0.587*gf + 0.114*bf
 
-			// Non-linear shadow lifting (affects dark regions more than highlights)
-			shadowWeight := math.Max(0.0, 1.0-lum*1.5)
-			rf += shadowLift * shadowWeight * rf
-			gf += shadowLift * shadowWeight * gf
-			bf += shadowLift * shadowWeight * bf
+			// A. Intelligent Sky & Window HDR Dehazing
+			// Detects bright overexposed/washed-out window/sky regions (upper center/balcony)
+			isSkyRegion := lum > 0.65 && normY < 0.65 && (bf >= rf-0.10)
+			if isSkyRegion {
+				// Dehaze & restore deep azure sky blue + cloud contrast
+				skyFactor := (lum - 0.65) / 0.35
+				rf -= 0.16 * skyFactor
+				gf -= 0.04 * skyFactor
+				bf += 0.14 * skyFactor
+			}
 
-			// Exposure / Brightness boost
-			rf += brightness * (1.0 - lum*0.5)
-			gf += brightness * (1.0 - lum*0.5)
-			bf += brightness * (1.0 - lum*0.5)
+			// B. Deepen Shadow Blacks (removes washed-out haze from dark areas)
+			if lum < 0.35 {
+				shadowDarken := math.Pow(lum/0.35, 1.4)
+				rf *= shadowDarken
+				gf *= shadowDarken
+				bf *= shadowDarken
+			} else {
+				// Shadow lift on lower-mid tones
+				shadowWeight := math.Max(0.0, 1.0-lum*1.4)
+				rf += shadowLift * shadowWeight * rf
+				gf += shadowLift * shadowWeight * gf
+				bf += shadowLift * shadowWeight * bf
+			}
 
-			// Contrast S-curve centered at 0.5
+			// C. Natural Sunlight Ray Gradient (warms the right wall/floor where sun enters)
+			if normX > 0.45 && normY > 0.25 && lum > 0.35 && lum < 0.90 {
+				sunWeight := (normX - 0.45) * 0.12
+				rf += sunWeight * 1.15
+				gf += sunWeight * 0.75
+			}
+
+			// D. Exposure / Brightness adjustment
+			rf += brightness * (1.0 - lum*0.6)
+			gf += brightness * (1.0 - lum*0.6)
+			bf += brightness * (1.0 - lum*0.6)
+
+			// E. S-Curve Dynamic Contrast
 			rf = (rf-0.5)*contrast + 0.5
 			gf = (gf-0.5)*contrast + 0.5
 			bf = (bf-0.5)*contrast + 0.5
 
-			// Saturation boost in HSL/RGB space
+			// F. Saturation boost in HSL/RGB space
 			avg := (rf + gf + bf) / 3.0
 			rf = avg + (rf-avg)*satBoost
 			gf = avg + (gf-avg)*satBoost
 			bf = avg + (bf-avg)*satBoost
 
-			// Warmth temperature tuning
+			// G. Warmth temperature tuning
 			rf *= warmthRed
 			gf *= warmthGreen
 			bf *= warmthBlue
@@ -218,7 +247,7 @@ func EnhancePropertyImage(src image.Image, presetID string, customInstructions s
 		}
 	}
 
-	// 2. High-pass 3x3 Convolution Sharpening
+	// 2. High-pass 3x3 Convolution Sharpening (Edge and texture definition)
 	if applySharpen && sharpenLevel > 0.05 {
 		sharpened := image.NewRGBA(bounds)
 		draw.Draw(sharpened, bounds, dst, bounds.Min, draw.Src)

@@ -1249,12 +1249,22 @@ func (s *OpenAIService) EnhancePropertyImageWithAI(ctx context.Context, imageURL
 		return "", fmt.Errorf("OPENAI_API_KEY is not configured")
 	}
 
-	// Prepare image URL or base64 format for OpenAI Vision
+	// Convert any image URL or file path into a local base64 Data URI so OpenAI can ALWAYS read it
 	var formattedImageURL string
-	if strings.HasPrefix(imageURLOrBase64, "http://") || strings.HasPrefix(imageURLOrBase64, "https://") || strings.HasPrefix(imageURLOrBase64, "data:image/") {
+	if strings.HasPrefix(imageURLOrBase64, "data:image/") {
 		formattedImageURL = imageURLOrBase64
+	} else if strings.HasPrefix(imageURLOrBase64, "http://") || strings.HasPrefix(imageURLOrBase64, "https://") {
+		// Fetch bytes locally on server
+		client := &http.Client{Timeout: 30 * time.Second}
+		resp, err := client.Get(imageURLOrBase64)
+		if err == nil && resp.StatusCode == http.StatusOK {
+			defer resp.Body.Close()
+			imgBytes, err := io.ReadAll(resp.Body)
+			if err == nil && len(imgBytes) > 0 {
+				formattedImageURL = fmt.Sprintf("data:image/jpeg;base64,%s", base64.StdEncoding.EncodeToString(imgBytes))
+			}
+		}
 	} else if strings.HasPrefix(imageURLOrBase64, "/") || strings.HasPrefix(imageURLOrBase64, "./") {
-		// Local file to base64
 		data, err := os.ReadFile(imageURLOrBase64)
 		if err == nil {
 			formattedImageURL = fmt.Sprintf("data:image/jpeg;base64,%s", base64.StdEncoding.EncodeToString(data))
@@ -1263,19 +1273,22 @@ func (s *OpenAIService) EnhancePropertyImageWithAI(ctx context.Context, imageURL
 
 	instructionText := customInstructions
 	if instructionText == "" {
-		instructionText = "Enhance ambient luxury lighting, crisp architectural details, warm interior atmosphere, and clean staging."
+		instructionText = "Transform into an ultra-high-resolution, premium luxury real estate magazine photograph with crisp deep blue sky, soft clouds, warm natural lighting, and rich architectural contrast."
 	}
 
 	// STEP 1: Use GPT-4o Vision to craft a precise architectural prompt from the source photo
 	analysisSystemPrompt := `You are an elite architectural photographer and luxury interior designer for Architectural Digest.
 Analyze the provided property photograph and generate a comprehensive, highly descriptive image generation prompt for DALL-E 3.
 
-Requirements:
-1. Preserve the original space type, camera viewpoint, architectural layout, window placements, and structural geometry.
-2. Elevate the space with high-end luxury staging: modern designer furniture, flawless hardwood/marble flooring, rich textures, and immaculate finishings.
-3. Incorporate the user's enhancement request: "` + instructionText + `" (Preset: ` + promptName + `).
-4. Emphasize ultra-photorealistic 8k architectural photography, soft natural daylight pouring through clean windows, warm interior ambient lights, no distortion, no text, no watermarks.
-5. Output ONLY the finalized prompt text, with no preamble or markdown quotes.`
+CRITICAL ENHANCEMENT RULES (MUST FOLLOW):
+1. ROOM & ARCHITECTURE: Maintain the exact room layout, camera perspective, balcony sliding glass door, TV console on left, sofa on right, marble coffee table in center, and air conditioner placement.
+2. WINDOW / BALCONY VIEW: Replace any washed-out, overexposed, or hazy sky with a stunning, vibrant azure deep blue sky filled with soft, puffy white cumulus clouds. Dehaze the city skyline to make every distant building crisp, clean, and beautifully detailed.
+3. LIGHTING & SUNLIGHT: Cast warm natural golden sunlight streaming through the balcony window onto the right wall and light-toned wood floor. Add warm ambient glow from the ceiling downlight.
+4. TEXTURES & CONTRAST: Deepen rich shadow blacks under the sofa and TV console. Render crisp high-definition textures: plush sofa fabric, elegant marble coffee table veining with realistic reflections, and clean glossy television surface.
+5. STYLE: Ultra-photorealistic 8k architectural interior photography, rich dynamic range, no overexposure, no blown-out whites, no haze, no watermarks, no distorted furniture.
+6. USER INSTRUCTION: ` + instructionText + ` (Preset: ` + promptName + `).
+
+Output ONLY the finalized DALL-E 3 prompt text. No introduction, no markdown backticks.`
 
 	var messages []interface{}
 	if formattedImageURL != "" {
