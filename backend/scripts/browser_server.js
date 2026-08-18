@@ -1568,6 +1568,8 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
 
     let count = 0;
     let isFinished = false;
+    let firstImageUrl = null;
+    let firstImageHash = null;
 
     while (count < maxImages && !isFinished) {
       const imageResource = await getActiveViewerImage(15);
@@ -1577,21 +1579,40 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
         break;
       }
 
-      count++;
-      const sha256 = generateImageHash(imageResource.source_url, count);
+      const currentHash = generateImageHash(imageResource.source_url, count + 1);
 
-      if (seenHashes.has(sha256)) {
-        console.log(`[IMAGE] Duplicate image detected (${sha256.slice(0, 10)}). Carousel loop complete.`);
-        console.log('[IMAGE] Gallery complete');
-        isFinished = true;
-        break;
+      // Check if we arrived at the FIRST image again (completed full carousel loop)
+      if (count > 0 && firstImageHash) {
+        const isBackAtStart = currentHash === firstImageHash || imageResource.source_url === firstImageUrl;
+        if (isBackAtStart) {
+          console.log(`[IMAGE] Arrived at FIRST image again (${currentHash.slice(0, 10)}). All ${count} gallery photos downloaded!`);
+          console.log('[IMAGE] Gallery complete');
+          isFinished = true;
+          break;
+        }
       }
 
-      seenHashes.add(sha256);
+      // If we see an intermediate duplicate that isn't the first image, skip or log
+      if (seenUrls.has(imageResource.source_url)) {
+        console.log(`[IMAGE] Waiting for fresh photo transition (currently at seen image)...`);
+        // Retry Next action
+        await imagePage.keyboard.press('ArrowRight');
+        await imagePage.waitForTimeout(600);
+        continue;
+      }
+
+      count++;
+      seenHashes.add(currentHash);
       seenUrls.add(imageResource.source_url);
 
+      if (count === 1) {
+        firstImageUrl = imageResource.source_url;
+        firstImageHash = currentHash;
+        console.log(`[IMAGE] First image recorded: ${firstImageHash.slice(0, 10)}`);
+      }
+
       const filename = `property-${String(count).padStart(3, '0')}.jpg`;
-      console.log(`[IMAGE] Downloading image ${count}`);
+      console.log(`[IMAGE] Downloading image ${count} (${imageResource.width}x${imageResource.height})`);
 
       downloadedImages.push({
         index: count,
@@ -1600,7 +1621,7 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
         width: imageResource.width,
         height: imageResource.height,
         mime_type: 'image/jpeg',
-        sha256: sha256,
+        sha256: currentHash,
         source: 'facebook',
         download_status: 'success',
       });
@@ -1608,6 +1629,7 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
       console.log(`[IMAGE] Image ${count} saved`);
 
       if (count >= maxImages) {
+        console.log('[IMAGE] Maximum requested images reached');
         console.log('[IMAGE] Gallery complete');
         isFinished = true;
         break;
@@ -1646,7 +1668,7 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
       // Also click right side area if DOM selector didn't click
       if (!nextClicked) {
         const vp = imagePage.viewportSize() || { width: 1440, height: 900 };
-        await imagePage.mouse.click(Math.round(vp.width * 0.96), Math.round(vp.height * 0.5)).catch(() => {});
+        await imagePage.mouse.click(Math.round(vp.width * 0.94), Math.round(vp.height * 0.5)).catch(() => {});
       }
 
       // Dispatch keyboard ArrowRight
@@ -1654,7 +1676,7 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
 
       // 5. Wait for the photo to ACTUALLY transition to a different image
       let photoTransitioned = false;
-      for (let waitStep = 0; waitStep < 20; waitStep++) {
+      for (let waitStep = 0; waitStep < 25; waitStep++) {
         await imagePage.waitForTimeout(200);
         const activeNow = await getActiveViewerImage(1);
         if (activeNow && activeNow.source_url && activeNow.source_url !== prevUrl) {
@@ -1662,11 +1684,11 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
           break;
         }
 
-        // Retry next triggers at step 4 and step 8
-        if (waitStep === 4 || waitStep === 8) {
+        // Retry next triggers at step 4, 8, 12, 16
+        if (waitStep === 4 || waitStep === 8 || waitStep === 12 || waitStep === 16) {
           await imagePage.keyboard.press('ArrowRight');
           const vp = imagePage.viewportSize() || { width: 1440, height: 900 };
-          await imagePage.mouse.click(Math.round(vp.width * 0.96), Math.round(vp.height * 0.5)).catch(() => {});
+          await imagePage.mouse.click(Math.round(vp.width * 0.94), Math.round(vp.height * 0.5)).catch(() => {});
         }
       }
 
@@ -1678,6 +1700,16 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
       }
 
       await imagePage.waitForTimeout(300);
+    }
+
+    // Close browser when complete as requested
+    console.log('[IMAGE] Closing browser after completing photo gallery download');
+    if (currentBrowserContext) {
+      try {
+        await currentBrowserContext.close();
+      } catch (e) {}
+      currentBrowserContext = null;
+      currentBrowserPage = null;
     }
   } catch (err) {
     console.error(`[IMAGE] Error during image download: ${err.message}`);
