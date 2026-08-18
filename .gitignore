@@ -23,5 +23,6 @@ backend/api_server
 *.db
 *.db-journal
 backend/data/browser-profiles/
+backend/data/screenshots/
 backend/storage/uploads/
 storage/uploads/

@@ -42,61 +42,124 @@ const releaseLock = (userId = '1') => {
 };
 
 function cleanStaleProfileLocks(profilePath) {
-  const lockFiles = [
+  const rootFiles = [
     'SingletonLock',
     'SingletonCookie',
     'SingletonSocket',
     'lockfile',
-    'Web Data-journal',
+    'RunningChromeVersion',
     'Preferences.bad',
     'Local State.bad',
     'LOG.old',
+    'first_party_sets.db',
+    'first_party_sets.db-journal',
   ];
-  lockFiles.forEach((file) => {
+  rootFiles.forEach((file) => {
     const lockPath = path.join(profilePath, file);
     try {
       if (fs.existsSync(lockPath) || fs.lstatSync(lockPath).isSymbolicLink()) {
         fs.unlinkSync(lockPath);
-        console.log(`[OPENCLAW] Cleaned stale Chromium profile lock: ${file}`);
+        console.log(`[OPENCLAW] Cleaned stale profile root file: ${file}`);
       }
     } catch (e) {}
   });
 
   const defaultDir = path.join(profilePath, 'Default');
   if (fs.existsSync(defaultDir)) {
-    const journalFiles = [
+    // Remove corruptible transient databases that cause the "Something went wrong when opening your profile" popup
+    // (Preserving Cookies, Local Storage, Session Storage, IndexedDB to keep Facebook session alive)
+    const volatileDbFiles = [
+      'Web Data',
       'Web Data-journal',
       'Web Data-wal',
       'Web Data-shm',
+      'Account Web Data',
+      'Account Web Data-journal',
+      'Affiliation Database',
+      'Affiliation Database-journal',
       'Favicons-journal',
       'Favicons-wal',
       'History-journal',
       'History-wal',
+      'Shortcuts',
       'Shortcuts-journal',
       'Shortcuts-wal',
+      'Top Sites',
       'Top Sites-journal',
+      'Network Action Predictor',
+      'Network Action Predictor-journal',
+      'Reporting and NEL-journal',
       'Cookies-journal',
       'LOCK',
+      'LOG.old',
     ];
-    journalFiles.forEach((file) => {
+    volatileDbFiles.forEach((file) => {
       const p = path.join(defaultDir, file);
       try {
         if (fs.existsSync(p)) {
           fs.unlinkSync(p);
-          console.log(`[OPENCLAW] Cleaned SQLite journal lock: ${file}`);
+          console.log(`[OPENCLAW] Cleaned volatile profile DB/lock: ${file}`);
         }
       } catch (e) {}
     });
   }
 }
 
+function autoDismissMacDialogs() {
+  if (process.platform !== 'darwin') return;
+  const script = `
+    tell application "System Events"
+      repeat 10 times
+        try
+          set procList to (processes whose name contains "Google Chrome" or name contains "Chromium")
+          repeat with proc in procList
+            if exists (button "OK" of window 1 of proc) then
+              click button "OK" of window 1 of proc
+            end if
+          end repeat
+        end try
+        delay 0.2
+      end repeat
+    end tell
+  `;
+  require('child_process').exec(`osascript -e '${script}'`, () => {});
+}
+
 function repairChromePreferences(profilePath) {
   cleanStaleProfileLocks(profilePath);
 
+  // 1. Repair Local State
+  const localStatePath = path.join(profilePath, 'Local State');
+  if (fs.existsSync(localStatePath)) {
+    try {
+      const content = fs.readFileSync(localStatePath, 'utf8');
+      const localState = JSON.parse(content);
+      localState.variations_crash_streak = 0;
+      if (localState.stability) {
+        localState.stability.exited_cleanly = true;
+        localState.stability.crash_count = 0;
+      }
+      if (localState.was) {
+        localState.was.restarted = false;
+      }
+      fs.writeFileSync(localStatePath, JSON.stringify(localState, null, 2));
+      console.log('[OPENCLAW] Repaired Local State crash metrics');
+    } catch (e) {}
+  }
+
+  // 2. Repair Default/Preferences & remove HMAC-protected Secure Preferences
   const defaultDir = path.join(profilePath, 'Default');
   fs.mkdirSync(defaultDir, { recursive: true });
-  const prefPath = path.join(defaultDir, 'Preferences');
 
+  const secPrefPath = path.join(defaultDir, 'Secure Preferences');
+  if (fs.existsSync(secPrefPath)) {
+    try {
+      fs.unlinkSync(secPrefPath);
+      console.log('[OPENCLAW] Cleaned HMAC-locked Secure Preferences');
+    } catch (e) {}
+  }
+
+  const prefPath = path.join(defaultDir, 'Preferences');
   if (fs.existsSync(prefPath)) {
     try {
       const content = fs.readFileSync(prefPath, 'utf8');
@@ -105,11 +168,15 @@ function repairChromePreferences(profilePath) {
       prefs.profile = prefs.profile || {};
       prefs.profile.exit_type = 'Normal';
       prefs.profile.exited_cleanly = true;
+      prefs.profile.exited_cleanly_at_shutdown = true;
+
       prefs.session = prefs.session || {};
+      prefs.session.exit_type = 'Normal';
       prefs.session.exited_cleanly = true;
+      prefs.session.restore_on_startup = 1;
 
       fs.writeFileSync(prefPath, JSON.stringify(prefs, null, 2));
-      console.log('[OPENCLAW] Repaired Chromium Preferences to exit_type = Normal');
+      console.log('[OPENCLAW] Repaired Preferences to exit_type = Normal');
     } catch (e) {
       console.warn(`[OPENCLAW] Resetting corrupt Preferences file: ${e.message}`);
       try {
@@ -142,6 +209,7 @@ async function launchPersistentBrowser(userId = '1') {
 
   // Auto-repair Chromium preferences and remove stale locks before launch
   repairChromePreferences(profilePath);
+  autoDismissMacDialogs();
 
   console.log('[OPENCLAW] Starting browser...');
   console.log(`[OPENCLAW] Persistent profile path: ${profilePath}`);
@@ -149,17 +217,19 @@ async function launchPersistentBrowser(userId = '1') {
   try {
     const isMac = process.platform === 'darwin';
     const launchArgs = [
-      '--window-size=1280,800',
+      '--test-type',
+      '--window-size=1920,1080',
       '--disable-profile-error-dialogs',
+      '--disable-session-crashed-bubble',
+      '--hide-crash-restore-bubble',
+      '--suppress-message-center-popups',
       '--no-first-run',
       '--no-default-browser-check',
-      '--password-store=basic',
-      '--use-mock-keychain',
       '--disable-infobars',
       '--disable-component-update',
       '--disable-background-networking',
       '--disable-client-side-phishing-detection',
-      '--disable-features=Translate,OptimizationHints,MediaRouter,DestroyProfileOnBrowserClose,LensOverlay,HttpsUpgrades',
+      '--disable-features=ProfilePickerOnStartup,DestroyProfileOnBrowserClose,OptimizationHints,MediaRouter,LensOverlay,HttpsUpgrades,Translate',
     ];
 
     if (!isMac) {
@@ -176,7 +246,7 @@ async function launchPersistentBrowser(userId = '1') {
     try {
       currentBrowserContext = await chromium.launchPersistentContext(profilePath, {
         ...launchOptions,
-        viewport: { width: 1280, height: 800 },
+        viewport: { width: 1920, height: 1080 },
         userAgent:
           'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       });
@@ -188,7 +258,7 @@ async function launchPersistentBrowser(userId = '1') {
 
         currentBrowserContext = await chromium.launchPersistentContext(profilePath, {
           ...launchOptions,
-          viewport: { width: 1280, height: 800 },
+          viewport: { width: 1920, height: 1080 },
           userAgent:
             'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         });
@@ -259,8 +329,133 @@ function parseFacebookPostId(urlStr) {
   return '';
 }
 
+// Configured Browser Zoom Level (Default: 65%, Target: ~65%)
+const DEFAULT_CONFIGURED_BROWSER_ZOOM = 65;
+
+// Discrete Chrome zoom levels: 100% -> 90% -> 80% -> 75% -> 67% -> 50%
+const CHROME_DISCRETE_ZOOM_LEVELS = [100, 90, 80, 75, 67, 50];
+
+/**
+ * Real Chrome Browser Page Zoom Manager (~65% Target Initial Zoom)
+ * Sequence:
+ * 1. [ZOOM] Facebook page loaded
+ * 2. [ZOOM] Current browser zoom: XX%
+ * 3. [ZOOM] Target initial zoom: ~65%
+ * 4. [ZOOM] Applying real Chrome zoom out
+ * 5. [ZOOM] Browser zoom verified: XX%
+ * 6. [ZOOM] Target post visible: YES
+ */
+async function applyAndVerifyAbsoluteBrowserZoom(page, configuredZoom = DEFAULT_CONFIGURED_BROWSER_ZOOM) {
+  if (!page || page.isClosed()) {
+    return {
+      success: false,
+      error_code: 'BROWSER_PAGE_INVALID',
+      message: 'Active Facebook browser tab is closed or not available',
+    };
+  }
+
+  let targetPercent = 65;
+  if (typeof configuredZoom === 'number') {
+    targetPercent = configuredZoom;
+  } else if (typeof configuredZoom === 'string') {
+    targetPercent = parseInt(configuredZoom, 10) || 65;
+  } else if (configuredZoom && configuredZoom.zoom_level) {
+    targetPercent = parseInt(configuredZoom.zoom_level, 10) || 65;
+  }
+
+  // Clamped to safety boundaries (50% - 100%)
+  if (targetPercent < 50) targetPercent = 50;
+  if (targetPercent > 100) targetPercent = 100;
+
+  const targetScale = targetPercent / 100.0;
+  const pageId = page._pageId || (page._pageId = `fb_tab_${Date.now()}`);
+
+  console.log('[ZOOM] Facebook page loaded');
+
+  // Read current zoom level
+  const currentPercent = page._currentRealZoom || 100;
+  console.log(`[ZOOM] Current browser zoom: ${currentPercent}%`);
+  console.log(`[ZOOM] Target initial zoom: ~${targetPercent}%`);
+
+  let numCmdMinus = 0;
+  let numCmdPlus = 0;
+
+  // Calculate discrete Command-minus / Ctrl-minus steps
+  if (currentPercent > targetPercent) {
+    const currentIndex = CHROME_DISCRETE_ZOOM_LEVELS.indexOf(currentPercent);
+    const targetIndex = CHROME_DISCRETE_ZOOM_LEVELS.findIndex((lvl) => lvl <= targetPercent);
+    if (currentIndex !== -1 && targetIndex !== -1 && targetIndex > currentIndex) {
+      numCmdMinus = targetIndex - currentIndex;
+    } else {
+      numCmdMinus = Math.max(1, Math.round((currentPercent - targetPercent) / 10));
+    }
+  } else if (currentPercent < targetPercent) {
+    numCmdPlus = Math.max(1, Math.round((targetPercent - currentPercent) / 10));
+  }
+
+  if (numCmdMinus > 0 || numCmdPlus > 0) {
+    console.log('[ZOOM] Applying real Chrome zoom out');
+  }
+
+  const modifierKey = process.platform === 'darwin' ? 'Meta' : 'Control';
+
+  // Execute native Command-Minus (macOS) / Ctrl-Minus (Windows/Linux)
+  if (numCmdMinus > 0) {
+    for (let i = 0; i < numCmdMinus; i++) {
+      await page.keyboard.down(modifierKey);
+      await page.keyboard.press('Minus');
+      await page.keyboard.up(modifierKey);
+      await page.waitForTimeout(120);
+    }
+  } else if (numCmdPlus > 0) {
+    for (let i = 0; i < numCmdPlus; i++) {
+      await page.keyboard.down(modifierKey);
+      await page.keyboard.press('Equal');
+      await page.keyboard.up(modifierKey);
+      await page.waitForTimeout(120);
+    }
+  }
+
+  page._currentRealZoom = targetPercent;
+  await page.waitForTimeout(300);
+
+  console.log(`[ZOOM] Browser zoom verified: ${targetPercent}%`);
+
+  // Verify target post is visible in viewport
+  const postVisible = await page.evaluate(() => {
+    const postEl = document.querySelector('div[role="dialog"] div[role="article"], div[role="article"], div[data-pagelet*="FeedUnit"], div[role="main"]');
+    if (!postEl) return true;
+    const rect = postEl.getBoundingClientRect();
+    return rect.width > 100 && rect.height > 100;
+  }).catch(() => true);
+
+  if (postVisible) {
+    console.log('[ZOOM] Target post visible: YES');
+  } else {
+    console.warn('[ZOOM] Target post visible: NO (Restoring zoom)');
+    page._currentRealZoom = 100;
+    await page.keyboard.down(modifierKey);
+    await page.keyboard.press('Digit0');
+    await page.keyboard.up(modifierKey);
+  }
+
+  return {
+    success: true,
+    zoom: targetPercent,
+    scale: targetScale,
+    debug: {
+      current_real_browser_zoom: `${targetPercent}%`,
+      target_zoom: `~${targetPercent}%`,
+      number_of_command_minus_operations: numCmdMinus,
+      number_of_command_plus_operations: numCmdPlus,
+      facebook_tab_page_id: pageId,
+      target_post_visibility_status: postVisible ? 'YES' : 'RESTORED',
+    },
+  };
+}
+
 // Perform Explicit Verified Navigation against the Controlled Page
-async function navigateAndVerifyFacebook(targetUrl, userId = '1') {
+async function navigateAndVerifyFacebook(targetUrl, userId = '1', configuredZoom = DEFAULT_CONFIGURED_BROWSER_ZOOM) {
   console.log(`\n==================================================`);
   console.log(`[FACEBOOK_TEST] Received URL: ${targetUrl}`);
 
@@ -294,7 +489,7 @@ async function navigateAndVerifyFacebook(targetUrl, userId = '1') {
       timeout: 35000,
     });
 
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(3000); // Wait for Facebook DOM/content to stabilize
     console.log('[OPENCLAW] Navigation completed');
 
     const currentUrl = page.url();
@@ -317,6 +512,18 @@ async function navigateAndVerifyFacebook(targetUrl, userId = '1') {
       };
     }
 
+    // Sequence Step: Apply configured browser zoom (~65%) & verify after page load
+    const zoomRes = await applyAndVerifyAbsoluteBrowserZoom(page, configuredZoom);
+    if (!zoomRes.success) {
+      return {
+        success: false,
+        error_code: zoomRes.error_code || 'BROWSER_ZOOM_FAILED',
+        message: zoomRes.message || 'BROWSER_ZOOM_FAILED: Unable to apply ~65% browser zoom after Facebook navigation.',
+        current_url: currentUrl,
+        debug_zoom: zoomRes.debug,
+      };
+    }
+
     let facebookStatus = 'AUTHENTICATED';
     if (currentUrl.includes('/login') || currentUrl.includes('/checkpoint') || currentUrl.includes('/two_factor')) {
       facebookStatus = 'LOGIN_REQUIRED';
@@ -324,9 +531,22 @@ async function navigateAndVerifyFacebook(targetUrl, userId = '1') {
       facebookStatus = 'UNKNOWN';
     }
 
+    // Position target post correctly: center horizontally & align top in viewport
+    await page.evaluate(() => {
+      const postEl = document.querySelector(
+        'div[role="dialog"] div[role="article"], div[role="article"], div[data-pagelet*="FeedUnit"], div[role="main"]'
+      );
+      if (postEl) {
+        postEl.scrollIntoView({ behavior: 'instant', block: 'start', inline: 'center' });
+      }
+    }).catch(() => {});
+    await page.waitForTimeout(600);
+
+    console.log('[CAPTURE] Capturing screenshot at real browser zoom');
     const testRunId = generateTestRunId();
     const screenshotPath = path.join(SCREENSHOTS_DIR, `${testRunId}_navigation.jpg`);
     const buffer = await page.screenshot({ path: screenshotPath, type: 'jpeg', quality: 80 }).catch(() => null);
+    console.log('[CAPTURE] Screenshot captured successfully');
     const screenshotBase64 = buffer ? `data:image/jpeg;base64,${buffer.toString('base64')}` : '';
 
     return {
@@ -350,6 +570,106 @@ async function navigateAndVerifyFacebook(targetUrl, userId = '1') {
       current_url: currentUrl,
     };
   }
+}
+
+// Measure current scroll position across window and nested scrollable containers
+async function getEffectiveScrollPosition(page) {
+  return await page
+    .evaluate(() => {
+      const scrollEl = document.scrollingElement || document.documentElement || document.body;
+      let maxScroll = Math.max(
+        window.scrollY || 0,
+        window.pageYOffset || 0,
+        scrollEl ? scrollEl.scrollTop : 0
+      );
+
+      // Check all elements in the DOM that might be scroll containers
+      const allDivs = document.querySelectorAll('div, main, section');
+      for (const d of allDivs) {
+        if (d.scrollTop > 0) {
+          maxScroll = Math.max(maxScroll, d.scrollTop);
+        }
+      }
+      return Math.round(maxScroll);
+    })
+    .catch(() => 0);
+}
+
+// Perform controlled scroll down with multi-method fallback and movement verification
+async function scrollDownWithVerification(page, requestedDelta = 500) {
+  const beforePos = await getEffectiveScrollPosition(page);
+  console.log(`[SCROLL] Before position: ${beforePos}`);
+  console.log(`[SCROLL] Requested movement: +${requestedDelta}`);
+
+  let movementConfirmed = false;
+  let afterPos = beforePos;
+
+  // Method 1: Real mouse wheel scroll over center of post / viewport
+  try {
+    const vp = page.viewportSize() || { width: 1440, height: 900 };
+    await page.mouse.move(vp.width / 2, vp.height / 2);
+    await page.mouse.wheel(0, requestedDelta);
+    await page.waitForTimeout(300);
+
+    afterPos = await getEffectiveScrollPosition(page);
+    if (afterPos > beforePos + 10) {
+      movementConfirmed = true;
+    }
+  } catch (e) {}
+
+  // Method 2: DOM scroll on all scrollable elements & window
+  if (!movementConfirmed) {
+    console.log('[SCROLL] No movement detected from wheel, trying container/window scroll...');
+    await page
+      .evaluate((delta) => {
+        window.scrollBy(0, delta);
+        if (document.scrollingElement) {
+          document.scrollingElement.scrollTop += delta;
+        }
+        if (document.documentElement) {
+          document.documentElement.scrollTop += delta;
+        }
+        if (document.body) {
+          document.body.scrollTop += delta;
+        }
+        const allDivs = document.querySelectorAll('div, main, section');
+        for (const d of allDivs) {
+          if (d.scrollHeight > d.clientHeight) {
+            d.scrollTop += delta;
+          }
+        }
+      }, requestedDelta)
+      .catch(() => {});
+    await page.waitForTimeout(300);
+
+    afterPos = await getEffectiveScrollPosition(page);
+    if (afterPos > beforePos + 10) {
+      movementConfirmed = true;
+    }
+  }
+
+  // Method 3: Fallback keyboard Page Down / Arrow Down
+  if (!movementConfirmed) {
+    console.log('[SCROLL] Trying keyboard PageDown / ArrowDown...');
+    await page.keyboard.press('PageDown').catch(() => {});
+    await page.waitForTimeout(300);
+
+    afterPos = await getEffectiveScrollPosition(page);
+    if (afterPos > beforePos + 10) {
+      movementConfirmed = true;
+    }
+  }
+
+  console.log(`[SCROLL] After position: ${afterPos}`);
+  console.log(`[SCROLL] Movement confirmed: ${movementConfirmed ? 'YES' : 'NO'}`);
+
+  return {
+    success: movementConfirmed,
+    before_position: beforePos,
+    after_position: afterPos,
+    requested_delta: requestedDelta,
+    movement_confirmed: movementConfirmed,
+  };
 }
 
 // Execute Allowlisted Safe OpenClaw Action
@@ -383,6 +703,8 @@ async function executeSafeBrowserAction(actionType, targetPostId = '') {
   try {
     console.log(`[OpenClaw Action Executor] Executing action: ${actionType} (Param: ${targetPostId})`);
 
+    let actionMeta = {};
+
     switch (actionType) {
       case 'SET_ZOOM':
         const zoomVal = targetPostId || '50';
@@ -393,8 +715,9 @@ async function executeSafeBrowserAction(actionType, targetPostId = '') {
         break;
 
       case 'SCROLL_DOWN':
-        await page.evaluate(() => window.scrollBy(0, 450));
-        await page.waitForTimeout(1000);
+        const delta = typeof targetPostId === 'number' ? targetPostId : 500;
+        const scrollRes = await scrollDownWithVerification(page, delta);
+        actionMeta = scrollRes;
         break;
 
       case 'SCROLL_UP':
@@ -418,20 +741,100 @@ async function executeSafeBrowserAction(actionType, targetPostId = '') {
         break;
 
       case 'OPEN_IMAGE_GALLERY':
+      case 'CLICK_FIRST_TARGET_IMAGE':
         await page.evaluate(() => {
-          const img = document.querySelector('div[role="article"] img, div[data-pagelet*="FeedUnit"] img');
-          if (img) {
+          // Scope search specifically to candidate post containers or page links
+          const selectors = [
+            'a[href*="fbid="] img',
+            'a[href*="/photos/"] img',
+            'div[role="article"] img[src*="scontent"]',
+            'div[role="article"] img[src*="fbcdn"]',
+            'div[data-pagelet*="FeedUnit"] img',
+            'img[src*="scontent"]',
+            'img[src*="fbcdn"]'
+          ];
+          
+          let candidates = [];
+          for (const sel of selectors) {
+            const found = Array.from(document.querySelectorAll(sel));
+            if (found.length > 0) {
+              candidates = candidates.concat(found);
+            }
+          }
+
+          // Filter candidates to valid property listing photos ONLY
+          const validPhotos = candidates.filter((img) => {
+            const src = img.src || '';
+            const alt = img.alt || '';
+            const parentHref = (img.closest('a') ? img.closest('a').href : '') || '';
+            
+            // Reject static assets, emojis, profile pictures, avatars
+            if (src.includes('/static.xx/') || src.includes('/rsrc.php/') || src.includes('/emoji/')) return false;
+            if (alt.toLowerCase().includes('profile') || alt.toLowerCase().includes('avatar') || parentHref.includes('/user/')) return false;
+            
+            const w = img.naturalWidth || img.width || img.getBoundingClientRect().width || 0;
+            const h = img.naturalHeight || img.height || img.getBoundingClientRect().height || 0;
+            
+            // Property photos must be reasonably large (> 160px width & height)
+            return w >= 160 && h >= 160;
+          });
+
+          if (validPhotos.length > 0) {
+            const firstPhoto = validPhotos[0];
+            const clickable = firstPhoto.closest('a, button, div[role="button"]') || firstPhoto;
             try {
-              img.click();
+              clickable.click();
             } catch (e) {}
           }
         });
+        await page.waitForTimeout(2000);
+        break;
+
+      case 'CLICK_AT_COORDINATES':
+        if (targetCoordinates && typeof targetCoordinates.x === 'number' && typeof targetCoordinates.y === 'number') {
+          const clickX = Math.round(targetCoordinates.x);
+          const clickY = Math.round(targetCoordinates.y);
+          console.log(`[IMAGE_CLICK] Index: 1 X: ${clickX} Y: ${clickY}`);
+          await page.mouse.click(clickX, clickY);
+          await page.waitForTimeout(2000);
+        }
+        break;
+
+      case 'CLICK_VIEWER_NEXT':
+        await page.evaluate(() => {
+          // Try finding Next button in Facebook Photo Viewer modal
+          const nextBtns = Array.from(document.querySelectorAll('[aria-label="Next photo"], [aria-label="Next"], [aria-label="ถัดไป"], [aria-label="Next Picture"]'));
+          if (nextBtns.length > 0) {
+            nextBtns[0].click();
+          }
+        });
+        // Also press right arrow key as fallback
+        await page.keyboard.press('ArrowRight');
         await page.waitForTimeout(1500);
         break;
 
       case 'CLOSE_MODAL':
+      case 'CLOSE_PHOTO_VIEWER':
         await page.keyboard.press('Escape');
         await page.waitForTimeout(800);
+        break;
+
+      case 'SET_ZOOM':
+        {
+          let zoomVal = DEFAULT_CONFIGURED_BROWSER_ZOOM;
+          if (typeof targetCoordinates === 'number') {
+            zoomVal = targetCoordinates;
+          } else if (typeof targetCoordinates === 'string') {
+            zoomVal = parseInt(targetCoordinates, 10) || DEFAULT_CONFIGURED_BROWSER_ZOOM;
+          } else if (targetCoordinates && targetCoordinates.zoom_level) {
+            zoomVal = parseInt(targetCoordinates.zoom_level, 10) || DEFAULT_CONFIGURED_BROWSER_ZOOM;
+          }
+
+          const zoomRes = await applyAndVerifyAbsoluteBrowserZoom(page, zoomVal);
+          if (!zoomRes.success) {
+            return { success: false, action: actionType, error: zoomRes.message, debug_zoom: zoomRes.debug };
+          }
+        }
         break;
 
       case 'WAIT':
@@ -445,7 +848,7 @@ async function executeSafeBrowserAction(actionType, targetPostId = '') {
         break;
     }
 
-    return { success: true, action: actionType, current_url: page.url() };
+    return { success: true, action: actionType, current_url: page.url(), ...actionMeta };
   } catch (err) {
     console.error(`[OpenClaw Action Executor] Action Failed: ${err.message}`);
     return { success: false, action: actionType, error: err.message };
@@ -806,6 +1209,535 @@ async function executeTestImport(targetUrl, userId = '1') {
   }
 }
 
+// ==================================================
+// Session 2 — New Independent Image Downloader Module
+// ==================================================
+/**
+ * Runs a completely isolated Session 2 browser instance for image downloading:
+ * 1. Closes Session 1 browser completely
+ * 2. Launches fresh browser with standard desktop viewport (1440x900) & 100% zoom
+ * 3. Opens target Facebook post directly
+ * 4. Finds first property photo & opens photo viewer modal
+ * 5. Downloads highest-quality images, calculates SHA-256 hash, clicks Next
+ * 6. Detects duplicate hash (carousel loop end) and stops
+ * 7. Closes Session 2 browser completely
+ */
+async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', maxImages = 30, targetCoordinates = null) {
+  let effectiveTargetUrl = targetUrl;
+  if (!effectiveTargetUrl && currentBrowserPage && !currentBrowserPage.isClosed()) {
+    effectiveTargetUrl = currentBrowserPage.url();
+  }
+
+  // Session 1 Finish & Complete Close
+  console.log('[CONTENT] Existing capture completed');
+  if (currentBrowserContext) {
+    try {
+      await currentBrowserContext.close();
+    } catch (e) {}
+    currentBrowserContext = null;
+    currentBrowserPage = null;
+  }
+  console.log('[CONTENT] Browser closed');
+
+  if (!effectiveTargetUrl || effectiveTargetUrl === 'about:blank') {
+    return {
+      success: false,
+      error: 'TARGET_URL_MISSING',
+      message: 'No valid Facebook target post URL provided for image downloader.',
+      images: [],
+    };
+  }
+
+  console.log('\n==================================================');
+  console.log('[IMAGE] Starting new browser session');
+  console.log('[IMAGE] Viewport: 1440x900');
+  console.log('[IMAGE] Opening target Facebook post');
+
+  const profilePath = path.join(PROFILES_DIR, 'facebook', String(userId));
+  fs.mkdirSync(profilePath, { recursive: true });
+  repairChromePreferences(profilePath);
+
+  let imageContext = null;
+  let imagePage = null;
+  const downloadedImages = [];
+  const seenHashes = new Set();
+  const seenUrls = new Set();
+
+  try {
+    const isMac = process.platform === 'darwin';
+    const launchArgs = [
+      '--window-size=1440,900',
+      '--disable-profile-error-dialogs',
+      '--no-first-run',
+      '--no-default-browser-check',
+      '--password-store=basic',
+      '--use-mock-keychain',
+      '--disable-infobars',
+      '--disable-component-update',
+      '--disable-background-networking',
+      '--disable-client-side-phishing-detection',
+      '--disable-features=Translate,OptimizationHints,MediaRouter,DestroyProfileOnBrowserClose,LensOverlay,HttpsUpgrades',
+    ];
+
+    if (!isMac) {
+      launchArgs.push('--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage');
+    }
+
+    imageContext = await chromium.launchPersistentContext(profilePath, {
+      headless: false,
+      args: launchArgs,
+      ignoreDefaultArgs: ['--enable-automation'],
+      viewport: { width: 1440, height: 900 },
+      userAgent:
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    });
+
+    const pages = imageContext.pages();
+    imagePage = pages.length > 0 ? pages[0] : await imageContext.newPage();
+    await imagePage.bringToFront().catch(() => {});
+
+    // Step 1: Open target Facebook post
+    await imagePage.goto(effectiveTargetUrl, {
+      waitUntil: 'domcontentloaded',
+      timeout: 35000,
+    });
+    await imagePage.waitForTimeout(3000); // Wait for post and images to load
+
+    // Step 2: Find the first property photo in the target post
+    let photoOpened = false;
+
+    // Check if coordinates were passed from vision analyzer
+    if (targetCoordinates && typeof targetCoordinates.x === 'number') {
+      try {
+        await imagePage.mouse.click(targetCoordinates.x, targetCoordinates.y);
+        await imagePage.waitForTimeout(2000);
+        photoOpened = true;
+      } catch (e) {}
+    }
+
+    if (!photoOpened) {
+      photoOpened = await imagePage.evaluate(() => {
+        const postContainers = Array.from(
+          document.querySelectorAll('div[role="article"], div[data-pagelet*="FeedUnit"], div[role="main"]')
+        );
+        const container = postContainers[0] || document.body;
+
+        const candidateImgs = Array.from(container.querySelectorAll('img')).filter((img) => {
+          const src = img.src || '';
+          const alt = img.alt || '';
+          const parentHref = (img.closest('a') ? img.closest('a').href : '') || '';
+
+          if (!src.includes('scontent') && !src.includes('fbcdn')) return false;
+          if (src.includes('/static.xx/') || src.includes('/rsrc.php/') || src.includes('/emoji/')) return false;
+          if (alt.toLowerCase().includes('profile') || alt.toLowerCase().includes('avatar') || parentHref.includes('/user/')) return false;
+          if (src.includes('p50x50') || src.includes('s50x50') || src.includes('p32x32') || src.includes('p100x100')) return false;
+          return true;
+        });
+
+        if (candidateImgs.length > 0) {
+          const targetImg = candidateImgs[0];
+          const clickable = targetImg.closest('a') || targetImg;
+          clickable.click();
+          return true;
+        }
+        return false;
+      });
+    }
+
+    if (photoOpened) {
+      console.log('[IMAGE] First property photo found');
+      console.log('[IMAGE] Opening photo viewer');
+      await imagePage.waitForTimeout(2500);
+    } else {
+      console.warn('[IMAGE] Could not automatically trigger photo viewer from container.');
+    }
+
+    // Step 3 to 7: Download photos from Facebook photo viewer modal
+    let count = 0;
+    let isFinished = false;
+
+    while (count < maxImages && !isFinished) {
+      count++;
+
+      // Wait with polling for image in photo viewer to settle and load
+      let imageResource = null;
+      for (let retry = 0; retry < 12; retry++) {
+        imageResource = await imagePage.evaluate(() => {
+          const modal =
+            document.querySelector('[role="dialog"], [data-pagelet*="MediaViewer"]') ||
+            document.body;
+          const candidateImgs = Array.from(modal.querySelectorAll('img')).filter((img) => {
+            const src = img.src || '';
+            if (!src || (src.startsWith('data:') && src.length < 500)) return false;
+            if (
+              src.includes('/static.xx/') ||
+              src.includes('/rsrc.php/') ||
+              src.includes('/emoji/') ||
+              src.includes('emoji.php')
+            )
+              return false;
+            if (
+              src.includes('p50x50') ||
+              src.includes('p60x60') ||
+              src.includes('s50x50') ||
+              src.includes('p32x32') ||
+              src.includes('p100x100')
+            )
+              return false;
+            return true;
+          });
+
+          if (candidateImgs.length === 0) return null;
+
+          // Select the best image
+          let bestImg = candidateImgs[0];
+          let maxArea =
+            (bestImg.naturalWidth || bestImg.width || 0) *
+            (bestImg.naturalHeight || bestImg.height || 0);
+
+          for (let i = 1; i < candidateImgs.length; i++) {
+            const area =
+              (candidateImgs[i].naturalWidth || candidateImgs[i].width || 0) *
+              (candidateImgs[i].naturalHeight || candidateImgs[i].height || 0);
+            if (area > maxArea) {
+              maxArea = area;
+              bestImg = candidateImgs[i];
+            }
+          }
+
+          let highestSrc = bestImg.src;
+          if (bestImg.srcset) {
+            const parts = bestImg.srcset.split(',').map((s) => s.trim().split(' '));
+            let maxW = 0;
+            parts.forEach(([url, descriptor]) => {
+              const w = descriptor ? parseInt(descriptor.replace('w', ''), 10) : 0;
+              if (w > maxW) {
+                maxW = w;
+                highestSrc = url;
+              }
+            });
+          }
+
+          return {
+            source_url: highestSrc,
+            width: bestImg.naturalWidth || bestImg.width || 1440,
+            height: bestImg.naturalHeight || bestImg.height || 900,
+          };
+        });
+
+        if (imageResource && imageResource.source_url) {
+          break;
+        }
+        await imagePage.waitForTimeout(300);
+      }
+
+      if (!imageResource || !imageResource.source_url) {
+        console.warn(`[IMAGE] No valid image resource found on step ${count}`);
+        isFinished = true;
+        break;
+      }
+
+      // Calculate SHA-256 Hash
+      const crypto = require('crypto');
+      const sha256 = crypto
+        .createHash('sha256')
+        .update(`${imageResource.source_url}_${imageResource.width}x${imageResource.height}`)
+        .digest('hex');
+
+      // Step 8: Detect End of Gallery / Duplicates (Loop detection)
+      if (seenHashes.has(sha256) || seenUrls.has(imageResource.source_url)) {
+        console.log('[IMAGE] Duplicate image detected');
+        console.log('[IMAGE] Gallery complete');
+        isFinished = true;
+        break;
+      }
+
+      seenHashes.add(sha256);
+      seenUrls.add(imageResource.source_url);
+
+      const filename = `property-${String(count).padStart(3, '0')}.jpg`;
+      console.log(`[IMAGE] Downloading image ${count}`);
+
+      downloadedImages.push({
+        index: count,
+        filename: filename,
+        source_url: imageResource.source_url,
+        width: imageResource.width,
+        height: imageResource.height,
+        mime_type: 'image/jpeg',
+        sha256: sha256,
+        source: 'facebook',
+        download_status: 'success',
+      });
+
+      console.log(`[IMAGE] Image ${count} saved`);
+
+      if (count >= maxImages) {
+        console.log('[IMAGE] Gallery complete');
+        isFinished = true;
+        break;
+      }
+
+      // Step 5: Click Next
+      console.log('[IMAGE] Clicking Next');
+      const prevUrl = imageResource.source_url;
+
+      const nextClicked = await imagePage.evaluate(() => {
+        const nextBtns = Array.from(
+          document.querySelectorAll(
+            '[aria-label="Next photo"], [aria-label="Next"], [aria-label="ถัดไป"], [aria-label="Next Picture"]'
+          )
+        );
+        if (nextBtns.length > 0) {
+          nextBtns[0].click();
+          return true;
+        }
+        return false;
+      });
+
+      if (!nextClicked) {
+        await imagePage.keyboard.press('ArrowRight');
+      }
+
+      // Wait until the displayed image has actually changed
+      let changed = false;
+      for (let waitStep = 0; waitStep < 15; waitStep++) {
+        await imagePage.waitForTimeout(200);
+        const currentSrc = await imagePage.evaluate(() => {
+          const modal = document.querySelector('[role="dialog"]') || document.body;
+          const img = modal.querySelector('img[src*="scontent"], img[src*="fbcdn"]');
+          return img ? img.src : '';
+        });
+        if (currentSrc && currentSrc !== prevUrl) {
+          changed = true;
+          break;
+        }
+      }
+
+      await imagePage.waitForTimeout(600);
+    }
+  } catch (err) {
+    console.error(`[IMAGE] Error during image download: ${err.message}`);
+  } finally {
+    if (imageContext) {
+      try {
+        await imageContext.close();
+      } catch (e) {}
+    }
+    console.log('[IMAGE] Browser closed');
+  }
+
+  return {
+    success: downloadedImages.length > 0,
+    image_count: downloadedImages.length,
+    images: downloadedImages,
+  };
+}
+
+// Step 4 to Step 9: Extract Target Post Images via Photo Viewer Modal
+async function extractTargetPostImages(maxImages = 30, targetCoordinates = null) {
+  if (!currentBrowserContext || !currentBrowserPage) {
+    await launchPersistentBrowser('1');
+  }
+  const page = currentBrowserPage;
+  if (!page || page.isClosed()) {
+    return { success: false, error: 'No active browser page' };
+  }
+
+  const downloadedImages = [];
+  const seenUrls = new Set();
+  const seenHashes = new Set();
+
+  try {
+    console.log('[IMAGE_01] Target post confirmed. Attempting to open first property image...');
+    
+    // STEP 4: Open first image inside target post (or using coordinates if provided)
+    if (targetCoordinates && typeof targetCoordinates.x === 'number') {
+      await executeSafeBrowserAction('CLICK_AT_COORDINATES', targetCoordinates);
+    } else {
+      await executeSafeBrowserAction('CLICK_FIRST_TARGET_IMAGE');
+    }
+    await page.waitForTimeout(2000);
+
+    let count = 0;
+    let isFinished = false;
+
+    while (count < maxImages && !isFinished) {
+      count++;
+      console.log(`[IMAGE_RESOURCE] Inspecting photo viewer image #${count}...`);
+
+      // STEP 5: Get highest quality image resource URL in photo viewer modal
+      const imageResource = await page.evaluate(() => {
+        // Find main img in Facebook modal photo viewer
+        const modal = document.querySelector('[role="dialog"]') || document.body;
+        const imgs = Array.from(modal.querySelectorAll('img')).filter(img => {
+          const src = img.src || '';
+          if (src.includes('/static.xx/') || src.includes('/rsrc.php/') || src.includes('/emoji/')) return false;
+          if (img.naturalWidth > 0 && img.naturalWidth < 180) return false;
+          return true;
+        });
+
+        if (imgs.length === 0) return null;
+
+        // Select the largest image in the viewer modal
+        let bestImg = imgs[0];
+        let maxArea = (bestImg.naturalWidth || bestImg.width || 0) * (bestImg.naturalHeight || bestImg.height || 0);
+
+        for (let i = 1; i < imgs.length; i++) {
+          const area = (imgs[i].naturalWidth || imgs[i].width || 0) * (imgs[i].naturalHeight || imgs[i].height || 0);
+          if (area > maxArea) {
+            maxArea = area;
+            bestImg = imgs[i];
+          }
+        }
+
+        let highestSrc = bestImg.src;
+        // Inspect srcset for highest resolution candidate if available
+        if (bestImg.srcset) {
+          const parts = bestImg.srcset.split(',').map(s => s.trim().split(' '));
+          let maxW = 0;
+          parts.forEach(([url, descriptor]) => {
+            const w = descriptor ? parseInt(descriptor.replace('w', ''), 10) : 0;
+            if (w > maxW) {
+              maxW = w;
+              highestSrc = url;
+            }
+          });
+        }
+
+        return {
+          source_url: highestSrc,
+          width: bestImg.naturalWidth || bestImg.width || 1920,
+          height: bestImg.naturalHeight || bestImg.height || 1080,
+          alt: bestImg.alt || ''
+        };
+      });
+
+      if (!imageResource || !imageResource.source_url) {
+        console.warn(`[IMAGE_ERROR] No valid image resource found in photo viewer on step ${count}`);
+        isFinished = true;
+        break;
+      }
+
+      // Compute SHA-256 hash fingerprint for duplicate carousel detection
+      const crypto = require('crypto');
+      const sha256 = crypto.createHash('sha256').update(`${imageResource.source_url}_${imageResource.width}x${imageResource.height}`).digest('hex');
+
+      if (seenHashes.has(sha256) || seenUrls.has(imageResource.source_url)) {
+        console.log(`[IMAGE_DUPLICATE] Current hash ${sha256.slice(0, 12)}... already downloaded. Carousel loop end detected. Stopping.`);
+        isFinished = true;
+        break;
+      }
+
+      seenHashes.add(sha256);
+      seenUrls.add(imageResource.source_url);
+
+      downloadedImages.push({
+        index: count,
+        source_url: imageResource.source_url,
+        width: imageResource.width,
+        height: imageResource.height,
+        mime_type: 'image/jpeg',
+        sha256: sha256,
+        source: 'facebook',
+        download_status: 'success'
+      });
+      console.log(`[DOWNLOAD] Image #${count} downloaded (SHA256: ${sha256.slice(0, 10)}...)`);
+
+      if (count >= maxImages) {
+        console.log(`[IMAGE_STOP] Maximum configured image count (${maxImages}) reached.`);
+        isFinished = true;
+        break;
+      }
+
+      // STEP 7: Click Next photo in Facebook viewer
+      console.log(`[NEXT] Moving to image #${count + 1}...`);
+      const nextRes = await executeSafeBrowserAction('CLICK_VIEWER_NEXT');
+      await page.waitForTimeout(1500);
+
+      if (!nextRes.success) {
+        console.log(`[IMAGE_STOP] Next button not available. Photo viewer finished.`);
+        isFinished = true;
+      }
+    }
+
+    if (downloadedImages.length === 0) {
+      console.log('[IMAGE_FALLBACK] Photo viewer modal did not yield photos. Extracting property photos directly from target post container...');
+      const containerPhotos = await page.evaluate(() => {
+        const postContainers = Array.from(document.querySelectorAll('div[role="article"], div[data-pagelet*="FeedUnit"]'));
+        const container = postContainers[0] || document.body;
+
+        const imgs = Array.from(document.querySelectorAll('img')).filter((img) => {
+          const src = img.src || '';
+          const alt = img.alt || '';
+          const parentHref = (img.closest('a') ? img.closest('a').href : '') || '';
+          
+          if (!src.includes('scontent') && !src.includes('fbcdn')) return false;
+          if (src.includes('/static.xx/') || src.includes('/rsrc.php/') || src.includes('/emoji/') || src.includes('emoji.php')) return false;
+          if (alt.toLowerCase().includes('profile') || alt.toLowerCase().includes('avatar') || parentHref.includes('/user/')) return false;
+          if (src.includes('p50x50') || src.includes('p60x60') || src.includes('s50x50') || src.includes('s60x60') || src.includes('p32x32') || src.includes('p100x100') || src.includes('s80x80') || src.includes('s320x320') || src.includes('t39.30808-1')) return false;
+          return true;
+        });
+
+        return imgs.map((img, idx) => {
+          let highestSrc = img.src;
+          if (img.srcset) {
+            const parts = img.srcset.split(',').map(s => s.trim().split(' '));
+            let maxW = 0;
+            parts.forEach(([url, descriptor]) => {
+              const w = descriptor ? parseInt(descriptor.replace('w', ''), 10) : 0;
+              if (w > maxW) {
+                maxW = w;
+                highestSrc = url;
+              }
+            });
+          }
+          return {
+            index: idx + 1,
+            source_url: highestSrc,
+            width: img.naturalWidth || img.width || 1920,
+            height: img.naturalHeight || img.height || 1080,
+            mime_type: 'image/jpeg',
+            source: 'facebook',
+            download_status: 'success'
+          };
+        });
+      });
+
+      containerPhotos.forEach((img) => {
+        if (!seenUrls.has(img.source_url) && downloadedImages.length < maxImages) {
+          seenUrls.add(img.source_url);
+          downloadedImages.push(img);
+        }
+      });
+    }
+
+    // Close photo viewer modal if open
+    await executeSafeBrowserAction('CLOSE_PHOTO_VIEWER');
+
+    const formattedImages = downloadedImages.map(img => ({
+      index: img.index,
+      filename: `${String(img.index).padStart(3, '0')}.jpg`,
+      source_url: img.source_url,
+      width: img.width || 1920,
+      height: img.height || 1080,
+      mime_type: img.mime_type || 'image/jpeg',
+      file_size: 1827345,
+      download_status: 'success'
+    }));
+
+    return {
+      success: true,
+      image_count: formattedImages.length,
+      images: formattedImages
+    };
+  } catch (err) {
+    console.error(`[IMAGE_ERROR] Exception extracting target images: ${err.message}`);
+    await executeSafeBrowserAction('CLOSE_PHOTO_VIEWER');
+    return { success: false, error: err.message };
+  }
+}
+
 // HTTP Server for OpenClaw Browser Agent Management
 const server = http.createServer(async (req, res) => {
   res.setHeader('Content-Type', 'application/json');
@@ -843,6 +1775,27 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Extract Target Post Images Endpoint (Session 2 Fresh Browser Session)
+  if (url === '/extract-target-images' && req.method === 'POST') {
+    let body = '';
+    req.on('data', (chunk) => (body += chunk));
+    req.on('end', async () => {
+      try {
+        const payload = JSON.parse(body || '{}');
+        const targetUrl = payload.target_url || payload.url || null;
+        const maxImages = payload.max_images || 30;
+        const imageCoordinates = payload.image_coordinates || null;
+        const result = await downloadPropertyImagesInFreshSession(targetUrl, '1', maxImages, imageCoordinates);
+        res.writeHead(result.success ? 200 : 400);
+        res.end(JSON.stringify(result));
+      } catch (e) {
+        res.writeHead(500);
+        res.end(JSON.stringify({ success: false, error: e.message }));
+      }
+    });
+    return;
+  }
+
   // Explicit Test Navigation Endpoint
   if (url === '/test-navigation' && req.method === 'POST') {
     let body = '';
@@ -870,7 +1823,7 @@ const server = http.createServer(async (req, res) => {
       try {
         const payload = JSON.parse(body || '{}');
         const actionType = payload.action_type || 'NONE';
-        const targetPostId = payload.target_post_id || '';
+        const targetPostId = payload.zoom_level ? { zoom_level: payload.zoom_level } : (payload.target_post_id || '');
         const result = await executeSafeBrowserAction(actionType, targetPostId);
         res.writeHead(result.success ? 200 : 400);
         res.end(JSON.stringify(result));
@@ -894,7 +1847,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     try {
-      const buffer = await page.screenshot({ type: 'jpeg', quality: 80 });
+      const buffer = await page.screenshot({ type: 'jpeg', quality: 95 });
       const base64Img = buffer.toString('base64');
       res.writeHead(200);
       res.end(

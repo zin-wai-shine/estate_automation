@@ -1,0 +1,654 @@
+## Fix Required: Facebook Multi-Screenshot Capture
+
+There is currently a serious problem in the Facebook content-capture workflow:
+
+OpenClaw is supposed to scroll down when the target post continues below the current screen, but sometimes the scroll does not actually happen.
+
+The system then captures the same screen repeatedly.
+
+Example of the current bad behavior:
+
+```text
+Screenshot 1
+↓
+AI says MORE_CONTENT = true
+↓
+OpenClaw scroll
+↓
+Scroll did not actually move
+↓
+Screenshot 2 = SAME VIEW
+↓
+AI says MORE_CONTENT = true
+↓
+OpenClaw scroll
+↓
+Screenshot 3 = SAME VIEW
+↓
+Repeat...
+```
+
+This must be fixed.
+
+---
+
+# 1. DO NOT Capture Immediately After Scroll Command
+
+The system must NOT assume that:
+
+```text
+scroll()
+```
+
+means the page actually moved.
+
+After OpenClaw performs a scroll, wait briefly for Facebook to update/render.
+
+Then VERIFY that the viewport actually changed.
+
+Only after confirming movement should the system take the next screenshot.
+
+Correct flow:
+
+```text
+AI says more content
+        ↓
+OpenClaw scroll down
+        ↓
+Wait for page movement/rendering
+        ↓
+VERIFY viewport changed
+        ↓
+Viewport changed?
+   ┌──────────────┐
+   │              │
+  YES             NO
+   │              │
+   ↓              ↓
+Screenshot 2    Retry scroll
+```
+
+---
+
+# 2. Scroll the Correct Container
+
+Do not blindly send a generic page scroll if Facebook's current page/container does not respond to it.
+
+The automation must determine which element is actually scrollable.
+
+Priority:
+
+```text
+1. Facebook page/window scrolling
+2. Target post's scrollable container if applicable
+3. Browser wheel/scroll input
+```
+
+Use a real user-like scroll action when possible:
+
+```text
+mouse wheel / wheel event / keyboard Page Down
+```
+
+rather than relying only on JavaScript such as:
+
+```javascript
+window.scrollBy(...)
+```
+
+because Facebook can use nested scrolling containers.
+
+The important requirement is:
+
+**The visible Facebook content must physically move before the next screenshot is taken.**
+
+---
+
+# 3. Use a Controlled Small Scroll
+
+Do not scroll an entire page height.
+
+Use a controlled amount.
+
+For example:
+
+```text
+Scroll down approximately 400–600 px
+```
+
+The exact amount can be adjusted depending on the viewport.
+
+The goal is to maintain overlap:
+
+```text
+Screenshot 1
+┌──────────────────────┐
+│ A                    │
+│ B                    │
+│ C                    │
+│ D                    │
+│ E                    │
+└──────────────────────┘
+
+        ↓ 500px
+
+Screenshot 2
+┌──────────────────────┐
+│ D                    │
+│ E                    │
+│ F                    │
+│ G                    │
+│ H                    │
+└──────────────────────┘
+```
+
+This prevents missing content.
+
+---
+
+# 4. Verify Scroll Movement
+
+This is the most important fix.
+
+Before scrolling, record the current viewport state.
+
+For example:
+
+```text
+beforeScrollPosition
+```
+
+Then execute the scroll.
+
+After the scroll and a short wait, obtain the new viewport state:
+
+```text
+afterScrollPosition
+```
+
+Verify:
+
+```text
+afterScrollPosition > beforeScrollPosition
+```
+
+If the value has not changed:
+
+```text
+Scroll failed
+```
+
+Do NOT take another screenshot yet.
+
+---
+
+# 5. Retry Failed Scroll
+
+If the first scroll does not move the page:
+
+```text
+Attempt 1
+↓
+No movement
+↓
+Wait
+↓
+Attempt 2
+↓
+No movement
+↓
+Try alternate scroll method
+```
+
+For example:
+
+```text
+Method A:
+Mouse wheel
+
+↓
+
+Method B:
+Keyboard Page Down / Arrow Down
+
+↓
+
+Method C:
+Browser-level wheel input
+```
+
+Only use the method that actually causes the viewport to move.
+
+Do not continue taking screenshots if nothing moved.
+
+---
+
+# 6. Screenshot Must Be Different
+
+Before saving the next screenshot, compare it with the previous screenshot.
+
+At minimum, verify that one of these changed:
+
+```text
+Scroll position
+Screenshot image
+Visible text
+Visible image
+Viewport content
+```
+
+If Screenshot 2 is effectively identical to Screenshot 1:
+
+```text
+DO NOT SAVE IT
+```
+
+Instead:
+
+```text
+Screenshot 1
+      ↓
+Attempt scroll
+      ↓
+Screenshot looks identical
+      ↓
+DISCARD
+      ↓
+Try scroll again
+```
+
+---
+
+# 7. Duplicate Screenshot Protection
+
+Maintain a screenshot fingerprint/hash.
+
+Example:
+
+```text
+Screenshot 1 → hash AAA
+Screenshot 2 → hash AAA
+```
+
+This means the screen did not meaningfully change.
+
+Do not send Screenshot 2 to AI.
+
+Do not add Screenshot 2 to the capture list.
+
+Try scrolling again.
+
+If:
+
+```text
+Screenshot 3 → hash BBB
+```
+
+then the screen successfully changed.
+
+Now accept Screenshot 3.
+
+---
+
+# 8. Maximum Duplicate Protection
+
+Prevent infinite loops.
+
+If the same viewport appears repeatedly:
+
+```text
+Screenshot 1 → AAA
+Screenshot attempt → AAA
+Screenshot attempt → AAA
+```
+
+do not continue forever.
+
+After a small number of failed scroll attempts:
+
+```text
+Scroll failed repeatedly
+```
+
+log the problem and stop the capture loop safely.
+
+Example:
+
+```text
+[SCROLL] Current position: 1240
+[SCROLL] Attempting scroll: +500
+[SCROLL] New position: 1240
+[SCROLL] No movement detected
+[SCROLL] Retrying...
+
+[SCROLL] Attempting alternate wheel scroll
+[SCROLL] New position: 1740
+[SCROLL] Movement confirmed
+
+[CAPTURE] Taking Screenshot 2
+```
+
+---
+
+# 9. AI Should Not Be Asked to Analyze Identical Screenshots
+
+Current bad behavior:
+
+```text
+AI:
+Screenshot 1 → more content
+
+AI:
+Screenshot 2 → more content
+
+AI:
+Screenshot 3 → more content
+```
+
+when all three screenshots are actually identical.
+
+Fix this at the automation layer.
+
+AI should only receive a screenshot after:
+
+```text
+Scroll succeeded
++
+Viewport changed
+```
+
+Therefore:
+
+```text
+Screenshot 1
+    ↓
+AI analysis
+    ↓
+MORE_CONTENT = true
+    ↓
+REAL SCROLL
+    ↓
+VERIFY MOVEMENT
+    ↓
+NEW SCREEN
+    ↓
+Screenshot 2
+    ↓
+AI analysis
+```
+
+---
+
+# 10. Important: Detect the Actual Bottom of the Target Post
+
+When AI says:
+
+```text
+more_content_below = true
+```
+
+the automation should scroll down.
+
+But AI must distinguish between:
+
+```text
+Target post continues
+```
+
+and:
+
+```text
+Facebook page continues
+```
+
+For example:
+
+```text
+Target Post
+──────────────
+Property description
+Price
+Location
+Property images
+Contact
+──────────────
+END OF TARGET POST
+
+Comments
+Suggested posts
+Other content
+```
+
+If the target post has ended:
+
+```text
+STOP
+```
+
+Do not keep scrolling through Facebook.
+
+---
+
+# 11. Image Section Must Be Captured
+
+For real-estate posts, the following case must work:
+
+```text
+Screenshot 1
+
+Property title
+Description
+Price
+Location
+Contact
+↓
+bottom of viewport
+```
+
+AI determines:
+
+```text
+More target-post content exists below
+```
+
+OpenClaw scrolls.
+
+Then:
+
+```text
+Screenshot 2
+
+Property images
+[IMAGE 1]
+[IMAGE 2]
+[IMAGE 3]
+```
+
+AI receives:
+
+```text
+Screenshot 1 + Screenshot 2
+```
+
+and recognizes that the images belong to the same property post.
+
+Do NOT stop simply because Screenshot 1's text appears complete.
+
+---
+
+# 12. New Capture Loop
+
+Implement the workflow like this:
+
+```text
+OPEN TARGET POST
+       ↓
+CAPTURE SCREEN 1
+       ↓
+AI ANALYSIS
+       ↓
+MORE TARGET CONTENT?
+   ┌───────────────┐
+   │               │
+  NO              YES
+   │               │
+   ↓               ↓
+ FINISH       GET CURRENT
+              SCROLL POSITION
+                    ↓
+              SCROLL DOWN
+                    ↓
+                 WAIT
+                    ↓
+           VERIFY POSITION CHANGED
+              │            │
+             NO           YES
+              │            │
+              ↓            ↓
+         RETRY SCROLL   CAPTURE
+                           ↓
+                    COMPARE SCREEN
+                           ↓
+                   SCREEN CHANGED?
+                      │          │
+                     NO         YES
+                      │          │
+                      ↓          ↓
+                 RETRY SCROLL   SAVE
+                                   ↓
+                         AI reads ALL captures
+                                   ↓
+                         MORE CONTENT?
+                           │
+                          YES
+                           ↓
+                       SCROLL AGAIN
+                           ↓
+                          ...
+                           ↓
+                          NO
+                           ↓
+                     FINAL EXTRACTION
+```
+
+---
+
+# 13. Performance Requirement
+
+Do not make the screenshot/AI process unnecessarily slow.
+
+The system should NOT do:
+
+```text
+scroll
+↓
+long unnecessary wait
+↓
+screenshot
+↓
+AI
+↓
+long wait
+↓
+same screenshot
+↓
+scroll
+```
+
+Instead:
+
+```text
+Scroll
+↓
+Short render wait
+↓
+Verify viewport movement
+↓
+Screenshot
+↓
+AI
+```
+
+Use a reasonable wait for Facebook's content rendering, but do not use unnecessarily long fixed delays.
+
+Prefer checking for actual page/image stability rather than simply sleeping for a large number of seconds.
+
+---
+
+# 14. Logging
+
+Add clear logs so it is obvious whether OpenClaw actually scrolled.
+
+Example:
+
+```text
+[CAPTURE] Screenshot 1 captured
+[AI] More content below: YES
+
+[SCROLL] Before position: 842
+[SCROLL] Requested movement: +500
+[SCROLL] After position: 1342
+[SCROLL] Movement confirmed: YES
+
+[CAPTURE] Screenshot 2 captured
+[CAPTURE] Screenshot changed: YES
+
+[AI] Reading Screenshot 1 + Screenshot 2
+[AI] More content below: YES
+
+[SCROLL] Before position: 1342
+[SCROLL] Requested movement: +500
+[SCROLL] After position: 1842
+[SCROLL] Movement confirmed: YES
+
+[CAPTURE] Screenshot 3 captured
+```
+
+If it fails:
+
+```text
+[SCROLL] Before position: 1342
+[SCROLL] After position: 1342
+[SCROLL] Movement confirmed: NO
+[SCROLL] Screenshot NOT captured
+[SCROLL] Retrying...
+```
+
+This logging is important because we need to know whether the problem is:
+
+```text
+AI decision
+OR
+OpenClaw scroll
+OR
+Facebook scroll container
+OR
+Screenshot timing
+```
+
+---
+
+# Final Critical Requirements
+
+1. **Never capture a new screenshot until scrolling is confirmed.**
+2. **Never accept an identical screenshot as a new capture.**
+3. **Verify the actual viewport/scroll position changed.**
+4. **If normal scroll fails, retry using another browser input method.**
+5. **Do not let identical screenshots enter the AI analysis loop.**
+6. **Use small controlled scrolling with overlap.**
+7. **AI must analyze screenshots cumulatively.**
+8. **AI must detect both text AND images below.**
+9. **Do not stop just because the visible text appears complete.**
+10. **Stop when the target Facebook post itself is complete.**
+11. **Prevent infinite scrolling/capture loops.**
+12. **Keep the existing Facebook post detection and first-capture workflow unchanged.**
+
+The key fix is:
+
+**`SCROLL → VERIFY MOVEMENT → CAPTURE → VERIFY NEW SCREEN → AI`**
+
+not:
+
+**`SCROLL → CAPTURE → AI`**
+
+That verification step should eliminate the repeated-identical-screenshot problem.

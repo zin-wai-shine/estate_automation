@@ -22,6 +22,7 @@ type VisionTestStartRequest struct {
 type VisionTestActionRequest struct {
 	TestRunID  string `json:"test_run_id"`
 	ActionType string `json:"action_type"`
+	ZoomLevel  string `json:"zoom_level"`
 }
 
 type VisionTestEnhanceRequest struct {
@@ -137,20 +138,40 @@ func CaptureVisionScreenshot(c *fiber.Ctx) error {
 // AnalyzeVisionScreenshot handles POST /api/facebook/test/analyze
 func AnalyzeVisionScreenshot(c *fiber.Ctx) error {
 	var payload struct {
-		ScreenshotBase64 string `json:"screenshot_base64"`
-		URL              string `json:"url"`
+		ScreenshotBase64  string   `json:"screenshot_base64"`
+		ScreenshotsBase64 []string `json:"screenshots_base64"`
+		URL               string   `json:"url"`
+		TargetURL         string   `json:"target_url"`
 	}
 
-	if err := c.BodyParser(&payload); err != nil || payload.ScreenshotBase64 == "" {
+	if err := c.BodyParser(&payload); err != nil {
 		return c.Status(http.StatusBadRequest).JSON(fiber.Map{
 			"status":     "error",
 			"error_code": "AI_SCREENSHOT_INVALID",
-			"message":    "Valid screenshot_base64 string is required for analysis",
+			"message":    "Failed to parse request body",
+		})
+	}
+
+	targetURL := payload.TargetURL
+	if targetURL == "" {
+		targetURL = payload.URL
+	}
+
+	var screenshots []string
+	if len(payload.ScreenshotsBase64) > 0 {
+		screenshots = payload.ScreenshotsBase64
+	} else if payload.ScreenshotBase64 != "" {
+		screenshots = []string{payload.ScreenshotBase64}
+	} else {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{
+			"status":     "error",
+			"error_code": "AI_SCREENSHOT_INVALID",
+			"message":    "Valid screenshot_base64 or screenshots_base64 array is required for analysis",
 		})
 	}
 
 	openAISvc := services.NewOpenAIService()
-	result, err := openAISvc.AnalyzeScreenshot(c.Context(), payload.ScreenshotBase64, payload.URL)
+	result, err := openAISvc.AnalyzeScreenshotsSequential(c.Context(), screenshots, targetURL)
 	if err != nil {
 		errorCode := "OPENAI_REQUEST_FAILED"
 		if strings.Contains(err.Error(), "AUTH_FAILED") {
@@ -208,6 +229,7 @@ func ExecuteVisionAction(c *fiber.Ctx) error {
 	payloadBytes, _ := json.Marshal(map[string]string{
 		"action_type":    req.ActionType,
 		"target_post_id": req.TestRunID,
+		"zoom_level":     req.ZoomLevel,
 	})
 	client := &http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Post("http://localhost:9223/execute-action", "application/json", bytes.NewBuffer(payloadBytes))
@@ -228,6 +250,42 @@ func ExecuteVisionAction(c *fiber.Ctx) error {
 		"status":      "success",
 		"action_type": req.ActionType,
 		"result":      workerResp,
+	})
+}
+
+// ExtractTargetPostImages handles POST /api/facebook/test/extract-images
+func ExtractTargetPostImages(c *fiber.Ctx) error {
+	var req struct {
+		TargetURL        string      `json:"target_url"`
+		MaxImages        int         `json:"max_images"`
+		ImageCoordinates interface{} `json:"image_coordinates"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		req.MaxImages = 20
+	}
+	if req.MaxImages <= 0 {
+		req.MaxImages = 20
+	}
+
+	payloadBytes, _ := json.Marshal(req)
+	client := &http.Client{Timeout: 90 * time.Second}
+	resp, err := client.Post("http://localhost:9223/extract-target-images", "application/json", bytes.NewBuffer(payloadBytes))
+	if err != nil {
+		return c.Status(http.StatusServiceUnavailable).JSON(fiber.Map{
+			"status":     "error",
+			"error_code": "OPENCLAW_ACTION_FAILED",
+			"message":    fmt.Sprintf("Failed to extract target images from OpenClaw: %v", err),
+		})
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	var workerResp map[string]interface{}
+	_ = json.Unmarshal(body, &workerResp)
+
+	return c.JSON(fiber.Map{
+		"status": "success",
+		"result": workerResp,
 	})
 }
 
@@ -365,6 +423,43 @@ func ValidateVisionContent(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"status":          "success",
 		"cleaned_content": cleanedContent,
+	})
+}
+
+// DetectImageCoordinates handles POST /api/facebook/test/detect-image-coordinates
+func DetectImageCoordinates(c *fiber.Ctx) error {
+	var payload struct {
+		ScreenshotBase64 string `json:"screenshot_base64"`
+	}
+	if err := c.BodyParser(&payload); err != nil || payload.ScreenshotBase64 == "" {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{
+			"status":  "error",
+			"message": "ScreenshotBase64 is required",
+		})
+	}
+
+	openAISvc := services.NewOpenAIService()
+	coordsResult, err := openAISvc.DetectTargetPostImageCoordinates(c.Context(), payload.ScreenshotBase64)
+	if err != nil {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{
+			"status":  "error",
+			"message": fmt.Sprintf("Failed to detect image coordinates: %v", err),
+		})
+	}
+
+	// Coordinate Validation: Filter out coordinates outside 1920x1080 viewport bounds
+	var validImages []services.PropertyImageCoordinate
+	for _, img := range coordsResult.Images {
+		if img.CenterX >= 0 && img.CenterY >= 0 && img.CenterX < 1920 && img.CenterY < 1080 {
+			validImages = append(validImages, img)
+		}
+	}
+
+	return c.JSON(fiber.Map{
+		"status": "success",
+		"result": fiber.Map{
+			"images": validImages,
+		},
 	})
 }
 

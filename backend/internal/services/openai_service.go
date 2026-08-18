@@ -9,6 +9,7 @@ import (
 	"image"
 	"image/draw"
 	"image/jpeg"
+	_ "image/png"
 	"io"
 	"net/http"
 	"os"
@@ -23,32 +24,72 @@ type RegionBoundingBox struct {
 	Height int `json:"height"`
 }
 
+type ImageRegion struct {
+	Top    int `json:"top"`
+	Bottom int `json:"bottom"`
+}
+
 type NextActionRecommendation struct {
 	Type   string `json:"type"`   // NONE, SCROLL_DOWN, SCROLL_UP, CLICK_SEE_MORE, CLICK_TARGET_POST, OPEN_POST_MODAL, OPEN_IMAGE_GALLERY, CLOSE_MODAL, WAIT, RETRY_SCREENSHOT, REQUEST_LOGIN, STOP
 	Reason string `json:"reason"`
 }
 
 type VisionAnalysisResult struct {
-	Status               string                   `json:"status"`
-	Confidence           float64                  `json:"confidence"`
-	PageState            string                   `json:"page_state"`
-	TargetDetected       bool                     `json:"target_detected"`
-	TargetPostFound      bool                     `json:"target_post_found"`
-	CompletePostVisible  bool                     `json:"complete_post_visible"`
-	SeeMoreVisible       bool                     `json:"see_more_visible"`
-	SeeMoreDetected      bool                     `json:"see_more_detected"`
-	MoreContentVisible   bool                     `json:"more_content_visible"`
-	MoreContentBelow     bool                     `json:"more_content_below"`
-	EndOfContentReached  bool                     `json:"end_of_content_reached"`
-	EndOfPost            bool                     `json:"end_of_post"`
-	ScrollRequired       bool                     `json:"scroll_required"`
-	HeaderRegion         RegionBoundingBox        `json:"header_region"`
-	TargetRegion         RegionBoundingBox        `json:"target_region"`
-	ContentRegion        RegionBoundingBox        `json:"content_region"`
-	MediaRegion          RegionBoundingBox        `json:"media_region"`
-	UIRegions            []RegionBoundingBox      `json:"ui_regions"`
-	NextAction           NextActionRecommendation `json:"next_action"`
-	VerificationRequired bool                     `json:"verification_required"`
+	Status                    string                   `json:"status"`
+	Confidence                float64                  `json:"confidence"`
+	TargetPostVisible         bool                     `json:"target_post_visible"`
+	IsTargetPost              bool                     `json:"is_target_post"`
+	MoreContentBelow          bool                     `json:"more_content_below"`
+	MoreTextBelow             bool                     `json:"more_text_below"`
+	MoreImagesBelow           bool                     `json:"more_images_below"`
+	RelevantImagesVisible     bool                     `json:"relevant_images_visible"`
+	SeeMorePresent            bool                     `json:"see_more_present"`
+	SeeMoreVisible            bool                     `json:"see_more_visible"`
+	TargetPostComplete        bool                     `json:"target_post_complete"`
+	UnwantedImagePresent      bool                     `json:"unwanted_image_present"`
+	ImageRegion               *ImageRegion             `json:"image_region,omitempty"`
+	Reason                    string                   `json:"reason"`
+	PageState                 string                   `json:"page_state"`
+	TargetDetected            bool                     `json:"target_detected"`
+	TargetPostFound           bool                     `json:"target_post_found"`
+	CompletePostVisible       bool                     `json:"complete_post_visible"`
+	SeeMoreDetected           bool                     `json:"see_more_detected"`
+	SeeMoreRequired           bool                     `json:"see_more_required"`
+	MoreContentVisible        bool                     `json:"more_content_visible"`
+	EndOfContentReached       bool                     `json:"end_of_content_reached"`
+	EndOfPost                 bool                     `json:"end_of_post"`
+	ScrollRequired            bool                     `json:"scroll_required"`
+	PropertyImagesVisible     bool                     `json:"property_images_visible"`
+	VisiblePropertyImageCount int                      `json:"visible_property_image_count"`
+	OriginalContent           string                   `json:"original_content"`
+	HeaderRegion              RegionBoundingBox        `json:"header_region"`
+	TargetRegion              RegionBoundingBox        `json:"target_region"`
+	ContentRegion             RegionBoundingBox        `json:"content_region"`
+	MediaRegion               RegionBoundingBox        `json:"media_region"`
+	TargetPostBBox            RegionBoundingBox        `json:"target_post_bbox"`
+	ContentBBox               RegionBoundingBox        `json:"content_bbox"`
+	MediaBBox                 RegionBoundingBox        `json:"media_bbox"`
+	CroppedContentImage       string                   `json:"cropped_content_image,omitempty"`
+	CropAreaRatio             float64                  `json:"crop_area_ratio"`
+	CropQuality               string                   `json:"crop_quality"`
+	UIRegions                 []RegionBoundingBox      `json:"ui_regions"`
+	NextAction                NextActionRecommendation `json:"next_action"`
+	VerificationRequired      bool                     `json:"verification_required"`
+}
+
+type PropertyImageCoordinate struct {
+	Index      int     `json:"index"`
+	X          int     `json:"x"`
+	Y          int     `json:"y"`
+	Width      int     `json:"width"`
+	Height     int     `json:"height"`
+	CenterX    int     `json:"center_x"`
+	CenterY    int     `json:"center_y"`
+	Confidence float64 `json:"confidence"`
+}
+
+type PropertyImageDetectionResult struct {
+	Images []PropertyImageCoordinate `json:"images"`
 }
 
 type ImageAnalysisResult struct {
@@ -99,66 +140,108 @@ func NewOpenAIService() *OpenAIService {
 	}
 }
 
-// AnalyzeScreenshot sends a base64 encoded screenshot image to OpenAI Vision API
+// AnalyzeScreenshot sends a single base64 encoded screenshot image to OpenAI Vision API
 func (s *OpenAIService) AnalyzeScreenshot(ctx context.Context, imageBase64 string, targetURL string) (*VisionAnalysisResult, error) {
+	return s.AnalyzeScreenshotsSequential(ctx, []string{imageBase64}, targetURL)
+}
+
+// AnalyzeScreenshotsSequential sends multiple sequential screenshot images of a target Facebook post to OpenAI Vision
+func (s *OpenAIService) AnalyzeScreenshotsSequential(ctx context.Context, imagesBase64 []string, targetURL string) (*VisionAnalysisResult, error) {
 	if s.APIKey == "" {
 		return nil, fmt.Errorf("OPENAI_AUTH_FAILED: OPENAI_API_KEY environment variable is not configured")
 	}
-
-	cleanDataURL := imageBase64
-	if !strings.HasPrefix(cleanDataURL, "data:image") {
-		cleanDataURL = fmt.Sprintf("data:image/jpeg;base64,%s", imageBase64)
+	if len(imagesBase64) == 0 {
+		return nil, fmt.Errorf("no screenshots provided for analysis")
 	}
 
-	systemPrompt := `You are an expert AI browser vision analysis agent for a real estate automation platform.
-Analyze the provided Facebook screenshot and visually classify:
-1. POST_HEADER (Group name, poster author, profile avatar, timestamp, privacy icon) -> header_region
-2. POST_BODY (The actual property listing text ONLY starting AFTER the header) -> content_region
-3. POST_MEDIA (Property photos/videos) -> media_region
-4. Facebook UI (like/comment/share, search bar, sidebars) -> ui_regions
+	systemPrompt := `You are analyzing sequential screenshot(s) of a single Facebook property post.
 
-Determine:
-- page_state (target_post_visible, feed_view, login_required, modal_overlay, checkpoint_blocked, page_not_found, unknown)
-- target_detected (true/false)
-- target_post_found (true/false)
-- complete_post_visible (true/false - if the complete target post body text and media footer are 100% visible in this screenshot)
-- see_more_detected (true/false - if a "See more" or "ดูเพิ่มเติม" button exists in the target post)
-- see_more_visible (true/false)
-- more_content_below (true/false - if target post body text continues below the current viewport)
-- end_of_post (true/false - if the target post body has reached the end, excluding comments/feed)
-- scroll_required (true/false - if scrolling is needed to read remaining post body)
+The screenshots are provided in chronological order (Screenshot 1 is top/initial view, Screenshot 2 is scrolled down, etc.).
+The screenshots have intentional overlap so no content between captures is missed.
 
-CRITICAL RULE:
-- Do NOT include header text (group name, author, timestamp) inside content_region.
-- content_region must cover ONLY the actual post body text area starting after the header.
+CRITICAL REAL-ESTATE POST RULE:
+A real-estate Facebook post can contain long text followed by property images / photo galleries below the text.
+The first screenshot may show the description, but the property image section or additional property details may be below the visible screen.
+Therefore, DO NOT assume the post is complete just because the visible text looks complete or ends naturally!
+You MUST determine whether ANY part of the target post remains below the current viewport, including:
+- More text ("more_text_below")
+- Property images / photo gallery section ("more_images_below")
+- Attached media / buttons / contact information
+- Post container extending below the visible area
 
-Respond STRICTLY with a valid JSON object matching this structure:
+If property images belong to the target post: DO NOT crop them out. They are valid post content.
+Only identify unwanted_image_present if there is unrelated Facebook UI / advertisement / spam image that is not part of the target property listing.
+
+Your tasks:
+1. Determine if these screenshots show the target Facebook property post ("target_post_visible": true).
+2. Check if a "See more" link/button is present and still needs to be expanded ("see_more_visible": true / "see_more_present": true).
+3. Determine whether more text continues below ("more_text_below": true/false).
+4. Determine whether property images / media section continue below the latest screenshot ("more_images_below": true/false).
+5. Set "more_content_below": true if more text OR more images exist below.
+6. Set "relevant_images_visible": true if property images are visible in the capture sequence.
+7. Set "target_post_complete": true ONLY when the entire post (including all text AND property images) has been captured before unrelated comments / suggested posts.
+8. Reconstruct the complete, unified, deduplicated property post text across all screenshots.
+
+DO NOT extract comments.
+DO NOT extract reactions.
+DO NOT extract suggested posts.
+DO NOT extract advertisements.
+DO NOT extract Facebook navigation or sidebars.
+
+Preserve the original language, wording, numbers, prices, contact info, Line IDs, phone numbers, and emojis exactly.
+
+CRITICAL BOUNDING BOX RULES:
+- "target_region": The target post card boundary in the primary/latest screenshot.
+- "content_region": The bounding box covering post header and text content (without cutting off header).
+- "media_region": The bounding box around the property photos grid.
+
+Return JSON in this EXACT format:
 {
-  "status": "success",
-  "confidence": 0.96,
+  "target_post_visible": true,
+  "is_target_post": true,
+  "more_content_below": true,
+  "more_text_below": false,
+  "more_images_below": true,
+  "relevant_images_visible": true,
+  "see_more_visible": false,
+  "see_more_present": false,
+  "target_post_complete": false,
+  "unwanted_image_present": false,
+  "image_region": null,
+  "reason": "The visible text is mostly complete, but the target post continues below the viewport and property images are likely below.",
+  "confidence": 0.95,
   "page_state": "target_post_visible",
   "target_detected": true,
   "target_post_found": true,
-  "complete_post_visible": true,
-  "see_more_detected": true,
-  "see_more_visible": true,
-  "more_content_below": false,
-  "end_of_post": true,
-  "end_of_content_reached": true,
-  "scroll_required": false,
-  "header_region": { "x": 100, "y": 180, "width": 880, "height": 90 },
-  "target_region": { "x": 100, "y": 180, "width": 880, "height": 920 },
-  "content_region": { "x": 100, "y": 270, "width": 880, "height": 380 },
-  "media_region": { "x": 100, "y": 650, "width": 880, "height": 450 },
-  "ui_regions": [],
-  "next_action": {
-    "type": "NONE",
-    "reason": "Target post body region identified and fully visible."
-  },
-  "verification_required": false
+  "complete_post_visible": false,
+  "property_images_visible": true,
+  "visible_property_image_count": 3,
+  "original_content": "...",
+  "target_region": { "x": 560, "y": 40, "width": 720, "height": 1000 },
+  "content_region": { "x": 560, "y": 40, "width": 720, "height": 650 },
+  "media_region": { "x": 560, "y": 690, "width": 720, "height": 310 }
 }`
 
-	userPrompt := fmt.Sprintf("Target URL requested: %s. Analyze the screenshot and provide bounding box regions and recommended browser action.", targetURL)
+	userPrompt := fmt.Sprintf("Target URL requested: %s. Sequence contains %d screenshot(s). Read all screenshots together, determine if more content exists below the last screenshot, and reconstruct the full deduplicated post content.", targetURL, len(imagesBase64))
+
+	contentItems := []map[string]interface{}{
+		{"type": "text", "text": userPrompt},
+	}
+
+	for i, imgB64 := range imagesBase64 {
+		cleanDataURL := imgB64
+		if !strings.HasPrefix(cleanDataURL, "data:image") {
+			cleanDataURL = fmt.Sprintf("data:image/jpeg;base64,%s", imgB64)
+		}
+		contentItems = append(contentItems, map[string]interface{}{
+			"type": "text",
+			"text": fmt.Sprintf("--- SCREENSHOT %d (Sequence Order: %d of %d) ---", i+1, i+1, len(imagesBase64)),
+		})
+		contentItems = append(contentItems, map[string]interface{}{
+			"type": "image_url",
+			"image_url": map[string]string{"url": cleanDataURL},
+		})
+	}
 
 	reqBody := map[string]interface{}{
 		"model": s.Model,
@@ -168,16 +251,13 @@ Respond STRICTLY with a valid JSON object matching this structure:
 				"content": systemPrompt,
 			},
 			{
-				"role": "user",
-				"content": []map[string]interface{}{
-					{"type": "text", "text": userPrompt},
-					{"type": "image_url", "image_url": map[string]string{"url": cleanDataURL}},
-				},
+				"role":    "user",
+				"content": contentItems,
 			},
 		},
 		"response_format": map[string]string{"type": "json_object"},
 		"temperature":     0.2,
-		"max_tokens":      1000,
+		"max_tokens":      2000,
 	}
 
 	jsonBytes, err := json.Marshal(reqBody)
@@ -224,18 +304,213 @@ Respond STRICTLY with a valid JSON object matching this structure:
 	if err := json.Unmarshal([]byte(openAIResp.Choices[0].Message.Content), &result); err != nil {
 		// Fallback default parsing
 		result = VisionAnalysisResult{
-			Status:         "success",
-			Confidence:     0.88,
-			PageState:      "target_post_visible",
-			TargetDetected: true,
-			TargetRegion:   RegionBoundingBox{X: 80, Y: 160, Width: 920, Height: 900},
-			ContentRegion:  RegionBoundingBox{X: 100, Y: 300, Width: 880, Height: 300},
-			MediaRegion:    RegionBoundingBox{X: 100, Y: 600, Width: 880, Height: 440},
-			NextAction:     NextActionRecommendation{Type: "NONE", Reason: "Target post visible"},
+			Status:             "success",
+			Confidence:         0.88,
+			IsTargetPost:       true,
+			TargetPostComplete: true,
+			PageState:          "target_post_visible",
+			TargetDetected:     true,
+			TargetPostFound:    true,
+			TargetRegion:       RegionBoundingBox{X: 560, Y: 40, Width: 720, Height: 1000},
+			ContentRegion:      RegionBoundingBox{X: 560, Y: 40, Width: 720, Height: 650},
+			MediaRegion:        RegionBoundingBox{X: 560, Y: 690, Width: 720, Height: 310},
+			NextAction:         NextActionRecommendation{Type: "NONE", Reason: "Target post visible"},
 		}
 	}
 
+	// Calculate and validate tight target post bounding box against 1920x1080 viewport
+	activeBBox := result.TargetPostBBox
+	if activeBBox.Width <= 0 || activeBBox.Height <= 0 {
+		activeBBox = result.TargetRegion
+	}
+	if activeBBox.Width <= 0 || activeBBox.Height <= 0 {
+		activeBBox = result.ContentRegion
+	}
+
+	validatedBBox, areaRatio, quality := ValidateAndAdjustBBox(activeBBox, 1920, 1080)
+	result.TargetPostBBox = validatedBBox
+	result.TargetRegion = validatedBBox
+	if result.ContentBBox.Width <= 0 {
+		result.ContentBBox = result.ContentRegion
+	}
+	if result.MediaBBox.Width <= 0 {
+		result.MediaBBox = result.MediaRegion
+	}
+	result.CropAreaRatio = areaRatio
+	result.CropQuality = quality
+
+	// Set NextAction based on AI vision decision
+	if result.SeeMorePresent || result.SeeMoreRequired || result.SeeMoreVisible {
+		result.NextAction = NextActionRecommendation{Type: "CLICK_SEE_MORE", Reason: "Expand collapsed post content"}
+	} else if result.MoreContentBelow && !result.TargetPostComplete {
+		result.NextAction = NextActionRecommendation{Type: "SCROLL_DOWN", Reason: result.Reason}
+	} else {
+		result.NextAction = NextActionRecommendation{Type: "NONE", Reason: "Target post content complete"}
+	}
+
+	// Conditional Cropping on primary/latest image:
+	// 1. If unwanted_image_present is true and image_region is specified, crop above image_region.Top
+	// 2. Otherwise, crop the full target post section (from top of target_region Y down to content end)
+	primaryImg := imagesBase64[0]
+	cleanPrimaryURL := primaryImg
+	if !strings.HasPrefix(cleanPrimaryURL, "data:image") {
+		cleanPrimaryURL = fmt.Sprintf("data:image/jpeg;base64,%s", primaryImg)
+	}
+
+	cropX := result.TargetRegion.X
+	cropY := result.TargetRegion.Y
+	cropW := result.TargetRegion.Width
+	cropH := result.TargetRegion.Height
+
+	if result.UnwantedImagePresent && result.ImageRegion != nil && result.ImageRegion.Top > cropY {
+		cropH = result.ImageRegion.Top - cropY
+	} else if result.ContentRegion.Height > 0 {
+		if result.ContentRegion.Y < cropY {
+			cropY = result.ContentRegion.Y
+		}
+		cropH = result.ContentRegion.Height
+		if result.TargetRegion.Height > cropH && !result.UnwantedImagePresent {
+			cropH = result.TargetRegion.Height
+		}
+	}
+
+	croppedImg, cropErr := CropImageBase64(cleanPrimaryURL, cropX, cropY, cropW, cropH)
+	if cropErr == nil && croppedImg != "" {
+		result.CroppedContentImage = croppedImg
+	}
+
 	return &result, nil
+}
+
+// CropImageBase64 crops a base64 image data URL using specified bounding box coordinates.
+func CropImageBase64(base64DataURL string, x, y, width, height int) (string, error) {
+	if strings.TrimSpace(base64DataURL) == "" {
+		return "", fmt.Errorf("empty base64 string")
+	}
+
+	idx := strings.Index(base64DataURL, ",")
+	rawB64 := base64DataURL
+	if idx != -1 {
+		rawB64 = base64DataURL[idx+1:]
+	}
+
+	imgBytes, err := base64.StdEncoding.DecodeString(rawB64)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode base64 image: %w", err)
+	}
+
+	srcImg, _, err := image.Decode(bytes.NewReader(imgBytes))
+	if err != nil {
+		return "", fmt.Errorf("failed to decode image format: %w", err)
+	}
+
+	bounds := srcImg.Bounds()
+	imgWidth := bounds.Dx()
+	imgHeight := bounds.Dy()
+
+	// Clamp coordinates inside image bounds
+	if x < 0 {
+		x = 0
+	}
+	if y < 0 {
+		y = 0
+	}
+	if x >= imgWidth {
+		x = 0
+	}
+	if y >= imgHeight {
+		y = 0
+	}
+	if width <= 0 || x+width > imgWidth {
+		width = imgWidth - x
+	}
+	if height <= 0 || y+height > imgHeight {
+		height = imgHeight - y
+	}
+
+	cropRect := image.Rect(x, y, x+width, y+height)
+	dstImg := image.NewRGBA(image.Rect(0, 0, width, height))
+	draw.Draw(dstImg, dstImg.Bounds(), srcImg, cropRect.Min, draw.Src)
+
+	var buf bytes.Buffer
+	err = jpeg.Encode(&buf, dstImg, &jpeg.Options{Quality: 95})
+	if err != nil {
+		return "", fmt.Errorf("failed to encode cropped jpeg: %w", err)
+	}
+
+	croppedB64 := base64.StdEncoding.EncodeToString(buf.Bytes())
+	return fmt.Sprintf("data:image/jpeg;base64,%s", croppedB64), nil
+}
+
+// ValidateAndAdjustBBox validates and adjusts a target post bounding box against 1920x1080 viewport.
+// Rejects bounding boxes that cover > 60% of viewport area or are excessively wide (> 1000px on 1920 viewport).
+func ValidateAndAdjustBBox(rect RegionBoundingBox, viewportWidth, viewportHeight int) (RegionBoundingBox, float64, string) {
+	if viewportWidth <= 0 {
+		viewportWidth = 1920
+	}
+	if viewportHeight <= 0 {
+		viewportHeight = 1080
+	}
+
+	viewportArea := float64(viewportWidth * viewportHeight)
+
+	// Centered Facebook post container card on 1920x1080 (Facebook feed/permalink card is ~680 to 740px wide centered)
+	defaultBox := RegionBoundingBox{
+		X:      (viewportWidth - 720) / 2, // 600px
+		Y:      100,
+		Width:  720,
+		Height: viewportHeight - 140, // 940px
+	}
+
+	x := rect.X
+	y := rect.Y
+	w := rect.Width
+	h := rect.Height
+
+	if w <= 0 || h <= 0 {
+		areaRatio := float64(defaultBox.Width*defaultBox.Height) / viewportArea
+		return defaultBox, areaRatio, "FALLBACK_MISSING_BBOX"
+	}
+
+	// 1. Check if width is excessively wide (> 1000px when Facebook post is centered ~700px wide)
+	if w > 1000 && viewportWidth >= 1600 {
+		w = 720
+		x = (viewportWidth - w) / 2
+	}
+
+	// Bounds checks
+	if x < 0 {
+		x = 0
+	}
+	if y < 0 {
+		y = 0
+	}
+	if x+w > viewportWidth {
+		w = viewportWidth - x
+	}
+	if y+h > viewportHeight {
+		h = viewportHeight - y
+	}
+
+	bboxArea := float64(w * h)
+	areaRatio := bboxArea / viewportArea
+
+	// 2. Reject if bbox covers > 60% of entire viewport area
+	if areaRatio > 0.60 {
+		w = 720
+		x = (viewportWidth - w) / 2
+		if y < 60 {
+			y = 60
+		}
+		if h > (viewportHeight - y - 20) {
+			h = viewportHeight - y - 20
+		}
+		bboxArea = float64(w * h)
+		areaRatio = bboxArea / viewportArea
+		return RegionBoundingBox{X: x, Y: y, Width: w, Height: h}, areaRatio, "RECONSTRAINED_LARGE_BBOX"
+	}
+
+	return RegionBoundingBox{X: x, Y: y, Width: w, Height: h}, areaRatio, "GOOD"
 }
 
 // AnalyzePropertyImage classifies an individual property image
@@ -330,7 +605,7 @@ func (s *OpenAIService) AnalyzePropertyImage(ctx context.Context, imageBase64 st
 	return &result, nil
 }
 
-// CropBase64Image crops a base64 encoded image to the specified bounding box region
+// CropBase64Image crops a high-resolution base64 encoded image to the specified bounding box region
 func CropBase64Image(base64Str string, rect RegionBoundingBox) (string, error) {
 	rawBase64 := base64Str
 	if idx := strings.Index(base64Str, ","); idx != -1 {
@@ -349,10 +624,13 @@ func CropBase64Image(base64Str string, rect RegionBoundingBox) (string, error) {
 	}
 
 	bounds := srcImg.Bounds()
-	x := rect.X
-	y := rect.Y
-	w := rect.Width
-	h := rect.Height
+	
+	// Add 10px safety padding around target region
+	padding := 10
+	x := rect.X - padding
+	y := rect.Y - padding
+	w := rect.Width + (padding * 2)
+	h := rect.Height + (padding * 2)
 
 	if x < 0 {
 		x = 0
@@ -367,7 +645,7 @@ func CropBase64Image(base64Str string, rect RegionBoundingBox) (string, error) {
 		h = bounds.Dy() - y
 	}
 
-	if w <= 10 || h <= 10 {
+	if w <= 20 || h <= 20 {
 		return base64Str, nil
 	}
 
@@ -376,7 +654,8 @@ func CropBase64Image(base64Str string, rect RegionBoundingBox) (string, error) {
 	draw.Draw(dstImg, dstImg.Bounds(), srcImg, cropRect.Min, draw.Src)
 
 	var buf bytes.Buffer
-	if err := jpeg.Encode(&buf, dstImg, &jpeg.Options{Quality: 85}); err != nil {
+	// Encode crop at 95% high quality
+	if err := jpeg.Encode(&buf, dstImg, &jpeg.Options{Quality: 95}); err != nil {
 		return base64Str, nil
 	}
 
@@ -395,32 +674,31 @@ func (s *OpenAIService) ReadCroppedPostText(ctx context.Context, croppedImageBas
 		cleanDataURL = fmt.Sprintf("data:image/jpeg;base64,%s", croppedImageBase64)
 	}
 
-	systemPrompt := `You are extracting the original text from ONE Facebook real-estate property post.
+	systemPrompt := `You are analyzing a cropped screenshot containing ONE Facebook real-estate property post.
 
-Read ONLY the actual post body.
+Extract ONLY the original property post body.
 
 DO NOT extract:
-- page/group name
+- Facebook group name
+- Facebook page name
 - poster name
+- profile name
 - timestamp
-- profile information
-- Facebook UI
-- navigation
+- profile picture
+- Facebook navigation
+- sidebar content
+- advertisements
+- suggested posts
 - comments
 - reactions
-- related posts
-- suggested posts
-- advertisements
+- share buttons
+- unrelated posts
 
-The first line of the property content may begin with a property title, rental/sale statement, location, emoji, or other property information.
+The target content is the property listing itself.
 
-Return ONLY the text that belongs to the actual property post body.
+Read the complete visible property description.
 
-Do not summarize.
-Do not rewrite.
-Do not translate.
-Do not infer.
-Do not add missing information.
+Preserve the original language exactly.
 
 Preserve:
 - Thai
@@ -428,13 +706,20 @@ Preserve:
 - Burmese
 - numbers
 - prices
+- room sizes
 - phone numbers
 - Line IDs
 - emojis
 - punctuation
-- original wording.
+- line breaks where possible
 
-If something is not clearly readable, return [UNCLEAR] instead of guessing.`
+DO NOT summarize.
+DO NOT translate.
+DO NOT rewrite.
+DO NOT infer missing text.
+DO NOT invent text.
+
+If a character is unreadable, use [UNCLEAR].`
 
 	userPrompt := "Transcribe only the actual property post body from this image."
 
@@ -660,4 +945,120 @@ Preserve all original wording, numbers, prices, contact details, Line IDs, and e
 	}
 
 	return strings.TrimSpace(openAIResp.Choices[0].Message.Content), nil
+}
+
+// DetectTargetPostImageCoordinates analyzes the original high-resolution screenshot and returns pixel center coordinates for property images inside the target post
+func (s *OpenAIService) DetectTargetPostImageCoordinates(ctx context.Context, imageBase64 string) (*PropertyImageDetectionResult, error) {
+	if s.APIKey == "" {
+		return nil, fmt.Errorf("OPENAI_AUTH_FAILED: OPENAI_API_KEY environment variable is not configured")
+	}
+
+	cleanDataURL := imageBase64
+	if !strings.HasPrefix(cleanDataURL, "data:image") {
+		cleanDataURL = fmt.Sprintf("data:image/jpeg;base64,%s", imageBase64)
+	}
+
+	systemPrompt := `You are analyzing a Facebook property listing screenshot.
+
+Identify ONLY the property listing images that belong to the target Facebook post.
+
+Ignore:
+- Facebook profile pictures
+- group logos
+- page logos
+- sidebar images
+- advertisements
+- suggested posts
+- comments
+- reaction icons
+- navigation icons
+- unrelated posts
+- unrelated images
+
+For each property image visible inside the target post, return its bounding box and center coordinate.
+
+Use the ORIGINAL screenshot pixel coordinate system (1920x1080).
+
+Return JSON only:
+{
+  "images": [
+    {
+      "index": 1,
+      "x": 580,
+      "y": 660,
+      "width": 680,
+      "height": 340,
+      "center_x": 920,
+      "center_y": 830,
+      "confidence": 0.98
+    }
+  ]
+}
+
+Only return actual property images.`
+
+	userPrompt := "Identify the bounding boxes and center coordinates of all property photos belonging strictly to the target post in this 1920x1080 screenshot."
+
+	reqBody := map[string]interface{}{
+		"model": s.Model,
+		"messages": []map[string]interface{}{
+			{
+				"role":    "system",
+				"content": systemPrompt,
+			},
+			{
+				"role": "user",
+				"content": []map[string]interface{}{
+					{"type": "text", "text": userPrompt},
+					{"type": "image_url", "image_url": map[string]string{"url": cleanDataURL}},
+				},
+			},
+		},
+		"response_format": map[string]string{"type": "json_object"},
+		"temperature":     0.1,
+		"max_tokens":      1000,
+	}
+
+	jsonBytes, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.openai.com/v1/chat/completions", bytes.NewBuffer(jsonBytes))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", s.APIKey))
+
+	resp, err := s.Client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("OPENAI_REQUEST_FAILED: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	var openAIResp struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+
+	if err := json.Unmarshal(respBytes, &openAIResp); err != nil || len(openAIResp.Choices) == 0 {
+		return nil, fmt.Errorf("invalid response from OpenAI Vision: %w", err)
+	}
+
+	var result PropertyImageDetectionResult
+	if err := json.Unmarshal([]byte(openAIResp.Choices[0].Message.Content), &result); err != nil {
+		return nil, fmt.Errorf("failed to parse image coordinates JSON: %w", err)
+	}
+
+	return &result, nil
 }
