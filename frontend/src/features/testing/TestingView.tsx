@@ -444,7 +444,7 @@ export const TestingView: React.FC = () => {
     }
 
     const targetUrl = urlInput.trim();
-    const MAX_SCREENSHOTS = 6;
+    const MAX_SCREENSHOTS = 8;
     let textChunks: string[] = [];
 
     setTestLogs([]);
@@ -615,12 +615,24 @@ export const TestingView: React.FC = () => {
         }
 
         // Check if more content / images below or complete post reached
-        const hasMoreBelow =
+        const hasSeenImages = Boolean(
+          analysis?.property_images_visible ||
+          analysis?.relevant_images_visible ||
+          (analysis?.visible_property_image_count && analysis.visible_property_image_count > 0)
+        );
+
+        let hasMoreBelow =
           (analysis?.more_content_below || analysis?.more_images_below || analysis?.more_text_below) &&
           !analysis?.target_post_complete;
+
+        // At 100% zoom, real-estate posts frequently place photos below text. If photos not seen yet on capture 1-2, continue.
+        if (!hasSeenImages && screenshotCount <= 2) {
+          hasMoreBelow = true;
+        }
+
         const postFinished = analysis?.target_post_complete || !hasMoreBelow;
 
-        addLog('AI', `[AI] More content below: ${hasMoreBelow ? 'YES' : 'NO'}`);
+        addLog('AI', `[AI] More content below: ${hasMoreBelow ? 'YES' : 'NO'} (Photos detected: ${hasSeenImages ? 'YES' : 'PENDING'})`);
 
         if (postFinished || screenshotCount >= MAX_SCREENSHOTS) {
           isEndOfPost = true;

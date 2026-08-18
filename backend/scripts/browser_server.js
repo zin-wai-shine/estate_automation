@@ -595,8 +595,8 @@ async function getEffectiveScrollPosition(page) {
     .catch(() => 0);
 }
 
-// Perform controlled scroll down with multi-method fallback and movement verification
-async function scrollDownWithVerification(page, requestedDelta = 500) {
+// Perform controlled scroll down with multi-method fallback and movement verification (Optimized for 100% zoom)
+async function scrollDownWithVerification(page, requestedDelta = 650) {
   const beforePos = await getEffectiveScrollPosition(page);
   console.log(`[SCROLL] Before position: ${beforePos}`);
   console.log(`[SCROLL] Requested movement: +${requestedDelta}`);
@@ -609,7 +609,7 @@ async function scrollDownWithVerification(page, requestedDelta = 500) {
     const vp = page.viewportSize() || { width: 1440, height: 900 };
     await page.mouse.move(vp.width / 2, vp.height / 2);
     await page.mouse.wheel(0, requestedDelta);
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(500); // Allow lazy-loaded photos & virtualized items to render
 
     afterPos = await getEffectiveScrollPosition(page);
     if (afterPos > beforePos + 10) {

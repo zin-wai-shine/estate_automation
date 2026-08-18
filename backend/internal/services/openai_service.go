@@ -161,13 +161,21 @@ The screenshots have intentional overlap so no content between captures is misse
 
 CRITICAL REAL-ESTATE POST RULE:
 A real-estate Facebook post can contain long text followed by property images / photo galleries below the text.
-The first screenshot may show the description, but the property image section or additional property details may be below the visible screen.
+The first screenshot may show the description, but the property image section or additional property details are below the visible screen.
 Therefore, DO NOT assume the post is complete just because the visible text looks complete or ends naturally!
 You MUST determine whether ANY part of the target post remains below the current viewport, including:
 - More text ("more_text_below")
 - Property images / photo gallery section ("more_images_below")
 - Attached media / buttons / contact information
 - Post container extending below the visible area
+
+PHOTO GALLERY & POST COMPLETION RULES:
+1. If only description text is visible and NO property images have been captured yet in the sequence:
+   - You MUST set "more_images_below": true
+   - You MUST set "more_content_below": true
+   - You MUST set "target_post_complete": false
+2. Only set "target_post_complete": true when:
+   - The property photo gallery has been reached AND fully displayed, OR the post's Like/Comment/Share bar is clearly visible showing the actual bottom of the post.
 
 If property images belong to the target post: DO NOT crop them out. They are valid post content.
 Only identify unwanted_image_present if there is unrelated Facebook UI / advertisement / spam image that is not part of the target property listing.
