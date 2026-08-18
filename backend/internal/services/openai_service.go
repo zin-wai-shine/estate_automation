@@ -172,6 +172,11 @@ You MUST determine whether ANY part of the target post remains below the current
 If property images belong to the target post: DO NOT crop them out. They are valid post content.
 Only identify unwanted_image_present if there is unrelated Facebook UI / advertisement / spam image that is not part of the target property listing.
 
+CRITICAL TEXT & NUMERICAL ACCURACY (ZERO HALLUCINATION):
+- You MUST transcribe all numbers, rental prices, selling prices, deposit amounts, square meter figures (sqm / ตร.ม.), bedroom/bathroom counts, building names, floor numbers, and contact numbers EXACTLY as written in the target post.
+- NEVER estimate, guess, round, or alter numbers, prices, or currency symbols.
+- DO NOT confuse the main target post with adjacent posts above or below. Focus exclusively on the main center target post body.
+
 Your tasks:
 1. Determine if these screenshots show the target Facebook property post ("target_post_visible": true).
 2. Check if a "See more" link/button is present and still needs to be expanded ("see_more_visible": true / "see_more_present": true).
@@ -180,7 +185,7 @@ Your tasks:
 5. Set "more_content_below": true if more text OR more images exist below.
 6. Set "relevant_images_visible": true if property images are visible in the capture sequence.
 7. Set "target_post_complete": true ONLY when the entire post (including all text AND property images) has been captured before unrelated comments / suggested posts.
-8. Reconstruct the complete, unified, deduplicated property post text across all screenshots.
+8. Reconstruct the complete, unified, deduplicated property post text across all screenshots verbatim.
 
 DO NOT extract comments.
 DO NOT extract reactions.
@@ -239,7 +244,10 @@ Return JSON in this EXACT format:
 		})
 		contentItems = append(contentItems, map[string]interface{}{
 			"type": "image_url",
-			"image_url": map[string]string{"url": cleanDataURL},
+			"image_url": map[string]interface{}{
+				"url":    cleanDataURL,
+				"detail": "high",
+			},
 		})
 	}
 
@@ -256,8 +264,8 @@ Return JSON in this EXACT format:
 			},
 		},
 		"response_format": map[string]string{"type": "json_object"},
-		"temperature":     0.2,
-		"max_tokens":      2000,
+		"temperature":     0.0,
+		"max_tokens":      4000,
 	}
 
 	jsonBytes, err := json.Marshal(reqBody)
@@ -734,12 +742,18 @@ If a character is unreadable, use [UNCLEAR].`
 				"role": "user",
 				"content": []map[string]interface{}{
 					{"type": "text", "text": userPrompt},
-					{"type": "image_url", "image_url": map[string]string{"url": cleanDataURL}},
+					{
+						"type": "image_url",
+						"image_url": map[string]interface{}{
+							"url":    cleanDataURL,
+							"detail": "high",
+						},
+					},
 				},
 			},
 		},
 		"temperature": 0.0,
-		"max_tokens":  2000,
+		"max_tokens":  3000,
 	}
 
 	jsonBytes, _ := json.Marshal(reqBody)
@@ -1010,13 +1024,19 @@ Only return actual property images.`
 				"role": "user",
 				"content": []map[string]interface{}{
 					{"type": "text", "text": userPrompt},
-					{"type": "image_url", "image_url": map[string]string{"url": cleanDataURL}},
+					{
+						"type": "image_url",
+						"image_url": map[string]interface{}{
+							"url":    cleanDataURL,
+							"detail": "high",
+						},
+					},
 				},
 			},
 		},
 		"response_format": map[string]string{"type": "json_object"},
-		"temperature":     0.1,
-		"max_tokens":      1000,
+		"temperature":     0.0,
+		"max_tokens":      1500,
 	}
 
 	jsonBytes, err := json.Marshal(reqBody)
