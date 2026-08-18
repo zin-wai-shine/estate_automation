@@ -83,7 +83,7 @@ export interface PromptTemplate {
   id: number;
   name: string;
   category: 'FACEBOOK_RENT' | 'FACEBOOK_SALE' | 'TIKTOK' | 'EN_TRANSLATION' | 'IMAGE_ENHANCE';
-  model: string;
+  model?: string;
   version: string;
   active: boolean;
   templateText: string;

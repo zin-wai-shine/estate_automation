@@ -10,7 +10,6 @@ import {
   FiFileText,
   FiPlus,
   FiPower,
-  FiCpu,
   FiCheckCircle,
   FiEye,
   FiSearch,
@@ -22,7 +21,6 @@ export const PromptTemplatesView: React.FC = () => {
       id: 1,
       name: 'Facebook Rental Listing Copy (Thai/English)',
       category: 'FACEBOOK_RENT',
-      model: 'gpt-4o',
       version: 'V1.2',
       active: true,
       templateText:
@@ -32,7 +30,6 @@ export const PromptTemplatesView: React.FC = () => {
       id: 2,
       name: 'TikTok Short Video Script & Hook Generator',
       category: 'TIKTOK',
-      model: 'gemini-1.5-pro',
       version: 'V1.0',
       active: true,
       templateText:
@@ -42,7 +39,6 @@ export const PromptTemplatesView: React.FC = () => {
       id: 3,
       name: 'Facebook Property Sale Copy Template',
       category: 'FACEBOOK_SALE',
-      model: 'gpt-4o',
       version: 'V1.0',
       active: true,
       templateText:
@@ -59,12 +55,10 @@ export const PromptTemplatesView: React.FC = () => {
   const [newTemplate, setNewTemplate] = useState<{
     name: string;
     category: PromptTemplate['category'];
-    model: string;
     templateText: string;
   }>({
     name: '',
     category: 'FACEBOOK_SALE',
-    model: 'gpt-4o',
     templateText: '',
   });
 
@@ -81,14 +75,13 @@ export const PromptTemplatesView: React.FC = () => {
       id: Date.now(),
       name: newTemplate.name,
       category: newTemplate.category,
-      model: newTemplate.model,
       version: 'V1.0',
       active: true,
       templateText: newTemplate.templateText,
     };
     setPrompts((prev) => [created, ...prev]);
     setIsCreating(false);
-    setNewTemplate({ name: '', category: 'FACEBOOK_SALE', model: 'gpt-4o', templateText: '' });
+    setNewTemplate({ name: '', category: 'FACEBOOK_SALE', templateText: '' });
   };
 
   const formatCategoryLabel = (category: string) => {
@@ -129,12 +122,6 @@ export const PromptTemplatesView: React.FC = () => {
     { value: 'TIKTOK', label: 'TikTok' },
     { value: 'EN_TRANSLATION', label: 'English Translation' },
     { value: 'IMAGE_ENHANCE', label: 'Image Enhance' },
-  ];
-
-  const modelOptions: DropdownOption[] = [
-    { value: 'gpt-4o', label: 'ChatGPT (gpt-4o)' },
-    { value: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro' },
-    { value: 'claude-3-5-sonnet', label: 'Claude 3.5 Sonnet' },
   ];
 
   const filteredPrompts = prompts.filter((p) => {
@@ -233,19 +220,16 @@ export const PromptTemplatesView: React.FC = () => {
                 borderBottom: '1px solid var(--border-color)',
               }}
             >
-              <th style={{ padding: '0.875rem 1.25rem', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', width: '38%', whiteSpace: 'nowrap' }}>
+              <th style={{ padding: '0.875rem 1.25rem', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', width: '48%', whiteSpace: 'nowrap' }}>
                 Template Name & Preview
               </th>
-              <th style={{ padding: '0.875rem 1rem', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', width: '15%', whiteSpace: 'nowrap' }}>
+              <th style={{ padding: '0.875rem 1rem', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', width: '18%', whiteSpace: 'nowrap' }}>
                 Category
               </th>
-              <th style={{ padding: '0.875rem 1rem', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', width: '16%', whiteSpace: 'nowrap' }}>
-                AI Model
-              </th>
-              <th style={{ padding: '0.875rem 1rem', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', width: '8%', whiteSpace: 'nowrap' }}>
+              <th style={{ padding: '0.875rem 1rem', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', width: '10%', whiteSpace: 'nowrap' }}>
                 Version
               </th>
-              <th style={{ padding: '0.875rem 1rem', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', width: '9%', whiteSpace: 'nowrap' }}>
+              <th style={{ padding: '0.875rem 1rem', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', width: '10%', whiteSpace: 'nowrap' }}>
                 Status
               </th>
               <th style={{ padding: '0.875rem 1.25rem', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textAlign: 'right', width: '14%', whiteSpace: 'nowrap' }}>
@@ -257,7 +241,7 @@ export const PromptTemplatesView: React.FC = () => {
           <tbody>
             {filteredPrompts.length === 0 ? (
               <tr>
-                <td colSpan={6} style={{ padding: '3rem 1rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+                <td colSpan={5} style={{ padding: '3rem 1rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
                   No prompt templates found matching your search.
                 </td>
               </tr>
@@ -304,7 +288,7 @@ export const PromptTemplatesView: React.FC = () => {
                             whiteSpace: 'nowrap',
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
-                            maxWidth: '420px',
+                            maxWidth: '520px',
                             fontFamily: 'monospace',
                           }}
                         >
@@ -319,13 +303,6 @@ export const PromptTemplatesView: React.FC = () => {
                     <Badge variant={getCategoryBadgeVariant(prompt.category)} size="sm">
                       {formatCategoryLabel(prompt.category)}
                     </Badge>
-                  </td>
-
-                  {/* AI Model */}
-                  <td style={{ padding: '1rem', whiteSpace: 'nowrap' }}>
-                    <span style={{ fontSize: '0.78125rem', color: 'var(--text-secondary)', fontWeight: 500, display: 'inline-flex', alignItems: 'center', gap: '0.375rem', backgroundColor: 'var(--bg-secondary)', padding: '0.25rem 0.625rem', borderRadius: '0.375rem', border: '1px solid var(--border-color)', whiteSpace: 'nowrap' }}>
-                      <FiCpu style={{ color: 'var(--accent-primary)', flexShrink: 0 }} /> {prompt.model}
-                    </span>
                   </td>
 
                   {/* Version */}
@@ -394,9 +371,6 @@ export const PromptTemplatesView: React.FC = () => {
                 <Badge variant={getCategoryBadgeVariant(activePrompt.category)} size="sm">
                   {formatCategoryLabel(activePrompt.category)}
                 </Badge>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 500, display: 'inline-flex', alignItems: 'center', gap: '0.375rem' }}>
-                  <FiCpu style={{ color: 'var(--accent-primary)' }} /> {activePrompt.model}
-                </span>
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
@@ -418,24 +392,13 @@ export const PromptTemplatesView: React.FC = () => {
               />
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-              <div>
-                <CustomDropdown
-                  label="Category"
-                  options={categoryFormOptions}
-                  value={activePrompt.category}
-                  onChange={(val) => setActivePrompt({ ...activePrompt, category: val as PromptTemplate['category'] })}
-                />
-              </div>
-
-              <div>
-                <CustomDropdown
-                  label="AI Model"
-                  options={modelOptions}
-                  value={activePrompt.model}
-                  onChange={(val) => setActivePrompt({ ...activePrompt, model: val })}
-                />
-              </div>
+            <div>
+              <CustomDropdown
+                label="Category"
+                options={categoryFormOptions}
+                value={activePrompt.category}
+                onChange={(val) => setActivePrompt({ ...activePrompt, category: val as PromptTemplate['category'] })}
+              />
             </div>
 
             <div>
@@ -499,7 +462,7 @@ export const PromptTemplatesView: React.FC = () => {
 
       {/* Create New Prompt Modal */}
       {isCreating && (
-        <Modal isOpen={isCreating} onClose={() => setIsCreating(false)} title="Create AI Prompt Template" maxWidth="560px">
+        <Modal isOpen={isCreating} onClose={() => setIsCreating(false)} title="Create Prompt Template" maxWidth="560px">
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.125rem' }}>
             <div>
               <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '0.375rem' }}>
@@ -512,24 +475,13 @@ export const PromptTemplatesView: React.FC = () => {
               />
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-              <div>
-                <CustomDropdown
-                  label="Category"
-                  options={categoryFormOptions}
-                  value={newTemplate.category}
-                  onChange={(val) => setNewTemplate({ ...newTemplate, category: val as PromptTemplate['category'] })}
-                />
-              </div>
-
-              <div>
-                <CustomDropdown
-                  label="AI Model"
-                  options={modelOptions}
-                  value={newTemplate.model}
-                  onChange={(val) => setNewTemplate({ ...newTemplate, model: val })}
-                />
-              </div>
+            <div>
+              <CustomDropdown
+                label="Category"
+                options={categoryFormOptions}
+                value={newTemplate.category}
+                onChange={(val) => setNewTemplate({ ...newTemplate, category: val as PromptTemplate['category'] })}
+              />
             </div>
 
             <div>
