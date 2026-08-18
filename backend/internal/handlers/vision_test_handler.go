@@ -28,8 +28,11 @@ type VisionTestActionRequest struct {
 }
 
 type VisionTestEnhanceRequest struct {
-	TestRunID string `json:"test_run_id"`
-	ImageURL  string `json:"image_url"`
+	TestRunID          string `json:"test_run_id"`
+	ImageURL           string `json:"image_url"`
+	PromptID           string `json:"prompt_id"`
+	PromptName         string `json:"prompt_name"`
+	PromptInstructions string `json:"prompt_instructions"`
 }
 
 // TestFacebookNavigation handles POST /api/facebook/test/navigation
@@ -339,11 +342,13 @@ func EnhanceVisionImage(c *fiber.Ctx) error {
 	enhancedURL := fmt.Sprintf("%s?enhanced=true&t=%d", req.ImageURL, time.Now().Unix())
 
 	return c.JSON(fiber.Map{
-		"status":         "success",
-		"original_url":   req.ImageURL,
-		"enhanced_url":   enhancedURL,
-		"storage_key":    fmt.Sprintf("test-runs/%s/enhanced-images/01.jpg", req.TestRunID),
-		"enhancement_id": fmt.Sprintf("ENH-%d", time.Now().UnixNano()),
+		"status":              "success",
+		"original_url":        req.ImageURL,
+		"enhanced_url":        enhancedURL,
+		"prompt_name":         req.PromptName,
+		"prompt_instructions": req.PromptInstructions,
+		"storage_key":         fmt.Sprintf("test-runs/%s/enhanced-images/01.jpg", req.TestRunID),
+		"enhancement_id":      fmt.Sprintf("ENH-%d", time.Now().UnixNano()),
 	})
 }
 

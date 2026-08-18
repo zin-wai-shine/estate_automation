@@ -250,45 +250,126 @@ export const TestingView: React.FC = () => {
     },
   ];
 
-  // Dynamic Prompt Templates from localStorage
-  const [promptTemplates, setPromptTemplates] = useState<{ id: string; name: string; category: string; instructions: string }[]>(() => {
-    try {
-      const saved = localStorage.getItem('estate_prompt_templates');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed.map((item: any) => ({
-            id: String(item.id),
-            name: item.name,
-            category: item.category,
-            instructions: item.templateText || item.instructions,
-          }));
-        }
-      }
-    } catch (e) {}
-    return defaultTemplates;
-  });
+  // Default Image Enhancement Presets
+  const defaultImagePresets = [
+    {
+      id: 'bright_airy',
+      name: '☀️ Bright & Airy Luxury Lighting',
+      desc: 'Boost ambient illumination, window clarity, and lift shadows.',
+      instructions: 'Enhance ambient illumination, increase window clarity, lift indoor shadows, and give luxury lighting balance.',
+    },
+    {
+      id: 'hdr_interior',
+      name: '🛋️ HDR Warm Interior Staging',
+      desc: 'Enhance warmth, wood grain richness, and furniture contrast.',
+      instructions: 'Enhance warmth, wood grain richness, HDR balance, and cozy residential furniture staging contrast.',
+    },
+    {
+      id: 'sunset_golden',
+      name: '🌅 Sunset Golden Hour & Skyline Glow',
+      desc: 'Add warm golden sky gradients and vibrant city view colors.',
+      instructions: 'Add warm sunset golden hour glow, enhance balcony/window skyline views, and warm lighting gradients.',
+    },
+    {
+      id: 'crisp_sharpen',
+      name: '🔍 Crisp 4K Sharpening & Noise Reduction',
+      desc: 'Sharpen textures, remove pixel noise, and clean up edges.',
+      instructions: 'Apply 4K ultra-sharp texture refinement, remove low-light noise artifacts, and crisp architectural edges.',
+    },
+    {
+      id: 'sky_contrast',
+      name: '🌆 Sky Replacement & Architectural Pop',
+      desc: 'Replace overcast skies with clear blue gradients and pop building lines.',
+      instructions: 'Enhance architectural lines, boost exterior building facade pop, and replace overcast weather with vibrant clear sky.',
+    },
+    {
+      id: 'vibrant_natural',
+      name: '🎨 Vibrant Natural Color Balancing',
+      desc: 'Neutralize green/yellow artificial bulb casts to true-to-life tones.',
+      instructions: 'Correct unnatural color casts from fluorescent/tungsten bulbs, calibrate true white walls and vibrant natural tones.',
+    },
+  ];
 
-  useEffect(() => {
+  // Helper to load Content and Image templates directly from Prompt Templates library in localStorage
+  const loadAllPromptTemplates = () => {
     try {
       const saved = localStorage.getItem('estate_prompt_templates');
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          setPromptTemplates(
-            parsed.map((item: any) => ({
+          // 1. Content Formatter Templates (Non-image enhance)
+          const contentList = parsed
+            .filter((item: any) => item.category !== 'IMAGE_ENHANCE')
+            .map((item: any) => ({
               id: String(item.id),
               name: item.name,
               category: item.category,
-              instructions: item.templateText || item.instructions,
-            }))
-          );
+              instructions: item.templateText || item.instructions || '',
+            }));
+
+          // 2. Image Enhancement Templates (Directly from Prompt Templates)
+          const customImageTemplates = parsed
+            .filter((item: any) => item.category === 'IMAGE_ENHANCE')
+            .map((item: any) => ({
+              id: String(item.id),
+              name: `✨ ${item.name}`,
+              desc: item.templateText ? (item.templateText.length > 60 ? item.templateText.slice(0, 60) + '...' : item.templateText) : 'Custom AI Image Enhancement Template',
+              instructions: item.templateText || '',
+            }));
+
+          const mergedImagePrompts = [
+            ...customImageTemplates,
+            ...defaultImagePresets.filter(
+              (def) => !customImageTemplates.some((c) => c.name.toLowerCase().includes(def.name.toLowerCase()))
+            ),
+          ];
+
+          return {
+            contentTemplates: contentList.length > 0 ? contentList : defaultTemplates,
+            imagePrompts: mergedImagePrompts,
+          };
         }
       }
     } catch (e) {}
+    return {
+      contentTemplates: defaultTemplates,
+      imagePrompts: defaultImagePresets,
+    };
+  };
+
+  // State: Dynamic Prompt Templates for Content Formatter
+  const [promptTemplates, setPromptTemplates] = useState<{ id: string; name: string; category: string; instructions: string }[]>(
+    () => loadAllPromptTemplates().contentTemplates
+  );
+
+  // State: Dynamic Image Enhancement Prompts (from Prompt Templates library)
+  const [imageEnhancePrompts, setImageEnhancePrompts] = useState<{ id: string; name: string; desc: string; instructions: string }[]>(
+    () => loadAllPromptTemplates().imagePrompts
+  );
+
+  const [selectedPromptId, setSelectedPromptId] = useState<string>(() => loadAllPromptTemplates().contentTemplates[0]?.id || 'facebook_rent');
+  const [selectedImagePromptId, setSelectedImagePromptId] = useState<string>(() => loadAllPromptTemplates().imagePrompts[0]?.id || 'bright_airy');
+
+  // Keep both dropdowns synchronized with Prompt Templates library
+  useEffect(() => {
+    const syncTemplates = () => {
+      const { contentTemplates, imagePrompts } = loadAllPromptTemplates();
+      setPromptTemplates(contentTemplates);
+      setImageEnhancePrompts(imagePrompts);
+
+      setSelectedPromptId((prev) => (contentTemplates.some((t) => t.id === prev) ? prev : contentTemplates[0]?.id || ''));
+      setSelectedImagePromptId((prev) => (imagePrompts.some((p) => p.id === prev) ? prev : imagePrompts[0]?.id || ''));
+    };
+
+    syncTemplates();
+    window.addEventListener('focus', syncTemplates);
+    window.addEventListener('storage', syncTemplates);
+    return () => {
+      window.removeEventListener('focus', syncTemplates);
+      window.removeEventListener('storage', syncTemplates);
+    };
   }, []);
 
-  const [selectedPromptId, setSelectedPromptId] = useState<string>(() => promptTemplates[0]?.id || 'facebook_rent');
   const [transformedContent, setTransformedContent] = useState<string>('');
   const [generatedRefCode, setGeneratedRefCode] = useState<string>('');
   const [isTransforming, setIsTransforming] = useState<boolean>(false);
@@ -338,41 +419,6 @@ export const TestingView: React.FC = () => {
     return `${initials}-${randomDigits}-${randomLetters}`;
   };
 
-  // Image Enhancement Prompt Templates
-  const imageEnhancePrompts = [
-    {
-      id: 'bright_airy',
-      name: '☀️ Bright & Airy Luxury Lighting',
-      desc: 'Boost ambient illumination, window clarity, and lift shadows.',
-    },
-    {
-      id: 'hdr_interior',
-      name: '🛋️ HDR Warm Interior Staging',
-      desc: 'Enhance warmth, wood grain richness, and furniture contrast.',
-    },
-    {
-      id: 'sunset_golden',
-      name: '🌅 Sunset Golden Hour & Skyline Glow',
-      desc: 'Add warm golden sky gradients and vibrant city view colors.',
-    },
-    {
-      id: 'crisp_sharpen',
-      name: '🔍 Crisp 4K Sharpening & Noise Reduction',
-      desc: 'Sharpen textures, remove pixel noise, and clean up edges.',
-    },
-    {
-      id: 'sky_contrast',
-      name: '🌆 Sky Replacement & Architectural Pop',
-      desc: 'Replace overcast skies with clear blue gradients and pop building lines.',
-    },
-    {
-      id: 'vibrant_natural',
-      name: '🎨 Vibrant Natural Color Balancing',
-      desc: 'Neutralize green/yellow artificial bulb casts to true-to-life tones.',
-    },
-  ];
-
-  const [selectedImagePromptId, setSelectedImagePromptId] = useState<string>('bright_airy');
   const [isImagePromptDropdownOpen, setIsImagePromptDropdownOpen] = useState<boolean>(false);
   const [isBatchEnhancing, setIsBatchEnhancing] = useState<boolean>(false);
   const [batchEnhanceProgress, setBatchEnhanceProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 });
@@ -642,6 +688,7 @@ export const TestingView: React.FC = () => {
           image_url: imgUrl,
           prompt_id: chosenPrompt.id,
           prompt_name: chosenPrompt.name,
+          prompt_instructions: (chosenPrompt as any).instructions || chosenPrompt.desc,
         }),
       });
       const data = await resp.json();
@@ -678,6 +725,7 @@ export const TestingView: React.FC = () => {
             image_url: img.public_url,
             prompt_id: chosenPrompt.id,
             prompt_name: chosenPrompt.name,
+            prompt_instructions: (chosenPrompt as any).instructions || chosenPrompt.desc,
           }),
         });
         const data = await resp.json();
