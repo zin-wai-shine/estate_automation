@@ -1327,7 +1327,7 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
 
     const photoTarget = await imagePage.evaluate(() => {
       const postContainers = Array.from(
-        document.querySelectorAll('div[role="dialog"] div[role="article"], div[role="article"], div[data-pagelet*="FeedUnit"], div[role="main"]')
+        document.querySelectorAll('div[role="dialog"] div[role="article"], div[role="dialog"], div[role="article"], div[data-pagelet*="FeedUnit"], div[role="main"]')
       );
       const container = postContainers[0] || document.body;
 
@@ -1336,11 +1336,13 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
       ).filter((a) => {
         const href = a.href || '';
         if (href.includes('/user/') || href.includes('/profile.php') || href.includes('/groups/members')) return false;
-        return true;
+        const rect = a.getBoundingClientRect();
+        return rect.width > 50 && rect.height > 50;
       });
 
       if (photoAnchors.length > 0) {
         const a = photoAnchors[0];
+        a.scrollIntoView({ block: 'center', inline: 'center' });
         const rect = a.getBoundingClientRect();
         return {
           href: a.href,
@@ -1352,7 +1354,7 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
       }
 
       const candidateImgs = Array.from(container.querySelectorAll('img')).filter((img) => {
-        const src = img.src || '';
+        const src = img.src || img.currentSrc || '';
         const alt = img.alt || '';
         const parentHref = (img.closest('a') ? img.closest('a').href : '') || '';
 
@@ -1360,11 +1362,14 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
         if (src.includes('/static.xx/') || src.includes('/rsrc.php/') || src.includes('/emoji/')) return false;
         if (alt.toLowerCase().includes('profile') || alt.toLowerCase().includes('avatar') || parentHref.includes('/user/')) return false;
         if (src.includes('p50x50') || src.includes('s50x50') || src.includes('p32x32') || src.includes('p100x100')) return false;
-        return true;
+        
+        const rect = img.getBoundingClientRect();
+        return rect.width > 120 && rect.height > 120;
       });
 
       if (candidateImgs.length > 0) {
         const targetImg = candidateImgs[0];
+        targetImg.scrollIntoView({ block: 'center', inline: 'center' });
         const parentLink = targetImg.closest('a');
         const rect = targetImg.getBoundingClientRect();
         return {

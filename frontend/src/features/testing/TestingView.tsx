@@ -877,21 +877,13 @@ export const TestingView: React.FC = () => {
     addLog('AI_TARGET_01', '[STEP 1] Loading LAST screenshot to locate first property photo...');
 
     try {
-      let activeShot: string | null = capturedScreenshot;
-      if (!activeShot && allCapturedScreenshots.length > 0) {
-        activeShot = allCapturedScreenshots[allCapturedScreenshots.length - 1];
-      }
-
-      // If no screenshot exists, capture one first
-      if (!activeShot) {
-        addLog('AI_TARGET_01', '[STEP 1] Capturing fresh 1920x1080 screenshot from live browser...');
-        const sResp = await fetch('http://localhost:8085/api/facebook/test/screenshot', { method: 'POST' });
-        const sData = await sResp.json();
-        if (sData.screenshot && typeof sData.screenshot === 'string') {
-          activeShot = sData.screenshot;
-          setCapturedScreenshot(sData.screenshot);
-          setAllCapturedScreenshots((prev) => [...prev, sData.screenshot]);
-        }
+      addLog('AI_TARGET_01', '[STEP 1] Capturing fresh screenshot from live browser at exact scroll position...');
+      const sResp = await fetch('http://localhost:8085/api/facebook/test/screenshot', { method: 'POST' });
+      const sData = await sResp.json();
+      let activeShot: string | null = sData.screenshot || capturedScreenshot;
+      if (sData.screenshot && typeof sData.screenshot === 'string') {
+        setCapturedScreenshot(sData.screenshot);
+        setAllCapturedScreenshots((prev) => [...prev, sData.screenshot]);
       }
 
       if (!activeShot) {
@@ -902,7 +894,7 @@ export const TestingView: React.FC = () => {
 
       const validShot: string = activeShot;
 
-      addLog('AI_TARGET_02', '[STEP 2] Sending screenshot to OpenAI Vision to detect top-left first property photo...');
+      addLog('AI_TARGET_02', '[STEP 2] Sending live screenshot to OpenAI Vision to detect top-left first property photo...');
       let coordsResp = await fetch('http://localhost:8085/api/facebook/test/detect-image-coordinates', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
