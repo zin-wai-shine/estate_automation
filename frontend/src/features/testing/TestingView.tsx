@@ -207,7 +207,7 @@ export const TestingView: React.FC = () => {
   const [photoTargetMode, setPhotoTargetMode] = useState<'auto' | 'manual'>('auto');
 
   // AI Content Transformation State
-  const promptTemplates = [
+  const defaultTemplates = [
     {
       id: 'facebook_rent',
       name: 'Facebook Rental Listing Copy (Thai/English)',
@@ -245,7 +245,45 @@ export const TestingView: React.FC = () => {
     },
   ];
 
-  const [selectedPromptId, setSelectedPromptId] = useState<string>('facebook_rent');
+  // Dynamic Prompt Templates from localStorage
+  const [promptTemplates, setPromptTemplates] = useState<{ id: string; name: string; category: string; instructions: string }[]>(() => {
+    try {
+      const saved = localStorage.getItem('estate_prompt_templates');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map((item: any) => ({
+            id: String(item.id),
+            name: item.name,
+            category: item.category,
+            instructions: item.templateText || item.instructions,
+          }));
+        }
+      }
+    } catch (e) {}
+    return defaultTemplates;
+  });
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('estate_prompt_templates');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setPromptTemplates(
+            parsed.map((item: any) => ({
+              id: String(item.id),
+              name: item.name,
+              category: item.category,
+              instructions: item.templateText || item.instructions,
+            }))
+          );
+        }
+      }
+    } catch (e) {}
+  }, []);
+
+  const [selectedPromptId, setSelectedPromptId] = useState<string>(() => promptTemplates[0]?.id || 'facebook_rent');
   const [transformedContent, setTransformedContent] = useState<string>('');
   const [isTransforming, setIsTransforming] = useState<boolean>(false);
   const [isPromptDropdownOpen, setIsPromptDropdownOpen] = useState<boolean>(false);

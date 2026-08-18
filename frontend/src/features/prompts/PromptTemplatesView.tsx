@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { PromptTemplate } from '../../types';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
@@ -13,38 +13,57 @@ import {
   FiCheckCircle,
   FiEye,
   FiSearch,
+  FiTrash2,
 } from 'react-icons/fi';
 
+const INITIAL_DEFAULT_TEMPLATES: PromptTemplate[] = [
+  {
+    id: 1,
+    name: 'Facebook Rental Listing Copy (Thai/English)',
+    category: 'FACEBOOK_RENT',
+    version: 'V1.2',
+    active: true,
+    templateText:
+      'Generate an attractive Facebook real estate rental post for a condo in Bangkok.\nTitle: {title}\nPrice: {price}\nLocation: {location}\nInclude high-converting CTA and relevant hashtags.',
+  },
+  {
+    id: 2,
+    name: 'TikTok Short Video Script & Hook Generator',
+    category: 'TIKTOK',
+    version: 'V1.0',
+    active: true,
+    templateText:
+      'Create a viral 15-second TikTok video script for property listing {title}.\nStart with a high-curiosity hook, list 3 key highlights, and end with Line ID CTA.',
+  },
+  {
+    id: 3,
+    name: 'Facebook Property Sale Copy Template',
+    category: 'FACEBOOK_SALE',
+    version: 'V1.0',
+    active: true,
+    templateText:
+      'Write a professional sales copy for property sale: {title}.\nHighlight investment yield, BTS access, and price {price}.',
+  },
+];
+
 export const PromptTemplatesView: React.FC = () => {
-  const [prompts, setPrompts] = useState<PromptTemplate[]>([
-    {
-      id: 1,
-      name: 'Facebook Rental Listing Copy (Thai/English)',
-      category: 'FACEBOOK_RENT',
-      version: 'V1.2',
-      active: true,
-      templateText:
-        'Generate an attractive Facebook real estate rental post for a condo in Bangkok.\nTitle: {title}\nPrice: {price}\nLocation: {location}\nInclude high-converting CTA and relevant hashtags.',
-    },
-    {
-      id: 2,
-      name: 'TikTok Short Video Script & Hook Generator',
-      category: 'TIKTOK',
-      version: 'V1.0',
-      active: true,
-      templateText:
-        'Create a viral 15-second TikTok video script for property listing {title}.\nStart with a high-curiosity hook, list 3 key highlights, and end with Line ID CTA.',
-    },
-    {
-      id: 3,
-      name: 'Facebook Property Sale Copy Template',
-      category: 'FACEBOOK_SALE',
-      version: 'V1.0',
-      active: true,
-      templateText:
-        'Write a professional sales copy for property sale: {title}.\nHighlight investment yield, BTS access, and price {price}.',
-    },
-  ]);
+  const [prompts, setPrompts] = useState<PromptTemplate[]>(() => {
+    try {
+      const saved = localStorage.getItem('estate_prompt_templates');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return INITIAL_DEFAULT_TEMPLATES;
+  });
+
+  // Save to localStorage on any change
+  useEffect(() => {
+    try {
+      localStorage.setItem('estate_prompt_templates', JSON.stringify(prompts));
+    } catch (e) {}
+  }, [prompts]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('ALL');
@@ -69,15 +88,23 @@ export const PromptTemplatesView: React.FC = () => {
     );
   };
 
+  const handleDeletePrompt = (id: number, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setPrompts((prev) => prev.filter((p) => p.id !== id));
+    if (activePrompt && activePrompt.id === id) {
+      setActivePrompt(null);
+    }
+  };
+
   const handleCreateNew = () => {
     if (!newTemplate.name.trim() || !newTemplate.templateText.trim()) return;
     const created: PromptTemplate = {
       id: Date.now(),
-      name: newTemplate.name,
+      name: newTemplate.name.trim(),
       category: newTemplate.category,
       version: 'V1.0',
       active: true,
-      templateText: newTemplate.templateText,
+      templateText: newTemplate.templateText.trim(),
     };
     setPrompts((prev) => [created, ...prev]);
     setIsCreating(false);
@@ -347,10 +374,27 @@ export const PromptTemplatesView: React.FC = () => {
                         variant="secondary"
                         size="sm"
                         leftIcon={<FiEye />}
-                        onClick={() => setActivePrompt(prompt)}
+                        onClick={() => setActivePrompt({ ...prompt })}
                         style={{ height: '32px', fontSize: '0.75rem', padding: '0 0.75rem', whiteSpace: 'nowrap' }}
                       >
                         Detail & Edit
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        leftIcon={<FiTrash2 style={{ color: '#EF4444' }} />}
+                        onClick={(e) => handleDeletePrompt(prompt.id, e)}
+                        style={{
+                          height: '32px',
+                          fontSize: '0.75rem',
+                          padding: '0 0.625rem',
+                          whiteSpace: 'nowrap',
+                          borderColor: 'rgba(239, 68, 68, 0.4)',
+                          color: '#EF4444',
+                        }}
+                        title="Delete Template"
+                      >
+                        Delete
                       </Button>
                     </div>
                   </td>
@@ -425,19 +469,31 @@ export const PromptTemplatesView: React.FC = () => {
               />
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5rem' }}>
-              <Button
-                variant="outline"
-                size="sm"
-                leftIcon={<FiPower />}
-                onClick={() => {
-                  const updated = { ...activePrompt, active: !activePrompt.active };
-                  setActivePrompt(updated);
-                  setPrompts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
-                }}
-              >
-                {activePrompt.active ? 'Deactivate Prompt' : 'Activate Prompt'}
-              </Button>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  leftIcon={<FiPower />}
+                  onClick={() => {
+                    const updated = { ...activePrompt, active: !activePrompt.active };
+                    setActivePrompt(updated);
+                    setPrompts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+                  }}
+                >
+                  {activePrompt.active ? 'Deactivate' : 'Activate'}
+                </Button>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  leftIcon={<FiTrash2 style={{ color: '#EF4444' }} />}
+                  onClick={() => handleDeletePrompt(activePrompt.id)}
+                  style={{ borderColor: 'rgba(239, 68, 68, 0.4)', color: '#EF4444' }}
+                >
+                  Delete Template
+                </Button>
+              </div>
 
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <Button variant="outline" size="sm" onClick={() => setActivePrompt(null)}>
@@ -448,7 +504,13 @@ export const PromptTemplatesView: React.FC = () => {
                   size="sm"
                   leftIcon={<FiCheckCircle />}
                   onClick={() => {
-                    setPrompts((prev) => prev.map((p) => (p.id === activePrompt.id ? activePrompt : p)));
+                    if (!activePrompt.name.trim() || !activePrompt.templateText.trim()) return;
+                    const savedItem: PromptTemplate = {
+                      ...activePrompt,
+                      name: activePrompt.name.trim(),
+                      templateText: activePrompt.templateText.trim(),
+                    };
+                    setPrompts((prev) => prev.map((p) => (p.id === savedItem.id ? savedItem : p)));
                     setActivePrompt(null);
                   }}
                 >
