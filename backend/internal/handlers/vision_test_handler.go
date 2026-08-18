@@ -355,6 +355,8 @@ func EnhanceVisionImage(c *fiber.Ctx) error {
 		_, err := openAISvc.EnhancePropertyImageWithAI(c.Context(), req.ImageURL, req.PromptID, req.PromptName, req.PromptInstructions, outFilePath)
 		if err == nil {
 			enhancedURL = fmt.Sprintf("http://localhost:8085/storage/uploads/test-runs/%s/enhanced-images/%s?t=%d", testRunID, cleanName, time.Now().Unix())
+		} else {
+			fmt.Printf("[OPENAI_ENHANCE_ERR] Failed to enhance via OpenAI: %v\n", err)
 		}
 	}
 

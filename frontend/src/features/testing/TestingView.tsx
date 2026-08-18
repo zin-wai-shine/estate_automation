@@ -678,6 +678,7 @@ export const TestingView: React.FC = () => {
   const handleEnhanceImage = async (imgUrl: string, promptId?: string) => {
     if (!activeTestRun) return;
     const chosenPrompt = imageEnhancePrompts.find((p) => p.id === (promptId || selectedImagePromptId)) || imageEnhancePrompts[0];
+    const instructionText = chosenPrompt.instructions || (chosenPrompt as any).templateText || chosenPrompt.desc || '';
     addLog('ENHANCE', `Applying "${chosenPrompt.name}" enhancement to photo...`);
     try {
       const resp = await fetch('http://localhost:8085/api/facebook/test/enhance-image', {
@@ -688,7 +689,7 @@ export const TestingView: React.FC = () => {
           image_url: imgUrl,
           prompt_id: chosenPrompt.id,
           prompt_name: chosenPrompt.name,
-          prompt_instructions: (chosenPrompt as any).instructions || chosenPrompt.desc,
+          prompt_instructions: instructionText,
         }),
       });
       const data = await resp.json();
@@ -711,6 +712,7 @@ export const TestingView: React.FC = () => {
 
     setIsBatchEnhancing(true);
     const chosenPrompt = imageEnhancePrompts.find((p) => p.id === selectedImagePromptId) || imageEnhancePrompts[0];
+    const instructionText = chosenPrompt.instructions || (chosenPrompt as any).templateText || chosenPrompt.desc || '';
     addLog('ENHANCE_BATCH', `✨ Starting Batch AI Enhancement for ${images.length} photos with "${chosenPrompt.name}"...`);
 
     for (let i = 0; i < images.length; i++) {
@@ -725,7 +727,7 @@ export const TestingView: React.FC = () => {
             image_url: img.public_url,
             prompt_id: chosenPrompt.id,
             prompt_name: chosenPrompt.name,
-            prompt_instructions: (chosenPrompt as any).instructions || chosenPrompt.desc,
+            prompt_instructions: instructionText,
           }),
         });
         const data = await resp.json();
