@@ -1242,3 +1242,191 @@ CRITICAL RULES:
 
 	return strings.TrimSpace(openAIResp.Choices[0].Message.Content), nil
 }
+
+// EnhancePropertyImageWithAI uses GPT-4o Vision and DALL-E 3 to create an ultra-photorealistic, high-end architectural photo enhancement.
+func (s *OpenAIService) EnhancePropertyImageWithAI(ctx context.Context, imageURLOrBase64 string, promptID string, promptName string, customInstructions string, outFilePath string) (string, error) {
+	if s.APIKey == "" {
+		return "", fmt.Errorf("OPENAI_API_KEY is not configured")
+	}
+
+	// Prepare image URL or base64 format for OpenAI Vision
+	var formattedImageURL string
+	if strings.HasPrefix(imageURLOrBase64, "http://") || strings.HasPrefix(imageURLOrBase64, "https://") || strings.HasPrefix(imageURLOrBase64, "data:image/") {
+		formattedImageURL = imageURLOrBase64
+	} else if strings.HasPrefix(imageURLOrBase64, "/") || strings.HasPrefix(imageURLOrBase64, "./") {
+		// Local file to base64
+		data, err := os.ReadFile(imageURLOrBase64)
+		if err == nil {
+			formattedImageURL = fmt.Sprintf("data:image/jpeg;base64,%s", base64.StdEncoding.EncodeToString(data))
+		}
+	}
+
+	instructionText := customInstructions
+	if instructionText == "" {
+		instructionText = "Enhance ambient luxury lighting, crisp architectural details, warm interior atmosphere, and clean staging."
+	}
+
+	// STEP 1: Use GPT-4o Vision to craft a precise architectural prompt from the source photo
+	analysisSystemPrompt := `You are an elite architectural photographer and luxury interior designer for Architectural Digest.
+Analyze the provided property photograph and generate a comprehensive, highly descriptive image generation prompt for DALL-E 3.
+
+Requirements:
+1. Preserve the original space type, camera viewpoint, architectural layout, window placements, and structural geometry.
+2. Elevate the space with high-end luxury staging: modern designer furniture, flawless hardwood/marble flooring, rich textures, and immaculate finishings.
+3. Incorporate the user's enhancement request: "` + instructionText + `" (Preset: ` + promptName + `).
+4. Emphasize ultra-photorealistic 8k architectural photography, soft natural daylight pouring through clean windows, warm interior ambient lights, no distortion, no text, no watermarks.
+5. Output ONLY the finalized prompt text, with no preamble or markdown quotes.`
+
+	var messages []interface{}
+	if formattedImageURL != "" {
+		messages = []interface{}{
+			map[string]interface{}{
+				"role":    "system",
+				"content": analysisSystemPrompt,
+			},
+			map[string]interface{}{
+				"role": "user",
+				"content": []interface{}{
+					map[string]interface{}{
+						"type": "text",
+						"text": "Analyze this property photo and generate the ultimate photorealistic luxury enhancement prompt.",
+					},
+					map[string]interface{}{
+						"type": "image_url",
+						"image_url": map[string]interface{}{
+							"url":    formattedImageURL,
+							"detail": "high",
+						},
+					},
+				},
+			},
+		}
+	} else {
+		messages = []interface{}{
+			map[string]interface{}{
+				"role":    "system",
+				"content": analysisSystemPrompt,
+			},
+			map[string]interface{}{
+				"role":    "user",
+				"content": fmt.Sprintf("Generate an ultra-photorealistic luxury real estate architectural photograph: %s. %s", promptName, instructionText),
+			},
+		}
+	}
+
+	chatReqBody := map[string]interface{}{
+		"model":       "gpt-4o",
+		"messages":    messages,
+		"temperature": 0.5,
+		"max_tokens":  600,
+	}
+
+	chatBytes, err := json.Marshal(chatReqBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to encode vision request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", "https://api.openai.com/v1/chat/completions", bytes.NewBuffer(chatBytes))
+	if err != nil {
+		return "", fmt.Errorf("failed to create chat request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", s.APIKey))
+
+	chatResp, err := s.Client.Do(httpReq)
+	if err != nil {
+		return "", fmt.Errorf("OpenAI Vision failed: %w", err)
+	}
+	defer chatResp.Body.Close()
+
+	chatBodyBytes, _ := io.ReadAll(chatResp.Body)
+	var chatResult struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	_ = json.Unmarshal(chatBodyBytes, &chatResult)
+
+	var dallEPrompt string
+	if len(chatResult.Choices) > 0 && chatResult.Choices[0].Message.Content != "" {
+		dallEPrompt = strings.TrimSpace(chatResult.Choices[0].Message.Content)
+	} else {
+		dallEPrompt = fmt.Sprintf("Ultra-photorealistic 8k architectural digest luxury real estate photograph. %s. %s. Soft natural ambient daylight, immaculate interior staging, warm lighting.", promptName, instructionText)
+	}
+
+	// STEP 2: Call DALL-E 3 API to generate the ultra-photorealistic luxury image
+	dalleReqBody := map[string]interface{}{
+		"model":   "dall-e-3",
+		"prompt":  dallEPrompt,
+		"n":       1,
+		"size":    "1792x1024",
+		"quality": "hd",
+		"style":   "natural",
+	}
+
+	dalleBytes, err := json.Marshal(dalleReqBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to encode DALL-E request: %w", err)
+	}
+
+	dalleHttpReq, err := http.NewRequestWithContext(ctx, "POST", "https://api.openai.com/v1/images/generations", bytes.NewBuffer(dalleBytes))
+	if err != nil {
+		return "", fmt.Errorf("failed to create DALL-E request: %w", err)
+	}
+	dalleHttpReq.Header.Set("Content-Type", "application/json")
+	dalleHttpReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", s.APIKey))
+
+	dalleClient := &http.Client{Timeout: 90 * time.Second}
+	dalleResp, err := dalleClient.Do(dalleHttpReq)
+	if err != nil {
+		return "", fmt.Errorf("DALL-E 3 generation failed: %w", err)
+	}
+	defer dalleResp.Body.Close()
+
+	dalleBodyBytes, _ := io.ReadAll(dalleResp.Body)
+	var dalleResult struct {
+		Data []struct {
+			URL string `json:"url"`
+		} `json:"data"`
+		Error *struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+
+	if err := json.Unmarshal(dalleBodyBytes, &dalleResult); err != nil {
+		return "", fmt.Errorf("failed to parse DALL-E 3 response: %w", err)
+	}
+
+	if dalleResult.Error != nil && dalleResult.Error.Message != "" {
+		return "", fmt.Errorf("DALL-E 3 error: %s", dalleResult.Error.Message)
+	}
+
+	if len(dalleResult.Data) == 0 || dalleResult.Data[0].URL == "" {
+		return "", fmt.Errorf("DALL-E 3 returned no image URL")
+	}
+
+	generatedURL := dalleResult.Data[0].URL
+
+	// STEP 3: Download and persist generated image to local disk
+	dlResp, err := http.Get(generatedURL)
+	if err != nil {
+		return generatedURL, nil // Return direct URL if download fails
+	}
+	defer dlResp.Body.Close()
+
+	outFile, err := os.Create(outFilePath)
+	if err != nil {
+		return generatedURL, nil
+	}
+	defer outFile.Close()
+
+	_, err = io.Copy(outFile, dlResp.Body)
+	if err != nil {
+		return generatedURL, nil
+	}
+
+	return generatedURL, nil
+}
+

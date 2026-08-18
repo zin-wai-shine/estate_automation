@@ -348,12 +348,24 @@ func EnhanceVisionImage(c *fiber.Ctx) error {
 	outFilePath := filepath.Join(enhancedDir, cleanName)
 
 	var enhancedURL string
-	err := utils.ProcessAndSaveEnhancedImage(req.ImageURL, outFilePath, req.PromptID, req.PromptInstructions)
-	if err == nil {
-		enhancedURL = fmt.Sprintf("http://localhost:8085/storage/uploads/test-runs/%s/enhanced-images/%s?t=%d", testRunID, cleanName, time.Now().Unix())
-	} else {
-		// Fallback if source image couldn't be fetched over network directly
-		enhancedURL = fmt.Sprintf("%s?enhanced=true&preset=%s&t=%d", req.ImageURL, req.PromptID, time.Now().Unix())
+	openAISvc := services.NewOpenAIService()
+
+	// Try OpenAI GPT-4o Vision + DALL-E 3 for photorealistic architectural luxury enhancement
+	if openAISvc.APIKey != "" {
+		_, err := openAISvc.EnhancePropertyImageWithAI(c.Context(), req.ImageURL, req.PromptID, req.PromptName, req.PromptInstructions, outFilePath)
+		if err == nil {
+			enhancedURL = fmt.Sprintf("http://localhost:8085/storage/uploads/test-runs/%s/enhanced-images/%s?t=%d", testRunID, cleanName, time.Now().Unix())
+		}
+	}
+
+	// Fallback to high-definition computational photography tone curve & sharpening if needed
+	if enhancedURL == "" {
+		err := utils.ProcessAndSaveEnhancedImage(req.ImageURL, outFilePath, req.PromptID, req.PromptInstructions)
+		if err == nil {
+			enhancedURL = fmt.Sprintf("http://localhost:8085/storage/uploads/test-runs/%s/enhanced-images/%s?t=%d", testRunID, cleanName, time.Now().Unix())
+		} else {
+			enhancedURL = fmt.Sprintf("%s?enhanced=true&preset=%s&t=%d", req.ImageURL, req.PromptID, time.Now().Unix())
+		}
 	}
 
 	return c.JSON(fiber.Map{
