@@ -250,43 +250,49 @@ export const TestingView: React.FC = () => {
     },
   ];
 
-  // Default Image Enhancement Presets
+  // Default Image Enhancement & Retouching Presets (Strict Photo Restoration)
   const defaultImagePresets = [
     {
+      id: 'photo_retouch',
+      name: '✨ Professional Real Estate Photo Retouching',
+      desc: 'Enhance clarity, dynamic range, window sky view, and authentic color accuracy.',
+      instructions:
+        'Professionally retouch this original property photograph: enhance sharpness, clarity, dynamic range, window sky dehazing, and true-to-life color accuracy. Preserve exactly the original room layout, furniture, architecture, and lighting mood. Do not redesign, restyle, or recreate any elements.',
+    },
+    {
       id: 'bright_airy',
-      name: '☀️ Bright & Airy Luxury Lighting',
-      desc: 'Boost ambient illumination, window clarity, and lift shadows.',
-      instructions: 'Enhance ambient illumination, increase window clarity, lift indoor shadows, and give luxury lighting balance.',
+      name: '☀️ Exposure Balance & Shadow Recovery',
+      desc: 'Lift underexposed dark shadows and protect window highlights.',
+      instructions:
+        'Restore balanced exposure: lift dark shadow areas, protect bright window highlights, and preserve authentic architectural identity without changing original room colors or styling.',
     },
     {
       id: 'hdr_interior',
-      name: '🛋️ HDR Warm Interior Staging',
-      desc: 'Enhance warmth, wood grain richness, and furniture contrast.',
-      instructions: 'Enhance warmth, wood grain richness, HDR balance, and cozy residential furniture staging contrast.',
-    },
-    {
-      id: 'sunset_golden',
-      name: '🌅 Sunset Golden Hour & Skyline Glow',
-      desc: 'Add warm golden sky gradients and vibrant city view colors.',
-      instructions: 'Add warm sunset golden hour glow, enhance balcony/window skyline views, and warm lighting gradients.',
-    },
-    {
-      id: 'crisp_sharpen',
-      name: '🔍 Crisp 4K Sharpening & Noise Reduction',
-      desc: 'Sharpen textures, remove pixel noise, and clean up edges.',
-      instructions: 'Apply 4K ultra-sharp texture refinement, remove low-light noise artifacts, and crisp architectural edges.',
+      name: '🛋️ Natural Interior HDR Tone Balancing',
+      desc: 'Calibrate contrast, wood grain definition, and fabric textures.',
+      instructions:
+        'Enhance natural HDR contrast, refine authentic wood textures and fabric weave, and restore deep clean shadow details while keeping original furniture and staging intact.',
     },
     {
       id: 'sky_contrast',
-      name: '🌆 Sky Replacement & Architectural Pop',
-      desc: 'Replace overcast skies with clear blue gradients and pop building lines.',
-      instructions: 'Enhance architectural lines, boost exterior building facade pop, and replace overcast weather with vibrant clear sky.',
+      name: '🌆 Window Sky Dehaze & Skyline Clarity',
+      desc: 'Dehaze city views and restore natural sky tone through glass.',
+      instructions:
+        'Dehaze the distant city view outside the window/balcony glass, restore natural sky clarity and soft clouds, while preserving 100% of the authentic interior room elements.',
+    },
+    {
+      id: 'crisp_sharpen',
+      name: '🔍 4K Texture Clarity & Denoising',
+      desc: 'Eliminate low-light noise and sharpen fine architectural edges.',
+      instructions:
+        'Apply high-resolution texture refinement, eliminate digital noise artifacts, and sharpen architectural edges without producing halos or altering the original photo scene.',
     },
     {
       id: 'vibrant_natural',
-      name: '🎨 Vibrant Natural Color Balancing',
-      desc: 'Neutralize green/yellow artificial bulb casts to true-to-life tones.',
-      instructions: 'Correct unnatural color casts from fluorescent/tungsten bulbs, calibrate true white walls and vibrant natural tones.',
+      name: '🎨 True-to-Life White Balance & Color Correction',
+      desc: 'Neutralize artificial yellow/green casts to natural daylight tones.',
+      instructions:
+        'Calibrate white balance to neutralize unnatural indoor light casts, restoring true white walls, authentic flooring tones, and natural daylight colors.',
     },
   ];
 

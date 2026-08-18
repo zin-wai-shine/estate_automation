@@ -1273,18 +1273,31 @@ func (s *OpenAIService) EnhancePropertyImageWithAI(ctx context.Context, imageURL
 
 	instructionText := customInstructions
 	if instructionText == "" {
-		instructionText = "Transform into an ultra-high-resolution, premium luxury real estate magazine photograph with crisp deep blue sky, soft clouds, warm natural lighting, and rich architectural contrast."
+		instructionText = "Professionally retouch and restore this property photograph: enhance sharpness, clarity, dynamic range, window sky dehazing, and true-to-life color accuracy while preserving 100% of the authentic scene, furniture placement, and architectural layout."
 	}
 
-	// STEP 1: Use GPT-4o Vision to analyze the original image and produce targeted editing instructions
-	analysisSystemPrompt := `You are an elite architectural photo retoucher and image editor.
-Analyze the provided property photograph and generate precise image editing and photo restoration instructions for an image-to-image editing model.
+	// STEP 1: Use GPT-4o Vision strictly for photo defect analysis and retouching instructions
+	analysisSystemPrompt := `You are a senior professional architectural photo retoucher specializing in high-end real-estate photography editing.
+Your sole job is to analyze the technical image defects of this original property photo and output concise retouching instructions for an image-to-image photo editing model.
 
-Instructions:
-1. Preserve 100% of the authentic scene: room layout, architecture, furniture, textures, and items.
-2. Formulate specific image editing instructions to restore clarity, dynamic range, window sky blue/clouds, dehaze city view, balance lighting, and sharpen textures.
-3. User instruction: ` + instructionText + ` (Preset: ` + promptName + `).
-4. Output ONLY the concise photo editing instructions.`
+Analyze:
+1. Exposure & Dynamic Range: lift clipped shadows, protect and recover blown-out window highlights.
+2. Window / Balcony View: dehaze distant city skyline, restore natural azure sky tone and soft clouds through glass.
+3. Sharpness & Clarity: sharpen fine texture detail on fabrics, wood grains, and marble surfaces; correct lens softness.
+4. Color Balance: correct unnatural artificial light casts, restore neutral true-to-life wall tones.
+5. Denoising: eliminate low-light sensor noise while keeping architectural edges crisp.
+
+STRICT PRESERVATION RULES:
+- The output must be the exact same photograph after professional retouching, not a newly generated interpretation.
+- Do NOT redesign, restyle, recreate, or imagine missing details.
+- Do NOT change the original lighting mood or color identity.
+- Do NOT add luxury styling or cinematic effects.
+- Preserve exactly: furniture position, room layout, architecture, walls, doors, windows, flooring, materials, decorations, reflections, shadows, camera perspective, and composition.
+- Avoid words: "create", "generate", "redesign", "luxury rendering", "visualization", "cinematic", "modernize".
+- Use words: "restore", "enhance", "correct", "refine", "preserve", "retouch", "dehaze", "denoise".
+- User Request: ` + instructionText + ` (Preset: ` + promptName + `).
+
+Output ONLY the precise photo retouching instructions.`
 
 	var messages []interface{}
 	if formattedImageURL != "" {
@@ -1298,7 +1311,7 @@ Instructions:
 				"content": []interface{}{
 					map[string]interface{}{
 						"type": "text",
-						"text": "Analyze this original property photo and output image-to-image editing instructions to enhance quality, sky, and lighting while preserving the authentic scene.",
+						"text": "Analyze this original property photograph for technical defects and provide photo retouching instructions to restore clarity, exposure, and sky while preserving the exact authentic scene.",
 					},
 					map[string]interface{}{
 						"type": "image_url",
@@ -1318,7 +1331,7 @@ Instructions:
 			},
 			map[string]interface{}{
 				"role":    "user",
-				"content": fmt.Sprintf("Generate image-to-image editing instructions: %s. %s", promptName, instructionText),
+				"content": fmt.Sprintf("Provide photo retouching instructions to restore this property image: %s. %s", promptName, instructionText),
 			},
 		}
 	}
@@ -1326,7 +1339,7 @@ Instructions:
 	chatReqBody := map[string]interface{}{
 		"model":       "gpt-4o",
 		"messages":    messages,
-		"temperature": 0.3,
+		"temperature": 0.2,
 		"max_tokens":  500,
 	}
 
@@ -1362,7 +1375,7 @@ Instructions:
 	if len(chatResult.Choices) > 0 && chatResult.Choices[0].Message.Content != "" {
 		editingPrompt = strings.TrimSpace(chatResult.Choices[0].Message.Content)
 	} else {
-		editingPrompt = fmt.Sprintf("Enhance photo clarity, dynamic range, window sky view, and architectural lighting while preserving original scene: %s. %s", promptName, instructionText)
+		editingPrompt = fmt.Sprintf("Professionally retouch this property photograph: restore sharpness, dynamic range, window sky view, and balanced exposure while preserving 100%% of original room layout and furniture: %s. %s", promptName, instructionText)
 	}
 
 	// STEP 2: Call OpenAI Image Editing Model (images/edits) passing the original image directly
