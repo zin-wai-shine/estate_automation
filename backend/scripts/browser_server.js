@@ -1432,37 +1432,70 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
       console.warn('[IMAGE] Could not automatically trigger photo viewer modal.');
     }
 
-    // Step 3: Gallery Downloading Loop
-    const getActiveViewerImage = async () => {
-      return await imagePage.evaluate(() => {
-        const modal = document.querySelector('[role="dialog"], [data-pagelet*="MediaViewer"]') || document.body;
-        const candidates = Array.from(modal.querySelectorAll('img')).filter((img) => {
-          const src = img.src || '';
-          if (!src.includes('scontent') && !src.includes('fbcdn')) return false;
-          if (src.includes('/static.xx/') || src.includes('/rsrc.php/') || src.includes('/emoji/')) return false;
-          if (img.width < 250 || img.height < 250) return false;
-          return true;
+    // Step 3: Gallery Downloading Loop with Polling & Transition Detection
+    const getActiveViewerImage = async (maxAttempts = 15) => {
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const result = await imagePage.evaluate(() => {
+          const allImgs = Array.from(document.querySelectorAll('img')).filter((img) => {
+            const src = img.currentSrc || img.src || '';
+            if (!src || (!src.includes('scontent') && !src.includes('fbcdn'))) return false;
+            if (src.includes('/static.xx/') || src.includes('/rsrc.php/') || src.includes('/emoji/')) return false;
+            if (src.includes('p50x50') || src.includes('s50x50') || src.includes('p32x32') || src.includes('p100x100')) return false;
+            
+            const w = img.naturalWidth || img.width || 0;
+            const h = img.naturalHeight || img.height || 0;
+            const isVisualMedia = img.getAttribute('data-visualcompletion') === 'media-vc-image';
+            if (!isVisualMedia && w < 200 && h < 200) return false;
+            return true;
+          });
+
+          if (allImgs.length === 0) return null;
+
+          // Select the largest resolution image
+          allImgs.sort((a, b) => {
+            const areaA = (a.naturalWidth || a.width || 0) * (a.naturalHeight || a.height || 0);
+            const areaB = (b.naturalWidth || b.width || 0) * (b.naturalHeight || b.height || 0);
+            return areaB - areaA;
+          });
+
+          const best = allImgs[0];
+          let bestUrl = best.currentSrc || best.src;
+
+          if (best.srcset) {
+            const parts = best.srcset.split(',').map((s) => s.trim().split(' '));
+            let maxW = 0;
+            parts.forEach(([url, descriptor]) => {
+              const w = descriptor ? parseInt(descriptor.replace('w', ''), 10) : 0;
+              if (w > maxW) {
+                maxW = w;
+                bestUrl = url;
+              }
+            });
+          }
+
+          return {
+            source_url: bestUrl,
+            width: best.naturalWidth || best.width || 1280,
+            height: best.naturalHeight || best.height || 720,
+          };
         });
 
-        if (candidates.length === 0) return null;
-        candidates.sort((a, b) => (b.naturalWidth || b.width) * (b.naturalHeight || b.height) - (a.naturalWidth || a.width) * (a.naturalHeight || a.height));
-        const best = candidates[0];
-        return {
-          source_url: best.currentSrc || best.src,
-          width: best.naturalWidth || best.width,
-          height: best.naturalHeight || best.height,
-        };
-      });
+        if (result && result.source_url) {
+          return result;
+        }
+        await imagePage.waitForTimeout(250);
+      }
+      return null;
     };
 
     let count = 0;
     let isFinished = false;
 
     while (count < maxImages && !isFinished) {
-      const imageResource = await getActiveViewerImage();
+      const imageResource = await getActiveViewerImage(15);
 
       if (!imageResource || !imageResource.source_url) {
-        console.log('[IMAGE] No visible photo found in viewer.');
+        console.log('[IMAGE] No visible photo found in viewer after polling.');
         break;
       }
 
@@ -1470,7 +1503,7 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
       const sha256 = generateImageHash(imageResource.source_url, count);
 
       if (seenHashes.has(sha256)) {
-        console.log(`[IMAGE] Duplicate image detected (${sha256.slice(0, 10)}). Loop complete.`);
+        console.log(`[IMAGE] Duplicate image detected (${sha256.slice(0, 10)}). Carousel loop complete.`);
         console.log('[IMAGE] Gallery complete');
         isFinished = true;
         break;
@@ -1502,42 +1535,60 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
         break;
       }
 
-      // Click Next Photo
+      // 4. Click Next Photo
       console.log('[IMAGE] Clicking Next');
       const prevUrl = imageResource.source_url;
 
-      await imagePage.evaluate(() => {
-        const nextBtns = Array.from(
-          document.querySelectorAll(
-            '[aria-label="Next photo"], [aria-label="Next"], [aria-label="ถัดไป"], [aria-label="Next Picture"], [aria-label="Next image"], div[role="button"][aria-label*="Next"], div[role="button"][aria-label*="ถัดไป"]'
-          )
-        );
-        if (nextBtns.length > 0) {
-          nextBtns[0].click();
-          return;
-        }
+      // Click next button in DOM
+      const nextClicked = await imagePage.evaluate(() => {
+        const nextSelectors = [
+          '[aria-label="Next photo"]',
+          '[aria-label="Next image"]',
+          '[aria-label="Next"]',
+          '[aria-label="ถัดไป"]',
+          '[aria-label="Next Picture"]',
+          'div[role="button"][aria-label*="Next"]',
+          'div[role="button"][aria-label*="ถัดไป"]',
+          'div[data-visualcompletion="ignore-dynamic-extra"] div[role="button"]:last-child',
+        ];
 
-        const viewer = document.querySelector('[role="dialog"], [data-pagelet*="MediaViewer"]') || document.body;
-        const rightArea = viewer.querySelector('div[role="button"][tabindex="0"]:last-child');
-        if (rightArea) {
-          rightArea.click();
+        for (const sel of nextSelectors) {
+          const btns = Array.from(document.querySelectorAll(sel));
+          for (const btn of btns) {
+            const rect = btn.getBoundingClientRect();
+            if (rect.width > 0 && rect.height > 0 && rect.right > window.innerWidth / 2) {
+              btn.click();
+              return true;
+            }
+          }
         }
-      }).catch(() => {});
+        return false;
+      }).catch(() => false);
 
+      // Also click right side area if DOM selector didn't click
+      if (!nextClicked) {
+        const vp = imagePage.viewportSize() || { width: 1440, height: 900 };
+        await imagePage.mouse.click(Math.round(vp.width * 0.96), Math.round(vp.height * 0.5)).catch(() => {});
+      }
+
+      // Dispatch keyboard ArrowRight
       await imagePage.keyboard.press('ArrowRight');
 
+      // 5. Wait for the photo to ACTUALLY transition to a different image
       let photoTransitioned = false;
-      for (let waitStep = 0; waitStep < 18; waitStep++) {
+      for (let waitStep = 0; waitStep < 20; waitStep++) {
         await imagePage.waitForTimeout(200);
-        const activeNow = await getActiveViewerImage();
+        const activeNow = await getActiveViewerImage(1);
         if (activeNow && activeNow.source_url && activeNow.source_url !== prevUrl) {
           photoTransitioned = true;
           break;
         }
 
+        // Retry next triggers at step 4 and step 8
         if (waitStep === 4 || waitStep === 8) {
           await imagePage.keyboard.press('ArrowRight');
-          await imagePage.mouse.click(1200, 500).catch(() => {});
+          const vp = imagePage.viewportSize() || { width: 1440, height: 900 };
+          await imagePage.mouse.click(Math.round(vp.width * 0.96), Math.round(vp.height * 0.5)).catch(() => {});
         }
       }
 
@@ -1548,7 +1599,7 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
         break;
       }
 
-      await imagePage.waitForTimeout(400);
+      await imagePage.waitForTimeout(300);
     }
   } catch (err) {
     console.error(`[IMAGE] Error during image download: ${err.message}`);
