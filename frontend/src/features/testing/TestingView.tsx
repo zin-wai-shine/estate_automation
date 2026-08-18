@@ -285,11 +285,53 @@ export const TestingView: React.FC = () => {
 
   const [selectedPromptId, setSelectedPromptId] = useState<string>(() => promptTemplates[0]?.id || 'facebook_rent');
   const [transformedContent, setTransformedContent] = useState<string>('');
+  const [generatedRefCode, setGeneratedRefCode] = useState<string>('');
   const [isTransforming, setIsTransforming] = useState<boolean>(false);
   const [isPromptDropdownOpen, setIsPromptDropdownOpen] = useState<boolean>(false);
   const [isCopiedRaw, setIsCopiedRaw] = useState<boolean>(false);
   const [isCopiedTransformed, setIsCopiedTransformed] = useState<boolean>(false);
+  const [isCopiedRefCode, setIsCopiedRefCode] = useState<boolean>(false);
   const [isEditingTransformed, setIsEditingTransformed] = useState<boolean>(false);
+
+  // Client-side helper to generate standard Ref Code [CONDO_PREFIX]-[5_DIGITS]-[5_LETTERS]
+  const generateClientRefCode = (text: string) => {
+    const lines = text.split('\n');
+    let first = '';
+    for (const l of lines) {
+      if (l.trim()) {
+        first = l.trim();
+        break;
+      }
+    }
+    // Clean words
+    const cleanWords = first.replace(/[^a-zA-Z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
+    let initials = '';
+    for (const w of cleanWords) {
+      const lower = w.toLowerCase();
+      if (['condo', 'the', 'at', 'for', 'rent', 'sale', 'in', 'and'].includes(lower)) continue;
+      if (/^[a-zA-Z]/.test(w)) {
+        initials += w[0].toUpperCase();
+      }
+      if (initials.length >= 4) break;
+    }
+    if (initials.length < 2) {
+      for (const w of cleanWords) {
+        if (w.length >= 2) {
+          initials = w.slice(0, 3).toUpperCase();
+          break;
+        }
+      }
+    }
+    if (!initials) initials = 'BHV';
+
+    const randomDigits = Math.floor(10000 + Math.random() * 90000).toString();
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    let randomLetters = '';
+    for (let i = 0; i < 5; i++) {
+      randomLetters += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return `${initials}-${randomDigits}-${randomLetters}`;
+  };
 
   const handleSelectZoom = async (zoomVal: string) => {
     setSelectedZoom(zoomVal);
@@ -811,7 +853,9 @@ export const TestingView: React.FC = () => {
         created_at: new Date().toISOString(),
       };
       setActiveTestRun(finalRun);
-      addLog('PIPELINE', `🎉 Saved test run record (${finalCleanText.length} chars)`);
+      const autoRef = generateClientRefCode(finalCleanText);
+      setGeneratedRefCode(autoRef);
+      addLog('PIPELINE', `🎉 Saved test run record (${finalCleanText.length} chars) | 🏷️ Ref Code: ${autoRef}`);
 
       // AUTO PHOTO TARGETING & IMAGE DOWNLOAD PIPELINE
       if (photoTargetMode === 'auto') {
@@ -1121,6 +1165,10 @@ export const TestingView: React.FC = () => {
       const data = await resp.json();
       if (data.status === 'success' && data.transformed_content) {
         setTransformedContent(data.transformed_content);
+        if (data.ref_code) {
+          setGeneratedRefCode(data.ref_code);
+          addLog('REF_CODE', `🏷️ Standard Property Ref Code generated: ${data.ref_code}`);
+        }
         addLog('TRANSFORM_SUCCESS', `✓ Content transformed successfully into "${chosenTemplate.name}" (${data.character_count} chars)`);
       } else {
         addLog('TRANSFORM_ERROR', `Transformation failed: ${data.message || 'Unknown error'}`);
@@ -1154,11 +1202,13 @@ export const TestingView: React.FC = () => {
     setFirstPhotoTarget(null);
     setIsTargetingPhoto(false);
     setTransformedContent('');
+    setGeneratedRefCode('');
     setIsTransforming(false);
     setIsEditingTransformed(false);
     setIsCopiedRaw(false);
     setIsCopiedTransformed(false);
-    addLog('RESET', '🧹 All test data, screenshots, analyses, inputs, and transformed content cleared. Ready for next test.');
+    setIsCopiedRefCode(false);
+    addLog('RESET', '🧹 All test data, screenshots, analyses, inputs, Ref Codes, and transformed content cleared. Ready for next test.');
   };
 
   const handleStopTest = () => {
@@ -2485,8 +2535,48 @@ export const TestingView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Template Dropdown & Transform Button */}
+              {/* Template Dropdown, Ref Code Pill & Transform Button */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                {generatedRefCode && (
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.45rem',
+                      backgroundColor: 'rgba(139, 92, 246, 0.15)',
+                      border: '1px solid rgba(139, 92, 246, 0.4)',
+                      padding: '0.25rem 0.65rem',
+                      borderRadius: '0.375rem',
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      color: '#A78BFA',
+                      fontFamily: 'monospace',
+                    }}
+                  >
+                    <span>🏷️ Ref Code: {generatedRefCode}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(generatedRefCode);
+                        setIsCopiedRefCode(true);
+                        setTimeout(() => setIsCopiedRefCode(false), 2000);
+                      }}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: isCopiedRefCode ? '#10B981' : '#A78BFA',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        padding: 0,
+                      }}
+                      title="Copy Ref Code"
+                    >
+                      {isCopiedRefCode ? <FiCheck /> : <FiCopy />}
+                    </button>
+                  </div>
+                )}
+
                 <div style={{ position: 'relative' }}>
                   <button
                     type="button"

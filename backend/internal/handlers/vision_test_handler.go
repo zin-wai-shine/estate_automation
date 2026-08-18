@@ -13,6 +13,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/zinwaishine/estate-automate/backend/internal/services"
+	"github.com/zinwaishine/estate-automate/backend/internal/utils"
 )
 
 type VisionTestStartRequest struct {
@@ -511,13 +512,28 @@ func TransformContent(c *fiber.Ctx) error {
 		})
 	}
 
+	// Generate standardized Property Ref Code (e.g. BHV-52784-MQKRN)
+	lines := strings.Split(req.RawContent, "\n")
+	firstLine := ""
+	for _, l := range lines {
+		trimmed := strings.TrimSpace(l)
+		if trimmed != "" {
+			firstLine = trimmed
+			break
+		}
+	}
+	refCode := utils.GeneratePropertyRefCode(firstLine)
+
 	instructions := strings.TrimSpace(req.PromptInstructions)
 	if instructions == "" {
 		instructions = "Format into an engaging, structured Facebook real estate rental/sale post with relevant emojis, clear bullet specs (Size, Beds/Baths, Price, Location, Amenities), and Line ID / WhatsApp CTA."
 	}
 
+	// Instruct OpenAI to always include this generated Ref Code in the output if not present
+	enhancedInstructions := fmt.Sprintf("%s\n\nREQUIRED RULE: Always include 'Ref Code: %s' in the formatted output.", instructions, refCode)
+
 	openAISvc := services.NewOpenAIService()
-	transformed, err := openAISvc.TransformContentWithPrompt(c.Context(), req.RawContent, instructions)
+	transformed, err := openAISvc.TransformContentWithPrompt(c.Context(), req.RawContent, enhancedInstructions)
 	if err != nil {
 		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
 			"status":     "error",
@@ -528,6 +544,7 @@ func TransformContent(c *fiber.Ctx) error {
 
 	return c.JSON(fiber.Map{
 		"status":              "success",
+		"ref_code":            refCode,
 		"template_name":       req.TemplateName,
 		"transformed_content": transformed,
 		"character_count":     len([]rune(transformed)),
