@@ -16,7 +16,8 @@ import (
 )
 
 type VisionTestStartRequest struct {
-	URL string `json:"url"`
+	URL       string `json:"url"`
+	ZoomLevel string `json:"zoom_level"`
 }
 
 type VisionTestActionRequest struct {
@@ -37,7 +38,10 @@ func TestFacebookNavigation(c *fiber.Ctx) error {
 		req.URL = "https://www.facebook.com/"
 	}
 
-	payloadBytes, _ := json.Marshal(map[string]string{"url": req.URL})
+	payloadBytes, _ := json.Marshal(map[string]string{
+		"url":        req.URL,
+		"zoom_level": req.ZoomLevel,
+	})
 	client := &http.Client{Timeout: 45 * time.Second}
 	resp, err := client.Post("http://localhost:9223/test-navigation", "application/json", bytes.NewBuffer(payloadBytes))
 	if err != nil {

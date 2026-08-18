@@ -329,18 +329,18 @@ function parseFacebookPostId(urlStr) {
   return '';
 }
 
-// Configured Browser Zoom Level (Default: 65%, Target: ~65%)
-const DEFAULT_CONFIGURED_BROWSER_ZOOM = 65;
+// Configured Browser Zoom Level (Default: 80%, Target: ~80%)
+const DEFAULT_CONFIGURED_BROWSER_ZOOM = 80;
 
 // Discrete Chrome zoom levels: 100% -> 90% -> 80% -> 75% -> 67% -> 50%
 const CHROME_DISCRETE_ZOOM_LEVELS = [100, 90, 80, 75, 67, 50];
 
 /**
- * Real Chrome Browser Page Zoom Manager (~65% Target Initial Zoom)
+ * Real Chrome Browser Page Zoom Manager (~80% Target Initial Zoom)
  * Sequence:
  * 1. [ZOOM] Facebook page loaded
  * 2. [ZOOM] Current browser zoom: XX%
- * 3. [ZOOM] Target initial zoom: ~65%
+ * 3. [ZOOM] Target initial zoom: ~80%
  * 4. [ZOOM] Applying real Chrome zoom out
  * 5. [ZOOM] Browser zoom verified: XX%
  * 6. [ZOOM] Target post visible: YES
@@ -354,13 +354,13 @@ async function applyAndVerifyAbsoluteBrowserZoom(page, configuredZoom = DEFAULT_
     };
   }
 
-  let targetPercent = 65;
+  let targetPercent = 80;
   if (typeof configuredZoom === 'number') {
     targetPercent = configuredZoom;
   } else if (typeof configuredZoom === 'string') {
-    targetPercent = parseInt(configuredZoom, 10) || 65;
+    targetPercent = parseInt(configuredZoom, 10) || 80;
   } else if (configuredZoom && configuredZoom.zoom_level) {
-    targetPercent = parseInt(configuredZoom.zoom_level, 10) || 65;
+    targetPercent = parseInt(configuredZoom.zoom_level, 10) || 80;
   }
 
   // Clamped to safety boundaries (50% - 100%)
@@ -1804,7 +1804,8 @@ const server = http.createServer(async (req, res) => {
       try {
         const payload = JSON.parse(body || '{}');
         const targetUrl = payload.url || 'https://www.facebook.com/';
-        const result = await navigateAndVerifyFacebook(targetUrl, '1');
+        const configuredZoom = payload.zoom_level || payload.zoom || DEFAULT_CONFIGURED_BROWSER_ZOOM;
+        const result = await navigateAndVerifyFacebook(targetUrl, '1', configuredZoom);
         res.writeHead(result.success ? 200 : 400);
         res.end(JSON.stringify(result));
       } catch (e) {
