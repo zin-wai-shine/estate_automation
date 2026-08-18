@@ -1650,12 +1650,15 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
         break;
       }
 
-      // 4. Click Next Photo
+      // 4. Advance to Next Photo (Single Atomic Action — No Double Skipping)
       console.log('[IMAGE] Clicking Next');
       const prevPhotoId = currentPhotoId;
 
-      // Click next button in DOM
-      const nextClicked = await imagePage.evaluate(() => {
+      // Press ArrowRight as primary reliable single-advance action
+      await imagePage.keyboard.press('ArrowRight');
+
+      // Fallback: If not focused, click next button in DOM
+      await imagePage.evaluate(() => {
         const nextSelectors = [
           '[aria-label="Next photo"]',
           '[aria-label="Next image"]',
@@ -1663,16 +1666,13 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
           '[aria-label="ถัดไป"]',
           '[aria-label="Next Picture"]',
           'div[role="button"][aria-label*="Next"]',
-          'div[role="button"][aria-label*="ถัดไป"]',
-          'div[data-visualcompletion="ignore-dynamic-extra"] div[role="button"]:last-child',
         ];
-
         for (const sel of nextSelectors) {
           const btns = Array.from(document.querySelectorAll(sel));
           for (const btn of btns) {
             const rect = btn.getBoundingClientRect();
             if (rect.width > 0 && rect.height > 0 && rect.right > window.innerWidth / 2) {
-              btn.click();
+              btn.focus();
               return true;
             }
           }
@@ -1680,19 +1680,10 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
         return false;
       }).catch(() => false);
 
-      // Also click right side area if DOM selector didn't click
-      if (!nextClicked) {
-        const vp = imagePage.viewportSize() || { width: 1440, height: 900 };
-        await imagePage.mouse.click(Math.round(vp.width * 0.94), Math.round(vp.height * 0.5)).catch(() => {});
-      }
-
-      // Dispatch keyboard ArrowRight
-      await imagePage.keyboard.press('ArrowRight');
-
       // 5. Wait for the photo to ACTUALLY transition to a different image ID
       let photoTransitioned = false;
-      for (let waitStep = 0; waitStep < 25; waitStep++) {
-        await imagePage.waitForTimeout(200);
+      for (let waitStep = 0; waitStep < 20; waitStep++) {
+        await imagePage.waitForTimeout(250);
         const activeNow = await getActiveViewerImage(1);
         if (activeNow && activeNow.source_url) {
           const nowPhotoId = getPhotoId(activeNow.source_url, activeNow.fbid);
@@ -1702,11 +1693,10 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
           }
         }
 
-        // Retry next triggers at step 4, 8, 12, 16, 20
-        if (waitStep % 4 === 0) {
+        // Retry single ArrowRight only after 1.5s (step 6 and step 12) if completely stalled
+        if (waitStep === 6 || waitStep === 12) {
+          console.log('[IMAGE] Retrying Next transition...');
           await imagePage.keyboard.press('ArrowRight');
-          const vp = imagePage.viewportSize() || { width: 1440, height: 900 };
-          await imagePage.mouse.click(Math.round(vp.width * 0.94), Math.round(vp.height * 0.5)).catch(() => {});
         }
       }
 
@@ -1717,7 +1707,8 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
         break;
       }
 
-      await imagePage.waitForTimeout(300);
+      // Small stabilization wait for full resolution to settle
+      await imagePage.waitForTimeout(400);
     }
 
     // Close browser when complete as requested
