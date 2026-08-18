@@ -295,6 +295,9 @@ async function launchPersistentBrowser(userId = '1') {
       console.log('[OPENCLAW] Browser profile active (Public / Unauthenticated Mode)');
     }
 
+    // Install Accidental Click Prevention Shield on page
+    await injectClickProtectionShield(currentBrowserPage);
+
     return { success: true, state: sessionState, page: currentBrowserPage };
   } catch (err) {
     sessionState = 'ERROR';
@@ -302,6 +305,74 @@ async function launchPersistentBrowser(userId = '1') {
     releaseLock(userId);
     return { success: false, error: err.message };
   }
+}
+
+// Injects a floating shield that protects the browser page against accidental user mouse clicks during automated runs
+async function injectClickProtectionShield(page) {
+  if (!page || page.isClosed()) return;
+  try {
+    await page.evaluate(() => {
+      if (window.__openclaw_shield_installed) return;
+      window.__openclaw_shield_installed = true;
+
+      // 1. Inject Automation Protection Banner
+      let banner = document.getElementById('openclaw-automation-shield-banner');
+      if (!banner) {
+        banner = document.createElement('div');
+        banner.id = 'openclaw-automation-shield-banner';
+        banner.style.position = 'fixed';
+        banner.style.top = '10px';
+        banner.style.right = '16px';
+        banner.style.zIndex = '2147483640';
+        banner.style.backgroundColor = 'rgba(15, 23, 42, 0.92)';
+        banner.style.backdropFilter = 'blur(8px)';
+        banner.style.border = '1px solid rgba(59, 130, 246, 0.5)';
+        banner.style.borderRadius = '8px';
+        banner.style.padding = '6px 14px';
+        banner.style.color = '#93C5FD';
+        banner.style.fontSize = '12px';
+        banner.style.fontWeight = '700';
+        banner.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        banner.style.boxShadow = '0 6px 20px rgba(0,0,0,0.5)';
+        banner.style.display = 'flex';
+        banner.style.alignItems = 'center';
+        banner.style.gap = '8px';
+        banner.style.pointerEvents = 'none';
+        banner.style.userSelect = 'none';
+        banner.innerHTML = `
+          <span style="width: 8px; height: 8px; border-radius: 50%; background-color: #10B981; display: inline-block; box-shadow: 0 0 8px #10B981;"></span>
+          <span>🛡️ OPENCLAW AUTOMATION ACTIVE — ACCIDENTAL CLICKS PREVENTED</span>
+        `;
+        document.body.appendChild(banner);
+      }
+
+      // 2. Intercept accidental user clicks on background links and outside ads that break session
+      window.addEventListener(
+        'click',
+        (e) => {
+          if (e.target) {
+            const isAd = e.target.closest('a[href*="/ad/"], a[href*="facebook.com/ads"], [aria-label*="Sponsored"]');
+            const isNavOut = e.target.closest('a[href*="/watch"], a[href*="/marketplace"], a[href*="/gaming"], a[href*="/bookmarks"]');
+            if (isAd || isNavOut) {
+              e.preventDefault();
+              e.stopPropagation();
+              console.log('[SHIELD] Prevented accidental external navigation click');
+            }
+          }
+        },
+        true
+      );
+
+      // 3. Prevent accidental context menu from right clicks
+      window.addEventListener(
+        'contextmenu',
+        (e) => {
+          e.preventDefault();
+        },
+        true
+      );
+    });
+  } catch (e) {}
 }
 
 // Generate unique test run ID
@@ -1240,6 +1311,7 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
   }
 
   const imagePage = currentBrowserPage;
+  await injectClickProtectionShield(imagePage);
   const downloadedImages = [];
   const seenHashes = new Set();
   const seenUrls = new Set();
