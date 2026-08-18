@@ -424,6 +424,22 @@ export const TestingView: React.FC = () => {
   const [batchEnhanceProgress, setBatchEnhanceProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 });
   const [galleryFilter, setGalleryFilter] = useState<'ALL' | 'ENHANCED' | 'ORIGINAL'>('ALL');
 
+  // Real-Time ChatGPT-Style Studio State
+  const [enhancingUrls, setEnhancingUrls] = useState<Record<string, { stage: string; elapsed: number }>>({});
+  const [studioModal, setStudioModal] = useState<{
+    isOpen: boolean;
+    imgUrl: string;
+    photoOrder: number;
+    promptName: string;
+    promptText: string;
+    isProcessing: boolean;
+    stage: string;
+    elapsedSec: number;
+    logs: { time: string; text: string; status?: 'info' | 'success' | 'process' }[];
+    enhancedUrl?: string;
+    sliderPos: number;
+  } | null>(null);
+
   // Huge Lightbox Viewer State
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [lightboxViewMode, setLightboxViewMode] = useState<'enhanced' | 'original'>('enhanced');
@@ -674,12 +690,70 @@ export const TestingView: React.FC = () => {
     }
   };
 
-  // STAGE 5: Enhance Image (Single)
+  // STAGE 5: Enhance Image (Single) with Real-Time ChatGPT Studio Interface
   const handleEnhanceImage = async (imgUrl: string, promptId?: string) => {
     if (!activeTestRun) return;
     const chosenPrompt = imageEnhancePrompts.find((p) => p.id === (promptId || selectedImagePromptId)) || imageEnhancePrompts[0];
     const instructionText = chosenPrompt.instructions || (chosenPrompt as any).templateText || chosenPrompt.desc || '';
-    addLog('ENHANCE', `Applying "${chosenPrompt.name}" enhancement to photo...`);
+    const photoIndex = (activeTestRun.images?.findIndex((i) => i.public_url === imgUrl) ?? 0) + 1;
+
+    // Open Real-time ChatGPT-Style Studio Modal immediately
+    setStudioModal({
+      isOpen: true,
+      imgUrl,
+      photoOrder: photoIndex,
+      promptName: chosenPrompt.name,
+      promptText: instructionText,
+      isProcessing: true,
+      stage: 'Uploading & Preparing...',
+      elapsedSec: 0,
+      logs: [
+        { time: '00:00', text: '📤 Uploading original high-res photo to AI Engine...', status: 'process' },
+      ],
+      sliderPos: 50,
+    });
+
+    setEnhancingUrls((prev) => ({ ...prev, [imgUrl]: { stage: 'Analyzing...', elapsed: 0 } }));
+    addLog('ENHANCE', `✨ Starting Real-Time AI Enhancement for Photo #${photoIndex} with "${chosenPrompt.name}"...`);
+
+    const startTime = Date.now();
+    const timerInterval = setInterval(() => {
+      const currentElapsed = parseFloat(((Date.now() - startTime) / 1000).toFixed(1));
+      setStudioModal((prev) => (prev && prev.imgUrl === imgUrl ? { ...prev, elapsedSec: currentElapsed } : prev));
+      setEnhancingUrls((prev) => (prev[imgUrl] ? { ...prev, [imgUrl]: { ...prev[imgUrl], elapsed: currentElapsed } } : prev));
+    }, 100);
+
+    // Simulated progress stage updates while OpenAI processes
+    const t1 = setTimeout(() => {
+      setStudioModal((prev) => {
+        if (!prev || prev.imgUrl !== imgUrl) return prev;
+        return {
+          ...prev,
+          stage: 'GPT-4o Vision Analyzing...',
+          logs: [
+            ...prev.logs,
+            { time: '00:01', text: '🤖 GPT-4o Vision inspecting room geometry, lighting & textures...', status: 'process' },
+          ],
+        };
+      });
+      setEnhancingUrls((prev) => (prev[imgUrl] ? { ...prev, [imgUrl]: { ...prev[imgUrl], stage: 'Vision Inspecting...' } } : prev));
+    }, 1000);
+
+    const t2 = setTimeout(() => {
+      setStudioModal((prev) => {
+        if (!prev || prev.imgUrl !== imgUrl) return prev;
+        return {
+          ...prev,
+          stage: 'OpenAI Image-to-Image Editing...',
+          logs: [
+            ...prev.logs,
+            { time: '00:02', text: '🎨 OpenAI Image Editing Model (gpt-image-1) restoring scene, sky & lighting...', status: 'process' },
+          ],
+        };
+      });
+      setEnhancingUrls((prev) => (prev[imgUrl] ? { ...prev, [imgUrl]: { ...prev[imgUrl], stage: 'Image Editing...' } } : prev));
+    }, 2400);
+
     try {
       const resp = await fetch('http://localhost:8085/api/facebook/test/enhance-image', {
         method: 'POST',
@@ -693,11 +767,58 @@ export const TestingView: React.FC = () => {
         }),
       });
       const data = await resp.json();
+
+      clearInterval(timerInterval);
+      clearTimeout(t1);
+      clearTimeout(t2);
+
+      const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
+
       if (data.enhanced_url) {
         setEnhancedImages((prev) => ({ ...prev, [imgUrl]: data.enhanced_url }));
-        addLog('ENHANCE', `✓ Enhanced photo with ${chosenPrompt.name}`);
+        setStudioModal((prev) => {
+          if (!prev || prev.imgUrl !== imgUrl) return prev;
+          return {
+            ...prev,
+            isProcessing: false,
+            stage: 'Completed',
+            enhancedUrl: data.enhanced_url,
+            logs: [
+              ...prev.logs,
+              { time: `00:${Math.round(parseFloat(totalTime)).toString().padStart(2, '0')}`, text: `✨ Successfully enhanced in ${totalTime}s! High-res asset ready.`, status: 'success' },
+            ],
+          };
+        });
+        setEnhancingUrls((prev) => {
+          const next = { ...prev };
+          delete next[imgUrl];
+          return next;
+        });
+        addLog('ENHANCE', `✓ Enhanced Photo #${photoIndex} with ${chosenPrompt.name} in ${totalTime}s`);
+      } else {
+        throw new Error(data.message || 'No enhanced image returned');
       }
     } catch (e: any) {
+      clearInterval(timerInterval);
+      clearTimeout(t1);
+      clearTimeout(t2);
+      setStudioModal((prev) => {
+        if (!prev || prev.imgUrl !== imgUrl) return prev;
+        return {
+          ...prev,
+          isProcessing: false,
+          stage: 'Error',
+          logs: [
+            ...prev.logs,
+            { time: 'ERR', text: `❌ Enhancement error: ${e.message}`, status: 'info' },
+          ],
+        };
+      });
+      setEnhancingUrls((prev) => {
+        const next = { ...prev };
+        delete next[imgUrl];
+        return next;
+      });
       addLog('ENHANCE_ERR', `Enhancement error: ${e.message}`);
     }
   };
@@ -3218,19 +3339,27 @@ export const TestingView: React.FC = () => {
                     const activeUrl = enhancedImages[img.public_url] || img.public_url;
                     const realIndex = activeTestRun.images?.findIndex((i) => i.id === img.id) ?? idx;
 
+                    const isEnhancing = !!enhancingUrls[img.public_url];
+                    const enhInfo = enhancingUrls[img.public_url];
+
                     return (
                       <div
                         key={img.id}
                         style={{
                           borderRadius: '0.5rem',
                           overflow: 'hidden',
-                          border: '1px solid var(--border-color)',
-                          backgroundColor: 'var(--bg-secondary)',
+                          border: isEnhancing
+                            ? '2px solid #3B82F6'
+                            : isEnh
+                            ? '1px solid rgba(59, 130, 246, 0.4)'
+                            : '1px solid var(--border-color)',
+                          backgroundColor: isEnhancing ? 'rgba(59, 130, 246, 0.04)' : 'var(--bg-secondary)',
                           padding: '0.75rem',
-                          transition: 'transform 0.15s ease, border-color 0.15s ease',
+                          transition: 'all 0.2s ease',
                           display: 'flex',
                           flexDirection: 'column',
                           gap: '0.5rem',
+                          boxShadow: isEnhancing ? '0 0 15px rgba(59, 130, 246, 0.25)' : 'none',
                         }}
                       >
                         {/* Card Header */}
@@ -3243,12 +3372,34 @@ export const TestingView: React.FC = () => {
                               fontSize: '0.625rem',
                               padding: '0.15rem 0.45rem',
                               borderRadius: '0.25rem',
-                              backgroundColor: isEnh ? 'rgba(59, 130, 246, 0.15)' : 'rgba(16, 185, 129, 0.12)',
-                              color: isEnh ? '#60A5FA' : '#10B981',
-                              border: `1px solid ${isEnh ? 'rgba(59, 130, 246, 0.3)' : 'rgba(16, 185, 129, 0.3)'}`,
+                              backgroundColor: isEnhancing
+                                ? 'rgba(59, 130, 246, 0.2)'
+                                : isEnh
+                                ? 'rgba(59, 130, 246, 0.15)'
+                                : 'rgba(16, 185, 129, 0.12)',
+                              color: isEnhancing ? '#93C5FD' : isEnh ? '#60A5FA' : '#10B981',
+                              border: `1px solid ${
+                                isEnhancing
+                                  ? '#3B82F6'
+                                  : isEnh
+                                  ? 'rgba(59, 130, 246, 0.3)'
+                                  : 'rgba(16, 185, 129, 0.3)'
+                              }`,
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.25rem',
                             }}
                           >
-                            {isEnh ? '✨ ENHANCED' : 'ORIGINAL'}
+                            {isEnhancing ? (
+                              <>
+                                <FiLoader style={{ animation: 'spin 1s linear infinite' }} />
+                                {enhInfo?.stage || 'ENHANCING'} ({enhInfo?.elapsed || 0}s)
+                              </>
+                            ) : isEnh ? (
+                              '✨ ENHANCED'
+                            ) : (
+                              'ORIGINAL'
+                            )}
                           </span>
                         </div>
 
@@ -3272,8 +3423,27 @@ export const TestingView: React.FC = () => {
                           <img
                             src={activeUrl}
                             alt={`Property Photo ${img.original_order || realIndex + 1}`}
-                            style={{ width: '100%', height: '100%', objectFit: 'cover', transition: 'transform 0.2s ease' }}
+                            style={{
+                              width: '100%',
+                              height: '100%',
+                              objectFit: 'cover',
+                              transition: 'transform 0.2s ease',
+                              opacity: isEnhancing ? 0.75 : 1,
+                            }}
                           />
+
+                          {/* Scanning Laser Line when enhancing */}
+                          {isEnhancing && (
+                            <div
+                              style={{
+                                position: 'absolute',
+                                inset: 0,
+                                background: 'linear-gradient(180deg, transparent 0%, rgba(59, 130, 246, 0.3) 50%, transparent 100%)',
+                                animation: 'pulse 1.5s ease-in-out infinite',
+                                pointerEvents: 'none',
+                              }}
+                            />
+                          )}
 
                           {/* Magnify Overlay on Hover */}
                           <div
@@ -3305,17 +3475,20 @@ export const TestingView: React.FC = () => {
                         {/* Action Buttons: Enhance & Download */}
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem', marginTop: '0.2rem' }}>
                           <Button
-                            variant="outline"
+                            variant={isEnh ? 'primary' : 'outline'}
                             size="sm"
+                            disabled={isEnhancing}
                             onClick={() => handleEnhanceImage(img.public_url)}
+                            leftIcon={isEnhancing ? <FiLoader style={{ animation: 'spin 1s linear infinite' }} /> : undefined}
                             style={{
                               fontSize: '0.6875rem',
                               height: '28px',
+                              backgroundColor: isEnh ? 'rgba(59, 130, 246, 0.15)' : undefined,
                               borderColor: isEnh ? '#3B82F6' : 'var(--border-color)',
-                              color: isEnh ? '#3B82F6' : 'var(--text-primary)',
+                              color: isEnh ? '#60A5FA' : 'var(--text-primary)',
                             }}
                           >
-                            {isEnh ? 'Re-Enhance' : 'Enhance'}
+                            {isEnhancing ? 'Enhancing...' : isEnh ? '✨ Re-Enhance' : '✨ Enhance'}
                           </Button>
                           <Button
                             variant="secondary"
@@ -3671,6 +3844,384 @@ export const TestingView: React.FC = () => {
             </div>
           );
         })()
+      )}
+
+      {/* ✨ REAL-TIME CHATGPT AI ENHANCEMENT STUDIO MODAL */}
+      {studioModal && studioModal.isOpen && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9999,
+            backgroundColor: 'rgba(5, 7, 12, 0.88)',
+            backdropFilter: 'blur(8px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1.5rem',
+          }}
+          onClick={() => {
+            if (!studioModal.isProcessing) {
+              setStudioModal(null);
+            }
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%',
+              maxWidth: '1080px',
+              backgroundColor: '#111318',
+              border: '1px solid rgba(59, 130, 246, 0.4)',
+              borderRadius: '0.875rem',
+              boxShadow: '0 25px 60px rgba(0, 0, 0, 0.8), 0 0 30px rgba(59, 130, 246, 0.15)',
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+          >
+            {/* Modal Header */}
+            <div
+              style={{
+                padding: '1rem 1.25rem',
+                borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                backgroundColor: 'rgba(20, 23, 30, 0.6)',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div
+                  style={{
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '0.5rem',
+                    backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                    border: '1px solid #3B82F6',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#60A5FA',
+                    fontSize: '1rem',
+                  }}
+                >
+                  <FiZap />
+                </div>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <h3 style={{ fontSize: '0.9375rem', fontWeight: 700, color: '#FFFFFF', margin: 0 }}>
+                      ChatGPT AI Enhancement Studio
+                    </h3>
+                    <span
+                      style={{
+                        fontSize: '0.6875rem',
+                        fontWeight: 600,
+                        padding: '0.15rem 0.5rem',
+                        borderRadius: '0.25rem',
+                        backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                        color: '#93C5FD',
+                      }}
+                    >
+                      Photo #{String(studioModal.photoOrder).padStart(2, '0')}
+                    </span>
+                  </div>
+                  <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                    Style: {studioModal.promptName} • Model: OpenAI Image-to-Image (gpt-image-1 / Vision)
+                  </span>
+                </div>
+              </div>
+
+              {/* Status / Stopwatch & Close */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                    padding: '0.3rem 0.75rem',
+                    borderRadius: '0.375rem',
+                    backgroundColor: studioModal.isProcessing ? 'rgba(59, 130, 246, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                    border: `1px solid ${studioModal.isProcessing ? '#3B82F6' : '#10B981'}`,
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    color: studioModal.isProcessing ? '#60A5FA' : '#10B981',
+                  }}
+                >
+                  {studioModal.isProcessing ? (
+                    <>
+                      <FiLoader style={{ animation: 'spin 1s linear infinite' }} />
+                      <span>{studioModal.stage}</span>
+                      <span style={{ color: '#FFFFFF', fontFamily: 'monospace' }}>({studioModal.elapsedSec}s)</span>
+                    </>
+                  ) : (
+                    <>
+                      <FiCheck />
+                      <span>Mastered Asset Ready</span>
+                      <span style={{ color: '#FFFFFF', fontFamily: 'monospace' }}>({studioModal.elapsedSec}s)</span>
+                    </>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setStudioModal(null)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--text-muted)',
+                    cursor: 'pointer',
+                    fontSize: '1.25rem',
+                    padding: '0.25rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <FiX />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body Grid: Left Image Viewer, Right Prompt & Real-time Logs */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1.15fr 0.85fr',
+                minHeight: '440px',
+                maxHeight: '75vh',
+                overflow: 'hidden',
+              }}
+            >
+              {/* Left Column: Visual Output */}
+              <div
+                style={{
+                  backgroundColor: '#090B0E',
+                  padding: '1rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  position: 'relative',
+                  borderRight: '1px solid rgba(255, 255, 255, 0.08)',
+                  overflow: 'hidden',
+                }}
+              >
+                {studioModal.isProcessing ? (
+                  /* Processing View with Active Scanning Line */
+                  <div style={{ position: 'relative', width: '100%', height: '100%', maxHeight: '420px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <img
+                      src={studioModal.imgUrl}
+                      alt="Source property photo"
+                      style={{
+                        maxWidth: '100%',
+                        maxHeight: '100%',
+                        objectFit: 'contain',
+                        borderRadius: '0.5rem',
+                        opacity: 0.8,
+                        boxShadow: '0 8px 30px rgba(0,0,0,0.6)',
+                      }}
+                    />
+
+                    {/* Scanning Laser Beam Overlay */}
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        height: '4px',
+                        background: 'linear-gradient(90deg, transparent 0%, #3B82F6 50%, transparent 100%)',
+                        boxShadow: '0 0 15px #60A5FA',
+                        animation: 'pulse 1.2s ease-in-out infinite',
+                      }}
+                    />
+
+                    {/* Processing Center Badge */}
+                    <div
+                      style={{
+                        position: 'absolute',
+                        backgroundColor: 'rgba(15, 23, 42, 0.85)',
+                        backdropFilter: 'blur(8px)',
+                        border: '1px solid rgba(59, 130, 246, 0.4)',
+                        padding: '0.65rem 1.25rem',
+                        borderRadius: '0.5rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        color: '#FFFFFF',
+                        fontSize: '0.8125rem',
+                        fontWeight: 600,
+                        boxShadow: '0 8px 25px rgba(0,0,0,0.5)',
+                      }}
+                    >
+                      <FiLoader style={{ animation: 'spin 1s linear infinite', color: '#60A5FA' }} />
+                      <span>{studioModal.stage}</span>
+                    </div>
+                  </div>
+                ) : studioModal.enhancedUrl ? (
+                  /* Completed View: Side-by-Side / Interactive Comparison */
+                  <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', gap: '0.75rem', justifyContent: 'center' }}>
+                    <div style={{ position: 'relative', width: '100%', height: '360px', borderRadius: '0.5rem', overflow: 'hidden', backgroundColor: '#000000' }}>
+                      <img
+                        src={studioModal.enhancedUrl}
+                        alt="Mastered Enhanced Photo"
+                        style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                      />
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: '8px',
+                          left: '8px',
+                          backgroundColor: '#3B82F6',
+                          color: '#FFFFFF',
+                          padding: '0.2rem 0.5rem',
+                          borderRadius: '0.25rem',
+                          fontSize: '0.6875rem',
+                          fontWeight: 700,
+                          boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
+                        }}
+                      >
+                        ✨ ENHANCED WITH AI
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'center', gap: '0.5rem' }}>
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        leftIcon={<FiDownload />}
+                        onClick={() => {
+                          const prefix = generatedRefCode || 'PROPERTY';
+                          const order = String(studioModal.photoOrder).padStart(2, '0');
+                          handleDownloadSinglePhoto(studioModal.enhancedUrl!, `${prefix}-Photo-${order}-Enhanced.jpg`);
+                        }}
+                        style={{ backgroundColor: '#10B981', borderColor: '#059669', fontSize: '0.75rem' }}
+                      >
+                        📥 Download Enhanced Asset
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        leftIcon={<FiMaximize2 />}
+                        onClick={() => {
+                          const idx = activeTestRun?.images?.findIndex((i) => i.public_url === studioModal.imgUrl) ?? 0;
+                          setLightboxIndex(idx);
+                          setLightboxViewMode('enhanced');
+                          setStudioModal(null);
+                        }}
+                        style={{ fontSize: '0.75rem' }}
+                      >
+                        🔍 Open Huge Lightbox
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>Ready to enhance</div>
+                )}
+              </div>
+
+              {/* Right Column: Prompt & Real-time Live Log Stream */}
+              <div
+                style={{
+                  padding: '1.25rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '1rem',
+                  backgroundColor: '#111318',
+                  overflowY: 'auto',
+                }}
+              >
+                {/* Prompt Box */}
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                    <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase' }}>
+                      🤖 AI Prompt Sent to Model
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(studioModal.promptText);
+                        addLog('COPY', 'Copied enhancement prompt to clipboard');
+                      }}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: '#60A5FA',
+                        fontSize: '0.6875rem',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.25rem',
+                      }}
+                    >
+                      <FiCopy /> Copy Prompt
+                    </button>
+                  </div>
+                  <div
+                    style={{
+                      padding: '0.75rem',
+                      backgroundColor: 'var(--bg-secondary)',
+                      borderRadius: '0.5rem',
+                      border: '1px solid var(--border-color)',
+                      fontSize: '0.75rem',
+                      color: 'var(--text-primary)',
+                      lineHeight: '1.4',
+                      maxHeight: '120px',
+                      overflowY: 'auto',
+                      whiteSpace: 'pre-wrap',
+                    }}
+                  >
+                    {studioModal.promptText}
+                  </div>
+                </div>
+
+                {/* Real-time Thought Terminal */}
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: '160px' }}>
+                  <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', marginBottom: '0.35rem' }}>
+                    ⚡ Real-time Execution Steps
+                  </label>
+                  <div
+                    style={{
+                      flex: 1,
+                      backgroundColor: '#090B0E',
+                      border: '1px solid rgba(255, 255, 255, 0.08)',
+                      borderRadius: '0.5rem',
+                      padding: '0.75rem',
+                      fontFamily: 'monospace',
+                      fontSize: '0.71875rem',
+                      overflowY: 'auto',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.4rem',
+                    }}
+                  >
+                    {studioModal.logs.map((lg, i) => (
+                      <div
+                        key={i}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'flex-start',
+                          gap: '0.5rem',
+                          color: lg.status === 'success' ? '#10B981' : lg.status === 'process' ? '#93C5FD' : '#E2E8F0',
+                        }}
+                      >
+                        <span style={{ color: 'var(--text-muted)' }}>[{lg.time}]</span>
+                        <span>{lg.text}</span>
+                      </div>
+                    ))}
+                    {studioModal.isProcessing && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: '#60A5FA', marginTop: '0.2rem' }}>
+                        <FiLoader style={{ animation: 'spin 1s linear infinite' }} />
+                        <span style={{ fontStyle: 'italic' }}>Streaming response from OpenAI...</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Live Navigation & Execution Audit Log */}
