@@ -21,6 +21,8 @@ import {
   FiCheckCircle,
   FiCheck,
   FiCrosshair,
+  FiTrash2,
+  FiRotateCcw,
 } from 'react-icons/fi';
 
 interface RegionBoundingBox {
@@ -1004,6 +1006,30 @@ export const TestingView: React.FC = () => {
     }
   };
 
+  // CLEAN ALL / RESET TEST PIPELINE FOR NEW RUN
+  const handleCleanAll = () => {
+    setUrlInput('');
+    setIsTesting(false);
+    setCurrentStage('IDLE');
+    setTimelineStep(0);
+    setScreenshotsUsed(1);
+    setActiveTestRun(null);
+    setCapturedScreenshot(null);
+    setAiAnalysis(null);
+    setNavResult(null);
+    setErrorMessage('');
+    setTestLogs([]);
+    setEnhancedImages({});
+    setAiImageCoords([]);
+    setAllCapturedScreenshots([]);
+    setAllCroppedImages([]);
+    setAllAnalyses([]);
+    setActiveCaptureIndex(0);
+    setFirstPhotoTarget(null);
+    setIsTargetingPhoto(false);
+    addLog('RESET', '🧹 All test data, screenshots, analyses, and inputs cleared. Ready for next test.');
+  };
+
   const handleStopTest = () => {
     setIsTesting(false);
     setCurrentStage('IDLE');
@@ -1043,6 +1069,24 @@ export const TestingView: React.FC = () => {
 
         {/* Action Buttons Toolbar */}
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          <Button
+            variant="outline"
+            size="sm"
+            leftIcon={<FiTrash2 style={{ color: '#F87171' }} />}
+            onClick={handleCleanAll}
+            disabled={isTesting}
+            style={{
+              height: '36px',
+              whiteSpace: 'nowrap',
+              borderColor: 'rgba(239, 68, 68, 0.4)',
+              color: '#F87171',
+              backgroundColor: 'rgba(239, 68, 68, 0.08)',
+            }}
+            title="Clear all test data and reset for a new URL"
+          >
+            Clean All
+          </Button>
+
           <Button
             variant="outline"
             size="sm"
@@ -1199,6 +1243,19 @@ export const TestingView: React.FC = () => {
               style={{ height: '38px', padding: '0 1.25rem' }}
             >
               {isTesting ? 'Executing Pipeline...' : 'Run Full Test'}
+            </Button>
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              leftIcon={<FiRotateCcw style={{ color: '#9CA3AF' }} />}
+              onClick={handleCleanAll}
+              disabled={isTesting}
+              style={{ height: '38px', whiteSpace: 'nowrap', color: 'var(--text-secondary)' }}
+              title="Reset all fields and test state for next test"
+            >
+              Clean All
             </Button>
           </div>
 
