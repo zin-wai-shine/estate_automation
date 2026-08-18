@@ -12,6 +12,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"os"
 	"strings"
 	"time"
@@ -1405,10 +1406,25 @@ Output ONLY the precise photo retouching instructions.`
 	bodyBuf := &bytes.Buffer{}
 	mpWriter := multipart.NewWriter(bodyBuf)
 
-	// Image file part
-	imagePart, err := mpWriter.CreateFormFile("image", "original_image.png")
+	// Determine image MIME type
+	contentType := "image/jpeg"
+	filename := "original_image.jpg"
+	if len(rawImageBytes) >= 8 && rawImageBytes[0] == 0x89 && rawImageBytes[1] == 'P' && rawImageBytes[2] == 'N' && rawImageBytes[3] == 'G' {
+		contentType = "image/png"
+		filename = "original_image.png"
+	} else if len(rawImageBytes) >= 12 && string(rawImageBytes[8:12]) == "WEBP" {
+		contentType = "image/webp"
+		filename = "original_image.webp"
+	}
+
+	// Create Part with explicit image MIME header (required by OpenAI API)
+	partHeader := make(textproto.MIMEHeader)
+	partHeader.Set("Content-Disposition", fmt.Sprintf(`form-data; name="image"; filename="%s"`, filename))
+	partHeader.Set("Content-Type", contentType)
+
+	imagePart, err := mpWriter.CreatePart(partHeader)
 	if err != nil {
-		return "", fmt.Errorf("failed to create form file: %w", err)
+		return "", fmt.Errorf("failed to create image form part: %w", err)
 	}
 	if _, err := imagePart.Write(rawImageBytes); err != nil {
 		return "", fmt.Errorf("failed to write image bytes: %w", err)
@@ -1419,8 +1435,9 @@ Output ONLY the precise photo retouching instructions.`
 		return "", fmt.Errorf("failed to write prompt: %w", err)
 	}
 
-	// Model preference: gpt-image-1 / image editing model
+	// Model & parameters: gpt-image-1 with strict high fidelity
 	_ = mpWriter.WriteField("model", "gpt-image-1")
+	_ = mpWriter.WriteField("input_fidelity", "high")
 	_ = mpWriter.WriteField("n", "1")
 	_ = mpWriter.WriteField("size", "1024x1024")
 
