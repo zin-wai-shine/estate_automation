@@ -63,6 +63,8 @@ type VisionAnalysisResult struct {
 	PropertyImagesVisible     bool                     `json:"property_images_visible"`
 	ImageGridVisible          bool                     `json:"image_grid_visible"`
 	ImageGridReached          bool                     `json:"image_grid_reached"`
+	ImageGridPartiallyCutOff  bool                     `json:"image_grid_partially_cut_off"`
+	NeedsScrollForClearTarget bool                     `json:"needs_scroll_for_clear_target"`
 	VisiblePropertyImageCount int                      `json:"visible_property_image_count"`
 	OriginalContent           string                   `json:"original_content"`
 	HeaderRegion              RegionBoundingBox        `json:"header_region"`
@@ -192,29 +194,44 @@ The screenshots have intentional overlap so no content between captures is misse
 CRITICAL REAL-ESTATE POST RULE:
 A real-estate Facebook post contains property text description followed by a property images grid / photo collage attached below the text.
 
-IMAGE GRID DETECTION & CAPTURE TERMINATION RULES:
-1. When scrolling down to capture post content:
-   - If the property photo collage / image grid (the group of photos e.g. pool, bedroom, kitchen, dining, or "+N" photo grid) is NOT visible yet:
-     * Set "property_images_visible": false
-     * Set "image_grid_visible": false
-     * Set "image_grid_reached": false
-     * Set "more_images_below": true
-     * Set "more_content_below": true
-     * Set "target_post_complete": false
-   - If the property photo collage / image grid IS visible in the latest screenshot (even partially or with +N overlay):
-     * Set "property_images_visible": true
-     * Set "image_grid_visible": true
-     * Set "image_grid_reached": true
-     * Set "relevant_images_visible": true
-     * Set "more_images_below": false
-     * Set "more_content_below": false
-     * Set "target_post_complete": true
-     * You MUST mark "target_post_complete": true because the image grid is the boundary of the post!
-     * DO NOT look for comments, like/comment bar, or further content below the image grid.
+IMAGE GRID VISIBILITY & CLEAR TARGETING DEFINITION:
+You MUST carefully analyze the LATEST screenshot in the sequence to determine its exact visual state:
 
-2. NEVER CAPTURE COMMENTS OR SCROLL PAST IMAGE GRID:
-   - Do NOT scroll or screenshot into the comments section ("Most relevant", user comments, replies, comment box).
-   - Once the image grid is reached in the screenshot, post capture is FINISHED.
+STATE 1: NO IMAGE GRID VISIBLE YET (ONLY TEXT)
+- The property photo collage / image grid is NOT visible on screen yet (only text lines are showing).
+- Output:
+  "property_images_visible": false,
+  "image_grid_visible": false,
+  "image_grid_reached": false,
+  "image_grid_partially_cut_off": false,
+  "needs_scroll_for_clear_target": false,
+  "more_content_below": true,
+  "target_post_complete": false
+
+STATE 2: PARTIALLY CUT-OFF IMAGE GRID (TINY SLIVER / CUT OFF AT BOTTOM) - MUST SCROLL AGAIN!
+- The property photo collage / image grid just barely peeks in at the bottom edge of the dialog/modal (only a small top slice/sliver of photo is visible, height < 250px, or the photo is cut off by the bottom comment input bar).
+- The photo cell is NOT clearly visible for targeting.
+- Output:
+  "property_images_visible": true,
+  "image_grid_visible": true,
+  "image_grid_partially_cut_off": true,
+  "needs_scroll_for_clear_target": true,
+  "image_grid_reached": false,
+  "more_content_below": true,
+  "target_post_complete": false
+
+STATE 3: FULLY & CLEARLY EXPOSED IMAGE GRID (STOP SCROLLING & CLICK FIRST PHOTO!)
+- The property photo collage / image grid is PROMINENTLY and CLEARLY visible in the center of the dialog (full photo cells with height >= 300px are exposed without being cut off by the bottom bar).
+- The top-left property photo cell (e.g. swimming pool, high-ceiling lounge, condo interior) is completely clear and exposed.
+- Output:
+  "property_images_visible": true,
+  "image_grid_visible": true,
+  "image_grid_partially_cut_off": false,
+  "needs_scroll_for_clear_target": false,
+  "image_grid_reached": true,
+  "more_content_below": false,
+  "target_post_complete": true
+- The capture sequence will STOP right at this screenshot, and OpenClaw will click the center of the first photo.
 
 CRITICAL TEXT & NUMERICAL ACCURACY (ZERO HALLUCINATION):
 - You MUST transcribe all numbers, rental prices, selling prices, deposit amounts, square meter figures (sqm / ตร.ม.), bedroom/bathroom counts, building names, floor numbers, and contact numbers EXACTLY as written in the target post.

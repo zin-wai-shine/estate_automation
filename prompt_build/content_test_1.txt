@@ -495,35 +495,71 @@ Then OpenClaw clicks it.
 
 ---
 
-# 14. Stop at Image Grid — Immediately Terminate Screenshot & Scroll Sequence
+# 14. Unified Complete Process: Stop on Image Grid & Click on That Exact Capture
 
-When scrolling down and taking sequential screenshots (Capture #1, #2, #3...):
+This is the exact, complete two-phase process:
 
-### The Stopping Rule:
-1. **AI Analyzes Each Step**: After each scroll step, the screenshot is analyzed by the AI vision model.
-2. **Immediate Stop on Image Grid**: As soon as the AI detects that the **Image Grid** (property photos collage / photo grid) has arrived:
-   - **IMMEDIATELY STOP taking further screenshots**.
-   - **IMMEDIATELY STOP scrolling down**.
-   - **DO NOT** continue scrolling into Capture #4, #5, #6, #7...
-   - The screenshotting and scrolling process **STOPS RIGHT THERE at the image grid**.
-3. **Never Capture Comments**: Never scroll past the image grid into the comments section (*"Most relevant"*, user comments, replies, comment box).
-4. **Immediate Transition to Photo Click**: The current screenshot containing the image grid is immediately used to find the first property image, click its center, and open Facebook's Photo Viewer.
+### Phase 1: Content Extraction & Dynamic Scrolling Loop
+1. **Take Initial Screenshot (Capture #1)**:
+   - AI reads the screenshot and extracts the property description and listing specs verbatim.
+2. **Scroll if More Text Below**:
+   - If more post text continues below:
+     * Scroll down (e.g. +650px).
+     * Take next screenshot (e.g. Capture #2).
+     * AI reads and extracts the additional text.
+3. **The Stopping Condition (Clear Image Grid Detected)**:
+   - **Case A: Image Grid is Only Partially Cut Off at Bottom (<220px exposed)**:
+     * If the image grid just barely peeks in at the bottom edge of the modal/screen, it is NOT fully exposed for accurate clicking.
+     * The system **scrolls down ONCE MORE (+500px)** and takes the next capture so the property photo grid is clearly centered in view.
+   - **Case B: Image Grid is Clearly & Prominently Visible (>=250px exposed)**:
+     * **IMMEDIATELY STOP TAKING SCREENSHOTS**.
+     * **IMMEDIATELY STOP SCROLLING DOWN**.
+     * The capture sequence terminates right at that step (e.g. Capture #2 or #3).
+     * **NEVER** scroll into the comments section (*"Most relevant"*, user replies, comment input box).
+
+### Phase 2: Direct Coordinate Calculation & Click (On That Exact Same Capture)
+1. **Use the Capture Where Image Grid Is Clearly Visible**:
+   - **DO NOT** scroll down further.
+   - **DO NOT** take new or extra screenshots.
+   - Use the **exact same screenshot from Phase 1 where the image grid was fully exposed**.
+2. **AI Detects Top-Left First Photo Cell**:
+   - AI identifies the bounding box `(x, y, width, height)` of the **top-left first property image cell** within the image grid on that screenshot.
+   - Compute the exact center point:
+     ```text
+     Center X = x + (width / 2)
+     Center Y = y + (height / 2)
+     ```
+3. **OpenClaw Direct Click**:
+   - OpenClaw moves the mouse cursor directly to `(Center X, Center Y)` on that same screen.
+   - Pauses briefly (0.5s) and clicks once.
+   - Facebook's Photo Viewer opens.
+   - Download the high-resolution images by clicking "Next" in the Photo Viewer until complete.
 
 ```text
-┌───────────────────────────────────────────────────────────┐
-│ Capture #1 (Top)      → Post text description             │
-│ Capture #2 (+650px)   → Additional post text              │
-│ Capture #3 (+1300px)  → IMAGE GRID ARRIVED!               │
-│                         └─► AI detects Property Image Grid│
-│                             ⛔ STOP SCREENSHOT PROCESS    │
-│                             ⛔ STOP SCROLLING             │
-└───────────────────────────────────────────────────────────┘
-═════════════════════════════════════════════════════════════
-│ ⛔ NEVER CAPTURE:                                         │
-│ Capture #4 (+1950px)  → [BLOCKED] Do not scroll here      │
-│ Capture #5 (+2600px)  → [BLOCKED] Do not screenshot       │
-│ Capture #6 (+3250px)  → [BLOCKED] Comments section        │
-═════════════════════════════════════════════════════════════
+┌────────────────────────────────────────────────────────────────────────┐
+│ PHASE 1: Content Capture & Dynamic Scroll Loop                         │
+│ Capture #1 (Top)      → AI reads post text                             │
+│       ↓ (More text below)                                              │
+│ Scroll down +650px                                                     │
+│       ↓                                                                │
+│ Capture #2 (+650px)   → Image Grid barely peeks in at bottom (<220px)  │
+│                         ⚠️ PARTIALLY CUT OFF → Scroll ONCE MORE (+500px)│
+│       ↓                                                                │
+│ Capture #3 (+1150px)  → IMAGE GRID FULLY & CLEARLY CENTERED!           │
+│                         ⛔ STOP SCROLLING                              │
+│                         ⛔ STOP TAKING FURTHER CAPTURES                │
+├────────────────────────────────────────────────────────────────────────┤
+│ PHASE 2: Coordinate Calculation & Click (Directly on Capture #3)       │
+│ • Use Capture #3 (no extra scrolling, no extra screenshots)            │
+│ • AI locates Top-Left First Photo Cell: { x, y, width, height }        │
+│ • Compute Center: (Center X = x + width/2, Center Y = y + height/2)    │
+│ • OpenClaw clicks (Center X, Center Y) on that screen                  │
+│ • Facebook Photo Viewer opens → Download all full-res photos           │
+└────────────────────────────────────────────────────────────────────────┘
+══════════════════════════════════════════════════════════════════════════
+│ ⛔ BLOCKED & EXCLUDED (Never scroll or capture here):                  │
+│ Capture #4, #5, #6 → Comments section / user replies                   │
+══════════════════════════════════════════════════════════════════════════
 ```
 
 ---
@@ -535,17 +571,22 @@ Facebook Post
       ↓
 Take Screenshot (Capture #1)
       ↓
-AI analyzes: Is Image Grid present?
+AI reads & extracts text content
+      ↓
+Is Image Grid visible in screenshot?
    ├── NO  → Scroll down → Take next screenshot → Repeat
-   └── YES → ⛔ STOP TAKING SCREENSHOTS & STOP SCROLLING
+   ├── PARTIALLY CUT OFF (at bottom edge) → Scroll +500px → Take capture → Repeat
+   └── YES (CLEARLY IN VIEW) → ⛔ STOP TAKING SCREENSHOTS & STOP SCROLLING
                ↓
-         Image Grid is on CURRENT screenshot
+         [Image Grid Capture is already active]
                ↓
-         AI finds FIRST property image in grid
+         AI identifies Top-Left First Photo Cell on that capture
                ↓
-         Return bounding box & center (X, Y)
+         Calculate Center: (X + Width/2, Y + Height/2)
                ↓
-         OpenClaw clicks center of first image
+         OpenClaw moves mouse to (Center X, Center Y)
+               ↓
+         Click image center (NO extra scroll)
                ↓
          Facebook Photo Viewer opens
                ↓
@@ -558,7 +599,7 @@ AI analyzes: Is Image Grid present?
          First image appears again → STOP
 ```
 
-**Key Rules Summary:**
-1. **Stop at Image Grid**: As soon as the image grid / photo collage is detected in the screenshot, stop scrolling and stop taking new screenshots immediately.
-2. **Zero Comments Screenshot**: Never scroll past the image grid into the comment section.
-3. **Click First Photo**: Don't ask AI to parse a full gallery from the feed; find the first clickable property photo in the current screenshot, click it, and let Facebook's Photo Viewer handle high-res gallery downloads.
+**Key Summary:**
+1. **Stop at Image Grid**: The moment the image grid appears, text capture and scrolling immediately stop.
+2. **Zero Extra Scrolling for Clicking**: Coordinates are calculated directly on the capture where the image grid was found.
+3. **OpenClaw Clicks Center**: Mouse moves to `(x + width/2, y + height/2)` on that capture and clicks once to launch the Photo Viewer.
