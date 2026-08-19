@@ -129,26 +129,36 @@ type OpenAIService struct {
 
 func NewOpenAIService() *OpenAIService {
 	apiKey := os.Getenv("OPENAI_API_KEY")
-	if apiKey == "" {
+	model := os.Getenv("OPENAI_VISION_MODEL")
+	if model == "" {
+		model = os.Getenv("OPENAI_MODEL")
+	}
+
+	if apiKey == "" || model == "" {
 		// Read root .env file fallback
 		envPaths := []string{".env", "../.env", "../../.env"}
 		for _, p := range envPaths {
 			if b, err := os.ReadFile(p); err == nil {
 				lines := strings.Split(string(b), "\n")
 				for _, line := range lines {
-					if strings.HasPrefix(line, "OPENAI_API_KEY=") {
-						apiKey = strings.TrimSpace(strings.TrimPrefix(line, "OPENAI_API_KEY="))
-						break
+					trimmed := strings.TrimSpace(line)
+					if strings.HasPrefix(trimmed, "OPENAI_API_KEY=") && apiKey == "" {
+						apiKey = strings.TrimSpace(strings.TrimPrefix(trimmed, "OPENAI_API_KEY="))
+					}
+					if (strings.HasPrefix(trimmed, "OPENAI_VISION_MODEL=") || strings.HasPrefix(trimmed, "OPENAI_MODEL=")) && model == "" {
+						parts := strings.SplitN(trimmed, "=", 2)
+						if len(parts) == 2 && strings.TrimSpace(parts[1]) != "" {
+							model = strings.TrimSpace(parts[1])
+						}
 					}
 				}
 			}
-			if apiKey != "" {
+			if apiKey != "" && model != "" {
 				break
 			}
 		}
 	}
 
-	model := os.Getenv("OPENAI_VISION_MODEL")
 	if model == "" {
 		model = "gpt-4o"
 	}

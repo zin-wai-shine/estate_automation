@@ -181,6 +181,7 @@ func AnalyzeVisionScreenshot(c *fiber.Ctx) error {
 	openAISvc := services.NewOpenAIService()
 	result, err := openAISvc.AnalyzeScreenshotsSequential(c.Context(), screenshots, targetURL)
 	if err != nil {
+		fmt.Printf("[VISION_ANALYZE_ERR] OpenAI Vision failed: %v\n", err)
 		errorCode := "OPENAI_REQUEST_FAILED"
 		if strings.Contains(err.Error(), "AUTH_FAILED") {
 			errorCode = "OPENAI_AUTH_FAILED"

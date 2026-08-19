@@ -1098,6 +1098,9 @@ export const TestingView: React.FC = () => {
           }),
         });
         aiData = await aiResp.json();
+        if (aiData.error_code || !aiResp.ok) {
+          addLog('AI', `⚠️ [AI Analysis Error] ${aiData.message || aiData.error_code || 'OpenAI Vision request failed'}`);
+        }
         if (aiData.analysis) {
           analysis = aiData.analysis;
           setAiAnalysis(analysis);
