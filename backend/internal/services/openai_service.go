@@ -61,6 +61,8 @@ type VisionAnalysisResult struct {
 	EndOfPost                 bool                     `json:"end_of_post"`
 	ScrollRequired            bool                     `json:"scroll_required"`
 	PropertyImagesVisible     bool                     `json:"property_images_visible"`
+	ImageGridVisible          bool                     `json:"image_grid_visible"`
+	ImageGridReached          bool                     `json:"image_grid_reached"`
 	VisiblePropertyImageCount int                      `json:"visible_property_image_count"`
 	OriginalContent           string                   `json:"original_content"`
 	HeaderRegion              RegionBoundingBox        `json:"header_region"`
@@ -146,7 +148,7 @@ func NewOpenAIService() *OpenAIService {
 		}
 	}
 
-	model := os.Getenv("OPENAI_MODEL")
+	model := os.Getenv("OPENAI_VISION_MODEL")
 	if model == "" {
 		model = "gpt-4o"
 	}
@@ -178,32 +180,31 @@ The screenshots are provided in chronological order (Screenshot 1 is top/initial
 The screenshots have intentional overlap so no content between captures is missed.
 
 CRITICAL REAL-ESTATE POST RULE:
-A real-estate Facebook post can contain long text followed by property images / photo galleries below the text.
-The first screenshot may show the description, but the property image section or additional property details are below the visible screen.
-Therefore, DO NOT assume the post is complete just because the visible text looks complete or ends naturally!
-You MUST determine whether ANY part of the target post remains below the current viewport, including:
-- More text ("more_text_below")
-- Property images / photo gallery section ("more_images_below")
-- Attached media / buttons / contact information
-- Post container extending below the visible area
+A real-estate Facebook post contains property text description followed by a property images grid / photo collage attached below the text.
 
-PHOTO GALLERY & POST COMPLETION RULES:
-1. Real estate posts have property images attached below the description.
-2. If NO property photos/images have been captured yet anywhere in the screenshot sequence:
-   - You MUST set "property_images_visible": false
-   - You MUST set "relevant_images_visible": false
-   - You MUST set "more_images_below": true
-   - You MUST set "more_content_below": true
-   - You MUST set "target_post_complete": false
-   - DO NOT mark target_post_complete as true until the property photos section has been reached and photographed!
-3. Once property images ARE visible in the sequence:
-   - Set "property_images_visible": true
-   - Set "relevant_images_visible": true
-   - Check if additional property images or the post footer (Like/Comment bar) continue below.
-   - Set "target_post_complete": true ONLY when all property images have been captured and the bottom of the post is reached.
+IMAGE GRID DETECTION & CAPTURE TERMINATION RULES:
+1. When scrolling down to capture post content:
+   - If the property photo collage / image grid (the group of photos e.g. pool, bedroom, kitchen, dining, or "+N" photo grid) is NOT visible yet:
+     * Set "property_images_visible": false
+     * Set "image_grid_visible": false
+     * Set "image_grid_reached": false
+     * Set "more_images_below": true
+     * Set "more_content_below": true
+     * Set "target_post_complete": false
+   - If the property photo collage / image grid IS visible in the latest screenshot (even partially or with +N overlay):
+     * Set "property_images_visible": true
+     * Set "image_grid_visible": true
+     * Set "image_grid_reached": true
+     * Set "relevant_images_visible": true
+     * Set "more_images_below": false
+     * Set "more_content_below": false
+     * Set "target_post_complete": true
+     * You MUST mark "target_post_complete": true because the image grid is the boundary of the post!
+     * DO NOT look for comments, like/comment bar, or further content below the image grid.
 
-If property images belong to the target post: DO NOT crop them out. They are valid post content.
-Only identify unwanted_image_present if there is unrelated Facebook UI / advertisement / spam image that is not part of the target property listing.
+2. NEVER CAPTURE COMMENTS OR SCROLL PAST IMAGE GRID:
+   - Do NOT scroll or screenshot into the comments section ("Most relevant", user comments, replies, comment box).
+   - Once the image grid is reached in the screenshot, post capture is FINISHED.
 
 CRITICAL TEXT & NUMERICAL ACCURACY (ZERO HALLUCINATION):
 - You MUST transcribe all numbers, rental prices, selling prices, deposit amounts, square meter figures (sqm / ตร.ม.), bedroom/bathroom counts, building names, floor numbers, and contact numbers EXACTLY as written in the target post.
@@ -214,11 +215,9 @@ Your tasks:
 1. Determine if these screenshots show the target Facebook property post ("target_post_visible": true).
 2. Check if a "See more" link/button is present and still needs to be expanded ("see_more_visible": true / "see_more_present": true).
 3. Determine whether more text continues below ("more_text_below": true/false).
-4. Determine whether property images / media section continue below the latest screenshot ("more_images_below": true/false).
-5. Set "more_content_below": true if more text OR more images exist below.
-6. Set "relevant_images_visible": true if property images are visible in the capture sequence.
-7. Set "target_post_complete": true ONLY when the entire post (including all text AND property images) has been captured before unrelated comments / suggested posts.
-8. Reconstruct the complete, unified, deduplicated property post text across all screenshots verbatim.
+4. Determine whether the property image grid is reached ("image_grid_reached": true/false, "property_images_visible": true/false).
+5. If image grid is reached, set "more_content_below": false and "target_post_complete": true.
+6. Reconstruct the complete, unified, deduplicated property post text across all screenshots verbatim.
 
 DO NOT extract comments.
 DO NOT extract reactions.
@@ -237,27 +236,29 @@ Return JSON in this EXACT format:
 {
   "target_post_visible": true,
   "is_target_post": true,
-  "more_content_below": true,
+  "more_content_below": false,
   "more_text_below": false,
-  "more_images_below": true,
+  "more_images_below": false,
+  "property_images_visible": true,
+  "image_grid_visible": true,
+  "image_grid_reached": true,
   "relevant_images_visible": true,
   "see_more_visible": false,
   "see_more_present": false,
-  "target_post_complete": false,
+  "target_post_complete": true,
   "unwanted_image_present": false,
   "image_region": null,
-  "reason": "The visible text is mostly complete, but the target post continues below the viewport and property images are likely below.",
-  "confidence": 0.95,
+  "reason": "Image grid is visible in screenshot. Post description and property photos captured successfully.",
+  "confidence": 0.98,
   "page_state": "target_post_visible",
   "target_detected": true,
   "target_post_found": true,
-  "complete_post_visible": false,
-  "property_images_visible": true,
-  "visible_property_image_count": 3,
+  "complete_post_visible": true,
+  "visible_property_image_count": 4,
   "original_content": "...",
   "target_region": { "x": 560, "y": 40, "width": 720, "height": 1000 },
-  "content_region": { "x": 560, "y": 40, "width": 720, "height": 650 },
-  "media_region": { "x": 560, "y": 690, "width": 720, "height": 310 }
+  "content_region": { "x": 560, "y": 40, "width": 720, "height": 550 },
+  "media_region": { "x": 560, "y": 590, "width": 720, "height": 410 }
 }`
 
 	userPrompt := fmt.Sprintf("Target URL requested: %s. Sequence contains %d screenshot(s). Read all screenshots together, determine if more content exists below the last screenshot, and reconstruct the full deduplicated post content.", targetURL, len(imagesBase64))

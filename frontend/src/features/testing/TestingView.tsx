@@ -71,6 +71,8 @@ interface VisionAnalysisResult {
   end_of_post?: boolean;
   scroll_required?: boolean;
   property_images_visible?: boolean;
+  image_grid_visible?: boolean;
+  image_grid_reached?: boolean;
   visible_property_image_count?: number;
   original_content?: string;
   header_region?: RegionBoundingBox;
@@ -1112,29 +1114,25 @@ export const TestingView: React.FC = () => {
           addLog('STEP_6', `✓ OpenAI Vision extracted & reconstructed post body (${analysis.original_content.length} chars)`);
         }
 
-        // Check if more content / images below or complete post reached
+        // Check if property image grid has arrived in current capture
         const hasSeenImages = Boolean(
           analysis?.property_images_visible ||
+          analysis?.image_grid_visible ||
+          analysis?.image_grid_reached ||
           analysis?.relevant_images_visible ||
-          (analysis?.visible_property_image_count && analysis.visible_property_image_count > 0)
+          (analysis?.visible_property_image_count && analysis.visible_property_image_count > 0) ||
+          (analysis?.media_region && analysis.media_region.width > 50 && analysis.media_region.height > 50) ||
+          analysis?.target_post_complete
         );
 
-        let hasMoreBelow =
-          (analysis?.more_content_below || analysis?.more_images_below || analysis?.more_text_below) &&
-          !analysis?.target_post_complete;
+        // Stop immediately when the property image grid has arrived in the screenshot
+        const postFinished = hasSeenImages || analysis?.target_post_complete;
 
-        // Keep scrolling and taking screenshots until property images are seen!
-        if (!hasSeenImages) {
-          hasMoreBelow = true;
-        }
-
-        const postFinished = hasSeenImages && (analysis?.target_post_complete || !analysis?.more_content_below);
-
-        addLog('AI', `[AI] More content below: ${hasMoreBelow ? 'YES' : 'NO'} (Photos detected: ${hasSeenImages ? 'YES' : 'SEARCHING NEXT SCREENSHOT'})`);
+        addLog('AI', `[AI] Image Grid detected: ${hasSeenImages ? 'YES (STOPPING CAPTURE)' : 'NO (SEARCHING NEXT SCREENSHOT)'}`);
 
         if (postFinished || screenshotCount >= MAX_SCREENSHOTS) {
           isEndOfPost = true;
-          addLog('PIPELINE', `Target post capture complete (${hasSeenImages ? 'Photos & Content captured' : 'Max screenshots reached'}). Total captures: ${screenshotCount}.`);
+          addLog('PIPELINE', `Image grid arrived at Capture #${screenshotCount}! Terminating screenshot capture sequence immediately.`);
         } else {
           // Perform verified scroll
           const scrollActionResp = await fetch('http://localhost:8085/api/facebook/test/execute-action', {
