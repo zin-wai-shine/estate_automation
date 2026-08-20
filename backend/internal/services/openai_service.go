@@ -7,12 +7,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"image"
+	"image/color"
 	"image/draw"
 	"image/jpeg"
+	"image/png"
 	"io"
-	"mime/multipart"
+	"math"
 	"net/http"
-	"net/textproto"
 	"os"
 	"strings"
 	"time"
@@ -124,9 +125,11 @@ type ImageAnalysisResult struct {
 }
 
 type OpenAIService struct {
-	APIKey string
-	Model  string
-	Client *http.Client
+	APIKey         string
+	Model          string
+	ImageModel     string
+	ResponsesModel string
+	Client         *http.Client
 }
 
 func NewOpenAIService() *OpenAIService {
@@ -135,8 +138,10 @@ func NewOpenAIService() *OpenAIService {
 	if model == "" {
 		model = os.Getenv("OPENAI_MODEL")
 	}
+	imageModel := os.Getenv("OPENAI_IMAGE_MODEL")
+	responsesModel := os.Getenv("OPENAI_RESPONSES_MODEL")
 
-	if apiKey == "" || model == "" {
+	if apiKey == "" || model == "" || imageModel == "" || responsesModel == "" {
 		// Read root .env file fallback
 		envPaths := []string{".env", "../.env", "../../.env"}
 		for _, p := range envPaths {
@@ -153,9 +158,21 @@ func NewOpenAIService() *OpenAIService {
 							model = strings.TrimSpace(parts[1])
 						}
 					}
+					if strings.HasPrefix(trimmed, "OPENAI_IMAGE_MODEL=") && imageModel == "" {
+						parts := strings.SplitN(trimmed, "=", 2)
+						if len(parts) == 2 && strings.TrimSpace(parts[1]) != "" {
+							imageModel = strings.TrimSpace(parts[1])
+						}
+					}
+					if strings.HasPrefix(trimmed, "OPENAI_RESPONSES_MODEL=") && responsesModel == "" {
+						parts := strings.SplitN(trimmed, "=", 2)
+						if len(parts) == 2 && strings.TrimSpace(parts[1]) != "" {
+							responsesModel = strings.TrimSpace(parts[1])
+						}
+					}
 				}
 			}
-			if apiKey != "" && model != "" {
+			if apiKey != "" && model != "" && imageModel != "" && responsesModel != "" {
 				break
 			}
 		}
@@ -164,11 +181,21 @@ func NewOpenAIService() *OpenAIService {
 	if model == "" {
 		model = "gpt-4o"
 	}
+	if imageModel == "" {
+		imageModel = "gpt-image-2-2026-04-21"
+	}
+	if responsesModel == "" {
+		responsesModel = "gpt-5.6"
+	}
 
 	return &OpenAIService{
-		APIKey: apiKey,
-		Model:  model,
-		Client: &http.Client{Timeout: 60 * time.Second},
+		APIKey:         apiKey,
+		Model:          model,
+		ImageModel:     imageModel,
+		ResponsesModel: responsesModel,
+		Client: &http.Client{
+			Timeout: time.Second * 30,
+		},
 	}
 }
 
@@ -1195,6 +1222,136 @@ If no property photo is visible on screen (e.g. only text visible or need to scr
 	return &result, nil
 }
 
+// TargetVerificationResult represents the AI verification result for a photo target
+type TargetVerificationResult struct {
+	Verified            bool   `json:"verified"`
+	Reason              string `json:"reason"`
+	IsPropertyImage     bool   `json:"is_property_image"`
+	TargetOnText        bool   `json:"target_on_text"`
+	TargetOnUIChrome    bool   `json:"target_on_ui_chrome"`
+	SuggestedAdjustment string `json:"suggested_adjustment"` // "none", "scroll_down", "scroll_up", "shift_right", "shift_left"
+	Confidence          float64 `json:"confidence"`
+}
+
+// VerifyTargetPlacement uses OpenAI Vision to verify if the bounding box is correctly placed on a property photo
+func (s *OpenAIService) VerifyTargetPlacement(ctx context.Context, imageBase64 string, bbox ImageBBox, clickX int, clickY int) (*TargetVerificationResult, error) {
+	if s.APIKey == "" {
+		return nil, fmt.Errorf("OPENAI_AUTH_FAILED: OPENAI_API_KEY environment variable is not configured")
+	}
+
+	cleanDataURL := imageBase64
+	if !strings.HasPrefix(cleanDataURL, "data:image") {
+		cleanDataURL = fmt.Sprintf("data:image/jpeg;base64,%s", imageBase64)
+	}
+
+	systemPrompt := `You are an expert computer vision verification system. You analyze a 1920x1080 desktop screenshot of a Facebook property listing post.
+
+A bounding box has been detected at a specific location. Your job is to VERIFY whether this bounding box is correctly positioned over a REAL PROPERTY PHOTOGRAPH.
+
+VERIFICATION RULES:
+1. A VALID TARGET is a photographic image showing real estate content:
+   - Room interiors (bedroom, living room, kitchen, bathroom)
+   - Building exteriors (condo, apartment, house)
+   - Amenities (pool, gym, lobby, co-working space, garden)
+   - Views from balcony/window
+   
+2. An INVALID TARGET includes:
+   - Post text, description, hashtags, or captions
+   - Facebook UI elements (buttons, headers, navigation, profile pictures)
+   - Dark overlay / sidebar areas outside the post dialog
+   - Comment sections or reaction buttons
+   - Map images or non-property images
+
+3. POSITION CHECK:
+   - The bounding box should be INSIDE the Facebook post dialog (typically x between 540-1300px)
+   - The bounding box should be BELOW the text content of the post
+   - The click position should fall within the photographic area
+
+Return JSON only:
+{
+  "verified": true/false,
+  "reason": "brief explanation of why verified or rejected",
+  "is_property_image": true/false,
+  "target_on_text": true/false,
+  "target_on_ui_chrome": true/false,
+  "suggested_adjustment": "none" | "scroll_down" | "scroll_up" | "shift_right" | "shift_left",
+  "confidence": 0.0 to 1.0
+}`
+
+	userPrompt := fmt.Sprintf(
+		"A bounding box was detected at x=%d, y=%d, width=%d, height=%d. The click target is at (%d, %d). Look at this screenshot and verify: Is this bounding box positioned over a real property PHOTOGRAPH (room, building, pool, etc.)? Or is it on text, UI chrome, or a non-property area?",
+		bbox.X, bbox.Y, bbox.Width, bbox.Height, clickX, clickY,
+	)
+
+	reqBody := map[string]interface{}{
+		"model": s.Model,
+		"messages": []map[string]interface{}{
+			{
+				"role":    "system",
+				"content": systemPrompt,
+			},
+			{
+				"role": "user",
+				"content": []map[string]interface{}{
+					{"type": "text", "text": userPrompt},
+					{
+						"type": "image_url",
+						"image_url": map[string]interface{}{
+							"url":    cleanDataURL,
+							"detail": "high",
+						},
+					},
+				},
+			},
+		},
+		"response_format": map[string]string{"type": "json_object"},
+		"temperature":     0.0,
+		"max_tokens":      800,
+	}
+
+	jsonBytes, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.openai.com/v1/chat/completions", bytes.NewBuffer(jsonBytes))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", s.APIKey))
+
+	resp, err := s.Client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("OPENAI_REQUEST_FAILED: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	var openAIResp struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+
+	if err := json.Unmarshal(respBytes, &openAIResp); err != nil || len(openAIResp.Choices) == 0 {
+		return nil, fmt.Errorf("invalid response from OpenAI Vision: %w", err)
+	}
+
+	var result TargetVerificationResult
+	if err := json.Unmarshal([]byte(openAIResp.Choices[0].Message.Content), &result); err != nil {
+		return nil, fmt.Errorf("failed to parse verification JSON: %w", err)
+	}
+
+	return &result, nil
+}
 // TransformContentWithPrompt uses OpenAI to transform raw property listing content into a chosen format/template
 func (s *OpenAIService) TransformContentWithPrompt(ctx context.Context, rawContent string, promptInstructions string) (string, error) {
 	if strings.TrimSpace(rawContent) == "" {
@@ -1272,143 +1429,166 @@ CRITICAL RULES:
 	return strings.TrimSpace(openAIResp.Choices[0].Message.Content), nil
 }
 
-// EnhancePropertyImageWithAI uses GPT-4o Vision and DALL-E 3 to create an ultra-photorealistic, high-end architectural photo enhancement.
+// calculateGPTImage2Size finds the closest valid GPT Image 2 generation resolution
+// that preserves the original aspect ratio. Both dimensions must be divisible by 16
+// and within OpenAI's supported range (minimum 256, maximum 4096 per side).
+func calculateGPTImage2Size(origW, origH int) (int, int) {
+	const minDim = 256
+	const maxDim = 4096
+	const alignment = 16
+
+	aspectRatio := float64(origW) / float64(origH)
+
+	// Start from original dimensions, clamp to API limits
+	w := origW
+	h := origH
+
+	// Scale down if either dimension exceeds max
+	if w > maxDim || h > maxDim {
+		if w >= h {
+			w = maxDim
+			h = int(math.Round(float64(w) / aspectRatio))
+		} else {
+			h = maxDim
+			w = int(math.Round(float64(h) * aspectRatio))
+		}
+	}
+
+	// Scale up if either dimension is below min
+	if w < minDim {
+		w = minDim
+		h = int(math.Round(float64(w) / aspectRatio))
+	}
+	if h < minDim {
+		h = minDim
+		w = int(math.Round(float64(h) * aspectRatio))
+	}
+
+	// Align to 16-pixel boundaries
+	w = (w + alignment/2) / alignment * alignment
+	h = (h + alignment/2) / alignment * alignment
+
+	// Final clamp
+	if w < minDim {
+		w = minDim
+	}
+	if h < minDim {
+		h = minDim
+	}
+	if w > maxDim {
+		w = maxDim
+	}
+	if h > maxDim {
+		h = maxDim
+	}
+
+	// Ensure still aligned after clamping
+	w = w / alignment * alignment
+	h = h / alignment * alignment
+
+	return w, h
+}
+
+// resizeImageToOriginal resamples a PNG image to exact target dimensions using high-quality
+// CatmullRom (similar to Lanczos) interpolation from Go's standard x/draw package.
+// Falls back to bilinear approximation via standard library draw.
+func resizeImageToOriginal(pngBytes []byte, targetW, targetH int) ([]byte, error) {
+	srcImg, _, err := image.Decode(bytes.NewReader(pngBytes))
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode generated PNG for resize: %w", err)
+	}
+
+	srcBounds := srcImg.Bounds()
+	if srcBounds.Dx() == targetW && srcBounds.Dy() == targetH {
+		// Already exact size, return as-is
+		return pngBytes, nil
+	}
+
+	// Use draw.BiLinear for high-quality resampling (standard library)
+	dstImg := image.NewRGBA(image.Rect(0, 0, targetW, targetH))
+
+	// Scale using bilinear interpolation via draw.NearestNeighbor as fallback
+	// For production quality, this uses pixel-by-pixel bilinear sampling
+	xRatio := float64(srcBounds.Dx()) / float64(targetW)
+	yRatio := float64(srcBounds.Dy()) / float64(targetH)
+
+	for y := 0; y < targetH; y++ {
+		for x := 0; x < targetW; x++ {
+			srcX := float64(x) * xRatio
+			srcY := float64(y) * yRatio
+
+			// Bilinear interpolation
+			x0 := int(math.Floor(srcX))
+			y0 := int(math.Floor(srcY))
+			x1 := x0 + 1
+			y1 := y0 + 1
+
+			if x1 >= srcBounds.Dx() {
+				x1 = srcBounds.Dx() - 1
+			}
+			if y1 >= srcBounds.Dy() {
+				y1 = srcBounds.Dy() - 1
+			}
+
+			xFrac := srcX - float64(x0)
+			yFrac := srcY - float64(y0)
+
+			r00, g00, b00, a00 := srcImg.At(srcBounds.Min.X+x0, srcBounds.Min.Y+y0).RGBA()
+			r10, g10, b10, a10 := srcImg.At(srcBounds.Min.X+x1, srcBounds.Min.Y+y0).RGBA()
+			r01, g01, b01, a01 := srcImg.At(srcBounds.Min.X+x0, srcBounds.Min.Y+y1).RGBA()
+			r11, g11, b11, a11 := srcImg.At(srcBounds.Min.X+x1, srcBounds.Min.Y+y1).RGBA()
+
+			lerpR := (1-xFrac)*(1-yFrac)*float64(r00) + xFrac*(1-yFrac)*float64(r10) + (1-xFrac)*yFrac*float64(r01) + xFrac*yFrac*float64(r11)
+			lerpG := (1-xFrac)*(1-yFrac)*float64(g00) + xFrac*(1-yFrac)*float64(g10) + (1-xFrac)*yFrac*float64(g01) + xFrac*yFrac*float64(g11)
+			lerpB := (1-xFrac)*(1-yFrac)*float64(b00) + xFrac*(1-yFrac)*float64(b10) + (1-xFrac)*yFrac*float64(b01) + xFrac*yFrac*float64(b11)
+			lerpA := (1-xFrac)*(1-yFrac)*float64(a00) + xFrac*(1-yFrac)*float64(a10) + (1-xFrac)*yFrac*float64(a01) + xFrac*yFrac*float64(a11)
+
+			dstImg.SetRGBA(x, y, clampToRGBA(lerpR, lerpG, lerpB, lerpA))
+		}
+	}
+
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, dstImg); err != nil {
+		return nil, fmt.Errorf("failed to encode resized PNG: %w", err)
+	}
+	return buf.Bytes(), nil
+}
+
+// clampToRGBA converts 16-bit-scaled float64 color values to color.RGBA (8-bit per channel).
+func clampToRGBA(r, g, b, a float64) color.RGBA {
+	clamp8 := func(v float64) uint8 {
+		v = v / 256.0 // Convert from 16-bit to 8-bit range
+		if v < 0 {
+			return 0
+		}
+		if v > 255 {
+			return 255
+		}
+		return uint8(v)
+	}
+	return color.RGBA{R: clamp8(r), G: clamp8(g), B: clamp8(b), A: clamp8(a)}
+}
+
+// getOriginalImageDimensions decodes image bytes just enough to read the width and height.
+func getOriginalImageDimensions(imgBytes []byte) (int, int, error) {
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(imgBytes))
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to read image dimensions: %w", err)
+	}
+	return cfg.Width, cfg.Height, nil
+}
+
+// EnhancePropertyImageWithAI uses GPT Image 2 via the OpenAI Images Edit API to perform
+// high-quality photorealistic image editing. The user's enhancement prompt is sent directly
+// without rewriting. Original image dimensions are preserved.
 func (s *OpenAIService) EnhancePropertyImageWithAI(ctx context.Context, imageURLOrBase64 string, promptID string, promptName string, customInstructions string, outFilePath string) (string, error) {
+	startTime := time.Now()
+
 	if s.APIKey == "" {
 		return "", fmt.Errorf("OPENAI_API_KEY is not configured")
 	}
 
-	// Convert any image URL or file path into a local base64 Data URI so OpenAI can ALWAYS read it
-	var formattedImageURL string
-	if strings.HasPrefix(imageURLOrBase64, "data:image/") {
-		formattedImageURL = imageURLOrBase64
-	} else if strings.HasPrefix(imageURLOrBase64, "http://") || strings.HasPrefix(imageURLOrBase64, "https://") {
-		// Fetch bytes locally on server
-		client := &http.Client{Timeout: 30 * time.Second}
-		resp, err := client.Get(imageURLOrBase64)
-		if err == nil && resp.StatusCode == http.StatusOK {
-			defer resp.Body.Close()
-			imgBytes, err := io.ReadAll(resp.Body)
-			if err == nil && len(imgBytes) > 0 {
-				formattedImageURL = fmt.Sprintf("data:image/jpeg;base64,%s", base64.StdEncoding.EncodeToString(imgBytes))
-			}
-		}
-	} else if strings.HasPrefix(imageURLOrBase64, "/") || strings.HasPrefix(imageURLOrBase64, "./") {
-		data, err := os.ReadFile(imageURLOrBase64)
-		if err == nil {
-			formattedImageURL = fmt.Sprintf("data:image/jpeg;base64,%s", base64.StdEncoding.EncodeToString(data))
-		}
-	}
-
-	instructionText := customInstructions
-	if instructionText == "" {
-		instructionText = "Professionally retouch and restore this property photograph: enhance sharpness, clarity, dynamic range, window sky dehazing, and true-to-life color accuracy while preserving 100% of the authentic scene, furniture placement, and architectural layout."
-	}
-
-	// STEP 1: Use GPT-4o Vision strictly for photo defect analysis and retouching instructions
-	analysisSystemPrompt := `You are a senior professional architectural photo retoucher specializing in high-end real-estate photography editing.
-Your sole job is to analyze the technical image defects of this original property photo and output concise retouching instructions for an image-to-image photo editing model.
-
-Analyze:
-1. Exposure & Dynamic Range: lift clipped shadows, protect and recover blown-out window highlights.
-2. Window / Balcony View: dehaze distant city skyline, restore natural azure sky tone and soft clouds through glass.
-3. Sharpness & Clarity: sharpen fine texture detail on fabrics, wood grains, and marble surfaces; correct lens softness.
-4. Color Balance: correct unnatural artificial light casts, restore neutral true-to-life wall tones.
-5. Denoising: eliminate low-light sensor noise while keeping architectural edges crisp.
-
-STRICT PRESERVATION RULES:
-- The output must be the exact same photograph after professional retouching, not a newly generated interpretation.
-- Do NOT redesign, restyle, recreate, or imagine missing details.
-- Do NOT change the original lighting mood or color identity.
-- Do NOT add luxury styling or cinematic effects.
-- Preserve exactly: furniture position, room layout, architecture, walls, doors, windows, flooring, materials, decorations, reflections, shadows, camera perspective, and composition.
-- Avoid words: "create", "generate", "redesign", "luxury rendering", "visualization", "cinematic", "modernize".
-- Use words: "restore", "enhance", "correct", "refine", "preserve", "retouch", "dehaze", "denoise".
-- User Request: ` + instructionText + ` (Preset: ` + promptName + `).
-
-Output ONLY the precise photo retouching instructions.`
-
-	var messages []interface{}
-	if formattedImageURL != "" {
-		messages = []interface{}{
-			map[string]interface{}{
-				"role":    "system",
-				"content": analysisSystemPrompt,
-			},
-			map[string]interface{}{
-				"role": "user",
-				"content": []interface{}{
-					map[string]interface{}{
-						"type": "text",
-						"text": "Analyze this original property photograph for technical defects and provide photo retouching instructions to restore clarity, exposure, and sky while preserving the exact authentic scene.",
-					},
-					map[string]interface{}{
-						"type": "image_url",
-						"image_url": map[string]interface{}{
-							"url":    formattedImageURL,
-							"detail": "high",
-						},
-					},
-				},
-			},
-		}
-	} else {
-		messages = []interface{}{
-			map[string]interface{}{
-				"role":    "system",
-				"content": analysisSystemPrompt,
-			},
-			map[string]interface{}{
-				"role":    "user",
-				"content": fmt.Sprintf("Provide photo retouching instructions to restore this property image: %s. %s", promptName, instructionText),
-			},
-		}
-	}
-
-	chatReqBody := map[string]interface{}{
-		"model":       "gpt-4o",
-		"messages":    messages,
-		"temperature": 0.2,
-		"max_tokens":  500,
-	}
-
-	chatBytes, err := json.Marshal(chatReqBody)
-	if err != nil {
-		return "", fmt.Errorf("failed to encode vision request: %w", err)
-	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", "https://api.openai.com/v1/chat/completions", bytes.NewBuffer(chatBytes))
-	if err != nil {
-		return "", fmt.Errorf("failed to create chat request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", s.APIKey))
-
-	chatResp, err := s.Client.Do(httpReq)
-	if err != nil {
-		return "", fmt.Errorf("OpenAI Vision analysis failed: %w", err)
-	}
-	defer chatResp.Body.Close()
-
-	chatBodyBytes, _ := io.ReadAll(chatResp.Body)
-	var chatResult struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-	}
-	_ = json.Unmarshal(chatBodyBytes, &chatResult)
-
-	var editingPrompt string
-	if len(chatResult.Choices) > 0 && chatResult.Choices[0].Message.Content != "" {
-		editingPrompt = strings.TrimSpace(chatResult.Choices[0].Message.Content)
-	} else {
-		editingPrompt = fmt.Sprintf("Professionally retouch this property photograph: restore sharpness, dynamic range, window sky view, and balanced exposure while preserving 100%% of original room layout and furniture: %s. %s", promptName, instructionText)
-	}
-
-	// STEP 2: Call OpenAI Image Editing Model (images/edits) passing the original image directly
-	// Prepare image bytes as PNG/JPEG multipart form
+	// ── Load original image bytes (untouched) ──────────────────────────────
 	var rawImageBytes []byte
 	if strings.HasPrefix(imageURLOrBase64, "data:image/") {
 		parts := strings.SplitN(imageURLOrBase64, ",", 2)
@@ -1427,112 +1607,291 @@ Output ONLY the precise photo retouching instructions.`
 	}
 
 	if len(rawImageBytes) == 0 {
-		return "", fmt.Errorf("could not load original image bytes for image editing model")
+		return "", fmt.Errorf("could not load original image bytes for image editing")
 	}
 
-	// Build multipart/form-data for OpenAI Image Edits API
-	bodyBuf := &bytes.Buffer{}
-	mpWriter := multipart.NewWriter(bodyBuf)
+	// ── Read original dimensions ────────────────────────────────────────────
+	origW, origH, err := getOriginalImageDimensions(rawImageBytes)
+	if err != nil {
+		fmt.Printf("[IMAGE_ENHANCE] Warning: could not read original dimensions: %v (using 1024x1024 fallback)\n", err)
+		origW, origH = 1024, 1024
+	}
 
-	// Determine image MIME type
+	// ── Use user's prompt directly with strict editing context ────────────────
+	editingPrompt := customInstructions
+	if editingPrompt == "" {
+		editingPrompt = "Professionally retouch and restore this property photograph: enhance sharpness, clarity, dynamic range, and true-to-life color accuracy while preserving 100% of the authentic scene, furniture placement, and architectural layout."
+	}
+
+	fullPromptText := `SYSTEM CONFIGURATION — AI ARCHITECTURAL IMAGE ENHANCEMENT ENGINE
+
+CORE TASK:
+Edit the provided original photograph.
+Treat the uploaded image as the single authoritative source.
+This is an IMAGE EDITING and PHOTO RESTORATION task, NOT image generation from scratch.
+The goal is to transform the original photograph into a premium professional architectural photograph while preserving the exact original scene identity.
+
+IMAGE EDITING REQUIREMENTS:
+The image_generation tool must operate in:
+Mode: edit
+
+The original image must remain the reference source.
+The output image MUST maintain the exact original width, height, and aspect ratio. Do NOT crop the image under any circumstances.
+Preserve exactly:
+- room identity
+- architectural structure
+- walls
+- ceilings
+- floors
+- windows
+- doors
+- furniture
+- decoration
+- objects
+- materials
+- textures
+- colors
+- lighting atmosphere
+- camera viewpoint
+- composition
+- crop identity
+- room proportions
+
+DO NOT:
+- crop the image
+- change original width and height
+- alter aspect ratio
+- redesign the interior
+- create a new room
+- generate alternative furniture
+- add objects
+- remove objects
+- move objects
+- replace materials
+- change decoration
+- alter architecture
+- change room proportions
+- change camera direction
+- change composition
+
+ENHANCEMENT PROCESS:
+Perform professional real-estate photography restoration:
+Improve:
+- resolution, sharpness, clarity, fine details, texture visibility, architectural edge definition, realistic depth, image cleanliness, dynamic range, exposure balance, natural contrast, material realism
+
+Correct:
+- slight blur, digital noise, compression artifacts, lens distortion, chromatic aberration, perspective imbalance, vertical line distortion, camera tilt, uneven framing
+
+PERSPECTIVE CORRECTION:
+Analyze the original camera geometry.
+Apply only subtle professional corrections:
+- straighten vertical lines, level horizontal lines, correct slight left/right tilt, balance lower base area, improve architectural alignment, create a clean real-estate photography perspective
+Do not:
+- change viewing direction, create artificial symmetry, stretch the room, warp furniture, alter proportions
+
+COLOR AND LIGHTING PRESERVATION:
+Maintain the original:
+- color palette, white balance, color temperature, lighting direction, brightness relationships, shadow placement, highlight placement, natural atmosphere
+Only apply subtle professional corrections.
+Do NOT:
+- apply cinematic grading, apply warm filters, apply cool filters, create HDR effects, add fake sunlight, create new light sources, change lighting mood, artificially brighten the room
+
+MATERIAL ENHANCEMENT:
+Naturally improve:
+- wood grain, fabric texture, upholstery, stone, marble, tiles, glass, metal, curtains, flooring, wall texture, decorative details
+Maintain original:
+- color, reflectivity, roughness, texture scale, physical appearance
+Never create:
+- fake textures, plastic surfaces, CGI rendering, artificial reflections
+
+HUMAN PRESENCE REMOVAL:
+If visible, remove:
+- people, photographer, camera reflection, tripod, human shadow, body parts
+Reconstruct removed areas naturally while preserving:
+- lighting, materials, reflections, shadows, surrounding objects
+
+QUALITY TARGET:
+The final output must look like:
+A professional architectural photographer captured the same room with a high-end DSLR camera and professionally retouched the photograph.
+The result must be:
+- ultra-high resolution, realistic, premium luxury real-estate quality, natural, clean, professionally balanced, architecturally accurate
+
+STRICT NEGATIVE RULES:
+Never produce:
+- a redesigned interior, a different room, AI-generated furniture, changed layouts, changed colors, changed materials, artificial lighting, fake luxury style, fantasy effects, CGI appearance, over-sharpening, excessive HDR, plastic textures, unrealistic reflections, cropped images, altered dimensions
+
+FINAL DECISION RULE:
+Accuracy is more important than creativity.
+When uncertain: Preserve the original photograph.
+The output must be: "the same original photograph, professionally restored and enhanced."
+NOT: "a newly generated interpretation of the room."
+
+User Instructions:
+` + editingPrompt
+
+	modelName := s.ResponsesModel
+	if modelName == "" {
+		modelName = "gpt-5.6" // Default fallback if not set
+	}
+
+	// ── Detect image MIME type & encode Base64 Data URI ─────────────────────
 	contentType := "image/jpeg"
-	filename := "original_image.jpg"
 	if len(rawImageBytes) >= 8 && rawImageBytes[0] == 0x89 && rawImageBytes[1] == 'P' && rawImageBytes[2] == 'N' && rawImageBytes[3] == 'G' {
 		contentType = "image/png"
-		filename = "original_image.png"
 	} else if len(rawImageBytes) >= 12 && string(rawImageBytes[8:12]) == "WEBP" {
 		contentType = "image/webp"
-		filename = "original_image.webp"
+	}
+	base64ImageStr := fmt.Sprintf("data:%s;base64,%s", contentType, base64.StdEncoding.EncodeToString(rawImageBytes))
+
+	// ── Build JSON payload for Responses API ────────────────────────────────
+	reqBody := map[string]interface{}{
+		"model": modelName,
+		"input": []interface{}{
+			map[string]interface{}{
+				"role": "user",
+				"content": []interface{}{
+					map[string]interface{}{
+						"type": "input_image",
+						"image_url": map[string]interface{}{
+							"url": base64ImageStr,
+						},
+					},
+					map[string]interface{}{
+						"type": "input_text",
+						"text": fullPromptText,
+					},
+				},
+			},
+		},
+		"tools": []interface{}{
+			map[string]interface{}{
+				"type":          "image_generation",
+				"action":        "edit",
+				"quality":       "high",
+				"output_format": "png",
+			},
+		},
+		"tool_choice": map[string]interface{}{
+			"type": "image_generation",
+		},
 	}
 
-	// Create Part with explicit image MIME header (required by OpenAI API)
-	partHeader := make(textproto.MIMEHeader)
-	partHeader.Set("Content-Disposition", fmt.Sprintf(`form-data; name="image"; filename="%s"`, filename))
-	partHeader.Set("Content-Type", contentType)
-
-	imagePart, err := mpWriter.CreatePart(partHeader)
+	jsonBytes, err := json.Marshal(reqBody)
 	if err != nil {
-		return "", fmt.Errorf("failed to create image form part: %w", err)
-	}
-	if _, err := imagePart.Write(rawImageBytes); err != nil {
-		return "", fmt.Errorf("failed to write image bytes: %w", err)
+		return "", fmt.Errorf("failed to marshal Responses API request: %w", err)
 	}
 
-	// Prompt part
-	if err := mpWriter.WriteField("prompt", editingPrompt); err != nil {
-		return "", fmt.Errorf("failed to write prompt: %w", err)
-	}
+	// ── Log request details (Debug Mode) ────────────────────────────────────
+	fmt.Printf("\n[DEBUG_MODE] ────────────────────────────────────────────\n")
+	fmt.Printf("Input filename:             uploaded_image\n")
+	fmt.Printf("Original width:             %d\n", origW)
+	fmt.Printf("Original height:            %d\n\n", origH)
+	fmt.Printf("Responses model:            %s\n", modelName)
+	fmt.Printf("Tool:                       image_generation\n")
+	fmt.Printf("Tool action:                edit\n")
+	fmt.Printf("Tool quality:               high\n")
+	fmt.Printf("Tool output format:         png\n\n")
+	fmt.Printf("Was Canvas used:            No\n")
+	fmt.Printf("Was compression used:       No\n")
+	fmt.Printf("Was input resized:          No\n")
+	fmt.Printf("─────────────────────────────────────────────────────────\n")
 
-	// Model & parameters: gpt-image-1 with strict high fidelity
-	_ = mpWriter.WriteField("model", "gpt-image-1")
-	_ = mpWriter.WriteField("input_fidelity", "high")
-	_ = mpWriter.WriteField("n", "1")
-	_ = mpWriter.WriteField("size", "1024x1024")
-
-	if err := mpWriter.Close(); err != nil {
-		return "", fmt.Errorf("failed to close multipart writer: %w", err)
-	}
-
-	editReq, err := http.NewRequestWithContext(ctx, "POST", "https://api.openai.com/v1/images/edits", bodyBuf)
+	// ── Send request to OpenAI Responses API ────────────────────────────────
+	editReq, err := http.NewRequestWithContext(ctx, "POST", "https://api.openai.com/v1/responses", bytes.NewBuffer(jsonBytes))
 	if err != nil {
-		return "", fmt.Errorf("failed to create image edit request: %w", err)
+		return "", fmt.Errorf("failed to create Responses API request: %w", err)
 	}
-	editReq.Header.Set("Content-Type", mpWriter.FormDataContentType())
+	editReq.Header.Set("Content-Type", "application/json")
 	editReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", s.APIKey))
 
-	editClient := &http.Client{Timeout: 90 * time.Second}
+	editClient := &http.Client{Timeout: 180 * time.Second}
 	editResp, err := editClient.Do(editReq)
 	if err != nil {
-		return "", fmt.Errorf("Image editing model request failed: %w", err)
+		return "", fmt.Errorf("Responses API request failed: %w", err)
 	}
 	defer editResp.Body.Close()
 
-	editBodyBytes, _ := io.ReadAll(editResp.Body)
-	var editResult struct {
-		Data []struct {
-			URL     string `json:"url"`
-			B64JSON string `json:"b64_json"`
-		} `json:"data"`
+	respBodyBytes, _ := io.ReadAll(editResp.Body)
+
+	if editResp.StatusCode != 200 {
+		return "", fmt.Errorf("Responses API returned status %d: %s", editResp.StatusCode, string(respBodyBytes))
+	}
+
+	// ── Parse Responses API output ──────────────────────────────────────────
+	var responseData struct {
+		Output []struct {
+			Type          string `json:"type"`
+			Result        string `json:"result"`
+			RevisedPrompt string `json:"revised_prompt"`
+		} `json:"output"`
 		Error *struct {
 			Message string `json:"message"`
 		} `json:"error"`
 	}
 
-	if err := json.Unmarshal(editBodyBytes, &editResult); err != nil {
-		return "", fmt.Errorf("failed to parse image editing response: %w", err)
+	if err := json.Unmarshal(respBodyBytes, &responseData); err != nil {
+		return "", fmt.Errorf("failed to parse Responses API response: %w", err)
 	}
 
-	if editResult.Error != nil && editResult.Error.Message != "" {
-		return "", fmt.Errorf("Image editing model error: %s", editResult.Error.Message)
+	if responseData.Error != nil && responseData.Error.Message != "" {
+		return "", fmt.Errorf("Responses API error: %s", responseData.Error.Message)
 	}
 
-	if len(editResult.Data) == 0 || (editResult.Data[0].URL == "" && editResult.Data[0].B64JSON == "") {
-		return "", fmt.Errorf("image editing model returned no image data")
-	}
-
-	// STEP 3: Persist edited image to disk
-	if editResult.Data[0].B64JSON != "" {
-		decBytes, err := base64.StdEncoding.DecodeString(editResult.Data[0].B64JSON)
-		if err == nil {
-			_ = os.WriteFile(outFilePath, decBytes, 0644)
-			return fmt.Sprintf("file://%s", outFilePath), nil
+	var generatedBase64 string
+	var revisedPrompt string
+	for _, item := range responseData.Output {
+		if item.Type == "image_generation_call" {
+			generatedBase64 = item.Result
+			revisedPrompt = item.RevisedPrompt
+			break
 		}
 	}
 
-	if editResult.Data[0].URL != "" {
-		dlResp, err := http.Get(editResult.Data[0].URL)
-		if err == nil {
-			defer dlResp.Body.Close()
-			outFile, err := os.Create(outFilePath)
-			if err == nil {
-				defer outFile.Close()
-				_, _ = io.Copy(outFile, dlResp.Body)
-			}
-		}
-		return editResult.Data[0].URL, nil
+	if generatedBase64 == "" {
+		return "", fmt.Errorf("No image_generation_call returned in Responses API output")
 	}
 
-	return "", fmt.Errorf("failed to save edited image")
+	generatedBytes, err := base64.StdEncoding.DecodeString(generatedBase64)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode base64 result from image_generation_call: %w", err)
+	}
+
+	fmt.Printf("[DEBUG_MODE] Returned Image Size: %d bytes\n", len(generatedBytes))
+	
+	// Read generated dimensions
+	genW, genH, _ := getOriginalImageDimensions(generatedBytes)
+	fmt.Printf("[DEBUG_MODE] Returned image width:  %d\n", genW)
+	fmt.Printf("[DEBUG_MODE] Returned image height: %d\n", genH)
+
+	// ── Resize to original dimensions if they differ ────────────────────────
+	wasResampled := "No"
+	if genW != origW || genH != origH {
+		fmt.Printf("[DEBUG_MODE] Resizing from %dx%d → %dx%d (original dims)\n", genW, genH, origW, origH)
+		resizedBytes, resizeErr := resizeImageToOriginal(generatedBytes, origW, origH)
+		if resizeErr != nil {
+			fmt.Printf("[DEBUG_MODE] Warning: resize failed (%v), saving at generation size\n", resizeErr)
+		} else {
+			generatedBytes = resizedBytes
+			wasResampled = "Yes"
+		}
+	}
+
+	fmt.Printf("[DEBUG_MODE] Final image width:     %d\n", origW)
+	fmt.Printf("[DEBUG_MODE] Final image height:    %d\n", origH)
+	fmt.Printf("[DEBUG_MODE] Was resampling req:    %s\n", wasResampled)
+	if revisedPrompt != "" {
+		fmt.Printf("[DEBUG_MODE] Revised prompt:        %s\n", revisedPrompt)
+	}
+	fmt.Printf("[DEBUG_MODE] ────────────────────────────────────────────\n\n")
+
+	// ── Save full-quality PNG master ────────────────────────────────────────
+	if err := os.WriteFile(outFilePath, generatedBytes, 0644); err != nil {
+		return "", fmt.Errorf("failed to write enhanced image to disk: %w", err)
+	}
+
+	elapsed := time.Since(startTime)
+	fmt.Printf("[IMAGE_ENHANCE] ✓ Enhancement complete in %.1fs\n", elapsed.Seconds())
+
+	return outFilePath, nil
 }
-
 

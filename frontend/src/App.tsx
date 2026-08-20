@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AppLayout } from './components/layout/AppLayout';
@@ -96,8 +97,8 @@ const initialProperties: Property[] = [
 
 const MainApp: React.FC = () => {
   const { isAuthenticated } = useAuth();
-  const [activeTab, setActiveTab] = useState('add-url');
   const [properties, setProperties] = useState<Property[]>(initialProperties);
+  const navigate = useNavigate();
 
   if (!isAuthenticated) {
     return <LoginPage />;
@@ -196,60 +197,21 @@ const MainApp: React.FC = () => {
   };
 
   return (
-    <AppLayout activeTab={activeTab} onTabChange={setActiveTab}>
-      {activeTab === 'dashboard' && (
-        <DashboardView
-          properties={properties}
-          onNavigateTab={setActiveTab}
-        />
-      )}
-
-      {activeTab === 'add-url' && (
-        <AddUrlView
-          properties={properties}
-          onAddProperty={handleAddProperty}
-          onProcessBatch={handleProcessBatch}
-        />
-      )}
-
-      {activeTab === 'inbox' && (
-        <PropertyInboxView
-          properties={properties}
-          onProcessProperty={(id) => handleProcessBatch([id])}
-          onNavigateTab={setActiveTab}
-        />
-      )}
-
-      {activeTab === 'review' && (
-        <ReviewCenterView
-          properties={properties}
-          onApproveProperty={handleApproveProperty}
-          onRejectProperty={handleRejectProperty}
-        />
-      )}
-
-      {activeTab === 'projects' && <ProjectsView />}
-
-      {activeTab === 'prompts' && <PromptTemplatesView />}
-
-      {activeTab === 'workflow' && (
-        <WorkflowMapView onNavigateToFacebookLogin={() => setActiveTab('facebook-login')} />
-      )}
-
-      {activeTab === 'automation' && <AutomationSettingsView />}
-
-      {activeTab === 'testing' && <TestingView />}
-
-      {activeTab === 'settings' && (
-        <SettingsView onNavigateToFacebookLogin={() => setActiveTab('facebook-login')} />
-      )}
-
-      {activeTab === 'facebook-login' && (
-        <FacebookLoginView
-          onBack={() => setActiveTab('settings')}
-          onSuccess={() => setActiveTab('dashboard')}
-        />
-      )}
+    <AppLayout>
+      <Routes>
+        <Route path="/" element={<Navigate to="/add-url" replace />} />
+        <Route path="/dashboard" element={<DashboardView properties={properties} onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
+        <Route path="/add-url" element={<AddUrlView properties={properties} onAddProperty={handleAddProperty} onProcessBatch={handleProcessBatch} />} />
+        <Route path="/inbox" element={<PropertyInboxView properties={properties} onProcessProperty={(id) => handleProcessBatch([id])} onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
+        <Route path="/review" element={<ReviewCenterView properties={properties} onApproveProperty={handleApproveProperty} onRejectProperty={handleRejectProperty} />} />
+        <Route path="/projects" element={<ProjectsView />} />
+        <Route path="/prompts" element={<PromptTemplatesView />} />
+        <Route path="/workflow" element={<WorkflowMapView onNavigateToFacebookLogin={() => navigate('/settings/facebook-login')} />} />
+        <Route path="/automation" element={<AutomationSettingsView />} />
+        <Route path="/testing" element={<TestingView />} />
+        <Route path="/settings" element={<SettingsView onNavigateToFacebookLogin={() => navigate('/settings/facebook-login')} />} />
+        <Route path="/settings/facebook-login" element={<FacebookLoginView onBack={() => navigate('/settings')} onSuccess={() => navigate('/dashboard')} />} />
+      </Routes>
     </AppLayout>
   );
 };
@@ -258,7 +220,9 @@ export function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <MainApp />
+        <BrowserRouter>
+          <MainApp />
+        </BrowserRouter>
       </AuthProvider>
     </ThemeProvider>
   );

@@ -212,19 +212,19 @@ func ExecuteVisionAction(c *fiber.Ctx) error {
 
 	// Validate action against safe allowlist
 	allowedActions := map[string]bool{
-		"NONE":                true,
-		"SCROLL_DOWN":         true,
-		"SCROLL_UP":           true,
-		"CLICK_SEE_MORE":      true,
-		"CLICK_TARGET_POST":   true,
-		"OPEN_POST_MODAL":     true,
-		"OPEN_IMAGE_GALLERY":  true,
-		"CLOSE_MODAL":         true,
-		"WAIT":                true,
-		"RETRY_SCREENSHOT":    true,
-		"REQUEST_LOGIN":       true,
-		"SET_ZOOM":            true,
-		"STOP":                true,
+		"NONE":               true,
+		"SCROLL_DOWN":        true,
+		"SCROLL_UP":          true,
+		"CLICK_SEE_MORE":     true,
+		"CLICK_TARGET_POST":  true,
+		"OPEN_POST_MODAL":    true,
+		"OPEN_IMAGE_GALLERY": true,
+		"CLOSE_MODAL":        true,
+		"WAIT":               true,
+		"RETRY_SCREENSHOT":   true,
+		"REQUEST_LOGIN":      true,
+		"SET_ZOOM":           true,
+		"STOP":               true,
 	}
 
 	if !allowedActions[req.ActionType] {
@@ -344,32 +344,33 @@ func EnhanceVisionImage(c *fiber.Ctx) error {
 	enhancedDir := filepath.Join(".", "storage", "uploads", "test-runs", testRunID, "enhanced-images")
 	_ = os.MkdirAll(enhancedDir, 0755)
 
-	// Unique filename based on source image hash or timestamp
-	cleanName := fmt.Sprintf("enhanced-%d.jpg", time.Now().UnixNano())
+	// Output as PNG (full-quality master, no JPEG compression)
+	cleanName := fmt.Sprintf("enhanced-%d.png", time.Now().UnixNano())
 	outFilePath := filepath.Join(enhancedDir, cleanName)
 
-	var enhancedURL string
 	openAISvc := services.NewOpenAIService()
+	startTime := time.Now()
 
-	// Try OpenAI GPT-4o Vision + DALL-E 3 for photorealistic architectural luxury enhancement
-	if openAISvc.APIKey != "" {
-		_, err := openAISvc.EnhancePropertyImageWithAI(c.Context(), req.ImageURL, req.PromptID, req.PromptName, req.PromptInstructions, outFilePath)
-		if err == nil {
-			enhancedURL = fmt.Sprintf("http://localhost:8085/storage/uploads/test-runs/%s/enhanced-images/%s?t=%d", testRunID, cleanName, time.Now().Unix())
-		} else {
-			fmt.Printf("[OPENAI_ENHANCE_ERR] Failed to enhance via OpenAI: %v\n", err)
-		}
+	if openAISvc.APIKey == "" {
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+			"status":  "error",
+			"message": "OPENAI_API_KEY is not configured on the server",
+		})
 	}
 
-	// Fallback to high-definition computational photography tone curve & sharpening if needed
-	if enhancedURL == "" {
-		err := utils.ProcessAndSaveEnhancedImage(req.ImageURL, outFilePath, req.PromptID, req.PromptInstructions)
-		if err == nil {
-			enhancedURL = fmt.Sprintf("http://localhost:8085/storage/uploads/test-runs/%s/enhanced-images/%s?t=%d", testRunID, cleanName, time.Now().Unix())
-		} else {
-			enhancedURL = fmt.Sprintf("%s?enhanced=true&preset=%s&t=%d", req.ImageURL, req.PromptID, time.Now().Unix())
-		}
+	// Call Responses API via OpenAI Service — no silent fallback to a worse model
+	_, err := openAISvc.EnhancePropertyImageWithAI(c.Context(), req.ImageURL, req.PromptID, req.PromptName, req.PromptInstructions, outFilePath)
+	if err != nil {
+		fmt.Printf("[ENHANCE_HANDLER] Responses API enhancement failed: %v\n", err)
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+			"status":      "error",
+			"message":     fmt.Sprintf("Image enhancement failed: %v", err),
+			"model_used":  openAISvc.ResponsesModel,
+		})
 	}
+
+	processingMs := time.Since(startTime).Milliseconds()
+	enhancedURL := fmt.Sprintf("http://localhost:8085/storage/uploads/test-runs/%s/enhanced-images/%s?t=%d", testRunID, cleanName, time.Now().Unix())
 
 	return c.JSON(fiber.Map{
 		"status":              "success",
@@ -379,13 +380,16 @@ func EnhanceVisionImage(c *fiber.Ctx) error {
 		"prompt_instructions": req.PromptInstructions,
 		"storage_key":         fmt.Sprintf("test-runs/%s/enhanced-images/%s", testRunID, cleanName),
 		"enhancement_id":      fmt.Sprintf("ENH-%d", time.Now().UnixNano()),
+		"model_used":          openAISvc.ResponsesModel,
+		"processing_time_ms":  processingMs,
+		"output_format":       "png",
 	})
 }
 
 // ReadCroppedTargetPost handles POST /api/facebook/test/read-cropped
 func ReadCroppedTargetPost(c *fiber.Ctx) error {
 	var payload struct {
-		ScreenshotBase64 string                   `json:"screenshot_base64"`
+		ScreenshotBase64 string                     `json:"screenshot_base64"`
 		TargetRegion     services.RegionBoundingBox `json:"target_region"`
 	}
 	if err := c.BodyParser(&payload); err != nil || payload.ScreenshotBase64 == "" {
@@ -500,6 +504,52 @@ func DetectImageCoordinates(c *fiber.Ctx) error {
 		"result": fiber.Map{
 			"images": validImages,
 		},
+	})
+}
+
+// VerifyTargetPlacement handles POST /api/facebook/test/verify-target
+// Uses OpenAI Vision API to verify if the detected bounding box is correctly positioned on a property photo
+func VerifyTargetPlacement(c *fiber.Ctx) error {
+	var payload struct {
+		ScreenshotBase64   string                    `json:"screenshot_base64"`
+		BoundingBox        services.ImageBBox         `json:"bounding_box"`
+		ClickPosition      struct {
+			X int `json:"x"`
+			Y int `json:"y"`
+		} `json:"click_position"`
+		VerificationPrompt string `json:"verification_prompt"`
+	}
+	if err := c.BodyParser(&payload); err != nil || payload.ScreenshotBase64 == "" {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{
+			"status":  "error",
+			"message": "screenshot_base64 and bounding_box are required",
+		})
+	}
+
+	openAISvc := services.NewOpenAIService()
+	result, err := openAISvc.VerifyTargetPlacement(
+		c.Context(),
+		payload.ScreenshotBase64,
+		payload.BoundingBox,
+		payload.ClickPosition.X,
+		payload.ClickPosition.Y,
+	)
+	if err != nil {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{
+			"status":  "error",
+			"message": fmt.Sprintf("Target verification failed: %v", err),
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"status":              "success",
+		"verified":            result.Verified,
+		"reason":              result.Reason,
+		"is_property_image":   result.IsPropertyImage,
+		"target_on_text":      result.TargetOnText,
+		"target_on_ui_chrome": result.TargetOnUIChrome,
+		"suggested_adjustment": result.SuggestedAdjustment,
+		"confidence":          result.Confidence,
 	})
 }
 

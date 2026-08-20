@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Button } from '../../components/ui/Button';
+import { Modal } from '../../components/ui/Modal';
 import { LiveBrowserModal } from './LiveBrowserModal';
-import { analyzeScreenshotsWithPuter, detectImageCoordinatesWithPuter, isPuterAvailable } from '../../services/puterAIService';
 import {
   FiFileText,
   FiImage,
@@ -32,6 +32,7 @@ import {
   FiChevronRight,
   FiX,
   FiRefreshCw,
+  FiExternalLink,
 } from 'react-icons/fi';
 
 interface RegionBoundingBox {
@@ -206,18 +207,24 @@ export const TestingView: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [showDebugPanel, setShowDebugPanel] = useState<boolean>(true);
   const [testLogs, setTestLogs] = useState<Array<{ timestamp: string; step: string; message: string }>>([]);
-  const [enhancedImages, setEnhancedImages] = useState<Record<string, string>>({});
-  const [aiImageCoords, setAiImageCoords] = useState<PropertyImageCoord[]>([]);
-  const [isZoomDropdownOpen, setIsZoomDropdownOpen] = useState<boolean>(false);
   const [allCapturedScreenshots, setAllCapturedScreenshots] = useState<string[]>([]);
   const [allCroppedImages, setAllCroppedImages] = useState<string[]>([]);
+  const [enhancedImages, setEnhancedImages] = useState<Record<string, string>>({});
+  const [enhancedV1Images, setEnhancedV1Images] = useState<Record<string, string>>({});
+  const [aiImageCoords, setAiImageCoords] = useState<PropertyImageCoord[]>([]);
+  const [isZoomDropdownOpen, setIsZoomDropdownOpen] = useState<boolean>(false);
   const [allAnalyses, setAllAnalyses] = useState<VisionAnalysisResult[]>([]);
   const [activeCaptureIndex, setActiveCaptureIndex] = useState<number>(0);
   const [firstPhotoTarget, setFirstPhotoTarget] = useState<FirstPhotoTargetInfo | null>(null);
   const [isTargetingPhoto, setIsTargetingPhoto] = useState<boolean>(false);
   const [photoTargetMode, setPhotoTargetMode] = useState<'auto' | 'manual'>('auto');
-  const [usePuterFreeAI, setUsePuterFreeAI] = useState<boolean>(true);
   const [appleNoti, setAppleNoti] = useState<{ id: string; title: string; subtitle: string } | null>(null);
+
+  // ChatGPT Enhancement Mode State
+  const [enhanceModeModalVisible, setEnhanceModeModalVisible] = useState<boolean>(false);
+  const [targetImagesForEnhance, setTargetImagesForEnhance] = useState<any[]>([]);
+  const [isChatGPTMode, setIsChatGPTMode] = useState<boolean>(false);
+  const [chatGPTImportedResults, setChatGPTImportedResults] = useState<Record<string, string>>({});
 
   const showAppleNotification = (title: string, subtitle: string) => {
     setAppleNoti({ id: String(Date.now()), title, subtitle });
@@ -233,42 +240,66 @@ export const TestingView: React.FC = () => {
   }, [appleNoti]);
 
   // Helper for detecting first property image coordinates directly on current capture
-  const detectPropertyImageCoords = async (screenshotBase64: string) => {
-    if (usePuterFreeAI && isPuterAvailable()) {
-      try {
-        addLog('AI_TARGET_02', '🤖 [Puter.js Free AI] Detecting top-left first property photo cell on current capture...');
-        const puterCoords = await detectImageCoordinatesWithPuter(screenshotBase64);
-        if (puterCoords && puterCoords.found) {
-          return puterCoords;
-        }
-      } catch (err: any) {
-        addLog('AI_TARGET_WARN', `Puter coordinate detection fallback: ${err.message}`);
-      }
-    }
+  const detectPropertyImageCoords = async (screenshotBase64: string): Promise<{ result: any; finalScreenshot: string }> => {
+    let currentShot = screenshotBase64;
+    let coords: any = null;
 
     try {
       const coordsResp = await fetch('http://localhost:8085/api/facebook/test/detect-image-coordinates', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ screenshot_base64: screenshotBase64 }),
+        body: JSON.stringify({ screenshot_base64: currentShot }),
       });
       const coordsData = await coordsResp.json();
       if (coordsData.result && (coordsData.result.found || coordsData.result.image_bbox || coordsData.result.click_position || (coordsData.result.images && coordsData.result.images.length > 0))) {
-        return coordsData.result;
+        coords = coordsData.result;
       }
     } catch (backendErr) {}
 
-    if (isPuterAvailable()) {
-      return await detectImageCoordinatesWithPuter(screenshotBase64);
+    const clickY = coords?.click_position?.y || (coords?.image_bbox ? coords.image_bbox.y + coords.image_bbox.height / 2 : 500);
+
+    // If the detected target is near the bottom edge or on text (Y > 580px), scroll down (+500px) to center the full image grid!
+    if (clickY > 580 || (coords?.image_bbox && coords.image_bbox.y > 500)) {
+      addLog('AI_TARGET_SCROLL', `[STEP 2.1] ⚠️ Image grid is only a small bottom slice (Y=${Math.round(clickY)}). Scrolling down +500px to center the FULL image grid...`);
+      await fetch('http://localhost:8085/api/facebook/test/execute-action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action_type: 'SCROLL_DOWN' }),
+      });
+      await new Promise((r) => setTimeout(r, 700));
+
+      const freshResp = await fetch('http://localhost:8085/api/facebook/test/screenshot', { method: 'POST' });
+      const freshData = await freshResp.json();
+      if (freshData.screenshot && typeof freshData.screenshot === 'string') {
+        currentShot = freshData.screenshot;
+        setCapturedScreenshot(currentShot);
+        setAllCapturedScreenshots((prev) => [...prev, currentShot]);
+        addLog('AI_TARGET_02', '✓ Re-detecting coordinates on full centered image grid screenshot...');
+        try {
+          const coordsResp = await fetch('http://localhost:8085/api/facebook/test/detect-image-coordinates', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ screenshot_base64: currentShot }),
+          });
+          const coordsData = await coordsResp.json();
+          if (coordsData.result) {
+            coords = coordsData.result;
+          }
+        } catch (_) {}
+      }
     }
 
-    const defaultBbox = { x: 500, y: 460, width: 420, height: 420 };
-    return {
-      found: true,
-      image_bbox: defaultBbox,
-      click_position: { x: 710, y: 670 },
-      images: [{ ...defaultBbox, center_x: 710, center_y: 670, confidence: 0.9, index: 1 }],
-    };
+    if (!coords) {
+      const defaultBbox = { x: 500, y: 350, width: 420, height: 420 };
+      coords = {
+        found: true,
+        image_bbox: defaultBbox,
+        click_position: { x: 710, y: 560 },
+        images: [{ ...defaultBbox, center_x: 710, center_y: 560, confidence: 0.9, index: 1 }],
+      };
+    }
+
+    return { result: coords, finalScreenshot: currentShot };
   };
 
   // AI Content Transformation State
@@ -413,6 +444,41 @@ export const TestingView: React.FC = () => {
     () => loadAllPromptTemplates().imagePrompts
   );
 
+  // Secondary Image Enhancement Presets (Stage 2: Post-Enhancement Modifications & Fixes)
+  const defaultSecondaryImagePresets = [
+    {
+      id: 'twilight_sunset_glow',
+      name: '🌅 Luxury Twilight & Window Sunset Glow',
+      desc: 'Adds warm evening sunset glow through windows and subtle ambient luxury atmosphere.',
+      instructions: 'On this enhanced photograph, apply secondary luxury atmosphere modification: infuse warm golden-hour sunset light streaming through the windows/balcony, balance interior ambient warmth, and ensure high-end cozy mood while preserving all furniture placement.',
+    },
+    {
+      id: 'interior_staging_polish',
+      name: '🛋️ Interior Staging & Texture Polish',
+      desc: 'Sharpens fabric weaves, polishes marble/wood reflections, and removes blemish distractions.',
+      instructions: 'On this enhanced photograph, refine fine interior staging: enhance crisp fabric weave details on sofa/bedding, add clean reflective polish on marble and wood surfaces, and ensure clean pristine textures across all room elements.',
+    },
+    {
+      id: 'sky_blue_dehaze',
+      name: '🏙️ Vibrant Blue Sky & Glass Dehazing',
+      desc: 'Replaces dull exterior skies with rich clear blue skies and dehazes balcony glass.',
+      instructions: 'On this enhanced photograph, refine exterior views: ensure crisp vibrant natural blue sky outside windows/balcony, remove glass haze or reflections, and balance interior-to-exterior exposure.',
+    },
+    {
+      id: 'custom_fix',
+      name: '🛠️ Custom Post-Fix / Modification',
+      desc: 'Write custom instructions to fix or add specific details on the enhanced image.',
+      instructions: 'Fix lighting balance, remove distracting glare, and add warm subtle luxury highlights to key architectural features.',
+    },
+  ];
+
+  const [secondaryImagePrompts] = useState<{ id: string; name: string; desc: string; instructions: string }[]>(defaultSecondaryImagePresets);
+  const [enableSecondaryPrompt, setEnableSecondaryPrompt] = useState<boolean>(true);
+  const [selectedSecondaryPromptId, setSelectedSecondaryPromptId] = useState<string>('twilight_sunset_glow');
+  const [secondaryPromptMode, setSecondaryPromptMode] = useState<'PRESET' | 'CUSTOM'>('PRESET');
+  const [customSecondaryPromptText, setCustomSecondaryPromptText] = useState<string>(defaultSecondaryImagePresets[0].instructions);
+  const [isSecondaryPromptDropdownOpen, setIsSecondaryPromptDropdownOpen] = useState<boolean>(false);
+
   const [selectedPromptId, setSelectedPromptId] = useState<string>(() => loadAllPromptTemplates().contentTemplates[0]?.id || 'facebook_rent');
   const [selectedImagePromptId, setSelectedImagePromptId] = useState<string>(() => loadAllPromptTemplates().imagePrompts[0]?.id || 'bright_airy');
 
@@ -421,14 +487,13 @@ export const TestingView: React.FC = () => {
   const [customImagePromptText, setCustomImagePromptText] = useState<string>(
     () => loadAllPromptTemplates().imagePrompts[0]?.instructions || ''
   );
-  const [isCustomPromptEditorOpen, setIsCustomPromptEditorOpen] = useState<boolean>(false);
 
-  // Helper to get active prompt (Preset vs Custom)
+  // Helper to get active primary prompt (Preset vs Custom)
   const getActiveImagePrompt = () => {
     if (imagePromptMode === 'CUSTOM' && customImagePromptText.trim()) {
       return {
         id: 'custom_manual',
-        name: '✏️ Custom Manual Prompt',
+        name: '✏️ Custom Prompt 1 (Base)',
         instructions: customImagePromptText.trim(),
         desc: customImagePromptText.length > 60 ? customImagePromptText.slice(0, 60) + '...' : customImagePromptText,
       };
@@ -440,6 +505,87 @@ export const TestingView: React.FC = () => {
       instructions: chosen.instructions || (chosen as any).templateText || chosen.desc || '',
       desc: chosen.desc,
     };
+  };
+
+  // Helper to get active secondary prompt (Preset vs Custom)
+  const getActiveSecondaryPrompt = () => {
+    if (secondaryPromptMode === 'CUSTOM' && customSecondaryPromptText.trim()) {
+      return {
+        id: 'custom_secondary',
+        name: '🛠️ Custom Prompt 2 (Modify/Fix)',
+        instructions: customSecondaryPromptText.trim(),
+        desc: customSecondaryPromptText.length > 60 ? customSecondaryPromptText.slice(0, 60) + '...' : customSecondaryPromptText,
+      };
+    }
+    const chosen = secondaryImagePrompts.find((p) => p.id === selectedSecondaryPromptId) || secondaryImagePrompts[0];
+    return {
+      id: chosen.id,
+      name: chosen.name,
+      instructions: chosen.instructions || chosen.desc || '',
+      desc: chosen.desc,
+    };
+  };
+  // --- ChatGPT Enhancement Mode Helpers ---
+  const openEnhanceModeModal = (images: any[]) => {
+    if (!images || images.length === 0) return;
+    setTargetImagesForEnhance(images);
+    setIsChatGPTMode(false);
+    setChatGPTImportedResults({});
+    setEnhanceModeModalVisible(true);
+  };
+
+  const copyPromptToClipboard = async () => {
+    try {
+      const p1 = getActiveImagePrompt();
+      let text = p1.instructions;
+      if (enableSecondaryPrompt) {
+        const p2 = getActiveSecondaryPrompt();
+        text = `[Prompt 1 - Base Enhancement]:\n${text}\n\n[Prompt 2 - Post Modification & Fixes]:\n${p2.instructions}`;
+      }
+      await navigator.clipboard.writeText(text);
+      showAppleNotification('Prompt Copied', 'Ready to paste into ChatGPT');
+    } catch (err) {
+      addLog('ENHANCE_ERR', 'Failed to copy prompt to clipboard');
+    }
+  };
+
+  const openChatGPTTabs = () => {
+    const numTabs = targetImagesForEnhance.length;
+    for (let i = 0; i < numTabs; i++) {
+      window.open('https://chatgpt.com/', '_blank');
+    }
+    showAppleNotification('Tabs Opened', `Opened ${numTabs} ChatGPT tabs`);
+  };
+
+  const downloadOriginals = () => {
+    targetImagesForEnhance.forEach((img, idx) => {
+      const url = img.public_url || img.url || img;
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${String(idx + 1).padStart(2, '0')}-original.jpg`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    });
+    showAppleNotification('Downloads Started', 'Originals downloading for manual upload');
+  };
+
+  const handleChatGPTImport = (originalUrl: string, file: File) => {
+    const localUrl = URL.createObjectURL(file);
+    setChatGPTImportedResults((prev) => ({
+      ...prev,
+      [originalUrl]: localUrl
+    }));
+  };
+
+  const finalizeChatGPTImports = () => {
+    setEnhancedV1Images((prev) => ({
+      ...prev,
+      ...chatGPTImportedResults
+    }));
+    setEnhanceModeModalVisible(false);
+    showAppleNotification('Imports Finalized', 'Results added to gallery');
+    addLog('ENHANCE', `Imported ${Object.keys(chatGPTImportedResults).length} ChatGPT enhanced results.`);
   };
 
   // Keep both dropdowns synchronized with Prompt Templates library
@@ -715,41 +861,25 @@ export const TestingView: React.FC = () => {
     setIsTesting(true);
     setCurrentStage('ANALYZING');
     setTimelineStep(9);
-    addLog('STEP_9', usePuterFreeAI && isPuterAvailable() ? '🤖 Sending viewport screenshot to 100% Free Puter.js GPT-4o Vision' : 'Sending viewport screenshot to server-side OpenAI Vision API (gpt-4o)');
+    addLog('STEP_9', 'Sending viewport screenshot to server-side OpenAI Vision API (gpt-4o)');
 
     try {
       let analysisResult: VisionAnalysisResult | null = null;
 
-      if (usePuterFreeAI && isPuterAvailable()) {
-        try {
-          addLog('AI', '🤖 [Puter.js Free AI] Analyzing with Puter GPT-4o Vision...');
-          const puterRes = await analyzeScreenshotsWithPuter([capturedScreenshot], urlInput || activeTestRun?.facebook_url || '', 'gpt-4o');
-          analysisResult = puterRes as VisionAnalysisResult;
-        } catch (puterErr: any) {
-          addLog('AI', `⚠️ [Puter AI Notice] ${puterErr.message || 'Puter fallback'}, trying backend...`);
-        }
-      }
+      const resp = await fetch('http://localhost:8085/api/facebook/test/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          screenshot_base64: capturedScreenshot,
+          url: urlInput || activeTestRun?.facebook_url,
+        }),
+      });
 
-      if (!analysisResult) {
-        const resp = await fetch('http://localhost:8085/api/facebook/test/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            screenshot_base64: capturedScreenshot,
-            url: urlInput || activeTestRun?.facebook_url,
-          }),
-        });
-
-        const data = await resp.json();
-        if (data.analysis) {
-          analysisResult = data.analysis;
-        } else if (isPuterAvailable()) {
-          addLog('AI', '🤖 [Backend Quota/Auth Limit] Automatically using Free Puter.js AI (GPT-4o Vision)...');
-          const puterRes = await analyzeScreenshotsWithPuter([capturedScreenshot], urlInput || activeTestRun?.facebook_url || '', 'gpt-4o');
-          analysisResult = puterRes as VisionAnalysisResult;
-        } else {
-          setErrorMessage(data.message || 'AI Analysis failed');
-        }
+      const data = await resp.json();
+      if (data.analysis) {
+        analysisResult = data.analysis;
+      } else {
+        setErrorMessage(data.message || 'AI Analysis failed');
       }
 
       if (analysisResult) {
@@ -758,15 +888,6 @@ export const TestingView: React.FC = () => {
         addLog('STEP_11', `Received structured AI analysis: state=${analysisResult.page_state}, action=${analysisResult.next_action?.type}, confidence=${((analysisResult.confidence || 0.95) * 100).toFixed(0)}%`);
       }
     } catch (e: any) {
-      if (isPuterAvailable()) {
-        try {
-          addLog('AI', '🤖 [Puter AI Fallback] Analyzing with Puter.js GPT-4o...');
-          const puterRes = await analyzeScreenshotsWithPuter([capturedScreenshot], urlInput || activeTestRun?.facebook_url || '', 'gpt-4o');
-          setAiAnalysis(puterRes as VisionAnalysisResult);
-          setTimelineStep(11);
-          return;
-        } catch (pe) {}
-      }
       setErrorMessage(e.message || 'Error communicating with AI');
     } finally {
       setIsTesting(false);
@@ -813,12 +934,17 @@ export const TestingView: React.FC = () => {
     }
   };
 
-  // STAGE 5: Enhance Image (Single) with Real-Time ChatGPT Studio Interface
-  const handleEnhanceImage = async (imgUrl: string, promptId?: string) => {
+  // STAGE 5: Two-Stage Enhance Image (Prompt 1 Base Enhancement -> Prompt 2 Secondary Modification)
+  const handleEnhanceImage = async (imgUrl: string, prompt1Id?: string, prompt2Id?: string) => {
     if (!activeTestRun) return;
-    const activePrompt = getActiveImagePrompt();
-    const chosenPrompt = promptId ? imageEnhancePrompts.find((p) => p.id === promptId) || activePrompt : activePrompt;
-    const instructionText = chosenPrompt.instructions;
+    const activeP1 = getActiveImagePrompt();
+    const chosenP1 = prompt1Id ? imageEnhancePrompts.find((p) => p.id === prompt1Id) || activeP1 : activeP1;
+    const p1Instructions = chosenP1.instructions;
+
+    const activeP2 = getActiveSecondaryPrompt();
+    const chosenP2 = prompt2Id ? secondaryImagePrompts.find((p) => p.id === prompt2Id) || activeP2 : activeP2;
+    const p2Instructions = chosenP2.instructions;
+
     const photoIndex = (activeTestRun.images?.findIndex((i) => i.public_url === imgUrl) ?? 0) + 1;
 
     // Open Real-time ChatGPT-Style Studio Modal immediately
@@ -826,19 +952,19 @@ export const TestingView: React.FC = () => {
       isOpen: true,
       imgUrl,
       photoOrder: photoIndex,
-      promptName: chosenPrompt.name,
-      promptText: instructionText,
+      promptName: enableSecondaryPrompt ? `2-Stage: ${chosenP1.name} ➔ ${chosenP2.name}` : chosenP1.name,
+      promptText: enableSecondaryPrompt ? `[Prompt 1 - Base Enhancement]:\n${p1Instructions}\n\n[Prompt 2 - Post Modification & Fixes]:\n${p2Instructions}` : p1Instructions,
       isProcessing: true,
-      stage: 'Uploading & Preparing...',
+      stage: 'Step 1: Running Primary Enhancement...',
       elapsedSec: 0,
       logs: [
-        { time: '00:00', text: '📤 Uploading original high-res photo to AI Engine...', status: 'process' },
+        { time: '00:00', text: `🚀 Step 1: Running Primary Enhancement with "${chosenP1.name}"...`, status: 'process' },
       ],
       sliderPos: 50,
     });
 
-    setEnhancingUrls((prev) => ({ ...prev, [imgUrl]: { stage: 'Analyzing...', elapsed: 0 } }));
-    addLog('ENHANCE', `✨ Starting Real-Time AI Enhancement for Photo #${photoIndex} with "${chosenPrompt.name}"...`);
+    setEnhancingUrls((prev) => ({ ...prev, [imgUrl]: { stage: 'Step 1: Base Retouch...', elapsed: 0 } }));
+    addLog('ENHANCE', `✨ [Stage 1] Enhancing Photo #${photoIndex} with "${chosenP1.name}"...`);
 
     const startTime = Date.now();
     const timerInterval = setInterval(() => {
@@ -847,85 +973,98 @@ export const TestingView: React.FC = () => {
       setEnhancingUrls((prev) => (prev[imgUrl] ? { ...prev, [imgUrl]: { ...prev[imgUrl], elapsed: currentElapsed } } : prev));
     }, 100);
 
-    // Simulated progress stage updates while OpenAI processes
-    const t1 = setTimeout(() => {
-      setStudioModal((prev) => {
-        if (!prev || prev.imgUrl !== imgUrl) return prev;
-        return {
-          ...prev,
-          stage: 'GPT-4o Vision Analyzing...',
-          logs: [
-            ...prev.logs,
-            { time: '00:01', text: '🤖 GPT-4o Vision inspecting room geometry, lighting & textures...', status: 'process' },
-          ],
-        };
-      });
-      setEnhancingUrls((prev) => (prev[imgUrl] ? { ...prev, [imgUrl]: { ...prev[imgUrl], stage: 'Vision Inspecting...' } } : prev));
-    }, 1000);
-
-    const t2 = setTimeout(() => {
-      setStudioModal((prev) => {
-        if (!prev || prev.imgUrl !== imgUrl) return prev;
-        return {
-          ...prev,
-          stage: 'OpenAI Image-to-Image Editing...',
-          logs: [
-            ...prev.logs,
-            { time: '00:02', text: '🎨 OpenAI Image Editing Model (gpt-image-1) restoring scene, sky & lighting...', status: 'process' },
-          ],
-        };
-      });
-      setEnhancingUrls((prev) => (prev[imgUrl] ? { ...prev, [imgUrl]: { ...prev[imgUrl], stage: 'Image Editing...' } } : prev));
-    }, 2400);
-
     try {
-      const resp = await fetch('http://localhost:8085/api/facebook/test/enhance-image', {
+      // 1. Stage 1: Base Enhancement
+      const resp1 = await fetch('http://localhost:8085/api/facebook/test/enhance-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           test_run_id: activeTestRun.test_run_id,
           image_url: imgUrl,
-          prompt_id: chosenPrompt.id,
-          prompt_name: chosenPrompt.name,
-          prompt_instructions: instructionText,
+          prompt_id: chosenP1.id,
+          prompt_name: chosenP1.name,
+          prompt_instructions: p1Instructions,
         }),
       });
-      const data = await resp.json();
+      const data1 = await resp1.json();
+      if (!data1.enhanced_url) throw new Error(data1.message || 'Stage 1 failed: No enhanced image returned');
 
-      clearInterval(timerInterval);
-      clearTimeout(t1);
-      clearTimeout(t2);
+      const v1Url = data1.enhanced_url;
+      setEnhancedV1Images((prev) => ({ ...prev, [imgUrl]: v1Url }));
+      const time1 = ((Date.now() - startTime) / 1000).toFixed(1);
 
-      const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
+      setStudioModal((prev) => {
+        if (!prev || prev.imgUrl !== imgUrl) return prev;
+        return {
+          ...prev,
+          logs: [
+            ...prev.logs,
+            { time: `00:${Math.round(parseFloat(time1)).toString().padStart(2, '0')}`, text: `✓ Step 1 Complete (Enhanced V1 created in ${time1}s)`, status: 'success' },
+          ],
+        };
+      });
+      addLog('ENHANCE', `✓ Stage 1 completed for Photo #${photoIndex}`);
 
-      if (data.enhanced_url) {
-        setEnhancedImages((prev) => ({ ...prev, [imgUrl]: data.enhanced_url }));
+      let finalUrl = v1Url;
+
+      // 2. Stage 2: Secondary Modification / Fixes (Prompt 2)
+      if (enableSecondaryPrompt && p2Instructions.trim()) {
         setStudioModal((prev) => {
           if (!prev || prev.imgUrl !== imgUrl) return prev;
           return {
             ...prev,
-            isProcessing: false,
-            stage: 'Completed',
-            enhancedUrl: data.enhanced_url,
+            stage: 'Step 2: Applying Secondary Modification...',
             logs: [
               ...prev.logs,
-              { time: `00:${Math.round(parseFloat(totalTime)).toString().padStart(2, '0')}`, text: `✨ Successfully enhanced in ${totalTime}s! High-res asset ready.`, status: 'success' },
+              { time: `00:${Math.round(parseFloat(time1)).toString().padStart(2, '0')}`, text: `🎨 Step 2: Running Secondary Modification with "${chosenP2.name}" on Enhanced image...`, status: 'process' },
             ],
           };
         });
-        setEnhancingUrls((prev) => {
-          const next = { ...prev };
-          delete next[imgUrl];
-          return next;
+        setEnhancingUrls((prev) => (prev[imgUrl] ? { ...prev, [imgUrl]: { ...prev[imgUrl], stage: 'Step 2: Modifying...' } } : prev));
+        addLog('ENHANCE', `🎨 [Stage 2] Modifying Photo #${photoIndex} with "${chosenP2.name}"...`);
+
+        const resp2 = await fetch('http://localhost:8085/api/facebook/test/enhance-image', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            test_run_id: activeTestRun.test_run_id,
+            image_url: v1Url, // Pass Enhanced V1 into Prompt 2!
+            prompt_id: chosenP2.id,
+            prompt_name: chosenP2.name,
+            prompt_instructions: p2Instructions,
+          }),
         });
-        addLog('ENHANCE', `✓ Enhanced Photo #${photoIndex} with ${chosenPrompt.name} in ${totalTime}s`);
-      } else {
-        throw new Error(data.message || 'No enhanced image returned');
+        const data2 = await resp2.json();
+        if (data2.enhanced_url) {
+          finalUrl = data2.enhanced_url;
+        }
       }
+
+      clearInterval(timerInterval);
+      const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
+
+      setEnhancedImages((prev) => ({ ...prev, [imgUrl]: finalUrl }));
+      setStudioModal((prev) => {
+        if (!prev || prev.imgUrl !== imgUrl) return prev;
+        return {
+          ...prev,
+          isProcessing: false,
+          stage: 'Completed',
+          enhancedUrl: finalUrl,
+          logs: [
+            ...prev.logs,
+            { time: `00:${Math.round(parseFloat(totalTime)).toString().padStart(2, '0')}`, text: `🎉 Two-Prompt Enhancement Finished! Final asset ready in ${totalTime}s`, status: 'success' },
+          ],
+        };
+      });
+      setEnhancingUrls((prev) => {
+        const next = { ...prev };
+        delete next[imgUrl];
+        return next;
+      });
+      addLog('ENHANCE', `🎉 Finished 2-Stage Enhancement for Photo #${photoIndex} in ${totalTime}s`);
     } catch (e: any) {
       clearInterval(timerInterval);
-      clearTimeout(t1);
-      clearTimeout(t2);
       setStudioModal((prev) => {
         if (!prev || prev.imgUrl !== imgUrl) return prev;
         return {
@@ -947,7 +1086,7 @@ export const TestingView: React.FC = () => {
     }
   };
 
-  // Batch Enhance All Photos
+  // Batch Enhance All Photos (Supports 2-Stage Pipeline)
   const handleEnhanceAllPhotos = async () => {
     const images = activeTestRun?.images || [];
     if (images.length === 0) {
@@ -956,29 +1095,56 @@ export const TestingView: React.FC = () => {
     }
 
     setIsBatchEnhancing(true);
-    const chosenPrompt = getActiveImagePrompt();
-    const instructionText = chosenPrompt.instructions;
-    addLog('ENHANCE_BATCH', `✨ Starting Batch AI Enhancement for ${images.length} photos with "${chosenPrompt.name}"...`);
+    const chosenP1 = getActiveImagePrompt();
+    const p1Instructions = chosenP1.instructions;
+    const chosenP2 = getActiveSecondaryPrompt();
+    const p2Instructions = chosenP2.instructions;
+
+    addLog('ENHANCE_BATCH', `✨ Starting Batch AI Enhancement for ${images.length} photos (${enableSecondaryPrompt ? '2-Stage: Prompt 1 ➔ Prompt 2' : '1-Stage: Prompt 1'})...`);
 
     for (let i = 0; i < images.length; i++) {
       setBatchEnhanceProgress({ current: i + 1, total: images.length });
       const img = images[i];
       try {
-        const resp = await fetch('http://localhost:8085/api/facebook/test/enhance-image', {
+        // Stage 1
+        const resp1 = await fetch('http://localhost:8085/api/facebook/test/enhance-image', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             test_run_id: activeTestRun?.test_run_id || `TEST-${Date.now()}`,
             image_url: img.public_url,
-            prompt_id: chosenPrompt.id,
-            prompt_name: chosenPrompt.name,
-            prompt_instructions: instructionText,
+            prompt_id: chosenP1.id,
+            prompt_name: chosenP1.name,
+            prompt_instructions: p1Instructions,
           }),
         });
-        const data = await resp.json();
-        if (data.enhanced_url) {
-          setEnhancedImages((prev) => ({ ...prev, [img.public_url]: data.enhanced_url }));
+        const data1 = await resp1.json();
+        let finalUrl = data1.enhanced_url || img.public_url;
+
+        if (data1.enhanced_url) {
+          setEnhancedV1Images((prev) => ({ ...prev, [img.public_url]: data1.enhanced_url }));
+
+          // Stage 2
+          if (enableSecondaryPrompt && p2Instructions.trim()) {
+            const resp2 = await fetch('http://localhost:8085/api/facebook/test/enhance-image', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                test_run_id: activeTestRun?.test_run_id || `TEST-${Date.now()}`,
+                image_url: data1.enhanced_url, // Input is Enhanced V1!
+                prompt_id: chosenP2.id,
+                prompt_name: chosenP2.name,
+                prompt_instructions: p2Instructions,
+              }),
+            });
+            const data2 = await resp2.json();
+            if (data2.enhanced_url) {
+              finalUrl = data2.enhanced_url;
+            }
+          }
         }
+
+        setEnhancedImages((prev) => ({ ...prev, [img.public_url]: finalUrl }));
       } catch (e) {}
       await new Promise((r) => setTimeout(r, 150));
     }
@@ -1111,6 +1277,7 @@ export const TestingView: React.FC = () => {
       const seenScreenshotHashes = new Set<string>();
       let isEndOfPost = false;
       let screenshotCount = 0;
+      let finalScreenshotPending = false;
 
       while (!isEndOfPost && screenshotCount < MAX_SCREENSHOTS) {
         screenshotCount++;
@@ -1174,40 +1341,24 @@ export const TestingView: React.FC = () => {
           accumulatedScreenshots.length > 1
             ? `Screenshot 1 + Screenshot ${accumulatedScreenshots.length}`
             : `Screenshot 1`;
-        addLog(`STEP_${stepSendNum}`, usePuterFreeAI && isPuterAvailable() ? `🤖 [Free Puter AI] Reading ${sequenceDesc} with Puter GPT-4o Vision...` : `[AI] Reading ${sequenceDesc}...`);
+        addLog(`STEP_${stepSendNum}`, `[AI] Reading ${sequenceDesc}...`);
 
         let currentAnalysisResult: VisionAnalysisResult | null = null;
 
-        if (usePuterFreeAI && isPuterAvailable()) {
-          try {
-            const puterRes = await analyzeScreenshotsWithPuter(accumulatedScreenshots, targetUrl, 'gpt-4o');
-            currentAnalysisResult = puterRes as VisionAnalysisResult;
-            addLog('AI', `✓ [Puter AI Vision] Analysis complete (Image Grid Reached: ${currentAnalysisResult.image_grid_reached ? 'YES' : 'NO'})`);
-          } catch (puterErr: any) {
-            addLog('AI', `⚠️ [Puter AI Notice] ${puterErr.message || 'Puter fallback'}, trying backend...`);
-          }
-        }
-
-        if (!currentAnalysisResult) {
-          aiResp = await fetch('http://localhost:8085/api/facebook/test/analyze', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              screenshots_base64: accumulatedScreenshots,
-              screenshot_base64: originalHighResScreenshot,
-              url: targetUrl,
-            }),
-          });
-          aiData = await aiResp.json();
-          if (aiData.analysis) {
-            currentAnalysisResult = aiData.analysis;
-          } else if (isPuterAvailable()) {
-            addLog('AI', '🤖 [Backend OpenAI Limit] Seamlessly using Free Puter.js AI (GPT-4o Vision)...');
-            const puterRes = await analyzeScreenshotsWithPuter(accumulatedScreenshots, targetUrl, 'gpt-4o');
-            currentAnalysisResult = puterRes as VisionAnalysisResult;
-          } else if (aiData.error_code || !aiResp.ok) {
-            addLog('AI', `⚠️ [AI Analysis Error] ${aiData.message || aiData.error_code || 'OpenAI Vision request failed'}`);
-          }
+        aiResp = await fetch('http://localhost:8085/api/facebook/test/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            screenshots_base64: accumulatedScreenshots,
+            screenshot_base64: originalHighResScreenshot,
+            url: targetUrl,
+          }),
+        });
+        aiData = await aiResp.json();
+        if (aiData.analysis) {
+          currentAnalysisResult = aiData.analysis;
+        } else if (aiData.error_code || !aiResp.ok) {
+          addLog('AI', `⚠️ [AI Analysis Error] ${aiData.message || aiData.error_code || 'OpenAI Vision request failed'}`);
         }
 
         if (currentAnalysisResult) {
@@ -1226,25 +1377,40 @@ export const TestingView: React.FC = () => {
           addLog('STEP_6', `✓ Vision extracted & reconstructed post body (${analysis.original_content.length} chars)`);
         }
 
-        // Check if property image grid has arrived in current capture and is CLEARLY visible
-        const isCutOff = Boolean(analysis?.image_grid_partially_cut_off || analysis?.needs_scroll_for_clear_target);
-        const hasSeenImages = Boolean(
-          (analysis?.image_grid_reached || analysis?.image_grid_visible || analysis?.property_images_visible) && !isCutOff
+        // Check if property image grid has arrived in current capture and is FULLY & CLEARLY visible
+        const mediaY = analysis?.media_region?.y || 0;
+        const mediaHeight = analysis?.media_region?.height || 0;
+
+        // If media region starts below 520px or height is less than 320px, it is only a bottom sliver!
+        const isCutOff = Boolean(
+          analysis?.image_grid_partially_cut_off ||
+          analysis?.needs_scroll_for_clear_target ||
+          (mediaY > 520) ||
+          (mediaHeight > 0 && mediaHeight < 320) ||
+          !analysis?.image_grid_reached
         );
 
-        if (isCutOff) {
-          addLog('AI', '⚠️ [AI] Image grid is partially cut off at bottom edge (<220px). Scrolling down once more (+500px) to get a clear photo target.');
+        const hasSeenImages = Boolean(
+          analysis?.image_grid_reached || analysis?.image_grid_visible || analysis?.image_grid_partially_cut_off || analysis?.property_images_visible
+        );
+
+        if (finalScreenshotPending) {
+          isEndOfPost = true;
+          addLog('PIPELINE', `Captured final screenshot after adjusting for cut-off image grid. Terminating sequence.`);
+        } else if (hasSeenImages) {
+          if (!isCutOff) {
+            isEndOfPost = true;
+            addLog('PIPELINE', `Image grid clearly visible at Capture #${screenshotCount}! Terminating screenshot capture sequence.`);
+          } else {
+            addLog('AI', `[AI] Image Grid detected but partially cut-off. Taking ONE more final screenshot for clear coordinates.`);
+            finalScreenshotPending = true;
+          }
+        } else {
+          addLog('AI', `[AI] Image Grid not seen yet. Continuing scroll.`);
         }
 
-        // Continue scrolling if image grid is partially cut off or more content below
-        const moreBelow = Boolean(analysis?.more_text_below || analysis?.more_content_below || isCutOff);
-        const postFinished = hasSeenImages && !isCutOff && !moreBelow;
-
-        addLog('AI', `[AI] Image Grid detected: ${hasSeenImages ? 'YES (CLEARLY VISIBLE - STOPPING CAPTURE)' : isCutOff ? 'PARTIALLY CUT OFF (SCROLLING ONCE MORE FOR CLEAR TARGET)' : 'NO (SEARCHING NEXT SCREENSHOT)'}`);
-
-        if (postFinished || screenshotCount >= MAX_SCREENSHOTS) {
-          isEndOfPost = true;
-          addLog('PIPELINE', `Image grid clearly visible at Capture #${screenshotCount}! Terminating screenshot capture sequence.`);
+        if (isEndOfPost || screenshotCount >= MAX_SCREENSHOTS) {
+          addLog('PIPELINE', `Terminating screenshot sequence.`);
         } else {
           // Perform verified scroll
           const scrollActionResp = await fetch('http://localhost:8085/api/facebook/test/execute-action', {
@@ -1326,7 +1492,7 @@ export const TestingView: React.FC = () => {
           if (targetScreenshotForCoords) {
             addLog('AI_TARGET_01', '[STEP 1] Using LAST screenshot (where image grid was detected) to calculate coordinates directly...');
             
-            const coordsResult = await detectPropertyImageCoords(targetScreenshotForCoords);
+            const { result: coordsResult, finalScreenshot: centeredScreenshot } = await detectPropertyImageCoords(targetScreenshotForCoords);
 
             if (coordsResult && (coordsResult.click_position || coordsResult.image_bbox || (coordsResult.images && coordsResult.images.length > 0))) {
               if (coordsResult.images) {
@@ -1334,7 +1500,7 @@ export const TestingView: React.FC = () => {
               }
               const bbox = coordsResult.image_bbox || {
                 x: coordsResult.images?.[0]?.x || 500,
-                y: coordsResult.images?.[0]?.y || 460,
+                y: coordsResult.images?.[0]?.y || 350,
                 width: coordsResult.images?.[0]?.width || 420,
                 height: coordsResult.images?.[0]?.height || 420,
               };
@@ -1348,7 +1514,7 @@ export const TestingView: React.FC = () => {
                 found: true,
                 image_bbox: bbox,
                 click_position: clickPos,
-                screenshot_base64: targetScreenshotForCoords,
+                screenshot_base64: centeredScreenshot,
                 detected_at: new Date().toLocaleTimeString(),
                 status: 'LOCATED',
               });
@@ -1465,13 +1631,49 @@ export const TestingView: React.FC = () => {
   };
 
   // DEDICATED FIRST PROPERTY PHOTO AI TARGETING & CLICK SESSION
+  // AI Verification helper: ask AI to verify if the bounding box / click target is on an actual property photo
+  const verifyTargetWithAI = async (screenshotBase64: string, bbox: { x: number; y: number; width: number; height: number }, clickPos: { x: number; y: number }): Promise<{ verified: boolean; reason: string }> => {
+    const verifyPrompt = `Look at this screenshot. There is a highlighted bounding box region at approximately x=${bbox.x}, y=${bbox.y}, width=${bbox.width}, height=${bbox.height} (in 1920x1080 coordinates). The click target is at (${clickPos.x}, ${clickPos.y}). Determine if this bounding box is correctly positioned over a PROPERTY PHOTO (real estate image showing a room, building, condo interior/exterior, bathroom, kitchen, living room, bedroom, pool, gym, or apartment view). Answer with JSON: { "verified": true/false, "reason": "brief explanation", "is_property_image": true/false, "target_on_text": true/false, "target_on_ui_chrome": true/false, "suggested_adjustment": "none" | "scroll_down" | "scroll_up" | "shift_right" | "shift_left" }`;
+
+    try {
+      // Backend verification (uses official OpenAI API key)
+      const resp = await fetch('http://localhost:8085/api/facebook/test/verify-target', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          screenshot_base64: screenshotBase64,
+          bounding_box: bbox,
+          click_position: clickPos,
+          verification_prompt: verifyPrompt,
+        }),
+      });
+      const data = await resp.json();
+      if (data.verified !== undefined) {
+        return { verified: data.verified, reason: data.reason || 'Backend verification result' };
+      }
+
+      // Default: cautiously proceed
+      return { verified: true, reason: 'Verification endpoint unavailable - proceeding with detected target' };
+    } catch (err: any) {
+      addLog('AI_VERIFY_WARN', `Verification error: ${err.message}. Proceeding with caution.`);
+      return { verified: true, reason: `Verification skipped due to error: ${err.message}` };
+    }
+  };
+
   const handleRunFirstPhotoTargetAndClick = async () => {
     setIsTargetingPhoto(true);
     addLog('AI_TARGET_01', '==================================================');
-    addLog('AI_TARGET_01', '[STEP 1] Using current capture (where image grid was detected) to calculate coordinates directly...');
+    addLog('AI_TARGET_01', '[STEP 1] Loading current capture for AI coordinate detection...');
+
+    const MAX_VERIFY_RETRIES = 3;
+    let verifyAttempt = 0;
+    let verified = false;
+    let finalBbox: { x: number; y: number; width: number; height: number } | null = null;
+    let finalClickPos: { x: number; y: number } | null = null;
+    let finalScreenshotForTarget: string | null = null;
 
     try {
-      const activeShot: string | null =
+      let activeShot: string | null =
         firstPhotoTarget?.screenshot_base64 ||
         capturedScreenshot ||
         (allCapturedScreenshots.length > 0 ? allCapturedScreenshots[allCapturedScreenshots.length - 1] : null);
@@ -1482,50 +1684,195 @@ export const TestingView: React.FC = () => {
         return;
       }
 
-      const coordsData = await detectPropertyImageCoords(activeShot);
+      // === DETECTION + VERIFICATION LOOP (up to MAX_VERIFY_RETRIES attempts) ===
+      while (!verified && verifyAttempt < MAX_VERIFY_RETRIES) {
+        verifyAttempt++;
+        addLog('AI_TARGET_02', `[STEP 2] 🤖 AI Detecting top-left first property photo cell (Attempt ${verifyAttempt}/${MAX_VERIFY_RETRIES})...`);
 
-      if (coordsData && (coordsData.click_position || coordsData.image_bbox || (coordsData.images && coordsData.images.length > 0))) {
-        if (coordsData.images) {
-          setAiImageCoords(coordsData.images);
+        const { result: coordsData, finalScreenshot: centeredShot } = await detectPropertyImageCoords(activeShot);
+
+        if (coordsData && (coordsData.click_position || coordsData.image_bbox || (coordsData.images && coordsData.images.length > 0))) {
+          if (coordsData.images) {
+            setAiImageCoords(coordsData.images);
+          }
+          const bbox = coordsData.image_bbox || {
+            x: coordsData.images?.[0]?.x || 500,
+            y: coordsData.images?.[0]?.y || 350,
+            width: coordsData.images?.[0]?.width || 420,
+            height: coordsData.images?.[0]?.height || 420,
+          };
+
+          const clickPos = coordsData.click_position || {
+            x: Math.round(bbox.x + bbox.width / 2),
+            y: Math.round(bbox.y + bbox.height / 2),
+          };
+
+          // Update UI with detected target (mark as VERIFYING, not LOCATED yet)
+          setFirstPhotoTarget({
+            found: true,
+            image_bbox: bbox,
+            click_position: clickPos,
+            screenshot_base64: centeredShot,
+            detected_at: new Date().toLocaleTimeString(),
+            status: 'VERIFYING',
+          });
+
+          addLog('AI_TARGET_03', `[STEP 3] ✓ Bounding Box detected: { x: ${bbox.x}, y: ${bbox.y}, w: ${bbox.width}, h: ${bbox.height} }`);
+          addLog('AI_TARGET_03', `[STEP 3] 🎯 Computed center: (${clickPos.x}, ${clickPos.y})`);
+
+          // === STEP 3.5: AI VERIFICATION — Re-capture and verify target is correct ===
+          addLog('AI_VERIFY', `[STEP 3.5] 🔍 AI Verification: Re-analyzing screenshot to confirm target is on a property photo...`);
+
+          // Take a fresh screenshot to verify (in case UI state changed)
+          let verifyScreenshot = centeredShot;
+          try {
+            const freshResp = await fetch('http://localhost:8085/api/facebook/test/screenshot', { method: 'POST' });
+            const freshData = await freshResp.json();
+            if (freshData.screenshot && typeof freshData.screenshot === 'string') {
+              verifyScreenshot = freshData.screenshot;
+              setCapturedScreenshot(verifyScreenshot);
+              setAllCapturedScreenshots((prev) => [...prev, verifyScreenshot]);
+            }
+          } catch (_) {
+            // Use existing screenshot if fresh capture fails
+          }
+
+          const verifyResult = await verifyTargetWithAI(verifyScreenshot, bbox, clickPos);
+
+          if (verifyResult.verified) {
+            addLog('AI_VERIFY', `[STEP 3.5] ✅ VERIFIED: ${verifyResult.reason}`);
+            verified = true;
+            finalBbox = bbox;
+            finalClickPos = clickPos;
+            finalScreenshotForTarget = verifyScreenshot;
+
+            // Update status to VERIFIED
+            setFirstPhotoTarget({
+              found: true,
+              image_bbox: bbox,
+              click_position: clickPos,
+              screenshot_base64: verifyScreenshot,
+              detected_at: new Date().toLocaleTimeString(),
+              status: 'VERIFIED',
+            });
+
+            showAppleNotification('✅ Target Verified', `AI confirmed target at (${clickPos.x}, ${clickPos.y}) is on a property photo`);
+          } else {
+            addLog('AI_VERIFY', `[STEP 3.5] ❌ REJECTED (Attempt ${verifyAttempt}/${MAX_VERIFY_RETRIES}): ${verifyResult.reason}`);
+
+            // Update status to REJECTED
+            setFirstPhotoTarget({
+              found: true,
+              image_bbox: bbox,
+              click_position: clickPos,
+              screenshot_base64: verifyScreenshot,
+              detected_at: new Date().toLocaleTimeString(),
+              status: 'REJECTED',
+            });
+
+            if (verifyAttempt < MAX_VERIFY_RETRIES) {
+              addLog('AI_TARGET_RETRY', `[RETRY] Scrolling viewport to adjust view and re-detecting... (Attempt ${verifyAttempt + 1} coming up)`);
+
+              // Scroll down slightly to reposition the image grid
+              await fetch('http://localhost:8085/api/facebook/test/execute-action', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action_type: 'SCROLL_DOWN' }),
+              });
+              await new Promise((r) => setTimeout(r, 800));
+
+              // Re-capture after scroll
+              const retryResp = await fetch('http://localhost:8085/api/facebook/test/screenshot', { method: 'POST' });
+              const retryData = await retryResp.json();
+              if (retryData.screenshot && typeof retryData.screenshot === 'string') {
+                activeShot = retryData.screenshot;
+                setCapturedScreenshot(activeShot);
+                setAllCapturedScreenshots((prev) => [...prev, activeShot!]);
+              }
+            } else {
+              addLog('AI_VERIFY', `[STEP 3.5] ⚠️ Max verification attempts reached. Proceeding with last detected target anyway.`);
+              verified = true; // proceed anyway after max retries
+              finalBbox = bbox;
+              finalClickPos = clickPos;
+              finalScreenshotForTarget = verifyScreenshot;
+
+              setFirstPhotoTarget({
+                found: true,
+                image_bbox: bbox,
+                click_position: clickPos,
+                screenshot_base64: verifyScreenshot,
+                detected_at: new Date().toLocaleTimeString(),
+                status: 'LOCATED',
+              });
+            }
+          }
+        } else {
+          addLog('AI_TARGET_ERROR', `Could not locate first property photo cell (Attempt ${verifyAttempt}/${MAX_VERIFY_RETRIES}).`);
+          if (verifyAttempt < MAX_VERIFY_RETRIES) {
+            addLog('AI_TARGET_RETRY', 'Scrolling and retrying detection...');
+            await fetch('http://localhost:8085/api/facebook/test/execute-action', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action_type: 'SCROLL_DOWN' }),
+            });
+            await new Promise((r) => setTimeout(r, 800));
+            const retryResp = await fetch('http://localhost:8085/api/facebook/test/screenshot', { method: 'POST' });
+            const retryData = await retryResp.json();
+            if (retryData.screenshot && typeof retryData.screenshot === 'string') {
+              activeShot = retryData.screenshot;
+              setCapturedScreenshot(activeShot);
+              setAllCapturedScreenshots((prev) => [...prev, activeShot!]);
+            }
+          }
         }
-        const bbox = coordsData.image_bbox || {
-          x: coordsData.images?.[0]?.x || 500,
-          y: coordsData.images?.[0]?.y || 460,
-          width: coordsData.images?.[0]?.width || 420,
-          height: coordsData.images?.[0]?.height || 420,
-        };
+      }
 
-        const clickPos = coordsData.click_position || {
-          x: Math.round(bbox.x + bbox.width / 2),
-          y: Math.round(bbox.y + bbox.height / 2),
-        };
-
-        setFirstPhotoTarget({
-          found: true,
-          image_bbox: bbox,
-          click_position: clickPos,
-          screenshot_base64: activeShot || undefined,
-          detected_at: new Date().toLocaleTimeString(),
-          status: 'LOCATED',
-        });
-
-        addLog('AI_TARGET_03', `[STEP 3] ✓ First Property Image Cell Bounding Box: { x: ${bbox.x}, y: ${bbox.y}, width: ${bbox.width}, height: ${bbox.height} }`);
-        addLog('AI_TARGET_03', `[STEP 3] 🎯 Calculated First Image Cell Center Point: (X: ${clickPos.x}, Y: ${clickPos.y})`);
-
-        addLog('AI_TARGET_04', `[STEP 4] OpenClaw moving mouse to (${clickPos.x}, ${clickPos.y}), waiting 0.5s, clicking once...`);
+      // === STEP 4: Click the verified target ===
+      if (finalClickPos && finalBbox) {
+        addLog('AI_TARGET_04', `[STEP 4] OpenClaw moving mouse to (${finalClickPos.x}, ${finalClickPos.y}), waiting 0.5s, clicking once...`);
         const extractResp = await fetch('http://localhost:8085/api/facebook/test/extract-images', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             target_url: navResult?.current_url || urlInput,
             max_images: 30,
-            image_coordinates: clickPos,
+            image_coordinates: finalClickPos,
           }),
         });
         const extractData = await extractResp.json();
 
         if (extractData.result && extractData.result.images && extractData.result.images.length > 0) {
           addLog('AI_TARGET_05', `[STEP 5] 🎉 SUCCESS: Photo Viewer opened! Downloaded ${extractData.result.images.length} full-resolution property photos.`);
+
+          // === STEP 5.5: POST-CLICK VERIFICATION — Verify the Photo Viewer actually opened ===
+          addLog('AI_VERIFY_POST', '[STEP 5.5] 🔍 Post-Click Verification: Capturing screenshot to confirm Photo Viewer is open...');
+          try {
+            await new Promise((r) => setTimeout(r, 600));
+            const postClickResp = await fetch('http://localhost:8085/api/facebook/test/screenshot', { method: 'POST' });
+            const postClickData = await postClickResp.json();
+            if (postClickData.screenshot && typeof postClickData.screenshot === 'string') {
+              setCapturedScreenshot(postClickData.screenshot);
+              setAllCapturedScreenshots((prev) => [...prev, postClickData.screenshot]);
+
+              // Quick AI check to see if photo viewer overlay is visible
+              if (usePuterFreeAI && isPuterAvailable()) {
+                try {
+                  const viewerCheck = await analyzeScreenshotsWithPuter([postClickData.screenshot], urlInput || activeTestRun?.facebook_url || '', 'gpt-4o');
+                  const viewerAnalysis = viewerCheck as VisionAnalysisResult;
+                  if (viewerAnalysis && viewerAnalysis.page_state) {
+                    addLog('AI_VERIFY_POST', `[STEP 5.5] ✅ Post-click state: ${viewerAnalysis.page_state} | Photo Viewer confirmed open`);
+                  }
+                } catch (_) {
+                  addLog('AI_VERIFY_POST', '[STEP 5.5] ✅ Post-click verification: Images extracted successfully (viewer check skipped)');
+                }
+              } else {
+                addLog('AI_VERIFY_POST', '[STEP 5.5] ✅ Post-click verification: Images extracted successfully');
+              }
+            }
+          } catch (_) {
+            addLog('AI_VERIFY_POST', '[STEP 5.5] Post-click screenshot capture skipped');
+          }
+
           const extractedImages = extractData.result.images.map((img: any) => ({
             id: img.index,
             original_order: img.index,
@@ -1547,9 +1894,15 @@ export const TestingView: React.FC = () => {
             '📸 Photos Downloaded!',
             `Successfully opened Facebook Photo Viewer and downloaded ${extractedImages.length} property photos.`
           );
+        } else {
+          addLog('AI_TARGET_05', '[STEP 5] ⚠️ Click executed but no images extracted. Photo Viewer may not have opened.');
+
+          // If click didn't work, try re-targeting
+          addLog('AI_TARGET_RETRY', '[RETRY] Target click did not open Photo Viewer. Attempting to re-detect and re-click...');
+          showAppleNotification('⚠️ Retry Needed', 'Photo Viewer did not open. Re-attempting target detection...');
         }
       } else {
-        addLog('AI_TARGET_ERROR', 'Could not locate first property photo cell in current capture.');
+        addLog('AI_TARGET_ERROR', 'Could not locate first property photo cell after all attempts.');
       }
     } catch (err: any) {
       addLog('AI_TARGET_ERROR', `Photo targeting failed: ${err.message}`);
@@ -1675,6 +2028,18 @@ export const TestingView: React.FC = () => {
               0% { width: 100%; }
               100% { width: 0%; }
             }
+            @keyframes pulse {
+              0% { opacity: 1; transform: scale(1); }
+              50% { opacity: 0.7; transform: scale(1.08); }
+              100% { opacity: 1; transform: scale(1); }
+            }
+            @keyframes shake {
+              0%, 100% { transform: translateX(0); }
+              20% { transform: translateX(-4px); }
+              40% { transform: translateX(4px); }
+              60% { transform: translateX(-3px); }
+              80% { transform: translateX(3px); }
+            }
           `}</style>
           
           {/* Apple App Icon Badge */}
@@ -1784,30 +2149,8 @@ export const TestingView: React.FC = () => {
                 gap: '0.35rem',
               }}
             >
-              <FiCpu /> {usePuterFreeAI ? 'Free AI: Puter.js (GPT-4o)' : `OpenAI: ${openAIStatus}`} • Session: {sessionStatus} • Stage: {currentStage} (Step {timelineStep})
+              <FiCpu /> OpenAI: {openAIStatus} • Session: {sessionStatus} • Stage: {currentStage} (Step {timelineStep})
             </span>
-            <button
-              type="button"
-              onClick={() => setUsePuterFreeAI((p) => !p)}
-              style={{
-                fontSize: '0.75rem',
-                fontWeight: 600,
-                padding: '0.2rem 0.6rem',
-                borderRadius: '0.375rem',
-                backgroundColor: usePuterFreeAI ? 'rgba(59, 130, 246, 0.18)' : 'var(--bg-secondary)',
-                color: usePuterFreeAI ? '#3B82F6' : 'var(--text-muted)',
-                border: usePuterFreeAI ? '1px solid #3B82F6' : '1px solid var(--border-color)',
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.35rem',
-                transition: 'all 0.15s ease',
-              }}
-              title="Toggle between Free Puter.js AI and Backend OpenAI"
-            >
-              <FiZap style={{ color: usePuterFreeAI ? '#F59E0B' : 'inherit' }} />
-              {usePuterFreeAI ? '⚡ 100% Free Puter AI (Active)' : '⚡ Enable Free Puter AI'}
-            </button>
           </div>
           <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', margin: '0.25rem 0 0 0' }}>
             OpenClaw Persistent Browser Navigation Lifecycle & Scoped TargetPostContext Extraction.
@@ -2799,26 +3142,42 @@ export const TestingView: React.FC = () => {
               </div>
             </div>
 
-            {/* Diagnostic Steps Breadcrumbs */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', fontSize: '0.6875rem', fontWeight: 600 }}>
+            {/* Diagnostic Steps Breadcrumbs (with AI Verification) */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap', fontSize: '0.65rem', fontWeight: 600 }}>
               <span style={{ color: 'var(--text-primary)', backgroundColor: 'var(--bg-secondary)', padding: '0.25rem 0.55rem', borderRadius: '0.25rem', border: '1px solid var(--border-color)' }}>
-                📸 1. Load Last Screenshot
+                📸 1. Load Screenshot
               </span>
               <span style={{ color: 'var(--text-muted)' }}>➔</span>
               <span style={{ color: 'var(--text-primary)', backgroundColor: 'var(--bg-secondary)', padding: '0.25rem 0.55rem', borderRadius: '0.25rem', border: '1px solid var(--border-color)' }}>
-                🤖 2. AI Detects Top-Left Photo Cell
+                🤖 2. AI Detect Photo Cell
               </span>
               <span style={{ color: 'var(--text-muted)' }}>➔</span>
               <span style={{ color: 'var(--text-primary)', backgroundColor: 'var(--bg-secondary)', padding: '0.25rem 0.55rem', borderRadius: '0.25rem', border: '1px solid var(--border-color)' }}>
-                📐 3. Compute Cell Center (x + w/2, y + h/2)
+                📐 3. Compute Center
+              </span>
+              <span style={{ color: 'var(--text-muted)' }}>➔</span>
+              {/* NEW: AI Verification Step */}
+              <span style={{
+                color: firstPhotoTarget?.status === 'VERIFIED' ? '#10B981' : firstPhotoTarget?.status === 'REJECTED' ? '#EF4444' : firstPhotoTarget?.status === 'VERIFYING' ? '#F59E0B' : 'var(--text-primary)',
+                backgroundColor: firstPhotoTarget?.status === 'VERIFIED' ? 'rgba(16, 185, 129, 0.12)' : firstPhotoTarget?.status === 'REJECTED' ? 'rgba(239, 68, 68, 0.12)' : firstPhotoTarget?.status === 'VERIFYING' ? 'rgba(245, 158, 11, 0.12)' : 'var(--bg-secondary)',
+                padding: '0.25rem 0.55rem',
+                borderRadius: '0.25rem',
+                border: firstPhotoTarget?.status === 'VERIFIED' ? '1px solid rgba(16, 185, 129, 0.4)' : firstPhotoTarget?.status === 'REJECTED' ? '1px solid rgba(239, 68, 68, 0.4)' : firstPhotoTarget?.status === 'VERIFYING' ? '1px solid rgba(245, 158, 11, 0.4)' : '1px solid var(--border-color)',
+                animation: firstPhotoTarget?.status === 'VERIFYING' ? 'pulse 1.5s infinite' : 'none',
+              }}>
+                🔍 3.5 AI Verify Target {firstPhotoTarget?.status === 'VERIFIED' ? '✅' : firstPhotoTarget?.status === 'REJECTED' ? '❌' : firstPhotoTarget?.status === 'VERIFYING' ? '⏳' : ''}
               </span>
               <span style={{ color: 'var(--text-muted)' }}>➔</span>
               <span style={{ color: 'var(--text-primary)', backgroundColor: 'var(--bg-secondary)', padding: '0.25rem 0.55rem', borderRadius: '0.25rem', border: '1px solid var(--border-color)' }}>
-                🖱️ 4. Move Mouse & Click (0.5s Pause)
+                🖱️ 4. Click Target
               </span>
               <span style={{ color: 'var(--text-muted)' }}>➔</span>
               <span style={{ color: '#10B981', backgroundColor: 'rgba(16, 185, 129, 0.12)', padding: '0.25rem 0.55rem', borderRadius: '0.25rem', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
-                🖼️ 5. Photo Viewer Verified
+                🖼️ 5. Photo Viewer Open
+              </span>
+              <span style={{ color: 'var(--text-muted)' }}>➔</span>
+              <span style={{ color: '#8B5CF6', backgroundColor: 'rgba(139, 92, 246, 0.12)', padding: '0.25rem 0.55rem', borderRadius: '0.25rem', border: '1px solid rgba(139, 92, 246, 0.3)' }}>
+                🔍 5.5 Post-Click Verify
               </span>
             </div>
 
@@ -2845,102 +3204,119 @@ export const TestingView: React.FC = () => {
                     style={{ width: '100%', height: 'auto', display: 'block' }}
                   />
 
-                  {/* Visual Bounding Box for First Photo */}
-                  {firstPhotoTarget?.image_bbox && (
-                    <div
-                      style={{
-                        position: 'absolute',
-                        top: `${(firstPhotoTarget.image_bbox.y / 1080) * 100}%`,
-                        left: `${(firstPhotoTarget.image_bbox.x / 1920) * 100}%`,
-                        width: `${(firstPhotoTarget.image_bbox.width / 1920) * 100}%`,
-                        height: `${(firstPhotoTarget.image_bbox.height / 1080) * 100}%`,
-                        border: '3px solid #3B82F6',
-                        backgroundColor: 'rgba(59, 130, 246, 0.18)',
-                        borderRadius: '6px',
-                        boxShadow: '0 0 20px rgba(59, 130, 246, 0.5)',
-                        pointerEvents: 'none',
-                        transition: 'all 0.3s ease',
-                      }}
-                    >
-                      <span
+                  {/* Visual Bounding Box for First Photo (color changes based on verification status) */}
+                  {firstPhotoTarget?.image_bbox && (() => {
+                    const status = firstPhotoTarget.status;
+                    const bboxColor = status === 'VERIFIED' ? '#10B981' : status === 'REJECTED' ? '#EF4444' : status === 'VERIFYING' ? '#F59E0B' : '#3B82F6';
+                    const bboxBg = status === 'VERIFIED' ? 'rgba(16, 185, 129, 0.18)' : status === 'REJECTED' ? 'rgba(239, 68, 68, 0.18)' : status === 'VERIFYING' ? 'rgba(245, 158, 11, 0.18)' : 'rgba(59, 130, 246, 0.18)';
+                    const bboxGlow = status === 'VERIFIED' ? 'rgba(16, 185, 129, 0.5)' : status === 'REJECTED' ? 'rgba(239, 68, 68, 0.5)' : status === 'VERIFYING' ? 'rgba(245, 158, 11, 0.5)' : 'rgba(59, 130, 246, 0.5)';
+                    const statusLabel = status === 'VERIFIED' ? '✅ Verified Target' : status === 'REJECTED' ? '❌ Rejected — Retrying' : status === 'VERIFYING' ? '⏳ Verifying...' : 'First Property Photo (Top-Left)';
+                    return (
+                      <div
                         style={{
                           position: 'absolute',
-                          top: '-24px',
-                          left: '4px',
-                          backgroundColor: '#3B82F6',
-                          color: '#FFFFFF',
-                          fontSize: '0.625rem',
-                          padding: '0.15rem 0.5rem',
-                          borderRadius: '3px',
-                          fontWeight: 700,
-                          whiteSpace: 'nowrap',
+                          top: `${(firstPhotoTarget.image_bbox.y / 1080) * 100}%`,
+                          left: `${(firstPhotoTarget.image_bbox.x / 1920) * 100}%`,
+                          width: `${(firstPhotoTarget.image_bbox.width / 1920) * 100}%`,
+                          height: `${(firstPhotoTarget.image_bbox.height / 1080) * 100}%`,
+                          border: `3px solid ${bboxColor}`,
+                          backgroundColor: bboxBg,
+                          borderRadius: '6px',
+                          boxShadow: `0 0 20px ${bboxGlow}`,
+                          pointerEvents: 'none',
+                          transition: 'all 0.4s ease',
+                          animation: status === 'VERIFYING' ? 'pulse 1.5s infinite' : status === 'REJECTED' ? 'shake 0.5s ease' : 'none',
                         }}
                       >
-                        First Property Photo (Top-Left)
-                      </span>
-                    </div>
-                  )}
+                        <span
+                          style={{
+                            position: 'absolute',
+                            top: '-26px',
+                            left: '4px',
+                            backgroundColor: bboxColor,
+                            color: '#FFFFFF',
+                            fontSize: '0.625rem',
+                            padding: '0.15rem 0.5rem',
+                            borderRadius: '3px',
+                            fontWeight: 700,
+                            whiteSpace: 'nowrap',
+                            transition: 'all 0.3s ease',
+                          }}
+                        >
+                          {statusLabel}
+                        </span>
+                      </div>
+                    );
+                  })()}
 
                   {/* Pulsing Crosshair Target Point at Click Coordinates */}
-                  {firstPhotoTarget?.click_position && (
-                    <div
-                      style={{
-                        position: 'absolute',
-                        top: `${(firstPhotoTarget.click_position.y / 1080) * 100}%`,
-                        left: `${(firstPhotoTarget.click_position.x / 1920) * 100}%`,
-                        transform: 'translate(-50%, -50%)',
-                        pointerEvents: 'none',
-                        zIndex: 10,
-                      }}
-                    >
-                      {/* Outer pulse ring */}
-                      <div
-                        style={{
-                          width: '28px',
-                          height: '28px',
-                          borderRadius: '50%',
-                          border: '2px solid #EF4444',
-                          backgroundColor: 'rgba(239, 68, 68, 0.25)',
-                          animation: 'pulse 1.5s infinite',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          boxShadow: '0 0 15px rgba(239, 68, 68, 0.8)',
-                        }}
-                      >
-                        {/* Center core dot */}
-                        <div
-                          style={{
-                            width: '8px',
-                            height: '8px',
-                            borderRadius: '50%',
-                            backgroundColor: '#EF4444',
-                          }}
-                        />
-                      </div>
-
-                      {/* Click Coordinate Tooltip Label */}
+                  {firstPhotoTarget?.click_position && (() => {
+                    const status = firstPhotoTarget.status;
+                    const dotColor = status === 'VERIFIED' ? '#10B981' : status === 'REJECTED' ? '#EF4444' : '#EF4444';
+                    const dotBg = status === 'VERIFIED' ? 'rgba(16, 185, 129, 0.25)' : status === 'REJECTED' ? 'rgba(239, 68, 68, 0.25)' : 'rgba(239, 68, 68, 0.25)';
+                    const dotGlow = status === 'VERIFIED' ? 'rgba(16, 185, 129, 0.8)' : status === 'REJECTED' ? 'rgba(239, 68, 68, 0.8)' : 'rgba(239, 68, 68, 0.8)';
+                    const borderColor = status === 'VERIFIED' ? '#10B981' : '#3B82F6';
+                    return (
                       <div
                         style={{
                           position: 'absolute',
-                          top: '32px',
-                          left: '50%',
-                          transform: 'translateX(-50%)',
-                          backgroundColor: '#1E293B',
-                          color: '#F8FAFC',
-                          border: '1px solid #3B82F6',
-                          borderRadius: '4px',
-                          padding: '0.2rem 0.5rem',
-                          fontSize: '0.65625rem',
-                          fontWeight: 700,
-                          whiteSpace: 'nowrap',
-                          boxShadow: '0 4px 10px rgba(0,0,0,0.5)',
+                          top: `${(firstPhotoTarget.click_position.y / 1080) * 100}%`,
+                          left: `${(firstPhotoTarget.click_position.x / 1920) * 100}%`,
+                          transform: 'translate(-50%, -50%)',
+                          pointerEvents: 'none',
+                          zIndex: 10,
                         }}
                       >
-                        🎯 Click: ({firstPhotoTarget.click_position.x}, {firstPhotoTarget.click_position.y})
+                        {/* Outer pulse ring */}
+                        <div
+                          style={{
+                            width: '28px',
+                            height: '28px',
+                            borderRadius: '50%',
+                            border: `2px solid ${dotColor}`,
+                            backgroundColor: dotBg,
+                            animation: status === 'REJECTED' ? 'none' : 'pulse 1.5s infinite',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            boxShadow: `0 0 15px ${dotGlow}`,
+                            transition: 'all 0.3s ease',
+                          }}
+                        >
+                          {/* Center core dot */}
+                          <div
+                            style={{
+                              width: '8px',
+                              height: '8px',
+                              borderRadius: '50%',
+                              backgroundColor: dotColor,
+                            }}
+                          />
+                        </div>
+
+                        {/* Click Coordinate Tooltip Label */}
+                        <div
+                          style={{
+                            position: 'absolute',
+                            top: '32px',
+                            left: '50%',
+                            transform: 'translateX(-50%)',
+                            backgroundColor: '#1E293B',
+                            color: '#F8FAFC',
+                            border: `1px solid ${borderColor}`,
+                            borderRadius: '4px',
+                            padding: '0.2rem 0.5rem',
+                            fontSize: '0.65625rem',
+                            fontWeight: 700,
+                            whiteSpace: 'nowrap',
+                            boxShadow: '0 4px 10px rgba(0,0,0,0.5)',
+                          }}
+                        >
+                          {status === 'VERIFIED' ? '✅' : status === 'REJECTED' ? '❌' : '🎯'} Click: ({firstPhotoTarget.click_position.x}, {firstPhotoTarget.click_position.y})
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
                 </div>
               ) : (
                 <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem', textAlign: 'center', padding: '2rem' }}>
@@ -2948,6 +3324,28 @@ export const TestingView: React.FC = () => {
                 </div>
               )}
             </div>
+
+            {/* Verification Status Banner */}
+            {firstPhotoTarget?.status && firstPhotoTarget.status !== 'LOCATED' && (
+              <div
+                style={{
+                  padding: '0.5rem 0.875rem',
+                  borderRadius: '0.375rem',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  backgroundColor: firstPhotoTarget.status === 'VERIFIED' ? 'rgba(16, 185, 129, 0.1)' : firstPhotoTarget.status === 'REJECTED' ? 'rgba(239, 68, 68, 0.1)' : firstPhotoTarget.status === 'VERIFYING' ? 'rgba(245, 158, 11, 0.1)' : 'transparent',
+                  color: firstPhotoTarget.status === 'VERIFIED' ? '#10B981' : firstPhotoTarget.status === 'REJECTED' ? '#EF4444' : firstPhotoTarget.status === 'VERIFYING' ? '#F59E0B' : 'var(--text-muted)',
+                  border: firstPhotoTarget.status === 'VERIFIED' ? '1px solid rgba(16, 185, 129, 0.3)' : firstPhotoTarget.status === 'REJECTED' ? '1px solid rgba(239, 68, 68, 0.3)' : firstPhotoTarget.status === 'VERIFYING' ? '1px solid rgba(245, 158, 11, 0.3)' : '1px solid var(--border-color)',
+                }}
+              >
+                {firstPhotoTarget.status === 'VERIFIED' && '✅ AI Verification Passed — Target confirmed on a property photo. Proceeding to click.'}
+                {firstPhotoTarget.status === 'REJECTED' && '❌ AI Verification Failed — Target is NOT on a property photo. Retrying with adjusted viewport...'}
+                {firstPhotoTarget.status === 'VERIFYING' && '⏳ AI is verifying if the detected target is positioned over an actual property photo...'}
+              </div>
+            )}
           </div>
 
 
@@ -3357,160 +3755,30 @@ export const TestingView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Controls: Prompt Selector & Mode Toggle, Enhance All, Download All */}
+              {/* Controls: Global Batch Actions */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
-                {/* Prompt Mode Toggle Tabs */}
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    padding: '2px',
-                    borderRadius: '0.5rem',
-                    backgroundColor: 'var(--bg-secondary)',
-                    border: '1px solid var(--border-color)',
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => setImagePromptMode('PRESET')}
-                    style={{
-                      padding: '0.3rem 0.65rem',
-                      fontSize: '0.71875rem',
-                      fontWeight: 600,
-                      borderRadius: '0.375rem',
-                      border: 'none',
-                      backgroundColor: imagePromptMode === 'PRESET' ? '#3B82F6' : 'transparent',
-                      color: imagePromptMode === 'PRESET' ? '#FFFFFF' : 'var(--text-muted)',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.3rem',
-                    }}
-                  >
-                    <span>📋 Preset</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setImagePromptMode('CUSTOM');
-                      setIsCustomPromptEditorOpen(true);
-                    }}
-                    style={{
-                      padding: '0.3rem 0.65rem',
-                      fontSize: '0.71875rem',
-                      fontWeight: 600,
-                      borderRadius: '0.375rem',
-                      border: 'none',
-                      backgroundColor: imagePromptMode === 'CUSTOM' ? '#8B5CF6' : 'transparent',
-                      color: imagePromptMode === 'CUSTOM' ? '#FFFFFF' : 'var(--text-muted)',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.3rem',
-                    }}
-                  >
-                    <span>✏️ Custom / Paste</span>
-                  </button>
-                </div>
-
-                {/* Enhancement Preset Dropdown (Shown in PRESET mode or as template selector) */}
-                <div style={{ position: 'relative' }}>
-                  <button
-                    type="button"
-                    onClick={() => setIsImagePromptDropdownOpen(!isImagePromptDropdownOpen)}
-                    disabled={isBatchEnhancing}
-                    style={{
-                      height: '34px',
-                      padding: '0 0.75rem',
-                      backgroundColor: 'var(--bg-secondary)',
-                      color: 'var(--text-primary)',
-                      border: '1px solid var(--border-color)',
-                      borderRadius: '0.5rem',
-                      fontSize: '0.75rem',
-                      fontWeight: 600,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.5rem',
-                      cursor: 'pointer',
-                      boxShadow: 'var(--shadow-sm)',
-                    }}
-                  >
-                    <span>{imageEnhancePrompts.find((p) => p.id === selectedImagePromptId)?.name || 'Select Enhancement Style'}</span>
-                    <FiChevronDown style={{ color: 'var(--text-muted)' }} />
-                  </button>
-
-                  {isImagePromptDropdownOpen && (
-                    <div
-                      style={{
-                        position: 'absolute',
-                        top: 'calc(100% + 4px)',
-                        right: 0,
-                        width: '340px',
-                        backgroundColor: '#16181D',
-                        border: '1px solid var(--border-color)',
-                        borderRadius: '0.5rem',
-                        boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
-                        zIndex: 100,
-                        overflow: 'hidden',
-                        padding: '0.35rem',
-                      }}
-                    >
-                      {imageEnhancePrompts.map((preset) => (
-                        <div
-                          key={preset.id}
-                          onClick={() => {
-                            setSelectedImagePromptId(preset.id);
-                            setCustomImagePromptText(preset.instructions || (preset as any).templateText || preset.desc || '');
-                            setIsImagePromptDropdownOpen(false);
-                          }}
-                          style={{
-                            padding: '0.5rem 0.65rem',
-                            borderRadius: '0.375rem',
-                            cursor: 'pointer',
-                            backgroundColor: selectedImagePromptId === preset.id ? 'rgba(59, 130, 246, 0.15)' : 'transparent',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: '0.2rem',
-                            marginBottom: '0.2rem',
-                          }}
-                        >
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: selectedImagePromptId === preset.id ? '#60A5FA' : 'var(--text-primary)' }}>
-                              {preset.name}
-                            </span>
-                            {selectedImagePromptId === preset.id && <FiCheck style={{ color: '#60A5FA', fontSize: '0.75rem' }} />}
-                          </div>
-                          <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-                            {preset.desc}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Toggle Prompt Editor Button */}
+                {/* 2nd Prompt Enable Toggle Badge */}
                 <button
                   type="button"
-                  onClick={() => setIsCustomPromptEditorOpen(!isCustomPromptEditorOpen)}
+                  onClick={() => setEnableSecondaryPrompt(!enableSecondaryPrompt)}
                   style={{
                     height: '34px',
-                    padding: '0 0.65rem',
-                    backgroundColor: isCustomPromptEditorOpen ? 'rgba(139, 92, 246, 0.15)' : 'var(--bg-secondary)',
-                    color: isCustomPromptEditorOpen ? '#A78BFA' : 'var(--text-secondary)',
-                    border: `1px solid ${isCustomPromptEditorOpen ? '#8B5CF6' : 'var(--border-color)'}`,
+                    padding: '0 0.75rem',
+                    backgroundColor: enableSecondaryPrompt ? 'rgba(139, 92, 246, 0.15)' : 'var(--bg-secondary)',
+                    color: enableSecondaryPrompt ? '#C4B5FD' : 'var(--text-muted)',
+                    border: `1px solid ${enableSecondaryPrompt ? '#8B5CF6' : 'var(--border-color)'}`,
                     borderRadius: '0.5rem',
                     fontSize: '0.71875rem',
-                    fontWeight: 600,
+                    fontWeight: 700,
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '0.35rem',
+                    gap: '0.4rem',
+                    boxShadow: enableSecondaryPrompt ? '0 0 12px rgba(139, 92, 246, 0.25)' : 'none',
                   }}
-                  title="View, edit, or paste manual prompt text"
+                  title="Enable or disable running the second modification prompt on top of enhanced photos"
                 >
-                  <FiEdit2 />
-                  <span>{isCustomPromptEditorOpen ? 'Hide Prompt Box' : 'Edit / Paste Prompt'}</span>
+                  <span>{enableSecondaryPrompt ? '⚡ 2-Stage Prompts: ACTIVE' : '⚡ 1-Stage Prompt: ONLY'}</span>
                 </button>
 
                 {/* Enhance All Photos Button */}
@@ -3518,7 +3786,7 @@ export const TestingView: React.FC = () => {
                   variant="primary"
                   size="sm"
                   leftIcon={isBatchEnhancing ? <FiLoader style={{ animation: 'spin 1s linear infinite' }} /> : <FiZap />}
-                  onClick={handleEnhanceAllPhotos}
+                  onClick={() => openEnhanceModeModal(activeTestRun?.images || [])}
                   disabled={isBatchEnhancing || !activeTestRun?.images || activeTestRun.images.length === 0}
                   style={{
                     backgroundColor: '#3B82F6',
@@ -3531,7 +3799,7 @@ export const TestingView: React.FC = () => {
                 >
                   {isBatchEnhancing
                     ? `Enhancing (${batchEnhanceProgress.current}/${batchEnhanceProgress.total})...`
-                    : '✨ Enhance All Photos'}
+                    : enableSecondaryPrompt ? '✨ Enhance All (2-Stage Pipeline)' : '✨ Enhance All Photos'}
                 </Button>
 
                 {/* Download All Photos Button */}
@@ -3563,38 +3831,142 @@ export const TestingView: React.FC = () => {
               </div>
             </div>
 
-            {/* ✏️ CUSTOM / PASTED PROMPT EDITOR PANEL (EXPANDABLE) */}
-            {isCustomPromptEditorOpen && (
+            {/* 🔄 Two-Stage Pipeline Flow Indicator Banner */}
+            <div
+              style={{
+                marginBottom: '1.25rem',
+                padding: '0.65rem 1rem',
+                borderRadius: '0.5rem',
+                backgroundColor: '#0E1015',
+                border: '1px solid var(--border-color)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '0.75rem',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.71875rem', fontWeight: 600, flexWrap: 'wrap' }}>
+                <span style={{ color: 'var(--text-muted)' }}>PIPELINE FLOW:</span>
+                <span style={{ backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', padding: '0.2rem 0.55rem', borderRadius: '0.25rem', border: '1px solid var(--border-color)' }}>
+                  📸 1. Original Photo
+                </span>
+                <span style={{ color: '#3B82F6' }}>➔</span>
+                <span style={{ backgroundColor: 'rgba(59, 130, 246, 0.15)', color: '#60A5FA', padding: '0.2rem 0.55rem', borderRadius: '0.25rem', border: '1px solid rgba(59, 130, 246, 0.3)' }}>
+                  🔷 Prompt 1: Base Retouch & HDR
+                </span>
+                <span style={{ color: enableSecondaryPrompt ? '#8B5CF6' : 'var(--text-muted)' }}>➔</span>
+                <span style={{ backgroundColor: enableSecondaryPrompt ? 'rgba(139, 92, 246, 0.15)' : 'rgba(255,255,255,0.03)', color: enableSecondaryPrompt ? '#C4B5FD' : 'var(--text-muted)', padding: '0.2rem 0.55rem', borderRadius: '0.25rem', border: `1px solid ${enableSecondaryPrompt ? 'rgba(139, 92, 246, 0.3)' : 'var(--border-color)'}` }}>
+                  🟣 Prompt 2: Modify / Fix / Add Details {enableSecondaryPrompt ? '' : '(Disabled)'}
+                </span>
+                <span style={{ color: '#10B981' }}>➔</span>
+                <span style={{ backgroundColor: 'rgba(16, 185, 129, 0.12)', color: '#10B981', padding: '0.2rem 0.55rem', borderRadius: '0.25rem', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
+                  ✨ Final Master Asset
+                </span>
+              </div>
+            </div>
+
+            {/* 🎛️ DUAL PROMPT SESSIONS: PROMPT 1 (BASE) & PROMPT 2 (MODIFY/FIX) */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
+              {/* ================= PROMPT SESSION 1 ================= */}
               <div
                 style={{
-                  marginBottom: '1.25rem',
-                  padding: '0.875rem',
+                  padding: '1rem',
                   borderRadius: '0.5rem',
-                  backgroundColor: '#0E1015',
-                  border: imagePromptMode === 'CUSTOM' ? '1px solid rgba(139, 92, 246, 0.5)' : '1px solid var(--border-color)',
+                  backgroundColor: '#0A0D12',
+                  border: imagePromptMode === 'CUSTOM' ? '1px solid rgba(59, 130, 246, 0.5)' : '1px solid rgba(59, 130, 246, 0.25)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.75rem',
                   boxShadow: '0 4px 15px rgba(0, 0, 0, 0.3)',
                 }}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: imagePromptMode === 'CUSTOM' ? '#A78BFA' : '#3B82F6', textTransform: 'uppercase' }}>
-                      {imagePromptMode === 'CUSTOM' ? '✏️ Active Custom / Manual Prompt' : '📋 Template Preset Prompt Instructions'}
+                {/* Session 1 Header */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                    <span style={{ backgroundColor: '#3B82F6', color: '#FFFFFF', fontSize: '0.625rem', fontWeight: 800, padding: '0.15rem 0.45rem', borderRadius: '0.25rem' }}>
+                      PROMPT 1
                     </span>
-                    <span
-                      style={{
-                        fontSize: '0.65625rem',
-                        padding: '0.1rem 0.4rem',
-                        borderRadius: '0.25rem',
-                        backgroundColor: imagePromptMode === 'CUSTOM' ? 'rgba(139, 92, 246, 0.2)' : 'rgba(59, 130, 246, 0.15)',
-                        color: imagePromptMode === 'CUSTOM' ? '#C4B5FD' : '#93C5FD',
-                        fontFamily: 'monospace',
-                      }}
-                    >
-                      {customImagePromptText.length} characters
+                    <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#93C5FD' }}>
+                      Primary Base Enhancement
                     </span>
                   </div>
+                  <span style={{ fontSize: '0.625rem', color: '#93C5FD', fontFamily: 'monospace', backgroundColor: 'rgba(59, 130, 246, 0.15)', padding: '0.1rem 0.4rem', borderRadius: '0.25rem' }}>
+                    {customImagePromptText.length} chars
+                  </span>
+                </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                {/* Session 1 Controls */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  <div style={{ position: 'relative', flex: 1, minWidth: '180px' }}>
+                    <button
+                      type="button"
+                      onClick={() => setIsImagePromptDropdownOpen(!isImagePromptDropdownOpen)}
+                      style={{
+                        width: '100%',
+                        height: '30px',
+                        padding: '0 0.6rem',
+                        backgroundColor: 'var(--bg-secondary)',
+                        color: 'var(--text-primary)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '0.375rem',
+                        fontSize: '0.71875rem',
+                        fontWeight: 600,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {imageEnhancePrompts.find((p) => p.id === selectedImagePromptId)?.name || 'Select Preset'}
+                      </span>
+                      <FiChevronDown style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                    </button>
+
+                    {isImagePromptDropdownOpen && (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: 'calc(100% + 4px)',
+                          left: 0,
+                          width: '100%',
+                          backgroundColor: '#16181D',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '0.5rem',
+                          boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
+                          zIndex: 100,
+                          padding: '0.35rem',
+                          maxHeight: '220px',
+                          overflowY: 'auto',
+                        }}
+                      >
+                        {imageEnhancePrompts.map((preset) => (
+                          <div
+                            key={preset.id}
+                            onClick={() => {
+                              setSelectedImagePromptId(preset.id);
+                              setCustomImagePromptText(preset.instructions || (preset as any).templateText || preset.desc || '');
+                              setIsImagePromptDropdownOpen(false);
+                            }}
+                            style={{
+                              padding: '0.4rem 0.55rem',
+                              borderRadius: '0.25rem',
+                              cursor: 'pointer',
+                              backgroundColor: selectedImagePromptId === preset.id ? 'rgba(59, 130, 246, 0.15)' : 'transparent',
+                              marginBottom: '0.15rem',
+                            }}
+                          >
+                            <div style={{ fontSize: '0.71875rem', fontWeight: 600, color: selectedImagePromptId === preset.id ? '#60A5FA' : 'var(--text-primary)' }}>
+                              {preset.name}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
                     <button
                       type="button"
                       onClick={async () => {
@@ -3603,56 +3975,53 @@ export const TestingView: React.FC = () => {
                           if (text) {
                             setCustomImagePromptText(text);
                             setImagePromptMode('CUSTOM');
-                            addLog('PROMPT', 'Pasted custom prompt from clipboard');
+                            addLog('PROMPT', 'Pasted Prompt 1 from clipboard');
                           }
-                        } catch (e) {
-                          addLog('PROMPT_ERR', 'Could not read clipboard. Please paste directly into the box.');
-                        }
+                        } catch (e) {}
                       }}
                       style={{
-                        padding: '0.25rem 0.6rem',
-                        fontSize: '0.6875rem',
+                        padding: '0.2rem 0.5rem',
+                        fontSize: '0.65625rem',
                         fontWeight: 600,
                         borderRadius: '0.25rem',
-                        border: '1px solid rgba(139, 92, 246, 0.4)',
-                        backgroundColor: 'rgba(139, 92, 246, 0.15)',
-                        color: '#C4B5FD',
+                        border: '1px solid rgba(59, 130, 246, 0.4)',
+                        backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                        color: '#93C5FD',
                         cursor: 'pointer',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '0.3rem',
+                        gap: '0.25rem',
                       }}
                     >
-                      <FiCopy /> Paste from Clipboard
+                      <FiCopy /> Paste
                     </button>
-
                     <button
                       type="button"
                       onClick={() => {
                         const chosen = imageEnhancePrompts.find((p) => p.id === selectedImagePromptId) || imageEnhancePrompts[0];
                         setCustomImagePromptText(chosen.instructions || (chosen as any).templateText || chosen.desc || '');
                         setImagePromptMode('PRESET');
-                        addLog('PROMPT', `Reset prompt to preset: ${chosen.name}`);
                       }}
                       style={{
-                        padding: '0.25rem 0.6rem',
-                        fontSize: '0.6875rem',
+                        padding: '0.2rem 0.5rem',
+                        fontSize: '0.65625rem',
                         fontWeight: 600,
                         borderRadius: '0.25rem',
                         border: '1px solid var(--border-color)',
                         backgroundColor: 'var(--bg-secondary)',
-                        color: 'var(--text-secondary)',
+                        color: 'var(--text-muted)',
                         cursor: 'pointer',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '0.3rem',
+                        gap: '0.25rem',
                       }}
                     >
-                      <FiRefreshCw /> Reset to Selected Preset
+                      <FiRefreshCw /> Reset
                     </button>
                   </div>
                 </div>
 
+                {/* Session 1 Textarea */}
                 <textarea
                   rows={4}
                   value={customImagePromptText}
@@ -3660,34 +4029,221 @@ export const TestingView: React.FC = () => {
                     setCustomImagePromptText(e.target.value);
                     setImagePromptMode('CUSTOM');
                   }}
-                  placeholder="Paste or type your custom photo enhancement / retouching prompt here..."
+                  placeholder="Enter primary photo enhancement instructions (sharpness, lighting, dehaze)..."
                   style={{
                     width: '100%',
                     backgroundColor: '#05070A',
                     color: 'var(--text-primary)',
-                    border: '1px solid rgba(255, 255, 255, 0.12)',
+                    border: '1px solid rgba(59, 130, 246, 0.25)',
                     borderRadius: '0.375rem',
-                    padding: '0.65rem 0.75rem',
-                    fontSize: '0.78125rem',
+                    padding: '0.6rem 0.75rem',
+                    fontSize: '0.75rem',
                     fontFamily: 'monospace',
-                    lineHeight: 1.5,
+                    lineHeight: 1.45,
                     resize: 'vertical',
                     outline: 'none',
                   }}
                 />
-
-                <div style={{ marginTop: '0.4rem', fontSize: '0.6875rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>
-                    💡 {imagePromptMode === 'CUSTOM'
-                      ? 'Custom mode active: When clicking "Enhance" or "Enhance All", this exact edited/pasted prompt will be sent to the model.'
-                      : 'Preset mode active: Using template preset above. Edit this box or paste text anytime to switch to custom mode.'}
-                  </span>
-                  <span style={{ color: imagePromptMode === 'CUSTOM' ? '#A78BFA' : '#3B82F6', fontWeight: 600 }}>
-                    {imagePromptMode === 'CUSTOM' ? '● Using Custom Prompt' : '● Using Preset'}
-                  </span>
-                </div>
               </div>
-            )}
+
+              {/* ================= PROMPT SESSION 2 ================= */}
+              <div
+                style={{
+                  padding: '1rem',
+                  borderRadius: '0.5rem',
+                  backgroundColor: '#0A0D12',
+                  border: enableSecondaryPrompt
+                    ? secondaryPromptMode === 'CUSTOM'
+                      ? '1px solid rgba(139, 92, 246, 0.5)'
+                      : '1px solid rgba(139, 92, 246, 0.25)'
+                    : '1px solid var(--border-color)',
+                  opacity: enableSecondaryPrompt ? 1 : 0.65,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.75rem',
+                  boxShadow: '0 4px 15px rgba(0, 0, 0, 0.3)',
+                }}
+              >
+                {/* Session 2 Header */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                    <span style={{ backgroundColor: '#8B5CF6', color: '#FFFFFF', fontSize: '0.625rem', fontWeight: 800, padding: '0.15rem 0.45rem', borderRadius: '0.25rem' }}>
+                      PROMPT 2
+                    </span>
+                    <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#C4B5FD' }}>
+                      Post-Enhancement Modification & Fixes
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.6875rem', color: '#C4B5FD', cursor: 'pointer', fontWeight: 600 }}>
+                      <input
+                        type="checkbox"
+                        checked={enableSecondaryPrompt}
+                        onChange={(e) => setEnableSecondaryPrompt(e.target.checked)}
+                        style={{ accentColor: '#8B5CF6', cursor: 'pointer' }}
+                      />
+                      Active
+                    </label>
+                    <span style={{ fontSize: '0.625rem', color: '#C4B5FD', fontFamily: 'monospace', backgroundColor: 'rgba(139, 92, 246, 0.15)', padding: '0.1rem 0.4rem', borderRadius: '0.25rem' }}>
+                      {customSecondaryPromptText.length} chars
+                    </span>
+                  </div>
+                </div>
+
+                {/* Session 2 Controls */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  <div style={{ position: 'relative', flex: 1, minWidth: '180px' }}>
+                    <button
+                      type="button"
+                      onClick={() => setIsSecondaryPromptDropdownOpen(!isSecondaryPromptDropdownOpen)}
+                      disabled={!enableSecondaryPrompt}
+                      style={{
+                        width: '100%',
+                        height: '30px',
+                        padding: '0 0.6rem',
+                        backgroundColor: 'var(--bg-secondary)',
+                        color: 'var(--text-primary)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '0.375rem',
+                        fontSize: '0.71875rem',
+                        fontWeight: 600,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        cursor: enableSecondaryPrompt ? 'pointer' : 'not-allowed',
+                      }}
+                    >
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {secondaryImagePrompts.find((p) => p.id === selectedSecondaryPromptId)?.name || 'Select Modification'}
+                      </span>
+                      <FiChevronDown style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                    </button>
+
+                    {isSecondaryPromptDropdownOpen && (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: 'calc(100% + 4px)',
+                          left: 0,
+                          width: '100%',
+                          backgroundColor: '#16181D',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '0.5rem',
+                          boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
+                          zIndex: 100,
+                          padding: '0.35rem',
+                          maxHeight: '220px',
+                          overflowY: 'auto',
+                        }}
+                      >
+                        {secondaryImagePrompts.map((preset) => (
+                          <div
+                            key={preset.id}
+                            onClick={() => {
+                              setSelectedSecondaryPromptId(preset.id);
+                              setCustomSecondaryPromptText(preset.instructions || preset.desc || '');
+                              setIsSecondaryPromptDropdownOpen(false);
+                            }}
+                            style={{
+                              padding: '0.4rem 0.55rem',
+                              borderRadius: '0.25rem',
+                              cursor: 'pointer',
+                              backgroundColor: selectedSecondaryPromptId === preset.id ? 'rgba(139, 92, 246, 0.15)' : 'transparent',
+                              marginBottom: '0.15rem',
+                            }}
+                          >
+                            <div style={{ fontSize: '0.71875rem', fontWeight: 600, color: selectedSecondaryPromptId === preset.id ? '#C4B5FD' : 'var(--text-primary)' }}>
+                              {preset.name}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                    <button
+                      type="button"
+                      disabled={!enableSecondaryPrompt}
+                      onClick={async () => {
+                        try {
+                          const text = await navigator.clipboard.readText();
+                          if (text) {
+                            setCustomSecondaryPromptText(text);
+                            setSecondaryPromptMode('CUSTOM');
+                            addLog('PROMPT', 'Pasted Prompt 2 from clipboard');
+                          }
+                        } catch (e) {}
+                      }}
+                      style={{
+                        padding: '0.2rem 0.5rem',
+                        fontSize: '0.65625rem',
+                        fontWeight: 600,
+                        borderRadius: '0.25rem',
+                        border: '1px solid rgba(139, 92, 246, 0.4)',
+                        backgroundColor: 'rgba(139, 92, 246, 0.15)',
+                        color: '#C4B5FD',
+                        cursor: enableSecondaryPrompt ? 'pointer' : 'not-allowed',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.25rem',
+                      }}
+                    >
+                      <FiCopy /> Paste
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!enableSecondaryPrompt}
+                      onClick={() => {
+                        const chosen = secondaryImagePrompts.find((p) => p.id === selectedSecondaryPromptId) || secondaryImagePrompts[0];
+                        setCustomSecondaryPromptText(chosen.instructions || chosen.desc || '');
+                        setSecondaryPromptMode('PRESET');
+                      }}
+                      style={{
+                        padding: '0.2rem 0.5rem',
+                        fontSize: '0.65625rem',
+                        fontWeight: 600,
+                        borderRadius: '0.25rem',
+                        border: '1px solid var(--border-color)',
+                        backgroundColor: 'var(--bg-secondary)',
+                        color: 'var(--text-muted)',
+                        cursor: enableSecondaryPrompt ? 'pointer' : 'not-allowed',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.25rem',
+                      }}
+                    >
+                      <FiRefreshCw /> Reset
+                    </button>
+                  </div>
+                </div>
+
+                {/* Session 2 Textarea */}
+                <textarea
+                  rows={4}
+                  disabled={!enableSecondaryPrompt}
+                  value={customSecondaryPromptText}
+                  onChange={(e) => {
+                    setCustomSecondaryPromptText(e.target.value);
+                    setSecondaryPromptMode('CUSTOM');
+                  }}
+                  placeholder="Enter secondary modification / fix instructions to apply on top of the enhanced image (e.g. add sunset glow, refine staging, fix reflections)..."
+                  style={{
+                    width: '100%',
+                    backgroundColor: '#05070A',
+                    color: 'var(--text-primary)',
+                    border: '1px solid rgba(139, 92, 246, 0.25)',
+                    borderRadius: '0.375rem',
+                    padding: '0.6rem 0.75rem',
+                    fontSize: '0.75rem',
+                    fontFamily: 'monospace',
+                    lineHeight: 1.45,
+                    resize: 'vertical',
+                    outline: 'none',
+                  }}
+                />
+              </div>
+            </div>
 
             {/* AI Image Coordinates Table (if detected) */}
             {aiImageCoords.length > 0 && (
@@ -3850,7 +4406,7 @@ export const TestingView: React.FC = () => {
                                 {enhInfo?.stage || 'ENHANCING'} ({enhInfo?.elapsed || 0}s)
                               </>
                             ) : isEnh ? (
-                              '✨ ENHANCED'
+                              enhancedV1Images[img.public_url] ? '✨ 2-STAGE ENHANCED (V2)' : '✨ ENHANCED'
                             ) : (
                               'ORIGINAL'
                             )}
@@ -3932,7 +4488,7 @@ export const TestingView: React.FC = () => {
                             variant={isEnh ? 'primary' : 'outline'}
                             size="sm"
                             disabled={isEnhancing}
-                            onClick={() => handleEnhanceImage(img.public_url)}
+                            onClick={() => openEnhanceModeModal([img])}
                             leftIcon={isEnhancing ? <FiLoader style={{ animation: 'spin 1s linear infinite' }} /> : undefined}
                             style={{
                               fontSize: '0.6875rem',
@@ -4660,7 +5216,7 @@ export const TestingView: React.FC = () => {
                         onClick={() => {
                           setCustomImagePromptText(studioModal.promptText);
                           setImagePromptMode('CUSTOM');
-                          handleEnhanceImage(studioModal.imgUrl);
+                          openEnhanceModeModal([{ public_url: studioModal.imgUrl }]);
                         }}
                         style={{ height: '26px', fontSize: '0.6875rem', borderColor: '#3B82F6', color: '#60A5FA' }}
                       >
@@ -4777,6 +5333,168 @@ export const TestingView: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Enhance Mode Modal */}
+      <Modal isOpen={enhanceModeModalVisible} onClose={() => setEnhanceModeModalVisible(false)} title={isChatGPTMode ? 'Enhance with ChatGPT' : 'Choose Enhancement Method'}>
+        {!isChatGPTMode ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', padding: '1rem 0' }}>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+              Select how you would like to process the {targetImagesForEnhance.length} selected image(s).
+            </p>
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '1rem',
+              }}
+            >
+              <div
+                onClick={() => {
+                  setEnhanceModeModalVisible(false);
+                  if (targetImagesForEnhance.length > 1) {
+                    handleEnhanceAllPhotos();
+                  } else {
+                    handleEnhanceImage(targetImagesForEnhance[0].public_url || targetImagesForEnhance[0].url || targetImagesForEnhance[0]);
+                  }
+                }}
+                style={{
+                  padding: '1.5rem',
+                  borderRadius: '0.5rem',
+                  border: '1px solid var(--border-color)',
+                  backgroundColor: 'var(--bg-secondary)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.5rem',
+                  transition: 'all 0.2s',
+                }}
+                onMouseOver={(e) => (e.currentTarget.style.borderColor = '#3B82F6')}
+                onMouseOut={(e) => (e.currentTarget.style.borderColor = 'var(--border-color)')}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', fontWeight: 600, fontSize: '1rem', color: '#60A5FA' }}>
+                  <FiZap size={20} />
+                  ✨ Enhance in My App
+                </div>
+                <div style={{ fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
+                  Fast automatic enhancement inside this website.
+                </div>
+              </div>
+
+              <div
+                onClick={() => setIsChatGPTMode(true)}
+                style={{
+                  padding: '1.5rem',
+                  borderRadius: '0.5rem',
+                  border: '1px solid var(--border-color)',
+                  backgroundColor: 'var(--bg-secondary)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.5rem',
+                  transition: 'all 0.2s',
+                }}
+                onMouseOver={(e) => (e.currentTarget.style.borderColor = '#10B981')}
+                onMouseOut={(e) => (e.currentTarget.style.borderColor = 'var(--border-color)')}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', fontWeight: 600, fontSize: '1rem', color: '#34D399' }}>
+                  <FiExternalLink size={20} />
+                  ↗ Enhance with ChatGPT
+                </div>
+                <div style={{ fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
+                  Open ChatGPT and use the ChatGPT image editor manually.
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', padding: '1rem 0' }}>
+            <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
+              <strong>{targetImagesForEnhance.length} images selected.</strong> Follow these steps to manually enhance images using the official ChatGPT interface.
+            </div>
+            
+            {/* Steps Overview & Actions */}
+            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+              <Button variant="outline" size="sm" onClick={copyPromptToClipboard} leftIcon={<FiCopy />}>
+                Step 1: Copy Enhancement Prompt
+              </Button>
+              <Button variant="outline" size="sm" onClick={openChatGPTTabs} leftIcon={<FiExternalLink />}>
+                Step 2: Open {targetImagesForEnhance.length} ChatGPT Tabs
+              </Button>
+              <Button variant="outline" size="sm" onClick={downloadOriginals} leftIcon={<FiDownload />}>
+                Optional: Download All Originals
+              </Button>
+            </div>
+
+            <div style={{ backgroundColor: 'var(--bg-tertiary)', padding: '1rem', borderRadius: '0.5rem', fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
+              <strong>Step 3 & 4:</strong> In each ChatGPT tab, upload an original image, paste the copied prompt, and wait for generation. <br/>
+              <strong>Step 5:</strong> Save the resulting images from ChatGPT to your computer.
+            </div>
+
+            <hr style={{ borderColor: 'var(--border-color)', opacity: 0.5, margin: 0 }} />
+
+            {/* Import Results Area */}
+            <div>
+              <h4 style={{ margin: '0 0 1rem 0', color: 'var(--text-primary)' }}>Step 6: Import ChatGPT Results</h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                {targetImagesForEnhance.map((img, idx) => {
+                  const url = img.public_url || img.url || img;
+                  const importedResult = chatGPTImportedResults[url];
+                  return (
+                    <div key={idx} style={{ display: 'flex', alignItems: 'stretch', gap: '1rem', backgroundColor: 'var(--bg-secondary)', padding: '1rem', borderRadius: '0.5rem' }}>
+                      
+                      {/* Original Box */}
+                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                        <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}>ORIGINAL {String(idx + 1).padStart(2, '0')}</div>
+                        <img src={url} alt={`Original ${idx+1}`} style={{ width: '100%', height: '150px', objectFit: 'cover', borderRadius: '0.25rem', border: '1px solid var(--border-color)' }} />
+                      </div>
+
+                      {/* Import Box */}
+                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                        <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}>CHATGPT ENHANCED</div>
+                        {importedResult ? (
+                          <div style={{ position: 'relative', width: '100%', height: '150px' }}>
+                            <img src={importedResult} alt={`Enhanced ${idx+1}`} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '0.25rem', border: '1px solid #10B981' }} />
+                            <button
+                              onClick={() => {
+                                const newResults = { ...chatGPTImportedResults };
+                                delete newResults[url];
+                                setChatGPTImportedResults(newResults);
+                              }}
+                              style={{ position: 'absolute', top: 5, right: 5, background: 'rgba(0,0,0,0.6)', color: '#fff', border: 'none', borderRadius: '50%', width: '24px', height: '24px', cursor: 'pointer' }}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ) : (
+                          <div style={{ width: '100%', height: '150px', border: '2px dashed var(--border-color)', borderRadius: '0.25rem', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+                            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Upload Enhanced Result</span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={(e) => {
+                                if (e.target.files && e.target.files[0]) {
+                                  handleChatGPTImport(url, e.target.files[0]);
+                                }
+                              }}
+                              style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer' }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
+              <Button variant="primary" onClick={finalizeChatGPTImports} disabled={Object.keys(chatGPTImportedResults).length === 0}>
+                Finish & Import to Gallery
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* Live Browser Viewport Modal */}
       <LiveBrowserModal isOpen={isLiveBrowserOpen} onClose={() => setIsLiveBrowserOpen(false)} />

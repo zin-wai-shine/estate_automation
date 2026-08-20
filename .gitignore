@@ -26,3 +26,5 @@ backend/data/browser-profiles/
 backend/data/screenshots/
 backend/storage/uploads/
 storage/uploads/
+
+backend/api

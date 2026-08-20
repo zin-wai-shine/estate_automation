@@ -3,15 +3,15 @@
     {
       "enabled": true,
       "id": "input-trigger",
-      "x": -96,
-      "y": 183
+      "x": 40,
+      "y": 190
     },
     {
       "enabled": true,
       "id": "ai-chatgpt",
       "model": "gpt-4o",
-      "x": 352,
-      "y": -6
+      "x": 350,
+      "y": 60
     },
     {
       "enabled": true,
@@ -24,26 +24,26 @@
       "enabled": true,
       "id": "content-path",
       "model": "gemini-1.5-pro",
-      "x": 756,
-      "y": 380
+      "x": 680,
+      "y": 300
     },
     {
       "enabled": true,
       "id": "image-path",
       "model": "gpt-4o",
-      "x": 752,
-      "y": -43
+      "x": 680,
+      "y": 60
     },
     {
       "enabled": true,
       "id": "output-publish",
-      "x": 1137,
-      "y": 188
+      "x": 1010,
+      "y": 190
     }
   ],
   "panOffset": {
-    "x": 144,
-    "y": 88
+    "x": 111,
+    "y": 78
   },
   "zoom": 0.7
 }

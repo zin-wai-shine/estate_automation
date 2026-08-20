@@ -603,3 +603,38 @@ Is Image Grid visible in screenshot?
 1. **Stop at Image Grid**: The moment the image grid appears, text capture and scrolling immediately stop.
 2. **Zero Extra Scrolling for Clicking**: Coordinates are calculated directly on the capture where the image grid was found.
 3. **OpenClaw Clicks Center**: Mouse moves to `(x + width/2, y + height/2)` on that capture and clicks once to launch the Photo Viewer.
+
+---
+
+# 15. Two-Prompt Image Enhancement & Retouching Pipeline
+
+For photo processing, the system supports a chained **Two-Stage Prompt Session** workflow:
+
+```text
+📸 Original Downloaded Property Photo
+               │
+               ▼
+┌────────────────────────────────────────────────────────┐
+│ 🔷 PROMPT SESSION 1: Primary Base Enhancement          │
+│ • Sharpness, clarity, dynamic range upscale            │
+│ • HDR tone mapping & window sky dehazing               │
+│ • Authentic color accuracy & room geometry restoration │
+└────────────────────────────────────────────────────────┘
+               │
+               ▼ [Produces Enhanced V1 Asset]
+┌────────────────────────────────────────────────────────┐
+│ 🟣 PROMPT SESSION 2: Post-Enhancement Modification     │
+│ • Runs directly on top of Enhanced V1                  │
+│ • Adds user-defined tweaks, fixes, or styling elements │
+│ • Presets: Twilight / sunset window glow, staging      │
+│   texture polish, blue sky replacement, or custom fix  │
+└────────────────────────────────────────────────────────┘
+               │
+               ▼
+✨ Final Master Enhanced Asset (V2)
+```
+
+### Key Workflow Features:
+1. **Chained Execution**: Prompt 1 runs on the original image $\rightarrow$ outputs `Enhanced V1` $\rightarrow$ Prompt 2 takes `Enhanced V1` as input and applies secondary modifications $\rightarrow$ outputs `Final Enhanced V2`.
+2. **Dedicated UI Sessions**: Two independent, editable monospace prompt sessions with preset selectors, character counters, clipboard paste, and on/off toggles.
+3. **Batch & Single Photo Support**: Both single photo enhancement in the Studio Lightbox and batch *"Enhance All"* execute this 2-stage pipeline sequentially across all property photos.

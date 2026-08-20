@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { Button } from '../ui/Button';
 import { 
@@ -18,16 +19,14 @@ import {
 
 interface AppLayoutProps {
   children: React.ReactNode;
-  activeTab?: string;
-  onTabChange?: (tab: string) => void;
 }
 
-export const AppLayout: React.FC<AppLayoutProps> = ({
-  children,
-  activeTab = 'dashboard',
-  onTabChange = () => {},
-}) => {
+export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
   const { user } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const activeTab = location.pathname.split('/')[1] || 'add-url';
 
   // Mobile drawer state & screen size detection
   const [isMobileOpen, setIsMobileOpen] = useState(false);
@@ -61,7 +60,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   const currentNav = navItems.find((item) => item.id === activeTab) || navItems[0];
 
   const handleNavClick = (id: string) => {
-    onTabChange(id);
+    navigate(`/${id}`);
     setIsMobileOpen(false);
   };
 
@@ -141,7 +140,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
               variant={activeTab === 'settings' ? 'primary' : 'outline'}
               size="sm"
               leftIcon={<FiSettings />}
-              onClick={() => onTabChange('settings')}
+              onClick={() => handleNavClick('settings')}
               style={{ padding: '0.375rem 0.5rem', height: '32px', fontSize: '0.75rem', flexShrink: 0 }}
             >
               Settings
@@ -216,7 +215,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                   variant={activeTab === 'settings' ? 'secondary' : 'outline'}
                   size="sm"
                   leftIcon={<FiSettings />}
-                  onClick={() => onTabChange('settings')}
+                  onClick={() => handleNavClick('settings')}
                 >
                   Settings
                 </Button>
@@ -316,10 +315,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         {/* Sidebar Footer - Settings Trigger */}
         <div style={{ padding: '0.75rem 0.625rem', borderTop: '1px solid var(--border-color)' }}>
           <button
-            onClick={() => {
-              setIsMobileOpen(false);
-              onTabChange('settings');
-            }}
+            onClick={() => handleNavClick('settings')}
             style={{
               width: '100%',
               display: 'flex',

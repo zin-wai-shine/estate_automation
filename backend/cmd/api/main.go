@@ -106,6 +106,7 @@ func main() {
 	fbTest.Post("/analyze-image", handlers.AnalyzeSingleImage)
 	fbTest.Post("/enhance-image", handlers.EnhanceVisionImage)
 	fbTest.Post("/detect-image-coordinates", handlers.DetectImageCoordinates)
+	fbTest.Post("/verify-target", handlers.VerifyTargetPlacement)
 	fbTest.Post("/transform-content", handlers.TransformContent)
 	fbTest.Get("/:testRunId", handlers.GetVisionTestRun)
 	fbTest.Get("/:testRunId/logs", handlers.GetVisionTestLogs)
