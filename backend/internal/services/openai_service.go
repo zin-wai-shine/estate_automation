@@ -647,7 +647,7 @@ func (s *OpenAIService) AnalyzePropertyImage(ctx context.Context, imageBase64 st
 		},
 		"response_format": map[string]string{"type": "json_object"},
 		"temperature":     0.2,
-		"max_tokens":      300,
+		"max_tokens":      200,
 	}
 
 	jsonBytes, _ := json.Marshal(reqBody)
@@ -1111,7 +1111,7 @@ If no property photo is visible on screen (e.g. only text visible or need to scr
 						"type": "image_url",
 						"image_url": map[string]interface{}{
 							"url":    cleanDataURL,
-							"detail": "high",
+							"detail": "low",
 						},
 					},
 				},
@@ -1119,7 +1119,7 @@ If no property photo is visible on screen (e.g. only text visible or need to scr
 		},
 		"response_format": map[string]string{"type": "json_object"},
 		"temperature":     0.0,
-		"max_tokens":      1500,
+		"max_tokens":      500,
 	}
 
 	jsonBytes, err := json.Marshal(reqBody)
@@ -1298,7 +1298,7 @@ Return JSON only:
 						"type": "image_url",
 						"image_url": map[string]interface{}{
 							"url":    cleanDataURL,
-							"detail": "high",
+							"detail": "low",
 						},
 					},
 				},
@@ -1306,7 +1306,7 @@ Return JSON only:
 		},
 		"response_format": map[string]string{"type": "json_object"},
 		"temperature":     0.0,
-		"max_tokens":      800,
+		"max_tokens":      300,
 	}
 
 	jsonBytes, err := json.Marshal(reqBody)
@@ -1623,108 +1623,33 @@ func (s *OpenAIService) EnhancePropertyImageWithAI(ctx context.Context, imageURL
 		editingPrompt = "Professionally retouch and restore this property photograph: enhance sharpness, clarity, dynamic range, and true-to-life color accuracy while preserving 100% of the authentic scene, furniture placement, and architectural layout."
 	}
 
-	fullPromptText := `SYSTEM CONFIGURATION — AI ARCHITECTURAL IMAGE ENHANCEMENT ENGINE
+	fullPromptText := `IMAGE EDIT MODE — Professional architectural photo enhancement.
 
-CORE TASK:
-Edit the provided original photograph.
-Treat the uploaded image as the single authoritative source.
-This is an IMAGE EDITING and PHOTO RESTORATION task, NOT image generation from scratch.
-The goal is to transform the original photograph into a premium professional architectural photograph while preserving the exact original scene identity.
+RULES:
+1. This is PHOTO EDITING, not generation. The uploaded image is the sole reference.
+2. Preserve EXACTLY: room identity, architecture, furniture, objects, materials, textures, colors, camera viewpoint, composition, dimensions, and aspect ratio.
+3. Do NOT crop, resize, redesign, add/remove/move objects, change materials, or alter the room layout.
 
-IMAGE EDITING REQUIREMENTS:
-The image_generation tool must operate in:
-Mode: edit
+ENHANCE:
+- Resolution, sharpness, clarity, fine details, texture visibility, dynamic range, exposure balance, natural contrast.
+- Correct: blur, noise, compression artifacts, lens distortion, slight perspective tilt.
+- Subtly straighten vertical/horizontal lines without warping furniture or altering proportions.
 
-The original image must remain the reference source.
-The output image MUST maintain the exact original width, height, and aspect ratio. Do NOT crop the image under any circumstances.
-Preserve exactly:
-- room identity
-- architectural structure
-- walls
-- ceilings
-- floors
-- windows
-- doors
-- furniture
-- decoration
-- objects
-- materials
-- textures
-- colors
-- lighting atmosphere
-- camera viewpoint
-- composition
-- crop identity
-- room proportions
+COLOR & LIGHTING:
+- Maintain original color palette, white balance, lighting direction, shadows, and atmosphere.
+- Do NOT apply cinematic grading, HDR effects, fake sunlight, or artificial brightening.
 
-DO NOT:
-- crop the image
-- change original width and height
-- alter aspect ratio
-- redesign the interior
-- create a new room
-- generate alternative furniture
-- add objects
-- remove objects
-- move objects
-- replace materials
-- change decoration
-- alter architecture
-- change room proportions
-- change camera direction
-- change composition
+MATERIALS:
+- Naturally enhance wood grain, fabric, stone, tile, glass, metal textures.
+- Never create fake textures, plastic surfaces, or CGI appearance.
 
-ENHANCEMENT PROCESS:
-Perform professional real-estate photography restoration:
-Improve:
-- resolution, sharpness, clarity, fine details, texture visibility, architectural edge definition, realistic depth, image cleanliness, dynamic range, exposure balance, natural contrast, material realism
-
-Correct:
-- slight blur, digital noise, compression artifacts, lens distortion, chromatic aberration, perspective imbalance, vertical line distortion, camera tilt, uneven framing
-
-PERSPECTIVE CORRECTION:
-Analyze the original camera geometry.
-Apply only subtle professional corrections:
-- straighten vertical lines, level horizontal lines, correct slight left/right tilt, balance lower base area, improve architectural alignment, create a clean real-estate photography perspective
-Do not:
-- change viewing direction, create artificial symmetry, stretch the room, warp furniture, alter proportions
-
-COLOR AND LIGHTING PRESERVATION:
-Maintain the original:
-- color palette, white balance, color temperature, lighting direction, brightness relationships, shadow placement, highlight placement, natural atmosphere
-Only apply subtle professional corrections.
-Do NOT:
-- apply cinematic grading, apply warm filters, apply cool filters, create HDR effects, add fake sunlight, create new light sources, change lighting mood, artificially brighten the room
-
-MATERIAL ENHANCEMENT:
-Naturally improve:
-- wood grain, fabric texture, upholstery, stone, marble, tiles, glass, metal, curtains, flooring, wall texture, decorative details
-Maintain original:
-- color, reflectivity, roughness, texture scale, physical appearance
-Never create:
-- fake textures, plastic surfaces, CGI rendering, artificial reflections
-
-HUMAN PRESENCE REMOVAL:
-If visible, remove:
-- people, photographer, camera reflection, tripod, human shadow, body parts
-Reconstruct removed areas naturally while preserving:
-- lighting, materials, reflections, shadows, surrounding objects
+HUMAN REMOVAL:
+- If people, photographer reflections, or tripods are visible, remove them and reconstruct the area naturally.
 
 QUALITY TARGET:
-The final output must look like:
-A professional architectural photographer captured the same room with a high-end DSLR camera and professionally retouched the photograph.
-The result must be:
-- ultra-high resolution, realistic, premium luxury real-estate quality, natural, clean, professionally balanced, architecturally accurate
+- Output must look like a professional DSLR architectural photograph, professionally retouched: ultra-high resolution, realistic, premium real-estate quality.
 
-STRICT NEGATIVE RULES:
-Never produce:
-- a redesigned interior, a different room, AI-generated furniture, changed layouts, changed colors, changed materials, artificial lighting, fake luxury style, fantasy effects, CGI appearance, over-sharpening, excessive HDR, plastic textures, unrealistic reflections, cropped images, altered dimensions
-
-FINAL DECISION RULE:
-Accuracy is more important than creativity.
-When uncertain: Preserve the original photograph.
-The output must be: "the same original photograph, professionally restored and enhanced."
-NOT: "a newly generated interpretation of the room."
+FINAL RULE: Accuracy over creativity. When uncertain, preserve the original. Output "the same photo, professionally enhanced" — NOT a new interpretation.
 
 User Instructions:
 ` + editingPrompt

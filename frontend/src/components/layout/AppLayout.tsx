@@ -59,7 +59,12 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
 
   const currentNav = navItems.find((item) => item.id === activeTab) || navItems[0];
 
-  const handleNavClick = (id: string) => {
+  const handleNavClick = (e: React.MouseEvent<HTMLAnchorElement | HTMLButtonElement>, id: string) => {
+    if (e.metaKey || e.ctrlKey || e.button === 1) {
+      // Command/Ctrl/Middle-click: Allow native browser behavior to open link in NEW TAB!
+      return;
+    }
+    e.preventDefault();
     navigate(`/${id}`);
     setIsMobileOpen(false);
   };
@@ -136,15 +141,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
               </div>
             </div>
 
-            <Button
-              variant={activeTab === 'settings' ? 'primary' : 'outline'}
-              size="sm"
-              leftIcon={<FiSettings />}
-              onClick={() => handleNavClick('settings')}
-              style={{ padding: '0.375rem 0.5rem', height: '32px', fontSize: '0.75rem', flexShrink: 0 }}
-            >
-              Settings
-            </Button>
+            <div id="header-action-portal" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }} />
           </div>
         ) : (
           /* Desktop Top Bar */
@@ -190,7 +187,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
               </div>
             </div>
 
-            {/* Top-Right Header Content: Active Page Title & Settings */}
+            {/* Top-Right Header Content: Active Page Title & Action Portal */}
             <div
               style={{
                 flex: 1,
@@ -199,27 +196,23 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 padding: '0 1.25rem',
+                gap: '1rem',
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <span style={{ fontSize: '1rem', color: 'var(--accent-primary)', display: 'inline-flex' }}>
-                  {currentNav.icon}
-                </span>
-                <h2 style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
-                  {currentNav.label}
-                </h2>
+              <div id="header-title-portal" style={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
+                {activeTab !== 'testing' && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{ fontSize: '1rem', color: 'var(--accent-primary)', display: 'inline-flex' }}>
+                      {currentNav.icon}
+                    </span>
+                    <h2 style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
+                      {currentNav.label}
+                    </h2>
+                  </div>
+                )}
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
-                <Button
-                  variant={activeTab === 'settings' ? 'secondary' : 'outline'}
-                  size="sm"
-                  leftIcon={<FiSettings />}
-                  onClick={() => handleNavClick('settings')}
-                >
-                  Settings
-                </Button>
-              </div>
+              <div id="header-action-portal" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }} />
             </div>
           </>
         )}
@@ -270,9 +263,10 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
             {navItems.map((item) => {
               const isActive = activeTab === item.id;
               return (
-                <button
+                <a
                   key={item.id}
-                  onClick={() => handleNavClick(item.id)}
+                  href={`/${item.id}`}
+                  onClick={(e) => handleNavClick(e, item.id)}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -287,6 +281,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                     border: 'none',
                     cursor: 'pointer',
                     transition: 'all 0.15s ease',
+                    textDecoration: 'none',
+                    boxSizing: 'border-box',
                   }}
                   onMouseEnter={(e) => {
                     if (!isActive) {
@@ -306,7 +302,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                     <span>{item.label}</span>
                   </div>
                   {isActive && <FiChevronRight style={{ fontSize: '0.875rem' }} />}
-                </button>
+                </a>
               );
             })}
           </nav>
@@ -314,8 +310,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
 
         {/* Sidebar Footer - Settings Trigger */}
         <div style={{ padding: '0.75rem 0.625rem', borderTop: '1px solid var(--border-color)' }}>
-          <button
-            onClick={() => handleNavClick('settings')}
+          <a
+            href="/settings"
+            onClick={(e) => handleNavClick(e, 'settings')}
             style={{
               width: '100%',
               display: 'flex',
@@ -328,6 +325,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
               color: activeTab === 'settings' ? '#FFFFFF' : 'var(--text-primary)',
               cursor: 'pointer',
               transition: 'all 0.12s ease',
+              textDecoration: 'none',
+              boxSizing: 'border-box',
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -355,7 +354,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
               </div>
             </div>
             <FiSettings style={{ color: activeTab === 'settings' ? '#FFFFFF' : 'var(--text-muted)', fontSize: '0.875rem' }} />
-          </button>
+          </a>
         </div>
       </aside>
 

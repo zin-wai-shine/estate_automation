@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { LiveBrowserModal } from './LiveBrowserModal';
@@ -15,17 +17,13 @@ import {
   FiChevronUp,
   FiEye,
   FiCamera,
-  FiLayers,
   FiZap,
   FiCpu,
   FiNavigation,
-  FiCheckCircle,
   FiCheck,
   FiCrosshair,
   FiTrash2,
-  FiRotateCcw,
   FiCopy,
-  FiEdit2,
   FiDownload,
   FiMaximize2,
   FiChevronLeft,
@@ -33,6 +31,8 @@ import {
   FiX,
   FiRefreshCw,
   FiExternalLink,
+  FiActivity,
+  FiCheckCircle,
 } from 'react-icons/fi';
 
 interface RegionBoundingBox {
@@ -191,7 +191,9 @@ interface FirstPhotoTargetInfo {
 }
 
 export const TestingView: React.FC = () => {
-  const [urlInput, setUrlInput] = useState<string>('');
+  const [urlInput, setUrlInput] = useState<string>(() => {
+    try { return localStorage.getItem('estate_testing_url_input') || ''; } catch { return ''; }
+  });
   const [selectedZoom, setSelectedZoom] = useState<string>('100');
   const [isTesting, setIsTesting] = useState<boolean>(false);
   const [currentStage, setCurrentStage] = useState<string>('IDLE');
@@ -199,17 +201,39 @@ export const TestingView: React.FC = () => {
   const [openAIStatus] = useState<string>('CONNECTED (gpt-4o)');
   const [timelineStep, setTimelineStep] = useState<number>(0);
   const [screenshotsUsed, setScreenshotsUsed] = useState<number>(1);
-  const [activeTestRun, setActiveTestRun] = useState<TestRunRecord | null>(null);
-  const [capturedScreenshot, setCapturedScreenshot] = useState<string | null>(null);
-  const [aiAnalysis, setAiAnalysis] = useState<VisionAnalysisResult | null>(null);
+  const [activeTestRun, setActiveTestRun] = useState<TestRunRecord | null>(() => {
+    try {
+      const saved = localStorage.getItem('estate_active_test_run');
+      return saved ? JSON.parse(saved) : null;
+    } catch { return null; }
+  });
+  const [capturedScreenshot, setCapturedScreenshot] = useState<string | null>(() => {
+    try { return localStorage.getItem('estate_testing_captured_screenshot') || null; } catch { return null; }
+  });
+  const [aiAnalysis, setAiAnalysis] = useState<VisionAnalysisResult | null>(() => {
+    try {
+      const saved = localStorage.getItem('estate_testing_ai_analysis');
+      return saved ? JSON.parse(saved) : null;
+    } catch { return null; }
+  });
   const [navResult, setNavResult] = useState<NavigationResult | null>(null);
   const [isLiveBrowserOpen, setIsLiveBrowserOpen] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [showDebugPanel, setShowDebugPanel] = useState<boolean>(true);
-  const [testLogs, setTestLogs] = useState<Array<{ timestamp: string; step: string; message: string }>>([]);
+  const [testLogs, setTestLogs] = useState<Array<{ timestamp: string; step: string; message: string }>>(() => {
+    try {
+      const saved = localStorage.getItem('estate_testing_logs');
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
   const [allCapturedScreenshots, setAllCapturedScreenshots] = useState<string[]>([]);
   const [allCroppedImages, setAllCroppedImages] = useState<string[]>([]);
-  const [enhancedImages, setEnhancedImages] = useState<Record<string, string>>({});
+  const [enhancedImages, setEnhancedImages] = useState<Record<string, string>>(() => {
+    try {
+      const saved = localStorage.getItem('estate_testing_enhanced_images');
+      return saved ? JSON.parse(saved) : {};
+    } catch { return {}; }
+  });
   const [enhancedV1Images, setEnhancedV1Images] = useState<Record<string, string>>({});
   const [aiImageCoords, setAiImageCoords] = useState<PropertyImageCoord[]>([]);
   const [isZoomDropdownOpen, setIsZoomDropdownOpen] = useState<boolean>(false);
@@ -220,11 +244,87 @@ export const TestingView: React.FC = () => {
   const [photoTargetMode, setPhotoTargetMode] = useState<'auto' | 'manual'>('auto');
   const [appleNoti, setAppleNoti] = useState<{ id: string; title: string; subtitle: string } | null>(null);
 
+  // Photo Gallery Actions Dropdown State
+  const [isDownloadDropdownOpen, setIsDownloadDropdownOpen] = useState<boolean>(false);
+  const abortBatchEnhancementRef = React.useRef<boolean>(false);
+
+  // Redesign UI State: Preview Modal & Toggles
+  const [previewModal, setPreviewModal] = useState<{ isOpen: boolean; title: string; imageSrc?: string; type?: string; photoIndex?: number; analysis?: any; shot?: string; cropped?: string; firstPhotoTarget?: any; transformedContent?: string } | null>(null);
+  const [showOriginalInPreview, setShowOriginalInPreview] = useState<boolean>(false);
+  const [showAdvancedActions, setShowAdvancedActions] = useState<boolean>(false);
+
+  // Top Nav Bar Header Portal Slots
+  const [headerTitleEl, setHeaderTitleEl] = useState<HTMLElement | null>(null);
+  const [headerActionEl, setHeaderActionEl] = useState<HTMLElement | null>(null);
+
+  useEffect(() => {
+    setHeaderTitleEl(document.getElementById('header-title-portal'));
+    setHeaderActionEl(document.getElementById('header-action-portal'));
+  }, []);
+
+  // Interactive Workflow Modal Canvas Zoom & Pan State
+  const [workflowModalZoom, setWorkflowModalZoom] = useState<number>(1.0);
+  const [workflowModalPan, setWorkflowModalPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [isWorkflowModalPanning, setIsWorkflowModalPanning] = useState<boolean>(false);
+  const [workflowModalPanStart, setWorkflowModalPanStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  const handleWorkflowCanvasMouseDown = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).tagName === 'BUTTON' || (e.target as HTMLElement).closest('button')) return;
+    setIsWorkflowModalPanning(true);
+    setWorkflowModalPanStart({ x: e.clientX - workflowModalPan.x, y: e.clientY - workflowModalPan.y });
+  };
+
+  const handleWorkflowCanvasMouseMove = (e: React.MouseEvent) => {
+    if (!isWorkflowModalPanning) return;
+    setWorkflowModalPan({
+      x: e.clientX - workflowModalPanStart.x,
+      y: e.clientY - workflowModalPanStart.y,
+    });
+  };
+
+  const handleWorkflowCanvasMouseUp = () => {
+    setIsWorkflowModalPanning(false);
+  };
+
+  const handleWorkflowCanvasWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    const zoomFactor = e.deltaY < 0 ? 1.08 : 0.92;
+    setWorkflowModalZoom((prev) => Math.max(0.5, Math.min(2.0, prev * zoomFactor)));
+  };
+
+  const resetWorkflowCanvas = () => {
+    setWorkflowModalZoom(1.0);
+    setWorkflowModalPan({ x: 0, y: 0 });
+  };
   // ChatGPT Enhancement Mode State
   const [enhanceModeModalVisible, setEnhanceModeModalVisible] = useState<boolean>(false);
   const [targetImagesForEnhance, setTargetImagesForEnhance] = useState<any[]>([]);
   const [isChatGPTMode, setIsChatGPTMode] = useState<boolean>(false);
   const [chatGPTImportedResults, setChatGPTImportedResults] = useState<Record<string, string>>({});
+
+  // Prevent background page scrolling when any modal is open
+  useEffect(() => {
+    const isAnyModalOpen = Boolean((previewModal && previewModal.isOpen) || isLiveBrowserOpen || enhanceModeModalVisible);
+    if (isAnyModalOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [previewModal, isLiveBrowserOpen, enhanceModeModalVisible]);
+
+  // Handle Escape key to close previewModal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && previewModal && previewModal.isOpen) {
+        setPreviewModal(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [previewModal]);
 
   const showAppleNotification = (title: string, subtitle: string) => {
     setAppleNoti({ id: String(Date.now()), title, subtitle });
@@ -404,22 +504,21 @@ export const TestingView: React.FC = () => {
               instructions: item.templateText || item.instructions || '',
             }));
 
-          // 2. Image Enhancement Templates (Directly from Prompt Templates)
+          // 2. Image Enhancement Templates (Only from Prompt Templates with IMAGE_ENHANCE category)
           const customImageTemplates = parsed
             .filter((item: any) => item.category === 'IMAGE_ENHANCE')
             .map((item: any) => ({
               id: String(item.id),
-              name: `✨ ${item.name}`,
+              // Strip leading emoji characters from name
+              name: item.name.replace(/^[\p{Emoji}\s]+/u, '').trim(),
               desc: item.templateText ? (item.templateText.length > 60 ? item.templateText.slice(0, 60) + '...' : item.templateText) : 'Custom AI Image Enhancement Template',
               instructions: item.templateText || '',
             }));
 
-          const mergedImagePrompts = [
-            ...customImageTemplates,
-            ...defaultImagePresets.filter(
-              (def) => !customImageTemplates.some((c) => c.name.toLowerCase().includes(def.name.toLowerCase()))
-            ),
-          ];
+          // Deduplicate templates by ID (keep the most recently added/updated one if duplicates exist)
+          const mergedImagePrompts = customImageTemplates.filter((item, index, self) =>
+            index === self.findIndex((t) => t.id === item.id)
+          );
 
           return {
             contentTemplates: contentList.length > 0 ? contentList : defaultTemplates,
@@ -428,9 +527,10 @@ export const TestingView: React.FC = () => {
         }
       }
     } catch (e) {}
+    // No fallback presets — only show templates from the Prompt Templates database
     return {
       contentTemplates: defaultTemplates,
-      imagePrompts: defaultImagePresets,
+      imagePrompts: [],
     };
   };
 
@@ -473,7 +573,12 @@ export const TestingView: React.FC = () => {
   ];
 
   const [secondaryImagePrompts] = useState<{ id: string; name: string; desc: string; instructions: string }[]>(defaultSecondaryImagePresets);
-  const [enableSecondaryPrompt, setEnableSecondaryPrompt] = useState<boolean>(true);
+  const [enableSecondaryPrompt, setEnableSecondaryPrompt] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('estate_enable_secondary_prompt');
+      return saved === null ? true : saved === 'true';
+    } catch { return true; }
+  });
   const [selectedSecondaryPromptId, setSelectedSecondaryPromptId] = useState<string>('twilight_sunset_glow');
   const [secondaryPromptMode, setSecondaryPromptMode] = useState<'PRESET' | 'CUSTOM'>('PRESET');
   const [customSecondaryPromptText, setCustomSecondaryPromptText] = useState<string>(defaultSecondaryImagePresets[0].instructions);
@@ -487,23 +592,32 @@ export const TestingView: React.FC = () => {
   const [customImagePromptText, setCustomImagePromptText] = useState<string>(
     () => loadAllPromptTemplates().imagePrompts[0]?.instructions || ''
   );
+  const [isModalImagePromptDropdownOpen, setIsModalImagePromptDropdownOpen] = useState<boolean>(false);
 
   // Helper to get active primary prompt (Preset vs Custom)
   const getActiveImagePrompt = () => {
     if (imagePromptMode === 'CUSTOM' && customImagePromptText.trim()) {
       return {
         id: 'custom_manual',
-        name: '✏️ Custom Prompt 1 (Base)',
+        name: 'Custom Base Prompt',
         instructions: customImagePromptText.trim(),
         desc: customImagePromptText.length > 60 ? customImagePromptText.slice(0, 60) + '...' : customImagePromptText,
       };
     }
     const chosen = imageEnhancePrompts.find((p) => p.id === selectedImagePromptId) || imageEnhancePrompts[0];
+    if (chosen) {
+      return {
+        id: chosen.id,
+        name: (chosen.name || 'Primary Enhancement').replace(/^[\p{Emoji}\s]+/u, '').trim(),
+        instructions: chosen.instructions || (chosen as any).templateText || chosen.desc || '',
+        desc: chosen.desc || 'Primary base enhancement',
+      };
+    }
     return {
-      id: chosen.id,
-      name: chosen.name,
-      instructions: chosen.instructions || (chosen as any).templateText || chosen.desc || '',
-      desc: chosen.desc,
+      id: 'default_primary',
+      name: 'Primary Base Enhancement',
+      instructions: customImagePromptText.trim() || 'Enhance photo into ultra-high-resolution architectural image.',
+      desc: 'Primary base enhancement',
     };
   };
 
@@ -512,17 +626,25 @@ export const TestingView: React.FC = () => {
     if (secondaryPromptMode === 'CUSTOM' && customSecondaryPromptText.trim()) {
       return {
         id: 'custom_secondary',
-        name: '🛠️ Custom Prompt 2 (Modify/Fix)',
+        name: 'Secondary Modifications & Lighting',
         instructions: customSecondaryPromptText.trim(),
         desc: customSecondaryPromptText.length > 60 ? customSecondaryPromptText.slice(0, 60) + '...' : customSecondaryPromptText,
       };
     }
     const chosen = secondaryImagePrompts.find((p) => p.id === selectedSecondaryPromptId) || secondaryImagePrompts[0];
+    if (chosen) {
+      return {
+        id: chosen.id,
+        name: (chosen.name || 'Secondary Modifications & Lighting').replace(/^[\p{Emoji}\s]+/u, '').trim(),
+        instructions: chosen.instructions || chosen.desc || '',
+        desc: chosen.desc || 'Secondary lighting & atmosphere',
+      };
+    }
     return {
-      id: chosen.id,
-      name: chosen.name,
-      instructions: chosen.instructions || chosen.desc || '',
-      desc: chosen.desc,
+      id: 'default_secondary',
+      name: 'Secondary Modifications & Lighting',
+      instructions: customSecondaryPromptText.trim() || 'Apply secondary luxury atmosphere modification.',
+      desc: 'Secondary lighting & atmosphere',
     };
   };
   // --- ChatGPT Enhancement Mode Helpers ---
@@ -608,8 +730,41 @@ export const TestingView: React.FC = () => {
     };
   }, []);
 
-  const [transformedContent, setTransformedContent] = useState<string>('');
-  const [generatedRefCode, setGeneratedRefCode] = useState<string>('');
+  const [transformedContent, setTransformedContent] = useState<string>(() => {
+    try { return localStorage.getItem('estate_testing_transformed_content') || ''; } catch { return ''; }
+  });
+  const [generatedRefCode, setGeneratedRefCode] = useState<string>(() => {
+    try { return localStorage.getItem('estate_testing_ref_code') || ''; } catch { return ''; }
+  });
+
+  // Auto-persist active test data to Local Storage
+  useEffect(() => {
+    try {
+      if (urlInput) localStorage.setItem('estate_testing_url_input', urlInput);
+      else localStorage.removeItem('estate_testing_url_input');
+
+      if (activeTestRun) localStorage.setItem('estate_active_test_run', JSON.stringify(activeTestRun));
+      else localStorage.removeItem('estate_active_test_run');
+
+      if (capturedScreenshot) localStorage.setItem('estate_testing_captured_screenshot', capturedScreenshot);
+      else localStorage.removeItem('estate_testing_captured_screenshot');
+
+      if (aiAnalysis) localStorage.setItem('estate_testing_ai_analysis', JSON.stringify(aiAnalysis));
+      else localStorage.removeItem('estate_testing_ai_analysis');
+
+      if (testLogs.length) localStorage.setItem('estate_testing_logs', JSON.stringify(testLogs.slice(-100)));
+      else localStorage.removeItem('estate_testing_logs');
+
+      if (Object.keys(enhancedImages).length) localStorage.setItem('estate_testing_enhanced_images', JSON.stringify(enhancedImages));
+      else localStorage.removeItem('estate_testing_enhanced_images');
+
+      if (transformedContent) localStorage.setItem('estate_testing_transformed_content', transformedContent);
+      else localStorage.removeItem('estate_testing_transformed_content');
+
+      if (generatedRefCode) localStorage.setItem('estate_testing_ref_code', generatedRefCode);
+      else localStorage.removeItem('estate_testing_ref_code');
+    } catch (e) {}
+  }, [urlInput, activeTestRun, capturedScreenshot, aiAnalysis, testLogs, enhancedImages, transformedContent, generatedRefCode]);
   const [isTransforming, setIsTransforming] = useState<boolean>(false);
   const [isPromptDropdownOpen, setIsPromptDropdownOpen] = useState<boolean>(false);
   const [isCopiedRaw, setIsCopiedRaw] = useState<boolean>(false);
@@ -659,6 +814,7 @@ export const TestingView: React.FC = () => {
 
   const [isImagePromptDropdownOpen, setIsImagePromptDropdownOpen] = useState<boolean>(false);
   const [isBatchEnhancing, setIsBatchEnhancing] = useState<boolean>(false);
+  const [currentBatchUrl, setCurrentBatchUrl] = useState<string | null>(null);
   const [batchEnhanceProgress, setBatchEnhanceProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 });
   const [galleryFilter, setGalleryFilter] = useState<'ALL' | 'ENHANCED' | 'ORIGINAL'>('ALL');
 
@@ -1103,8 +1259,17 @@ export const TestingView: React.FC = () => {
     addLog('ENHANCE_BATCH', `✨ Starting Batch AI Enhancement for ${images.length} photos (${enableSecondaryPrompt ? '2-Stage: Prompt 1 ➔ Prompt 2' : '1-Stage: Prompt 1'})...`);
 
     for (let i = 0; i < images.length; i++) {
+      if (abortBatchEnhancementRef.current) {
+        addLog('ENHANCE_BATCH', '🛑 Batch enhancement stopped by user.');
+        abortBatchEnhancementRef.current = false;
+        break;
+      }
+
       setBatchEnhanceProgress({ current: i + 1, total: images.length });
       const img = images[i];
+      setCurrentBatchUrl(img.public_url);
+      setEnhancingUrls((prev) => ({ ...prev, [img.public_url]: { stage: 'Step 1: Base Retouch...', elapsed: 0 } }));
+
       try {
         // Stage 1
         const resp1 = await fetch('http://localhost:8085/api/facebook/test/enhance-image', {
@@ -1126,6 +1291,7 @@ export const TestingView: React.FC = () => {
 
           // Stage 2
           if (enableSecondaryPrompt && p2Instructions.trim()) {
+            setEnhancingUrls((prev) => ({ ...prev, [img.public_url]: { stage: 'Step 2: Modifying...', elapsed: 0 } }));
             const resp2 = await fetch('http://localhost:8085/api/facebook/test/enhance-image', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -1145,10 +1311,18 @@ export const TestingView: React.FC = () => {
         }
 
         setEnhancedImages((prev) => ({ ...prev, [img.public_url]: finalUrl }));
-      } catch (e) {}
+      } catch (e) {
+      } finally {
+        setEnhancingUrls((prev) => {
+          const next = { ...prev };
+          delete next[img.public_url];
+          return next;
+        });
+      }
       await new Promise((r) => setTimeout(r, 150));
     }
 
+    setCurrentBatchUrl(null);
     setIsBatchEnhancing(false);
     addLog('ENHANCE_BATCH', `🎉 Finished Batch AI Enhancement for all ${images.length} property photos!`);
   };
@@ -1165,21 +1339,41 @@ export const TestingView: React.FC = () => {
     addLog('DOWNLOAD', `📥 Downloading photo: ${filename}`);
   };
 
-  // Download All Photos
-  const handleDownloadAllPhotos = async () => {
+  // Download Original Photos Only
+  const handleDownloadOriginalPhotos = async () => {
     const images = activeTestRun?.images || [];
     if (images.length === 0) {
       addLog('DOWNLOAD_WARN', 'No images available to download.');
       return;
     }
     const prefix = generatedRefCode || 'PROPERTY';
-    addLog('DOWNLOAD', `📥 Triggering batch download for all ${images.length} property photos...`);
+    addLog('DOWNLOAD', `📥 Triggering download for all ${images.length} original photos...`);
+
+    images.forEach((img, idx) => {
+      const order = String(img.original_order || idx + 1).padStart(2, '0');
+      const filename = `${prefix}-Photo-${order}-Original.jpg`;
+
+      setTimeout(() => {
+        handleDownloadSinglePhoto(img.public_url, filename);
+      }, idx * 250);
+    });
+  };
+
+  // Download Enhanced Photos Only
+  const handleDownloadEnhancedPhotos = async () => {
+    const images = activeTestRun?.images || [];
+    if (images.length === 0) {
+      addLog('DOWNLOAD_WARN', 'No images available to download.');
+      return;
+    }
+    const prefix = generatedRefCode || 'PROPERTY';
+    addLog('DOWNLOAD', `📥 Triggering download for all ${images.length} enhanced photos...`);
 
     images.forEach((img, idx) => {
       const activeUrl = enhancedImages[img.public_url] || img.public_url;
       const order = String(img.original_order || idx + 1).padStart(2, '0');
       const isEnh = !!enhancedImages[img.public_url];
-      const filename = `${prefix}-Photo-${order}${isEnh ? '-Enhanced' : ''}.jpg`;
+      const filename = `${prefix}-Photo-${order}${isEnh ? '-Enhanced' : '-Original'}.jpg`;
 
       setTimeout(() => {
         handleDownloadSinglePhoto(activeUrl, filename);
@@ -1349,7 +1543,7 @@ export const TestingView: React.FC = () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            screenshots_base64: accumulatedScreenshots,
+            screenshots_base64: [originalHighResScreenshot],
             screenshot_base64: originalHighResScreenshot,
             url: targetUrl,
           }),
@@ -1941,6 +2135,17 @@ export const TestingView: React.FC = () => {
 
   // CLEAN ALL / RESET TEST PIPELINE FOR NEW RUN
   const handleCleanAll = () => {
+    try {
+      localStorage.removeItem('estate_active_test_run');
+      localStorage.removeItem('estate_testing_url_input');
+      localStorage.removeItem('estate_testing_captured_screenshot');
+      localStorage.removeItem('estate_testing_ai_analysis');
+      localStorage.removeItem('estate_testing_logs');
+      localStorage.removeItem('estate_testing_enhanced_images');
+      localStorage.removeItem('estate_testing_transformed_content');
+      localStorage.removeItem('estate_testing_ref_code');
+    } catch (e) {}
+
     setUrlInput('');
     setIsTesting(false);
     setCurrentStage('IDLE');
@@ -1978,215 +2183,228 @@ export const TestingView: React.FC = () => {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', width: '100%', maxWidth: '1200px', margin: '0 auto', position: 'relative' }}>
-      {/* Apple-style macOS / Dynamic Island Floating Toast Notification */}
-      {appleNoti && (
-        <div
-          style={{
-            position: 'fixed',
-            top: '24px',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            zIndex: 99999,
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.875rem',
-            padding: '0.75rem 1.125rem',
-            borderRadius: '1.25rem',
-            backgroundColor: 'rgba(15, 23, 42, 0.92)',
-            backdropFilter: 'blur(24px) saturate(180%)',
-            WebkitBackdropFilter: 'blur(24px) saturate(180%)',
-            border: '1px solid rgba(255, 255, 255, 0.16)',
-            boxShadow: '0 20px 45px -10px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.08), 0 0 30px rgba(59, 130, 246, 0.25)',
-            minWidth: '380px',
-            maxWidth: '540px',
-            animation: 'appleNotiSlideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards',
-            color: '#FFFFFF',
-            fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", Inter, sans-serif',
-          }}
-        >
-          <style>{`
-            @keyframes appleNotiSlideIn {
-              0% { opacity: 0; transform: translate(-50%, -24px) scale(0.95); }
-              100% { opacity: 1; transform: translate(-50%, 0) scale(1); }
-            }
-            @keyframes appleNotiProgress {
-              0% { width: 100%; }
-              100% { width: 0%; }
-            }
-            @keyframes pulse {
-              0% { opacity: 1; transform: scale(1); }
-              50% { opacity: 0.7; transform: scale(1.08); }
-              100% { opacity: 1; transform: scale(1); }
-            }
-            @keyframes shake {
-              0%, 100% { transform: translateX(0); }
-              20% { transform: translateX(-4px); }
-              40% { transform: translateX(4px); }
-              60% { transform: translateX(-3px); }
-              80% { transform: translateX(3px); }
-            }
-          `}</style>
-          
-          {/* Apple App Icon Badge */}
-          <div
+      {/* Injected CSS Keyframes for border spin animation */}
+      <style>{`
+        @keyframes borderSpin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      `}</style>
+      {/* Premium Minimal Toast Notification with Framer Motion */}
+      <AnimatePresence>
+        {appleNoti && (
+          <motion.div
+            initial={{ opacity: 0, y: -20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -10, scale: 0.98 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 25 }}
             style={{
-              width: '38px',
-              height: '38px',
-              borderRadius: '0.65rem',
-              background: 'linear-gradient(135deg, var(--accent-primary) 0%, #10B981 100%)',
+              position: 'fixed',
+              top: '24px',
+              left: '50%',
+              x: '-50%',
+              zIndex: 99999,
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-              boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)',
-            }}
-          >
-            <FiCheckCircle style={{ color: '#FFFFFF', fontSize: '1.25rem' }} />
-          </div>
-
-          {/* Text Content */}
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.15rem' }}>
-              <span style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#94A3B8' }}>
-                ESTATE AUTOMATE • NOW
-              </span>
-            </div>
-            <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#FFFFFF', lineHeight: 1.25 }}>
-              {appleNoti.title}
-            </div>
-            <div style={{ fontSize: '0.75rem', color: '#CBD5E1', marginTop: '0.2rem', lineHeight: 1.35 }}>
-              {appleNoti.subtitle}
-            </div>
-          </div>
-
-          {/* Close button */}
-          <button
-            type="button"
-            onClick={() => setAppleNoti(null)}
-            style={{
-              background: 'rgba(255, 255, 255, 0.1)',
-              border: 'none',
-              borderRadius: '50%',
-              width: '24px',
-              height: '24px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#94A3B8',
-              cursor: 'pointer',
-              flexShrink: 0,
-              transition: 'all 0.15s ease',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.22)';
-              e.currentTarget.style.color = '#FFFFFF';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
-              e.currentTarget.style.color = '#94A3B8';
-            }}
-          >
-            <FiX style={{ fontSize: '0.75rem' }} />
-          </button>
-
-          {/* Progress timer bar */}
-          <div
-            style={{
-              position: 'absolute',
-              bottom: 0,
-              left: '14px',
-              right: '14px',
-              height: '2px',
-              backgroundColor: 'rgba(255, 255, 255, 0.12)',
-              borderRadius: '1px',
+              gap: '12px',
+              padding: '12px 16px',
+              borderRadius: '12px',
+              backgroundColor: 'rgba(15, 23, 42, 0.85)',
+              backdropFilter: 'blur(20px)',
+              WebkitBackdropFilter: 'blur(20px)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              boxShadow: '0 8px 30px rgba(0, 0, 0, 0.3)',
+              minWidth: '320px',
+              maxWidth: '450px',
+              color: '#FFFFFF',
+              fontFamily: '"Helvetica Neue", Helvetica, Arial, sans-serif',
               overflow: 'hidden',
             }}
           >
+            {/* Minimal Icon */}
             <div
               style={{
-                height: '100%',
-                backgroundColor: 'var(--accent-primary)',
-                animation: 'appleNotiProgress 4.5s linear forwards',
+                width: '32px',
+                height: '32px',
+                borderRadius: '50%',
+                backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}
+            >
+              <FiCheck style={{ color: '#10B981', fontSize: '16px' }} />
+            </div>
+
+            {/* Text Content */}
+            <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+              <div style={{ fontSize: '14px', fontWeight: 600, color: '#F8FAFC', letterSpacing: '-0.01em' }}>
+                {appleNoti.title}
+              </div>
+              <div style={{ fontSize: '13px', color: '#94A3B8', lineHeight: 1.4 }}>
+                {appleNoti.subtitle}
+              </div>
+            </div>
+
+            {/* Close button */}
+            <button
+              type="button"
+              onClick={() => setAppleNoti(null)}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                width: '24px',
+                height: '24px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#64748B',
+                cursor: 'pointer',
+                flexShrink: 0,
+                transition: 'color 0.2s',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = '#F8FAFC')}
+              onMouseLeave={(e) => (e.currentTarget.style.color = '#64748B')}
+            >
+              <FiX style={{ fontSize: '14px' }} />
+            </button>
+
+            {/* Minimal Progress Bar */}
+            <motion.div
+              initial={{ width: '100%' }}
+              animate={{ width: '0%' }}
+              transition={{ duration: 4.5, ease: 'linear' }}
+              style={{
+                position: 'absolute',
+                bottom: 0,
+                left: 0,
+                height: '2px',
+                backgroundColor: 'rgba(255, 255, 255, 0.2)',
               }}
             />
-          </div>
-        </div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      {/* Header & Status Toolbar */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-              AI Facebook Vision Test & Target Post DOM Isolation
+      {/* Top Navbar Portals: Title, Status Badge & Action Toolbar */}
+      {headerTitleEl &&
+        createPortal(
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', minWidth: 0 }}>
+            <h2 style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0, whiteSpace: 'nowrap' }}>
+              Target Post Extraction Pipeline
             </h2>
             <span
               style={{
-                fontSize: '0.71875rem',
-                fontWeight: 700,
+                fontSize: '0.6875rem',
+                fontWeight: 600,
                 padding: '0.15rem 0.5rem',
                 borderRadius: '0.375rem',
                 backgroundColor: 'rgba(16, 185, 129, 0.12)',
                 color: '#10B981',
-                border: '1px solid var(--border-color)',
+                border: '1px solid rgba(16, 185, 129, 0.2)',
                 display: 'inline-flex',
                 alignItems: 'center',
-                gap: '0.35rem',
+                gap: '0.3rem',
+                whiteSpace: 'nowrap',
               }}
             >
-              <FiCpu /> OpenAI: {openAIStatus} • Session: {sessionStatus} • Stage: {currentStage} (Step {timelineStep})
+              <FiCpu style={{ fontSize: '0.75rem' }} /> {sessionStatus === 'CONNECTED' ? 'Ready' : sessionStatus} • Step {timelineStep}
             </span>
-          </div>
-          <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', margin: '0.25rem 0 0 0' }}>
-            OpenClaw Persistent Browser Navigation Lifecycle & Scoped TargetPostContext Extraction.
-          </p>
-        </div>
+          </div>,
+          headerTitleEl
+        )}
 
-        {/* Action Buttons Toolbar */}
-        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-          <Button
-            variant="outline"
-            size="sm"
-            leftIcon={<FiTrash2 style={{ color: '#F87171' }} />}
-            onClick={handleCleanAll}
-            disabled={isTesting}
-            style={{
-              height: '36px',
-              whiteSpace: 'nowrap',
-              borderColor: 'rgba(239, 68, 68, 0.4)',
-              color: '#F87171',
-              backgroundColor: 'rgba(239, 68, 68, 0.08)',
-            }}
-            title="Clear all test data and reset for a new URL"
-          >
-            Clean All
-          </Button>
-
-          <Button
-            variant="outline"
-            size="sm"
-            leftIcon={<FiTv />}
-            onClick={() => setIsLiveBrowserOpen(true)}
-            style={{ height: '36px', whiteSpace: 'nowrap' }}
-          >
-            Open Live Browser
-          </Button>
-
-          {isTesting && (
+      {headerActionEl &&
+        createPortal(
+          <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexShrink: 0 }}>
             <Button
               variant="outline"
               size="sm"
-              leftIcon={<FiStopCircle style={{ color: '#EF4444' }} />}
-              onClick={handleStopTest}
-              style={{ height: '36px', whiteSpace: 'nowrap', borderColor: '#EF4444', color: '#EF4444' }}
+              leftIcon={<FiTrash2 style={{ color: '#F87171' }} />}
+              onClick={handleCleanAll}
+              disabled={isTesting}
+              style={{
+                height: '32px',
+                padding: '0 0.65rem',
+                fontSize: '0.75rem',
+                whiteSpace: 'nowrap',
+                borderColor: 'rgba(239, 68, 68, 0.3)',
+                color: '#F87171',
+                backgroundColor: 'rgba(239, 68, 68, 0.05)',
+              }}
+              title="Clear test data"
             >
-              Stop Test
+              Clean All
             </Button>
-          )}
-        </div>
-      </div>
 
-      {/* Main Input Form */}
+            <Button
+              variant="primary"
+              size="sm"
+              leftIcon={<FiActivity />}
+              onClick={() =>
+                setPreviewModal({
+                  isOpen: true,
+                  title: 'Multi-AI Automation Pipeline Workflow Map',
+                  type: 'workflow_map',
+                })
+              }
+              style={{
+                height: '32px',
+                padding: '0 0.75rem',
+                fontSize: '0.75rem',
+                whiteSpace: 'nowrap',
+                backgroundColor: 'var(--accent-primary)',
+                color: '#FFFFFF',
+                border: 'none',
+                fontWeight: 600,
+              }}
+            >
+              View Workflow
+            </Button>
+
+            <Button
+              variant="outline"
+              size="sm"
+              leftIcon={<FiTv />}
+              onClick={() => setIsLiveBrowserOpen(true)}
+              style={{
+                height: '32px',
+                padding: '0 0.75rem',
+                fontSize: '0.75rem',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              Open Live Browser
+            </Button>
+
+            {isTesting && (
+              <Button
+                variant="outline"
+                size="sm"
+                leftIcon={<FiStopCircle style={{ color: '#EF4444' }} />}
+                onClick={handleStopTest}
+                style={{
+                  height: '32px',
+                  padding: '0 0.65rem',
+                  fontSize: '0.75rem',
+                  whiteSpace: 'nowrap',
+                  borderColor: '#EF4444',
+                  color: '#EF4444',
+                }}
+              >
+                Stop Test
+              </Button>
+            )}
+          </div>,
+          headerActionEl
+        )}
+
+      {/* Main Workflow Control Bar */}
       <div
         style={{
           backgroundColor: 'var(--bg-surface)',
@@ -2197,14 +2415,10 @@ export const TestingView: React.FC = () => {
         }}
       >
         <form onSubmit={handleRunFullTest} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <label style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-            Facebook Post URL
-          </label>
-
           <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
             <input
               type="text"
-              placeholder="https://www.facebook.com/..."
+              placeholder="Paste Facebook Post URL..."
               value={urlInput}
               onChange={(e) => setUrlInput(e.target.value)}
               style={{
@@ -2221,11 +2435,8 @@ export const TestingView: React.FC = () => {
               }}
             />
 
-            {/* CUSTOM REACT DROPDOWN FOR BROWSER ZOOM */}
+            {/* Custom Dropdown for Browser Zoom */}
             <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                Browser Zoom:
-              </span>
               <div style={{ position: 'relative' }}>
                 <button
                   type="button"
@@ -2233,24 +2444,23 @@ export const TestingView: React.FC = () => {
                   disabled={isTesting}
                   style={{
                     height: '38px',
-                    minWidth: '100px',
+                    minWidth: '90px',
                     padding: '0 0.75rem',
                     backgroundColor: 'var(--bg-secondary)',
                     color: 'var(--text-primary)',
                     border: '1px solid var(--border-color)',
                     borderRadius: '0.5rem',
                     fontSize: '0.8125rem',
-                    fontWeight: 700,
+                    fontWeight: 600,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     gap: '0.5rem',
                     cursor: 'pointer',
                     outline: 'none',
-                    boxShadow: 'var(--shadow-sm)',
                   }}
                 >
-                  <span>{selectedZoom}%</span>
+                  <span>Zoom: {selectedZoom}%</span>
                   <FiChevronDown style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }} />
                 </button>
 
@@ -2260,7 +2470,7 @@ export const TestingView: React.FC = () => {
                       position: 'absolute',
                       top: 'calc(100% + 4px)',
                       right: 0,
-                      minWidth: '150px',
+                      minWidth: '130px',
                       backgroundColor: '#16181D',
                       border: '1px solid var(--border-color)',
                       borderRadius: '0.5rem',
@@ -2296,19 +2506,6 @@ export const TestingView: React.FC = () => {
               </div>
             </div>
 
-            {/* DEDICATED NAV TEST BUTTON */}
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              leftIcon={<FiNavigation />}
-              onClick={handleTestFacebookNavigation}
-              disabled={isTesting}
-              style={{ height: '38px', whiteSpace: 'nowrap' }}
-            >
-              Test Facebook Navigation
-            </Button>
-
             <Button
               type="submit"
               variant="primary"
@@ -2320,70 +2517,92 @@ export const TestingView: React.FC = () => {
               {isTesting ? 'Executing Pipeline...' : 'Run Full Test'}
             </Button>
 
-            <Button
+            <button
               type="button"
-              variant="outline"
-              size="sm"
-              leftIcon={<FiRotateCcw style={{ color: '#9CA3AF' }} />}
-              onClick={handleCleanAll}
-              disabled={isTesting}
-              style={{ height: '38px', whiteSpace: 'nowrap', color: 'var(--text-secondary)' }}
-              title="Reset all fields and test state for next test"
+              onClick={() => setShowAdvancedActions(!showAdvancedActions)}
+              style={{
+                background: 'transparent',
+                border: '1px solid var(--border-color)',
+                borderRadius: '0.5rem',
+                height: '38px',
+                padding: '0 0.75rem',
+                color: 'var(--text-muted)',
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+              }}
             >
-              Clean All
-            </Button>
+              <span>Advanced Tools</span>
+              {showAdvancedActions ? <FiChevronUp /> : <FiChevronDown />}
+            </button>
           </div>
 
-          {/* Individual Stage Buttons */}
-          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.25rem' }}>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              leftIcon={<FiEye />}
-              onClick={handleOpenFacebook}
-              disabled={isTesting}
-              style={{ fontSize: '0.75rem', height: '32px' }}
-            >
-              Open Facebook
-            </Button>
+          {/* Expandable Individual Stage Buttons */}
+          {showAdvancedActions && (
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', paddingTop: '0.5rem', borderTop: '1px solid var(--border-color)' }}>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                leftIcon={<FiNavigation />}
+                onClick={handleTestFacebookNavigation}
+                disabled={isTesting}
+                style={{ fontSize: '0.75rem', height: '32px' }}
+              >
+                Test Navigation
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                leftIcon={<FiEye />}
+                onClick={handleOpenFacebook}
+                disabled={isTesting}
+                style={{ fontSize: '0.75rem', height: '32px' }}
+              >
+                Open Facebook
+              </Button>
 
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              leftIcon={<FiCamera />}
-              onClick={handleCaptureScreenshot}
-              disabled={isTesting}
-              style={{ fontSize: '0.75rem', height: '32px' }}
-            >
-              Capture Screenshot
-            </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                leftIcon={<FiCamera />}
+                onClick={handleCaptureScreenshot}
+                disabled={isTesting}
+                style={{ fontSize: '0.75rem', height: '32px' }}
+              >
+                Capture Screenshot
+              </Button>
 
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              leftIcon={<FiCpu />}
-              onClick={handleAnalyzeWithAI}
-              disabled={isTesting || !capturedScreenshot || navResult?.current_url === 'about:blank'}
-              style={{ fontSize: '0.75rem', height: '32px' }}
-            >
-              Analyze With AI
-            </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                leftIcon={<FiCpu />}
+                onClick={handleAnalyzeWithAI}
+                disabled={isTesting || !capturedScreenshot || navResult?.current_url === 'about:blank'}
+                style={{ fontSize: '0.75rem', height: '32px' }}
+              >
+                Analyze With AI
+              </Button>
 
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              leftIcon={<FiZap />}
-              onClick={handleExecuteAIInstruction}
-              disabled={isTesting || !aiAnalysis?.next_action?.type}
-              style={{ fontSize: '0.75rem', height: '32px' }}
-            >
-              Execute AI Instruction
-            </Button>
-          </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                leftIcon={<FiZap />}
+                onClick={handleExecuteAIInstruction}
+                disabled={isTesting || !aiAnalysis?.next_action?.type}
+                style={{ fontSize: '0.75rem', height: '32px' }}
+              >
+                Execute AI Instruction
+              </Button>
+            </div>
+          )}
 
           {errorMessage && (
             <div style={{ fontSize: '0.75rem', color: '#EF4444', display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
@@ -2394,948 +2613,54 @@ export const TestingView: React.FC = () => {
         </form>
       </div>
 
-      {/* Navigation Diagnostic Verification Card */}
-      {navResult && (
-        <div
-          style={{
-            backgroundColor: 'var(--bg-surface)',
-            border: '1px solid var(--border-color)',
-            borderRadius: '0.75rem',
-            padding: '1.25rem',
-            boxShadow: 'var(--shadow-sm)',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.875rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <FiNavigation style={{ color: 'var(--accent-primary)' }} />
-              <h3 style={{ fontSize: '0.90625rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-                Navigation Verification Diagnostics
-              </h3>
-            </div>
-            <span
-              style={{
-                fontSize: '0.75rem',
-                fontWeight: 600,
-                color: navResult.success && navResult.current_url !== 'about:blank' ? '#10B981' : '#EF4444',
-                backgroundColor: navResult.success && navResult.current_url !== 'about:blank' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
-                padding: '0.2rem 0.55rem',
-                borderRadius: '0.25rem',
-              }}
-            >
-              {navResult.success && navResult.current_url !== 'about:blank' ? 'Navigation Success' : 'Navigation Failed'}
-            </span>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem' }}>
-            <div style={{ padding: '0.75rem', borderRadius: '0.5rem', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
-              <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', display: 'block' }}>Browser Status</span>
-              <span style={{ fontSize: '0.84375rem', fontWeight: 600, color: '#10B981', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                <FiCheckCircle /> Connected
-              </span>
-            </div>
-
-            <div style={{ padding: '0.75rem', borderRadius: '0.5rem', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
-              <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', display: 'block' }}>Controlled Page</span>
-              <span style={{ fontSize: '0.84375rem', fontWeight: 600, color: '#10B981' }}>
-                Ready
-              </span>
-            </div>
-
-            <div style={{ padding: '0.75rem', borderRadius: '0.5rem', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
-              <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', display: 'block' }}>Current URL</span>
-              <span
-                style={{
-                  fontSize: '0.78125rem',
-                  fontWeight: 600,
-                  color: navResult.current_url === 'about:blank' ? '#EF4444' : 'var(--accent-primary)',
-                  fontFamily: 'monospace',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  display: 'block',
-                }}
-              >
-                {navResult.current_url}
-              </span>
-            </div>
-
-            <div style={{ padding: '0.75rem', borderRadius: '0.5rem', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
-              <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', display: 'block' }}>Facebook Status</span>
-              <span style={{ fontSize: '0.84375rem', fontWeight: 600, color: navResult.facebook_status === 'AUTHENTICATED' ? '#10B981' : '#F59E0B' }}>
-                {navResult.facebook_status === 'AUTHENTICATED' ? 'Authenticated' : navResult.facebook_status}
-              </span>
-            </div>
-          </div>
-
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.75rem', fontFamily: 'monospace' }}>
-            <strong>Page Title:</strong> {navResult.page_title}
-          </div>
-        </div>
-      )}
-
-      {/* SCREENSHOT PAGINATION & PREVIEW SECTION */}
-      {(() => {
-        const shotsList = allCapturedScreenshots.length > 0 ? allCapturedScreenshots : [capturedScreenshot];
-        const totalShots = shotsList.length;
-        const safeIndex = Math.min(Math.max(0, activeCaptureIndex), totalShots - 1);
-        const shot = shotsList[safeIndex];
-        const cropped = allCroppedImages[safeIndex] || (safeIndex === 0 ? aiAnalysis?.cropped_content_image : null);
-        const analysis = allAnalyses[safeIndex] || (safeIndex === 0 ? aiAnalysis : null);
-
-        return (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            {/* PAGINATION / SELECTOR BAR (WHEN MULTIPLE CAPTURES EXIST) */}
-            {totalShots > 1 && (
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  backgroundColor: 'var(--bg-surface)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: '0.75rem',
-                  padding: '0.5rem 0.875rem',
-                  boxShadow: 'var(--shadow-sm)',
-                  flexWrap: 'wrap',
-                  gap: '0.625rem',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                    Capture Sequence ({totalShots}):
-                  </span>
-                  <div style={{ display: 'flex', gap: '0.375rem', flexWrap: 'wrap' }}>
-                    {shotsList.map((_, i) => (
-                      <button
-                        key={i}
-                        type="button"
-                        onClick={() => setActiveCaptureIndex(i)}
-                        style={{
-                          padding: '0.3rem 0.65rem',
-                          fontSize: '0.75rem',
-                          fontWeight: safeIndex === i ? 700 : 500,
-                          color: safeIndex === i ? '#FFF' : 'var(--text-primary)',
-                          backgroundColor: safeIndex === i ? 'var(--accent-primary)' : 'var(--bg-secondary)',
-                          border: safeIndex === i ? '1px solid var(--accent-primary)' : '1px solid var(--border-color)',
-                          borderRadius: '0.375rem',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '0.3rem',
-                          transition: 'all 0.15s ease',
-                        }}
-                      >
-                        <span>Capture #{i + 1}</span>
-                        <span style={{ fontSize: '0.6875rem', opacity: 0.85 }}>
-                          {i === 0 ? '(Top)' : `(+${i * 650}px)`}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <button
-                    type="button"
-                    disabled={safeIndex <= 0}
-                    onClick={() => setActiveCaptureIndex((p) => Math.max(0, p - 1))}
-                    style={{
-                      padding: '0.3rem 0.65rem',
-                      fontSize: '0.75rem',
-                      fontWeight: 600,
-                      color: safeIndex <= 0 ? 'var(--text-muted)' : 'var(--text-primary)',
-                      backgroundColor: 'var(--bg-secondary)',
-                      border: '1px solid var(--border-color)',
-                      borderRadius: '0.375rem',
-                      cursor: safeIndex <= 0 ? 'not-allowed' : 'pointer',
-                    }}
-                  >
-                    &larr; Prev
-                  </button>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>
-                    {safeIndex + 1} / {totalShots}
-                  </span>
-                  <button
-                    type="button"
-                    disabled={safeIndex >= totalShots - 1}
-                    onClick={() => setActiveCaptureIndex((p) => Math.min(totalShots - 1, p + 1))}
-                    style={{
-                      padding: '0.3rem 0.65rem',
-                      fontSize: '0.75rem',
-                      fontWeight: 600,
-                      color: safeIndex >= totalShots - 1 ? 'var(--text-muted)' : 'var(--text-primary)',
-                      backgroundColor: 'var(--bg-secondary)',
-                      border: '1px solid var(--border-color)',
-                      borderRadius: '0.375rem',
-                      cursor: safeIndex >= totalShots - 1 ? 'not-allowed' : 'pointer',
-                    }}
-                  >
-                    Next &rarr;
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* THREE PREVIEW CARDS FOR CURRENT CAPTURE */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.25rem' }}>
-              {/* CARD A: ORIGINAL FACEBOOK SCREENSHOT */}
-              <div
-                style={{
-                  backgroundColor: 'var(--bg-surface)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: '0.75rem',
-                  padding: '1rem',
-                  boxShadow: 'var(--shadow-sm)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.625rem', gap: '0.5rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', minWidth: 0, flex: 1 }}>
-                    <FiCamera style={{ color: 'var(--accent-primary)', flexShrink: 0 }} />
-                    <h3 style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      Original Facebook Screenshot {totalShots > 1 ? `(#${safeIndex + 1})` : ''}
-                    </h3>
-                  </div>
-                  <span style={{ fontSize: '0.65625rem', color: 'var(--accent-primary)', backgroundColor: 'rgba(59, 130, 246, 0.12)', padding: '0.15rem 0.45rem', borderRadius: '0.25rem', fontWeight: 600, flexShrink: 0, whiteSpace: 'nowrap' }}>
-                    1920 × 1080 High-Res
-                  </span>
-                </div>
-
-                <div
-                  style={{
-                    width: '100%',
-                    minHeight: '260px',
-                    backgroundColor: '#0D0E11',
-                    borderRadius: '0.5rem',
-                    overflow: 'hidden',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    border: '1px solid var(--border-color)',
-                  }}
-                >
-                  {shot ? (
-                    <img
-                      src={shot}
-                      alt={`Original Facebook Screenshot #${safeIndex + 1}`}
-                      style={{ width: '100%', height: 'auto', display: 'block' }}
-                    />
-                  ) : (
-                    <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', textAlign: 'center', padding: '1.5rem' }}>
-                      No full screenshot captured yet.
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* CARD B: AI CROPPED CONTENT IMAGE */}
-              <div
-                style={{
-                  backgroundColor: 'var(--bg-surface)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: '0.75rem',
-                  padding: '1rem',
-                  boxShadow: 'var(--shadow-sm)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.625rem', gap: '0.5rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', minWidth: 0, flex: 1 }}>
-                    <FiCpu style={{ color: '#8B5CF6', flexShrink: 0 }} />
-                    <h3 style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      AI Cropped Content Image {totalShots > 1 ? `(#${safeIndex + 1})` : ''}
-                    </h3>
-                  </div>
-                  <span style={{ fontSize: '0.65625rem', color: '#8B5CF6', backgroundColor: 'rgba(139, 92, 246, 0.12)', padding: '0.15rem 0.45rem', borderRadius: '0.25rem', fontWeight: 600, flexShrink: 0, whiteSpace: 'nowrap' }}>
-                    {cropped ? 'Isolated Text Section' : 'Awaiting AI Crop'}
-                  </span>
-                </div>
-
-                <div
-                  style={{
-                    width: '100%',
-                    minHeight: '260px',
-                    backgroundColor: '#0D0E11',
-                    borderRadius: '0.5rem',
-                    overflow: 'hidden',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    border: '1px solid var(--border-color)',
-                  }}
-                >
-                  {cropped ? (
-                    <img
-                      src={cropped}
-                      alt={`AI Cropped Content Image #${safeIndex + 1}`}
-                      style={{ width: '100%', maxHeight: '420px', display: 'block', objectFit: 'contain' }}
-                    />
-                  ) : shot ? (
-                    <img
-                      src={shot}
-                      alt={`AI Vision Input #${safeIndex + 1}`}
-                      style={{ width: '100%', height: 'auto', display: 'block', objectFit: 'contain' }}
-                    />
-                  ) : (
-                    <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', textAlign: 'center', padding: '1.5rem' }}>
-                      No cropped content image generated yet. Run test to capture & crop.
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* CARD C: OPTIONAL TARGET DETECTION OVERLAY */}
-              <div
-                style={{
-                  backgroundColor: 'var(--bg-surface)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: '0.75rem',
-                  padding: '1rem',
-                  boxShadow: 'var(--shadow-sm)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.625rem', gap: '0.5rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', minWidth: 0, flex: 1 }}>
-                    <FiEye style={{ color: '#10B981', flexShrink: 0 }} />
-                    <h3 style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      Target Post Detected {totalShots > 1 ? `(#${safeIndex + 1})` : ''}
-                    </h3>
-                  </div>
-                  <span style={{ fontSize: '0.65625rem', color: '#10B981', backgroundColor: 'rgba(16, 185, 129, 0.12)', padding: '0.15rem 0.45rem', borderRadius: '0.25rem', fontWeight: 600, flexShrink: 0, whiteSpace: 'nowrap' }}>
-                    Visual Diagnostic Overlay
-                  </span>
-                </div>
-
-                <div
-                  style={{
-                    position: 'relative',
-                    width: '100%',
-                    minHeight: '260px',
-                    backgroundColor: '#0D0E11',
-                    borderRadius: '0.5rem',
-                    overflow: 'hidden',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    border: '1px solid var(--border-color)',
-                  }}
-                >
-                  {shot ? (
-                    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-                      <img
-                        src={shot}
-                        alt={`Target Post Bounding Box Overlay #${safeIndex + 1}`}
-                        style={{ width: '100%', height: 'auto', display: 'block' }}
-                      />
-
-                      {analysis?.target_region ? (
-                        <div
-                          style={{
-                            position: 'absolute',
-                            top: `${Math.max(1, ((analysis.target_region.y || 20) / 1080) * 100)}%`,
-                            left: `${((analysis.target_region.x || 500) / 1920) * 100}%`,
-                            width: `${((analysis.target_region.width || 720) / 1920) * 100}%`,
-                            height: `${Math.min(97, ((analysis.target_region.height || 1020) / 1080) * 100)}%`,
-                            border: '3px solid #10B981',
-                            backgroundColor: 'rgba(16, 185, 129, 0.10)',
-                            pointerEvents: 'none',
-                            borderRadius: '6px',
-                            boxShadow: '0 0 15px rgba(16, 185, 129, 0.4)',
-                          }}
-                        >
-                          <span style={{ position: 'absolute', top: '-22px', left: '4px', backgroundColor: '#10B981', color: '#FFF', fontSize: '0.625rem', padding: '0.15rem 0.45rem', borderRadius: '3px', fontWeight: 700 }}>
-                            Target Post Container (AI Bounding Box)
-                          </span>
-                        </div>
-                      ) : (
-                        <div
-                          style={{
-                            position: 'absolute',
-                            top: '2%',
-                            left: '26%',
-                            width: '48%',
-                            height: '80%',
-                            border: '3px solid #10B981',
-                            backgroundColor: 'rgba(16, 185, 129, 0.10)',
-                            pointerEvents: 'none',
-                            borderRadius: '6px',
-                            boxShadow: '0 0 15px rgba(16, 185, 129, 0.4)',
-                          }}
-                        >
-                          <span style={{ position: 'absolute', top: '-22px', left: '4px', backgroundColor: '#10B981', color: '#FFF', fontSize: '0.625rem', padding: '0.15rem 0.45rem', borderRadius: '3px', fontWeight: 700 }}>
-                            Target Post Container (AI Bounding Box)
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', textAlign: 'center', padding: '1.5rem' }}>
-                      No diagnostic overlay available. Run test to capture & analyze.
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* Structured AI Analysis Result Panel */}
-      <div
-        style={{
-          backgroundColor: 'var(--bg-surface)',
-          border: '1px solid var(--border-color)',
-          borderRadius: '0.75rem',
-          padding: '1.25rem',
-          boxShadow: 'var(--shadow-sm)',
-          display: 'flex',
-          flexDirection: 'column',
-        }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.875rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <FiLayers style={{ color: '#8B5CF6' }} />
-            <h3 style={{ fontSize: '0.90625rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-              Extraction Status & Bounding Box Diagnostics
-            </h3>
-          </div>
-          {aiAnalysis && (
-            <span style={{ fontSize: '0.71875rem', fontWeight: 700, color: '#10B981', backgroundColor: 'rgba(16, 185, 129, 0.12)', padding: '0.15rem 0.5rem', borderRadius: '0.25rem' }}>
-              {(aiAnalysis.confidence * 100).toFixed(0)}% Confidence
-            </span>
-          )}
-        </div>
-
-        {!aiAnalysis ? (
-          <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
-            Click "Run Full Test" to execute high-resolution target-post cropping & AI Vision extraction.
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.75rem' }}>
-              <div style={{ padding: '0.625rem', borderRadius: '0.375rem', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
-                <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', display: 'block' }}>Target Post</span>
-                <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: aiAnalysis.target_detected || aiAnalysis.target_post_found ? '#10B981' : '#EF4444' }}>
-                  {aiAnalysis.target_detected || aiAnalysis.target_post_found ? 'FOUND' : 'NOT FOUND'}
-                </span>
-              </div>
-
-              <div style={{ padding: '0.625rem', borderRadius: '0.375rem', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
-                <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', display: 'block' }}>Target BBox</span>
-                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--accent-primary)', fontFamily: 'monospace' }}>
-                  x:{aiAnalysis.target_region?.x || 600}, y:{aiAnalysis.target_region?.y || 100}, w:{aiAnalysis.target_region?.width || 720}, h:{aiAnalysis.target_region?.height || 940}
-                </span>
-              </div>
-
-              <div style={{ padding: '0.625rem', borderRadius: '0.375rem', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
-                <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', display: 'block' }}>Crop Quality</span>
-                <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: aiAnalysis.crop_quality === 'GOOD' ? '#10B981' : 'var(--accent-primary)' }}>
-                  {aiAnalysis.crop_quality || 'GOOD'} (Ratio: {((aiAnalysis.crop_area_ratio || 0.32) * 100).toFixed(0)}%)
-                </span>
-              </div>
-
-              <div style={{ padding: '0.625rem', borderRadius: '0.375rem', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
-                <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', display: 'block' }}>AI Vision Status</span>
-                <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: capturedScreenshot ? '#10B981' : '#F59E0B' }}>
-                  {capturedScreenshot ? 'READY' : 'NOT_READY'}
-                </span>
-              </div>
-
-              <div style={{ padding: '0.625rem', borderRadius: '0.375rem', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
-                <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', display: 'block' }}>Text Detected</span>
-                <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: activeTestRun?.extracted_content ? '#10B981' : '#F59E0B' }}>
-                  {activeTestRun?.extracted_content ? 'YES' : 'READING...'}
-                </span>
-              </div>
-
-              <div style={{ padding: '0.625rem', borderRadius: '0.375rem', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
-                <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', display: 'block' }}>Screenshots</span>
-                <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: screenshotsUsed === 1 ? '#10B981' : 'var(--accent-primary)' }}>
-                  {screenshotsUsed} / 4
-                </span>
-              </div>
-            </div>
-
-            {/* DEBUG JSON OBJECT */}
-            <div style={{ marginTop: '0.5rem', padding: '0.75rem', borderRadius: '0.5rem', backgroundColor: '#0D0E11', border: '1px solid var(--border-color)' }}>
-              <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: '#8B5CF6', textTransform: 'uppercase', display: 'block', marginBottom: '0.35rem' }}>
-                Debug JSON Inspector
-              </span>
-              <pre style={{ margin: 0, fontSize: '0.71875rem', color: '#10B981', fontFamily: 'monospace', overflowX: 'auto' }}>
-                {JSON.stringify(
-                  {
-                    viewport: { width: 1920, height: 1080 },
-                    target_post_bbox: aiAnalysis.target_region || { x: 600, y: 100, width: 720, height: 940 },
-                    crop: { width: aiAnalysis.target_region?.width || 720, height: aiAnalysis.target_region?.height || 940 },
-                    crop_area_ratio: aiAnalysis.crop_area_ratio || 0.32,
-                    crop_quality: aiAnalysis.crop_quality || 'GOOD',
-                    text_extraction: {
-                      started: true,
-                      completed: !!activeTestRun?.extracted_content,
-                      confidence: aiAnalysis.confidence || 0.96,
-                    },
-                  },
-                  null,
-                  2
-                )}
-              </pre>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Extracted Original Content & Non-Destructive Enhanced Images */}
-      {activeTestRun && (
+      {/* 2-COLUMN MAIN DASHBOARD GRID */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(460px, 1fr))', gap: '1.25rem', alignItems: 'start' }}>
+        
+        {/* LEFT COLUMN: Extracted Raw Content & AI Content Transformation */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          {/* Content Panel */}
-          <div
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              border: '1px solid var(--border-color)',
-              borderRadius: '0.75rem',
-              padding: '1.25rem',
-              boxShadow: 'var(--shadow-sm)',
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <FiFileText style={{ color: 'var(--accent-primary)' }} />
-                <h3 style={{ fontSize: '0.90625rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-                  Extracted Original Content
-                </h3>
-              </div>
-              <span style={{ fontSize: '0.71875rem', color: '#10B981', backgroundColor: 'rgba(16, 185, 129, 0.12)', padding: '0.1rem 0.4rem', borderRadius: '0.25rem', fontWeight: 600 }}>
-                Target Post ID: {activeTestRun.target_post_id}
-              </span>
-            </div>
 
+          {/* CARD L1: Extracted Original Content (Hidden - content is already presented inside AI Content Transformation) */}
+          {activeTestRun && (
             <div
               style={{
-                padding: '1rem',
-                borderRadius: '0.5rem',
-                backgroundColor: 'var(--bg-secondary)',
+                display: 'none',
+                backgroundColor: 'var(--bg-surface)',
                 border: '1px solid var(--border-color)',
-                fontSize: '0.8125rem',
-                lineHeight: 1.6,
-                whiteSpace: 'pre-wrap',
-                fontFamily: 'monospace',
-                color: 'var(--text-primary)',
+                borderRadius: '0.75rem',
+                padding: '1.25rem',
+                boxShadow: 'var(--shadow-sm)',
               }}
             >
-              {activeTestRun.extracted_content || 'No text extracted yet.'}
-            </div>
-          </div>
-
-          {/* Target Post Metadata & Candidate Inspection Card */}
-          <div
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              border: '1px solid var(--border-color)',
-              borderRadius: '0.75rem',
-              padding: '1.25rem',
-              boxShadow: 'var(--shadow-sm)',
-            }}
-          >
-            <h3 style={{ fontSize: '0.90625rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.875rem' }}>
-              Target Post DOM Isolation Diagnostics
-            </h3>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', marginBottom: '1rem' }}>
-              <div style={{ padding: '0.75rem', borderRadius: '0.5rem', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
-                <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', display: 'block' }}>Target Post ID</span>
-                <span style={{ fontSize: '0.84375rem', fontWeight: 700, color: 'var(--accent-primary)', fontFamily: 'monospace' }}>
-                  {activeTestRun.target_post_id}
-                </span>
-              </div>
-
-              <div style={{ padding: '0.75rem', borderRadius: '0.5rem', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
-                <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', display: 'block' }}>DOM Container Bounding Box</span>
-                <span style={{ fontSize: '0.78125rem', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'monospace' }}>
-                  {activeTestRun.bounding_box ? `x:${activeTestRun.bounding_box.x}, y:${activeTestRun.bounding_box.y}, w:${activeTestRun.bounding_box.width}, h:${activeTestRun.bounding_box.height}` : 'x:120, y:180, w:880, h:920'}
-                </span>
-              </div>
-
-              <div style={{ padding: '0.75rem', borderRadius: '0.5rem', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
-                <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', display: 'block' }}>Candidate Posts Inspected</span>
-                <span style={{ fontSize: '0.84375rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                  {activeTestRun.debug_metrics?.candidate_post_count || 1}
-                </span>
-              </div>
-            </div>
-
-            {/* Rejected Candidates List */}
-            {activeTestRun.debug_metrics?.rejected_candidates && activeTestRun.debug_metrics.rejected_candidates.length > 0 && (
-              <div>
-                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: '0.5rem' }}>
-                  Rejected Candidate Containers Breakdown:
-                </span>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '160px', overflowY: 'auto' }}>
-                  {activeTestRun.debug_metrics.rejected_candidates.map((cand) => (
-                    <div
-                      key={cand.index}
-                      style={{
-                        padding: '0.5rem 0.75rem',
-                        borderRadius: '0.375rem',
-                        backgroundColor: 'var(--bg-secondary)',
-                        border: '1px solid var(--border-color)',
-                        fontSize: '0.71875rem',
-                      }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', color: '#EF4444', fontWeight: 600 }}>
-                        <span>Candidate #{cand.index} (Score: {cand.score})</span>
-                        <span>{cand.reason}</span>
-                      </div>
-                      <div style={{ color: 'var(--text-muted)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: '2px' }}>
-                        "{cand.snippet}"
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* DEDICATED LIVE FIRST PROPERTY PHOTO AI TARGETING & CLICK SESSION CARD */}
-          <div
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              border: '1px solid var(--border-color)',
-              borderRadius: '0.75rem',
-              padding: '1.25rem',
-              boxShadow: 'var(--shadow-sm)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '1rem',
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <FiCrosshair style={{ color: 'var(--accent-primary)', fontSize: '1.1rem' }} />
-                <div>
-                  <h3 style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-                    First Property Photo AI Targeting & OpenClaw Click Session
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <FiFileText style={{ color: 'var(--accent-primary)' }} />
+                  <h3 style={{ fontSize: '0.90625rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+                    Extracted Post Content
                   </h3>
-                  <span style={{ fontSize: '0.71875rem', color: 'var(--text-muted)' }}>
-                    Visual Bounding Box & Exact First Image Cell Center Point (X + W/2, Y + H/2)
-                  </span>
                 </div>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
-                {/* Auto / Manual Mode Switch Toggle */}
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    backgroundColor: 'var(--bg-secondary)',
-                    padding: '0.2rem',
-                    borderRadius: '0.5rem',
-                    border: '1px solid var(--border-color)',
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      setPhotoTargetMode('auto');
-                      addLog('MODE', '⚡ Photo Targeting & Click mode switched to: AUTO. Triggering automatic targeting...');
-                      if (!isTargetingPhoto && !isTesting) {
-                        await handleRunFirstPhotoTargetAndClick();
-                      }
-                    }}
-                    style={{
-                      padding: '0.25rem 0.65rem',
-                      borderRadius: '0.375rem',
-                      fontSize: '0.75rem',
-                      fontWeight: 700,
-                      border: 'none',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.3rem',
-                      backgroundColor: photoTargetMode === 'auto' ? '#10B981' : 'transparent',
-                      color: photoTargetMode === 'auto' ? '#FFFFFF' : 'var(--text-muted)',
-                      boxShadow: photoTargetMode === 'auto' ? '0 1px 4px rgba(16, 185, 129, 0.4)' : 'none',
-                      transition: 'all 0.15s ease',
-                    }}
-                  >
-                    ⚡ Auto
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPhotoTargetMode('manual');
-                      addLog('MODE', 'Photo Targeting & Click mode switched to: MANUAL (User triggered)');
-                    }}
-                    style={{
-                      padding: '0.25rem 0.65rem',
-                      borderRadius: '0.375rem',
-                      fontSize: '0.75rem',
-                      fontWeight: 700,
-                      border: 'none',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.3rem',
-                      backgroundColor: photoTargetMode === 'manual' ? 'var(--accent-primary)' : 'transparent',
-                      color: photoTargetMode === 'manual' ? '#FFFFFF' : 'var(--text-muted)',
-                      boxShadow: photoTargetMode === 'manual' ? '0 1px 4px rgba(59, 130, 246, 0.4)' : 'none',
-                      transition: 'all 0.15s ease',
-                    }}
-                  >
-                    🖐️ Manual
-                  </button>
-                </div>
-
-                {firstPhotoTarget?.click_position && (
-                  <span
-                    style={{
-                      fontSize: '0.75rem',
-                      fontFamily: 'monospace',
-                      fontWeight: 700,
-                      color: 'var(--accent-primary)',
-                      backgroundColor: 'rgba(59, 130, 246, 0.12)',
-                      padding: '0.25rem 0.6rem',
-                      borderRadius: '0.375rem',
-                      border: '1px solid rgba(59, 130, 246, 0.3)',
-                    }}
-                  >
-                    🎯 Cell Center: ({firstPhotoTarget.click_position.x}, {firstPhotoTarget.click_position.y})
-                  </span>
-                )}
-
-                <Button
-                  variant="primary"
-                  size="sm"
-                  disabled={isTargetingPhoto || isTesting}
-                  onClick={handleRunFirstPhotoTargetAndClick}
-                  style={{
-                    backgroundColor: photoTargetMode === 'auto' ? '#10B981' : 'var(--accent-primary)',
-                    borderColor: photoTargetMode === 'auto' ? '#059669' : '#2563EB',
-                    fontSize: '0.75rem',
-                    fontWeight: 600,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.35rem',
-                    boxShadow: photoTargetMode === 'auto' ? '0 2px 8px rgba(16, 185, 129, 0.3)' : '0 2px 8px rgba(59, 130, 246, 0.3)',
-                  }}
-                >
-                  <FiCrosshair /> {isTargetingPhoto ? 'Targeting & Clicking...' : photoTargetMode === 'auto' ? 'Run Photo Targeting (Auto)' : 'Run Photo Targeting & Click Test'}
-                </Button>
-              </div>
-            </div>
-
-            {/* Diagnostic Steps Breadcrumbs (with AI Verification) */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap', fontSize: '0.65rem', fontWeight: 600 }}>
-              <span style={{ color: 'var(--text-primary)', backgroundColor: 'var(--bg-secondary)', padding: '0.25rem 0.55rem', borderRadius: '0.25rem', border: '1px solid var(--border-color)' }}>
-                📸 1. Load Screenshot
-              </span>
-              <span style={{ color: 'var(--text-muted)' }}>➔</span>
-              <span style={{ color: 'var(--text-primary)', backgroundColor: 'var(--bg-secondary)', padding: '0.25rem 0.55rem', borderRadius: '0.25rem', border: '1px solid var(--border-color)' }}>
-                🤖 2. AI Detect Photo Cell
-              </span>
-              <span style={{ color: 'var(--text-muted)' }}>➔</span>
-              <span style={{ color: 'var(--text-primary)', backgroundColor: 'var(--bg-secondary)', padding: '0.25rem 0.55rem', borderRadius: '0.25rem', border: '1px solid var(--border-color)' }}>
-                📐 3. Compute Center
-              </span>
-              <span style={{ color: 'var(--text-muted)' }}>➔</span>
-              {/* NEW: AI Verification Step */}
-              <span style={{
-                color: firstPhotoTarget?.status === 'VERIFIED' ? '#10B981' : firstPhotoTarget?.status === 'REJECTED' ? '#EF4444' : firstPhotoTarget?.status === 'VERIFYING' ? '#F59E0B' : 'var(--text-primary)',
-                backgroundColor: firstPhotoTarget?.status === 'VERIFIED' ? 'rgba(16, 185, 129, 0.12)' : firstPhotoTarget?.status === 'REJECTED' ? 'rgba(239, 68, 68, 0.12)' : firstPhotoTarget?.status === 'VERIFYING' ? 'rgba(245, 158, 11, 0.12)' : 'var(--bg-secondary)',
-                padding: '0.25rem 0.55rem',
-                borderRadius: '0.25rem',
-                border: firstPhotoTarget?.status === 'VERIFIED' ? '1px solid rgba(16, 185, 129, 0.4)' : firstPhotoTarget?.status === 'REJECTED' ? '1px solid rgba(239, 68, 68, 0.4)' : firstPhotoTarget?.status === 'VERIFYING' ? '1px solid rgba(245, 158, 11, 0.4)' : '1px solid var(--border-color)',
-                animation: firstPhotoTarget?.status === 'VERIFYING' ? 'pulse 1.5s infinite' : 'none',
-              }}>
-                🔍 3.5 AI Verify Target {firstPhotoTarget?.status === 'VERIFIED' ? '✅' : firstPhotoTarget?.status === 'REJECTED' ? '❌' : firstPhotoTarget?.status === 'VERIFYING' ? '⏳' : ''}
-              </span>
-              <span style={{ color: 'var(--text-muted)' }}>➔</span>
-              <span style={{ color: 'var(--text-primary)', backgroundColor: 'var(--bg-secondary)', padding: '0.25rem 0.55rem', borderRadius: '0.25rem', border: '1px solid var(--border-color)' }}>
-                🖱️ 4. Click Target
-              </span>
-              <span style={{ color: 'var(--text-muted)' }}>➔</span>
-              <span style={{ color: '#10B981', backgroundColor: 'rgba(16, 185, 129, 0.12)', padding: '0.25rem 0.55rem', borderRadius: '0.25rem', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
-                🖼️ 5. Photo Viewer Open
-              </span>
-              <span style={{ color: 'var(--text-muted)' }}>➔</span>
-              <span style={{ color: '#8B5CF6', backgroundColor: 'rgba(139, 92, 246, 0.12)', padding: '0.25rem 0.55rem', borderRadius: '0.25rem', border: '1px solid rgba(139, 92, 246, 0.3)' }}>
-                🔍 5.5 Post-Click Verify
-              </span>
-            </div>
-
-            {/* Visual Screenshot Container with Target Marker Overlay */}
-            <div
-              style={{
-                position: 'relative',
-                width: '100%',
-                backgroundColor: '#0D0E11',
-                borderRadius: '0.5rem',
-                overflow: 'hidden',
-                border: '1px solid var(--border-color)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                minHeight: '320px',
-              }}
-            >
-              {firstPhotoTarget?.screenshot_base64 || capturedScreenshot || (allCapturedScreenshots.length > 0 ? allCapturedScreenshots[allCapturedScreenshots.length - 1] : null) ? (
-                <div style={{ position: 'relative', width: '100%', height: 'auto' }}>
-                  <img
-                    src={firstPhotoTarget?.screenshot_base64 || capturedScreenshot || allCapturedScreenshots[allCapturedScreenshots.length - 1]}
-                    alt="AI Visual Target Screen"
-                    style={{ width: '100%', height: 'auto', display: 'block' }}
-                  />
-
-                  {/* Visual Bounding Box for First Photo (color changes based on verification status) */}
-                  {firstPhotoTarget?.image_bbox && (() => {
-                    const status = firstPhotoTarget.status;
-                    const bboxColor = status === 'VERIFIED' ? '#10B981' : status === 'REJECTED' ? '#EF4444' : status === 'VERIFYING' ? '#F59E0B' : 'var(--accent-primary)';
-                    const bboxBg = status === 'VERIFIED' ? 'rgba(16, 185, 129, 0.18)' : status === 'REJECTED' ? 'rgba(239, 68, 68, 0.18)' : status === 'VERIFYING' ? 'rgba(245, 158, 11, 0.18)' : 'rgba(59, 130, 246, 0.18)';
-                    const bboxGlow = status === 'VERIFIED' ? 'rgba(16, 185, 129, 0.5)' : status === 'REJECTED' ? 'rgba(239, 68, 68, 0.5)' : status === 'VERIFYING' ? 'rgba(245, 158, 11, 0.5)' : 'rgba(59, 130, 246, 0.5)';
-                    const statusLabel = status === 'VERIFIED' ? '✅ Verified Target' : status === 'REJECTED' ? '❌ Rejected — Retrying' : status === 'VERIFYING' ? '⏳ Verifying...' : 'First Property Photo (Top-Left)';
-                    return (
-                      <div
-                        style={{
-                          position: 'absolute',
-                          top: `${(firstPhotoTarget.image_bbox.y / 1080) * 100}%`,
-                          left: `${(firstPhotoTarget.image_bbox.x / 1920) * 100}%`,
-                          width: `${(firstPhotoTarget.image_bbox.width / 1920) * 100}%`,
-                          height: `${(firstPhotoTarget.image_bbox.height / 1080) * 100}%`,
-                          border: `3px solid ${bboxColor}`,
-                          backgroundColor: bboxBg,
-                          borderRadius: '6px',
-                          boxShadow: `0 0 20px ${bboxGlow}`,
-                          pointerEvents: 'none',
-                          transition: 'all 0.4s ease',
-                          animation: status === 'VERIFYING' ? 'pulse 1.5s infinite' : status === 'REJECTED' ? 'shake 0.5s ease' : 'none',
-                        }}
-                      >
-                        <span
-                          style={{
-                            position: 'absolute',
-                            top: '-26px',
-                            left: '4px',
-                            backgroundColor: bboxColor,
-                            color: '#FFFFFF',
-                            fontSize: '0.625rem',
-                            padding: '0.15rem 0.5rem',
-                            borderRadius: '3px',
-                            fontWeight: 700,
-                            whiteSpace: 'nowrap',
-                            transition: 'all 0.3s ease',
-                          }}
-                        >
-                          {statusLabel}
-                        </span>
-                      </div>
-                    );
-                  })()}
-
-                  {/* Pulsing Crosshair Target Point at Click Coordinates */}
-                  {firstPhotoTarget?.click_position && (() => {
-                    const status = firstPhotoTarget.status;
-                    const dotColor = status === 'VERIFIED' ? '#10B981' : status === 'REJECTED' ? '#EF4444' : '#EF4444';
-                    const dotBg = status === 'VERIFIED' ? 'rgba(16, 185, 129, 0.25)' : status === 'REJECTED' ? 'rgba(239, 68, 68, 0.25)' : 'rgba(239, 68, 68, 0.25)';
-                    const dotGlow = status === 'VERIFIED' ? 'rgba(16, 185, 129, 0.8)' : status === 'REJECTED' ? 'rgba(239, 68, 68, 0.8)' : 'rgba(239, 68, 68, 0.8)';
-                    const borderColor = status === 'VERIFIED' ? '#10B981' : 'var(--accent-primary)';
-                    return (
-                      <div
-                        style={{
-                          position: 'absolute',
-                          top: `${(firstPhotoTarget.click_position.y / 1080) * 100}%`,
-                          left: `${(firstPhotoTarget.click_position.x / 1920) * 100}%`,
-                          transform: 'translate(-50%, -50%)',
-                          pointerEvents: 'none',
-                          zIndex: 10,
-                        }}
-                      >
-                        {/* Outer pulse ring */}
-                        <div
-                          style={{
-                            width: '28px',
-                            height: '28px',
-                            borderRadius: '50%',
-                            border: `2px solid ${dotColor}`,
-                            backgroundColor: dotBg,
-                            animation: status === 'REJECTED' ? 'none' : 'pulse 1.5s infinite',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            boxShadow: `0 0 15px ${dotGlow}`,
-                            transition: 'all 0.3s ease',
-                          }}
-                        >
-                          {/* Center core dot */}
-                          <div
-                            style={{
-                              width: '8px',
-                              height: '8px',
-                              borderRadius: '50%',
-                              backgroundColor: dotColor,
-                            }}
-                          />
-                        </div>
-
-                        {/* Click Coordinate Tooltip Label */}
-                        <div
-                          style={{
-                            position: 'absolute',
-                            top: '32px',
-                            left: '50%',
-                            transform: 'translateX(-50%)',
-                            backgroundColor: '#1E293B',
-                            color: '#F8FAFC',
-                            border: `1px solid ${borderColor}`,
-                            borderRadius: '4px',
-                            padding: '0.2rem 0.5rem',
-                            fontSize: '0.65625rem',
-                            fontWeight: 700,
-                            whiteSpace: 'nowrap',
-                            boxShadow: '0 4px 10px rgba(0,0,0,0.5)',
-                          }}
-                        >
-                          {status === 'VERIFIED' ? '✅' : status === 'REJECTED' ? '❌' : '🎯'} Click: ({firstPhotoTarget.click_position.x}, {firstPhotoTarget.click_position.y})
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
-              ) : (
-                <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem', textAlign: 'center', padding: '2rem' }}>
-                  No screenshot captured yet. Click "Run Photo Targeting & Click Test" to capture and target.
-                </div>
-              )}
-            </div>
-
-            {/* Verification Status Banner */}
-            {firstPhotoTarget?.status && firstPhotoTarget.status !== 'LOCATED' && (
               <div
                 style={{
-                  padding: '0.5rem 0.875rem',
-                  borderRadius: '0.375rem',
-                  fontSize: '0.75rem',
-                  fontWeight: 600,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.5rem',
-                  backgroundColor: firstPhotoTarget.status === 'VERIFIED' ? 'rgba(16, 185, 129, 0.1)' : firstPhotoTarget.status === 'REJECTED' ? 'rgba(239, 68, 68, 0.1)' : firstPhotoTarget.status === 'VERIFYING' ? 'rgba(245, 158, 11, 0.1)' : 'transparent',
-                  color: firstPhotoTarget.status === 'VERIFIED' ? '#10B981' : firstPhotoTarget.status === 'REJECTED' ? '#EF4444' : firstPhotoTarget.status === 'VERIFYING' ? '#F59E0B' : 'var(--text-muted)',
-                  border: firstPhotoTarget.status === 'VERIFIED' ? '1px solid rgba(16, 185, 129, 0.3)' : firstPhotoTarget.status === 'REJECTED' ? '1px solid rgba(239, 68, 68, 0.3)' : firstPhotoTarget.status === 'VERIFYING' ? '1px solid rgba(245, 158, 11, 0.3)' : '1px solid var(--border-color)',
+                  padding: '1rem',
+                  borderRadius: '0.5rem',
+                  backgroundColor: 'var(--bg-secondary)',
+                  border: '1px solid var(--border-color)',
+                  fontSize: '0.8125rem',
+                  lineHeight: 1.6,
+                  whiteSpace: 'pre-wrap',
+                  fontFamily: 'monospace',
+                  color: 'var(--text-primary)',
+                  maxHeight: '300px',
+                  overflowY: 'auto',
                 }}
               >
-                {firstPhotoTarget.status === 'VERIFIED' && '✅ AI Verification Passed — Target confirmed on a property photo. Proceeding to click.'}
-                {firstPhotoTarget.status === 'REJECTED' && '❌ AI Verification Failed — Target is NOT on a property photo. Retrying with adjusted viewport...'}
-                {firstPhotoTarget.status === 'VERIFYING' && '⏳ AI is verifying if the detected target is positioned over an actual property photo...'}
+                {activeTestRun.extracted_content || 'No text extracted yet. Run pipeline test above.'}
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
-
-
-          {/* AI CONTENT TRANSFORMATION & PROMPT FORMATTER SESSION */}
+          {/* CARD L2: AI Content Transformation & Prompt Formatter */}
           <div
             style={{
               backgroundColor: 'var(--bg-surface)',
@@ -3348,65 +2673,20 @@ export const TestingView: React.FC = () => {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <FiZap style={{ color: '#8B5CF6', fontSize: '1.125rem' }} />
-                <div>
-                  <h3 style={{ fontSize: '0.90625rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-                    AI CONTENT TRANSFORMATION & PROMPT FORMATTER
-                  </h3>
-                  <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: '0.15rem 0 0 0' }}>
-                    Transform raw extracted property details with custom prompt templates for multi-channel publishing.
-                  </p>
-                </div>
+                <h3 style={{ fontSize: '0.90625rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+                  AI Content Transformation
+                </h3>
               </div>
 
-              {/* Template Dropdown, Ref Code Pill & Transform Button */}
+              {/* Template Dropdown, Transform Button & Preview Transformed Output Button */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
-                {generatedRefCode && (
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.45rem',
-                      backgroundColor: 'rgba(139, 92, 246, 0.15)',
-                      border: '1px solid rgba(139, 92, 246, 0.4)',
-                      padding: '0.25rem 0.65rem',
-                      borderRadius: '0.375rem',
-                      fontSize: '0.75rem',
-                      fontWeight: 700,
-                      color: '#A78BFA',
-                      fontFamily: 'monospace',
-                    }}
-                  >
-                    <span>🏷️ Ref Code: {generatedRefCode}</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigator.clipboard.writeText(generatedRefCode);
-                        setIsCopiedRefCode(true);
-                        setTimeout(() => setIsCopiedRefCode(false), 2000);
-                      }}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        color: isCopiedRefCode ? '#10B981' : '#A78BFA',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        padding: 0,
-                      }}
-                      title="Copy Ref Code"
-                    >
-                      {isCopiedRefCode ? <FiCheck /> : <FiCopy />}
-                    </button>
-                  </div>
-                )}
-
                 <div style={{ position: 'relative' }}>
                   <button
                     type="button"
                     onClick={() => setIsPromptDropdownOpen(!isPromptDropdownOpen)}
                     disabled={isTransforming}
                     style={{
-                      height: '34px',
+                      height: '36px',
                       padding: '0 0.75rem',
                       backgroundColor: 'var(--bg-secondary)',
                       color: 'var(--text-primary)',
@@ -3418,11 +2698,10 @@ export const TestingView: React.FC = () => {
                       alignItems: 'center',
                       gap: '0.5rem',
                       cursor: 'pointer',
-                      boxShadow: 'var(--shadow-sm)',
                     }}
                   >
-                    <span>{promptTemplates.find((t) => t.id === selectedPromptId)?.name || 'Select Prompt Format'}</span>
-                    <FiChevronDown style={{ color: 'var(--text-muted)' }} />
+                    <span>{promptTemplates.find((p) => p.id === selectedPromptId)?.name || 'FB Format'}</span>
+                    <FiChevronDown />
                   </button>
 
                   {isPromptDropdownOpen && (
@@ -3431,43 +2710,33 @@ export const TestingView: React.FC = () => {
                         position: 'absolute',
                         top: 'calc(100% + 4px)',
                         right: 0,
-                        width: '320px',
-                        backgroundColor: '#16181D',
+                        minWidth: '220px',
+                        backgroundColor: 'var(--bg-surface)',
                         border: '1px solid var(--border-color)',
                         borderRadius: '0.5rem',
-                        boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
+                        boxShadow: 'var(--shadow-md)',
                         zIndex: 100,
-                        overflow: 'hidden',
-                        padding: '0.35rem',
+                        padding: '0.25rem',
                       }}
                     >
-                      {promptTemplates.map((template) => (
+                      {promptTemplates.map((tmpl) => (
                         <div
-                          key={template.id}
+                          key={tmpl.id}
                           onClick={() => {
-                            setSelectedPromptId(template.id);
+                            setSelectedPromptId(tmpl.id);
                             setIsPromptDropdownOpen(false);
                           }}
                           style={{
-                            padding: '0.5rem 0.65rem',
+                            padding: '0.5rem 0.75rem',
+                            fontSize: '0.75rem',
+                            fontWeight: selectedPromptId === tmpl.id ? 700 : 500,
+                            color: selectedPromptId === tmpl.id ? 'var(--accent-primary)' : 'var(--text-primary)',
+                            backgroundColor: selectedPromptId === tmpl.id ? 'rgba(59, 130, 246, 0.12)' : 'transparent',
                             borderRadius: '0.375rem',
                             cursor: 'pointer',
-                            backgroundColor: selectedPromptId === template.id ? 'rgba(139, 92, 246, 0.15)' : 'transparent',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: '0.2rem',
-                            marginBottom: '0.2rem',
                           }}
                         >
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: selectedPromptId === template.id ? '#A78BFA' : 'var(--text-primary)' }}>
-                              {template.name}
-                            </span>
-                            {selectedPromptId === template.id && <FiCheck style={{ color: '#A78BFA', fontSize: '0.75rem' }} />}
-                          </div>
-                          <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-                            {template.category}
-                          </span>
+                          {tmpl.name}
                         </div>
                       ))}
                     </div>
@@ -3480,243 +2749,672 @@ export const TestingView: React.FC = () => {
                   leftIcon={isTransforming ? <FiLoader style={{ animation: 'spin 1s linear infinite' }} /> : <FiZap />}
                   onClick={() => handleTransformContent()}
                   disabled={isTransforming || !activeTestRun?.extracted_content}
-                  style={{
-                    backgroundColor: '#8B5CF6',
-                    borderColor: '#7C3AED',
-                    height: '34px',
-                    fontSize: '0.75rem',
-                    fontWeight: 600,
-                    boxShadow: '0 2px 8px rgba(139, 92, 246, 0.3)',
-                  }}
+                  style={{ height: '36px', fontSize: '0.75rem', fontWeight: 600 }}
                 >
                   {isTransforming ? 'Transforming...' : 'Transform with AI'}
+                </Button>
+
+                <Button
+                  variant="primary"
+                  size="sm"
+                  leftIcon={<FiEye />}
+                  disabled={!transformedContent}
+                  onClick={() =>
+                    setPreviewModal({
+                      isOpen: true,
+                      title: `AI Transformed Copy Output (${promptTemplates.find((p) => p.id === selectedPromptId)?.name || 'FB Format'})`,
+                      type: 'transformed_text',
+                      transformedContent: transformedContent,
+                    })
+                  }
+                  style={{
+                    height: '36px',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    backgroundColor: '#8B5CF6',
+                    color: '#FFFFFF',
+                    border: 'none',
+                    boxShadow: 'none',
+                  }}
+                >
+                  Preview Transformed Copy
                 </Button>
               </div>
             </div>
 
-            {/* Side-by-Side 2-Column Grid */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1rem' }}>
-              {/* Left Column: Raw Extracted Post Content */}
-              <div
+            {/* Full-Width Raw Post Content Display */}
+            <div>
+              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '0.35rem' }}>
+                Raw Extracted Property Post Content
+              </span>
+              <textarea
+                readOnly
+                rows={8}
+                value={activeTestRun?.extracted_content || ''}
+                placeholder="Raw extracted property text..."
                 style={{
-                  display: 'flex',
-                  flexDirection: 'column',
+                  width: '100%',
                   backgroundColor: 'var(--bg-secondary)',
-                  borderRadius: '0.5rem',
+                  color: 'var(--text-primary)',
                   border: '1px solid var(--border-color)',
-                  overflow: 'hidden',
-                }}
-              >
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '0.65rem 0.875rem',
-                    borderBottom: '1px solid var(--border-color)',
-                    backgroundColor: 'rgba(255, 255, 255, 0.02)',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                    <FiFileText style={{ color: 'var(--text-secondary)', fontSize: '0.8125rem' }} />
-                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                      Raw Extracted Post Content
-                    </span>
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                    <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
-                      {activeTestRun?.extracted_content?.length || 0} chars
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (activeTestRun?.extracted_content) {
-                          navigator.clipboard.writeText(activeTestRun.extracted_content);
-                          setIsCopiedRaw(true);
-                          setTimeout(() => setIsCopiedRaw(false), 2000);
-                        }
-                      }}
-                      style={{
-                        padding: '0.2rem 0.45rem',
-                        fontSize: '0.6875rem',
-                        borderRadius: '0.25rem',
-                        border: '1px solid var(--border-color)',
-                        backgroundColor: 'var(--bg-surface)',
-                        color: isCopiedRaw ? '#10B981' : 'var(--text-secondary)',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.25rem',
-                      }}
-                    >
-                      {isCopiedRaw ? <FiCheck /> : <FiCopy />}
-                      <span>{isCopiedRaw ? 'Copied' : 'Copy'}</span>
-                    </button>
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    padding: '0.875rem',
-                    fontSize: '0.78125rem',
-                    fontFamily: 'monospace',
-                    lineHeight: 1.6,
-                    color: 'var(--text-primary)',
-                    maxHeight: '340px',
-                    overflowY: 'auto',
-                    whiteSpace: 'pre-wrap',
-                    backgroundColor: '#0D0E11',
-                    minHeight: '180px',
-                  }}
-                >
-                  {activeTestRun?.extracted_content || (
-                    <span style={{ color: 'var(--text-muted)' }}>
-                      No raw content available yet. Run extraction pipeline to fetch post content.
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* Right Column: AI Transformed Output */}
-              <div
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  backgroundColor: 'var(--bg-secondary)',
                   borderRadius: '0.5rem',
-                  border: '1px solid var(--border-color)',
-                  overflow: 'hidden',
+                  padding: '0.75rem',
+                  fontSize: '0.75rem',
+                  fontFamily: 'monospace',
+                  lineHeight: 1.5,
+                  resize: 'vertical',
                 }}
-              >
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '0.65rem 0.875rem',
-                    borderBottom: '1px solid var(--border-color)',
-                    backgroundColor: 'rgba(139, 92, 246, 0.05)',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                    <FiZap style={{ color: '#8B5CF6', fontSize: '0.8125rem' }} />
-                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#A78BFA' }}>
-                      AI Transformed Output
-                    </span>
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                    {transformedContent && (
-                      <span style={{ fontSize: '0.6875rem', color: '#A78BFA', fontFamily: 'monospace' }}>
-                        {transformedContent.length} chars
-                      </span>
-                    )}
-
-                    {transformedContent && (
-                      <button
-                        type="button"
-                        onClick={() => setIsEditingTransformed(!isEditingTransformed)}
-                        style={{
-                          padding: '0.2rem 0.45rem',
-                          fontSize: '0.6875rem',
-                          borderRadius: '0.25rem',
-                          border: '1px solid var(--border-color)',
-                          backgroundColor: isEditingTransformed ? 'rgba(139, 92, 246, 0.2)' : 'var(--bg-surface)',
-                          color: isEditingTransformed ? '#A78BFA' : 'var(--text-secondary)',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '0.25rem',
-                        }}
-                      >
-                        <FiEdit2 />
-                        <span>{isEditingTransformed ? 'Done' : 'Edit'}</span>
-                      </button>
-                    )}
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (transformedContent) {
-                          navigator.clipboard.writeText(transformedContent);
-                          setIsCopiedTransformed(true);
-                          setTimeout(() => setIsCopiedTransformed(false), 2000);
-                        }
-                      }}
-                      disabled={!transformedContent}
-                      style={{
-                        padding: '0.2rem 0.45rem',
-                        fontSize: '0.6875rem',
-                        borderRadius: '0.25rem',
-                        border: '1px solid var(--border-color)',
-                        backgroundColor: 'var(--bg-surface)',
-                        color: isCopiedTransformed ? '#10B981' : transformedContent ? '#A78BFA' : 'var(--text-muted)',
-                        cursor: transformedContent ? 'pointer' : 'default',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.25rem',
-                      }}
-                    >
-                      {isCopiedTransformed ? <FiCheck /> : <FiCopy />}
-                      <span>{isCopiedTransformed ? 'Copied' : 'Copy'}</span>
-                    </button>
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    padding: '0.875rem',
-                    fontSize: '0.78125rem',
-                    fontFamily: 'monospace',
-                    lineHeight: 1.6,
-                    color: 'var(--text-primary)',
-                    maxHeight: '340px',
-                    overflowY: 'auto',
-                    whiteSpace: 'pre-wrap',
-                    backgroundColor: '#0D0E11',
-                    minHeight: '180px',
-                    position: 'relative',
-                  }}
-                >
-                  {isTransforming ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: '160px', gap: '0.75rem', color: '#A78BFA' }}>
-                      <FiLoader style={{ fontSize: '1.5rem', animation: 'spin 1s linear infinite' }} />
-                      <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>
-                        Transforming content with {promptTemplates.find((t) => t.id === selectedPromptId)?.name}...
-                      </span>
-                    </div>
-                  ) : isEditingTransformed ? (
-                    <textarea
-                      rows={10}
-                      value={transformedContent}
-                      onChange={(e) => setTransformedContent(e.target.value)}
-                      style={{
-                        width: '100%',
-                        backgroundColor: 'transparent',
-                        color: 'var(--text-primary)',
-                        border: 'none',
-                        outline: 'none',
-                        fontSize: '0.78125rem',
-                        fontFamily: 'monospace',
-                        lineHeight: 1.6,
-                        resize: 'vertical',
-                      }}
-                    />
-                  ) : transformedContent ? (
-                    transformedContent
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: '160px', color: 'var(--text-muted)', textAlign: 'center', gap: '0.5rem' }}>
-                      <FiZap style={{ fontSize: '1.25rem', opacity: 0.5 }} />
-                      <span>Select a prompt format above and click "Transform with AI" to generate modified marketing copy.</span>
-                    </div>
-                  )}
-                </div>
-              </div>
+              />
             </div>
           </div>
 
-          {/* ✨ AI IMAGE ENHANCEMENT & PHOTO STUDIO SESSION */}
+          {/* CARD L3: Extracted Property Photos Gallery (Under Content Box in Left Column) */}
+          {activeTestRun && activeTestRun.images && activeTestRun.images.length > 0 && (
+            <div
+              style={{
+                backgroundColor: 'var(--bg-surface)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '0.75rem',
+                padding: '1.25rem',
+                boxShadow: 'var(--shadow-sm)',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.875rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <FiImage style={{ color: '#10B981' }} />
+                  <h3 style={{ fontSize: '0.90625rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+                    Property Photos ({activeTestRun.images.length})
+                  </h3>
+                </div>
+
+                {/* Right Action Buttons: Enhance All & Download All Dropdown */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', position: 'relative' }}>
+                  {/* Enhance All Images Button */}
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    leftIcon={isBatchEnhancing ? <FiX style={{ fontSize: '0.85rem' }} /> : <FiZap style={{ fontSize: '0.85rem' }} />}
+                    onClick={isBatchEnhancing ? () => { abortBatchEnhancementRef.current = true; } : handleEnhanceAllPhotos}
+                    style={{
+                      height: '32px',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      backgroundColor: isBatchEnhancing ? '#EF4444' : 'var(--accent-primary)',
+                      color: '#FFFFFF',
+                      border: 'none',
+                      boxShadow: 'none',
+                      padding: '0 0.75rem',
+                    }}
+                  >
+                    {isBatchEnhancing ? 'Stop Enhancing' : 'Enhance All Images'}
+                  </Button>
+
+                  {/* Download All Images Dropdown Button */}
+                  <div style={{ position: 'relative' }}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      leftIcon={<FiDownload style={{ fontSize: '0.85rem' }} />}
+                      rightIcon={<FiChevronDown style={{ fontSize: '0.8rem', marginLeft: '0.1rem' }} />}
+                      onClick={() => setIsDownloadDropdownOpen((prev) => !prev)}
+                      style={{
+                        height: '32px',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        boxShadow: 'none',
+                        padding: '0 0.75rem',
+                        borderColor: 'var(--border-color)',
+                      }}
+                    >
+                      Download All Images
+                    </Button>
+
+                    {/* Custom Popover Dropdown Menu */}
+                    {isDownloadDropdownOpen && (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          right: 0,
+                          top: 'calc(100% + 4px)',
+                          zIndex: 35,
+                          backgroundColor: 'var(--bg-surface)',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '0.5rem',
+                          boxShadow: 'var(--shadow-md)',
+                          padding: '0.35rem',
+                          minWidth: '210px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '0.2rem',
+                        }}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsDownloadDropdownOpen(false);
+                            handleDownloadEnhancedPhotos();
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.5rem',
+                            padding: '0.5rem 0.75rem',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            color: 'var(--text-primary)',
+                            backgroundColor: 'transparent',
+                            border: 'none',
+                            borderRadius: '0.375rem',
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                            width: '100%',
+                          }}
+                          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--bg-secondary)')}
+                          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                        >
+                          <FiZap style={{ color: '#10B981', flexShrink: 0 }} />
+                          <span>Download Enhanced Photos</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsDownloadDropdownOpen(false);
+                            handleDownloadOriginalPhotos();
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.5rem',
+                            padding: '0.5rem 0.75rem',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            color: 'var(--text-primary)',
+                            backgroundColor: 'transparent',
+                            border: 'none',
+                            borderRadius: '0.375rem',
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                            width: '100%',
+                          }}
+                          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--bg-secondary)')}
+                          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                        >
+                          <FiImage style={{ color: 'var(--accent-primary)', flexShrink: 0 }} />
+                          <span>Download Original Photos</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Photos Grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: '0.75rem' }}>
+                {activeTestRun.images.map((img, idx) => {
+                  const isEnh = !!enhancedImages[img.public_url];
+                  const isItemEnhancing = (currentBatchUrl === img.public_url) || (studioModal?.isProcessing && studioModal.imgUrl === img.public_url) || !!enhancingUrls[img.public_url];
+                  const isQueued = isBatchEnhancing && !isEnh && !isItemEnhancing;
+                  const activeUrl = enhancedImages[img.public_url] || img.public_url;
+                  const realIndex = activeTestRun.images?.findIndex((i) => i.id === img.id) ?? idx;
+
+                  return (
+                    <div
+                      key={img.id || idx}
+                      style={{
+                        position: 'relative',
+                        aspectRatio: '4/3',
+                        borderRadius: '0.625rem',
+                        overflow: 'hidden',
+                        cursor: 'pointer',
+                        transition: 'all 0.25s ease',
+                        // Use padding to create border space for conic gradient
+                        padding: isItemEnhancing ? '3px' : 0,
+                        backgroundColor: isItemEnhancing ? 'transparent' : undefined,
+                        boxShadow: isItemEnhancing
+                          ? '0 0 16px rgba(59, 130, 246, 0.5), 0 0 4px rgba(59, 130, 246, 0.3)'
+                          : isEnh
+                          ? '0 0 10px rgba(16, 185, 129, 0.3)'
+                          : 'none',
+                      }}
+                      onClick={() => {
+                        setShowOriginalInPreview(false);
+                        setPreviewModal({
+                          isOpen: true,
+                          title: `Property Photo #${realIndex + 1} of ${activeTestRun.images?.length || 0} (${isEnh ? 'AI Enhanced Studio' : 'Original Extracted'})`,
+                          type: 'property_photo',
+                          photoIndex: realIndex,
+                          imageSrc: activeUrl,
+                        });
+                      }}
+                    >
+                      {/* Spinning Conic Gradient Border Layer */}
+                      {isItemEnhancing && (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            inset: '-2px',
+                            borderRadius: '0.625rem',
+                            background: 'conic-gradient(from 0deg, #3B82F6, #60A5FA, #93C5FD, rgba(255,255,255,0.15), #3B82F6)',
+                            animation: 'borderSpin 1.8s linear infinite',
+                            zIndex: 0,
+                          }}
+                        />
+                      )}
+                      {/* Inner content container */}
+                      <div
+                        style={{
+                          position: 'relative',
+                          width: '100%',
+                          height: '100%',
+                          borderRadius: isItemEnhancing ? '0.4375rem' : '0.5rem',
+                          overflow: 'hidden',
+                          backgroundColor: 'var(--bg-secondary)',
+                          border: isItemEnhancing
+                            ? 'none'
+                            : isEnh
+                            ? '2px solid #10B981'
+                            : isQueued
+                            ? '1px dashed rgba(59, 130, 246, 0.4)'
+                            : '1px solid var(--border-color)',
+                        }}
+                      >
+                        <img
+                          src={activeUrl}
+                          alt={`Property photo ${idx + 1}`}
+                          style={{
+                            width: '100%',
+                            height: '100%',
+                            objectFit: 'cover',
+                            opacity: isItemEnhancing ? 0.78 : 1,
+                            transition: 'opacity 0.3s ease',
+                          }}
+                        />
+
+                        {/* Enhancing Light Sweep Shimmer on Thumbnail */}
+                        {isItemEnhancing && (
+                          <div
+                            style={{
+                              position: 'absolute',
+                              inset: 0,
+                              overflow: 'hidden',
+                              pointerEvents: 'none',
+                              zIndex: 10,
+                            }}
+                          >
+                            <motion.div
+                              initial={{ x: '-150%', y: '-150%' }}
+                              animate={{ x: '150%', y: '150%' }}
+                              transition={{ repeat: Infinity, duration: 1.6, ease: 'easeInOut' }}
+                              style={{
+                                position: 'absolute',
+                                top: '-50%',
+                                left: '-50%',
+                                width: '200%',
+                                height: '50px',
+                                background: 'linear-gradient(180deg, transparent 0%, rgba(255, 255, 255, 0.05) 20%, rgba(255, 255, 255, 0.5) 50%, rgba(255, 255, 255, 0.05) 80%, transparent 100%)',
+                                transform: 'rotate(-45deg)',
+                              }}
+                            />
+                          </div>
+                        )}
+
+                        {/* Center Floating Spinner on Thumbnail while Enhancing */}
+                        {isItemEnhancing && (
+                          <div
+                            style={{
+                              position: 'absolute',
+                              inset: 0,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              zIndex: 12,
+                              pointerEvents: 'none',
+                            }}
+                          >
+                            <div
+                              style={{
+                                position: 'relative',
+                                width: '32px',
+                                height: '32px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                              }}
+                            >
+                              <div
+                                style={{
+                                  position: 'absolute',
+                                  inset: 0,
+                                  borderRadius: '50%',
+                                  border: '2.5px solid rgba(255, 255, 255, 0.3)',
+                                  borderTopColor: '#3B82F6',
+                                  borderRightColor: '#60A5FA',
+                                  animation: 'spin 0.85s linear infinite',
+                                  filter: 'drop-shadow(0 0 6px rgba(59, 130, 246, 0.8))',
+                                }}
+                              />
+                              <FiZap style={{ color: '#FFFFFF', fontSize: '0.85rem', filter: 'drop-shadow(0 0 6px #60A5FA)' }} />
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Photo Index Badge */}
+                        <div
+                          style={{
+                            position: 'absolute',
+                            top: '0.35rem',
+                            left: '0.35rem',
+                            backgroundColor: 'rgba(0,0,0,0.75)',
+                            color: '#FFF',
+                            fontSize: '0.625rem',
+                            fontWeight: 700,
+                            padding: '0.1rem 0.35rem',
+                            borderRadius: '0.25rem',
+                            zIndex: 14,
+                          }}
+                        >
+                          #{realIndex + 1}
+                        </div>
+
+                        {/* Status Badges */}
+                        {isItemEnhancing ? (
+                          <div
+                            style={{
+                              position: 'absolute',
+                              bottom: '0.35rem',
+                              right: '0.35rem',
+                              backgroundColor: 'rgba(37, 99, 235, 0.95)',
+                              color: '#FFF',
+                              fontSize: '0.5625rem',
+                              fontWeight: 700,
+                              padding: '0.1rem 0.35rem',
+                              borderRadius: '0.25rem',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.2rem',
+                              zIndex: 14,
+                              boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
+                            }}
+                          >
+                            <FiLoader style={{ animation: 'spin 1s linear infinite', fontSize: '9px' }} /> Enhancing
+                          </div>
+                        ) : isEnh ? (
+                          <div
+                            style={{
+                              position: 'absolute',
+                              bottom: '0.35rem',
+                              right: '0.35rem',
+                              backgroundColor: '#10B981',
+                              color: '#FFF',
+                              width: '18px',
+                              height: '18px',
+                              borderRadius: '50%',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              zIndex: 14,
+                              boxShadow: '0 2px 5px rgba(0,0,0,0.2)',
+                            }}
+                          >
+                            <FiCheck style={{ fontSize: '12px', strokeWidth: 3 }} />
+                          </div>
+                        ) : isQueued ? (
+                          <div
+                            style={{
+                              position: 'absolute',
+                              bottom: '0.35rem',
+                              right: '0.35rem',
+                              backgroundColor: 'rgba(0,0,0,0.65)',
+                              color: 'rgba(255,255,255,0.7)',
+                              fontSize: '0.5625rem',
+                              fontWeight: 600,
+                              padding: '0.1rem 0.35rem',
+                              borderRadius: '0.25rem',
+                              zIndex: 14,
+                            }}
+                          >
+                            Queued
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* RIGHT COLUMN: Visual Pipeline Stepper, Photo Targeting & Photo Studio Gallery */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+
+          {/* CARD R2: First Property Photo AI Targeting & Click Session Card */}
+          {(() => {
+            const shotsList = allCapturedScreenshots.length > 0 ? allCapturedScreenshots : [capturedScreenshot];
+            const totalShots = shotsList.length;
+            const safeIndex = Math.min(Math.max(0, activeCaptureIndex), totalShots - 1);
+            const shot = shotsList[safeIndex];
+            const cropped = allCroppedImages[safeIndex] || (safeIndex === 0 ? aiAnalysis?.cropped_content_image : null);
+            const analysis = allAnalyses[safeIndex] || (safeIndex === 0 ? aiAnalysis : null);
+
+            return (
+              <div
+                style={{
+                  backgroundColor: 'var(--bg-surface)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '0.75rem',
+                  padding: '1.25rem',
+                  boxShadow: 'var(--shadow-sm)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.875rem',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <FiCrosshair style={{ color: 'var(--accent-primary)', fontSize: '1.1rem' }} />
+                    <div>
+                      <h3 style={{ fontSize: '0.90625rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+                        Photo AI Targeting & Click Session
+                      </h3>
+                      <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: '0.15rem 0 0 0' }}>
+                        Automated AI photo detection, targeting click, and visual process screenshots.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Primary Action Controls: Mode Toggle & Run Button */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    {/* Apple iOS ON/OFF Switch with Auto Label */}
+                    <div
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.6rem',
+                        userSelect: 'none',
+                        cursor: 'pointer',
+                      }}
+                      onClick={async () => {
+                        const newMode = photoTargetMode === 'auto' ? 'manual' : 'auto';
+                        setPhotoTargetMode(newMode);
+                        if (newMode === 'auto' && !isTargetingPhoto && !isTesting) {
+                          await handleRunFirstPhotoTargetAndClick();
+                        }
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: '0.78125rem',
+                          fontWeight: 700,
+                          color: photoTargetMode === 'auto' ? '#34C759' : 'var(--text-muted)',
+                          fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif',
+                          letterSpacing: '-0.01em',
+                          transition: 'color 0.2s ease',
+                        }}
+                      >
+                        Auto
+                      </span>
+
+                      {/* Apple iOS Track */}
+                      <div
+                        style={{
+                          width: '46px',
+                          height: '26px',
+                          borderRadius: '9999px',
+                          backgroundColor: photoTargetMode === 'auto' ? '#34C759' : 'rgba(120, 120, 128, 0.36)',
+                          padding: '2px',
+                          boxSizing: 'border-box',
+                          position: 'relative',
+                          transition: 'background-color 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                          boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.3)',
+                        }}
+                      >
+                        {/* Apple iOS Sliding White Thumb */}
+                        <div
+                          style={{
+                            width: '22px',
+                            height: '22px',
+                            borderRadius: '50%',
+                            backgroundColor: '#FFFFFF',
+                            boxShadow: '0 3px 8px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.2)',
+                            transform: photoTargetMode === 'auto' ? 'translateX(20px)' : 'translateX(0px)',
+                            transition: 'transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    {photoTargetMode === 'manual' && (
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        disabled={isTargetingPhoto || isTesting}
+                        onClick={handleRunFirstPhotoTargetAndClick}
+                        style={{ height: '34px', fontSize: '0.75rem', fontWeight: 600 }}
+                      >
+                        <FiCrosshair /> {isTargetingPhoto ? 'Targeting & Clicking...' : 'Run Photo Targeting & Click Test'}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Dedicated Preview Flow Buttons Row */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem', marginTop: '0.25rem' }}>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    leftIcon={<FiEye />}
+                    disabled={!shot}
+                    onClick={() =>
+                      setPreviewModal({
+                        isOpen: true,
+                        title: 'Extraction Process Screenshot Flow',
+                        type: 'pipeline_flow',
+                        shot: shot || undefined,
+                        cropped: (cropped || shot) || undefined,
+                        analysis: analysis,
+                      })
+                    }
+                    style={{
+                      height: '36px',
+                      fontSize: '0.78125rem',
+                      fontWeight: 600,
+                      justifyContent: 'center',
+                      backgroundColor: 'var(--bg-secondary)',
+                      color: 'var(--text-primary)',
+                      border: '1px solid var(--border-color)',
+                      boxShadow: 'none',
+                    }}
+                  >
+                    Preview Process Flow
+                  </Button>
+
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    leftIcon={<FiCrosshair />}
+                    disabled={!firstPhotoTarget && !shot}
+                    onClick={() =>
+                      setPreviewModal({
+                        isOpen: true,
+                        title: 'Photo AI Target & Click Center Preview',
+                        type: 'target_flow',
+                        shot: shot || undefined,
+                        firstPhotoTarget: firstPhotoTarget,
+                      })
+                    }
+                    style={{
+                      height: '36px',
+                      fontSize: '0.78125rem',
+                      fontWeight: 600,
+                      justifyContent: 'center',
+                      backgroundColor: '#0284C7',
+                      color: '#FFFFFF',
+                      border: 'none',
+                      boxShadow: 'none',
+                    }}
+                  >
+                    Preview Target Flow
+                  </Button>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* CARD R3: AI Photo Studio Prompt Configurations (Under Photo AI Targeting Box) */}
+          <div
+            style={{
+              backgroundColor: 'var(--bg-surface)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '0.75rem',
+              padding: '1.25rem',
+              boxShadow: 'var(--shadow-sm)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '1rem',
+              flexWrap: 'wrap',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+              <FiImage style={{ color: 'var(--accent-primary)', fontSize: '1.1rem' }} />
+              <div>
+                <h3 style={{ fontSize: '0.90625rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+                  AI Photo Studio Prompt Configurations
+                </h3>
+                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: '0.15rem 0 0 0' }}>
+                  Manage AI base enhancement & secondary lighting modification prompts.
+                </p>
+              </div>
+            </div>
+
+            <Button
+              variant="primary"
+              size="sm"
+              leftIcon={<FiImage />}
+              onClick={() =>
+                setPreviewModal({
+                  isOpen: true,
+                  title: 'AI Photo Studio Prompt Configurations & Database',
+                  type: 'prompt_config',
+                })
+              }
+              style={{
+                height: '36px',
+                fontSize: '0.78125rem',
+                fontWeight: 600,
+                backgroundColor: '#2563EB',
+                color: '#FFFFFF',
+                border: 'none',
+                boxShadow: 'none',
+              }}
+            >
+              Configure AI Studio Prompts
+            </Button>
+          </div>
+
+          {/* CARD R4: Live Navigation & Execution Audit Log (Workflow Feed Style - Right Column) */}
           <div
             style={{
               backgroundColor: 'var(--bg-surface)',
@@ -3726,791 +3424,142 @@ export const TestingView: React.FC = () => {
               boxShadow: 'var(--shadow-sm)',
             }}
           >
-            {/* Header: Title, Preset Selector & Global Actions */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.125rem', flexWrap: 'wrap', gap: '0.75rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <FiImage style={{ color: 'var(--accent-primary)', fontSize: '1.125rem' }} />
+            <div
+              onClick={() => setShowDebugPanel(!showDebugPanel)}
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <FiActivity style={{ color: 'var(--accent-primary)', fontSize: '1.1rem' }} />
                 <div>
                   <h3 style={{ fontSize: '0.90625rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-                    AI IMAGE ENHANCEMENT & PHOTO STUDIO
+                    Live Execution Workflow Activity
                   </h3>
                   <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: '0.15rem 0 0 0' }}>
-                    Select AI enhancement prompt, batch polish photos, inspect in full-screen lightbox, and download all assets.
+                    Real-time automated step-by-step pipeline activity feed.
                   </p>
                 </div>
               </div>
-
-              {/* Controls: Global Batch Actions */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
-                {/* 2nd Prompt Enable Toggle Badge */}
-                <button
-                  type="button"
-                  onClick={() => setEnableSecondaryPrompt(!enableSecondaryPrompt)}
-                  style={{
-                    height: '34px',
-                    padding: '0 0.75rem',
-                    backgroundColor: enableSecondaryPrompt ? 'rgba(139, 92, 246, 0.15)' : 'var(--bg-secondary)',
-                    color: enableSecondaryPrompt ? '#C4B5FD' : 'var(--text-muted)',
-                    border: `1px solid ${enableSecondaryPrompt ? '#8B5CF6' : 'var(--border-color)'}`,
-                    borderRadius: '0.5rem',
-                    fontSize: '0.71875rem',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.4rem',
-                    boxShadow: enableSecondaryPrompt ? '0 0 12px rgba(139, 92, 246, 0.25)' : 'none',
-                  }}
-                  title="Enable or disable running the second modification prompt on top of enhanced photos"
-                >
-                  <span>{enableSecondaryPrompt ? '⚡ 2-Stage Prompts: ACTIVE' : '⚡ 1-Stage Prompt: ONLY'}</span>
-                </button>
-
-                {/* Enhance All Photos Button */}
-                <Button
-                  variant="primary"
-                  size="sm"
-                  leftIcon={isBatchEnhancing ? <FiLoader style={{ animation: 'spin 1s linear infinite' }} /> : <FiZap />}
-                  onClick={() => openEnhanceModeModal(activeTestRun?.images || [])}
-                  disabled={isBatchEnhancing || !activeTestRun?.images || activeTestRun.images.length === 0}
-                  style={{
-                    backgroundColor: 'var(--accent-primary)',
-                    borderColor: '#2563EB',
-                    height: '34px',
-                    fontSize: '0.75rem',
-                    fontWeight: 600,
-                    boxShadow: '0 2px 8px rgba(59, 130, 246, 0.3)',
-                  }}
-                >
-                  {isBatchEnhancing
-                    ? `Enhancing (${batchEnhanceProgress.current}/${batchEnhanceProgress.total})...`
-                    : enableSecondaryPrompt ? '✨ Enhance All (2-Stage Pipeline)' : '✨ Enhance All Photos'}
-                </Button>
-
-                {/* Download All Photos Button */}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  leftIcon={<FiDownload />}
-                  onClick={handleDownloadAllPhotos}
-                  disabled={!activeTestRun?.images || activeTestRun.images.length === 0}
-                  style={{
-                    height: '34px',
-                    fontSize: '0.75rem',
-                    fontWeight: 600,
-                    borderColor: '#10B981',
-                    color: '#10B981',
-                  }}
-                >
-                  📥 Download All ({activeTestRun?.images?.length || 0})
-                </Button>
-
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleRetryImageDownload}
-                  style={{ height: '34px', fontSize: '0.75rem' }}
-                >
-                  🔄 Retry Download
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                  {testLogs.length} Events
+                </span>
+                <Button variant="outline" size="sm" style={{ fontSize: '0.6875rem', padding: '0 0.5rem', height: '28px' }}>
+                  {showDebugPanel ? <FiChevronUp /> : <FiChevronDown />}
                 </Button>
               </div>
             </div>
 
-            {/* 🔄 Two-Stage Pipeline Flow Indicator Banner */}
-            <div
-              style={{
-                marginBottom: '1.25rem',
-                padding: '0.65rem 1rem',
-                borderRadius: '0.5rem',
-                backgroundColor: '#0E1015',
-                border: '1px solid var(--border-color)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                flexWrap: 'wrap',
-                gap: '0.75rem',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.71875rem', fontWeight: 600, flexWrap: 'wrap' }}>
-                <span style={{ color: 'var(--text-muted)' }}>PIPELINE FLOW:</span>
-                <span style={{ backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', padding: '0.2rem 0.55rem', borderRadius: '0.25rem', border: '1px solid var(--border-color)' }}>
-                  📸 1. Original Photo
-                </span>
-                <span style={{ color: 'var(--accent-primary)' }}>➔</span>
-                <span style={{ backgroundColor: 'rgba(59, 130, 246, 0.15)', color: '#60A5FA', padding: '0.2rem 0.55rem', borderRadius: '0.25rem', border: '1px solid rgba(59, 130, 246, 0.3)' }}>
-                  🔷 Prompt 1: Base Retouch & HDR
-                </span>
-                <span style={{ color: enableSecondaryPrompt ? '#8B5CF6' : 'var(--text-muted)' }}>➔</span>
-                <span style={{ backgroundColor: enableSecondaryPrompt ? 'rgba(139, 92, 246, 0.15)' : 'rgba(255,255,255,0.03)', color: enableSecondaryPrompt ? '#C4B5FD' : 'var(--text-muted)', padding: '0.2rem 0.55rem', borderRadius: '0.25rem', border: `1px solid ${enableSecondaryPrompt ? 'rgba(139, 92, 246, 0.3)' : 'var(--border-color)'}` }}>
-                  🟣 Prompt 2: Modify / Fix / Add Details {enableSecondaryPrompt ? '' : '(Disabled)'}
-                </span>
-                <span style={{ color: '#10B981' }}>➔</span>
-                <span style={{ backgroundColor: 'rgba(16, 185, 129, 0.12)', color: '#10B981', padding: '0.2rem 0.55rem', borderRadius: '0.25rem', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
-                  ✨ Final Master Asset
-                </span>
-              </div>
-            </div>
-
-            {/* 🎛️ DUAL PROMPT SESSIONS: PROMPT 1 (BASE) & PROMPT 2 (MODIFY/FIX) */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
-              {/* ================= PROMPT SESSION 1 ================= */}
-              <div
-                style={{
-                  padding: '1rem',
-                  borderRadius: '0.5rem',
-                  backgroundColor: '#0A0D12',
-                  border: imagePromptMode === 'CUSTOM' ? '1px solid rgba(59, 130, 246, 0.5)' : '1px solid rgba(59, 130, 246, 0.25)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '0.75rem',
-                  boxShadow: '0 4px 15px rgba(0, 0, 0, 0.3)',
-                }}
-              >
-                {/* Session 1 Header */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                    <span style={{ backgroundColor: 'var(--accent-primary)', color: '#FFFFFF', fontSize: '0.625rem', fontWeight: 800, padding: '0.15rem 0.45rem', borderRadius: '0.25rem' }}>
-                      PROMPT 1
-                    </span>
-                    <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#93C5FD' }}>
-                      Primary Base Enhancement
-                    </span>
-                  </div>
-                  <span style={{ fontSize: '0.625rem', color: '#93C5FD', fontFamily: 'monospace', backgroundColor: 'rgba(59, 130, 246, 0.15)', padding: '0.1rem 0.4rem', borderRadius: '0.25rem' }}>
-                    {customImagePromptText.length} chars
-                  </span>
-                </div>
-
-                {/* Session 1 Controls */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
-                  <div style={{ position: 'relative', flex: 1, minWidth: '180px' }}>
-                    <button
-                      type="button"
-                      onClick={() => setIsImagePromptDropdownOpen(!isImagePromptDropdownOpen)}
-                      style={{
-                        width: '100%',
-                        height: '30px',
-                        padding: '0 0.6rem',
-                        backgroundColor: 'var(--bg-secondary)',
-                        color: 'var(--text-primary)',
-                        border: '1px solid var(--border-color)',
-                        borderRadius: '0.375rem',
-                        fontSize: '0.71875rem',
-                        fontWeight: 600,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {imageEnhancePrompts.find((p) => p.id === selectedImagePromptId)?.name || 'Select Preset'}
-                      </span>
-                      <FiChevronDown style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-                    </button>
-
-                    {isImagePromptDropdownOpen && (
-                      <div
-                        style={{
-                          position: 'absolute',
-                          top: 'calc(100% + 4px)',
-                          left: 0,
-                          width: '100%',
-                          backgroundColor: '#16181D',
-                          border: '1px solid var(--border-color)',
-                          borderRadius: '0.5rem',
-                          boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
-                          zIndex: 100,
-                          padding: '0.35rem',
-                          maxHeight: '220px',
-                          overflowY: 'auto',
-                        }}
-                      >
-                        {imageEnhancePrompts.map((preset) => (
-                          <div
-                            key={preset.id}
-                            onClick={() => {
-                              setSelectedImagePromptId(preset.id);
-                              setCustomImagePromptText(preset.instructions || (preset as any).templateText || preset.desc || '');
-                              setIsImagePromptDropdownOpen(false);
-                            }}
-                            style={{
-                              padding: '0.4rem 0.55rem',
-                              borderRadius: '0.25rem',
-                              cursor: 'pointer',
-                              backgroundColor: selectedImagePromptId === preset.id ? 'rgba(59, 130, 246, 0.15)' : 'transparent',
-                              marginBottom: '0.15rem',
-                            }}
-                          >
-                            <div style={{ fontSize: '0.71875rem', fontWeight: 600, color: selectedImagePromptId === preset.id ? '#60A5FA' : 'var(--text-primary)' }}>
-                              {preset.name}
-                            </div>
-                          </div>
-                        ))}
+            {showDebugPanel && (
+              <div style={{ marginTop: '1rem' }}>
+                  <div
+                    style={{
+                      maxHeight: '320px',
+                      overflowY: 'auto',
+                      marginTop: '0.75rem',
+                      paddingTop: '0.5rem',
+                      borderTop: '1px solid var(--border-color)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                    }}
+                  >
+                    {testLogs.length === 0 ? (
+                      <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem', textAlign: 'center', padding: '1.5rem 1rem' }}>
+                        No active workflow logs yet. Click "Run Photo Targeting" or "Test Facebook Extraction" to start.
                       </div>
-                    )}
-                  </div>
+                    ) : (
+                      testLogs
+                        .filter((log) => !log.message.includes('================'))
+                        .map((log, idx, arr) => {
+                          const isErr = log.step.includes('STOP') || log.step.includes('ERR') || log.message.includes('failed') || log.message.includes('aborted') || log.message.includes('No screenshot');
+                          const isSuccess = log.message.includes('completed') || log.message.includes('detected: true') || log.message.includes('CONFIRMED') || log.message.includes('SUCCESS') || log.message.includes('Passed');
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        try {
-                          const text = await navigator.clipboard.readText();
-                          if (text) {
-                            setCustomImagePromptText(text);
-                            setImagePromptMode('CUSTOM');
-                            addLog('PROMPT', 'Pasted Prompt 1 from clipboard');
-                          }
-                        } catch (e) {}
-                      }}
-                      style={{
-                        padding: '0.2rem 0.5rem',
-                        fontSize: '0.65625rem',
-                        fontWeight: 600,
-                        borderRadius: '0.25rem',
-                        border: '1px solid rgba(59, 130, 246, 0.4)',
-                        backgroundColor: 'rgba(59, 130, 246, 0.15)',
-                        color: '#93C5FD',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.25rem',
-                      }}
-                    >
-                      <FiCopy /> Paste
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const chosen = imageEnhancePrompts.find((p) => p.id === selectedImagePromptId) || imageEnhancePrompts[0];
-                        setCustomImagePromptText(chosen.instructions || (chosen as any).templateText || chosen.desc || '');
-                        setImagePromptMode('PRESET');
-                      }}
-                      style={{
-                        padding: '0.2rem 0.5rem',
-                        fontSize: '0.65625rem',
-                        fontWeight: 600,
-                        borderRadius: '0.25rem',
-                        border: '1px solid var(--border-color)',
-                        backgroundColor: 'var(--bg-secondary)',
-                        color: 'var(--text-muted)',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.25rem',
-                      }}
-                    >
-                      <FiRefreshCw /> Reset
-                    </button>
-                  </div>
-                </div>
+                          const statusBg = isErr ? 'rgba(239, 68, 68, 0.1)' : isSuccess ? 'rgba(16, 185, 129, 0.1)' : 'rgba(59, 130, 246, 0.1)';
+                          const statusColor = isErr ? '#EF4444' : isSuccess ? '#10B981' : '#60A5FA';
+                          const statusIcon = isErr ? <FiAlertCircle style={{ color: statusColor, fontSize: '10px' }} /> : isSuccess ? <FiCheckCircle style={{ color: statusColor, fontSize: '10px' }} /> : <FiActivity style={{ color: statusColor, fontSize: '10px' }} />;
+                          const isLast = idx === arr.length - 1;
 
-                {/* Session 1 Textarea */}
-                <textarea
-                  rows={4}
-                  value={customImagePromptText}
-                  onChange={(e) => {
-                    setCustomImagePromptText(e.target.value);
-                    setImagePromptMode('CUSTOM');
-                  }}
-                  placeholder="Enter primary photo enhancement instructions (sharpness, lighting, dehaze)..."
-                  style={{
-                    width: '100%',
-                    backgroundColor: '#05070A',
-                    color: 'var(--text-primary)',
-                    border: '1px solid rgba(59, 130, 246, 0.25)',
-                    borderRadius: '0.375rem',
-                    padding: '0.6rem 0.75rem',
-                    fontSize: '0.75rem',
-                    fontFamily: 'monospace',
-                    lineHeight: 1.45,
-                    resize: 'vertical',
-                    outline: 'none',
-                  }}
-                />
-              </div>
-
-              {/* ================= PROMPT SESSION 2 ================= */}
-              <div
-                style={{
-                  padding: '1rem',
-                  borderRadius: '0.5rem',
-                  backgroundColor: '#0A0D12',
-                  border: enableSecondaryPrompt
-                    ? secondaryPromptMode === 'CUSTOM'
-                      ? '1px solid rgba(139, 92, 246, 0.5)'
-                      : '1px solid rgba(139, 92, 246, 0.25)'
-                    : '1px solid var(--border-color)',
-                  opacity: enableSecondaryPrompt ? 1 : 0.65,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '0.75rem',
-                  boxShadow: '0 4px 15px rgba(0, 0, 0, 0.3)',
-                }}
-              >
-                {/* Session 2 Header */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                    <span style={{ backgroundColor: '#8B5CF6', color: '#FFFFFF', fontSize: '0.625rem', fontWeight: 800, padding: '0.15rem 0.45rem', borderRadius: '0.25rem' }}>
-                      PROMPT 2
-                    </span>
-                    <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#C4B5FD' }}>
-                      Post-Enhancement Modification & Fixes
-                    </span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.6875rem', color: '#C4B5FD', cursor: 'pointer', fontWeight: 600 }}>
-                      <input
-                        type="checkbox"
-                        checked={enableSecondaryPrompt}
-                        onChange={(e) => setEnableSecondaryPrompt(e.target.checked)}
-                        style={{ accentColor: '#8B5CF6', cursor: 'pointer' }}
-                      />
-                      Active
-                    </label>
-                    <span style={{ fontSize: '0.625rem', color: '#C4B5FD', fontFamily: 'monospace', backgroundColor: 'rgba(139, 92, 246, 0.15)', padding: '0.1rem 0.4rem', borderRadius: '0.25rem' }}>
-                      {customSecondaryPromptText.length} chars
-                    </span>
-                  </div>
-                </div>
-
-                {/* Session 2 Controls */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
-                  <div style={{ position: 'relative', flex: 1, minWidth: '180px' }}>
-                    <button
-                      type="button"
-                      onClick={() => setIsSecondaryPromptDropdownOpen(!isSecondaryPromptDropdownOpen)}
-                      disabled={!enableSecondaryPrompt}
-                      style={{
-                        width: '100%',
-                        height: '30px',
-                        padding: '0 0.6rem',
-                        backgroundColor: 'var(--bg-secondary)',
-                        color: 'var(--text-primary)',
-                        border: '1px solid var(--border-color)',
-                        borderRadius: '0.375rem',
-                        fontSize: '0.71875rem',
-                        fontWeight: 600,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        cursor: enableSecondaryPrompt ? 'pointer' : 'not-allowed',
-                      }}
-                    >
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {secondaryImagePrompts.find((p) => p.id === selectedSecondaryPromptId)?.name || 'Select Modification'}
-                      </span>
-                      <FiChevronDown style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-                    </button>
-
-                    {isSecondaryPromptDropdownOpen && (
-                      <div
-                        style={{
-                          position: 'absolute',
-                          top: 'calc(100% + 4px)',
-                          left: 0,
-                          width: '100%',
-                          backgroundColor: '#16181D',
-                          border: '1px solid var(--border-color)',
-                          borderRadius: '0.5rem',
-                          boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
-                          zIndex: 100,
-                          padding: '0.35rem',
-                          maxHeight: '220px',
-                          overflowY: 'auto',
-                        }}
-                      >
-                        {secondaryImagePrompts.map((preset) => (
-                          <div
-                            key={preset.id}
-                            onClick={() => {
-                              setSelectedSecondaryPromptId(preset.id);
-                              setCustomSecondaryPromptText(preset.instructions || preset.desc || '');
-                              setIsSecondaryPromptDropdownOpen(false);
-                            }}
-                            style={{
-                              padding: '0.4rem 0.55rem',
-                              borderRadius: '0.25rem',
-                              cursor: 'pointer',
-                              backgroundColor: selectedSecondaryPromptId === preset.id ? 'rgba(139, 92, 246, 0.15)' : 'transparent',
-                              marginBottom: '0.15rem',
-                            }}
-                          >
-                            <div style={{ fontSize: '0.71875rem', fontWeight: 600, color: selectedSecondaryPromptId === preset.id ? '#C4B5FD' : 'var(--text-primary)' }}>
-                              {preset.name}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                    <button
-                      type="button"
-                      disabled={!enableSecondaryPrompt}
-                      onClick={async () => {
-                        try {
-                          const text = await navigator.clipboard.readText();
-                          if (text) {
-                            setCustomSecondaryPromptText(text);
-                            setSecondaryPromptMode('CUSTOM');
-                            addLog('PROMPT', 'Pasted Prompt 2 from clipboard');
-                          }
-                        } catch (e) {}
-                      }}
-                      style={{
-                        padding: '0.2rem 0.5rem',
-                        fontSize: '0.65625rem',
-                        fontWeight: 600,
-                        borderRadius: '0.25rem',
-                        border: '1px solid rgba(139, 92, 246, 0.4)',
-                        backgroundColor: 'rgba(139, 92, 246, 0.15)',
-                        color: '#C4B5FD',
-                        cursor: enableSecondaryPrompt ? 'pointer' : 'not-allowed',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.25rem',
-                      }}
-                    >
-                      <FiCopy /> Paste
-                    </button>
-                    <button
-                      type="button"
-                      disabled={!enableSecondaryPrompt}
-                      onClick={() => {
-                        const chosen = secondaryImagePrompts.find((p) => p.id === selectedSecondaryPromptId) || secondaryImagePrompts[0];
-                        setCustomSecondaryPromptText(chosen.instructions || chosen.desc || '');
-                        setSecondaryPromptMode('PRESET');
-                      }}
-                      style={{
-                        padding: '0.2rem 0.5rem',
-                        fontSize: '0.65625rem',
-                        fontWeight: 600,
-                        borderRadius: '0.25rem',
-                        border: '1px solid var(--border-color)',
-                        backgroundColor: 'var(--bg-secondary)',
-                        color: 'var(--text-muted)',
-                        cursor: enableSecondaryPrompt ? 'pointer' : 'not-allowed',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.25rem',
-                      }}
-                    >
-                      <FiRefreshCw /> Reset
-                    </button>
-                  </div>
-                </div>
-
-                {/* Session 2 Textarea */}
-                <textarea
-                  rows={4}
-                  disabled={!enableSecondaryPrompt}
-                  value={customSecondaryPromptText}
-                  onChange={(e) => {
-                    setCustomSecondaryPromptText(e.target.value);
-                    setSecondaryPromptMode('CUSTOM');
-                  }}
-                  placeholder="Enter secondary modification / fix instructions to apply on top of the enhanced image (e.g. add sunset glow, refine staging, fix reflections)..."
-                  style={{
-                    width: '100%',
-                    backgroundColor: '#05070A',
-                    color: 'var(--text-primary)',
-                    border: '1px solid rgba(139, 92, 246, 0.25)',
-                    borderRadius: '0.375rem',
-                    padding: '0.6rem 0.75rem',
-                    fontSize: '0.75rem',
-                    fontFamily: 'monospace',
-                    lineHeight: 1.45,
-                    resize: 'vertical',
-                    outline: 'none',
-                  }}
-                />
-              </div>
-            </div>
-
-            {/* AI Image Coordinates Table (if detected) */}
-            {aiImageCoords.length > 0 && (
-              <div style={{ marginBottom: '1rem', padding: '0.75rem', borderRadius: '0.5rem', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
-                <span style={{ fontSize: '0.71875rem', fontWeight: 700, color: 'var(--accent-primary)', textTransform: 'uppercase', display: 'block', marginBottom: '0.35rem' }}>
-                  AI Calculated Property Image Coordinates (1920x1080 Viewport)
-                </span>
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', fontSize: '0.6875rem', borderCollapse: 'collapse', textAlign: 'left' }}>
-                    <thead>
-                      <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
-                        <th style={{ padding: '0.3rem' }}>Index</th>
-                        <th style={{ padding: '0.3rem' }}>Bounding Box (X, Y, W, H)</th>
-                        <th style={{ padding: '0.3rem' }}>Center Click Coordinate</th>
-                        <th style={{ padding: '0.3rem' }}>Confidence</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {aiImageCoords.map((coord) => (
-                        <tr key={coord.index} style={{ borderBottom: '1px solid var(--border-color)', fontFamily: 'monospace' }}>
-                          <td style={{ padding: '0.3rem', color: '#10B981', fontWeight: 700 }}>IMAGE {coord.index}</td>
-                          <td style={{ padding: '0.3rem' }}>{coord.x}, {coord.y}, {coord.width}, {coord.height}</td>
-                          <td style={{ padding: '0.3rem', color: 'var(--accent-primary)', fontWeight: 700 }}>({coord.center_x}, {coord.center_y})</td>
-                          <td style={{ padding: '0.3rem', color: '#8B5CF6' }}>{(coord.confidence * 100).toFixed(0)}%</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            {/* Filter & Counter Bar */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                <button
-                  type="button"
-                  onClick={() => setGalleryFilter('ALL')}
-                  style={{
-                    padding: '0.25rem 0.65rem',
-                    borderRadius: '0.375rem',
-                    fontSize: '0.71875rem',
-                    fontWeight: 600,
-                    border: '1px solid var(--border-color)',
-                    backgroundColor: galleryFilter === 'ALL' ? 'var(--text-primary)' : 'var(--bg-secondary)',
-                    color: galleryFilter === 'ALL' ? 'var(--bg-surface)' : 'var(--text-muted)',
-                    cursor: 'pointer',
-                  }}
-                >
-                  All Photos ({activeTestRun?.images?.length || 0})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setGalleryFilter('ENHANCED')}
-                  style={{
-                    padding: '0.25rem 0.65rem',
-                    borderRadius: '0.375rem',
-                    fontSize: '0.71875rem',
-                    fontWeight: 600,
-                    border: '1px solid var(--border-color)',
-                    backgroundColor: galleryFilter === 'ENHANCED' ? 'var(--accent-primary)' : 'var(--bg-secondary)',
-                    color: galleryFilter === 'ENHANCED' ? '#FFFFFF' : 'var(--text-muted)',
-                    cursor: 'pointer',
-                  }}
-                >
-                  ✨ Enhanced ({Object.keys(enhancedImages).length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setGalleryFilter('ORIGINAL')}
-                  style={{
-                    padding: '0.25rem 0.65rem',
-                    borderRadius: '0.375rem',
-                    fontSize: '0.71875rem',
-                    fontWeight: 600,
-                    border: '1px solid var(--border-color)',
-                    backgroundColor: galleryFilter === 'ORIGINAL' ? '#10B981' : 'var(--bg-secondary)',
-                    color: galleryFilter === 'ORIGINAL' ? '#FFFFFF' : 'var(--text-muted)',
-                    cursor: 'pointer',
-                  }}
-                >
-                  Original ({(activeTestRun?.images?.length || 0) - Object.keys(enhancedImages).length})
-                </button>
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.71875rem', color: 'var(--text-muted)' }}>
-                <span>💡 Click any photo to inspect in huge full-screen lightbox</span>
-              </div>
-            </div>
-
-            {/* Gallery Grid */}
-            {activeTestRun?.images && activeTestRun.images.length > 0 ? (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '0.875rem' }}>
-                {activeTestRun.images
-                  .filter((img) => {
-                    const isEnh = !!enhancedImages[img.public_url];
-                    if (galleryFilter === 'ENHANCED') return isEnh;
-                    if (galleryFilter === 'ORIGINAL') return !isEnh;
-                    return true;
-                  })
-                  .map((img, idx) => {
-                    const isEnh = !!enhancedImages[img.public_url];
-                    const activeUrl = enhancedImages[img.public_url] || img.public_url;
-                    const realIndex = activeTestRun.images?.findIndex((i) => i.id === img.id) ?? idx;
-
-                    const isEnhancing = !!enhancingUrls[img.public_url];
-                    const enhInfo = enhancingUrls[img.public_url];
-
-                    return (
-                      <div
-                        key={img.id}
-                        style={{
-                          borderRadius: '0.5rem',
-                          overflow: 'hidden',
-                          border: isEnhancing
-                            ? '2px solid var(--accent-primary)'
-                            : isEnh
-                            ? '1px solid rgba(59, 130, 246, 0.4)'
-                            : '1px solid var(--border-color)',
-                          backgroundColor: isEnhancing ? 'rgba(59, 130, 246, 0.04)' : 'var(--bg-secondary)',
-                          padding: '0.75rem',
-                          transition: 'all 0.2s ease',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '0.5rem',
-                          boxShadow: isEnhancing ? '0 0 15px rgba(59, 130, 246, 0.25)' : 'none',
-                        }}
-                      >
-                        {/* Card Header */}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.6875rem', fontWeight: 700 }}>
-                          <span style={{ color: 'var(--text-primary)' }}>
-                            [✓] Photo {String(img.original_order || realIndex + 1).padStart(2, '0')}
-                          </span>
-                          <span
-                            style={{
-                              fontSize: '0.625rem',
-                              padding: '0.15rem 0.45rem',
-                              borderRadius: '0.25rem',
-                              backgroundColor: isEnhancing
-                                ? 'rgba(59, 130, 246, 0.2)'
-                                : isEnh
-                                ? 'rgba(59, 130, 246, 0.15)'
-                                : 'rgba(16, 185, 129, 0.12)',
-                              color: isEnhancing ? '#93C5FD' : isEnh ? '#60A5FA' : '#10B981',
-                              border: `1px solid ${
-                                isEnhancing
-                                  ? 'var(--accent-primary)'
-                                  : isEnh
-                                  ? 'rgba(59, 130, 246, 0.3)'
-                                  : 'rgba(16, 185, 129, 0.3)'
-                              }`,
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '0.25rem',
-                            }}
-                          >
-                            {isEnhancing ? (
-                              <>
-                                <FiLoader style={{ animation: 'spin 1s linear infinite' }} />
-                                {enhInfo?.stage || 'ENHANCING'} ({enhInfo?.elapsed || 0}s)
-                              </>
-                            ) : isEnh ? (
-                              enhancedV1Images[img.public_url] ? '✨ 2-STAGE ENHANCED (V2)' : '✨ ENHANCED'
-                            ) : (
-                              'ORIGINAL'
-                            )}
-                          </span>
-                        </div>
-
-                        {/* Image Thumbnail with Huge View Click Trigger */}
-                        <div
-                          onClick={() => {
-                            setLightboxIndex(realIndex);
-                            setLightboxViewMode(isEnh ? 'enhanced' : 'original');
-                          }}
-                          style={{
-                            height: '160px',
-                            width: '100%',
-                            overflow: 'hidden',
-                            borderRadius: '0.375rem',
-                            position: 'relative',
-                            cursor: 'pointer',
-                            backgroundColor: '#0D0E11',
-                          }}
-                          title="Click to view large in full-screen Lightbox"
-                        >
-                          <img
-                            src={activeUrl}
-                            alt={`Property Photo ${img.original_order || realIndex + 1}`}
-                            style={{
-                              width: '100%',
-                              height: '100%',
-                              objectFit: 'cover',
-                              transition: 'transform 0.2s ease',
-                              opacity: isEnhancing ? 0.75 : 1,
-                            }}
-                          />
-
-                          {/* Scanning Laser Line when enhancing */}
-                          {isEnhancing && (
+                          return (
                             <div
+                              key={idx}
                               style={{
-                                position: 'absolute',
-                                inset: 0,
-                                background: 'linear-gradient(180deg, transparent 0%, rgba(59, 130, 246, 0.3) 50%, transparent 100%)',
-                                animation: 'pulse 1.5s ease-in-out infinite',
-                                pointerEvents: 'none',
+                                display: 'flex',
+                                alignItems: 'flex-start',
+                                justifyContent: 'space-between',
+                                padding: '0.7rem 0.5rem',
+                                gap: '0.75rem',
+                                borderBottom: isLast ? 'none' : '1px solid var(--border-color)',
+                                transition: 'background-color 0.15s ease',
                               }}
-                            />
-                          )}
+                              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--bg-secondary)')}
+                              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem', flex: 1, minWidth: 0 }}>
+                                <div
+                                  style={{
+                                    marginTop: '2px',
+                                    width: '20px',
+                                    height: '20px',
+                                    borderRadius: '50%',
+                                    backgroundColor: statusBg,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  {statusIcon}
+                                </div>
 
-                          {/* Magnify Overlay on Hover */}
-                          <div
-                            style={{
-                              position: 'absolute',
-                              bottom: '6px',
-                              right: '6px',
-                              backgroundColor: 'rgba(0, 0, 0, 0.75)',
-                              color: '#FFFFFF',
-                              padding: '0.2rem 0.45rem',
-                              borderRadius: '0.25rem',
-                              fontSize: '0.65rem',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '0.25rem',
-                              backdropFilter: 'blur(4px)',
-                            }}
-                          >
-                            <FiMaximize2 /> Large View
-                          </div>
-                        </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.1rem', minWidth: 0, flex: 1 }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <span
+                                      style={{
+                                        color: statusColor,
+                                        fontSize: '0.625rem',
+                                        fontWeight: 700,
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.02em',
+                                      }}
+                                    >
+                                      {log.step}
+                                    </span>
+                                  </div>
+                                  <span
+                                    style={{
+                                      fontSize: '0.8125rem',
+                                      fontWeight: 500,
+                                      color: isErr ? '#F87171' : 'var(--text-primary)',
+                                      lineHeight: 1.4,
+                                    }}
+                                  >
+                                    {log.message}
+                                  </span>
+                                </div>
+                              </div>
 
-                        {/* Resolution & Specs */}
-                        <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between' }}>
-                          <span>1920 × 1080</span>
-                          <span>~1.8 MB</span>
-                        </div>
-
-                        {/* Action Buttons: Enhance & Download */}
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem', marginTop: '0.2rem' }}>
-                          <Button
-                            variant={isEnh ? 'primary' : 'outline'}
-                            size="sm"
-                            disabled={isEnhancing}
-                            onClick={() => openEnhanceModeModal([img])}
-                            leftIcon={isEnhancing ? <FiLoader style={{ animation: 'spin 1s linear infinite' }} /> : undefined}
-                            style={{
-                              fontSize: '0.6875rem',
-                              height: '28px',
-                              backgroundColor: isEnh ? 'rgba(59, 130, 246, 0.15)' : undefined,
-                              borderColor: isEnh ? 'var(--accent-primary)' : 'var(--border-color)',
-                              color: isEnh ? '#60A5FA' : 'var(--text-primary)',
-                            }}
-                          >
-                            {isEnhancing ? 'Enhancing...' : isEnh ? '✨ Re-Enhance' : '✨ Enhance'}
-                          </Button>
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            leftIcon={<FiDownload />}
-                            onClick={() => {
-                              const prefix = generatedRefCode || 'PROPERTY';
-                              const order = String(img.original_order || realIndex + 1).padStart(2, '0');
-                              handleDownloadSinglePhoto(activeUrl, `${prefix}-Photo-${order}${isEnh ? '-Enhanced' : ''}.jpg`);
-                            }}
-                            style={{ fontSize: '0.6875rem', height: '28px' }}
-                          >
-                            Download
-                          </Button>
-                        </div>
-                      </div>
-                    );
-                  })}
-              </div>
-            ) : (
-              <div style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
-                No target post photos extracted yet. Run the extraction test pipeline above to download property photos.
+                              <span
+                                style={{
+                                  fontSize: '0.6875rem',
+                                  color: 'var(--text-muted)',
+                                  fontWeight: 500,
+                                  flexShrink: 0,
+                                  marginTop: '2px',
+                                }}
+                              >
+                                {log.timestamp}
+                              </span>
+                            </div>
+                          );
+                        })
+                    )}
+                  </div>
               </div>
             )}
           </div>
-        </div>
-      )}
+
+        </div> {/* END RIGHT COLUMN */}
+
+      </div> {/* END 2-COLUMN MAIN DASHBOARD GRID */}
 
       {/* 🌟 HUGE INTERACTIVE FULL-SCREEN LIGHTBOX MODAL */}
       {lightboxIndex !== null && activeTestRun?.images && activeTestRun.images[lightboxIndex] && (
@@ -4841,16 +3890,16 @@ export const TestingView: React.FC = () => {
         })()
       )}
 
-      {/* ✨ REAL-TIME CHATGPT AI ENHANCEMENT STUDIO MODAL */}
+      {/* ✨ REAL-TIME CHATGPT AI ENHANCEMENT STUDIO MODAL (Disabled - in-place sidebar pipeline is used) */}
       {studioModal && studioModal.isOpen && (
         <div
           style={{
+            display: 'none',
             position: 'fixed',
             inset: 0,
             zIndex: 9999,
             backgroundColor: 'rgba(5, 7, 12, 0.88)',
             backdropFilter: 'blur(8px)',
-            display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             padding: '1.5rem',
@@ -5259,65 +4308,7 @@ export const TestingView: React.FC = () => {
         </div>
       )}
 
-      {/* Live Navigation & Execution Audit Log */}
-      <div
-        style={{
-          backgroundColor: 'var(--bg-surface)',
-          border: '1px solid var(--border-color)',
-          borderRadius: '0.75rem',
-          padding: '1.25rem',
-          boxShadow: 'var(--shadow-sm)',
-        }}
-      >
-        <div
-          onClick={() => setShowDebugPanel(!showDebugPanel)}
-          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <FiCode style={{ color: 'var(--accent-primary)' }} />
-            <h3 style={{ fontSize: '0.90625rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-              Live Navigation & Execution Audit Log
-            </h3>
-          </div>
-          <Button variant="outline" size="sm" style={{ fontSize: '0.6875rem', padding: '0 0.5rem', height: '26px' }}>
-            {showDebugPanel ? <FiChevronUp /> : <FiChevronDown />}
-          </Button>
-        </div>
 
-        {showDebugPanel && (
-          <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            <div
-              style={{
-                maxHeight: '260px',
-                overflowY: 'auto',
-                padding: '0.75rem',
-                backgroundColor: '#0D0E11',
-                borderRadius: '0.5rem',
-                fontFamily: 'monospace',
-                fontSize: '0.75rem',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '0.35rem',
-              }}
-            >
-              {testLogs.length === 0 ? (
-                <div style={{ color: 'var(--text-muted)' }}>Click "Test Facebook Navigation" or "Run Full Test".</div>
-              ) : (
-                testLogs.map((log, idx) => {
-                  const isErr = log.step.includes('STOP') || log.step.includes('ERR') || log.message.includes('failed') || log.message.includes('aborted');
-                  const isSuccess = log.message.includes('completed') || log.message.includes('detected: true') || log.message.includes('CONFIRMED') || log.message.includes('SUCCESS');
-
-                  return (
-                    <div key={idx} style={{ color: isErr ? '#EF4444' : isSuccess ? '#10B981' : 'var(--text-primary)' }}>
-                      [{log.timestamp}] <strong style={{ color: isErr ? '#EF4444' : 'var(--accent-primary)' }}>[{log.step}]</strong>: {log.message}
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        )}
-      </div>
 
       {/* Enhance Mode Modal */}
       <Modal isOpen={enhanceModeModalVisible} onClose={() => setEnhanceModeModalVisible(false)} title={isChatGPTMode ? 'Enhance with ChatGPT' : 'Choose Enhancement Method'}>
@@ -5480,6 +4471,1698 @@ export const TestingView: React.FC = () => {
           </div>
         )}
       </Modal>
+
+      {/* Clean Lightbox Preview Modal for Workflow Images & Overlays */}
+      {previewModal && previewModal.isOpen && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 99999,
+            backgroundColor: 'rgba(5, 7, 12, 0.90)',
+            backdropFilter: 'blur(16px)',
+            WebkitBackdropFilter: 'blur(16px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1.5rem',
+            overscrollBehavior: 'contain',
+          }}
+          onClick={() => setPreviewModal(null)}
+        >
+          <div
+            style={{
+              position: 'relative',
+              maxWidth: '92vw',
+              maxHeight: '90vh',
+              backgroundColor: 'var(--bg-surface)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '1rem',
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: 'var(--shadow-lg)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem 1.25rem', borderBottom: '1px solid var(--border-color)' }}>
+              <div style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                {previewModal.title}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                {previewModal.type === 'transformed_text' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (previewModal.transformedContent) {
+                        navigator.clipboard.writeText(previewModal.transformedContent);
+                      }
+                    }}
+                    style={{
+                      padding: '0.35rem 0.75rem',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      borderRadius: '0.375rem',
+                      border: '1px solid var(--border-color)',
+                      backgroundColor: 'var(--accent-primary-alpha)',
+                      color: 'var(--accent-primary)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
+                    }}
+                  >
+                    <FiCopy /> Copy Text
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setPreviewModal(null)}
+                  style={{
+                    background: 'var(--bg-secondary)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '50%',
+                    width: '28px',
+                    height: '28px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'var(--text-muted)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <FiX style={{ fontSize: '1rem' }} />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Content */}
+            <div style={{ padding: previewModal.type === 'property_photo' ? '1rem 1.25rem' : '1.25rem', overflowY: previewModal.type === 'property_photo' ? 'hidden' : 'auto', overscrollBehavior: 'contain', display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '360px', maxHeight: 'calc(90vh - 65px)', boxSizing: 'border-box' }}>
+              {previewModal.type === 'pipeline_flow' ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.75rem', width: '100%', maxWidth: '960px' }}>
+                  {/* Step 1: Full Page Screenshot */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', backgroundColor: 'var(--bg-secondary)', padding: '1rem', borderRadius: '0.75rem', border: '1px solid var(--border-color)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span style={{ backgroundColor: 'var(--accent-primary)', color: '#FFF', fontSize: '0.6875rem', fontWeight: 800, padding: '0.2rem 0.55rem', borderRadius: '0.25rem' }}>
+                          STEP 1
+                        </span>
+                        <span style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                          Full Page Screenshot Capture
+                        </span>
+                      </div>
+                      <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>1920 × 1080 Full Viewport</span>
+                    </div>
+
+                    {previewModal.shot ? (
+                      <img src={previewModal.shot} alt="Step 1: Full Page Screenshot" style={{ width: '100%', height: 'auto', borderRadius: '0.5rem', border: '1px solid var(--border-color)', display: 'block' }} />
+                    ) : (
+                      <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8125rem', backgroundColor: 'var(--bg-secondary)', borderRadius: '0.5rem' }}>
+                        No full page screenshot captured yet. Run extraction pipeline to generate captures.
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Step 2: AI Cropped Content Area */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', backgroundColor: 'var(--bg-secondary)', padding: '1rem', borderRadius: '0.75rem', border: '1px solid var(--border-color)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span style={{ backgroundColor: '#8B5CF6', color: '#FFF', fontSize: '0.6875rem', fontWeight: 800, padding: '0.2rem 0.55rem', borderRadius: '0.25rem' }}>
+                          STEP 2
+                        </span>
+                        <span style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                          AI Cropped Target Content Area
+                        </span>
+                      </div>
+                      <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>Isolated Post Region</span>
+                    </div>
+
+                    {previewModal.cropped ? (
+                      <img src={previewModal.cropped} alt="Step 2: AI Cropped Content Area" style={{ width: '100%', height: 'auto', borderRadius: '0.5rem', border: '1px solid var(--border-color)', display: 'block' }} />
+                    ) : (
+                      <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8125rem', backgroundColor: 'var(--bg-secondary)', borderRadius: '0.5rem' }}>
+                        No AI cropped content image available yet.
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Step 3: Visual Overlay */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', backgroundColor: 'var(--bg-secondary)', padding: '1rem', borderRadius: '0.75rem', border: '1px solid var(--border-color)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span style={{ backgroundColor: '#10B981', color: '#FFF', fontSize: '0.6875rem', fontWeight: 800, padding: '0.2rem 0.55rem', borderRadius: '0.25rem' }}>
+                          STEP 3
+                        </span>
+                        <span style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                          Diagnostic Bounding Box Overlay
+                        </span>
+                      </div>
+                      <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>Visual Target Frame</span>
+                    </div>
+
+                    {previewModal.shot ? (
+                      <div style={{ position: 'relative', width: '100%' }}>
+                        <img src={previewModal.shot} alt="Step 3: Visual Overlay" style={{ width: '100%', height: 'auto', display: 'block', borderRadius: '0.5rem', border: '1px solid var(--border-color)' }} />
+                        {previewModal.analysis?.target_region ? (
+                          <div
+                            style={{
+                              position: 'absolute',
+                              top: `${Math.max(1, ((previewModal.analysis.target_region.y || 20) / 1080) * 100)}%`,
+                              left: `${((previewModal.analysis.target_region.x || 500) / 1920) * 100}%`,
+                              width: `${((previewModal.analysis.target_region.width || 720) / 1920) * 100}%`,
+                              height: `${Math.min(97, ((previewModal.analysis.target_region.height || 1020) / 1080) * 100)}%`,
+                              border: '3px solid #10B981',
+                              backgroundColor: 'rgba(16, 185, 129, 0.12)',
+                              pointerEvents: 'none',
+                              borderRadius: '6px',
+                              boxShadow: '0 0 20px rgba(16, 185, 129, 0.5)',
+                            }}
+                          >
+                            <span style={{ position: 'absolute', top: '-24px', left: '4px', backgroundColor: '#10B981', color: '#FFF', fontSize: '0.6875rem', padding: '0.15rem 0.5rem', borderRadius: '4px', fontWeight: 700 }}>
+                              Target Post Container (AI Bounding Box)
+                            </span>
+                          </div>
+                        ) : (
+                          <div
+                            style={{
+                              position: 'absolute',
+                              top: '2%',
+                              left: '26%',
+                              width: '48%',
+                              height: '80%',
+                              border: '3px solid #10B981',
+                              backgroundColor: 'rgba(16, 185, 129, 0.12)',
+                              pointerEvents: 'none',
+                              borderRadius: '6px',
+                              boxShadow: '0 0 20px rgba(16, 185, 129, 0.5)',
+                            }}
+                          >
+                            <span style={{ position: 'absolute', top: '-24px', left: '4px', backgroundColor: '#10B981', color: '#FFF', fontSize: '0.6875rem', padding: '0.15rem 0.5rem', borderRadius: '4px', fontWeight: 700 }}>
+                              Target Post Container (AI Bounding Box)
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8125rem', backgroundColor: 'var(--bg-secondary)', borderRadius: '0.5rem' }}>
+                        No visual overlay image available.
+                      </div>
+                    )}
+                  </div>
+
+                </div>
+              ) : previewModal.type === 'target_flow' ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', width: '100%', maxWidth: '960px' }}>
+                  {/* Status & Coordinates Banner */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'var(--bg-secondary)', padding: '0.875rem 1.125rem', borderRadius: '0.75rem', border: '1px solid var(--border-color)', flexWrap: 'wrap', gap: '0.75rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                      <span style={{ backgroundColor: 'var(--accent-primary)', color: '#FFF', fontSize: '0.6875rem', fontWeight: 800, padding: '0.2rem 0.55rem', borderRadius: '0.25rem' }}>
+                        TARGET DETAILS
+                      </span>
+                      <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#F8FAFC' }}>
+                        Photo AI Target Calculation & Click Center
+                      </span>
+                    </div>
+
+                    {previewModal.firstPhotoTarget?.click_position && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', fontSize: '0.75rem', fontFamily: 'monospace' }}>
+                        <span style={{ backgroundColor: 'rgba(59, 130, 246, 0.15)', color: '#60A5FA', border: '1px solid rgba(59, 130, 246, 0.3)', padding: '0.2rem 0.6rem', borderRadius: '0.375rem', fontWeight: 700 }}>
+                          📐 BBox: {previewModal.firstPhotoTarget.image_bbox?.x}, {previewModal.firstPhotoTarget.image_bbox?.y} ({previewModal.firstPhotoTarget.image_bbox?.width}×{previewModal.firstPhotoTarget.image_bbox?.height})
+                        </span>
+                        <span style={{ backgroundColor: 'rgba(239, 68, 68, 0.15)', color: '#F87171', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '0.2rem 0.6rem', borderRadius: '0.375rem', fontWeight: 700 }}>
+                          🎯 Click Center: ({previewModal.firstPhotoTarget.click_position.x}, {previewModal.firstPhotoTarget.click_position.y})
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* High Resolution Screenshot View with Target Overlays */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', backgroundColor: 'var(--bg-secondary)', padding: '1rem', borderRadius: '0.75rem', border: '1px solid var(--border-color)' }}>
+                    {previewModal.firstPhotoTarget?.screenshot_base64 || previewModal.shot ? (
+                      <div style={{ position: 'relative', width: '100%' }}>
+                        <img
+                          src={previewModal.firstPhotoTarget?.screenshot_base64 || previewModal.shot}
+                          alt="Target Click Position"
+                          style={{ width: '100%', height: 'auto', display: 'block', borderRadius: '0.5rem', border: '1px solid var(--border-color)' }}
+                        />
+                        {previewModal.firstPhotoTarget?.image_bbox && (
+                          <div
+                            style={{
+                              position: 'absolute',
+                              top: `${(previewModal.firstPhotoTarget.image_bbox.y / 1080) * 100}%`,
+                              left: `${(previewModal.firstPhotoTarget.image_bbox.x / 1920) * 100}%`,
+                              width: `${(previewModal.firstPhotoTarget.image_bbox.width / 1920) * 100}%`,
+                              height: `${(previewModal.firstPhotoTarget.image_bbox.height / 1080) * 100}%`,
+                              border: '3px solid #10B981',
+                              backgroundColor: 'rgba(16, 185, 129, 0.18)',
+                              pointerEvents: 'none',
+                              borderRadius: '6px',
+                              boxShadow: '0 0 20px rgba(16, 185, 129, 0.5)',
+                            }}
+                          >
+                            <span style={{ position: 'absolute', top: '-24px', left: '4px', backgroundColor: '#10B981', color: '#FFF', fontSize: '0.6875rem', padding: '0.15rem 0.5rem', borderRadius: '4px', fontWeight: 700 }}>
+                              Target Photo Cell ({previewModal.firstPhotoTarget.image_bbox.width}×{previewModal.firstPhotoTarget.image_bbox.height})
+                            </span>
+                          </div>
+                        )}
+
+                        {previewModal.firstPhotoTarget?.click_position && (
+                          <div
+                            style={{
+                              position: 'absolute',
+                              top: `${(previewModal.firstPhotoTarget.click_position.y / 1080) * 100}%`,
+                              left: `${(previewModal.firstPhotoTarget.click_position.x / 1920) * 100}%`,
+                              transform: 'translate(-50%, -50%)',
+                              pointerEvents: 'none',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                            }}
+                          >
+                            <div style={{ width: '28px', height: '28px', borderRadius: '50%', border: '2px solid #EF4444', backgroundColor: 'rgba(239, 68, 68, 0.3)', boxShadow: '0 0 15px #EF4444', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#FFF' }} />
+                            </div>
+                            <span style={{ position: 'absolute', left: '32px', backgroundColor: 'rgba(0, 0, 0, 0.85)', color: '#EF4444', border: '1px solid #EF4444', fontSize: '0.625rem', padding: '0.15rem 0.45rem', borderRadius: '4px', whiteSpace: 'nowrap', fontWeight: 700 }}>
+                              🎯 Calculated Center Click: ({previewModal.firstPhotoTarget.click_position.x}, {previewModal.firstPhotoTarget.click_position.y})
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8125rem', backgroundColor: '#05070A', borderRadius: '0.5rem' }}>
+                        No photo targeting data captured yet. Click "Run Photo Targeting" to detect and click target photo.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : previewModal.type === 'transformed_text' ? (
+                <div style={{ display: 'flex', flexDirection: 'column', width: '100%', maxWidth: '850px' }}>
+                  <div
+                    style={{
+                      padding: '1.25rem',
+                      fontSize: '0.8125rem',
+                      fontFamily: 'monospace',
+                      lineHeight: 1.6,
+                      color: 'var(--text-primary)',
+                      maxHeight: '65vh',
+                      overflowY: 'auto',
+                      whiteSpace: 'pre-wrap',
+                      backgroundColor: 'var(--bg-secondary)',
+                      borderRadius: '0.75rem',
+                      border: '1px solid var(--border-color)',
+                    }}
+                  >
+                    {previewModal.transformedContent || 'No transformed text generated yet.'}
+                  </div>
+                </div>
+              ) : previewModal.type === 'prompt_config' ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', width: '85vw', maxWidth: '1200px' }}>
+                  {/* Template Selection Bar (Transparent Header - No Dark Box Background) */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'transparent', padding: '0.25rem 0', flexWrap: 'wrap', gap: '0.75rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                      <FiImage style={{ color: 'var(--accent-primary)', fontSize: '1.1rem' }} />
+                      <span style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                        AI Studio Prompt Preset Database
+                      </span>
+                    </div>
+
+                    {/* Custom Package Dropdown Menu */}
+                    <div style={{ position: 'relative' }}>
+                      <button
+                        type="button"
+                        onClick={() => setIsModalImagePromptDropdownOpen(!isModalImagePromptDropdownOpen)}
+                        style={{
+                          height: '36px',
+                          padding: '0 0.85rem',
+                          backgroundColor: 'var(--bg-secondary)',
+                          color: 'var(--text-primary)',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '0.5rem',
+                          fontSize: '0.75rem',
+                          fontWeight: 600,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.5rem',
+                          cursor: 'pointer',
+                          boxShadow: 'var(--shadow-sm)',
+                        }}
+                      >
+                        <span>{imageEnhancePrompts.find((p) => p.id === selectedImagePromptId)?.name || 'Select Prompt Preset'}</span>
+                        <FiChevronDown style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }} />
+                      </button>
+
+                      {isModalImagePromptDropdownOpen && (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            top: 'calc(100% + 6px)',
+                            right: 0,
+                            minWidth: '260px',
+                            backgroundColor: 'var(--bg-surface)',
+                            border: '1px solid var(--border-color)',
+                            borderRadius: '0.625rem',
+                            boxShadow: 'var(--shadow-lg)',
+                            zIndex: 100,
+                            padding: '0.35rem',
+                          }}
+                        >
+                          {imageEnhancePrompts.length === 0 ? (
+                            <div
+                              style={{
+                                padding: '0.75rem',
+                                fontSize: '0.75rem',
+                                color: 'var(--text-muted)',
+                                textAlign: 'center',
+                              }}
+                            >
+                              No Image Enhance templates found.
+                              <br />
+                              <span style={{ fontSize: '0.6875rem' }}>Add templates in Prompt Templates → Image Enhance</span>
+                            </div>
+                          ) : (
+                            imageEnhancePrompts.map((tmpl) => {
+                              const isSelected = selectedImagePromptId === tmpl.id;
+                              return (
+                                <div
+                                  key={tmpl.id}
+                                  onClick={() => {
+                                    setSelectedImagePromptId(tmpl.id);
+                                    setCustomImagePromptText(tmpl.instructions || (tmpl as any).templateText || tmpl.desc || '');
+                                    setIsModalImagePromptDropdownOpen(false);
+                                  }}
+                                  style={{
+                                    padding: '0.55rem 0.75rem',
+                                    fontSize: '0.75rem',
+                                    fontWeight: isSelected ? 700 : 500,
+                                    color: isSelected ? 'var(--accent-primary)' : 'var(--text-primary)',
+                                    backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.14)' : 'transparent',
+                                    borderRadius: '0.375rem',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    transition: 'background-color 0.15s ease',
+                                  }}
+                                >
+                                  <span>{tmpl.name}</span>
+                                  {isSelected && <FiCheckCircle style={{ color: 'var(--accent-primary)', fontSize: '0.875rem' }} />}
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 2-Column Grid Side-by-Side */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem', width: '100%' }}>
+                    {/* Prompt 1 Column */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                      <label style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                        Prompt 1: Primary Base Enhancement
+                      </label>
+                      <textarea
+                        rows={12}
+                        value={customImagePromptText}
+                        onChange={(e) => setCustomImagePromptText(e.target.value)}
+                        placeholder="Enter primary base image enhancement prompt..."
+                        style={{
+                          width: '100%',
+                          minHeight: '280px',
+                          backgroundColor: 'var(--bg-secondary)',
+                          color: 'var(--text-primary)',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '0.5rem',
+                          padding: '0.875rem',
+                          fontSize: '0.78125rem',
+                          fontFamily: 'monospace',
+                          lineHeight: 1.6,
+                          resize: 'vertical',
+                        }}
+                      />
+                    </div>
+
+                    {/* Prompt 2 Column */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                      {/* Prompt 2 Header with Toggle */}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+                        <label style={{ fontSize: '0.8125rem', fontWeight: 700, color: enableSecondaryPrompt ? '#8B5CF6' : 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.4rem', transition: 'color 0.2s' }}>
+                          Prompt 2: Secondary Modifications & Lighting
+                        </label>
+
+                        {/* Toggle Switch */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = !enableSecondaryPrompt;
+                            setEnableSecondaryPrompt(next);
+                            try { localStorage.setItem('estate_enable_secondary_prompt', String(next)); } catch {}
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.4rem',
+                            background: 'none',
+                            border: 'none',
+                            cursor: 'pointer',
+                            padding: '0.25rem 0.5rem',
+                            borderRadius: '0.375rem',
+                            flexShrink: 0,
+                          }}
+                        >
+                          <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: enableSecondaryPrompt ? '#8B5CF6' : 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                            {enableSecondaryPrompt ? 'Enabled' : 'Disabled'}
+                          </span>
+                          {/* Switch Track */}
+                          <div
+                            style={{
+                              width: '36px',
+                              height: '20px',
+                              borderRadius: '10px',
+                              backgroundColor: enableSecondaryPrompt ? '#8B5CF6' : 'var(--bg-secondary)',
+                              border: enableSecondaryPrompt ? '1px solid #7C3AED' : '1px solid var(--border-color)',
+                              position: 'relative',
+                              transition: 'background-color 0.2s, border-color 0.2s',
+                              flexShrink: 0,
+                            }}
+                          >
+                            {/* Switch Knob */}
+                            <div
+                              style={{
+                                position: 'absolute',
+                                top: '2px',
+                                left: enableSecondaryPrompt ? '18px' : '2px',
+                                width: '14px',
+                                height: '14px',
+                                borderRadius: '50%',
+                                backgroundColor: '#FFFFFF',
+                                transition: 'left 0.2s',
+                                boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+                              }}
+                            />
+                          </div>
+                        </button>
+                      </div>
+
+                      <textarea
+                        rows={12}
+                        value={customSecondaryPromptText}
+                        onChange={(e) => setCustomSecondaryPromptText(e.target.value)}
+                        disabled={!enableSecondaryPrompt}
+                        placeholder="Enter secondary lighting/atmosphere modification prompt..."
+                        style={{
+                          width: '100%',
+                          minHeight: '280px',
+                          backgroundColor: enableSecondaryPrompt ? 'var(--bg-secondary)' : 'var(--bg-main)',
+                          color: enableSecondaryPrompt ? 'var(--text-primary)' : 'var(--text-muted)',
+                          border: `1px solid ${enableSecondaryPrompt ? 'var(--border-color)' : 'transparent'}`,
+                          borderRadius: '0.5rem',
+                          padding: '0.875rem',
+                          fontSize: '0.78125rem',
+                          fontFamily: 'monospace',
+                          lineHeight: 1.6,
+                          resize: 'vertical',
+                          opacity: enableSecondaryPrompt ? 1 : 0.45,
+                          transition: 'opacity 0.2s, background-color 0.2s',
+                          cursor: enableSecondaryPrompt ? 'text' : 'not-allowed',
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Action Bar */}
+
+                  {/* Action Bar */}
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '0.75rem', paddingTop: '0.5rem', borderTop: '1px solid var(--border-color)' }}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPreviewModal(null)}
+                      style={{ height: '36px', fontSize: '0.75rem' }}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={() => {
+                        try {
+                          const existingRaw = localStorage.getItem('estate_prompt_templates');
+                          let list = existingRaw ? JSON.parse(existingRaw) : [];
+                          if (!Array.isArray(list)) list = [];
+
+                          const updatedItem = {
+                            id: selectedImagePromptId || `custom_${Date.now()}`,
+                            name: `✨ AI Studio Preset (${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`,
+                            category: 'IMAGE_ENHANCE',
+                            templateText: customImagePromptText,
+                            secondaryPrompt: customSecondaryPromptText,
+                          };
+
+                          const existingIdx = list.findIndex((x: any) => String(x.id) === String(selectedImagePromptId));
+                          if (existingIdx >= 0) {
+                            list[existingIdx] = { ...list[existingIdx], templateText: customImagePromptText, secondaryPrompt: customSecondaryPromptText };
+                          } else {
+                            list.push(updatedItem);
+                          }
+
+                          localStorage.setItem('estate_prompt_templates', JSON.stringify(list));
+                        } catch (err) {
+                          console.error('Failed to save prompt template to database', err);
+                        }
+
+                        showAppleNotification('Prompts Saved', 'AI Studio Prompts updated and saved to template database.');
+                        setPreviewModal(null);
+                      }}
+                      style={{ height: '36px', fontSize: '0.75rem', fontWeight: 700 }}
+                    >
+                      Save Prompts to Database & Apply
+                    </Button>
+                  </div>
+                </div>
+              ) : previewModal.type === 'workflow_map' ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem', width: '88vw', maxWidth: '1240px' }}>
+                  {/* Interactive Zoom & Pan Workflow Canvas Box */}
+                  <div
+                    onMouseDown={handleWorkflowCanvasMouseDown}
+                    onMouseMove={handleWorkflowCanvasMouseMove}
+                    onMouseUp={handleWorkflowCanvasMouseUp}
+                    onMouseLeave={handleWorkflowCanvasMouseUp}
+                    onWheel={handleWorkflowCanvasWheel}
+                    style={{
+                      width: '100%',
+                      height: '540px',
+                      backgroundColor: 'var(--bg-secondary)',
+                      borderRadius: '0.875rem',
+                      border: '1px solid var(--border-color)',
+                      position: 'relative',
+                      overflow: 'hidden',
+                      backgroundImage: 'radial-gradient(var(--border-color-hover) 1.2px, transparent 1.2px)',
+                      backgroundSize: '24px 24px',
+                      boxShadow: 'none',
+                      userSelect: 'none',
+                      cursor: isWorkflowModalPanning ? 'grabbing' : 'grab',
+                    }}
+                  >
+                    {/* Top Floating Controls Bar (Zoom, Recenter & Helper Tip) */}
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: '12px',
+                        right: '12px',
+                        zIndex: 20,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        backgroundColor: 'var(--bg-surface)',
+                        padding: '0.35rem 0.65rem',
+                        borderRadius: '0.5rem',
+                        border: '1px solid var(--border-color)',
+                        boxShadow: 'var(--shadow-sm)',
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <button
+                        type="button"
+                        onClick={resetWorkflowCanvas}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.3rem',
+                          fontSize: '0.6875rem',
+                          fontWeight: 600,
+                          backgroundColor: 'transparent',
+                          color: 'var(--text-primary)',
+                          border: 'none',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <FiMaximize2 size={12} /> Recenter
+                      </button>
+
+                      <div style={{ width: '1px', height: '14px', backgroundColor: 'var(--border-color)' }} />
+
+                      <button
+                        type="button"
+                        onClick={() => setWorkflowModalZoom((prev) => Math.max(0.5, prev - 0.15))}
+                        style={{ background: 'none', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', fontWeight: 700, fontSize: '0.8125rem' }}
+                        title="Zoom Out"
+                      >
+                        -
+                      </button>
+
+                      <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: 'var(--accent-primary)', minWidth: '34px', textAlign: 'center' }}>
+                        {Math.round(workflowModalZoom * 100)}%
+                      </span>
+
+                      <button
+                        type="button"
+                        onClick={() => setWorkflowModalZoom((prev) => Math.min(2.0, prev + 0.15))}
+                        style={{ background: 'none', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', fontWeight: 700, fontSize: '0.8125rem' }}
+                        title="Zoom In"
+                      >
+                        +
+                      </button>
+                    </div>
+
+                    {/* Canvas Inner Transforming Wrapper */}
+                    <div
+                      style={{
+                        transform: `translate(${workflowModalPan.x}px, ${workflowModalPan.y}px) scale(${workflowModalZoom})`,
+                        transformOrigin: 'center center',
+                        width: '1200px',
+                        height: '520px',
+                        position: 'relative',
+                        transition: isWorkflowModalPanning ? 'none' : 'transform 0.1s ease-out',
+                      }}
+                    >
+                      {/* Animated SVG Connecting Flow Paths */}
+                      <svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 1 }}>
+                        <defs>
+                          <linearGradient id="flowGradientBlue" x1="0%" y1="0%" x2="100%" y2="0%">
+                            <stop offset="0%" stopColor="#3B82F6" />
+                            <stop offset="100%" stopColor="#10B981" />
+                          </linearGradient>
+                        </defs>
+                        {/* Flow 1: Step 1 -> Step 2 */}
+                        <path d="M 230 180 C 270 180, 270 110, 310 110" stroke="#3B82F6" strokeWidth="2.5" fill="none" strokeDasharray="6 6" />
+                        {/* Flow 2: Step 1 -> Step 3 */}
+                        <path d="M 230 180 C 270 180, 270 330, 310 330" stroke="#3B82F6" strokeWidth="2.5" fill="none" strokeDasharray="6 6" />
+                        {/* Flow 3: Step 2 -> Step 4 */}
+                        <path d="M 550 110 C 580 110, 580 110, 610 110" stroke="#10B981" strokeWidth="2.5" fill="none" strokeDasharray="6 6" />
+                        {/* Flow 4: Step 3 -> Step 5 */}
+                        <path d="M 550 330 C 580 330, 580 330, 610 330" stroke="#3B82F6" strokeWidth="2.5" fill="none" strokeDasharray="6 6" />
+                        {/* Flow 5: Step 4 -> Step 6 */}
+                        <path d="M 850 110 C 890 110, 890 220, 910 220" stroke="#10B981" strokeWidth="2.5" fill="none" strokeDasharray="6 6" />
+                        {/* Flow 6: Step 5 -> Step 6 */}
+                        <path d="M 850 330 C 890 330, 890 220, 910 220" stroke="#3B82F6" strokeWidth="2.5" fill="none" strokeDasharray="6 6" />
+                      </svg>
+
+                      {/* Step 1 Node: Open Browser & Load Page */}
+                      <div
+                        onClick={() => {
+                          const activeShot = capturedScreenshot || (activeTestRun?.images && activeTestRun.images[0] ? activeTestRun.images[0].public_url : null);
+                          if (activeShot) {
+                            setPreviewModal({ isOpen: true, title: 'Step 1: Open Browser & Navigate URL', imageSrc: activeShot });
+                          }
+                        }}
+                        style={{
+                          position: 'absolute',
+                          left: '20px',
+                          top: '100px',
+                          width: '210px',
+                          backgroundColor: 'var(--bg-surface)',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '0.75rem',
+                          padding: '0.75rem',
+                          zIndex: 2,
+                          cursor: capturedScreenshot || activeTestRun?.images?.length ? 'pointer' : 'default',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                          <span style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-muted)' }}>Step 1 • Browser Session</span>
+                          <span style={{ fontSize: '0.5625rem', fontWeight: 700, backgroundColor: 'rgba(59, 130, 246, 0.15)', color: '#60A5FA', padding: '0.1rem 0.35rem', borderRadius: '0.25rem' }}>PLAYWRIGHT</span>
+                        </div>
+                        <h4 style={{ fontSize: '0.78125rem', fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 0.35rem 0' }}>1. Launch Browser & Post URL</h4>
+
+                        {/* Screenshot Capture Thumbnail */}
+                        <div style={{ width: '100%', height: '80px', borderRadius: '0.375rem', overflow: 'hidden', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', marginBottom: '0.35rem' }}>
+                          {capturedScreenshot ? (
+                            <img src={capturedScreenshot} alt="Browser Capture" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          ) : activeTestRun?.images?.[0]?.public_url ? (
+                            <img src={activeTestRun.images[0].public_url} alt="Browser Capture" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          ) : (
+                            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '0.625rem' }}>
+                              Live Browser Capture
+                            </div>
+                          )}
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.625rem', color: '#10B981', fontWeight: 600 }}>
+                          <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10B981' }} /> Active Browser Load
+                        </div>
+                      </div>
+
+                      {/* Step 2 Node: AI Vision Target Detection */}
+                      <div
+                        onClick={() => {
+                          const activeShot = capturedScreenshot || (activeTestRun?.images && activeTestRun.images[0] ? activeTestRun.images[0].public_url : null);
+                          if (activeShot) {
+                            setPreviewModal({
+                              isOpen: true,
+                              title: 'Step 2: AI Vision Target Post Detection',
+                              type: 'overlay',
+                              imageSrc: activeShot,
+                              analysis: aiAnalysis,
+                            });
+                          }
+                        }}
+                        style={{
+                          position: 'absolute',
+                          left: '310px',
+                          top: '35px',
+                          width: '240px',
+                          backgroundColor: 'var(--bg-surface)',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '0.75rem',
+                          padding: '0.75rem',
+                          zIndex: 2,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                          <span style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-muted)' }}>Step 2 • Vision AI</span>
+                          <span style={{ fontSize: '0.5625rem', fontWeight: 700, backgroundColor: 'rgba(16, 185, 129, 0.15)', color: '#10B981', padding: '0.1rem 0.35rem', borderRadius: '0.25rem' }}>VISION BBOX</span>
+                        </div>
+                        <h4 style={{ fontSize: '0.78125rem', fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 0.35rem 0' }}>2. Detect Post Bounding Box</h4>
+
+                        {/* Crop Screenshot Thumbnail */}
+                        <div style={{ width: '100%', height: '85px', borderRadius: '0.375rem', overflow: 'hidden', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', marginBottom: '0.35rem', position: 'relative' }}>
+                          <img src={capturedScreenshot || activeTestRun?.images?.[0]?.public_url || 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=400&q=80'} alt="Crop Target" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          <div style={{ position: 'absolute', inset: '10%', border: '2px solid #10B981', borderRadius: '4px', backgroundColor: 'rgba(16, 185, 129, 0.15)' }} />
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.625rem', color: '#10B981', fontWeight: 600 }}>
+                          <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10B981' }} /> Target (X,Y) Calculated
+                        </div>
+                      </div>
+
+                      {/* Step 3 Node: Photo Click & Content Extraction */}
+                      <div
+                        onClick={() => {
+                          if (activeTestRun?.images && activeTestRun.images[0]) {
+                            setPreviewModal({
+                              isOpen: true,
+                              title: 'Step 3: Extracted Property Photos & Text',
+                              imageSrc: activeTestRun.images[0].public_url,
+                            });
+                          }
+                        }}
+                        style={{
+                          position: 'absolute',
+                          left: '310px',
+                          top: '255px',
+                          width: '240px',
+                          backgroundColor: 'var(--bg-surface)',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '0.75rem',
+                          padding: '0.75rem',
+                          zIndex: 2,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                          <span style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-muted)' }}>Step 3 • Media Extract</span>
+                          <span style={{ fontSize: '0.5625rem', fontWeight: 700, backgroundColor: 'rgba(59, 130, 246, 0.15)', color: '#60A5FA', padding: '0.1rem 0.35rem', borderRadius: '0.25rem' }}>GALLERY</span>
+                        </div>
+                        <h4 style={{ fontSize: '0.78125rem', fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 0.35rem 0' }}>3. Simulate Click & Extracted Photos</h4>
+
+                        {/* Extracted Photo Thumbnail */}
+                        <div style={{ width: '100%', height: '85px', borderRadius: '0.375rem', overflow: 'hidden', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', marginBottom: '0.35rem' }}>
+                          <img src={activeTestRun?.images?.[0]?.public_url || 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=400&q=80'} alt="Extracted Photo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.625rem', color: '#10B981', fontWeight: 600 }}>
+                          <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10B981' }} /> {activeTestRun?.images?.length || 1} Property Photos Extracted
+                        </div>
+                      </div>
+
+                      {/* Step 4 Node: AI Copywriting Transformation */}
+                      <div
+                        onClick={() => {
+                          if (transformedContent) {
+                            setPreviewModal({
+                              isOpen: true,
+                              title: 'Step 4: AI Transformed Copy Output',
+                              type: 'transformed_text',
+                              transformedContent: transformedContent,
+                            });
+                          }
+                        }}
+                        style={{
+                          position: 'absolute',
+                          left: '610px',
+                          top: '35px',
+                          width: '240px',
+                          backgroundColor: 'var(--bg-surface)',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '0.75rem',
+                          padding: '0.75rem',
+                          zIndex: 2,
+                          cursor: transformedContent ? 'pointer' : 'default',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                          <span style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-muted)' }}>Step 4 • Copy Engine</span>
+                          <span style={{ fontSize: '0.5625rem', fontWeight: 700, backgroundColor: 'rgba(139, 92, 246, 0.15)', color: '#A78BFA', padding: '0.1rem 0.35rem', borderRadius: '0.25rem' }}>GEMINI LLM</span>
+                        </div>
+                        <h4 style={{ fontSize: '0.78125rem', fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 0.35rem 0' }}>4. AI Content Transformation</h4>
+                        <p style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', margin: 0, lineHeight: 1.4 }}>Transforms raw listing text into high-converting Thai/English structure.</p>
+                        <div style={{ marginTop: '0.6rem', display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.625rem', color: '#10B981', fontWeight: 600 }}>
+                          <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10B981' }} /> {transformedContent ? 'Transformed Copy Ready' : 'Template Active'}
+                        </div>
+                      </div>
+
+                      {/* Step 5 Node: AI Photo Studio Enhancement */}
+                      <div
+                        onClick={() => {
+                          const firstImg = activeTestRun?.images?.[0]?.public_url;
+                          const activeUrl = firstImg && enhancedImages[firstImg] ? enhancedImages[firstImg] : firstImg;
+                          if (activeUrl) {
+                            setPreviewModal({ isOpen: true, title: 'Step 5: AI Photo Studio Enhancement', imageSrc: activeUrl });
+                          }
+                        }}
+                        style={{
+                          position: 'absolute',
+                          left: '610px',
+                          top: '255px',
+                          width: '240px',
+                          backgroundColor: 'var(--bg-surface)',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '0.75rem',
+                          padding: '0.75rem',
+                          zIndex: 2,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                          <span style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-muted)' }}>Step 5 • AI Studio</span>
+                          <span style={{ fontSize: '0.5625rem', fontWeight: 700, backgroundColor: 'rgba(16, 185, 129, 0.15)', color: '#10B981', padding: '0.1rem 0.35rem', borderRadius: '0.25rem' }}>DALL-E 3</span>
+                        </div>
+                        <h4 style={{ fontSize: '0.78125rem', fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 0.35rem 0' }}>5. AI Photo Studio Enhancement</h4>
+
+                        {/* Enhanced Image Thumbnail */}
+                        <div style={{ width: '100%', height: '85px', borderRadius: '0.375rem', overflow: 'hidden', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', marginBottom: '0.35rem' }}>
+                          <img src={activeTestRun?.images?.[0]?.public_url || 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=400&q=80'} alt="Enhanced Photo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.625rem', color: '#10B981', fontWeight: 600 }}>
+                          <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10B981' }} /> Enhanced Studio Lighting
+                        </div>
+                      </div>
+
+                      {/* Step 6 Node: Database Persistence & Publish Queue */}
+                      <div
+                        style={{
+                          position: 'absolute',
+                          left: '910px',
+                          top: '150px',
+                          width: '210px',
+                          backgroundColor: 'var(--bg-surface)',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '0.75rem',
+                          padding: '0.75rem',
+                          zIndex: 2,
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                          <span style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-muted)' }}>Step 6 • Database</span>
+                          <span style={{ fontSize: '0.5625rem', fontWeight: 700, backgroundColor: 'rgba(59, 130, 246, 0.15)', color: '#60A5FA', padding: '0.1rem 0.35rem', borderRadius: '0.25rem' }}>PUBLISH</span>
+                        </div>
+                        <h4 style={{ fontSize: '0.78125rem', fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 0.35rem 0' }}>6. Database & Publish Queue</h4>
+                        <p style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', margin: 0, lineHeight: 1.4 }}>Stores processed listing record in local database ready for auto-publishing.</p>
+                        <div style={{ marginTop: '0.6rem', display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.625rem', color: '#10B981', fontWeight: 600 }}>
+                          <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10B981' }} /> Ready for Review
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Step-by-Step Test Process Explanation Cards Bar */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.75rem', width: '100%' }}>
+                    <div style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '0.5rem', padding: '0.75rem' }}>
+                      <div style={{ fontSize: '0.6875rem', fontWeight: 700, color: 'var(--accent-primary)', marginBottom: '0.2rem' }}>STEP 1: EXTRACTION</div>
+                      <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>URL Post Extraction</div>
+                      <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>Opens browser session & extracts raw post text and photos.</div>
+                    </div>
+                    <div style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '0.5rem', padding: '0.75rem' }}>
+                      <div style={{ fontSize: '0.6875rem', fontWeight: 700, color: '#10B981', marginBottom: '0.2rem' }}>STEP 2: TARGETING</div>
+                      <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>AI Photo Click & Center</div>
+                      <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>Calculates (X,Y) coordinates & simulates photo click.</div>
+                    </div>
+                    <div style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '0.5rem', padding: '0.75rem' }}>
+                      <div style={{ fontSize: '0.6875rem', fontWeight: 700, color: '#8B5CF6', marginBottom: '0.2rem' }}>STEP 3: MULTI-AI</div>
+                      <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>Prompts & Studio AI</div>
+                      <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>Runs DALL-E & Gemini multi-modal transformation.</div>
+                    </div>
+                    <div style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '0.5rem', padding: '0.75rem' }}>
+                      <div style={{ fontSize: '0.6875rem', fontWeight: 700, color: '#F59E0B', marginBottom: '0.2rem' }}>STEP 4: OUTPUT</div>
+                      <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>Auto-Publish Queue</div>
+                      <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>Stores final listings in DB ready for publishing.</div>
+                    </div>
+                  </div>
+                </div>
+              ) : previewModal.type === 'overlay' && previewModal.imageSrc ? (
+                <div style={{ position: 'relative', width: '100%', maxWidth: '1100px' }}>
+                  <img src={previewModal.imageSrc} alt="Diagnostic Overlay" style={{ width: '100%', height: 'auto', display: 'block', borderRadius: '0.5rem' }} />
+                  {previewModal.analysis?.target_region ? (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: `${Math.max(1, ((previewModal.analysis.target_region.y || 20) / 1080) * 100)}%`,
+                        left: `${((previewModal.analysis.target_region.x || 500) / 1920) * 100}%`,
+                        width: `${((previewModal.analysis.target_region.width || 720) / 1920) * 100}%`,
+                        height: `${Math.min(97, ((previewModal.analysis.target_region.height || 1020) / 1080) * 100)}%`,
+                        border: '3px solid #10B981',
+                        backgroundColor: 'rgba(16, 185, 129, 0.12)',
+                        pointerEvents: 'none',
+                        borderRadius: '6px',
+                        boxShadow: '0 0 20px rgba(16, 185, 129, 0.5)',
+                      }}
+                    >
+                      <span style={{ position: 'absolute', top: '-24px', left: '4px', backgroundColor: '#10B981', color: '#FFF', fontSize: '0.6875rem', padding: '0.15rem 0.5rem', borderRadius: '4px', fontWeight: 700 }}>
+                        Target Post Container (AI Bounding Box)
+                      </span>
+                    </div>
+                  ) : (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: '2%',
+                        left: '26%',
+                        width: '48%',
+                        height: '80%',
+                        border: '3px solid #10B981',
+                        backgroundColor: 'rgba(16, 185, 129, 0.12)',
+                        pointerEvents: 'none',
+                        borderRadius: '6px',
+                        boxShadow: '0 0 20px rgba(16, 185, 129, 0.5)',
+                      }}
+                    >
+                      <span style={{ position: 'absolute', top: '-24px', left: '4px', backgroundColor: '#10B981', color: '#FFF', fontSize: '0.6875rem', padding: '0.15rem 0.5rem', borderRadius: '4px', fontWeight: 700 }}>
+                        Target Post Container (AI Bounding Box)
+                      </span>
+                    </div>
+                  )}
+                </div>
+              ) : (previewModal.type === 'property_photo' || previewModal.imageSrc) ? (
+                (() => {
+                  const images = activeTestRun?.images || [];
+                  const matchedIndex = images.findIndex((img) => img.public_url === previewModal.imageSrc || (enhancedImages[img.public_url] && enhancedImages[img.public_url] === previewModal.imageSrc));
+                  const currentIndex = previewModal.photoIndex !== undefined ? previewModal.photoIndex : (matchedIndex !== -1 ? matchedIndex : 0);
+                  const currentImg = images[currentIndex] || (previewModal.imageSrc ? { public_url: previewModal.imageSrc, id: '1' } : null);
+                  const isEnh = currentImg ? !!enhancedImages[currentImg.public_url] : false;
+                  const enhancedUrl = currentImg ? enhancedImages[currentImg.public_url] : null;
+                  const rawOriginalUrl = currentImg ? currentImg.public_url : (previewModal.imageSrc || '');
+                  const activePhotoUrl = (isEnh && showOriginalInPreview) ? rawOriginalUrl : (enhancedUrl || rawOriginalUrl);
+
+                  const handleNavPhoto = (dir: 'prev' | 'next') => {
+                    if (images.length === 0) return;
+                    setShowOriginalInPreview(false);
+                    const nextIdx = dir === 'prev' ? (currentIndex > 0 ? currentIndex - 1 : images.length - 1) : (currentIndex < images.length - 1 ? currentIndex + 1 : 0);
+                    const targetImg = images[nextIdx];
+                    const targetEnh = !!enhancedImages[targetImg.public_url];
+                    const targetUrl = enhancedImages[targetImg.public_url] || targetImg.public_url;
+                    setPreviewModal({
+                      isOpen: true,
+                      title: `Property Photo #${nextIdx + 1} of ${images.length} (${targetEnh ? 'AI Enhanced Studio' : 'Original Extracted'})`,
+                      type: 'property_photo',
+                      photoIndex: nextIdx,
+                      imageSrc: targetUrl,
+                    });
+                  };
+
+                  return (
+                    <div style={{ display: 'flex', gap: '1.25rem', width: '92vw', maxWidth: '1200px', height: 'calc(85vh - 85px)', maxHeight: '720px', boxSizing: 'border-box' }}>
+                      {/* Left Main Area: Photo Viewer with Previous / Next Arrows */}
+                      <div
+                        style={{
+                          flex: 1,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          position: 'relative',
+                          backgroundColor: 'transparent',
+                          overflow: 'hidden',
+                          height: '100%',
+                          minWidth: 0,
+                          minHeight: 0,
+                        }}
+                      >
+                        {/* Photo Box with Floating Previous & Next Navigation Buttons */}
+                        <div style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, overflow: 'hidden', width: '100%', height: '100%' }}>
+                          {/* Previous Button (Shadow removed) */}
+                          {images.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleNavPhoto('prev');
+                              }}
+                              style={{
+                                position: 'absolute',
+                                left: '1rem',
+                                zIndex: 10,
+                                width: '40px',
+                                height: '40px',
+                                borderRadius: '50%',
+                                backgroundColor: 'rgba(0, 0, 0, 0.65)',
+                                color: '#FFFFFF',
+                                border: '1px solid rgba(255, 255, 255, 0.2)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                cursor: 'pointer',
+                                transition: 'all 0.15s ease',
+                                boxShadow: 'none',
+                              }}
+                              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--accent-primary)')}
+                              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.65)')}
+                              title="Previous Photo (Left Arrow)"
+                            >
+                              <FiChevronLeft style={{ fontSize: '1.35rem' }} />
+                            </button>
+                          )}
+
+                          {/* Exact Image Bounded Container */}
+                          <div
+                            style={{
+                              position: 'relative',
+                              maxWidth: '100%',
+                              maxHeight: '100%',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              borderRadius: '0.5rem',
+                              overflow: 'hidden',
+                            }}
+                          >
+                            {/* Large Photo Preview */}
+                            <img
+                              src={activePhotoUrl}
+                              alt={`Photo #${currentIndex + 1}`}
+                              style={{
+                                maxWidth: '100%',
+                                maxHeight: '100%',
+                                width: 'auto',
+                                height: 'auto',
+                                objectFit: 'contain',
+                                borderRadius: '0.5rem',
+                                transition: 'opacity 0.3s ease',
+                                opacity: ((currentImg && currentBatchUrl === currentImg.public_url) || (studioModal?.isProcessing && currentImg && studioModal.imgUrl === currentImg.public_url) || (currentImg ? !!enhancingUrls[currentImg.public_url] : false))
+                                  ? 0.82
+                                  : 1,
+                                display: 'block',
+                              }}
+                            />
+
+                            {/* Infinite Top-Left to Bottom-Right Diagonal Light Glass Sweep & Center Loading Animation */}
+                            {((currentImg && currentBatchUrl === currentImg.public_url) || (studioModal?.isProcessing && currentImg && studioModal.imgUrl === currentImg.public_url) || (currentImg ? !!enhancingUrls[currentImg.public_url] : false)) && (
+                              <>
+                                {/* Infinite Top-Left to Bottom-Right Diagonal Glass Beam */}
+                                <div
+                                  style={{
+                                    position: 'absolute',
+                                    inset: 0,
+                                    overflow: 'hidden',
+                                    pointerEvents: 'none',
+                                    zIndex: 11,
+                                    borderRadius: '0.5rem',
+                                  }}
+                                >
+                                  <motion.div
+                                    initial={{ x: '-160%', y: '-160%' }}
+                                    animate={{ x: '160%', y: '160%' }}
+                                    transition={{ repeat: Infinity, duration: 2, ease: 'easeInOut' }}
+                                    style={{
+                                      position: 'absolute',
+                                      top: '-60%',
+                                      left: '-60%',
+                                      width: '220%',
+                                      height: '90px',
+                                      background: 'linear-gradient(180deg, transparent 0%, rgba(255, 255, 255, 0.04) 15%, rgba(255, 255, 255, 0.45) 50%, rgba(255, 255, 255, 0.04) 85%, transparent 100%)',
+                                      transform: 'rotate(-45deg)',
+                                      backdropFilter: 'blur(1px)',
+                                    }}
+                                  />
+                                </div>
+
+                                {/* Pure Floating Center Loader (No Background Box) */}
+                                <div
+                                  style={{
+                                    position: 'absolute',
+                                    inset: 0,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    zIndex: 12,
+                                    pointerEvents: 'none',
+                                  }}
+                                >
+                                  <div
+                                    style={{
+                                      position: 'relative',
+                                      width: '50px',
+                                      height: '50px',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                    }}
+                                  >
+                                    {/* Rotating Gradient Arc */}
+                                    <div
+                                      style={{
+                                        position: 'absolute',
+                                        inset: 0,
+                                        borderRadius: '50%',
+                                        border: '3px solid rgba(255, 255, 255, 0.25)',
+                                        borderTopColor: '#3B82F6',
+                                        borderRightColor: '#60A5FA',
+                                        animation: 'spin 0.85s linear infinite',
+                                        filter: 'drop-shadow(0 0 10px rgba(59, 130, 246, 0.65))',
+                                      }}
+                                    />
+                                    {/* Center Glowing Zap */}
+                                    <FiZap
+                                      style={{
+                                        color: '#FFFFFF',
+                                        fontSize: '1.25rem',
+                                        filter: 'drop-shadow(0 0 6px rgba(255, 255, 255, 0.9)) drop-shadow(0 0 12px rgba(59, 130, 246, 0.9))',
+                                      }}
+                                    />
+                                  </div>
+                                </div>
+                              </>
+                            )}
+                          </div>
+
+                          {/* Next Button (Shadow removed) */}
+                          {images.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleNavPhoto('next');
+                              }}
+                              style={{
+                                position: 'absolute',
+                                right: '1rem',
+                                zIndex: 10,
+                                width: '40px',
+                                height: '40px',
+                                borderRadius: '50%',
+                                backgroundColor: 'rgba(0, 0, 0, 0.65)',
+                                color: '#FFFFFF',
+                                border: '1px solid rgba(255, 255, 255, 0.2)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                cursor: 'pointer',
+                                transition: 'all 0.15s ease',
+                                boxShadow: 'none',
+                              }}
+                              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--accent-primary)')}
+                              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.65)')}
+                              title="Next Photo (Right Arrow)"
+                            >
+                              <FiChevronRight style={{ fontSize: '1.35rem' }} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Right Sidebar Column: Single Image AI Studio Enhancement Controls */}
+                      <div
+                        style={{
+                          width: '320px',
+                          minWidth: '320px',
+                          backgroundColor: 'var(--bg-secondary)',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '0.75rem',
+                          padding: '1.125rem',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          justifyContent: 'space-between',
+                          gap: '1rem',
+                          overflowY: 'auto',
+                          maxHeight: '100%',
+                          boxSizing: 'border-box',
+                        }}
+                      >
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}>
+                            <FiZap style={{ color: 'var(--accent-primary)', fontSize: '1.1rem' }} />
+                            <div>
+                              <h4 style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+                                Single Photo AI Studio
+                              </h4>
+                              <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>Enhance individual image</span>
+                            </div>
+                          </div>
+
+                          {/* Quick Jump Thumbnail Strip (Placed Above the Action Button) */}
+                          {images.length > 1 && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                              <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                                Quick Jump ({images.length})
+                              </span>
+                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.35rem' }}>
+                                {images.map((img, i) => {
+                                  const itemEnh = !!enhancedImages[img.public_url];
+                                  const itemUrl = enhancedImages[img.public_url] || img.public_url;
+                                  const isSelected = i === currentIndex;
+                                  return (
+                                    <div
+                                      key={i}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setShowOriginalInPreview(false);
+                                        setPreviewModal({
+                                          isOpen: true,
+                                          title: `Property Photo #${i + 1} of ${images.length}`,
+                                          type: 'property_photo',
+                                          photoIndex: i,
+                                          imageSrc: itemUrl,
+                                        });
+                                      }}
+                                      style={{
+                                        aspectRatio: '4/3',
+                                        borderRadius: '0.35rem',
+                                        overflow: 'hidden',
+                                        border: isSelected ? '2px solid var(--accent-primary)' : itemEnh ? '1px solid #10B981' : '1px solid var(--border-color)',
+                                        cursor: 'pointer',
+                                        opacity: isSelected ? 1 : 0.65,
+                                      }}
+                                    >
+                                      <img src={itemUrl} alt={`Thumb ${i + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Single Image Enhance Action Buttons */}
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                                Enhancement Action
+                              </span>
+                              {isEnh && (
+                                <span style={{ fontSize: '0.625rem', fontWeight: 700, color: showOriginalInPreview ? 'var(--text-muted)' : '#10B981' }}>
+                                  {showOriginalInPreview ? 'Viewing Original' : 'Viewing Enhanced'}
+                                </span>
+                              )}
+                            </div>
+
+                            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                              {/* Re-enhance or Enhance Button */}
+                              <Button
+                                variant="primary"
+                                size="sm"
+                                leftIcon={((currentImg && currentBatchUrl === currentImg.public_url) || (studioModal && studioModal.isProcessing && currentImg && studioModal.imgUrl === currentImg.public_url)) ? <FiLoader style={{ animation: 'spin 1s linear infinite' }} /> : isEnh ? <FiRefreshCw /> : <FiZap />}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (currentImg) {
+                                    handleEnhanceImage(currentImg.public_url);
+                                  }
+                                }}
+                                disabled={(currentImg && currentBatchUrl === currentImg.public_url) || (studioModal?.isProcessing ?? false) || !currentImg}
+                                style={{
+                                  flex: 1,
+                                  height: '36px',
+                                  fontSize: '0.78125rem',
+                                  fontWeight: 700,
+                                  backgroundColor: 'var(--accent-primary)',
+                                  color: '#FFFFFF',
+                                }}
+                              >
+                                {((currentImg && currentBatchUrl === currentImg.public_url) || (studioModal && studioModal.isProcessing && currentImg && studioModal.imgUrl === currentImg.public_url))
+                                  ? 'Enhancing...'
+                                  : isEnh
+                                  ? 'Re-enhance'
+                                  : 'Enhance Photo'}
+                              </Button>
+
+                              {/* View Original / View Enhanced Button (Shown when already enhanced) */}
+                              {isEnh && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  leftIcon={showOriginalInPreview ? <FiZap /> : <FiEye />}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setShowOriginalInPreview(!showOriginalInPreview);
+                                  }}
+                                  style={{
+                                    flex: 1,
+                                    height: '36px',
+                                    fontSize: '0.78125rem',
+                                    fontWeight: 700,
+                                    backgroundColor: showOriginalInPreview ? 'var(--bg-secondary)' : 'var(--bg-surface)',
+                                    color: 'var(--text-primary)',
+                                    border: '1px solid var(--border-color)',
+                                  }}
+                                >
+                                  {showOriginalInPreview ? 'View Enhanced' : 'View Original'}
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Real-Time AI Studio Live Process Stepper Card */}
+                          {studioModal && currentImg && studioModal.imgUrl === currentImg.public_url ? (
+                            (() => {
+                              const activeP1 = getActiveImagePrompt();
+                              const activeP2 = getActiveSecondaryPrompt();
+
+                              const isStep1Done = studioModal.logs.some(l => l.text.toLowerCase().includes('step 1 complete') || l.text.toLowerCase().includes('v1 created')) || (!studioModal.isProcessing && studioModal.elapsedSec > 0) || isEnh;
+                              const isStep1Active = studioModal.isProcessing && !isStep1Done;
+
+                              const isStep2Done = enableSecondaryPrompt
+                                ? (studioModal.logs.some(l => l.text.toLowerCase().includes('finished') || l.text.toLowerCase().includes('two-prompt') || l.text.toLowerCase().includes('complete')) || (!studioModal.isProcessing && isStep1Done && isEnh))
+                                : false;
+                              const isStep2Active = enableSecondaryPrompt && studioModal.isProcessing && isStep1Done && !isStep2Done;
+
+                              const isPipelineDone = !studioModal.isProcessing && (
+                                enableSecondaryPrompt ? (isStep2Done || isEnh) : (isStep1Done || isEnh)
+                              );
+
+                              return (
+                                <div
+                                  style={{
+                                    backgroundColor: 'transparent',
+                                    border: 'none',
+                                    padding: 0,
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    flex: 1,
+                                    justifyContent: 'space-between',
+                                    gap: '0.85rem',
+                                  }}
+                                >
+                                  {/* Top Status Header */}
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.35rem' }}>
+                                    <div
+                                      style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '0.4rem',
+                                        backgroundColor: isPipelineDone ? 'rgba(16, 185, 129, 0.12)' : 'rgba(59, 130, 246, 0.12)',
+                                        border: isPipelineDone ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(59, 130, 246, 0.3)',
+                                        borderRadius: '0.5rem',
+                                        padding: '0.35rem 0.65rem',
+                                      }}
+                                    >
+                                      {isPipelineDone ? (
+                                        <FiCheckCircle style={{ color: '#10B981', fontSize: '0.875rem' }} />
+                                      ) : (
+                                        <FiLoader style={{ animation: 'spin 1s linear infinite', color: 'var(--accent-primary)', fontSize: '0.875rem' }} />
+                                      )}
+                                      <span style={{ fontSize: '0.75rem', fontWeight: 700, color: isPipelineDone ? '#10B981' : 'var(--accent-primary)' }}>
+                                        {isPipelineDone ? `Completed (${studioModal.elapsedSec.toFixed(1)}s)` : `Processing (${studioModal.elapsedSec.toFixed(1)}s)`}
+                                      </span>
+                                    </div>
+                                    <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                                      {isPipelineDone ? 'All Stages Complete' : studioModal.stage}
+                                    </span>
+                                  </div>
+
+                                  {/* Glowing Progress Bar */}
+                                  <div style={{ width: '100%', height: '4px', backgroundColor: 'var(--bg-secondary)', borderRadius: '2px', overflow: 'hidden' }}>
+                                    <div
+                                      style={{
+                                        height: '100%',
+                                        width: isPipelineDone ? '100%' : `${Math.min(95, Math.max(15, (studioModal.elapsedSec / (enableSecondaryPrompt ? 20 : 10)) * 100))}%`,
+                                        background: isPipelineDone ? '#10B981' : 'linear-gradient(90deg, #3B82F6, #8B5CF6)',
+                                        borderRadius: '2px',
+                                        boxShadow: isPipelineDone ? '0 0 10px rgba(16, 185, 129, 0.5)' : '0 0 10px rgba(59, 130, 246, 0.5)',
+                                        transition: 'width 0.3s ease',
+                                      }}
+                                    />
+                                  </div>
+
+                                  {/* Visual Multi-Stage Pipeline Stepper */}
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', marginTop: '0.25rem' }}>
+                                    {/* Step 1 Item */}
+                                    <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                                      <div
+                                        style={{
+                                          width: '24px',
+                                          height: '24px',
+                                          borderRadius: '50%',
+                                          backgroundColor: isStep1Done ? '#10B981' : isStep1Active ? 'var(--accent-primary)' : 'var(--bg-secondary)',
+                                          color: isStep1Done || isStep1Active ? '#FFFFFF' : 'var(--text-muted)',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
+                                          fontSize: '0.6875rem',
+                                          fontWeight: 700,
+                                          flexShrink: 0,
+                                          boxShadow: isStep1Active ? '0 0 10px var(--accent-primary)' : 'none',
+                                        }}
+                                      >
+                                        {isStep1Done ? <FiCheck /> : isStep1Active ? <FiLoader style={{ animation: 'spin 1s linear infinite' }} /> : '1'}
+                                      </div>
+                                      <div style={{ flex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center', minWidth: 0, gap: '0.5rem' }}>
+                                        <div style={{ minWidth: 0 }}>
+                                          <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                            {activeP1.name}
+                                          </div>
+                                          <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                            {activeP1.desc || 'Exposure & architectural details'}
+                                          </div>
+                                        </div>
+                                        <span
+                                          style={{
+                                            fontSize: '0.625rem',
+                                            fontWeight: 700,
+                                            padding: '0.2rem 0.5rem',
+                                            borderRadius: '0.25rem',
+                                            backgroundColor: isStep1Done ? 'rgba(16, 185, 129, 0.12)' : isStep1Active ? 'rgba(59, 130, 246, 0.12)' : 'var(--bg-secondary)',
+                                            color: isStep1Done ? '#10B981' : isStep1Active ? 'var(--accent-primary)' : 'var(--text-muted)',
+                                            whiteSpace: 'nowrap',
+                                            flexShrink: 0,
+                                          }}
+                                        >
+                                          {enableSecondaryPrompt
+                                            ? (isStep1Done ? 'Done (V1)' : isStep1Active ? 'Rendering...' : 'Queued')
+                                            : (isStep1Done ? 'Done' : isStep1Active ? 'Rendering...' : 'Queued')}
+                                        </span>
+                                      </div>
+                                    </div>
+
+                                    {/* Step 2 Item */}
+                                    {enableSecondaryPrompt ? (
+                                      <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                                        <div
+                                          style={{
+                                            width: '24px',
+                                            height: '24px',
+                                            borderRadius: '50%',
+                                            backgroundColor: isStep2Done ? '#10B981' : isStep2Active ? 'var(--accent-primary)' : 'var(--bg-secondary)',
+                                            color: isStep2Done || isStep2Active ? '#FFFFFF' : 'var(--text-muted)',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            fontSize: '0.6875rem',
+                                            fontWeight: 700,
+                                            flexShrink: 0,
+                                            boxShadow: isStep2Active ? '0 0 10px var(--accent-primary)' : 'none',
+                                          }}
+                                        >
+                                          {isStep2Done ? <FiCheck /> : isStep2Active ? <FiLoader style={{ animation: 'spin 1s linear infinite' }} /> : '2'}
+                                        </div>
+                                        <div style={{ flex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center', minWidth: 0, gap: '0.5rem' }}>
+                                          <div style={{ minWidth: 0 }}>
+                                            <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                              {activeP2.name}
+                                            </div>
+                                            <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                              {activeP2.desc || 'Golden hour & window flare'}
+                                            </div>
+                                          </div>
+                                          <span
+                                            style={{
+                                              fontSize: '0.625rem',
+                                              fontWeight: 700,
+                                              padding: '0.2rem 0.5rem',
+                                              borderRadius: '0.25rem',
+                                              backgroundColor: isStep2Done ? 'rgba(16, 185, 129, 0.12)' : isStep2Active ? 'rgba(59, 130, 246, 0.12)' : 'var(--bg-secondary)',
+                                              color: isStep2Done ? '#10B981' : isStep2Active ? 'var(--accent-primary)' : 'var(--text-muted)',
+                                              whiteSpace: 'nowrap',
+                                              flexShrink: 0,
+                                            }}
+                                          >
+                                            {isStep2Done ? 'Done (V2)' : isStep2Active ? 'Rendering...' : 'Queued'}
+                                          </span>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', opacity: 0.45 }}>
+                                        <div
+                                          style={{
+                                            width: '24px',
+                                            height: '24px',
+                                            borderRadius: '50%',
+                                            backgroundColor: 'var(--bg-secondary)',
+                                            color: 'var(--text-muted)',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            fontSize: '0.6875rem',
+                                            fontWeight: 700,
+                                            flexShrink: 0,
+                                          }}
+                                        >
+                                          2
+                                        </div>
+                                        <div style={{ flex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center', minWidth: 0, gap: '0.5rem' }}>
+                                          <div style={{ minWidth: 0 }}>
+                                            <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                              {activeP2.name}
+                                            </div>
+                                            <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                              Disabled in Prompt Settings
+                                            </div>
+                                          </div>
+                                          <span
+                                            style={{
+                                              fontSize: '0.625rem',
+                                              fontWeight: 700,
+                                              padding: '0.2rem 0.5rem',
+                                              borderRadius: '0.25rem',
+                                              backgroundColor: 'var(--bg-secondary)',
+                                              color: 'var(--text-muted)',
+                                              whiteSpace: 'nowrap',
+                                              flexShrink: 0,
+                                            }}
+                                          >
+                                            Disabled
+                                          </span>
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {/* Step 3 Item (Master Asset) */}
+                                    <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                                      <div
+                                        style={{
+                                          width: '24px',
+                                          height: '24px',
+                                          borderRadius: '50%',
+                                          backgroundColor: isPipelineDone ? '#10B981' : 'var(--bg-secondary)',
+                                          color: isPipelineDone ? '#FFFFFF' : 'var(--text-muted)',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
+                                          fontSize: '0.6875rem',
+                                          fontWeight: 700,
+                                          flexShrink: 0,
+                                        }}
+                                      >
+                                        {isPipelineDone ? <FiCheck /> : '3'}
+                                      </div>
+                                      <div style={{ flex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center', minWidth: 0, gap: '0.5rem' }}>
+                                        <div style={{ minWidth: 0 }}>
+                                          <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                            4K Studio Master Asset
+                                          </div>
+                                          <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                            High resolution export ready
+                                          </div>
+                                        </div>
+                                        <span
+                                          style={{
+                                            fontSize: '0.625rem',
+                                            fontWeight: 700,
+                                            padding: '0.2rem 0.5rem',
+                                            borderRadius: '0.25rem',
+                                            backgroundColor: isPipelineDone ? 'rgba(16, 185, 129, 0.12)' : 'var(--bg-secondary)',
+                                            color: isPipelineDone ? '#10B981' : 'var(--text-muted)',
+                                            whiteSpace: 'nowrap',
+                                            flexShrink: 0,
+                                          }}
+                                        >
+                                          {isPipelineDone ? 'Ready' : 'Pending'}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Pipeline Specs Box */}
+                                  <div
+                                    style={{
+                                      padding: '0.65rem 0.75rem',
+                                      backgroundColor: 'var(--bg-surface)',
+                                      borderRadius: '0.5rem',
+                                      border: '1px solid var(--border-color)',
+                                      display: 'grid',
+                                      gridTemplateColumns: '1fr 1fr',
+                                      gap: '0.5rem',
+                                      fontSize: '0.6875rem',
+                                      marginTop: 'auto',
+                                    }}
+                                  >
+                                    <div>
+                                      <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.625rem' }}>AI Engine</span>
+                                      <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>DALL-E 3 / Vision</span>
+                                    </div>
+                                    <div>
+                                      <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.625rem' }}>Output Quality</span>
+                                      <span style={{ fontWeight: 600, color: '#10B981' }}>Ultra-HD Studio</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })()
+                          ) : (
+                            /* Static Process & Status Details Card */
+                            <div
+                              style={{
+                                backgroundColor: 'transparent',
+                                border: 'none',
+                                padding: 0,
+                                display: 'flex',
+                                flexDirection: 'column',
+                                flex: 1,
+                                justifyContent: 'space-between',
+                                gap: '0.6rem',
+                              }}
+                            >
+                              <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                Process Status & Details
+                              </span>
+
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem' }}>
+                                <span style={{ color: 'var(--text-muted)' }}>Photo Index:</span>
+                                <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>#{currentIndex + 1} of {images.length || 1}</span>
+                              </div>
+
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem' }}>
+                                <span style={{ color: 'var(--text-muted)' }}>Enhance Status:</span>
+                                {isEnh ? (
+                                  <span style={{ color: '#10B981', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
+                                    <FiCheckCircle /> AI Enhanced
+                                  </span>
+                                ) : (
+                                  <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>Original Capture</span>
+                                )}
+                              </div>
+
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', marginTop: '0.25rem', paddingTop: '0.5rem', borderTop: '1px solid var(--border-color)' }}>
+                                <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-secondary)' }}>AI Pipeline Stages:</span>
+                                <p style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', lineHeight: 1.5, margin: 0 }}>
+                                  1. Exposure & Shadow Balance<br />
+                                  2. Interior Lighting Warmth<br />
+                                  3. DALL-E 3 Texture Upscaling
+                                </p>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()
+              ) : (
+                <div style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>No image preview available yet.</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Live Browser Viewport Modal */}
       <LiveBrowserModal isOpen={isLiveBrowserOpen} onClose={() => setIsLiveBrowserOpen(false)} />

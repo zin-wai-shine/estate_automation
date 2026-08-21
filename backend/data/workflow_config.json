@@ -24,8 +24,8 @@
       "enabled": true,
       "id": "content-path",
       "model": "gemini-1.5-pro",
-      "x": 680,
-      "y": 300
+      "x": 696,
+      "y": 395
     },
     {
       "enabled": true,
@@ -42,8 +42,8 @@
     }
   ],
   "panOffset": {
-    "x": 111,
+    "x": 54,
     "y": 78
   },
-  "zoom": 0.7
+  "zoom": 0.85
 }

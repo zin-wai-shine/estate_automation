@@ -266,7 +266,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 transition: 'background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, color 0.15s ease',
                 whiteSpace: 'nowrap',
                 boxSizing: 'border-box',
-                boxShadow: isActive ? '0 4px 12px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(37, 99, 235, 0.25)' : 'none',
+                boxShadow: 'none',
                 outline: 'none',
               }}
             >

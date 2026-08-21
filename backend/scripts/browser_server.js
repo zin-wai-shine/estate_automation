@@ -195,14 +195,26 @@ function repairChromePreferences(profilePath) {
 
 // Clean persistent Playwright Chromium browser session launch
 async function launchPersistentBrowser(userId = '1', options = {}) {
+  const desiredHeadless = options.headless !== undefined
+    ? Boolean(options.headless)
+    : (process.env.HEADLESS !== undefined ? (process.env.HEADLESS === 'true' || process.env.HEADLESS === '1') : true);
+
   if (currentBrowserContext) {
     try {
       const isConnected = currentBrowserContext.isConnected ? currentBrowserContext.isConnected() : true;
       const pages = currentBrowserContext.pages();
       if (isConnected && pages.length > 0 && !pages[0].isClosed()) {
-        currentBrowserPage = pages[0];
-        console.log('[OPENCLAW] Reusing existing persistent browser context and active page');
-        return { success: true, state: sessionState, page: currentBrowserPage };
+        const currentHeadless = currentBrowserContext._isHeadlessMode !== undefined ? currentBrowserContext._isHeadlessMode : true;
+        if (currentHeadless !== desiredHeadless) {
+          console.log(`[OPENCLAW] Switching browser mode (current headless=${currentHeadless}, requested headless=${desiredHeadless}). Re-launching context...`);
+          await currentBrowserContext.close().catch(() => {});
+          currentBrowserContext = null;
+          currentBrowserPage = null;
+        } else {
+          currentBrowserPage = pages[0];
+          console.log('[OPENCLAW] Reusing existing persistent browser context and active page');
+          return { success: true, state: sessionState, page: currentBrowserPage };
+        }
       }
     } catch (e) {
       currentBrowserContext = null;
@@ -243,10 +255,7 @@ async function launchPersistentBrowser(userId = '1', options = {}) {
       launchArgs.push('--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage');
     }
 
-    const isHeadless = options.headless !== undefined
-      ? Boolean(options.headless)
-      : (process.env.HEADLESS !== undefined ? (process.env.HEADLESS === 'true' || process.env.HEADLESS === '1') : true);
-
+    const isHeadless = desiredHeadless;
     console.log(`[OPENCLAW] Launching Chromium Context (headless=${isHeadless})...`);
 
     const launchOptions = {
@@ -256,10 +265,11 @@ async function launchPersistentBrowser(userId = '1', options = {}) {
     };
 
     console.log('[OPENCLAW] Creating/reusing browser context...');
+    const contextViewport = isHeadless ? { width: 1920, height: 1080 } : null;
     try {
       currentBrowserContext = await chromium.launchPersistentContext(profilePath, {
         ...launchOptions,
-        viewport: { width: 1920, height: 1080 },
+        viewport: contextViewport,
         userAgent:
           'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       });
@@ -271,7 +281,7 @@ async function launchPersistentBrowser(userId = '1', options = {}) {
 
         currentBrowserContext = await chromium.launchPersistentContext(profilePath, {
           ...launchOptions,
-          viewport: { width: 1920, height: 1080 },
+          viewport: contextViewport,
           userAgent:
             'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         });
@@ -279,6 +289,7 @@ async function launchPersistentBrowser(userId = '1', options = {}) {
         throw launchErr;
       }
     }
+    currentBrowserContext._isHeadlessMode = isHeadless;
     console.log('[OPENCLAW] Context ready');
 
     console.log('[OPENCLAW] Creating/reusing page...');
@@ -1999,6 +2010,9 @@ const server = http.createServer(async (req, res) => {
           options.headless = payload.headless;
         }
         const result = await launchPersistentBrowser('1', options);
+        if (result.success && result.page && result.page.url() === 'about:blank') {
+          await result.page.goto('https://www.facebook.com', { waitUntil: 'domcontentloaded' }).catch(() => {});
+        }
         res.writeHead(result.success ? 200 : 500);
         res.end(JSON.stringify(result));
       } catch (e) {

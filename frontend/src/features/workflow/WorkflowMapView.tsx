@@ -753,9 +753,9 @@ export const WorkflowMapView: React.FC<WorkflowMapViewProps> = ({
                 width: '100vw',
                 height: '100vh',
                 zIndex: 9999,
-                backgroundColor: '#09090B',
+                backgroundColor: 'var(--bg-main)',
                 overflow: 'hidden',
-                backgroundImage: 'radial-gradient(rgba(255, 255, 255, 0.12) 1px, transparent 1px)',
+                backgroundImage: 'radial-gradient(var(--text-muted) 1px, transparent 1px)',
                 backgroundSize: '24px 24px',
                 userSelect: 'none',
                 cursor: isPanning ? 'grabbing' : 'grab',
@@ -763,14 +763,14 @@ export const WorkflowMapView: React.FC<WorkflowMapViewProps> = ({
             : {
                 width: '100%',
                 height: '640px',
-                backgroundColor: '#09090B',
+                backgroundColor: 'var(--bg-secondary)',
                 borderRadius: '0.875rem',
                 border: '1px solid var(--border-color)',
                 position: 'relative',
                 overflow: 'hidden',
-                backgroundImage: 'radial-gradient(rgba(255, 255, 255, 0.1) 1px, transparent 1px)',
+                backgroundImage: 'radial-gradient(var(--border-color-hover) 1.2px, transparent 1.2px)',
                 backgroundSize: '24px 24px',
-                boxShadow: 'inset 0 0 50px rgba(0, 0, 0, 0.9), var(--shadow-sm)',
+                boxShadow: 'var(--shadow-sm)',
                 userSelect: 'none',
                 cursor: isPanning ? 'grabbing' : 'grab',
               }
@@ -786,12 +786,12 @@ export const WorkflowMapView: React.FC<WorkflowMapViewProps> = ({
             display: 'flex',
             alignItems: 'center',
             gap: '0.375rem',
-            backgroundColor: 'rgba(24, 25, 26, 0.92)',
+            backgroundColor: 'var(--bg-surface)',
             backdropFilter: 'blur(8px)',
             padding: '0.375rem 0.625rem',
             borderRadius: '0.625rem',
             border: '1px solid var(--border-color)',
-            boxShadow: '0 4px 16px rgba(0, 0, 0, 0.5)',
+            boxShadow: 'var(--shadow-md)',
           }}
         >
           {/* Pan Indicator Icon */}
@@ -1269,7 +1269,7 @@ export const WorkflowMapView: React.FC<WorkflowMapViewProps> = ({
                     height: '12px',
                     borderRadius: '50%',
                     backgroundColor: isTrigger && !isFbConnected ? '#EF4444' : node.enabled && isFbConnected ? 'var(--accent-primary)' : '#404040',
-                    border: '2px solid #09090B',
+                    border: '2px solid var(--bg-surface)',
                     boxShadow: isTrigger && !isFbConnected ? '0 0 8px rgba(239, 68, 68, 0.6)' : node.enabled && isFbConnected ? '0 0 8px rgba(37, 99, 235, 0.6)' : 'none',
                     zIndex: 4,
                   }}
@@ -1287,7 +1287,7 @@ export const WorkflowMapView: React.FC<WorkflowMapViewProps> = ({
                       height: '12px',
                       borderRadius: '50%',
                       backgroundColor: isTrigger && !isFbConnected ? '#EF4444' : node.enabled && isFbConnected ? 'var(--accent-primary)' : '#404040',
-                      border: '2px solid #09090B',
+                      border: '2px solid var(--bg-surface)',
                       boxShadow: isTrigger && !isFbConnected ? '0 0 8px rgba(239, 68, 68, 0.6)' : node.enabled && isFbConnected ? '0 0 8px rgba(37, 99, 235, 0.6)' : 'none',
                       zIndex: 4,
                     }}
@@ -1307,7 +1307,7 @@ export const WorkflowMapView: React.FC<WorkflowMapViewProps> = ({
                         height: '12px',
                         borderRadius: '50%',
                         backgroundColor: isFbConnected && isChatGPTActive ? '#10B981' : '#404040',
-                        border: '2px solid #09090B',
+                        border: '2px solid var(--bg-surface)',
                         zIndex: 4,
                       }}
                     />
@@ -1321,7 +1321,7 @@ export const WorkflowMapView: React.FC<WorkflowMapViewProps> = ({
                         height: '12px',
                         borderRadius: '50%',
                         backgroundColor: isFbConnected && isGeminiActive ? 'var(--accent-primary)' : '#404040',
-                        border: '2px solid #09090B',
+                        border: '2px solid var(--bg-surface)',
                         zIndex: 4,
                       }}
                     />
@@ -1341,7 +1341,7 @@ export const WorkflowMapView: React.FC<WorkflowMapViewProps> = ({
                         height: '12px',
                         borderRadius: '50%',
                         backgroundColor: isFbConnected && isImagePathActive && activeImageAIProvider ? '#10B981' : '#404040',
-                        border: '2px solid #09090B',
+                        border: '2px solid var(--bg-surface)',
                         zIndex: 4,
                       }}
                     />
@@ -1355,7 +1355,7 @@ export const WorkflowMapView: React.FC<WorkflowMapViewProps> = ({
                         height: '12px',
                         borderRadius: '50%',
                         backgroundColor: isFbConnected && isContentPathActive && activeContentAIProvider ? 'var(--accent-primary)' : '#404040',
-                        border: '2px solid #09090B',
+                        border: '2px solid var(--bg-surface)',
                         zIndex: 4,
                       }}
                     />
