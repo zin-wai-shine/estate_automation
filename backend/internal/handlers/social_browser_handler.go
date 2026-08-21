@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -159,11 +160,15 @@ func ConnectSocialBrowser(c *fiber.Ctx) error {
 	userProfilePath := filepath.Join(profileDir, "facebook", "1")
 	_ = os.MkdirAll(userProfilePath, 0755)
 
-	// Call browser-worker service HTTP API to launch Chromium on persistent profile
+	// Call browser-worker service HTTP API to launch Chromium on persistent profile (headless: false for setup login)
 	workerHost := getBrowserWorkerHost()
 	connectURL := fmt.Sprintf("http://%s:9223/connect", workerHost)
 
-	req, _ := http.NewRequest("POST", connectURL, nil)
+	payloadBytes, _ := json.Marshal(map[string]interface{}{
+		"headless": false,
+	})
+	req, _ := http.NewRequest("POST", connectURL, bytes.NewBuffer(payloadBytes))
+	req.Header.Set("Content-Type", "application/json")
 	client := &http.Client{Timeout: 8 * time.Second}
 	resp, err := client.Do(req)
 
