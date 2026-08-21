@@ -1670,7 +1670,6 @@ export const TestingView: React.FC = () => {
     let verified = false;
     let finalBbox: { x: number; y: number; width: number; height: number } | null = null;
     let finalClickPos: { x: number; y: number } | null = null;
-    let finalScreenshotForTarget: string | null = null;
 
     try {
       let activeShot: string | null =
@@ -1684,12 +1683,14 @@ export const TestingView: React.FC = () => {
         return;
       }
 
+      const validShot: string = activeShot;
+
       // === DETECTION + VERIFICATION LOOP (up to MAX_VERIFY_RETRIES attempts) ===
       while (!verified && verifyAttempt < MAX_VERIFY_RETRIES) {
         verifyAttempt++;
         addLog('AI_TARGET_02', `[STEP 2] 🤖 AI Detecting top-left first property photo cell (Attempt ${verifyAttempt}/${MAX_VERIFY_RETRIES})...`);
 
-        const { result: coordsData, finalScreenshot: centeredShot } = await detectPropertyImageCoords(activeShot);
+        const { result: coordsData, finalScreenshot: centeredShot } = await detectPropertyImageCoords(validShot);
 
         if (coordsData && (coordsData.click_position || coordsData.image_bbox || (coordsData.images && coordsData.images.length > 0))) {
           if (coordsData.images) {
@@ -1744,7 +1745,6 @@ export const TestingView: React.FC = () => {
             verified = true;
             finalBbox = bbox;
             finalClickPos = clickPos;
-            finalScreenshotForTarget = verifyScreenshot;
 
             // Update status to VERIFIED
             setFirstPhotoTarget({
@@ -1794,7 +1794,6 @@ export const TestingView: React.FC = () => {
               verified = true; // proceed anyway after max retries
               finalBbox = bbox;
               finalClickPos = clickPos;
-              finalScreenshotForTarget = verifyScreenshot;
 
               setFirstPhotoTarget({
                 found: true,
@@ -1853,21 +1852,7 @@ export const TestingView: React.FC = () => {
             if (postClickData.screenshot && typeof postClickData.screenshot === 'string') {
               setCapturedScreenshot(postClickData.screenshot);
               setAllCapturedScreenshots((prev) => [...prev, postClickData.screenshot]);
-
-              // Quick AI check to see if photo viewer overlay is visible
-              if (usePuterFreeAI && isPuterAvailable()) {
-                try {
-                  const viewerCheck = await analyzeScreenshotsWithPuter([postClickData.screenshot], urlInput || activeTestRun?.facebook_url || '', 'gpt-4o');
-                  const viewerAnalysis = viewerCheck as VisionAnalysisResult;
-                  if (viewerAnalysis && viewerAnalysis.page_state) {
-                    addLog('AI_VERIFY_POST', `[STEP 5.5] ✅ Post-click state: ${viewerAnalysis.page_state} | Photo Viewer confirmed open`);
-                  }
-                } catch (_) {
-                  addLog('AI_VERIFY_POST', '[STEP 5.5] ✅ Post-click verification: Images extracted successfully (viewer check skipped)');
-                }
-              } else {
-                addLog('AI_VERIFY_POST', '[STEP 5.5] ✅ Post-click verification: Images extracted successfully');
-              }
+              addLog('AI_VERIFY_POST', '[STEP 5.5] ✅ Post-click verification: Images extracted successfully');
             }
           } catch (_) {
             addLog('AI_VERIFY_POST', '[STEP 5.5] Post-click screenshot capture skipped');
@@ -2048,7 +2033,7 @@ export const TestingView: React.FC = () => {
               width: '38px',
               height: '38px',
               borderRadius: '0.65rem',
-              background: 'linear-gradient(135deg, #3B82F6 0%, #10B981 100%)',
+              background: 'linear-gradient(135deg, var(--accent-primary) 0%, #10B981 100%)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -2120,7 +2105,7 @@ export const TestingView: React.FC = () => {
             <div
               style={{
                 height: '100%',
-                backgroundColor: '#3B82F6',
+                backgroundColor: 'var(--accent-primary)',
                 animation: 'appleNotiProgress 4.5s linear forwards',
               }}
             />
@@ -2606,12 +2591,12 @@ export const TestingView: React.FC = () => {
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.625rem', gap: '0.5rem' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', minWidth: 0, flex: 1 }}>
-                    <FiCamera style={{ color: '#3B82F6', flexShrink: 0 }} />
+                    <FiCamera style={{ color: 'var(--accent-primary)', flexShrink: 0 }} />
                     <h3 style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       Original Facebook Screenshot {totalShots > 1 ? `(#${safeIndex + 1})` : ''}
                     </h3>
                   </div>
-                  <span style={{ fontSize: '0.65625rem', color: '#3B82F6', backgroundColor: 'rgba(59, 130, 246, 0.12)', padding: '0.15rem 0.45rem', borderRadius: '0.25rem', fontWeight: 600, flexShrink: 0, whiteSpace: 'nowrap' }}>
+                  <span style={{ fontSize: '0.65625rem', color: 'var(--accent-primary)', backgroundColor: 'rgba(59, 130, 246, 0.12)', padding: '0.15rem 0.45rem', borderRadius: '0.25rem', fontWeight: 600, flexShrink: 0, whiteSpace: 'nowrap' }}>
                     1920 × 1080 High-Res
                   </span>
                 </div>
@@ -2847,7 +2832,7 @@ export const TestingView: React.FC = () => {
 
               <div style={{ padding: '0.625rem', borderRadius: '0.375rem', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
                 <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', display: 'block' }}>Crop Quality</span>
-                <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: aiAnalysis.crop_quality === 'GOOD' ? '#10B981' : '#3B82F6' }}>
+                <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: aiAnalysis.crop_quality === 'GOOD' ? '#10B981' : 'var(--accent-primary)' }}>
                   {aiAnalysis.crop_quality || 'GOOD'} (Ratio: {((aiAnalysis.crop_area_ratio || 0.32) * 100).toFixed(0)}%)
                 </span>
               </div>
@@ -2868,7 +2853,7 @@ export const TestingView: React.FC = () => {
 
               <div style={{ padding: '0.625rem', borderRadius: '0.375rem', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
                 <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', display: 'block' }}>Screenshots</span>
-                <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: screenshotsUsed === 1 ? '#10B981' : '#3B82F6' }}>
+                <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: screenshotsUsed === 1 ? '#10B981' : 'var(--accent-primary)' }}>
                   {screenshotsUsed} / 4
                 </span>
               </div>
@@ -3028,7 +3013,7 @@ export const TestingView: React.FC = () => {
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <FiCrosshair style={{ color: '#3B82F6', fontSize: '1.1rem' }} />
+                <FiCrosshair style={{ color: 'var(--accent-primary)', fontSize: '1.1rem' }} />
                 <div>
                   <h3 style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
                     First Property Photo AI Targeting & OpenClaw Click Session
@@ -3094,7 +3079,7 @@ export const TestingView: React.FC = () => {
                       display: 'flex',
                       alignItems: 'center',
                       gap: '0.3rem',
-                      backgroundColor: photoTargetMode === 'manual' ? '#3B82F6' : 'transparent',
+                      backgroundColor: photoTargetMode === 'manual' ? 'var(--accent-primary)' : 'transparent',
                       color: photoTargetMode === 'manual' ? '#FFFFFF' : 'var(--text-muted)',
                       boxShadow: photoTargetMode === 'manual' ? '0 1px 4px rgba(59, 130, 246, 0.4)' : 'none',
                       transition: 'all 0.15s ease',
@@ -3110,7 +3095,7 @@ export const TestingView: React.FC = () => {
                       fontSize: '0.75rem',
                       fontFamily: 'monospace',
                       fontWeight: 700,
-                      color: '#3B82F6',
+                      color: 'var(--accent-primary)',
                       backgroundColor: 'rgba(59, 130, 246, 0.12)',
                       padding: '0.25rem 0.6rem',
                       borderRadius: '0.375rem',
@@ -3127,7 +3112,7 @@ export const TestingView: React.FC = () => {
                   disabled={isTargetingPhoto || isTesting}
                   onClick={handleRunFirstPhotoTargetAndClick}
                   style={{
-                    backgroundColor: photoTargetMode === 'auto' ? '#10B981' : '#3B82F6',
+                    backgroundColor: photoTargetMode === 'auto' ? '#10B981' : 'var(--accent-primary)',
                     borderColor: photoTargetMode === 'auto' ? '#059669' : '#2563EB',
                     fontSize: '0.75rem',
                     fontWeight: 600,
@@ -3207,7 +3192,7 @@ export const TestingView: React.FC = () => {
                   {/* Visual Bounding Box for First Photo (color changes based on verification status) */}
                   {firstPhotoTarget?.image_bbox && (() => {
                     const status = firstPhotoTarget.status;
-                    const bboxColor = status === 'VERIFIED' ? '#10B981' : status === 'REJECTED' ? '#EF4444' : status === 'VERIFYING' ? '#F59E0B' : '#3B82F6';
+                    const bboxColor = status === 'VERIFIED' ? '#10B981' : status === 'REJECTED' ? '#EF4444' : status === 'VERIFYING' ? '#F59E0B' : 'var(--accent-primary)';
                     const bboxBg = status === 'VERIFIED' ? 'rgba(16, 185, 129, 0.18)' : status === 'REJECTED' ? 'rgba(239, 68, 68, 0.18)' : status === 'VERIFYING' ? 'rgba(245, 158, 11, 0.18)' : 'rgba(59, 130, 246, 0.18)';
                     const bboxGlow = status === 'VERIFIED' ? 'rgba(16, 185, 129, 0.5)' : status === 'REJECTED' ? 'rgba(239, 68, 68, 0.5)' : status === 'VERIFYING' ? 'rgba(245, 158, 11, 0.5)' : 'rgba(59, 130, 246, 0.5)';
                     const statusLabel = status === 'VERIFIED' ? '✅ Verified Target' : status === 'REJECTED' ? '❌ Rejected — Retrying' : status === 'VERIFYING' ? '⏳ Verifying...' : 'First Property Photo (Top-Left)';
@@ -3255,7 +3240,7 @@ export const TestingView: React.FC = () => {
                     const dotColor = status === 'VERIFIED' ? '#10B981' : status === 'REJECTED' ? '#EF4444' : '#EF4444';
                     const dotBg = status === 'VERIFIED' ? 'rgba(16, 185, 129, 0.25)' : status === 'REJECTED' ? 'rgba(239, 68, 68, 0.25)' : 'rgba(239, 68, 68, 0.25)';
                     const dotGlow = status === 'VERIFIED' ? 'rgba(16, 185, 129, 0.8)' : status === 'REJECTED' ? 'rgba(239, 68, 68, 0.8)' : 'rgba(239, 68, 68, 0.8)';
-                    const borderColor = status === 'VERIFIED' ? '#10B981' : '#3B82F6';
+                    const borderColor = status === 'VERIFIED' ? '#10B981' : 'var(--accent-primary)';
                     return (
                       <div
                         style={{
@@ -3744,7 +3729,7 @@ export const TestingView: React.FC = () => {
             {/* Header: Title, Preset Selector & Global Actions */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.125rem', flexWrap: 'wrap', gap: '0.75rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <FiImage style={{ color: '#3B82F6', fontSize: '1.125rem' }} />
+                <FiImage style={{ color: 'var(--accent-primary)', fontSize: '1.125rem' }} />
                 <div>
                   <h3 style={{ fontSize: '0.90625rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
                     AI IMAGE ENHANCEMENT & PHOTO STUDIO
@@ -3789,7 +3774,7 @@ export const TestingView: React.FC = () => {
                   onClick={() => openEnhanceModeModal(activeTestRun?.images || [])}
                   disabled={isBatchEnhancing || !activeTestRun?.images || activeTestRun.images.length === 0}
                   style={{
-                    backgroundColor: '#3B82F6',
+                    backgroundColor: 'var(--accent-primary)',
                     borderColor: '#2563EB',
                     height: '34px',
                     fontSize: '0.75rem',
@@ -3851,7 +3836,7 @@ export const TestingView: React.FC = () => {
                 <span style={{ backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', padding: '0.2rem 0.55rem', borderRadius: '0.25rem', border: '1px solid var(--border-color)' }}>
                   📸 1. Original Photo
                 </span>
-                <span style={{ color: '#3B82F6' }}>➔</span>
+                <span style={{ color: 'var(--accent-primary)' }}>➔</span>
                 <span style={{ backgroundColor: 'rgba(59, 130, 246, 0.15)', color: '#60A5FA', padding: '0.2rem 0.55rem', borderRadius: '0.25rem', border: '1px solid rgba(59, 130, 246, 0.3)' }}>
                   🔷 Prompt 1: Base Retouch & HDR
                 </span>
@@ -3884,7 +3869,7 @@ export const TestingView: React.FC = () => {
                 {/* Session 1 Header */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                    <span style={{ backgroundColor: '#3B82F6', color: '#FFFFFF', fontSize: '0.625rem', fontWeight: 800, padding: '0.15rem 0.45rem', borderRadius: '0.25rem' }}>
+                    <span style={{ backgroundColor: 'var(--accent-primary)', color: '#FFFFFF', fontSize: '0.625rem', fontWeight: 800, padding: '0.15rem 0.45rem', borderRadius: '0.25rem' }}>
                       PROMPT 1
                     </span>
                     <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#93C5FD' }}>
@@ -4248,7 +4233,7 @@ export const TestingView: React.FC = () => {
             {/* AI Image Coordinates Table (if detected) */}
             {aiImageCoords.length > 0 && (
               <div style={{ marginBottom: '1rem', padding: '0.75rem', borderRadius: '0.5rem', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
-                <span style={{ fontSize: '0.71875rem', fontWeight: 700, color: '#3B82F6', textTransform: 'uppercase', display: 'block', marginBottom: '0.35rem' }}>
+                <span style={{ fontSize: '0.71875rem', fontWeight: 700, color: 'var(--accent-primary)', textTransform: 'uppercase', display: 'block', marginBottom: '0.35rem' }}>
                   AI Calculated Property Image Coordinates (1920x1080 Viewport)
                 </span>
                 <div style={{ overflowX: 'auto' }}>
@@ -4266,7 +4251,7 @@ export const TestingView: React.FC = () => {
                         <tr key={coord.index} style={{ borderBottom: '1px solid var(--border-color)', fontFamily: 'monospace' }}>
                           <td style={{ padding: '0.3rem', color: '#10B981', fontWeight: 700 }}>IMAGE {coord.index}</td>
                           <td style={{ padding: '0.3rem' }}>{coord.x}, {coord.y}, {coord.width}, {coord.height}</td>
-                          <td style={{ padding: '0.3rem', color: '#3B82F6', fontWeight: 700 }}>({coord.center_x}, {coord.center_y})</td>
+                          <td style={{ padding: '0.3rem', color: 'var(--accent-primary)', fontWeight: 700 }}>({coord.center_x}, {coord.center_y})</td>
                           <td style={{ padding: '0.3rem', color: '#8B5CF6' }}>{(coord.confidence * 100).toFixed(0)}%</td>
                         </tr>
                       ))}
@@ -4304,7 +4289,7 @@ export const TestingView: React.FC = () => {
                     fontSize: '0.71875rem',
                     fontWeight: 600,
                     border: '1px solid var(--border-color)',
-                    backgroundColor: galleryFilter === 'ENHANCED' ? '#3B82F6' : 'var(--bg-secondary)',
+                    backgroundColor: galleryFilter === 'ENHANCED' ? 'var(--accent-primary)' : 'var(--bg-secondary)',
                     color: galleryFilter === 'ENHANCED' ? '#FFFFFF' : 'var(--text-muted)',
                     cursor: 'pointer',
                   }}
@@ -4359,7 +4344,7 @@ export const TestingView: React.FC = () => {
                           borderRadius: '0.5rem',
                           overflow: 'hidden',
                           border: isEnhancing
-                            ? '2px solid #3B82F6'
+                            ? '2px solid var(--accent-primary)'
                             : isEnh
                             ? '1px solid rgba(59, 130, 246, 0.4)'
                             : '1px solid var(--border-color)',
@@ -4390,7 +4375,7 @@ export const TestingView: React.FC = () => {
                               color: isEnhancing ? '#93C5FD' : isEnh ? '#60A5FA' : '#10B981',
                               border: `1px solid ${
                                 isEnhancing
-                                  ? '#3B82F6'
+                                  ? 'var(--accent-primary)'
                                   : isEnh
                                   ? 'rgba(59, 130, 246, 0.3)'
                                   : 'rgba(16, 185, 129, 0.3)'
@@ -4494,7 +4479,7 @@ export const TestingView: React.FC = () => {
                               fontSize: '0.6875rem',
                               height: '28px',
                               backgroundColor: isEnh ? 'rgba(59, 130, 246, 0.15)' : undefined,
-                              borderColor: isEnh ? '#3B82F6' : 'var(--border-color)',
+                              borderColor: isEnh ? 'var(--accent-primary)' : 'var(--border-color)',
                               color: isEnh ? '#60A5FA' : 'var(--text-primary)',
                             }}
                           >
@@ -4612,7 +4597,7 @@ export const TestingView: React.FC = () => {
                           fontWeight: 700,
                           border: 'none',
                           cursor: 'pointer',
-                          backgroundColor: lightboxViewMode === 'enhanced' ? '#3B82F6' : 'transparent',
+                          backgroundColor: lightboxViewMode === 'enhanced' ? 'var(--accent-primary)' : 'transparent',
                           color: lightboxViewMode === 'enhanced' ? '#FFFFFF' : 'var(--text-muted)',
                           transition: 'all 0.15s ease',
                         }}
@@ -4762,7 +4747,7 @@ export const TestingView: React.FC = () => {
                       position: 'absolute',
                       top: '12px',
                       left: '12px',
-                      backgroundColor: lightboxViewMode === 'enhanced' && isEnh ? '#3B82F6' : '#10B981',
+                      backgroundColor: lightboxViewMode === 'enhanced' && isEnh ? 'var(--accent-primary)' : '#10B981',
                       color: '#FFFFFF',
                       fontSize: '0.71875rem',
                       fontWeight: 700,
@@ -4839,7 +4824,7 @@ export const TestingView: React.FC = () => {
                         borderRadius: '0.25rem',
                         overflow: 'hidden',
                         cursor: 'pointer',
-                        border: isSelected ? '2px solid #3B82F6' : '1px solid rgba(255, 255, 255, 0.2)',
+                        border: isSelected ? '2px solid var(--accent-primary)' : '1px solid rgba(255, 255, 255, 0.2)',
                         opacity: isSelected ? 1 : 0.6,
                         transform: isSelected ? 'scale(1.08)' : 'scale(1)',
                         transition: 'all 0.15s ease',
@@ -4908,7 +4893,7 @@ export const TestingView: React.FC = () => {
                     height: '32px',
                     borderRadius: '0.5rem',
                     backgroundColor: 'rgba(59, 130, 246, 0.15)',
-                    border: '1px solid #3B82F6',
+                    border: '1px solid var(--accent-primary)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -4952,7 +4937,7 @@ export const TestingView: React.FC = () => {
                     padding: '0.3rem 0.75rem',
                     borderRadius: '0.375rem',
                     backgroundColor: studioModal.isProcessing ? 'rgba(59, 130, 246, 0.15)' : 'rgba(16, 185, 129, 0.15)',
-                    border: `1px solid ${studioModal.isProcessing ? '#3B82F6' : '#10B981'}`,
+                    border: `1px solid ${studioModal.isProcessing ? 'var(--accent-primary)' : '#10B981'}`,
                     fontSize: '0.75rem',
                     fontWeight: 600,
                     color: studioModal.isProcessing ? '#60A5FA' : '#10B981',
@@ -5041,7 +5026,7 @@ export const TestingView: React.FC = () => {
                         left: 0,
                         right: 0,
                         height: '4px',
-                        background: 'linear-gradient(90deg, transparent 0%, #3B82F6 50%, transparent 100%)',
+                        background: 'linear-gradient(90deg, transparent 0%, var(--accent-primary) 50%, transparent 100%)',
                         boxShadow: '0 0 15px #60A5FA',
                         animation: 'pulse 1.2s ease-in-out infinite',
                       }}
@@ -5083,7 +5068,7 @@ export const TestingView: React.FC = () => {
                           position: 'absolute',
                           top: '8px',
                           left: '8px',
-                          backgroundColor: '#3B82F6',
+                          backgroundColor: 'var(--accent-primary)',
                           color: '#FFFFFF',
                           padding: '0.2rem 0.5rem',
                           borderRadius: '0.25rem',
@@ -5218,7 +5203,7 @@ export const TestingView: React.FC = () => {
                           setImagePromptMode('CUSTOM');
                           openEnhanceModeModal([{ public_url: studioModal.imgUrl }]);
                         }}
-                        style={{ height: '26px', fontSize: '0.6875rem', borderColor: '#3B82F6', color: '#60A5FA' }}
+                        style={{ height: '26px', fontSize: '0.6875rem', borderColor: 'var(--accent-primary)', color: '#60A5FA' }}
                       >
                         Re-run with this Prompt
                       </Button>
@@ -5368,7 +5353,7 @@ export const TestingView: React.FC = () => {
                   gap: '0.5rem',
                   transition: 'all 0.2s',
                 }}
-                onMouseOver={(e) => (e.currentTarget.style.borderColor = '#3B82F6')}
+                onMouseOver={(e) => (e.currentTarget.style.borderColor = 'var(--accent-primary)')}
                 onMouseOut={(e) => (e.currentTarget.style.borderColor = 'var(--border-color)')}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', fontWeight: 600, fontSize: '1rem', color: '#60A5FA' }}>

@@ -5,8 +5,9 @@ const crypto = require('crypto');
 const { chromium } = require('playwright');
 
 const PORT = 9223;
-const PROFILES_DIR = process.env.BROWSER_PROFILES_DIR || '/data/browser-profiles';
+const PROFILES_DIR = process.env.BROWSER_PROFILES_DIR || path.join(__dirname, '..', 'browser-profiles');
 const SCREENSHOTS_DIR = path.join(PROFILES_DIR, '..', 'screenshots');
+fs.mkdirSync(PROFILES_DIR, { recursive: true });
 fs.mkdirSync(SCREENSHOTS_DIR, { recursive: true });
 
 function generateImageHash(url, index = 0) {
@@ -193,7 +194,7 @@ function repairChromePreferences(profilePath) {
 }
 
 // Clean persistent Playwright Chromium browser session launch
-async function launchPersistentBrowser(userId = '1') {
+async function launchPersistentBrowser(userId = '1', options = {}) {
   if (currentBrowserContext) {
     try {
       const isConnected = currentBrowserContext.isConnected ? currentBrowserContext.isConnected() : true;
@@ -242,8 +243,14 @@ async function launchPersistentBrowser(userId = '1') {
       launchArgs.push('--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage');
     }
 
+    const isHeadless = options.headless !== undefined
+      ? Boolean(options.headless)
+      : (process.env.HEADLESS !== undefined ? (process.env.HEADLESS === 'true' || process.env.HEADLESS === '1') : true);
+
+    console.log(`[OPENCLAW] Launching Chromium Context (headless=${isHeadless})...`);
+
     const launchOptions = {
-      headless: false,
+      headless: isHeadless,
       args: launchArgs,
       ignoreDefaultArgs: ['--enable-automation'],
     };
@@ -1982,9 +1989,23 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (url === '/connect' && req.method === 'POST') {
-    const result = await launchPersistentBrowser('1');
-    res.writeHead(result.success ? 200 : 500);
-    res.end(JSON.stringify(result));
+    let body = '';
+    req.on('data', (chunk) => (body += chunk));
+    req.on('end', async () => {
+      try {
+        const payload = JSON.parse(body || '{}');
+        const options = {};
+        if (payload.headless !== undefined) {
+          options.headless = payload.headless;
+        }
+        const result = await launchPersistentBrowser('1', options);
+        res.writeHead(result.success ? 200 : 500);
+        res.end(JSON.stringify(result));
+      } catch (e) {
+        res.writeHead(500);
+        res.end(JSON.stringify({ success: false, error: e.message }));
+      }
+    });
     return;
   }
 

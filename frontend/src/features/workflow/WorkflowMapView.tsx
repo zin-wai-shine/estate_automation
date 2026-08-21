@@ -63,7 +63,7 @@ const getAIModelMetadata = (modelKey: string) => {
         subtitle: 'Google AI Core',
         badgeText: 'Google AI',
         badgeVariant: 'warning' as const,
-        icon: <FiZap style={{ color: '#3B82F6' }} />,
+        icon: <FiZap style={{ color: 'var(--accent-primary)' }} />,
         description: 'Generates high-converting Thai/English rental copy, hashtags, & Line ID CTA.',
       };
     case 'claude-3-5-sonnet':
@@ -99,7 +99,7 @@ const getAIModelMetadata = (modelKey: string) => {
         subtitle: 'AI Core Provider',
         badgeText: 'AI Core',
         badgeVariant: 'info' as const,
-        icon: <FiCpu style={{ color: '#3B82F6' }} />,
+        icon: <FiCpu style={{ color: 'var(--accent-primary)' }} />,
         description: 'AI processing engine node.',
       };
   }
@@ -138,7 +138,7 @@ const getInitialDefaultNodes = (): WorkflowNode[] => [
     type: 'ai',
     title: 'Gemini 1.5 Pro Engine',
     subtitle: 'Google AI Core',
-    icon: <FiZap style={{ color: '#3B82F6' }} />,
+    icon: <FiZap style={{ color: 'var(--accent-primary)' }} />,
     x: 350,
     y: 300,
     enabled: true,
@@ -152,7 +152,7 @@ const getInitialDefaultNodes = (): WorkflowNode[] => [
     type: 'content_branch',
     title: 'Content Generation Path',
     subtitle: 'Copywriting & Translation',
-    icon: <FiFileText style={{ color: '#3B82F6' }} />,
+    icon: <FiFileText style={{ color: 'var(--accent-primary)' }} />,
     x: 680,
     y: 300,
     enabled: true,
@@ -971,7 +971,7 @@ export const WorkflowMapView: React.FC<WorkflowMapViewProps> = ({
             <path
               d={pathTriggerToGemini}
               fill="none"
-              stroke={isFbConnected && isGeminiActive ? '#3B82F6' : '#333333'}
+              stroke={isFbConnected && isGeminiActive ? 'var(--accent-primary)' : '#333333'}
               strokeWidth={isFbConnected && isGeminiActive ? '3.5' : '2'}
               strokeDasharray={isFbConnected && isGeminiActive ? '8 6' : '4 4'}
               style={{ animation: isFbConnected && isGeminiActive ? 'n8nFlow 1.2s linear infinite' : 'none' }}
@@ -985,7 +985,7 @@ export const WorkflowMapView: React.FC<WorkflowMapViewProps> = ({
               stroke={
                 isFbConnected && isContentPathActive && activeContentAIProvider
                   ? activeContentAIProvider === 'gemini'
-                    ? '#3B82F6'
+                    ? 'var(--accent-primary)'
                     : '#10B981'
                   : '#333333'
               }
@@ -1003,7 +1003,7 @@ export const WorkflowMapView: React.FC<WorkflowMapViewProps> = ({
                 isFbConnected && isImagePathActive && activeImageAIProvider
                   ? activeImageAIProvider === 'chatgpt'
                     ? '#10B981'
-                    : '#3B82F6'
+                    : 'var(--accent-primary)'
                   : '#333333'
               }
               strokeWidth={isFbConnected && isImagePathActive && activeImageAIProvider ? '3.5' : '2'}
@@ -1016,7 +1016,7 @@ export const WorkflowMapView: React.FC<WorkflowMapViewProps> = ({
             <path
               d={pathContentToOutput}
               fill="none"
-              stroke={isFbConnected && isContentPathActive && activeContentAIProvider ? '#3B82F6' : '#333333'}
+              stroke={isFbConnected && isContentPathActive && activeContentAIProvider ? 'var(--accent-primary)' : '#333333'}
               strokeWidth={isFbConnected && isContentPathActive && activeContentAIProvider ? '3.5' : '2'}
               strokeDasharray={isFbConnected && isContentPathActive && activeContentAIProvider ? '8 6' : '4 4'}
               style={{ animation: isFbConnected && isContentPathActive && activeContentAIProvider ? 'n8nFlow 1.2s linear infinite' : 'none' }}
@@ -1320,7 +1320,7 @@ export const WorkflowMapView: React.FC<WorkflowMapViewProps> = ({
                         width: '12px',
                         height: '12px',
                         borderRadius: '50%',
-                        backgroundColor: isFbConnected && isGeminiActive ? '#3B82F6' : '#404040',
+                        backgroundColor: isFbConnected && isGeminiActive ? 'var(--accent-primary)' : '#404040',
                         border: '2px solid #09090B',
                         zIndex: 4,
                       }}
@@ -1354,7 +1354,7 @@ export const WorkflowMapView: React.FC<WorkflowMapViewProps> = ({
                         width: '12px',
                         height: '12px',
                         borderRadius: '50%',
-                        backgroundColor: isFbConnected && isContentPathActive && activeContentAIProvider ? '#3B82F6' : '#404040',
+                        backgroundColor: isFbConnected && isContentPathActive && activeContentAIProvider ? 'var(--accent-primary)' : '#404040',
                         border: '2px solid #09090B',
                         zIndex: 4,
                       }}

@@ -1,11 +1,14 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 
 export type ThemeMode = 'dark' | 'light' | 'system';
+export type AccentColor = 'blue' | 'orange';
 
 interface ThemeContextType {
   theme: ThemeMode;
   setTheme: (theme: ThemeMode) => void;
   actualTheme: 'dark' | 'light';
+  accentColor: AccentColor;
+  setAccentColor: (color: AccentColor) => void;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
@@ -14,6 +17,11 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [theme, setThemeState] = useState<ThemeMode>(() => {
     const saved = localStorage.getItem('estate_theme') as ThemeMode;
     return saved || 'dark';
+  });
+
+  const [accentColor, setAccentColorState] = useState<AccentColor>(() => {
+    const saved = localStorage.getItem('estate_accent_color') as AccentColor;
+    return saved || 'blue';
   });
 
   const [actualTheme, setActualTheme] = useState<'dark' | 'light'>('dark');
@@ -46,12 +54,22 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, [theme]);
 
+  useEffect(() => {
+    const root = document.documentElement;
+    root.setAttribute('data-color', accentColor);
+    localStorage.setItem('estate_accent_color', accentColor);
+  }, [accentColor]);
+
   const setTheme = (newTheme: ThemeMode) => {
     setThemeState(newTheme);
   };
 
+  const setAccentColor = (newColor: AccentColor) => {
+    setAccentColorState(newColor);
+  };
+
   return (
-    <ThemeContext.Provider value={{ theme, setTheme, actualTheme }}>
+    <ThemeContext.Provider value={{ theme, setTheme, actualTheme, accentColor, setAccentColor }}>
       {children}
     </ThemeContext.Provider>
   );

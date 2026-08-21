@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
-import type { ThemeMode } from '../../context/ThemeContext';
+import type { ThemeMode, AccentColor } from '../../context/ThemeContext';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
@@ -42,7 +42,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onNavigateToFacebookLogin = () => {},
 }) => {
   const { user, logout } = useAuth();
-  const { theme, setTheme } = useTheme();
+  const { theme, setTheme, accentColor, setAccentColor } = useTheme();
 
   const [activeSection, setActiveSection] = useState<SettingsSection>('facebook');
   const [importStrategy, setImportStrategy] = useState('AUTO_WITH_MANUAL_FALLBACK');
@@ -73,7 +73,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   const importStrategyOptions: DropdownOption[] = [
     { value: 'AUTO_WITH_MANUAL_FALLBACK', label: 'Auto Import (Meta API → Browser Agent)', badge: 'Recommended', icon: <FiZap style={{ color: '#F59E0B' }} /> },
-    { value: 'OFFICIAL_API_FIRST', label: 'Official Meta Graph API Only', badge: 'Meta Pages', icon: <FiFileText style={{ color: '#3B82F6' }} /> },
+    { value: 'OFFICIAL_API_FIRST', label: 'Official Meta Graph API Only', badge: 'Meta Pages', icon: <FiFileText style={{ color: 'var(--accent-primary)' }} /> },
     { value: 'BROWSER_WHEN_AVAILABLE', label: 'Browser Agent Worker Session', badge: 'Playwright', icon: <FiGlobe style={{ color: '#10B981' }} /> },
     { value: 'MANUAL_ONLY', label: 'Manual Fallback Entry', badge: 'Direct Upload', icon: <FiEdit3 style={{ color: '#A855F7' }} /> },
   ];
@@ -172,7 +172,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     {
       id: 'profile',
       label: 'Admin Account',
-      icon: <FiUser style={{ color: '#3B82F6' }} />,
+      icon: <FiUser style={{ color: 'var(--accent-primary)' }} />,
     },
     {
       id: 'system',
@@ -589,16 +589,23 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
               <div
                 style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(3, 1fr)',
-                  padding: '0.25rem',
-                  borderRadius: '0.625rem',
-                  backgroundColor: 'var(--bg-secondary)',
-                  border: '1px solid var(--border-color)',
-                  gap: '0.25rem',
-                  maxWidth: '420px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '1.25rem'
                 }}
               >
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(3, 1fr)',
+                    padding: '0.25rem',
+                    borderRadius: '0.625rem',
+                    backgroundColor: 'var(--bg-secondary)',
+                    border: '1px solid var(--border-color)',
+                    gap: '0.25rem',
+                    maxWidth: '420px',
+                  }}
+                >
                 {(['dark', 'light', 'system'] as ThemeMode[]).map((mode) => {
                   const isSelected = theme === mode;
                   return (
@@ -632,6 +639,59 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     </button>
                   );
                 })}
+                </div>
+
+                {/* Accent Color Picker */}
+                <div style={{ marginTop: '0.5rem' }}>
+                  <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '0.75rem' }}>
+                    Accent Color
+                  </span>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(2, 1fr)',
+                      padding: '0.25rem',
+                      borderRadius: '0.625rem',
+                      backgroundColor: 'var(--bg-secondary)',
+                      border: '1px solid var(--border-color)',
+                      gap: '0.25rem',
+                      maxWidth: '420px',
+                    }}
+                  >
+                    {(['blue', 'orange'] as AccentColor[]).map((colorMode) => {
+                      const isSelected = accentColor === colorMode;
+                      const displayColor = colorMode === 'blue' ? '#3B82F6' : '#fd5404';
+                      return (
+                        <button
+                          key={colorMode}
+                          type="button"
+                          onClick={() => setAccentColor(colorMode)}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '0.5rem',
+                            padding: '0.5rem 0.375rem',
+                            height: '36px',
+                            borderRadius: '0.375rem',
+                            border: isSelected ? '1px solid var(--border-color)' : 'none',
+                            backgroundColor: isSelected ? 'var(--bg-surface)' : 'transparent',
+                            color: isSelected ? 'var(--text-primary)' : 'var(--text-muted)',
+                            fontSize: '0.78125rem',
+                            fontWeight: isSelected ? 600 : 500,
+                            cursor: 'pointer',
+                            textTransform: 'capitalize',
+                            transition: 'all 0.15s ease',
+                            boxShadow: isSelected ? 'var(--shadow-sm)' : 'none',
+                          }}
+                        >
+                          <span style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: displayColor }} />
+                          <span>{colorMode}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -675,7 +735,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.625rem 0.875rem', borderRadius: '0.375rem', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-secondary)' }}>
-                    <FiShield style={{ color: '#3B82F6' }} /> Profile Directory Path
+                    <FiShield style={{ color: 'var(--accent-primary)' }} /> Profile Directory Path
                   </span>
                   <span style={{ color: 'var(--text-muted)', fontWeight: 500, fontFamily: 'monospace', fontSize: '0.71875rem' }}>
                     /browser-profiles
