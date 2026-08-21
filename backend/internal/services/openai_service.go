@@ -1752,9 +1752,7 @@ User Instructions:
 				"content": []interface{}{
 					map[string]interface{}{
 						"type": "input_image",
-						"image_url": map[string]interface{}{
-							"url": base64ImageStr,
-						},
+						"image_url": base64ImageStr,
 					},
 					map[string]interface{}{
 						"type": "input_text",
