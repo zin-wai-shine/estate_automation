@@ -482,6 +482,41 @@ func DetectImageCoordinates(c *fiber.Ctx) error {
 		})
 	}
 
+	// 1. FIRST PRIORITY: Query real DOM coordinates from the active browser worker!
+	client := &http.Client{Timeout: 4 * time.Second}
+	domResp, err := client.Post("http://localhost:9223/detect-photo-target", "application/json", bytes.NewBuffer([]byte("{}")))
+	if err == nil && domResp.StatusCode == http.StatusOK {
+		defer domResp.Body.Close()
+		var domResult struct {
+			Success       bool                             `json:"success"`
+			Found         bool                             `json:"found"`
+			ImageBBox     *services.ImageBBox              `json:"image_bbox"`
+			ClickPosition *services.ClickPosition          `json:"click_position"`
+			Images        []services.PropertyImageCoordinate `json:"images"`
+		}
+		if jsonErr := json.NewDecoder(domResp.Body).Decode(&domResult); jsonErr == nil && domResult.Found && domResult.ImageBBox != nil {
+			if domResult.ImageBBox.Width >= 50 && domResult.ImageBBox.Height >= 50 {
+				if domResult.ClickPosition == nil {
+					domResult.ClickPosition = &services.ClickPosition{
+						X: domResult.ImageBBox.X + domResult.ImageBBox.Width/2,
+						Y: domResult.ImageBBox.Y + domResult.ImageBBox.Height/2,
+					}
+				}
+				return c.JSON(fiber.Map{
+					"status": "success",
+					"result": fiber.Map{
+						"found":          true,
+						"source":         "dom_measured",
+						"image_bbox":     domResult.ImageBBox,
+						"click_position": domResult.ClickPosition,
+						"images":         domResult.Images,
+					},
+				})
+			}
+		}
+	}
+
+	// 2. SECOND PRIORITY: High-resolution OpenAI Vision Detection
 	openAISvc := services.NewOpenAIService()
 	coordsResult, err := openAISvc.DetectTargetPostImageCoordinates(c.Context(), payload.ScreenshotBase64)
 	if err != nil {
@@ -502,7 +537,11 @@ func DetectImageCoordinates(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"status": "success",
 		"result": fiber.Map{
-			"images": validImages,
+			"found":          coordsResult.Found,
+			"source":         "openai_vision_high_res",
+			"image_bbox":     coordsResult.ImageBBox,
+			"click_position": coordsResult.ClickPosition,
+			"images":         validImages,
 		},
 	})
 }

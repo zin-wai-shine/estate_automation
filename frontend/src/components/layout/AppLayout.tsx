@@ -211,6 +211,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                   </div>
                 )}
               </div>
+              <div id="header-center-portal" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1 }} />
 
               <div id="header-action-portal" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }} />
             </div>

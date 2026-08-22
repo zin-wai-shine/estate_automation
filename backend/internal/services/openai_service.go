@@ -1062,20 +1062,23 @@ func (s *OpenAIService) DetectTargetPostImageCoordinates(ctx context.Context, im
 
 	systemPrompt := `You are an expert computer vision system analyzing a 1920x1080 Facebook desktop screenshot.
 
-Your task is to identify the EXACT pixel bounding box of the FIRST REAL PROPERTY PHOTO (the top-left photo inside the post's image gallery/collage).
+Your task is to identify the EXACT pixel bounding box of the FIRST REAL PROPERTY PHOTO (the top-left photo cell inside the post's image gallery / photo grid collage).
 
-CRITICAL DISTINCTION RULES:
-1. TEXT IS NOT A PHOTO:
-   - Do NOT select post text, hashtags (#...), phone numbers, author headers, caption lines, or "See translation".
-   - In Facebook posts, description text is located at the top. The photo gallery begins BELOW the text.
-2. TARGET ONLY PHOTOGRAPHIC PIXELS:
-   - Identify the actual colorful photographic rectangle showing real estate (e.g. rooms, sofa, living area, balcony, bed, kitchen, condo exterior/interior).
-   - In a multi-photo post collage, find the TOP-LEFT photo cell.
-3. BOUNDING BOX ACCURACY:
-   - x: left edge of the photo
-   - y: top edge of the photo (strictly below all text)
-   - width: width of the photo cell
-   - height: height of the photo cell
+CRITICAL DISTINCTION & IDENTIFICATION RULES:
+1. LAYOUT IN FACEBOOK POSTS:
+   - Top area: Author header, profile avatar icon, author name, timestamp, and text description.
+   - Middle/Bottom area: The PROPERTY PHOTO GALLERY / GRID COLLAGE (e.g. 2x2, 2+3, 1+3 grid showing living rooms, bedrooms, kitchens, balconies).
+   - In desktop viewport (1920x1080), the post dialog/card is centered on screen (typically x between 550-1350px).
+2. FIRST STEP: LOCATE THE PROPERTY PHOTO GRID:
+   - Identify the large real estate photo collage located BELOW the description text (typically y >= 350px).
+   - NEVER select the author's profile avatar/picture at the top of the post (near author name at y < 250). That is a personal avatar, NOT a property photo!
+3. SECOND STEP: IDENTIFY TOP-LEFT PHOTO CELL:
+   - In the property photo collage, find the TOP-LEFT photo cell showing a real estate photograph (living room, bedroom, kitchen, condo interior/exterior).
+   - Return its exact bounding box [x, y, width, height] in pixels.
+   - x: left edge of the photo cell in pixels (0-1920)
+   - y: top edge of the photo cell in pixels (strictly below all text and author header!)
+   - width: width of the photo cell in pixels (typically >= 150px)
+   - height: height of the photo cell in pixels (typically >= 150px)
 
 Return JSON only:
 {
@@ -1111,7 +1114,7 @@ If no property photo is visible on screen (e.g. only text visible or need to scr
 						"type": "image_url",
 						"image_url": map[string]interface{}{
 							"url":    cleanDataURL,
-							"detail": "low",
+							"detail": "high",
 						},
 					},
 				},
@@ -1298,7 +1301,7 @@ Return JSON only:
 						"type": "image_url",
 						"image_url": map[string]interface{}{
 							"url":    cleanDataURL,
-							"detail": "low",
+							"detail": "high",
 						},
 					},
 				},

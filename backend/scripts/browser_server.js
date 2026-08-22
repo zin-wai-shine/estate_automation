@@ -2084,6 +2084,151 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Detect Real DOM Photo Target Endpoint (Guaranteed Pixel-Perfect Coordinates)
+  if (url === '/detect-photo-target' && (req.method === 'POST' || req.method === 'GET')) {
+    if (!currentBrowserContext || !currentBrowserPage) {
+      res.writeHead(200);
+      res.end(JSON.stringify({ success: false, found: false, error: 'No active browser session' }));
+      return;
+    }
+    const page = currentBrowserPage;
+    if (!page || page.isClosed()) {
+      res.writeHead(200);
+      res.end(JSON.stringify({ success: false, found: false, error: 'No active browser page open' }));
+      return;
+    }
+    try {
+      const targetInfo = await page.evaluate(() => {
+        const postContainers = Array.from(
+          document.querySelectorAll('div[role="dialog"] div[role="article"], div[role="dialog"], div[role="article"], div[data-pagelet*="FeedUnit"], div[role="main"]')
+        );
+        const container = postContainers[0] || document.body;
+
+        // 1. Gather all property photos inside the post container (strictly excluding author avatar/profile pics)
+        const allPhotos = [];
+
+        // Check photo anchors
+        const photoAnchors = Array.from(
+          container.querySelectorAll('a[href*="/photo"], a[href*="fbid="], a[href*="/photos/"]')
+        ).filter((a) => {
+          const href = a.href || '';
+          if (href.includes('/user/') || href.includes('/profile.php') || href.includes('/groups/members') || href.includes('profile_id')) return false;
+          
+          const img = a.querySelector('img');
+          const alt = (img ? img.alt : '') || a.getAttribute('aria-label') || '';
+          if (alt.toLowerCase().includes('profile') || alt.toLowerCase().includes('avatar') || alt.includes('รูปโปรไฟล์')) return false;
+          
+          const rect = a.getBoundingClientRect();
+          // Property photos in grid must be large (width >= 140 && height >= 140) and below post header (top >= 250)
+          if (rect.width < 140 || rect.height < 140) return false;
+          if (rect.top < 220 || rect.bottom <= 0 || rect.top > window.innerHeight) return false;
+
+          // Exclude circular avatars
+          if (img) {
+            const computedStyle = window.getComputedStyle(img);
+            if (computedStyle.borderRadius === '50%' || computedStyle.borderRadius.includes('9999px')) return false;
+          }
+
+          return true;
+        });
+
+        for (const a of photoAnchors) {
+          const rect = a.getBoundingClientRect();
+          allPhotos.push({
+            el: a,
+            x: Math.round(rect.left),
+            y: Math.round(rect.top),
+            width: Math.round(rect.width),
+            height: Math.round(rect.height),
+            area: rect.width * rect.height,
+          });
+        }
+
+        // Check direct img elements in post
+        const candidateImgs = Array.from(container.querySelectorAll('img')).filter((img) => {
+          const src = img.src || img.currentSrc || '';
+          const alt = img.alt || '';
+          const parentHref = (img.closest('a') ? img.closest('a').href : '') || '';
+
+          if (!src.includes('scontent') && !src.includes('fbcdn')) return false;
+          if (src.includes('/static.xx/') || src.includes('/rsrc.php/') || src.includes('/emoji/')) return false;
+          if (alt.toLowerCase().includes('profile') || alt.toLowerCase().includes('avatar') || alt.includes('รูปโปรไฟล์') || parentHref.includes('/user/') || parentHref.includes('/profile.php')) return false;
+          if (src.includes('p50x50') || src.includes('s50x50') || src.includes('p32x32') || src.includes('p100x100')) return false;
+
+          const rect = img.getBoundingClientRect();
+          if (rect.width < 140 || rect.height < 140) return false;
+          if (rect.top < 220 || rect.bottom <= 0 || rect.top > window.innerHeight) return false;
+
+          const computedStyle = window.getComputedStyle(img);
+          if (computedStyle.borderRadius === '50%' || computedStyle.borderRadius.includes('9999px')) return false;
+
+          return true;
+        });
+
+        for (const img of candidateImgs) {
+          const rect = img.getBoundingClientRect();
+          // Avoid duplicate overlapping elements
+          const exists = allPhotos.some((p) => Math.abs(p.x - rect.left) < 20 && Math.abs(p.y - rect.top) < 20);
+          if (!exists) {
+            allPhotos.push({
+              el: img,
+              x: Math.round(rect.left),
+              y: Math.round(rect.top),
+              width: Math.round(rect.width),
+              height: Math.round(rect.height),
+              area: rect.width * rect.height,
+            });
+          }
+        }
+
+        if (allPhotos.length > 0) {
+          // Sort top-to-bottom, then left-to-right to accurately find the TOP-LEFT photo cell in the image grid!
+          allPhotos.sort((a, b) => {
+            if (Math.abs(a.y - b.y) > 40) return a.y - b.y;
+            return a.x - b.x;
+          });
+
+          const best = allPhotos[0];
+          const bbox = {
+            x: best.x,
+            y: best.y,
+            width: best.width,
+            height: best.height,
+          };
+          const clickPos = {
+            x: Math.round(bbox.x + bbox.width / 2),
+            y: Math.round(bbox.y + bbox.height / 2),
+          };
+
+          return {
+            found: true,
+            image_bbox: bbox,
+            click_position: clickPos,
+            images: allPhotos.map((p, idx) => ({
+              x: p.x,
+              y: p.y,
+              width: p.width,
+              height: p.height,
+              center_x: Math.round(p.x + p.width / 2),
+              center_y: Math.round(p.y + p.height / 2),
+              confidence: 1.0,
+              index: idx + 1,
+            })),
+          };
+        }
+
+        return { found: false };
+      });
+
+      res.writeHead(200);
+      res.end(JSON.stringify({ success: true, ...targetInfo }));
+    } catch (e) {
+      res.writeHead(500);
+      res.end(JSON.stringify({ success: false, found: false, error: e.message }));
+    }
+    return;
+  }
+
   // Capture Screenshot Endpoint
   if (url === '/capture-screenshot' && req.method === 'POST') {
     if (!currentBrowserContext || !currentBrowserPage) {
