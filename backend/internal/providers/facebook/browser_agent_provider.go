@@ -13,6 +13,7 @@ import (
 
 	"github.com/zinwaishine/estate-automate/backend/internal/database"
 	"github.com/zinwaishine/estate-automate/backend/internal/models"
+	"github.com/zinwaishine/estate-automate/backend/internal/utils"
 )
 
 type BrowserAgentProvider struct {
@@ -25,10 +26,7 @@ func NewBrowserAgentProvider() *BrowserAgentProvider {
 	if profileDir == "" {
 		profileDir = "/data/browser-profiles"
 	}
-	workerURL := os.Getenv("BROWSER_WORKER_URL")
-	if workerURL == "" {
-		workerURL = "http://localhost:9223"
-	}
+	workerURL := utils.GetBrowserWorkerURL()
 	return &BrowserAgentProvider{
 		ProfileDir: profileDir,
 		WorkerURL:  workerURL,

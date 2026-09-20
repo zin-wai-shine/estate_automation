@@ -95,12 +95,12 @@ export const BrowserPreviewModal: React.FC<BrowserPreviewModalProps> = ({
   }
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Facebook Browser" maxWidth="860px">
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+    <Modal isOpen={isOpen} onClose={onClose} title="Facebook Chromium Browser" maxWidth="960px">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
         {/* Live Viewport Stream Box */}
         <div
           style={{
-            height: '440px',
+            height: '520px',
             backgroundColor: '#0D0D0D',
             borderRadius: '0.5rem',
             border: '1px solid var(--border-color)',
@@ -112,7 +112,7 @@ export const BrowserPreviewModal: React.FC<BrowserPreviewModalProps> = ({
           {/* Browser Top Navigation Bar Header */}
           <div
             style={{
-              height: '32px',
+              height: '34px',
               backgroundColor: '#1A1A1A',
               borderBottom: '1px solid #262626',
               display: 'flex',
@@ -140,54 +140,55 @@ export const BrowserPreviewModal: React.FC<BrowserPreviewModalProps> = ({
               }}
             >
               <FiLock style={{ color: '#10B981', fontSize: '0.75rem' }} />
-              <span>https://www.facebook.com (Authenticated Browser Profile)</span>
+              <span>https://www.facebook.com/login (Live Browser Stream)</span>
             </div>
 
-            {isConnected ? (
-              <Badge variant="success" size="sm">Connected</Badge>
-            ) : (
-              <Badge variant="warning" size="sm">Awaiting Login</Badge>
-            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              {isConnected ? (
+                <Badge variant="success" size="sm">Connected</Badge>
+              ) : (
+                <Badge variant="warning" size="sm">Awaiting Login</Badge>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => window.open('http://localhost:6080/vnc.html?autoconnect=true&resize=scale', '_blank')}
+                style={{ fontSize: '0.6875rem', padding: '0.2rem 0.5rem', height: '24px' }}
+              >
+                Pop Out Window
+              </Button>
+            </div>
           </div>
 
-          {/* Real Chromium Browser - opened natively on desktop */}
-          <div
-            style={{
-              flex: 1,
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '1rem',
-              padding: '2rem',
-              backgroundColor: '#0D0D0D',
-            }}
-          >
-            {isConnected ? (
-              <>
-                <FiCheckCircle style={{ color: '#10B981', fontSize: '2.5rem' }} />
-                <p style={{ color: '#10B981', fontSize: '0.9375rem', fontWeight: 600, textAlign: 'center' }}>
-                  Facebook Connected! Session saved.
-                </p>
-              </>
-            ) : (
-              <>
-                <FiMonitor style={{ color: 'var(--accent-primary)', fontSize: '2.5rem' }} />
-                <div style={{ textAlign: 'center' }}>
-                  <p style={{ color: '#E4E6EB', fontSize: '0.9375rem', fontWeight: 600, margin: '0 0 0.375rem 0' }}>
-                    Chromium Browser Opened on Desktop
-                  </p>
-                  <p style={{ color: '#A3A3A3', fontSize: '0.8125rem', lineHeight: 1.5, maxWidth: '340px', margin: 0 }}>
-                    Log in to Facebook in the Chromium window that just opened. This dialog will auto-detect when you're authenticated.
-                  </p>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.375rem 0.875rem', borderRadius: '2rem', backgroundColor: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.2)' }}>
-                  <FiLoader style={{ color: '#F59E0B', fontSize: '0.75rem', animation: 'spin 1s linear infinite' }} />
-                  <span style={{ color: '#F59E0B', fontSize: '0.6875rem', fontWeight: 600 }}>Polling session status...</span>
-                </div>
-              </>
-            )}
-          </div>
+          {/* Real Interactive Chromium Browser Stream via noVNC */}
+          {isConnected ? (
+            <div
+              style={{
+                flex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '1rem',
+                padding: '2rem',
+                backgroundColor: '#0D0D0D',
+              }}
+            >
+              <FiCheckCircle style={{ color: '#10B981', fontSize: '2.5rem' }} />
+              <p style={{ color: '#10B981', fontSize: '0.9375rem', fontWeight: 600, textAlign: 'center' }}>
+                Facebook Connected! Session saved.
+              </p>
+            </div>
+          ) : (
+            <div style={{ flex: 1, position: 'relative', width: '100%', height: '100%', backgroundColor: '#000' }}>
+              <iframe
+                src="http://localhost:6080/vnc.html?autoconnect=true&resize=scale"
+                style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
+                title="Live Facebook Browser"
+                allow="clipboard-read; clipboard-write"
+              />
+            </div>
+          )}
         </div>
 
         {/* Compact Status Timeline Steps */}

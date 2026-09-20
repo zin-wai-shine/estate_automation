@@ -1,10 +1,13 @@
 FROM mcr.microsoft.com/playwright/python:v1.40.0-jammy
 
-# Install Node.js, Xvfb, x11vnc, websockify, and browser dependencies
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install Node.js, Xvfb, x11vnc, websockify, novnc, and browser dependencies
 RUN apt-get update && apt-get install -y \
     xvfb \
     x11vnc \
     websockify \
+    novnc \
     fluxbox \
     curl \
     gnupg \
@@ -16,9 +19,11 @@ WORKDIR /app
 
 # Copy package files and install Playwright
 COPY package.json ./
-RUN npm install || npm install playwright
+RUN npm install
 
 COPY scripts/ ./scripts/
+COPY entrypoint.browser.sh ./entrypoint.browser.sh
+RUN chmod +x ./entrypoint.browser.sh
 
 ENV DISPLAY=:99
 ENV BROWSER_PROFILES_DIR=/data/browser-profiles
@@ -26,5 +31,4 @@ ENV PYTHONUNBUFFERED=1
 
 RUN mkdir -p /data/browser-profiles
 
-# Launch Xvfb, x11vnc, websockify stream on port 6080, and browser_server.js on port 9223
-CMD ["bash", "-c", "Xvfb :99 -screen 0 1280x800x24 & fluxbox & x11vnc -display :99 -forever -shared -nopw -rfbport 5900 & websockify --web=/usr/share/novnc 6080 localhost:5900 & node scripts/browser_server.js"]
+CMD ["./entrypoint.browser.sh"]

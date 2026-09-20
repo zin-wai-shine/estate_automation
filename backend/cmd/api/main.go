@@ -101,6 +101,8 @@ func main() {
 	fbTest.Post("/read-cropped", handlers.ReadCroppedTargetPost)
 	fbTest.Post("/combine-text", handlers.CombineVisionTextChunks)
 	fbTest.Post("/validate-content", handlers.ValidateVisionContent)
+	fbTest.Post("/dom-text", handlers.ExtractDOMPostText)
+	fbTest.Get("/dom-text", handlers.ExtractDOMPostText)
 	fbTest.Post("/execute-action", handlers.ExecuteVisionAction)
 	fbTest.Post("/extract-images", handlers.ExtractTargetPostImages)
 	fbTest.Post("/analyze-image", handlers.AnalyzeSingleImage)

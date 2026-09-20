@@ -1,9 +1,10 @@
-FROM golang:1.22-alpine
+FROM golang:alpine
 
 WORKDIR /app
 
-# Install air for hot reloading
-RUN go install github.com/cosmtrek/air@latest
+# Install git, build-base, and air for hot reloading
+RUN apk add --no-cache git build-base && \
+    go install github.com/air-verse/air@latest
 
 COPY go.mod go.sum ./
 RUN go mod download

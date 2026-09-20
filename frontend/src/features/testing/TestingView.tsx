@@ -258,6 +258,14 @@ export const TestingView: React.FC = () => {
   const [firstPhotoTarget, setFirstPhotoTarget] = useState<FirstPhotoTargetInfo | null>(null);
   const [isTargetingPhoto, setIsTargetingPhoto] = useState<boolean>(false);
   const [photoTargetMode, setPhotoTargetMode] = useState<'auto' | 'manual'>('auto');
+  const [autoTransformEnabled, setAutoTransformEnabled] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('estate_testing_auto_transform');
+      return saved !== null ? saved === 'true' : true;
+    } catch {
+      return true;
+    }
+  });
   const [appleNoti, setAppleNoti] = useState<{ id: string; title: string; subtitle: string } | null>(null);
 
   // Photo Gallery Actions Dropdown State
@@ -1682,9 +1690,22 @@ export const TestingView: React.FC = () => {
         body: JSON.stringify({ content: combinedText }),
       });
       const valData = await valResp.json();
-      const finalCleanText = valData.cleaned_content || combinedText;
+      let finalCleanText = valData.cleaned_content || combinedText;
 
-      addLog('PIPELINE', '🎉 SUCCESS: Extracted complete original property post body!');
+      // Robust fallback: If Vision returned empty text or textChunks was empty, query the browser DOM directly!
+      if (!finalCleanText || finalCleanText.trim().length === 0) {
+        addLog('PIPELINE', 'Checking browser DOM for post description fallback...');
+        try {
+          const domResp = await fetch('http://localhost:8085/api/facebook/test/dom-text', { method: 'POST' });
+          const domData = await domResp.json();
+          if (domData.text && domData.text.trim().length > 0) {
+            finalCleanText = domData.text.trim();
+            addLog('PIPELINE', `✓ Retrieved property content via Browser DOM extraction fallback (${finalCleanText.length} chars)`);
+          }
+        } catch (e) {}
+      }
+
+      addLog('PIPELINE', `🎉 SUCCESS: Extracted complete original property post body (${finalCleanText.length} chars)!`);
 
       const finalRun: TestRunRecord = {
         id: Date.now(),
@@ -1707,6 +1728,12 @@ export const TestingView: React.FC = () => {
       const autoRef = generateClientRefCode(finalCleanText);
       setGeneratedRefCode(autoRef);
       addLog('PIPELINE', `🎉 Saved test run record (${finalCleanText.length} chars) | 🏷️ Ref Code: ${autoRef}`);
+
+      // AUTO CONTENT TRANSFORMATION PIPELINE
+      if (autoTransformEnabled && finalCleanText && finalCleanText.trim().length > 0) {
+        addLog('TRANSFORM_AUTO', '⚡ [AUTO TRANSFORM] Auto-transform is ON. Automatically transforming extracted listing content...');
+        handleTransformContent(undefined, finalCleanText);
+      }
 
       // AUTO PHOTO TARGETING & IMAGE DOWNLOAD PIPELINE
       if (photoTargetMode === 'auto') {
@@ -2153,13 +2180,50 @@ export const TestingView: React.FC = () => {
           addLog('REF_CODE', `🏷️ Standard Property Ref Code generated: ${data.ref_code}`);
         }
         addLog('TRANSFORM_SUCCESS', `✓ Content transformed successfully into "${chosenTemplate.name}" (${data.character_count} chars)`);
+        showAppleNotification(
+          '✨ Transformation Complete!',
+          `AI transformed listing into "${chosenTemplate.name}" format (${data.character_count || data.transformed_content.length} characters)`
+        );
       } else {
         addLog('TRANSFORM_ERROR', `Transformation failed: ${data.message || 'Unknown error'}`);
+        showAppleNotification('⚠️ Transformation Failed', data.message || 'Could not transform post content');
       }
     } catch (err: any) {
       addLog('TRANSFORM_ERROR', `Transformation network error: ${err.message}`);
+      showAppleNotification('⚠️ Transformation Error', err.message || 'Network error during transformation');
     } finally {
       setIsTransforming(false);
+    }
+  };
+
+  // Quick copy transformed listing copy to clipboard
+  const handleCopyTransformed = () => {
+    if (transformedContent) {
+      navigator.clipboard.writeText(transformedContent);
+      setIsCopiedTransformed(true);
+      showAppleNotification('📋 Copied!', 'Transformed listing content copied to clipboard');
+      setTimeout(() => setIsCopiedTransformed(false), 2000);
+    }
+  };
+
+  // AUTO TRANSFORM TOGGLE HANDLER
+  const handleToggleAutoTransform = async () => {
+    const nextVal = !autoTransformEnabled;
+    setAutoTransformEnabled(nextVal);
+    try {
+      localStorage.setItem('estate_testing_auto_transform', String(nextVal));
+    } catch (e) {}
+
+    if (nextVal) {
+      showAppleNotification('⚡ Auto Transform Enabled', 'Extracted listing content will transform automatically');
+      addLog('TRANSFORM_AUTO_TOGGLE', '⚡ [AUTO TRANSFORM] Enabled. Content will automatically transform upon extraction.');
+      // If there is already extracted content that hasn't been transformed yet, trigger transform right away
+      if (activeTestRun?.extracted_content && !transformedContent && !isTransforming) {
+        await handleTransformContent(selectedPromptId, activeTestRun.extracted_content);
+      }
+    } else {
+      showAppleNotification('✋ Manual Mode Enabled', 'Auto-transform disabled. Use the Transform button manually.');
+      addLog('TRANSFORM_AUTO_TOGGLE', '✋ [MANUAL MODE] Auto-transform disabled. Transformation requires clicking Transform.');
     }
   };
 
@@ -2778,6 +2842,65 @@ export const TestingView: React.FC = () => {
 
               {/* Template Dropdown, Transform Button & Preview Transformed Output Button */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                {/* Auto Transform Switch Button */}
+                <div
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    userSelect: 'none',
+                    cursor: 'pointer',
+                    padding: '0 0.65rem',
+                    backgroundColor: 'var(--bg-secondary)',
+                    borderRadius: '0.375rem',
+                    border: '1px solid var(--border-color)',
+                    height: '32px',
+                    boxSizing: 'border-box',
+                    transition: 'all 0.2s ease',
+                  }}
+                  onClick={handleToggleAutoTransform}
+                  title={autoTransformEnabled ? 'Auto Transform is ON: Posts transform automatically upon extraction' : 'Auto Transform is OFF (Manual mode)'}
+                >
+                  <span
+                    style={{
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      color: autoTransformEnabled ? '#34C759' : 'var(--text-muted)',
+                      fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif',
+                      transition: 'color 0.2s ease',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    Auto Transform
+                  </span>
+                  {/* Apple iOS Track */}
+                  <div
+                    style={{
+                      width: '34px',
+                      height: '18px',
+                      borderRadius: '9999px',
+                      backgroundColor: autoTransformEnabled ? '#34C759' : 'rgba(120, 120, 128, 0.36)',
+                      padding: '2px',
+                      boxSizing: 'border-box',
+                      position: 'relative',
+                      transition: 'background-color 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                      boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.3)',
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: '14px',
+                        height: '14px',
+                        borderRadius: '50%',
+                        backgroundColor: '#FFFFFF',
+                        boxShadow: '0 2px 5px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.2)',
+                        transform: autoTransformEnabled ? 'translateX(16px)' : 'translateX(0px)',
+                        transition: 'transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                      }}
+                    />
+                  </div>
+                </div>
+
                 <div style={{ position: 'relative' }}>
                   <button
                     type="button"
@@ -2823,6 +2946,9 @@ export const TestingView: React.FC = () => {
                           onClick={() => {
                             setSelectedPromptId(tmpl.id);
                             setIsPromptDropdownOpen(false);
+                            if (autoTransformEnabled && activeTestRun?.extracted_content && !isTransforming) {
+                              handleTransformContent(tmpl.id, activeTestRun.extracted_content);
+                            }
                           }}
                           style={{
                             padding: '0.5rem 0.75rem',
@@ -2855,6 +2981,33 @@ export const TestingView: React.FC = () => {
                 <Button
                   variant="outline"
                   size="sm"
+                  leftIcon={<FiFileText />}
+                  disabled={!activeTestRun?.extracted_content}
+                  onClick={() => {
+                    setPreviewModal({
+                      isOpen: true,
+                      title: 'Raw Extracted Property Post Content',
+                      type: 'raw_content',
+                    });
+                  }}
+                  style={{
+                    height: '32px',
+                    padding: '0 0.75rem',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    backgroundColor: 'var(--bg-secondary)',
+                    color: activeTestRun?.extracted_content ? 'var(--text-primary)' : 'var(--text-muted)',
+                    border: '1px solid var(--border-color)',
+                    boxShadow: 'none',
+                    borderRadius: '0.375rem',
+                  }}
+                >
+                  Raw Content
+                </Button>
+
+                <Button
+                  variant="outline"
+                  size="sm"
                   leftIcon={<FiEye />}
                   disabled={!transformedContent}
                   onClick={() => {
@@ -2882,29 +3035,180 @@ export const TestingView: React.FC = () => {
               </div>
             </div>
 
-            {/* Full-Width Raw Post Content Display */}
+            {/* Full-Width Transformed Content Display with Copy Button */}
             <div>
-              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '0.35rem' }}>
-                Raw Extracted Property Post Content
-              </span>
-              <textarea
-                readOnly
-                rows={14}
-                value={activeTestRun?.extracted_content || ''}
-                placeholder="Raw extracted property text..."
-                style={{
-                  width: '100%',
-                  backgroundColor: 'var(--bg-secondary)',
-                  color: 'var(--text-primary)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: '0.5rem',
-                  padding: '0.75rem',
-                  fontSize: '0.75rem',
-                  fontFamily: 'monospace',
-                  lineHeight: 1.5,
-                  resize: 'vertical',
-                }}
-              />
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.45rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                    {transformedContent ? 'Transformed Listing Content' : 'AI Transformed Content'}
+                  </span>
+                  {transformedContent && generatedRefCode && (
+                    <span
+                      style={{
+                        fontSize: '0.6875rem',
+                        fontWeight: 700,
+                        padding: '0.15rem 0.45rem',
+                        borderRadius: '0.25rem',
+                        backgroundColor: 'rgba(59, 130, 246, 0.12)',
+                        color: 'var(--accent-primary)',
+                        fontFamily: 'monospace',
+                      }}
+                    >
+                      {generatedRefCode}
+                    </span>
+                  )}
+                </div>
+
+                {/* Copy Button & Character Count */}
+                {transformedContent && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                      {transformedContent.length} chars
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleCopyTransformed}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.35rem',
+                        padding: '0.25rem 0.65rem',
+                        fontSize: '0.71875rem',
+                        fontWeight: 600,
+                        borderRadius: '0.375rem',
+                        border: isCopiedTransformed ? '1px solid #10B981' : '1px solid var(--border-color)',
+                        backgroundColor: isCopiedTransformed ? 'rgba(16, 185, 129, 0.15)' : 'var(--bg-secondary)',
+                        color: isCopiedTransformed ? '#10B981' : 'var(--text-primary)',
+                        cursor: 'pointer',
+                        boxShadow: 'var(--shadow-xs)',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      {isCopiedTransformed ? <FiCheck style={{ fontSize: '0.8125rem', color: '#10B981' }} /> : <FiCopy style={{ fontSize: '0.8125rem' }} />}
+                      <span>{isCopiedTransformed ? 'Copied!' : 'Copy'}</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {transformedContent ? (
+                <textarea
+                  readOnly
+                  rows={14}
+                  value={transformedContent}
+                  style={{
+                    width: '100%',
+                    backgroundColor: 'var(--bg-secondary)',
+                    color: 'var(--text-primary)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '0.5rem',
+                    padding: '0.875rem',
+                    fontSize: '0.8125rem',
+                    fontFamily: 'inherit',
+                    lineHeight: 1.6,
+                    resize: 'vertical',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              ) : activeTestRun?.extracted_content ? (
+                /* Before Transform State: Raw Content is Extracted & Ready to Transform */
+                <div
+                  style={{
+                    minHeight: '260px',
+                    backgroundColor: 'var(--bg-secondary)',
+                    border: '1px dashed var(--border-color)',
+                    borderRadius: '0.5rem',
+                    padding: '2.25rem 1.5rem',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    textAlign: 'center',
+                    gap: '0.875rem',
+                    boxSizing: 'border-box',
+                  }}
+                >
+                  <div
+                    style={{
+                      width: '46px',
+                      height: '46px',
+                      borderRadius: '50%',
+                      backgroundColor: 'rgba(139, 92, 246, 0.14)',
+                      color: '#8B5CF6',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '1.35rem',
+                    }}
+                  >
+                    <FiZap />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '0.90625rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.35rem' }}>
+                      Ready to Transform Listing Content
+                    </div>
+                    <div style={{ fontSize: '0.78125rem', color: 'var(--text-muted)', maxWidth: '440px', lineHeight: 1.55 }}>
+                      Raw property post extracted ({activeTestRun.extracted_content.length} characters). Select your desired format ({promptTemplates.find(p => p.id === selectedPromptId)?.name || 'FB Format'}) and click <strong>"Transform"</strong> to generate polished listing copy.
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.625rem', marginTop: '0.35rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      leftIcon={isTransforming ? <FiLoader style={{ animation: 'spin 1s linear infinite' }} /> : <FiZap />}
+                      onClick={() => handleTransformContent()}
+                      disabled={isTransforming}
+                      style={{ height: '34px', fontSize: '0.75rem', fontWeight: 600 }}
+                    >
+                      {isTransforming ? 'Transforming...' : 'Transform Now'}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      leftIcon={<FiFileText />}
+                      onClick={() => {
+                        setPreviewModal({
+                          isOpen: true,
+                          title: 'Raw Extracted Property Post Content',
+                          type: 'raw_content',
+                        });
+                      }}
+                      style={{ height: '34px', fontSize: '0.75rem', fontWeight: 600, backgroundColor: 'var(--bg-surface)' }}
+                    >
+                      View Raw Content
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                /* Initial State Before Pipeline Runs */
+                <div
+                  style={{
+                    minHeight: '220px',
+                    backgroundColor: 'var(--bg-secondary)',
+                    border: '1px dashed var(--border-color)',
+                    borderRadius: '0.5rem',
+                    padding: '2rem 1.5rem',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    textAlign: 'center',
+                    color: 'var(--text-muted)',
+                    gap: '0.625rem',
+                    boxSizing: 'border-box',
+                  }}
+                >
+                  <FiFileText style={{ fontSize: '1.75rem', opacity: 0.4 }} />
+                  <div>
+                    <div style={{ fontSize: '0.84375rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.2rem' }}>
+                      No Property Content Extracted Yet
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                      Run the extraction pipeline above to fetch and transform real estate listings.
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -4697,13 +5001,15 @@ export const TestingView: React.FC = () => {
                     )}
                   </div>
                 )}
-                {(previewModal.type === 'transformed_text' || previewModal.type === 'social_post_preview') && (
+                {(previewModal.type === 'transformed_text' || previewModal.type === 'social_post_preview' || previewModal.type === 'raw_content') && (
                   <button
                     type="button"
                     onClick={() => {
-                      const textToCopy = (socialPreviewTextSource === 'transformed' && transformedContent)
-                        ? transformedContent
-                        : (activeTestRun?.extracted_content || transformedContent || previewModal.transformedContent || '');
+                      const textToCopy = previewModal.type === 'raw_content'
+                        ? (activeTestRun?.extracted_content || '')
+                        : (socialPreviewTextSource === 'transformed' && transformedContent)
+                          ? transformedContent
+                          : (activeTestRun?.extracted_content || transformedContent || previewModal.transformedContent || '');
                       if (textToCopy) {
                         navigator.clipboard.writeText(textToCopy);
                         setIsModalCopied(true);
@@ -4971,6 +5277,39 @@ export const TestingView: React.FC = () => {
                         No photo targeting data captured yet. Click "Run Photo Targeting" to detect and click target photo.
                       </div>
                     )}
+                  </div>
+                </div>
+              ) : previewModal.type === 'raw_content' ? (
+                <div style={{ padding: '1.75rem', width: '820px', maxWidth: '100%', boxSizing: 'border-box', overflowY: 'auto', flex: 1 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', paddingBottom: '0.75rem', borderBottom: '1px solid var(--border-color)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <FiFileText style={{ color: 'var(--accent-primary)', fontSize: '1rem' }} />
+                      <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                        Original Extracted Post Content
+                      </span>
+                    </div>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                      {(activeTestRun?.extracted_content || '').length} characters
+                    </span>
+                  </div>
+                  <div
+                    style={{
+                      width: '100%',
+                      backgroundColor: 'var(--bg-secondary)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: '0.5rem',
+                      padding: '1.25rem',
+                      color: 'var(--text-primary)',
+                      fontFamily: 'monospace',
+                      fontSize: '0.8125rem',
+                      lineHeight: 1.6,
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-word',
+                      maxHeight: '60vh',
+                      overflowY: 'auto',
+                    }}
+                  >
+                    {activeTestRun?.extracted_content || 'No raw content extracted yet.'}
                   </div>
                 </div>
               ) : previewModal.type === 'transformed_text' ? (
@@ -5346,7 +5685,7 @@ export const TestingView: React.FC = () => {
                                     src={activeImages[0].url}
                                     alt="Property"
                                     onClick={() => setPreviewModal({ isOpen: true, title: 'Property Photo View', type: 'image_lightbox', imageSrc: activeImages[0].url })}
-                                    style={{ width: '100%', maxHeight: '480px', minHeight: '280px', objectFit: 'cover', display: 'block', cursor: 'pointer' }}
+                                    style={{ width: '100%', maxHeight: isMobile ? '280px' : '480px', minHeight: isMobile ? '180px' : '280px', objectFit: 'cover', display: 'block', cursor: 'pointer' }}
                                   />
                                 )}
 
@@ -5359,7 +5698,7 @@ export const TestingView: React.FC = () => {
                                         src={img.url}
                                         alt={`Property ${i + 1}`}
                                         onClick={() => setPreviewModal({ isOpen: true, title: 'Property Photo View', type: 'image_lightbox', imageSrc: img.url })}
-                                        style={{ width: '100%', height: '300px', objectFit: 'cover', display: 'block', cursor: 'pointer' }}
+                                        style={{ width: '100%', height: isMobile ? '195px' : '300px', objectFit: 'cover', display: 'block', cursor: 'pointer' }}
                                       />
                                     ))}
                                   </div>
@@ -5372,7 +5711,7 @@ export const TestingView: React.FC = () => {
                                       src={activeImages[0].url}
                                       alt="Property 1"
                                       onClick={() => setPreviewModal({ isOpen: true, title: 'Property Photo View', type: 'image_lightbox', imageSrc: activeImages[0].url })}
-                                      style={{ width: '100%', height: '280px', objectFit: 'cover', display: 'block', cursor: 'pointer' }}
+                                      style={{ width: '100%', height: isMobile ? '180px' : '280px', objectFit: 'cover', display: 'block', cursor: 'pointer' }}
                                     />
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px' }}>
                                       {activeImages.slice(1, 3).map((img, i) => (
@@ -5381,7 +5720,7 @@ export const TestingView: React.FC = () => {
                                           src={img.url}
                                           alt={`Property ${i + 2}`}
                                           onClick={() => setPreviewModal({ isOpen: true, title: 'Property Photo View', type: 'image_lightbox', imageSrc: img.url })}
-                                          style={{ width: '100%', height: '190px', objectFit: 'cover', display: 'block', cursor: 'pointer' }}
+                                          style={{ width: '100%', height: isMobile ? '120px' : '190px', objectFit: 'cover', display: 'block', cursor: 'pointer' }}
                                         />
                                       ))}
                                     </div>
@@ -5397,7 +5736,7 @@ export const TestingView: React.FC = () => {
                                         src={img.url}
                                         alt={`Property ${i + 1}`}
                                         onClick={() => setPreviewModal({ isOpen: true, title: 'Property Photo View', type: 'image_lightbox', imageSrc: img.url })}
-                                        style={{ width: '100%', height: '220px', objectFit: 'cover', display: 'block', cursor: 'pointer' }}
+                                        style={{ width: '100%', height: isMobile ? '145px' : '220px', objectFit: 'cover', display: 'block', cursor: 'pointer' }}
                                       />
                                     ))}
                                   </div>
@@ -5413,7 +5752,7 @@ export const TestingView: React.FC = () => {
                                           src={img.url}
                                           alt={`Property ${i + 1}`}
                                           onClick={() => setPreviewModal({ isOpen: true, title: 'Property Photo View', type: 'image_lightbox', imageSrc: img.url })}
-                                          style={{ width: '100%', height: '260px', objectFit: 'cover', display: 'block', cursor: 'pointer' }}
+                                          style={{ width: '100%', height: isMobile ? '175px' : '260px', objectFit: 'cover', display: 'block', cursor: 'pointer' }}
                                         />
                                       ))}
                                     </div>
@@ -5424,13 +5763,13 @@ export const TestingView: React.FC = () => {
                                           src={img.url}
                                           alt={`Property ${i + 3}`}
                                           onClick={() => setPreviewModal({ isOpen: true, title: 'Property Photo View', type: 'image_lightbox', imageSrc: img.url })}
-                                          style={{ width: '100%', height: '170px', objectFit: 'cover', display: 'block', cursor: 'pointer' }}
+                                          style={{ width: '100%', height: isMobile ? '115px' : '170px', objectFit: 'cover', display: 'block', cursor: 'pointer' }}
                                         />
                                       ))}
                                       {/* 5th Photo with +N badge */}
                                       <div
                                         onClick={() => setPreviewModal({ isOpen: true, title: 'Property Photo View', type: 'image_lightbox', imageSrc: activeImages[4].url })}
-                                        style={{ position: 'relative', width: '100%', height: '170px', cursor: 'pointer' }}
+                                        style={{ position: 'relative', width: '100%', height: isMobile ? '115px' : '170px', cursor: 'pointer' }}
                                       >
                                         <img
                                           src={activeImages[4].url}
@@ -5447,7 +5786,7 @@ export const TestingView: React.FC = () => {
                                               alignItems: 'center',
                                               justifyContent: 'center',
                                               color: '#FFFFFF',
-                                              fontSize: '1.25rem',
+                                              fontSize: isMobile ? '1.05rem' : '1.25rem',
                                               fontWeight: 800,
                                             }}
                                           >

@@ -47,7 +47,7 @@ func TestFacebookNavigation(c *fiber.Ctx) error {
 		"zoom_level": req.ZoomLevel,
 	})
 	client := &http.Client{Timeout: 45 * time.Second}
-	resp, err := client.Post("http://localhost:9223/test-navigation", "application/json", bytes.NewBuffer(payloadBytes))
+	resp, err := client.Post(fmt.Sprintf("%s/test-navigation", utils.GetBrowserWorkerURL()), "application/json", bytes.NewBuffer(payloadBytes))
 	if err != nil {
 		return c.Status(http.StatusServiceUnavailable).JSON(fiber.Map{
 			"status":     "error",
@@ -83,7 +83,7 @@ func StartVisionTest(c *fiber.Ctx) error {
 	testRunID := fmt.Sprintf("TEST-VISION-%s-%d", dateStr, time.Now().UnixNano()%9000+1000)
 
 	// Call OpenClaw to extract & capture viewport screenshot
-	workerURL := "http://localhost:9223/test-extract-post"
+	workerURL := fmt.Sprintf("%s/test-extract-post", utils.GetBrowserWorkerURL())
 	payloadBytes, _ := json.Marshal(map[string]string{"url": req.URL})
 
 	client := &http.Client{Timeout: 45 * time.Second}
@@ -123,7 +123,7 @@ func StartVisionTest(c *fiber.Ctx) error {
 // CaptureVisionScreenshot handles POST /api/facebook/test/screenshot
 func CaptureVisionScreenshot(c *fiber.Ctx) error {
 	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Post("http://localhost:9223/capture-screenshot", "application/json", nil)
+	resp, err := client.Post(fmt.Sprintf("%s/capture-screenshot", utils.GetBrowserWorkerURL()), "application/json", nil)
 	if err != nil {
 		return c.Status(http.StatusServiceUnavailable).JSON(fiber.Map{
 			"status":     "error",
@@ -241,7 +241,7 @@ func ExecuteVisionAction(c *fiber.Ctx) error {
 		"zoom_level":     req.ZoomLevel,
 	})
 	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Post("http://localhost:9223/execute-action", "application/json", bytes.NewBuffer(payloadBytes))
+	resp, err := client.Post(fmt.Sprintf("%s/execute-action", utils.GetBrowserWorkerURL()), "application/json", bytes.NewBuffer(payloadBytes))
 	if err != nil {
 		return c.Status(http.StatusServiceUnavailable).JSON(fiber.Map{
 			"status":     "error",
@@ -278,7 +278,7 @@ func ExtractTargetPostImages(c *fiber.Ctx) error {
 
 	payloadBytes, _ := json.Marshal(req)
 	client := &http.Client{Timeout: 90 * time.Second}
-	resp, err := client.Post("http://localhost:9223/extract-target-images", "application/json", bytes.NewBuffer(payloadBytes))
+	resp, err := client.Post(fmt.Sprintf("%s/extract-target-images", utils.GetBrowserWorkerURL()), "application/json", bytes.NewBuffer(payloadBytes))
 	if err != nil {
 		return c.Status(http.StatusServiceUnavailable).JSON(fiber.Map{
 			"status":     "error",
@@ -428,9 +428,9 @@ func CombineVisionTextChunks(c *fiber.Ctx) error {
 		Chunks []string `json:"chunks"`
 	}
 	if err := c.BodyParser(&payload); err != nil || len(payload.Chunks) == 0 {
-		return c.Status(http.StatusBadRequest).JSON(fiber.Map{
-			"status":  "error",
-			"message": "Chunks array is required",
+		return c.JSON(fiber.Map{
+			"status":        "success",
+			"combined_text": "",
 		})
 	}
 
@@ -451,10 +451,10 @@ func ValidateVisionContent(c *fiber.Ctx) error {
 	var payload struct {
 		Content string `json:"content"`
 	}
-	if err := c.BodyParser(&payload); err != nil || payload.Content == "" {
-		return c.Status(http.StatusBadRequest).JSON(fiber.Map{
-			"status":  "error",
-			"message": "Content string is required",
+	if err := c.BodyParser(&payload); err != nil || strings.TrimSpace(payload.Content) == "" {
+		return c.JSON(fiber.Map{
+			"status":          "success",
+			"cleaned_content": "",
 		})
 	}
 
@@ -467,6 +467,30 @@ func ValidateVisionContent(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"status":          "success",
 		"cleaned_content": cleanedContent,
+	})
+}
+
+// ExtractDOMPostText handles POST /api/facebook/test/dom-text
+func ExtractDOMPostText(c *fiber.Ctx) error {
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Post(fmt.Sprintf("%s/extract-post-text", utils.GetBrowserWorkerURL()), "application/json", bytes.NewBuffer([]byte("{}")))
+	if err != nil {
+		return c.JSON(fiber.Map{
+			"status":  "error",
+			"message": err.Error(),
+			"text":    "",
+		})
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	var workerResp map[string]interface{}
+	_ = json.Unmarshal(body, &workerResp)
+
+	text, _ := workerResp["text"].(string)
+	return c.JSON(fiber.Map{
+		"status": "success",
+		"text":   text,
 	})
 }
 
@@ -484,7 +508,7 @@ func DetectImageCoordinates(c *fiber.Ctx) error {
 
 	// 1. FIRST PRIORITY: Query real DOM coordinates from the active browser worker!
 	client := &http.Client{Timeout: 4 * time.Second}
-	domResp, err := client.Post("http://localhost:9223/detect-photo-target", "application/json", bytes.NewBuffer([]byte("{}")))
+	domResp, err := client.Post(fmt.Sprintf("%s/detect-photo-target", utils.GetBrowserWorkerURL()), "application/json", bytes.NewBuffer([]byte("{}")))
 	if err == nil && domResp.StatusCode == http.StatusOK {
 		defer domResp.Body.Close()
 		var domResult struct {

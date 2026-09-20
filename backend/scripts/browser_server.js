@@ -264,6 +264,11 @@ async function launchPersistentBrowser(userId = '1', options = {}) {
       ignoreDefaultArgs: ['--enable-automation'],
     };
 
+    const systemChromeMac = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+    if (isMac && fs.existsSync(systemChromeMac)) {
+      launchOptions.executablePath = systemChromeMac;
+    }
+
     console.log('[OPENCLAW] Creating/reusing browser context...');
     const contextViewport = isHeadless ? { width: 1920, height: 1080 } : null;
     try {
@@ -302,6 +307,10 @@ async function launchPersistentBrowser(userId = '1', options = {}) {
     await currentBrowserPage.bringToFront();
     console.log('[OPENCLAW] Page ready');
 
+    if (isMac && !isHeadless) {
+      require('child_process').exec(`osascript -e 'tell application "Google Chrome" to activate'`, () => {});
+    }
+
     const cookies = await currentBrowserContext.cookies().catch(() => []);
     const hasAuthCookie = cookies.some((c) => c.name === 'c_user' || c.name === 'xs');
 
@@ -313,8 +322,10 @@ async function launchPersistentBrowser(userId = '1', options = {}) {
       console.log('[OPENCLAW] Browser profile active (Public / Unauthenticated Mode)');
     }
 
-    // Install Accidental Click Prevention Shield on page
-    await injectClickProtectionShield(currentBrowserPage);
+    if (isHeadless) {
+      // Install Accidental Click Prevention Shield on page only in headless automated mode
+      await injectClickProtectionShield(currentBrowserPage);
+    }
 
     return { success: true, state: sessionState, page: currentBrowserPage };
   } catch (err) {
@@ -1745,15 +1756,9 @@ async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', max
       await imagePage.waitForTimeout(400);
     }
 
-    // Close browser when complete as requested
-    console.log('[IMAGE] Closing browser after completing photo gallery download');
-    if (currentBrowserContext) {
-      try {
-        await currentBrowserContext.close();
-      } catch (e) {}
-      currentBrowserContext = null;
-      currentBrowserPage = null;
-    }
+    // Dismiss photo viewer modal to return to clean post view while keeping browser open
+    console.log('[IMAGE] Photo gallery download complete. Closing viewer modal.');
+    await imagePage.keyboard.press('Escape').catch(() => {});
   } catch (err) {
     console.error(`[IMAGE] Error during image download: ${err.message}`);
   }
@@ -2010,11 +2015,18 @@ const server = http.createServer(async (req, res) => {
           options.headless = payload.headless;
         }
         const result = await launchPersistentBrowser('1', options);
-        if (result.success && result.page && result.page.url() === 'about:blank') {
-          await result.page.goto('https://www.facebook.com', { waitUntil: 'domcontentloaded' }).catch(() => {});
+        if (result.success && result.page) {
+          const currentUrl = result.page.url();
+          if (!currentUrl || currentUrl === 'about:blank' || currentUrl.includes('chrome://')) {
+            await result.page.goto('https://www.facebook.com/login', { waitUntil: 'domcontentloaded' }).catch(() => {});
+          }
         }
         res.writeHead(result.success ? 200 : 500);
-        res.end(JSON.stringify(result));
+        res.end(JSON.stringify({
+          success: result.success,
+          state: result.state || sessionState,
+          error: result.error,
+        }));
       } catch (e) {
         res.writeHead(500);
         res.end(JSON.stringify({ success: false, error: e.message }));
@@ -2229,6 +2241,126 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Extract Post Text from DOM Endpoint
+  if (url === '/extract-post-text' && (req.method === 'POST' || req.method === 'GET')) {
+    if (!currentBrowserContext || !currentBrowserPage) {
+      res.writeHead(200);
+      res.end(JSON.stringify({ success: false, text: '', error: 'No active browser session' }));
+      return;
+    }
+    const page = currentBrowserPage;
+    if (!page || page.isClosed()) {
+      res.writeHead(200);
+      res.end(JSON.stringify({ success: false, text: '', error: 'No active browser page open' }));
+      return;
+    }
+    try {
+      // First ensure "See more" is expanded if present
+      await page.evaluate(() => {
+        const clickables = Array.from(document.querySelectorAll('div[role="button"], span[role="button"]'));
+        clickables.forEach((btn) => {
+          const txt = (btn.innerText || '').trim();
+          if (txt === 'See more' || txt === 'ดูเพิ่มเติม' || txt === 'See More' || txt.includes('See more') || txt.includes('ดูเพิ่มเติม')) {
+            try { btn.click(); } catch (e) {}
+          }
+        });
+      }).catch(() => {});
+      await page.waitForTimeout(500);
+
+      const postText = await page.evaluate(() => {
+        const isExcluded = (el) => {
+          if (el.getAttribute && (el.getAttribute('aria-label') === 'Notifications' || el.getAttribute('aria-label') === 'Chats')) return true;
+          const txt = (el.innerText || '');
+          if (txt.includes('Your push notifications are off') && !txt.includes('Rent') && !txt.includes('ให้เช่า')) return true;
+          return false;
+        };
+
+        const candidateSelectors = [
+          'div[role="dialog"] div[role="article"]',
+          'div[role="dialog"]',
+          'div[role="article"]',
+          'article',
+          'div[data-pagelet*="FeedUnit"]',
+          'div[role="feed"] div[role="article"]',
+          'div[role="main"] div[role="article"]',
+          'div[role="main"]',
+        ];
+
+        let candidateElements = [];
+        for (const sel of candidateSelectors) {
+          candidateElements.push(...Array.from(document.querySelectorAll(sel)));
+        }
+        candidateElements = Array.from(new Set(candidateElements)).filter(el => !isExcluded(el));
+
+        // Score containers for real estate post markers
+        let bestContainer = null;
+        let bestScore = -1;
+        for (const el of candidateElements) {
+          const text = el.innerText || '';
+          let score = 0;
+          if (text.includes('Rent') || text.includes('ให้เช่า') || text.includes('เช่า')) score += 500;
+          if (text.includes('Bed') || text.includes('Bath') || text.includes('sqm') || text.includes('ตร.ม.') || text.includes('Floor')) score += 500;
+          if (text.includes('Tel') || text.includes('Line') || text.includes('Contact')) score += 300;
+          if (text.includes('Bangna') || text.includes('Regent') || text.includes('Condo')) score += 300;
+          if (score > bestScore) {
+            bestScore = score;
+            bestContainer = el;
+          }
+        }
+
+        const container = bestContainer || candidateElements[0] || document.body;
+
+        // Method 1: Check for Facebook standard post message container
+        const messageEl = container.querySelector('[data-ad-preview="message"]');
+        if (messageEl && messageEl.innerText && messageEl.innerText.trim().length > 20) {
+          return messageEl.innerText.trim();
+        }
+
+        // Method 2: Inspect direct text containers with dir="auto"
+        const dirAutoEls = Array.from(container.querySelectorAll('div[dir="auto"], span[dir="auto"]'));
+        for (const el of dirAutoEls) {
+          const txt = (el.innerText || '').trim();
+          if (txt.length > 50 && (txt.includes('Rent') || txt.includes('ให้เช่า') || txt.includes('เช่า') || txt.includes('Bed') || txt.includes('Bath') || txt.includes('Tel'))) {
+            return txt;
+          }
+        }
+
+        // Method 3: Aggregate scoped text nodes
+        const textNodes = Array.from(
+          container.querySelectorAll('div[dir="auto"], span[dir="auto"], p')
+        );
+
+        const excludedKeywords = [
+          'Create story', 'Like', 'Comment', 'Share', 'See translation', 'Rate this translation',
+          'Sponsored', 'Write a comment...', 'Suggested for you', 'Most relevant', 'See more', 'ดูเพิ่มเติม',
+          'Turn on notifications to stay connected', 'Notifications', 'Your push notifications are off'
+        ];
+
+        const seen = new Set();
+        const acceptedParts = [];
+        textNodes.forEach((node) => {
+          let txt = (node.innerText || '').trim();
+          if (!txt || txt.length < 2) return;
+          txt = txt.replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
+          if (excludedKeywords.some((kw) => txt === kw || txt.startsWith('Write a comment'))) return;
+          if (!seen.has(txt)) {
+            seen.add(txt);
+            acceptedParts.push(txt);
+          }
+        });
+
+        return acceptedParts.join('\n\n');
+      });
+
+      res.writeHead(200);
+      res.end(JSON.stringify({ success: true, text: postText || '' }));
+    } catch (e) {
+      res.writeHead(500);
+      res.end(JSON.stringify({ success: false, text: '', error: e.message }));
+    }
+    return;
+  }
+
   // Capture Screenshot Endpoint
   if (url === '/capture-screenshot' && req.method === 'POST') {
     if (!currentBrowserContext || !currentBrowserPage) {
@@ -2314,14 +2446,27 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (url === '/status') {
-    res.writeHead(200);
-    res.end(
-      JSON.stringify({
-        session_state: sessionState,
-        is_connected: sessionState === 'CONNECTED',
-        lock_active: activeLock,
-      })
-    );
+    (async () => {
+      let isConnected = sessionState === 'CONNECTED';
+      if (currentBrowserContext) {
+        try {
+          const cookies = await currentBrowserContext.cookies().catch(() => []);
+          const hasAuthCookie = cookies.some((c) => c.name === 'c_user' || c.name === 'xs');
+          if (hasAuthCookie) {
+            sessionState = 'CONNECTED';
+            isConnected = true;
+          }
+        } catch (e) {}
+      }
+      res.writeHead(200);
+      res.end(
+        JSON.stringify({
+          session_state: sessionState,
+          is_connected: isConnected,
+          lock_active: activeLock,
+        })
+      );
+    })();
     return;
   }
 

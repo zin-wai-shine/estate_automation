@@ -4,6 +4,6 @@
   "private": true,
   "main": "scripts/browser_server.js",
   "dependencies": {
-    "playwright": "^1.40.0"
+    "playwright": "1.40.0"
   }
 }

@@ -28,3 +28,4 @@ backend/storage/uploads/
 storage/uploads/
 
 backend/api
+backend/tmp/

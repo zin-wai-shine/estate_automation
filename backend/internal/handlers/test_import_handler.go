@@ -86,8 +86,8 @@ func ExecuteTestImport(c *fiber.Ctx) error {
 		normalizedURL = req.URL
 	}
 
-	// Call OpenClaw Browser Worker endpoint: http://localhost:9223/test-extract-post
-	workerURL := "http://localhost:9223/test-extract-post"
+	// Call OpenClaw Browser Worker endpoint: test-extract-post
+	workerURL := fmt.Sprintf("%s/test-extract-post", utils.GetBrowserWorkerURL())
 	payloadBytes, _ := json.Marshal(map[string]string{"url": req.URL})
 
 	client := &http.Client{Timeout: 45 * time.Second}
@@ -284,7 +284,7 @@ func DeleteTestRun(c *fiber.Ctx) error {
 
 // GetLiveBrowserScreenshot handles GET /api/testing/live-browser
 func GetLiveBrowserScreenshot(c *fiber.Ctx) error {
-	resp, err := http.Get("http://localhost:9223/live-screenshot")
+	resp, err := http.Get(fmt.Sprintf("%s/live-screenshot", utils.GetBrowserWorkerURL()))
 	if err != nil {
 		return c.Status(http.StatusServiceUnavailable).JSON(fiber.Map{
 			"status":  "error",
