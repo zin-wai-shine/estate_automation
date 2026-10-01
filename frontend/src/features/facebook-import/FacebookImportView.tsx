@@ -1244,7 +1244,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                     {isCompleted ? (
                       <FiCheck style={{ fontSize: '12px', strokeWidth: 2.5 }} />
                     ) : isCurrent ? (
-                      <FiRefreshCw style={{ animation: 'spin 1s linear infinite', fontSize: '11px' }} />
+                      <FiRefreshCw className="spin" style={{ fontSize: '11px', display: 'inline-block' }} />
                     ) : isFailed ? (
                       <FiAlertCircle style={{ fontSize: '11px' }} />
                     ) : (
@@ -1558,7 +1558,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                 >
                   {isGeneratingAI ? (
                     <>
-                      <FiRefreshCw style={{ animation: 'spin 1s linear infinite' }} />
+                      <FiRefreshCw className="spin" style={{ display: 'inline-block' }} />
                       <span>Generating...</span>
                     </>
                   ) : (
