@@ -2,12 +2,12 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { Select } from '../../components/ui/Select';
+import { Modal } from '../../components/ui/Modal';
 import {
   FiCpu,
   FiPlay,
   FiRefreshCw,
   FiCheckCircle,
-  FiFacebook,
   FiFileText,
   FiImage,
   FiSettings,
@@ -15,18 +15,18 @@ import {
   FiZoomOut,
   FiMaximize2,
   FiMinimize2,
-  FiMove,
   FiCrosshair,
-  FiZap,
   FiPlus,
   FiTrash2,
   FiCopy,
   FiCheck,
-  FiLayers,
   FiSliders,
   FiArrowRight,
-  FiRadio,
+  FiX,
+  FiLayers,
 } from 'react-icons/fi';
+import { FaFacebook } from 'react-icons/fa';
+import { SiGooglegemini } from 'react-icons/si';
 
 export interface DynamicAIBoxConfig {
   id: string;
@@ -94,8 +94,8 @@ export const MODEL_OPTIONS = [
 
 export const DEFAULT_FB_WORKFLOW_CONFIG: FacebookWorkflowConfig = {
   trigger: {
-    x: 40,
-    y: 200,
+    x: 80,
+    y: 220,
     autoImport: true,
   },
   getContent: {
@@ -105,7 +105,7 @@ export const DEFAULT_FB_WORKFLOW_CONFIG: FacebookWorkflowConfig = {
     cleanThai: true,
     extractContacts: true,
     x: 340,
-    y: 80,
+    y: 120,
   },
   getImages: {
     enabled: true,
@@ -113,7 +113,7 @@ export const DEFAULT_FB_WORKFLOW_CONFIG: FacebookWorkflowConfig = {
     preserveOrder: true,
     watermark: false,
     x: 340,
-    y: 380,
+    y: 320,
   },
   aiBoxes: [
     {
@@ -127,12 +127,12 @@ export const DEFAULT_FB_WORKFLOW_CONFIG: FacebookWorkflowConfig = {
         'Transform the raw Facebook post into a compelling high-converting condo rental listing.\nHighlight: Rent Price, BTS/MRT station, Unit Size, Room Layout, Deposit terms, and Line ID CTA.\nLanguages: Thai primary, English summary.',
       customPrompt: '',
       enabled: true,
-      x: 680,
-      y: 50,
+      x: 640,
+      y: 100,
     },
     {
       id: 'ai-box-tiktok',
-      title: 'TikTok Viral Hook & Video Script',
+      title: 'TikTok Viral Hook & Script',
       processType: 'tiktok',
       provider: 'openai',
       model: 'gpt-4o',
@@ -141,15 +141,15 @@ export const DEFAULT_FB_WORKFLOW_CONFIG: FacebookWorkflowConfig = {
         'Create a viral 15-second TikTok script for this property.\nHook in the first 3 seconds, 3 quick visual highlights, and clear urgent call-to-action.',
       customPrompt: '',
       enabled: true,
-      x: 680,
-      y: 330,
+      x: 640,
+      y: 280,
     },
   ],
   destination: {
-    x: 1040,
-    y: 200,
+    x: 960,
+    y: 220,
   },
-  zoom: 0.9,
+  zoom: 0.95,
   panOffset: { x: 30, y: 30 },
 };
 
@@ -176,6 +176,20 @@ export const loadSavedFacebookWorkflowConfig = (): FacebookWorkflowConfig => {
   return DEFAULT_FB_WORKFLOW_CONFIG;
 };
 
+const OpenAIIcon: React.FC<{ size?: number; color?: string }> = ({ size = 26, color = '#10A37F' }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill={color}>
+    <path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1683a.071.071 0 0 1 .038.052v5.5826a4.5045 4.5045 0 0 1-4.4945 4.4947zm-9.66-4.5264a4.4707 4.4707 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1401-2.0474zm-1.127-10.742a4.4707 4.4707 0 0 1 2.3468-1.9729v5.6725a.7617.7617 0 0 0 .3879.6765l5.8144 3.3543-2.02 1.1683a.0757.0757 0 0 1-.071 0l-4.8303-2.7866a4.4992 4.4992 0 0 1-1.6278-6.1122zm16.637 4.906l-5.838-3.3733 2.02-1.1635a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4945 4.4945 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.4068-.6815zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.5797V7.2473a.0852.0852 0 0 1 .0332-.0615l4.9318-2.8466a4.4945 4.4945 0 0 1 6.6437 4.5422zm-8.8418-2.1246l-2.02 1.1635a.0757.0757 0 0 1-.071 0l-4.8303-2.7913a4.4945 4.4945 0 0 1 5.1764-1.3725l-.142.0804 1.8869 1.0886v1.8313z" />
+  </svg>
+);
+
+export type ActiveModalNode =
+  | { type: 'trigger' }
+  | { type: 'get-content' }
+  | { type: 'get-images' }
+  | { type: 'ai-box'; boxId: string }
+  | { type: 'destination' }
+  | null;
+
 interface FacebookWorkflowCanvasProps {
   initialConfig?: FacebookWorkflowConfig;
   onSwitchToLiveImport?: () => void;
@@ -194,6 +208,7 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
       setConfig(initialConfig);
     }
   }, [initialConfig]);
+
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null);
@@ -204,6 +219,11 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
   const [simulationStep, setSimulationStep] = useState<number>(-1);
   const [simulationMessage, setSimulationMessage] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
+
+  // Node Modal State
+  const [activeModalNode, setActiveModalNode] = useState<ActiveModalNode>(null);
+  const dragStartCoord = useRef({ x: 0, y: 0 });
+  const hasMoved = useRef(false);
 
   const canvasRef = useRef<HTMLDivElement>(null);
 
@@ -219,7 +239,6 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
   const handleSaveConfig = async () => {
     try {
       localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(config));
-      // Also sync to backend API if available
       try {
         await fetch('http://localhost:8085/api/workflow/config', {
           method: 'POST',
@@ -242,7 +261,7 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
   const handleAddAIBox = () => {
     const newId = `ai-box-${Date.now()}`;
     const boxCount = config.aiBoxes.length;
-    const newY = 50 + boxCount * 260;
+    const newY = 80 + boxCount * 140;
 
     const newBox: DynamicAIBoxConfig = {
       id: newId,
@@ -255,7 +274,7 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
         'Generate optimized marketing copy for this property listing.\nHighlight rent/sale price, transit access, and clear call-to-action.',
       customPrompt: '',
       enabled: true,
-      x: 680,
+      x: 640,
       y: newY,
     };
 
@@ -265,6 +284,7 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
     };
     updateConfig(newConfig);
     setSelectedBoxId(newId);
+    setActiveModalNode({ type: 'ai-box', boxId: newId });
   };
 
   // Delete Dynamic AI Box
@@ -281,6 +301,9 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
     };
     updateConfig(newConfig);
     if (selectedBoxId === id) setSelectedBoxId(null);
+    if (activeModalNode?.type === 'ai-box' && activeModalNode.boxId === id) {
+      setActiveModalNode(null);
+    }
   };
 
   // Duplicate Dynamic AI Box
@@ -291,7 +314,7 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
       ...box,
       id: newId,
       title: `${box.title} (Copy)`,
-      y: box.y + 70,
+      y: box.y + 60,
       x: box.x + 30,
     };
     const newConfig = {
@@ -319,77 +342,80 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
   const handleResetLayout = () => {
     const defaultBoxes = config.aiBoxes.map((box, idx) => ({
       ...box,
-      x: 680,
-      y: 50 + idx * 260,
+      x: 640,
+      y: 80 + idx * 150,
     }));
 
     const resetConfig: FacebookWorkflowConfig = {
       ...config,
-      trigger: { x: 40, y: 200, autoImport: config.trigger.autoImport },
-      getContent: { ...config.getContent, x: 340, y: 80 },
-      getImages: { ...config.getImages, x: 340, y: 380 },
+      trigger: { x: 80, y: 220, autoImport: config.trigger.autoImport },
+      getContent: { ...config.getContent, x: 340, y: 120 },
+      getImages: { ...config.getImages, x: 340, y: 320 },
+      destination: { x: 960, y: 220 },
       aiBoxes: defaultBoxes,
-      destination: { x: 1060, y: 200 },
-      zoom: 0.9,
-      panOffset: { x: 40, y: 40 },
     };
     updateConfig(resetConfig);
   };
 
-  // Simulation Runner
+  // Run Test Simulation
   const handleRunSimulation = () => {
     if (isSimulating) return;
     setIsSimulating(true);
     setSimulationStep(0);
-    setSimulationMessage('Triggering Facebook URL Importer scraper...');
+    setSimulationMessage('1. Capturing URL & Initializing Facebook OpenClaw...');
 
     setTimeout(() => {
       setSimulationStep(1);
       const branches = [];
-      if (config.getContent.enabled) branches.push('Get Content');
-      if (config.getImages.enabled) branches.push('Get Images');
-      setSimulationMessage(`Branching active streams: ${branches.join(' & ')}...`);
+      if (config.getContent.enabled) branches.push('100% Full Content');
+      if (config.getImages.enabled) branches.push('All Photos');
+      setSimulationMessage(`2. Extracting Branches: ${branches.join(' + ') || 'None selected'}`);
 
       setTimeout(() => {
         setSimulationStep(2);
-        const activeBoxes = config.aiBoxes.filter((b) => b.enabled);
-        setSimulationMessage(`Executing ${activeBoxes.length} AI dynamic prompt processes in parallel...`);
+        const activeAI = config.aiBoxes.filter((b) => b.enabled);
+        setSimulationMessage(
+          `3. Triggering ${activeAI.length} AI Generation Models (${activeAI.map((b) => b.model.includes('gemini') ? 'Gemini' : 'GPT-4o').join(', ')})...`
+        );
 
         setTimeout(() => {
           setSimulationStep(3);
-          setSimulationMessage('Aggregating listing copy and media into Property Inbox!');
+          setSimulationMessage('4. Compiling property card, media assets, and AI output to Property Inbox!');
 
           setTimeout(() => {
             setIsSimulating(false);
             setSimulationStep(-1);
-            setSimulationMessage('Workflow simulation completed successfully with 0 errors.');
-            setTimeout(() => setSimulationMessage(null), 4000);
-          }, 1800);
+            setSimulationMessage('✓ Pipeline completed successfully! Ready for live import.');
+            setTimeout(() => setSimulationMessage(null), 3500);
+          }, 1500);
         }, 1800);
       }, 1500);
     }, 1200);
   };
 
-  // Canvas Mouse Controls (Pan & Zoom)
+  // Canvas Mouse & Drag Handlers
   const handleCanvasMouseDown = (e: React.MouseEvent) => {
-    // Only pan if clicking canvas background directly
-    if (e.target === canvasRef.current || (e.target as HTMLElement).tagName === 'svg' || (e.target as HTMLElement).id === 'canvas-bg') {
-      setIsPanning(true);
-      setPanStart({ x: e.clientX - config.panOffset.x, y: e.clientY - config.panOffset.y });
+    if ((e.target as HTMLElement).closest('.canvas-node') || (e.target as HTMLElement).closest('.canvas-control')) {
+      return;
     }
+    setIsPanning(true);
+    setPanStart({ x: e.clientX - config.panOffset.x, y: e.clientY - config.panOffset.y });
   };
 
   const handleCanvasMouseMove = (e: React.MouseEvent) => {
     if (isPanning) {
-      const newPan = {
+      const newOffset = {
         x: e.clientX - panStart.x,
         y: e.clientY - panStart.y,
       };
-      setConfig((prev) => ({ ...prev, panOffset: newPan }));
-      return;
+      setConfig((prev) => ({ ...prev, panOffset: newOffset }));
     }
 
     if (draggedNodeId) {
+      if (Math.hypot(e.clientX - dragStartCoord.current.x, e.clientY - dragStartCoord.current.y) > 4) {
+        hasMoved.current = true;
+      }
+
       const deltaX = (e.clientX - dragStart.x) / config.zoom;
       const deltaY = (e.clientY - dragStart.y) / config.zoom;
 
@@ -447,16 +473,21 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
     e.stopPropagation();
     setDraggedNodeId(nodeId);
     setDragStart({ x: e.clientX, y: e.clientY });
+    dragStartCoord.current = { x: e.clientX, y: e.clientY };
+    hasMoved.current = false;
   };
 
-  // Bezier path helper
-  const createBezierPath = (start: { x: number; y: number }, end: { x: number; y: number }) => {
-    const deltaX = end.x - start.x;
-    const deltaY = end.y - start.y;
-    let controlOffset = Math.max(50, Math.min(200, Math.abs(deltaX) * 0.5 + Math.abs(deltaY) * 0.1));
-    if (deltaX < 0) {
-      controlOffset = Math.max(100, Math.min(260, Math.sqrt(deltaX * deltaX + deltaY * deltaY) * 0.4));
+  const handleNodeClick = (node: ActiveModalNode, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!hasMoved.current) {
+      setActiveModalNode(node);
     }
+  };
+
+  // Bezier curve generator
+  const createBezierPath = (start: { x: number; y: number }, end: { x: number; y: number }) => {
+    const dx = Math.abs(end.x - start.x);
+    const controlOffset = Math.max(dx * 0.45, 40);
     const c1x = start.x + controlOffset;
     const c1y = start.y;
     const c2x = end.x - controlOffset;
@@ -464,41 +495,38 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
     return `M ${start.x} ${start.y} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${end.x} ${end.y}`;
   };
 
-  // Node Dimensions
-  const NODE_WIDTH = 260;
-  const AI_NODE_WIDTH = 300;
+  // Circular Node Dimensions
+  const CIRCLE_SIZE = 72;
+  const HALF_CIRCLE = CIRCLE_SIZE / 2; // 36
 
-  // Socket Calculations
-  // Trigger Sockets
-  const trigOutContent = { x: config.trigger.x + NODE_WIDTH, y: config.trigger.y + 48 };
-  const trigOutImages = { x: config.trigger.x + NODE_WIDTH, y: config.trigger.y + 90 };
+  // Sockets for wires
+  const trigOutContent = { x: config.trigger.x + CIRCLE_SIZE, y: config.trigger.y + HALF_CIRCLE - 10 };
+  const trigOutImages = { x: config.trigger.x + CIRCLE_SIZE, y: config.trigger.y + HALF_CIRCLE + 10 };
 
-  // Content Sockets
-  const contentIn = { x: config.getContent.x, y: config.getContent.y + 48 };
-  const contentOut = { x: config.getContent.x + NODE_WIDTH, y: config.getContent.y + 48 };
+  const contentIn = { x: config.getContent.x, y: config.getContent.y + HALF_CIRCLE };
+  const contentOut = { x: config.getContent.x + CIRCLE_SIZE, y: config.getContent.y + HALF_CIRCLE };
 
-  // Images Sockets
-  const imagesIn = { x: config.getImages.x, y: config.getImages.y + 48 };
-  const imagesOut = { x: config.getImages.x + NODE_WIDTH, y: config.getImages.y + 48 };
+  const imagesIn = { x: config.getImages.x, y: config.getImages.y + HALF_CIRCLE };
+  const imagesOut = { x: config.getImages.x + CIRCLE_SIZE, y: config.getImages.y + HALF_CIRCLE };
 
-  // Destination Sockets
-  const destInTop = { x: config.destination.x, y: config.destination.y + 48 };
-  const destInBottom = { x: config.destination.x, y: config.destination.y + 90 };
+  const destInTop = { x: config.destination.x, y: config.destination.y + HALF_CIRCLE - 10 };
+  const destInBottom = { x: config.destination.x, y: config.destination.y + HALF_CIRCLE + 10 };
+
+  // Currently active AI Box in modal (if applicable)
+  const currentModalAIBox = activeModalNode?.type === 'ai-box'
+    ? config.aiBoxes.find((b) => b.id === activeModalNode.boxId)
+    : null;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', width: '100%', boxSizing: 'border-box' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', width: '100%', boxSizing: 'border-box' }}>
       <style>{`
         @keyframes n8nFlow {
           from { stroke-dashoffset: 28; }
           to { stroke-dashoffset: 0; }
         }
         @keyframes pulseGlow {
-          0%, 100% { opacity: 0.8; filter: drop-shadow(0 0 6px rgba(24, 119, 242, 0.6)); }
-          50% { opacity: 1; filter: drop-shadow(0 0 12px rgba(24, 119, 242, 0.9)); }
-        }
-        @keyframes boxPop {
-          0% { transform: scale(0.95); opacity: 0; }
-          100% { transform: scale(1); opacity: 1; }
+          0%, 100% { opacity: 0.85; filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.7)); }
+          50% { opacity: 1; filter: drop-shadow(0 0 18px rgba(59, 130, 246, 1)); }
         }
       `}</style>
 
@@ -509,85 +537,75 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
           justifyContent: 'space-between',
           alignItems: 'center',
           flexWrap: 'wrap',
-          gap: '1rem',
+          gap: '0.75rem',
           backgroundColor: 'var(--bg-surface)',
-          padding: '0.875rem 1.25rem',
+          padding: '0.625rem 1rem',
           borderRadius: '0.75rem',
           border: '1px solid var(--border-color)',
           boxShadow: 'var(--shadow-sm)',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <div
-            style={{
-              width: '36px',
-              height: '36px',
-              borderRadius: '0.5rem',
-              backgroundColor: 'rgba(24, 119, 242, 0.12)',
-              color: '#1877F2',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '1.2rem',
-              flexShrink: 0,
-            }}
-          >
-            <FiLayers />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+            <Badge variant="info" size="sm">Visual Graph</Badge>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+              Click any circle node to configure details
+            </span>
           </div>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <h2 style={{ fontSize: '1.125rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
-                Facebook Import Workflow Setup
-              </h2>
-              <Badge variant="info">Visual Builder</Badge>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                • {config.aiBoxes.length} Dynamic AI Process{config.aiBoxes.length > 1 ? 'es' : ''}
-              </span>
-            </div>
-            <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', margin: '0.2rem 0 0 0' }}>
-              Configure extraction branches (Content, Images) and stack multiple dynamic AI generation boxes.
-            </p>
+
+          {/* Quick Stats Chips */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+            <span
+              style={{
+                fontSize: '0.6875rem',
+                padding: '2px 7px',
+                borderRadius: '4px',
+                backgroundColor: config.getContent.enabled ? 'rgba(59, 130, 246, 0.12)' : 'rgba(255, 255, 255, 0.05)',
+                color: config.getContent.enabled ? '#60A5FA' : 'var(--text-muted)',
+                border: '1px solid',
+                borderColor: config.getContent.enabled ? 'rgba(59, 130, 246, 0.3)' : 'transparent',
+              }}
+            >
+              Content: {config.getContent.enabled ? '100% Full' : 'OFF'}
+            </span>
+            <span
+              style={{
+                fontSize: '0.6875rem',
+                padding: '2px 7px',
+                borderRadius: '4px',
+                backgroundColor: config.getImages.enabled ? 'rgba(16, 185, 129, 0.12)' : 'rgba(255, 255, 255, 0.05)',
+                color: config.getImages.enabled ? '#34D399' : 'var(--text-muted)',
+                border: '1px solid',
+                borderColor: config.getImages.enabled ? 'rgba(16, 185, 129, 0.3)' : 'transparent',
+              }}
+            >
+              Images: {config.getImages.enabled ? 'All Media' : 'OFF'}
+            </span>
+            <span
+              style={{
+                fontSize: '0.6875rem',
+                padding: '2px 7px',
+                borderRadius: '4px',
+                backgroundColor: 'rgba(139, 92, 246, 0.12)',
+                color: '#C4B5FD',
+                border: '1px solid rgba(139, 92, 246, 0.3)',
+              }}
+            >
+              {config.aiBoxes.length} AI Nodes
+            </span>
           </div>
         </div>
 
         {/* Action Controls */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', flexWrap: 'wrap' }}>
-          {onSwitchToLiveImport && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onSwitchToLiveImport}
-              leftIcon={<FiArrowRight style={{ transform: 'rotate(180deg)' }} />}
-              style={{ height: '36px', fontSize: '0.8125rem' }}
-            >
-              Back to Live Import
-            </Button>
-          )}
-
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleResetLayout}
-            leftIcon={<FiRefreshCw />}
-            title="Auto-align all nodes into clean columns"
-            style={{ height: '36px', fontSize: '0.8125rem' }}
-          >
-            Auto Align
-          </Button>
-
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
           <Button
             variant="outline"
             size="sm"
             onClick={handleAddAIBox}
             leftIcon={<FiPlus style={{ color: '#10B981' }} />}
-            style={{
-              height: '36px',
-              fontSize: '0.8125rem',
-              borderColor: 'rgba(16, 185, 129, 0.4)',
-              color: '#10B981',
-            }}
+            style={{ height: '32px', fontSize: '0.75rem', borderColor: 'rgba(16, 185, 129, 0.4)', color: '#10B981' }}
           >
-            Add AI Box
+            + Add Dynamic AI Node
           </Button>
 
           <Button
@@ -595,10 +613,30 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
             size="sm"
             onClick={handleRunSimulation}
             disabled={isSimulating}
-            leftIcon={<FiPlay style={{ color: 'var(--accent-primary)' }} />}
-            style={{ height: '36px', fontSize: '0.8125rem' }}
+            leftIcon={
+              isSimulating ? (
+                <FiRefreshCw className="spin" style={{ animation: 'spin 1s linear infinite' }} />
+              ) : (
+                <FiPlay />
+              )
+            }
+            style={{
+              height: '32px',
+              fontSize: '0.75rem',
+              backgroundColor: isSimulating ? 'rgba(24, 119, 242, 0.1)' : undefined,
+            }}
           >
-            {isSimulating ? 'Simulating...' : 'Test Simulation'}
+            {isSimulating ? 'Simulating...' : 'Test Flow'}
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleResetLayout}
+            leftIcon={<FiCrosshair />}
+            style={{ height: '32px', fontSize: '0.75rem' }}
+          >
+            Reset Layout
           </Button>
 
           <Button
@@ -607,119 +645,107 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
             onClick={handleSaveConfig}
             leftIcon={saveSuccess ? <FiCheck /> : <FiCheckCircle />}
             style={{
-              height: '36px',
-              fontSize: '0.8125rem',
+              height: '32px',
+              fontSize: '0.75rem',
               backgroundColor: saveSuccess ? 'var(--status-success)' : undefined,
             }}
           >
             {saveSuccess ? 'Saved!' : 'Save Workflow'}
           </Button>
+
+          {onSwitchToLiveImport && (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={onSwitchToLiveImport}
+              leftIcon={<FiArrowRight />}
+              style={{
+                height: '32px',
+                fontSize: '0.75rem',
+                background: 'linear-gradient(135deg, #1877F2 0%, #3B82F6 100%)',
+              }}
+            >
+              Use in Live Import
+            </Button>
+          )}
         </div>
       </div>
 
-      {/* Simulation / Status Feedback */}
+      {/* Simulation Banner Notification */}
       {simulationMessage && (
         <div
           style={{
-            padding: '0.75rem 1rem',
-            borderRadius: '0.625rem',
-            backgroundColor: isSimulating ? 'rgba(24, 119, 242, 0.1)' : 'rgba(16, 185, 129, 0.1)',
-            border: isSimulating ? '1px solid rgba(24, 119, 242, 0.3)' : '1px solid rgba(16, 185, 129, 0.3)',
-            color: isSimulating ? '#1877F2' : '#10B981',
-            fontSize: '0.8125rem',
-            fontWeight: 500,
+            backgroundColor: isSimulating ? 'rgba(24, 119, 242, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+            border: `1px solid ${isSimulating ? '#1877F2' : '#10B981'}`,
+            borderRadius: '0.5rem',
+            padding: '0.625rem 1rem',
             display: 'flex',
             alignItems: 'center',
-            gap: '0.5rem',
-            animation: 'boxPop 0.2s ease-out',
+            gap: '0.625rem',
+            fontSize: '0.8125rem',
+            color: '#FFFFFF',
+            boxShadow: 'var(--shadow-sm)',
+            animation: 'fadeIn 0.2s ease',
           }}
         >
-          <FiRadio style={{ animation: isSimulating ? 'pulseGlow 1s infinite' : 'none' }} />
-          <span>{simulationMessage}</span>
+          {isSimulating ? (
+            <FiRefreshCw className="spin" style={{ animation: 'spin 1s linear infinite', color: '#60A5FA' }} />
+          ) : (
+            <FiCheckCircle style={{ color: '#10B981' }} />
+          )}
+          <span style={{ fontWeight: 500 }}>{simulationMessage}</span>
         </div>
       )}
 
-      {/* Canvas Workspace Container */}
+      {/* Interactive Infinite Canvas */}
       <div
         ref={canvasRef}
-        id="canvas-bg"
         onMouseDown={handleCanvasMouseDown}
         onMouseMove={handleCanvasMouseMove}
         onMouseUp={handleCanvasMouseUp}
-        onMouseLeave={handleCanvasMouseUp}
         onWheel={handleWheel}
-        style={
-          isFullscreen
-            ? {
-                position: 'fixed',
-                top: 0,
-                left: 0,
-                width: '100vw',
-                height: '100vh',
-                zIndex: 9999,
-                backgroundColor: 'var(--bg-main)',
-                overflow: 'hidden',
-                backgroundImage: 'radial-gradient(rgba(255, 255, 255, 0.1) 1.2px, transparent 1.2px)',
-                backgroundSize: '24px 24px',
-                userSelect: 'none',
-                cursor: isPanning ? 'grabbing' : 'grab',
-              }
-            : {
-                width: '100%',
-                height: '680px',
-                backgroundColor: '#0F1318',
-                borderRadius: '0.875rem',
-                border: '1px solid var(--border-color)',
-                position: 'relative',
-                overflow: 'hidden',
-                backgroundImage: 'radial-gradient(rgba(255, 255, 255, 0.08) 1.2px, transparent 1.2px)',
-                backgroundSize: '24px 24px',
-                boxShadow: 'inset 0 2px 8px rgba(0, 0, 0, 0.4)',
-                userSelect: 'none',
-                cursor: isPanning ? 'grabbing' : 'grab',
-              }
-        }
+        style={{
+          position: 'relative',
+          width: '100%',
+          height: isFullscreen ? '94vh' : '640px',
+          backgroundColor: '#0D1117',
+          backgroundImage: `
+            radial-gradient(circle, rgba(255, 255, 255, 0.08) 1.2px, transparent 1.2px)
+          `,
+          backgroundSize: '24px 24px',
+          borderRadius: '0.75rem',
+          border: '1px solid var(--border-color)',
+          overflow: 'hidden',
+          cursor: isPanning ? 'grabbing' : 'default',
+          userSelect: 'none',
+          boxShadow: 'inset 0 0 40px rgba(0, 0, 0, 0.8)',
+        }}
       >
-        {/* Floating Zoom & Canvas Controls */}
+        {/* Floating Zoom Controls Bar */}
         <div
+          className="canvas-control"
           style={{
             position: 'absolute',
-            top: '16px',
+            bottom: '16px',
             right: '16px',
             zIndex: 30,
             display: 'flex',
             alignItems: 'center',
             gap: '0.375rem',
-            backgroundColor: 'rgba(21, 26, 35, 0.85)',
+            backgroundColor: 'rgba(22, 27, 34, 0.85)',
             backdropFilter: 'blur(8px)',
-            padding: '0.375rem 0.625rem',
-            borderRadius: '0.625rem',
-            border: '1px solid rgba(255, 255, 255, 0.12)',
-            boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+            padding: '4px 6px',
+            borderRadius: '0.5rem',
+            border: '1px solid var(--border-color)',
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.4)',
           }}
         >
-          <div
-            title="Drag canvas background to pan"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.25rem',
-              color: 'var(--text-muted)',
-              fontSize: '0.75rem',
-              paddingRight: '0.5rem',
-              borderRight: '1px solid rgba(255, 255, 255, 0.1)',
-            }}
-          >
-            <FiMove style={{ fontSize: '13px' }} />
-            <span>Pan</span>
-          </div>
-
           <button
             type="button"
-            onClick={() => setConfig((p) => ({ ...p, zoom: Math.min(p.zoom + 0.1, 1.6) }))}
+            onClick={() => setConfig((prev) => ({ ...prev, zoom: Math.min(prev.zoom + 0.1, 1.6) }))}
             title="Zoom In"
             style={{
-              background: 'none',
+              background: 'transparent',
               border: 'none',
               color: 'var(--text-secondary)',
               cursor: 'pointer',
@@ -731,17 +757,15 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
           >
             <FiZoomIn style={{ fontSize: '15px' }} />
           </button>
-
-          <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)', minWidth: '38px', textAlign: 'center' }}>
+          <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', minWidth: '38px', textAlign: 'center' }}>
             {Math.round(config.zoom * 100)}%
           </span>
-
           <button
             type="button"
-            onClick={() => setConfig((p) => ({ ...p, zoom: Math.max(p.zoom - 0.1, 0.45) }))}
+            onClick={() => setConfig((prev) => ({ ...prev, zoom: Math.max(prev.zoom - 0.1, 0.45) }))}
             title="Zoom Out"
             style={{
-              background: 'none',
+              background: 'transparent',
               border: 'none',
               color: 'var(--text-secondary)',
               cursor: 'pointer',
@@ -753,13 +777,12 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
           >
             <FiZoomOut style={{ fontSize: '15px' }} />
           </button>
-
           <button
             type="button"
-            onClick={() => setConfig((p) => ({ ...p, zoom: 0.9, panOffset: { x: 40, y: 40 } }))}
-            title="Reset View (100%)"
+            onClick={() => setConfig((prev) => ({ ...prev, zoom: 0.95, panOffset: { x: 30, y: 30 } }))}
+            title="Reset Pan & Zoom"
             style={{
-              background: 'none',
+              background: 'transparent',
               border: 'none',
               color: 'var(--text-secondary)',
               cursor: 'pointer',
@@ -771,13 +794,12 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
           >
             <FiCrosshair style={{ fontSize: '14px' }} />
           </button>
-
           <button
             type="button"
             onClick={() => setIsFullscreen(!isFullscreen)}
-            title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen Canvas'}
+            title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
             style={{
-              background: 'none',
+              background: 'transparent',
               border: 'none',
               color: 'var(--text-secondary)',
               cursor: 'pointer',
@@ -785,47 +807,9 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
               borderRadius: '4px',
               display: 'flex',
               alignItems: 'center',
-              marginLeft: '0.25rem',
             }}
           >
             {isFullscreen ? <FiMinimize2 style={{ fontSize: '14px' }} /> : <FiMaximize2 style={{ fontSize: '14px' }} />}
-          </button>
-        </div>
-
-        {/* Floating Quick Action: Add Dynamic Box */}
-        <div
-          style={{
-            position: 'absolute',
-            bottom: '20px',
-            left: '20px',
-            zIndex: 30,
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.625rem',
-          }}
-        >
-          <button
-            type="button"
-            onClick={handleAddAIBox}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              backgroundColor: 'rgba(16, 185, 129, 0.15)',
-              border: '1px solid rgba(16, 185, 129, 0.4)',
-              borderRadius: '0.5rem',
-              padding: '0.5rem 0.875rem',
-              color: '#10B981',
-              fontSize: '0.8125rem',
-              fontWeight: 600,
-              cursor: 'pointer',
-              backdropFilter: 'blur(8px)',
-              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
-              transition: 'all 0.15s ease',
-            }}
-          >
-            <FiPlus style={{ fontSize: '16px' }} />
-            <span>Add Dynamic AI Box</span>
           </button>
         </div>
 
@@ -854,7 +838,6 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
             }}
           >
             <defs>
-              {/* Gradients */}
               <linearGradient id="flow-content-active" x1="0%" y1="0%" x2="100%" y2="0%">
                 <stop offset="0%" stopColor="#1877F2" />
                 <stop offset="100%" stopColor="#3B82F6" />
@@ -869,11 +852,6 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
                 <stop offset="0%" stopColor="#3B82F6" />
                 <stop offset="100%" stopColor="#8B5CF6" />
               </linearGradient>
-
-              <linearGradient id="flow-dest-active" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stopColor="#8B5CF6" />
-                <stop offset="100%" stopColor="#10B981" />
-              </linearGradient>
             </defs>
 
             {/* 1. Trigger -> Get Content Line */}
@@ -885,7 +863,7 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
                   <path
                     d={path}
                     fill="none"
-                    stroke={isFlowing ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255, 255, 255, 0.08)'}
+                    stroke={isFlowing ? 'rgba(59, 130, 246, 0.25)' : 'rgba(255, 255, 255, 0.08)'}
                     strokeWidth="4"
                     strokeLinecap="round"
                   />
@@ -913,7 +891,7 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
                   <path
                     d={path}
                     fill="none"
-                    stroke={isFlowing ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255, 255, 255, 0.08)'}
+                    stroke={isFlowing ? 'rgba(16, 185, 129, 0.25)' : 'rgba(255, 255, 255, 0.08)'}
                     strokeWidth="4"
                     strokeLinecap="round"
                   />
@@ -941,7 +919,7 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
                   <path
                     d={path}
                     fill="none"
-                    stroke={isFlowing ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255, 255, 255, 0.08)'}
+                    stroke={isFlowing ? 'rgba(16, 185, 129, 0.25)' : 'rgba(255, 255, 255, 0.08)'}
                     strokeWidth="4"
                     strokeLinecap="round"
                   />
@@ -962,7 +940,7 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
 
             {/* 4. Get Content -> Each AI Box Lines */}
             {config.aiBoxes.map((aiBox) => {
-              const aiIn = { x: aiBox.x, y: aiBox.y + 48 };
+              const aiIn = { x: aiBox.x, y: aiBox.y + HALF_CIRCLE };
               const path = createBezierPath(contentOut, aiIn);
               const isFlowing = config.getContent.enabled && aiBox.enabled;
 
@@ -971,7 +949,7 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
                   <path
                     d={path}
                     fill="none"
-                    stroke={isFlowing ? 'rgba(139, 92, 246, 0.2)' : 'rgba(255, 255, 255, 0.08)'}
+                    stroke={isFlowing ? 'rgba(139, 92, 246, 0.25)' : 'rgba(255, 255, 255, 0.08)'}
                     strokeWidth="4"
                     strokeLinecap="round"
                   />
@@ -991,28 +969,24 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
             })}
 
             {/* 5. Each AI Box -> Destination Lines */}
-            {config.aiBoxes.map((aiBox, idx) => {
-              const aiOut = { x: aiBox.x + AI_NODE_WIDTH, y: aiBox.y + 48 };
-              const destTarget = {
-                x: config.destination.x,
-                y: config.destination.y + 36 + idx * 16,
-              };
-              const path = createBezierPath(aiOut, destTarget);
-              const isFlowing = config.getContent.enabled && aiBox.enabled;
+            {config.aiBoxes.map((aiBox) => {
+              const aiOut = { x: aiBox.x + CIRCLE_SIZE, y: aiBox.y + HALF_CIRCLE };
+              const path = createBezierPath(aiOut, destInTop);
+              const isFlowing = aiBox.enabled;
 
               return (
                 <g key={`wire-ai-dest-${aiBox.id}`}>
                   <path
                     d={path}
                     fill="none"
-                    stroke={isFlowing ? 'rgba(139, 92, 246, 0.2)' : 'rgba(255, 255, 255, 0.08)'}
+                    stroke={isFlowing ? 'rgba(139, 92, 246, 0.25)' : 'rgba(255, 255, 255, 0.08)'}
                     strokeWidth="4"
                     strokeLinecap="round"
                   />
                   <path
                     d={path}
                     fill="none"
-                    stroke={isFlowing ? 'url(#flow-dest-active)' : 'rgba(255, 255, 255, 0.2)'}
+                    stroke={isFlowing ? '#A78BFA' : 'rgba(255, 255, 255, 0.2)'}
                     strokeWidth="2.5"
                     strokeDasharray={isFlowing ? '6, 6' : '4, 4'}
                     strokeLinecap="round"
@@ -1026,150 +1000,155 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
           </svg>
 
           {/* ======================================================== */}
-          {/* NODE 1: FACEBOOK URL IMPORTER (TRIGGER)                  */}
+          {/* NODE 1: FACEBOOK URL IMPORTER (TRIGGER CIRCLE)           */}
           {/* ======================================================== */}
           <div
+            className="canvas-node"
             onMouseDown={(e) => startDragNode('trigger', e)}
+            onClick={(e) => handleNodeClick({ type: 'trigger' }, e)}
+            title="Click to configure Facebook Importer Trigger"
             style={{
               position: 'absolute',
               left: `${config.trigger.x}px`,
               top: `${config.trigger.y}px`,
-              width: `${NODE_WIDTH}px`,
+              width: `${CIRCLE_SIZE}px`,
+              height: `${CIRCLE_SIZE}px`,
+              borderRadius: '50%',
               backgroundColor: '#161B22',
-              borderRadius: '0.75rem',
-              border: simulationStep === 0 ? '2px solid #1877F2' : '1px solid rgba(24, 119, 242, 0.4)',
-              boxShadow: simulationStep === 0 ? '0 0 20px rgba(24, 119, 242, 0.6)' : '0 8px 24px rgba(0, 0, 0, 0.5)',
-              zIndex: 10,
-              cursor: 'grab',
-              transition: 'border 0.2s, box-shadow 0.2s',
+              backgroundImage: 'radial-gradient(circle at 35% 35%, rgba(24, 119, 242, 0.4) 0%, #161B22 100%)',
+              border: simulationStep === 0 ? '2.5px solid #1877F2' : '2px solid rgba(24, 119, 242, 0.7)',
+              boxShadow: simulationStep === 0
+                ? '0 0 25px rgba(24, 119, 242, 0.85)'
+                : '0 0 16px rgba(24, 119, 242, 0.35), 0 8px 24px rgba(0, 0, 0, 0.6)',
+              zIndex: 15,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'transform 0.15s ease, box-shadow 0.15s ease',
             }}
+            onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.08)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
           >
-            {/* Header */}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '0.75rem 0.875rem',
-                borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-                backgroundColor: 'rgba(24, 119, 242, 0.08)',
-                borderTopLeftRadius: '0.75rem',
-                borderTopRightRadius: '0.75rem',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <div
-                  style={{
-                    width: '28px',
-                    height: '28px',
-                    borderRadius: '6px',
-                    backgroundColor: '#1877F2',
-                    color: '#fff',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '15px',
-                  }}
-                >
-                  <FiFacebook />
-                </div>
-                <div>
-                  <div style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#fff' }}>
-                    Facebook URL Importer
-                  </div>
-                  <div style={{ fontSize: '0.6875rem', color: '#1877F2', fontWeight: 600 }}>
-                    INPUT TRIGGER
-                  </div>
-                </div>
-              </div>
-              <Badge variant="info">Active</Badge>
-            </div>
+            <FaFacebook style={{ fontSize: '30px', color: '#1877F2', filter: 'drop-shadow(0 2px 6px rgba(24, 119, 242, 0.5))' }} />
 
-            {/* Body */}
-            <div style={{ padding: '0.75rem 0.875rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              <p style={{ margin: '0 0 0.5rem 0', lineHeight: 1.4 }}>
-                Captures raw post URL from Facebook Groups & Marketplace.
-              </p>
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '0.375rem 0.5rem',
-                  backgroundColor: 'rgba(255, 255, 255, 0.04)',
-                  borderRadius: '0.375rem',
-                  border: '1px solid rgba(255, 255, 255, 0.06)',
-                }}
-              >
-                <span>Auto-Detect Format</span>
-                <span style={{ color: '#10B981', fontWeight: 600 }}>Enabled</span>
-              </div>
-            </div>
-
-            {/* Output Socket: Top (Content) */}
+            {/* Output Socket: Content */}
             <div
-              title="Content Branch Socket"
               style={{
                 position: 'absolute',
-                right: '-7px',
-                top: '44px',
-                width: '14px',
-                height: '14px',
+                right: '-6px',
+                top: `${HALF_CIRCLE - 14}px`,
+                width: '12px',
+                height: '12px',
                 borderRadius: '50%',
                 backgroundColor: '#3B82F6',
                 border: '2px solid #161B22',
                 boxShadow: '0 0 8px #3B82F6',
               }}
             />
-            {/* Output Socket: Bottom (Images) */}
+            {/* Output Socket: Images */}
             <div
-              title="Media Branch Socket"
               style={{
                 position: 'absolute',
-                right: '-7px',
-                top: '86px',
-                width: '14px',
-                height: '14px',
+                right: '-6px',
+                top: `${HALF_CIRCLE + 2}px`,
+                width: '12px',
+                height: '12px',
                 borderRadius: '50%',
                 backgroundColor: '#10B981',
                 border: '2px solid #161B22',
                 boxShadow: '0 0 8px #10B981',
               }}
             />
+
+            {/* Label below circle */}
+            <div
+              style={{
+                position: 'absolute',
+                top: `${CIRCLE_SIZE + 8}px`,
+                left: '50%',
+                transform: 'translateX(-50%)',
+                whiteSpace: 'nowrap',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '2px',
+                pointerEvents: 'none',
+              }}
+            >
+              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#fff', textShadow: '0 1px 4px rgba(0,0,0,0.9)' }}>
+                Facebook Post
+              </span>
+              <span style={{ fontSize: '0.625rem', color: '#60A5FA', fontWeight: 500, backgroundColor: 'rgba(0,0,0,0.7)', padding: '1px 6px', borderRadius: '4px', border: '1px solid rgba(59, 130, 246, 0.3)' }}>
+                Trigger • Auto
+              </span>
+            </div>
           </div>
 
           {/* ======================================================== */}
-          {/* NODE 2A: GET CONTENT BRANCH (TOGGLEABLE)                 */}
+          {/* NODE 2A: GET CONTENT BRANCH (CIRCLE)                     */}
           {/* ======================================================== */}
           <div
+            className="canvas-node"
             onMouseDown={(e) => startDragNode('get-content', e)}
+            onClick={(e) => handleNodeClick({ type: 'get-content' }, e)}
+            title="Click to configure Get Content"
             style={{
               position: 'absolute',
               left: `${config.getContent.x}px`,
               top: `${config.getContent.y}px`,
-              width: `${NODE_WIDTH}px`,
+              width: `${CIRCLE_SIZE}px`,
+              height: `${CIRCLE_SIZE}px`,
+              borderRadius: '50%',
               backgroundColor: '#161B22',
-              borderRadius: '0.75rem',
+              backgroundImage: config.getContent.enabled
+                ? 'radial-gradient(circle at 35% 35%, rgba(59, 130, 246, 0.4) 0%, #161B22 100%)'
+                : 'none',
               border: simulationStep === 1
-                ? '2px solid #3B82F6'
+                ? '2.5px solid #3B82F6'
                 : config.getContent.enabled
-                ? '1px solid rgba(59, 130, 246, 0.4)'
-                : '1px dashed rgba(255, 255, 255, 0.15)',
-              opacity: config.getContent.enabled ? 1 : 0.6,
-              boxShadow: simulationStep === 1 ? '0 0 20px rgba(59, 130, 246, 0.6)' : '0 8px 24px rgba(0, 0, 0, 0.5)',
-              zIndex: 10,
-              cursor: 'grab',
-              transition: 'all 0.2s ease',
+                ? '2px solid rgba(59, 130, 246, 0.7)'
+                : '2px dashed rgba(255, 255, 255, 0.2)',
+              opacity: config.getContent.enabled ? 1 : 0.5,
+              boxShadow: simulationStep === 1
+                ? '0 0 25px rgba(59, 130, 246, 0.85)'
+                : config.getContent.enabled
+                ? '0 0 16px rgba(59, 130, 246, 0.35), 0 8px 24px rgba(0, 0, 0, 0.6)'
+                : 'none',
+              zIndex: 15,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'transform 0.15s ease, box-shadow 0.15s ease',
             }}
+            onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.08)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
           >
-            {/* Input Socket */}
+            <FiFileText style={{ fontSize: '28px', color: config.getContent.enabled ? '#3B82F6' : '#9CA3AF' }} />
+
+            {/* Input Socket (Left) */}
             <div
               style={{
                 position: 'absolute',
-                left: '-7px',
-                top: '44px',
-                width: '14px',
-                height: '14px',
+                left: '-6px',
+                top: `${HALF_CIRCLE - 6}px`,
+                width: '12px',
+                height: '12px',
+                borderRadius: '50%',
+                backgroundColor: config.getContent.enabled ? '#3B82F6' : '#6B7280',
+                border: '2px solid #161B22',
+                boxShadow: config.getContent.enabled ? '0 0 8px #3B82F6' : 'none',
+              }}
+            />
+            {/* Output Socket (Right) */}
+            <div
+              style={{
+                position: 'absolute',
+                right: '-6px',
+                top: `${HALF_CIRCLE - 6}px`,
+                width: '12px',
+                height: '12px',
                 borderRadius: '50%',
                 backgroundColor: config.getContent.enabled ? '#3B82F6' : '#6B7280',
                 border: '2px solid #161B22',
@@ -1177,152 +1156,104 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
               }}
             />
 
-            {/* Header with Switch */}
+            {/* Label below circle */}
             <div
               style={{
+                position: 'absolute',
+                top: `${CIRCLE_SIZE + 8}px`,
+                left: '50%',
+                transform: 'translateX(-50%)',
+                whiteSpace: 'nowrap',
                 display: 'flex',
+                flexDirection: 'column',
                 alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '0.75rem 0.875rem',
-                borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-                backgroundColor: 'rgba(59, 130, 246, 0.08)',
-                borderTopLeftRadius: '0.75rem',
-                borderTopRightRadius: '0.75rem',
+                gap: '2px',
+                pointerEvents: 'none',
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <div
-                  style={{
-                    width: '28px',
-                    height: '28px',
-                    borderRadius: '6px',
-                    backgroundColor: config.getContent.enabled ? '#3B82F6' : '#4B5563',
-                    color: '#fff',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '14px',
-                  }}
-                >
-                  <FiFileText />
-                </div>
-                <div>
-                  <div style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#fff' }}>Get Content</div>
-                  <div style={{ fontSize: '0.6875rem', color: '#60A5FA', fontWeight: 600 }}>FULL CONTENT</div>
-                </div>
-              </div>
-
-              {/* Toggle Switch */}
-              <button
-                type="button"
-                role="switch"
-                aria-checked={config.getContent.enabled}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  updateConfig({
-                    ...config,
-                    getContent: { ...config.getContent, enabled: !config.getContent.enabled },
-                  });
-                }}
-                style={{
-                  width: '32px',
-                  height: '18px',
-                  backgroundColor: config.getContent.enabled ? '#3B82F6' : 'rgba(255, 255, 255, 0.2)',
-                  borderRadius: '10px',
-                  border: 'none',
-                  cursor: 'pointer',
-                  position: 'relative',
-                  padding: 0,
-                  outline: 'none',
-                }}
-              >
-                <div
-                  style={{
-                    width: '14px',
-                    height: '14px',
-                    backgroundColor: '#FFFFFF',
-                    borderRadius: '50%',
-                    position: 'absolute',
-                    top: '2px',
-                    left: config.getContent.enabled ? '16px' : '2px',
-                    transition: 'left 0.2s ease',
-                  }}
-                />
-              </button>
-            </div>
-
-            {/* Full Content Extraction Notice */}
-            <div style={{ padding: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#fff', textShadow: '0 1px 4px rgba(0,0,0,0.9)' }}>
+                Get Content
+              </span>
               <span
                 style={{
-                  width: '6px',
-                  height: '6px',
-                  borderRadius: '50%',
-                  backgroundColor: config.getContent.enabled ? '#3B82F6' : '#6B7280',
-                  flexShrink: 0,
-                }}
-              />
-              <span
-                style={{
-                  fontSize: '0.75rem',
-                  color: config.getContent.enabled ? '#E2E8F0' : 'var(--text-muted)',
-                  lineHeight: '1.4',
+                  fontSize: '0.625rem',
+                  color: config.getContent.enabled ? '#60A5FA' : '#9CA3AF',
+                  fontWeight: 500,
+                  backgroundColor: 'rgba(0,0,0,0.7)',
+                  padding: '1px 6px',
+                  borderRadius: '4px',
+                  border: `1px solid ${config.getContent.enabled ? 'rgba(59, 130, 246, 0.3)' : 'rgba(255,255,255,0.1)'}`,
                 }}
               >
-                {config.getContent.enabled
-                  ? 'Extracts 100% full original post content & caption'
-                  : 'Content extraction disabled'}
+                {config.getContent.enabled ? 'Full Content' : 'OFF'}
               </span>
             </div>
-
-            {/* Output Socket */}
-            <div
-              style={{
-                position: 'absolute',
-                right: '-7px',
-                top: '44px',
-                width: '14px',
-                height: '14px',
-                borderRadius: '50%',
-                backgroundColor: config.getContent.enabled ? '#3B82F6' : '#6B7280',
-                border: '2px solid #161B22',
-                boxShadow: config.getContent.enabled ? '0 0 8px #3B82F6' : 'none',
-              }}
-            />
           </div>
 
           {/* ======================================================== */}
-          {/* NODE 2B: GET IMAGES BRANCH (TOGGLEABLE)                  */}
+          {/* NODE 2B: GET IMAGES BRANCH (CIRCLE)                      */}
           {/* ======================================================== */}
           <div
+            className="canvas-node"
             onMouseDown={(e) => startDragNode('get-images', e)}
+            onClick={(e) => handleNodeClick({ type: 'get-images' }, e)}
+            title="Click to configure Get Images"
             style={{
               position: 'absolute',
               left: `${config.getImages.x}px`,
               top: `${config.getImages.y}px`,
-              width: `${NODE_WIDTH}px`,
+              width: `${CIRCLE_SIZE}px`,
+              height: `${CIRCLE_SIZE}px`,
+              borderRadius: '50%',
               backgroundColor: '#161B22',
-              borderRadius: '0.75rem',
+              backgroundImage: config.getImages.enabled
+                ? 'radial-gradient(circle at 35% 35%, rgba(16, 185, 129, 0.4) 0%, #161B22 100%)'
+                : 'none',
               border: simulationStep === 1
-                ? '2px solid #10B981'
+                ? '2.5px solid #10B981'
                 : config.getImages.enabled
-                ? '1px solid rgba(16, 185, 129, 0.4)'
-                : '1px dashed rgba(255, 255, 255, 0.15)',
-              opacity: config.getImages.enabled ? 1 : 0.6,
-              boxShadow: simulationStep === 1 ? '0 0 20px rgba(16, 185, 129, 0.6)' : '0 8px 24px rgba(0, 0, 0, 0.5)',
-              zIndex: 10,
-              cursor: 'grab',
-              transition: 'all 0.2s ease',
+                ? '2px solid rgba(16, 185, 129, 0.7)'
+                : '2px dashed rgba(255, 255, 255, 0.2)',
+              opacity: config.getImages.enabled ? 1 : 0.5,
+              boxShadow: simulationStep === 1
+                ? '0 0 25px rgba(16, 185, 129, 0.85)'
+                : config.getImages.enabled
+                ? '0 0 16px rgba(16, 185, 129, 0.35), 0 8px 24px rgba(0, 0, 0, 0.6)'
+                : 'none',
+              zIndex: 15,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'transform 0.15s ease, box-shadow 0.15s ease',
             }}
+            onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.08)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
           >
-            {/* Input Socket */}
+            <FiImage style={{ fontSize: '28px', color: config.getImages.enabled ? '#10B981' : '#9CA3AF' }} />
+
+            {/* Input Socket (Left) */}
             <div
               style={{
                 position: 'absolute',
-                left: '-7px',
-                top: '44px',
-                width: '14px',
-                height: '14px',
+                left: '-6px',
+                top: `${HALF_CIRCLE - 6}px`,
+                width: '12px',
+                height: '12px',
+                borderRadius: '50%',
+                backgroundColor: config.getImages.enabled ? '#10B981' : '#6B7280',
+                border: '2px solid #161B22',
+                boxShadow: config.getImages.enabled ? '0 0 8px #10B981' : 'none',
+              }}
+            />
+            {/* Output Socket (Right) */}
+            <div
+              style={{
+                position: 'absolute',
+                right: '-6px',
+                top: `${HALF_CIRCLE - 6}px`,
+                width: '12px',
+                height: '12px',
                 borderRadius: '50%',
                 backgroundColor: config.getImages.enabled ? '#10B981' : '#6B7280',
                 border: '2px solid #161B22',
@@ -1330,166 +1261,119 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
               }}
             />
 
-            {/* Header with Switch */}
+            {/* Label below circle */}
             <div
               style={{
+                position: 'absolute',
+                top: `${CIRCLE_SIZE + 8}px`,
+                left: '50%',
+                transform: 'translateX(-50%)',
+                whiteSpace: 'nowrap',
                 display: 'flex',
+                flexDirection: 'column',
                 alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '0.75rem 0.875rem',
-                borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-                backgroundColor: 'rgba(16, 185, 129, 0.08)',
-                borderTopLeftRadius: '0.75rem',
-                borderTopRightRadius: '0.75rem',
+                gap: '2px',
+                pointerEvents: 'none',
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <div
-                  style={{
-                    width: '28px',
-                    height: '28px',
-                    borderRadius: '6px',
-                    backgroundColor: config.getImages.enabled ? '#10B981' : '#4B5563',
-                    color: '#fff',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '14px',
-                  }}
-                >
-                  <FiImage />
-                </div>
-                <div>
-                  <div style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#fff' }}>Get Images</div>
-                  <div style={{ fontSize: '0.6875rem', color: '#34D399', fontWeight: 600 }}>ALL IMAGES</div>
-                </div>
-              </div>
-
-              {/* Toggle Switch */}
-              <button
-                type="button"
-                role="switch"
-                aria-checked={config.getImages.enabled}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  updateConfig({
-                    ...config,
-                    getImages: { ...config.getImages, enabled: !config.getImages.enabled },
-                  });
-                }}
-                style={{
-                  width: '32px',
-                  height: '18px',
-                  backgroundColor: config.getImages.enabled ? '#10B981' : 'rgba(255, 255, 255, 0.2)',
-                  borderRadius: '10px',
-                  border: 'none',
-                  cursor: 'pointer',
-                  position: 'relative',
-                  padding: 0,
-                  outline: 'none',
-                }}
-              >
-                <div
-                  style={{
-                    width: '14px',
-                    height: '14px',
-                    backgroundColor: '#FFFFFF',
-                    borderRadius: '50%',
-                    position: 'absolute',
-                    top: '2px',
-                    left: config.getImages.enabled ? '16px' : '2px',
-                    transition: 'left 0.2s ease',
-                  }}
-                />
-              </button>
-            </div>
-
-            {/* Full Images Extraction Notice */}
-            <div style={{ padding: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#fff', textShadow: '0 1px 4px rgba(0,0,0,0.9)' }}>
+                Get Images
+              </span>
               <span
                 style={{
-                  width: '6px',
-                  height: '6px',
-                  borderRadius: '50%',
-                  backgroundColor: config.getImages.enabled ? '#10B981' : '#6B7280',
-                  flexShrink: 0,
-                }}
-              />
-              <span
-                style={{
-                  fontSize: '0.75rem',
-                  color: config.getImages.enabled ? '#E2E8F0' : 'var(--text-muted)',
-                  lineHeight: '1.4',
+                  fontSize: '0.625rem',
+                  color: config.getImages.enabled ? '#34D399' : '#9CA3AF',
+                  fontWeight: 500,
+                  backgroundColor: 'rgba(0,0,0,0.7)',
+                  padding: '1px 6px',
+                  borderRadius: '4px',
+                  border: `1px solid ${config.getImages.enabled ? 'rgba(16, 185, 129, 0.3)' : 'rgba(255,255,255,0.1)'}`,
                 }}
               >
-                {config.getImages.enabled
-                  ? 'Downloads all original photos & media from post'
-                  : 'Image download disabled'}
+                {config.getImages.enabled ? 'All Media' : 'OFF'}
               </span>
             </div>
-
-            {/* Output Socket */}
-            <div
-              style={{
-                position: 'absolute',
-                right: '-7px',
-                top: '44px',
-                width: '14px',
-                height: '14px',
-                borderRadius: '50%',
-                backgroundColor: config.getImages.enabled ? '#10B981' : '#6B7280',
-                border: '2px solid #161B22',
-                boxShadow: config.getImages.enabled ? '0 0 8px #10B981' : 'none',
-              }}
-            />
           </div>
 
           {/* ======================================================== */}
-          {/* NODE 3: DYNAMIC AI PROMPT GENERATION BOXES (MULTIPLE!)   */}
+          {/* NODE 3: DYNAMIC MULTI-BOX AI PROCESSORS (CIRCLES)        */}
           {/* ======================================================== */}
           {config.aiBoxes.map((box) => {
             const isSelected = selectedBoxId === box.id;
             const isCurrentSimulating = simulationStep === 2 && box.enabled;
+            const isGoogle = box.provider === 'google_ai';
+            const themeColor = isGoogle ? '#60A5FA' : '#10B981';
 
             return (
               <div
                 key={box.id}
+                className="canvas-node"
                 onMouseDown={(e) => startDragNode(box.id, e)}
-                onClick={() => setSelectedBoxId(box.id)}
+                onClick={(e) => handleNodeClick({ type: 'ai-box', boxId: box.id }, e)}
+                title={`Click to configure ${box.title}`}
                 style={{
                   position: 'absolute',
                   left: `${box.x}px`,
                   top: `${box.y}px`,
-                  width: `${AI_NODE_WIDTH}px`,
+                  width: `${CIRCLE_SIZE}px`,
+                  height: `${CIRCLE_SIZE}px`,
+                  borderRadius: '50%',
                   backgroundColor: '#161B22',
-                  borderRadius: '0.75rem',
+                  backgroundImage: box.enabled
+                    ? `radial-gradient(circle at 35% 35%, ${isGoogle ? 'rgba(59, 130, 246, 0.4)' : 'rgba(16, 185, 129, 0.4)'} 0%, #161B22 100%)`
+                    : 'none',
                   border: isCurrentSimulating
-                    ? '2px solid #8B5CF6'
+                    ? '2.5px solid #8B5CF6'
                     : isSelected
-                    ? '2px solid var(--accent-primary)'
+                    ? '2.5px solid #A78BFA'
                     : box.enabled
-                    ? '1px solid rgba(139, 92, 246, 0.4)'
-                    : '1px dashed rgba(255, 255, 255, 0.15)',
+                    ? `2px solid ${themeColor}`
+                    : '2px dashed rgba(255, 255, 255, 0.2)',
+                  opacity: box.enabled ? 1 : 0.5,
                   boxShadow: isCurrentSimulating
-                    ? '0 0 24px rgba(139, 92, 246, 0.7)'
-                    : isSelected
-                    ? '0 0 16px rgba(24, 119, 242, 0.5)'
-                    : '0 8px 24px rgba(0, 0, 0, 0.5)',
-                  opacity: box.enabled ? 1 : 0.6,
-                  zIndex: isSelected ? 20 : 12,
-                  cursor: 'grab',
-                  animation: 'boxPop 0.25s ease-out',
-                  transition: 'border 0.2s, box-shadow 0.2s',
+                    ? '0 0 25px rgba(139, 92, 246, 0.85)'
+                    : box.enabled
+                    ? `0 0 16px ${isGoogle ? 'rgba(59, 130, 246, 0.35)' : 'rgba(16, 185, 129, 0.35)'}, 0 8px 24px rgba(0, 0, 0, 0.6)`
+                    : 'none',
+                  zIndex: isSelected ? 20 : 15,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'transform 0.15s ease, box-shadow 0.15s ease',
                 }}
+                onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.08)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
               >
-                {/* Input Socket (receives from Get Content) */}
+                {/* Center Icon */}
+                {isGoogle ? (
+                  <SiGooglegemini style={{ fontSize: '28px', color: box.enabled ? '#60A5FA' : '#9CA3AF' }} />
+                ) : (
+                  <OpenAIIcon size={28} color={box.enabled ? '#10B981' : '#9CA3AF'} />
+                )}
+
+                {/* Input Socket (Left) */}
                 <div
                   style={{
                     position: 'absolute',
-                    left: '-7px',
-                    top: '44px',
-                    width: '14px',
-                    height: '14px',
+                    left: '-6px',
+                    top: `${HALF_CIRCLE - 6}px`,
+                    width: '12px',
+                    height: '12px',
+                    borderRadius: '50%',
+                    backgroundColor: box.enabled ? '#8B5CF6' : '#6B7280',
+                    border: '2px solid #161B22',
+                    boxShadow: box.enabled ? '0 0 8px #8B5CF6' : 'none',
+                  }}
+                />
+                {/* Output Socket (Right) */}
+                <div
+                  style={{
+                    position: 'absolute',
+                    right: '-6px',
+                    top: `${HALF_CIRCLE - 6}px`,
+                    width: '12px',
+                    height: '12px',
                     borderRadius: '50%',
                     backgroundColor: box.enabled ? '#8B5CF6' : '#6B7280',
                     border: '2px solid #161B22',
@@ -1497,262 +1381,97 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
                   }}
                 />
 
-                {/* Header with Title & Controls */}
+                {/* Label below circle */}
                 <div
                   style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '0.625rem 0.875rem',
-                    borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-                    backgroundColor: 'rgba(139, 92, 246, 0.08)',
-                    borderTopLeftRadius: '0.75rem',
-                    borderTopRightRadius: '0.75rem',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0, flex: 1 }}>
-                    <div
-                      style={{
-                        width: '28px',
-                        height: '28px',
-                        borderRadius: '6px',
-                        backgroundColor: box.provider === 'openai' ? '#10A37F' : 'var(--accent-primary)',
-                        color: '#fff',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: '14px',
-                        flexShrink: 0,
-                      }}
-                    >
-                      {box.provider === 'openai' ? <FiCpu /> : <FiZap />}
-                    </div>
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <input
-                        type="text"
-                        value={box.title}
-                        onChange={(e) => handleUpdateAIBox(box.id, { title: e.target.value })}
-                        onClick={(e) => e.stopPropagation()}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: '#FFFFFF',
-                          fontSize: '0.8125rem',
-                          fontWeight: 700,
-                          width: '90%',
-                          outline: 'none',
-                          padding: 0,
-                          textOverflow: 'ellipsis',
-                        }}
-                      />
-                      <div style={{ fontSize: '0.6875rem', color: '#A78BFA', fontWeight: 600 }}>
-                        {box.provider === 'openai' ? 'OpenAI GPT-4o' : 'Google Gemini'}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Header Actions */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', flexShrink: 0 }}>
-                    {/* Duplicate */}
-                    <button
-                      type="button"
-                      onClick={(e) => handleDuplicateAIBox(box, e)}
-                      title="Duplicate this AI process box"
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        color: 'var(--text-muted)',
-                        cursor: 'pointer',
-                        padding: '4px',
-                      }}
-                    >
-                      <FiCopy style={{ fontSize: '13px' }} />
-                    </button>
-
-                    {/* Delete */}
-                    <button
-                      type="button"
-                      onClick={(e) => handleDeleteAIBox(box.id, e)}
-                      title="Delete this dynamic AI box"
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        color: '#EF4444',
-                        cursor: 'pointer',
-                        padding: '4px',
-                      }}
-                    >
-                      <FiTrash2 style={{ fontSize: '13px' }} />
-                    </button>
-
-                    {/* Enable Toggle */}
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={box.enabled}
-                      onClick={(e) => handleToggleAIBox(box.id, e)}
-                      style={{
-                        width: '28px',
-                        height: '16px',
-                        backgroundColor: box.enabled ? '#8B5CF6' : 'rgba(255, 255, 255, 0.2)',
-                        borderRadius: '10px',
-                        border: 'none',
-                        cursor: 'pointer',
-                        position: 'relative',
-                        padding: 0,
-                        outline: 'none',
-                        marginLeft: '2px',
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: '12px',
-                          height: '12px',
-                          backgroundColor: '#FFFFFF',
-                          borderRadius: '50%',
-                          position: 'absolute',
-                          top: '2px',
-                          left: box.enabled ? '14px' : '2px',
-                          transition: 'left 0.2s ease',
-                        }}
-                      />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Box Controls / Selectors */}
-                <div
-                  style={{
-                    padding: '0.75rem 0.875rem',
+                    position: 'absolute',
+                    top: `${CIRCLE_SIZE + 8}px`,
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    whiteSpace: 'nowrap',
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: '0.625rem',
+                    alignItems: 'center',
+                    gap: '2px',
+                    pointerEvents: 'none',
                   }}
-                  onClick={(e) => e.stopPropagation()}
                 >
-                  {/* Process Type Dropdown */}
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.6875rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
-                      Process Type
-                    </label>
-                    <Select
-                      options={PROCESS_TYPE_OPTIONS}
-                      value={box.processType}
-                      onChange={(val) => {
-                        let defaultTitle = box.title;
-                        const matched = PROCESS_TYPE_OPTIONS.find((p) => p.value === val);
-                        if (matched) defaultTitle = matched.label;
-                        handleUpdateAIBox(box.id, { processType: val as any, title: defaultTitle });
-                      }}
-                      height="32px"
-                    />
-                  </div>
-
-                  {/* AI Provider & Engine Model */}
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.6875rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
-                      AI Engine & Model
-                    </label>
-                    <Select
-                      options={MODEL_OPTIONS}
-                      value={box.model}
-                      onChange={(val) => {
-                        const isOAI = val.includes('gpt');
-                        handleUpdateAIBox(box.id, {
-                          model: val,
-                          provider: isOAI ? 'openai' : 'google_ai',
-                        });
-                      }}
-                      height="32px"
-                    />
-                  </div>
-
-                  {/* Prompt Instructions Tweak */}
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.6875rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
-                      Custom Prompt Instructions (Optional)
-                    </label>
-                    <textarea
-                      value={box.customPrompt}
-                      onChange={(e) => handleUpdateAIBox(box.id, { customPrompt: e.target.value })}
-                      placeholder="e.g. emphasize price negotiable, BTS Thong Lo 2 mins, urgent sale..."
-                      rows={2}
-                      style={{
-                        width: '100%',
-                        boxSizing: 'border-box',
-                        backgroundColor: 'var(--bg-main)',
-                        border: '1px solid var(--border-color)',
-                        borderRadius: '0.375rem',
-                        padding: '0.375rem 0.5rem',
-                        color: 'var(--text-primary)',
-                        fontSize: '0.75rem',
-                        resize: 'vertical',
-                        outline: 'none',
-                        fontFamily: 'inherit',
-                      }}
-                    />
-                  </div>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#fff', textShadow: '0 1px 4px rgba(0,0,0,0.9)' }}>
+                    {box.title}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: '0.625rem',
+                      color: isGoogle ? '#93C5FD' : '#6EE7B7',
+                      fontWeight: 500,
+                      backgroundColor: 'rgba(0,0,0,0.7)',
+                      padding: '1px 6px',
+                      borderRadius: '4px',
+                      border: `1px solid ${themeColor}40`,
+                    }}
+                  >
+                    {isGoogle ? 'Gemini' : 'GPT-4o'} • {box.enabled ? 'ON' : 'OFF'}
+                  </span>
                 </div>
-
-                {/* Output Socket (connects to destination) */}
-                <div
-                  style={{
-                    position: 'absolute',
-                    right: '-7px',
-                    top: '44px',
-                    width: '14px',
-                    height: '14px',
-                    borderRadius: '50%',
-                    backgroundColor: box.enabled ? '#8B5CF6' : '#6B7280',
-                    border: '2px solid #161B22',
-                    boxShadow: box.enabled ? '0 0 8px #8B5CF6' : 'none',
-                  }}
-                />
               </div>
             );
           })}
 
           {/* ======================================================== */}
-          {/* NODE 4: PROPERTY INBOX / OUTPUT DESTINATION              */}
+          {/* NODE 4: PROPERTY INBOX (DESTINATION CIRCLE)               */}
           {/* ======================================================== */}
           <div
+            className="canvas-node"
             onMouseDown={(e) => startDragNode('destination', e)}
+            onClick={(e) => handleNodeClick({ type: 'destination' }, e)}
+            title="Click to view Property Inbox Destination details"
             style={{
               position: 'absolute',
               left: `${config.destination.x}px`,
               top: `${config.destination.y}px`,
-              width: `${NODE_WIDTH}px`,
+              width: `${CIRCLE_SIZE}px`,
+              height: `${CIRCLE_SIZE}px`,
+              borderRadius: '50%',
               backgroundColor: '#161B22',
-              borderRadius: '0.75rem',
-              border: simulationStep === 3 ? '2px solid #10B981' : '1px solid rgba(16, 185, 129, 0.4)',
-              boxShadow: simulationStep === 3 ? '0 0 20px rgba(16, 185, 129, 0.6)' : '0 8px 24px rgba(0, 0, 0, 0.5)',
-              zIndex: 10,
-              cursor: 'grab',
-              transition: 'border 0.2s, box-shadow 0.2s',
+              backgroundImage: 'radial-gradient(circle at 35% 35%, rgba(16, 185, 129, 0.4) 0%, #161B22 100%)',
+              border: simulationStep === 3 ? '2.5px solid #10B981' : '2px solid rgba(16, 185, 129, 0.7)',
+              boxShadow: simulationStep === 3
+                ? '0 0 25px rgba(16, 185, 129, 0.85)'
+                : '0 0 16px rgba(16, 185, 129, 0.35), 0 8px 24px rgba(0, 0, 0, 0.6)',
+              zIndex: 15,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'transform 0.15s ease, box-shadow 0.15s ease',
             }}
+            onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.08)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
           >
-            {/* Input Socket Top */}
+            <FiCheckCircle style={{ fontSize: '30px', color: '#10B981', filter: 'drop-shadow(0 2px 6px rgba(16, 185, 129, 0.5))' }} />
+
+            {/* Input Socket: AI inputs (Top) */}
             <div
               style={{
                 position: 'absolute',
-                left: '-7px',
-                top: '44px',
-                width: '14px',
-                height: '14px',
+                left: '-6px',
+                top: `${HALF_CIRCLE - 14}px`,
+                width: '12px',
+                height: '12px',
                 borderRadius: '50%',
-                backgroundColor: '#10B981',
+                backgroundColor: '#8B5CF6',
                 border: '2px solid #161B22',
-                boxShadow: '0 0 8px #10B981',
+                boxShadow: '0 0 8px #8B5CF6',
               }}
             />
-            {/* Input Socket Bottom */}
+            {/* Input Socket: Images (Bottom) */}
             <div
               style={{
                 position: 'absolute',
-                left: '-7px',
-                top: '86px',
-                width: '14px',
-                height: '14px',
+                left: '-6px',
+                top: `${HALF_CIRCLE + 2}px`,
+                width: '12px',
+                height: '12px',
                 borderRadius: '50%',
                 backgroundColor: '#10B981',
                 border: '2px solid #161B22',
@@ -1760,68 +1479,540 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
               }}
             />
 
-            {/* Header */}
+            {/* Label below circle */}
             <div
               style={{
+                position: 'absolute',
+                top: `${CIRCLE_SIZE + 8}px`,
+                left: '50%',
+                transform: 'translateX(-50%)',
+                whiteSpace: 'nowrap',
                 display: 'flex',
+                flexDirection: 'column',
                 alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '0.75rem 0.875rem',
-                borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-                backgroundColor: 'rgba(16, 185, 129, 0.08)',
-                borderTopLeftRadius: '0.75rem',
-                borderTopRightRadius: '0.75rem',
+                gap: '2px',
+                pointerEvents: 'none',
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <div
-                  style={{
-                    width: '28px',
-                    height: '28px',
-                    borderRadius: '6px',
-                    backgroundColor: '#10B981',
-                    color: '#fff',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '15px',
-                  }}
-                >
-                  <FiCheckCircle />
-                </div>
-                <div>
-                  <div style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#fff' }}>Property Inbox</div>
-                  <div style={{ fontSize: '0.6875rem', color: '#34D399', fontWeight: 600 }}>DESTINATION</div>
-                </div>
-              </div>
-              <Badge variant="success">Ready</Badge>
-            </div>
-
-            {/* Body */}
-            <div style={{ padding: '0.75rem 0.875rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              <p style={{ margin: '0 0 0.5rem 0', lineHeight: 1.4 }}>
-                Saves structured property specs, extracted media, and multi-AI generated copy to Inbox.
-              </p>
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '0.375rem 0.5rem',
-                  backgroundColor: 'rgba(255, 255, 255, 0.04)',
-                  borderRadius: '0.375rem',
-                  border: '1px solid rgba(255, 255, 255, 0.06)',
-                }}
-              >
-                <span>Outputs Configured</span>
-                <span style={{ color: '#10B981', fontWeight: 600 }}>
-                  {config.aiBoxes.filter((b) => b.enabled).length} AI + {config.getImages.enabled ? '1 Media' : '0'}
-                </span>
-              </div>
+              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#fff', textShadow: '0 1px 4px rgba(0,0,0,0.9)' }}>
+                Property Inbox
+              </span>
+              <span style={{ fontSize: '0.625rem', color: '#34D399', fontWeight: 500, backgroundColor: 'rgba(0,0,0,0.7)', padding: '1px 6px', borderRadius: '4px', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
+                Destination • Ready
+              </span>
             </div>
           </div>
         </div>
       </div>
+
+      {/* ======================================================== */}
+      {/* NODE CONFIGURATION MODAL BOX                             */}
+      {/* ======================================================== */}
+      {activeModalNode && (
+        <Modal
+          isOpen={Boolean(activeModalNode)}
+          onClose={() => setActiveModalNode(null)}
+          maxWidth="560px"
+          title={
+            activeModalNode.type === 'trigger' ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+                <FaFacebook style={{ fontSize: '20px', color: '#1877F2' }} />
+                <span>Facebook URL Importer (Trigger)</span>
+              </div>
+            ) : activeModalNode.type === 'get-content' ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+                <FiFileText style={{ fontSize: '20px', color: '#3B82F6' }} />
+                <span>Get Content Branch</span>
+              </div>
+            ) : activeModalNode.type === 'get-images' ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+                <FiImage style={{ fontSize: '20px', color: '#10B981' }} />
+                <span>Get Images Branch</span>
+              </div>
+            ) : activeModalNode.type === 'destination' ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+                <FiCheckCircle style={{ fontSize: '20px', color: '#10B981' }} />
+                <span>Property Inbox Destination</span>
+              </div>
+            ) : currentModalAIBox ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+                {currentModalAIBox.provider === 'openai' ? (
+                  <OpenAIIcon size={20} />
+                ) : (
+                  <SiGooglegemini style={{ fontSize: '20px', color: '#60A5FA' }} />
+                )}
+                <span>Configure AI Process: {currentModalAIBox.title}</span>
+              </div>
+            ) : null
+          }
+        >
+          {/* TRIGGER MODAL CONTENT */}
+          {activeModalNode.type === 'trigger' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '0.875rem',
+                  backgroundColor: 'var(--bg-main)',
+                  borderRadius: '0.5rem',
+                  border: '1px solid var(--border-color)',
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                    Auto-Import on Paste
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                    Automatically triggers extraction when a valid Facebook URL is detected
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    updateConfig({
+                      ...config,
+                      trigger: { ...config.trigger, autoImport: !config.trigger.autoImport },
+                    })
+                  }
+                  style={{
+                    width: '36px',
+                    height: '20px',
+                    backgroundColor: config.trigger.autoImport ? '#1877F2' : 'rgba(255, 255, 255, 0.2)',
+                    borderRadius: '10px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    position: 'relative',
+                    padding: 0,
+                  }}
+                >
+                  <div
+                    style={{
+                      width: '16px',
+                      height: '16px',
+                      backgroundColor: '#FFFFFF',
+                      borderRadius: '50%',
+                      position: 'absolute',
+                      top: '2px',
+                      left: config.trigger.autoImport ? '18px' : '2px',
+                      transition: 'left 0.2s ease',
+                    }}
+                  />
+                </button>
+              </div>
+
+              <div style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                Connects incoming Facebook URLs from Groups, Pages, and Marketplace directly to the Get Content and Get Images branches.
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+                <Button variant="primary" size="sm" onClick={() => setActiveModalNode(null)}>
+                  Done
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* GET CONTENT MODAL CONTENT */}
+          {activeModalNode.type === 'get-content' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '0.875rem',
+                  backgroundColor: 'var(--bg-main)',
+                  borderRadius: '0.5rem',
+                  border: '1px solid var(--border-color)',
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                    Enable Content Extraction
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                    Extracts 100% full original post content & caption
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    updateConfig({
+                      ...config,
+                      getContent: { ...config.getContent, enabled: !config.getContent.enabled },
+                    })
+                  }
+                  style={{
+                    width: '36px',
+                    height: '20px',
+                    backgroundColor: config.getContent.enabled ? '#3B82F6' : 'rgba(255, 255, 255, 0.2)',
+                    borderRadius: '10px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    position: 'relative',
+                    padding: 0,
+                  }}
+                >
+                  <div
+                    style={{
+                      width: '16px',
+                      height: '16px',
+                      backgroundColor: '#FFFFFF',
+                      borderRadius: '50%',
+                      position: 'absolute',
+                      top: '2px',
+                      left: config.getContent.enabled ? '18px' : '2px',
+                      transition: 'left 0.2s ease',
+                    }}
+                  />
+                </button>
+              </div>
+
+              <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.5 }}>
+                When enabled, the full raw text caption and specifications are extracted directly from the post and piped simultaneously into all active AI copywriter nodes.
+              </p>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+                <Button variant="primary" size="sm" onClick={() => setActiveModalNode(null)}>
+                  Done
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* GET IMAGES MODAL CONTENT */}
+          {activeModalNode.type === 'get-images' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '0.875rem',
+                  backgroundColor: 'var(--bg-main)',
+                  borderRadius: '0.5rem',
+                  border: '1px solid var(--border-color)',
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                    Enable Images Download
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                    Downloads all original photos & media from the post
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    updateConfig({
+                      ...config,
+                      getImages: { ...config.getImages, enabled: !config.getImages.enabled },
+                    })
+                  }
+                  style={{
+                    width: '36px',
+                    height: '20px',
+                    backgroundColor: config.getImages.enabled ? '#10B981' : 'rgba(255, 255, 255, 0.2)',
+                    borderRadius: '10px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    position: 'relative',
+                    padding: 0,
+                  }}
+                >
+                  <div
+                    style={{
+                      width: '16px',
+                      height: '16px',
+                      backgroundColor: '#FFFFFF',
+                      borderRadius: '50%',
+                      position: 'absolute',
+                      top: '2px',
+                      left: config.getImages.enabled ? '18px' : '2px',
+                      transition: 'left 0.2s ease',
+                    }}
+                  />
+                </button>
+              </div>
+
+              <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.5 }}>
+                When enabled, the entire gallery of photos attached to the Facebook post is retrieved in high quality and sent to the Property Inbox.
+              </p>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+                <Button variant="primary" size="sm" onClick={() => setActiveModalNode(null)}>
+                  Done
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* DYNAMIC AI BOX MODAL CONTENT */}
+          {activeModalNode.type === 'ai-box' && currentModalAIBox && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              {/* Box Title & Enable Toggle */}
+              <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: 'block', fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                    Node Title
+                  </label>
+                  <input
+                    type="text"
+                    value={currentModalAIBox.title}
+                    onChange={(e) => handleUpdateAIBox(currentModalAIBox.id, { title: e.target.value })}
+                    style={{
+                      width: '100%',
+                      height: '34px',
+                      backgroundColor: 'var(--bg-main)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: '0.375rem',
+                      padding: '0 0.625rem',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.8125rem',
+                      outline: 'none',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                    Status
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleAIBox(currentModalAIBox.id)}
+                    style={{
+                      height: '34px',
+                      padding: '0 0.75rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.375rem',
+                      borderRadius: '0.375rem',
+                      border: `1px solid ${currentModalAIBox.enabled ? 'rgba(16, 185, 129, 0.4)' : 'var(--border-color)'}`,
+                      backgroundColor: currentModalAIBox.enabled ? 'rgba(16, 185, 129, 0.12)' : 'rgba(255, 255, 255, 0.05)',
+                      color: currentModalAIBox.enabled ? '#34D399' : 'var(--text-muted)',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: '6px',
+                        height: '6px',
+                        borderRadius: '50%',
+                        backgroundColor: currentModalAIBox.enabled ? '#10B981' : '#6B7280',
+                      }}
+                    />
+                    <span>{currentModalAIBox.enabled ? 'Enabled' : 'Disabled'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Process Type Dropdown */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                  Target Process Type
+                </label>
+                <Select
+                  options={PROCESS_TYPE_OPTIONS}
+                  value={currentModalAIBox.processType}
+                  onChange={(val) => handleUpdateAIBox(currentModalAIBox.id, { processType: val as any })}
+                  height="34px"
+                />
+              </div>
+
+              {/* Provider Selection Tabs */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                  AI Engine & Provider
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleUpdateAIBox(currentModalAIBox.id, {
+                        provider: 'google_ai',
+                        model: 'gemini-flash-latest',
+                      })
+                    }
+                    style={{
+                      height: '36px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '0.5rem',
+                      borderRadius: '0.375rem',
+                      border: `1.5px solid ${currentModalAIBox.provider === 'google_ai' ? '#3B82F6' : 'var(--border-color)'}`,
+                      backgroundColor: currentModalAIBox.provider === 'google_ai' ? 'rgba(59, 130, 246, 0.12)' : 'var(--bg-main)',
+                      color: currentModalAIBox.provider === 'google_ai' ? '#60A5FA' : 'var(--text-secondary)',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <SiGooglegemini style={{ fontSize: '15px' }} />
+                    <span>Google Gemini</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleUpdateAIBox(currentModalAIBox.id, {
+                        provider: 'openai',
+                        model: 'gpt-4o',
+                      })
+                    }
+                    style={{
+                      height: '36px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '0.5rem',
+                      borderRadius: '0.375rem',
+                      border: `1.5px solid ${currentModalAIBox.provider === 'openai' ? '#10B981' : 'var(--border-color)'}`,
+                      backgroundColor: currentModalAIBox.provider === 'openai' ? 'rgba(16, 185, 129, 0.12)' : 'var(--bg-main)',
+                      color: currentModalAIBox.provider === 'openai' ? '#34D399' : 'var(--text-secondary)',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <OpenAIIcon size={15} />
+                    <span>OpenAI ChatGPT</span>
+                  </button>
+                </div>
+
+                <Select
+                  options={
+                    currentModalAIBox.provider === 'google_ai'
+                      ? [
+                          { value: 'gemini-flash-latest', label: 'Gemini Flash (Ultra Fast & Responsive)' },
+                          { value: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro (Deep Multimodal Reasoning)' },
+                        ]
+                      : [
+                          { value: 'gpt-4o', label: 'GPT-4o (Omni High Precision)' },
+                          { value: 'gpt-4o-mini', label: 'GPT-4o-mini (Lightweight & Economical)' },
+                        ]
+                  }
+                  value={currentModalAIBox.model}
+                  onChange={(val) => handleUpdateAIBox(currentModalAIBox.id, { model: val })}
+                  height="34px"
+                />
+              </div>
+
+              {/* Custom Prompt Instructions */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                  Custom Prompt Instructions (Optional)
+                </label>
+                <textarea
+                  value={currentModalAIBox.customPrompt}
+                  onChange={(e) => handleUpdateAIBox(currentModalAIBox.id, { customPrompt: e.target.value })}
+                  rows={3}
+                  placeholder="e.g. emphasize price negotiable, BTS Thong Lo 2 mins, urgent sale, contact via LINE ID..."
+                  style={{
+                    width: '100%',
+                    backgroundColor: 'var(--bg-main)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '0.375rem',
+                    padding: '0.5rem 0.625rem',
+                    color: 'var(--text-primary)',
+                    fontSize: '0.75rem',
+                    outline: 'none',
+                    fontFamily: 'inherit',
+                    resize: 'vertical',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              </div>
+
+              {/* Modal Footer Actions */}
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  paddingTop: '0.75rem',
+                  borderTop: '1px solid var(--border-color)',
+                  marginTop: '0.5rem',
+                }}
+              >
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={(e) => handleDuplicateAIBox(currentModalAIBox, e)}
+                    leftIcon={<FiCopy />}
+                    style={{ height: '32px', fontSize: '0.75rem' }}
+                  >
+                    Duplicate
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={(e) => handleDeleteAIBox(currentModalAIBox.id, e)}
+                    leftIcon={<FiTrash2 style={{ color: '#EF4444' }} />}
+                    style={{ height: '32px', fontSize: '0.75rem', borderColor: 'rgba(239, 68, 68, 0.3)', color: '#EF4444' }}
+                  >
+                    Delete Node
+                  </Button>
+                </div>
+
+                <Button variant="primary" size="sm" onClick={() => setActiveModalNode(null)}>
+                  Done
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* DESTINATION MODAL CONTENT */}
+          {activeModalNode.type === 'destination' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '0.875rem',
+                  backgroundColor: 'var(--bg-main)',
+                  borderRadius: '0.5rem',
+                  border: '1px solid var(--border-color)',
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                    Property Inbox Target
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: '#10B981', marginTop: '2px', fontWeight: 500 }}>
+                    Active & Ready to Receive Data
+                  </div>
+                </div>
+                <Badge variant="success">Ready</Badge>
+              </div>
+
+              <div style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                Aggregates:
+                <ul style={{ margin: '0.5rem 0 0 1rem', padding: 0 }}>
+                  <li>{config.aiBoxes.filter((b) => b.enabled).length} Dynamic AI listing copies</li>
+                  <li>{config.getImages.enabled ? 'All original photos & media' : 'Media branch disabled'}</li>
+                  <li>Extracted price, bed/bath specs, contact info, and canonical Facebook URL</li>
+                </ul>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+                <Button variant="primary" size="sm" onClick={() => setActiveModalNode(null)}>
+                  Done
+                </Button>
+              </div>
+            </div>
+          )}
+        </Modal>
+      )}
     </div>
   );
 };
