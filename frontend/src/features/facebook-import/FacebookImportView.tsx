@@ -906,21 +906,27 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
               paddingLeft: '1.25rem',
               paddingRight: '1.25rem',
               fontWeight: 500,
-              display: 'flex',
+              fontSize: '0.875rem',
+              display: 'inline-flex',
               alignItems: 'center',
+              justifyContent: 'center',
               gap: '0.5rem',
               whiteSpace: 'nowrap',
               backgroundColor: '#1877F2',
               borderColor: '#1877F2',
+              borderRadius: '0.5rem',
             }}
           >
             {isProcessing ? (
               <>
-                <FiRefreshCw className="spin" style={{ animation: 'spin 1s linear infinite', fontSize: '14px' }} />
+                <FiRefreshCw className="spin" style={{ animation: 'spin 1s linear infinite', fontSize: '15px', flexShrink: 0 }} />
                 <span>Importing...</span>
               </>
             ) : (
-              <span>Import Post</span>
+              <>
+                <FiDownload style={{ fontSize: '15px', flexShrink: 0 }} />
+                <span>Import Post</span>
+              </>
             )}
           </Button>
 
@@ -935,16 +941,19 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
             title="Open live browser automation stream"
             style={{
               height: '42px',
-              paddingLeft: '1rem',
-              paddingRight: '1rem',
+              paddingLeft: '1.25rem',
+              paddingRight: '1.25rem',
               fontWeight: 500,
-              display: 'flex',
+              fontSize: '0.875rem',
+              display: 'inline-flex',
               alignItems: 'center',
+              justifyContent: 'center',
               gap: '0.5rem',
               whiteSpace: 'nowrap',
+              borderRadius: '0.5rem',
             }}
           >
-            <FiMonitor style={{ fontSize: '14px' }} />
+            <FiMonitor style={{ fontSize: '15px', flexShrink: 0 }} />
             <span>Live Browser</span>
           </Button>
         </div>
@@ -1547,13 +1556,16 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                   height: '38px',
                   display: 'inline-flex',
                   alignItems: 'center',
+                  justifyContent: 'center',
                   gap: '0.5rem',
                   whiteSpace: 'nowrap',
-                  padding: '0 1rem',
+                  padding: '0 1.125rem',
                   fontSize: '0.8125rem',
+                  fontWeight: 500,
+                  borderRadius: '0.375rem',
                 }}
               >
-                <FiCode style={{ fontSize: '14px', flexShrink: 0 }} />
+                <FiCode style={{ fontSize: '15px', flexShrink: 0 }} />
                 <span>View Raw Data</span>
               </Button>
               <Button
@@ -1564,13 +1576,16 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                   height: '38px',
                   display: 'inline-flex',
                   alignItems: 'center',
+                  justifyContent: 'center',
                   gap: '0.5rem',
                   whiteSpace: 'nowrap',
-                  padding: '0 1rem',
+                  padding: '0 1.125rem',
                   fontSize: '0.8125rem',
+                  fontWeight: 500,
+                  borderRadius: '0.375rem',
                 }}
               >
-                <FiRefreshCw style={{ fontSize: '14px', flexShrink: 0 }} />
+                <FiRefreshCw style={{ fontSize: '15px', flexShrink: 0 }} />
                 <span>Re-run Extraction</span>
               </Button>
             </div>
@@ -1664,7 +1679,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
               {/* Template Selection & Main Generate Button Row */}
               <div style={{ display: 'flex', gap: '0.625rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
                 <div style={{ flex: '1 1 220px', minWidth: '180px' }}>
-                  <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.25rem', display: 'block' }}>
+                  <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.375rem', display: 'block' }}>
                     Select Prompt Template
                   </label>
                   <select
@@ -1672,7 +1687,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                     onChange={(e) => setSelectedTemplateId(e.target.value)}
                     style={{
                       width: '100%',
-                      height: '38px',
+                      height: '40px',
                       padding: '0 0.75rem',
                       borderRadius: '0.5rem',
                       backgroundColor: 'var(--bg-main)',
@@ -1698,13 +1713,14 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                   onClick={handleGenerateAICopy}
                   disabled={isGeneratingAI || !caption.trim()}
                   style={{
-                    height: '38px',
+                    height: '40px',
                     minWidth: '160px',
                     display: 'inline-flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     gap: '0.5rem',
                     padding: '0 1.25rem',
+                    borderRadius: '0.5rem',
                     background: aiProvider === 'openai'
                       ? 'linear-gradient(135deg, #059669 0%, #10B981 100%)'
                       : 'linear-gradient(135deg, #2563EB 0%, #7C3AED 100%)',
@@ -1716,11 +1732,12 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                     fontWeight: 600,
                     whiteSpace: 'nowrap',
                     flexShrink: 0,
+                    boxSizing: 'border-box',
                   }}
                 >
                   {isGeneratingAI ? (
                     <>
-                      <FiRefreshCw className="spin" style={{ fontSize: '14px', flexShrink: 0 }} />
+                      <FiRefreshCw className="spin" style={{ animation: 'spin 1s linear infinite', fontSize: '15px', flexShrink: 0 }} />
                       <span>Generating...</span>
                     </>
                   ) : (
@@ -2108,13 +2125,16 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                 height: '38px',
                 display: 'inline-flex',
                 alignItems: 'center',
+                justifyContent: 'center',
                 gap: '0.5rem',
                 whiteSpace: 'nowrap',
-                padding: '0 1rem',
+                padding: '0 1.125rem',
                 fontSize: '0.8125rem',
+                fontWeight: 600,
+                borderRadius: '0.375rem',
               }}
             >
-              <FiTrash2 style={{ fontSize: '14px', flexShrink: 0 }} />
+              <FiTrash2 style={{ fontSize: '15px', flexShrink: 0 }} />
               <span>Delete Import</span>
             </Button>
             <Button
@@ -2125,13 +2145,16 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                 height: '38px',
                 display: 'inline-flex',
                 alignItems: 'center',
+                justifyContent: 'center',
                 gap: '0.5rem',
                 whiteSpace: 'nowrap',
-                padding: '0 1rem',
+                padding: '0 1.125rem',
                 fontSize: '0.8125rem',
+                fontWeight: 600,
+                borderRadius: '0.375rem',
               }}
             >
-              <FiExternalLink style={{ fontSize: '14px', flexShrink: 0 }} />
+              <FiExternalLink style={{ fontSize: '15px', flexShrink: 0 }} />
               <span>Open Original Post</span>
             </Button>
           </div>
@@ -2145,13 +2168,16 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                 height: '38px',
                 display: 'inline-flex',
                 alignItems: 'center',
+                justifyContent: 'center',
                 gap: '0.5rem',
                 whiteSpace: 'nowrap',
-                padding: '0 1rem',
+                padding: '0 1.125rem',
                 fontSize: '0.8125rem',
+                fontWeight: 600,
+                borderRadius: '0.375rem',
               }}
             >
-              <FiRefreshCw style={{ fontSize: '14px', flexShrink: 0 }} />
+              <FiRefreshCw style={{ fontSize: '15px', flexShrink: 0 }} />
               <span>Re-Extract</span>
             </Button>
             <Button
@@ -2162,11 +2188,13 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                 height: '38px',
                 display: 'inline-flex',
                 alignItems: 'center',
+                justifyContent: 'center',
                 gap: '0.5rem',
                 fontWeight: 600,
                 padding: '0 1.25rem',
                 whiteSpace: 'nowrap',
                 fontSize: '0.8125rem',
+                borderRadius: '0.375rem',
               }}
             >
               <FiSave style={{ fontSize: '15px', flexShrink: 0 }} />

@@ -78,7 +78,7 @@ export const Button: React.FC<ButtonProps> = ({
 
   const vStyle = getVariantStyles();
 
-  const padding = size === 'sm' ? '0.375rem 0.625rem' : size === 'lg' ? '0.625rem 1.25rem' : '0.5rem 0.875rem';
+  const padding = size === 'sm' ? '0.375rem 0.75rem' : size === 'lg' ? '0.625rem 1.25rem' : '0.5rem 1rem';
   const fontSize = size === 'sm' ? '0.75rem' : size === 'lg' ? '0.9375rem' : '0.8125rem';
 
   return (
@@ -91,6 +91,7 @@ export const Button: React.FC<ButtonProps> = ({
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
+        gap: '0.5rem',
         fontWeight: 500,
         borderRadius: '0.375rem',
         padding,
@@ -104,17 +105,18 @@ export const Button: React.FC<ButtonProps> = ({
         lineHeight: 1.2,
         outline: 'none',
         boxSizing: 'border-box',
+        whiteSpace: 'nowrap',
         ...style,
       }}
       {...props}
     >
       {isLoading ? (
-        <span style={{ marginRight: '0.375rem', animation: 'spin 1s linear infinite' }}>⏳</span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, animation: 'spin 1s linear infinite' }}>⏳</span>
       ) : leftIcon ? (
-        <span style={{ display: 'inline-flex', marginRight: '0.375rem', fontSize: '0.875rem' }}>{leftIcon}</span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '0.875rem' }}>{leftIcon}</span>
       ) : null}
-      <span>{children}</span>
-      {rightIcon && <span style={{ display: 'inline-flex', marginLeft: '0.375rem', fontSize: '0.875rem' }}>{rightIcon}</span>}
+      {children}
+      {rightIcon && <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '0.875rem' }}>{rightIcon}</span>}
     </button>
   );
 };
