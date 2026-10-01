@@ -22,6 +22,7 @@ import {
   FiCode,
   FiEye,
   FiInfo,
+  FiX,
 } from 'react-icons/fi';
 import { FaFacebook } from 'react-icons/fa';
 
@@ -652,30 +653,45 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
           padding: '1.25rem',
           display: 'flex',
           flexDirection: 'column',
-          gap: '1rem',
-          boxShadow: 'var(--shadow-sm)',
+          gap: '0.875rem',
         }}
       >
+        {/* Header: Label & Secondary Controls */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
-          <label style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+          <span style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--text-primary)' }}>
             Facebook Post URL
-          </label>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            {/* Auto Import Toggle */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>
+          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
+            {/* Auto Import Toggle (Clean switch, no redundant text badge) */}
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                fontSize: '0.8125rem',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                userSelect: 'none',
+              }}
+            >
               <span>Auto Import</span>
               <button
                 type="button"
+                role="switch"
+                aria-checked={autoImport}
                 onClick={() => setAutoImport(!autoImport)}
+                title={autoImport ? 'Auto import is enabled' : 'Auto import is disabled'}
                 style={{
-                  width: '38px',
+                  width: '36px',
                   height: '20px',
-                  backgroundColor: autoImport ? 'var(--accent-primary)' : 'var(--border-color)',
+                  backgroundColor: autoImport ? '#1877F2' : 'rgba(255, 255, 255, 0.15)',
                   borderRadius: '10px',
                   border: 'none',
                   cursor: 'pointer',
                   position: 'relative',
-                  transition: 'background-color 0.2s',
+                  transition: 'background-color 0.2s ease',
+                  padding: 0,
+                  outline: 'none',
                 }}
               >
                 <div
@@ -686,64 +702,104 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                     borderRadius: '50%',
                     position: 'absolute',
                     top: '2px',
-                    left: autoImport ? '20px' : '2px',
-                    transition: 'left 0.2s',
+                    left: autoImport ? '18px' : '2px',
+                    transition: 'left 0.2s ease',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
                   }}
                 />
               </button>
-              <Badge variant={autoImport ? 'info' : 'default'} size="sm">
-                {autoImport ? 'On' : 'Off'}
-              </Badge>
-            </div>
+            </label>
 
-            {/* Advanced Toggle */}
+            {/* Advanced Settings Toggle */}
             <button
               type="button"
               onClick={() => setShowAdvanced(!showAdvanced)}
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '0.25rem',
+                gap: '0.35rem',
                 background: 'transparent',
                 border: 'none',
-                color: 'var(--text-muted)',
+                color: showAdvanced ? 'var(--text-primary)' : 'var(--text-muted)',
                 cursor: 'pointer',
                 fontSize: '0.8125rem',
+                padding: '2px 4px',
+                transition: 'color 0.15s ease',
               }}
             >
-              <FiSliders />
+              <FiSliders style={{ fontSize: '13px' }} />
               <span>Advanced</span>
-              {showAdvanced ? <FiChevronUp /> : <FiChevronDown />}
+              {showAdvanced ? <FiChevronUp style={{ fontSize: '12px' }} /> : <FiChevronDown style={{ fontSize: '12px' }} />}
             </button>
           </div>
         </div>
 
-        {/* Input Bar & Action Buttons */}
-        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+        {/* Unified Input Bar & Action Buttons */}
+        <div style={{ display: 'flex', gap: '0.625rem', alignItems: 'center', flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: '280px' }}>
             <Input
-              placeholder="Paste Facebook Post URL (e.g. https://www.facebook.com/share/p/...)"
+              placeholder="Paste Facebook post link (e.g. https://www.facebook.com/share/p/...)"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && url.trim() && !isProcessing) {
+                  handleStartImport();
+                }
+              }}
               disabled={isProcessing}
-              leftIcon={<FaFacebook style={{ color: '#1877F2' }} />}
+              leftIcon={<FaFacebook style={{ color: '#1877F2', fontSize: '1.125rem' }} />}
+              rightIcon={
+                url && !isProcessing ? (
+                  <button
+                    type="button"
+                    onClick={() => setUrl('')}
+                    title="Clear input"
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: 'var(--text-muted)',
+                      cursor: 'pointer',
+                      padding: 0,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <FiX style={{ fontSize: '14px' }} />
+                  </button>
+                ) : undefined
+              }
+              style={{ height: '42px', fontSize: '0.875rem' }}
             />
           </div>
+
           <Button
             variant="primary"
             onClick={handleStartImport}
             disabled={!url.trim() || isProcessing}
-            style={{ minWidth: '140px', fontWeight: 600 }}
+            style={{
+              height: '42px',
+              paddingLeft: '1.25rem',
+              paddingRight: '1.25rem',
+              fontWeight: 500,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              whiteSpace: 'nowrap',
+              backgroundColor: '#1877F2',
+              borderColor: '#1877F2',
+            }}
           >
             {isProcessing ? (
-              <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <FiRefreshCw className="spin" style={{ animation: 'spin 1s linear infinite' }} />
-                Importing...
-              </span>
+              <>
+                <FiRefreshCw className="spin" style={{ animation: 'spin 1s linear infinite', fontSize: '14px' }} />
+                <span>Importing...</span>
+              </>
             ) : (
-              'Import Post'
+              <span>Import Post</span>
             )}
           </Button>
+
           <Button
             variant="outline"
             onClick={() => {
@@ -752,10 +808,20 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
               } catch (e) {}
               setShowLiveBrowserModal(true);
             }}
-            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+            title="Open live browser automation stream"
+            style={{
+              height: '42px',
+              paddingLeft: '1rem',
+              paddingRight: '1rem',
+              fontWeight: 500,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              whiteSpace: 'nowrap',
+            }}
           >
-            <FiMonitor />
-            Open Live Browser
+            <FiMonitor style={{ fontSize: '14px' }} />
+            <span>Live Browser</span>
           </Button>
         </div>
 
