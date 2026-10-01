@@ -807,169 +807,6 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
         )}
       </div>
 
-      {/* PIPELINE STATUS BAR */}
-      <div
-        style={{
-          backgroundColor: 'var(--bg-secondary)',
-          border: '1px solid var(--border-color)',
-          borderRadius: '0.75rem',
-          padding: '1rem',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '0.875rem',
-          boxShadow: 'var(--shadow-sm)',
-        }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-              Pipeline Status
-            </span>
-            {currentStepIndex >= 0 && (
-              <span style={{ fontSize: '0.75rem', color: isProcessing ? 'var(--accent-primary)' : 'var(--status-success)', fontWeight: 500 }}>
-                ({currentStepIndex + 1}/{PIPELINE_STEPS.length}: {PIPELINE_STEPS[currentStepIndex]?.label})
-              </span>
-            )}
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>OpenClaw Browser:</span>
-            <Badge
-              variant={
-                browserState === 'Logged In' || browserState === 'Complete'
-                  ? 'success'
-                  : browserState === 'Facebook Login Required' || browserState === 'Access Restricted'
-                  ? 'warning'
-                  : 'default'
-              }
-              size="sm"
-            >
-              {browserState}
-            </Badge>
-          </div>
-        </div>
-
-        {/* Connected Pipeline Stepper Track */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            overflowX: 'auto',
-            padding: '0.4rem 0.25rem 0.6rem 0.25rem',
-            gap: 0,
-            scrollbarWidth: 'thin',
-          }}
-        >
-          {PIPELINE_STEPS.map((step, idx) => {
-            const isCompleted = currentStepIndex > idx;
-            const isCurrent = currentStepIndex === idx && isProcessing;
-            const isFailed = currentStepIndex === idx && pipelineError !== null;
-
-            return (
-              <div key={step.id} style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
-                {/* Step Node Pill */}
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.45rem',
-                    padding: '0.35rem 0.7rem',
-                    borderRadius: '9999px',
-                    backgroundColor: isCompleted
-                      ? 'rgba(34, 197, 94, 0.12)'
-                      : isCurrent
-                      ? 'rgba(59, 130, 246, 0.16)'
-                      : isFailed
-                      ? 'rgba(239, 68, 68, 0.16)'
-                      : 'rgba(255, 255, 255, 0.02)',
-                    border: `1.5px solid ${
-                      isCompleted
-                        ? '#22C55E'
-                        : isCurrent
-                        ? '#3B82F6'
-                        : isFailed
-                        ? '#EF4444'
-                        : 'rgba(255, 255, 255, 0.08)'
-                    }`,
-                    boxShadow: isCompleted
-                      ? '0 0 10px rgba(34, 197, 94, 0.22)'
-                      : isCurrent
-                      ? '0 0 14px rgba(59, 130, 246, 0.35)'
-                      : 'none',
-                    transition: 'all 0.2s ease',
-                  }}
-                >
-                  <div
-                    style={{
-                      width: '18px',
-                      height: '18px',
-                      borderRadius: '50%',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      backgroundColor: isCompleted
-                        ? '#22C55E'
-                        : isCurrent
-                        ? '#3B82F6'
-                        : isFailed
-                        ? '#EF4444'
-                        : 'rgba(255, 255, 255, 0.08)',
-                      color: '#FFFFFF',
-                      fontSize: '0.625rem',
-                      fontWeight: 700,
-                      flexShrink: 0,
-                    }}
-                  >
-                    {isCompleted ? (
-                      <FiCheck style={{ fontSize: '11px', strokeWidth: 3 }} />
-                    ) : isCurrent ? (
-                      <FiRefreshCw style={{ animation: 'spin 1s linear infinite', fontSize: '10px' }} />
-                    ) : isFailed ? (
-                      <FiAlertCircle style={{ fontSize: '10px' }} />
-                    ) : (
-                      <span>{idx + 1}</span>
-                    )}
-                  </div>
-                  <span
-                    style={{
-                      fontSize: '0.75rem',
-                      fontWeight: isCompleted || isCurrent ? 600 : 500,
-                      color: isCompleted
-                        ? '#4ADE80'
-                        : isCurrent
-                        ? '#60A5FA'
-                        : isFailed
-                        ? '#F87171'
-                        : 'var(--text-muted)',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {step.label}
-                  </span>
-                </div>
-
-                {/* Connecting Track Line */}
-                {idx < PIPELINE_STEPS.length - 1 && (
-                  <div
-                    style={{
-                      width: '26px',
-                      height: '2px',
-                      backgroundColor: isCompleted
-                        ? '#22C55E'
-                        : isCurrent
-                        ? 'rgba(59, 130, 246, 0.5)'
-                        : 'rgba(255, 255, 255, 0.1)',
-                      boxShadow: isCompleted ? '0 0 6px rgba(34, 197, 94, 0.4)' : 'none',
-                      transition: 'background-color 0.25s ease, box-shadow 0.25s ease',
-                      flexShrink: 0,
-                    }}
-                  />
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
       {/* ERROR / LOGIN REQUIRED BANNER */}
       {pipelineError && (
         <div
@@ -1028,7 +865,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
           }}
         >
           <FiCheck style={{ color: 'var(--status-success)', fontSize: '1.25rem' }} />
-          <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+          <span style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--text-primary)' }}>
             Property successfully saved to Property Inbox! Redirecting...
           </span>
         </div>
@@ -1096,44 +933,233 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
         </div>
       )}
 
-      {/* LIVE ACTIVITY LOG */}
-      {logs.length > 0 && (
+      {/* 2-COLUMN EXTRACTION MONITOR: PIPELINE STATUS (LEFT) & LIVE ACTIVITY LOG (RIGHT) */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+          gap: '1rem',
+          alignItems: 'stretch',
+        }}
+      >
+        {/* LEFT COLUMN: VERTICAL PIPELINE STATUS (COLUMN DESIGN, NO GLOW, NOT BOLD) */}
         <div
           style={{
-            backgroundColor: '#0D0D0D',
+            backgroundColor: 'var(--bg-secondary)',
             border: '1px solid var(--border-color)',
-            borderRadius: '0.5rem',
-            padding: '0.75rem 1rem',
-            maxHeight: '120px',
-            overflowY: 'auto',
-            fontFamily: 'monospace',
-            fontSize: '0.75rem',
+            borderRadius: '0.75rem',
+            padding: '1.25rem',
             display: 'flex',
             flexDirection: 'column',
-            gap: '0.25rem',
+            gap: '1rem',
           }}
         >
-          {logs.map((log, idx) => (
-            <div key={idx} style={{ display: 'flex', gap: '0.5rem' }}>
-              <span style={{ color: 'var(--text-muted)' }}>{log.timestamp}</span>
-              <span
-                style={{
-                  color:
-                    log.level === 'success'
-                      ? 'var(--status-success)'
-                      : log.level === 'error'
-                      ? 'var(--status-danger)'
-                      : log.level === 'warn'
-                      ? 'var(--status-warning)'
-                      : 'var(--text-secondary)',
-                }}
-              >
-                {log.message}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--text-primary)' }}>
+                Pipeline Status
               </span>
+              {currentStepIndex >= 0 && (
+                <span
+                  style={{
+                    fontSize: '0.75rem',
+                    fontWeight: 400,
+                    color: isProcessing ? 'var(--accent-primary)' : 'var(--status-success)',
+                  }}
+                >
+                  ({currentStepIndex + 1}/{PIPELINE_STEPS.length}: {PIPELINE_STEPS[currentStepIndex]?.label})
+                </span>
+              )}
             </div>
-          ))}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>Browser:</span>
+              <Badge
+                variant={
+                  browserState === 'Logged In' || browserState === 'Complete'
+                    ? 'success'
+                    : browserState === 'Facebook Login Required' || browserState === 'Access Restricted'
+                    ? 'warning'
+                    : 'default'
+                }
+                size="sm"
+              >
+                {browserState}
+              </Badge>
+            </div>
+          </div>
+
+          {/* Vertical Stepper Column */}
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.75rem',
+              paddingLeft: '0.25rem',
+              paddingTop: '0.25rem',
+            }}
+          >
+            {PIPELINE_STEPS.map((step, idx) => {
+              const isCompleted = currentStepIndex > idx;
+              const isCurrent = currentStepIndex === idx && isProcessing;
+              const isFailed = currentStepIndex === idx && pipelineError !== null;
+
+              return (
+                <div
+                  key={step.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.75rem',
+                    position: 'relative',
+                  }}
+                >
+                  {/* Vertical connecting line */}
+                  {idx < PIPELINE_STEPS.length - 1 && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        left: '11px',
+                        top: '22px',
+                        bottom: '-12px',
+                        width: '2px',
+                        backgroundColor: isCompleted ? '#22C55E' : 'rgba(255, 255, 255, 0.1)',
+                        zIndex: 0,
+                      }}
+                    />
+                  )}
+
+                  {/* Step Node Circle (no glow, flat clean) */}
+                  <div
+                    style={{
+                      width: '24px',
+                      height: '24px',
+                      borderRadius: '50%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: isCompleted
+                        ? '#22C55E'
+                        : isCurrent
+                        ? '#3B82F6'
+                        : isFailed
+                        ? '#EF4444'
+                        : 'rgba(255, 255, 255, 0.05)',
+                      border: `1px solid ${
+                        isCompleted
+                          ? '#22C55E'
+                          : isCurrent
+                          ? '#3B82F6'
+                          : isFailed
+                          ? '#EF4444'
+                          : 'rgba(255, 255, 255, 0.12)'
+                      }`,
+                      color: isCompleted || isCurrent || isFailed ? '#FFFFFF' : 'var(--text-muted)',
+                      fontSize: '0.6875rem',
+                      fontWeight: 400,
+                      zIndex: 1,
+                      flexShrink: 0,
+                    }}
+                  >
+                    {isCompleted ? (
+                      <FiCheck style={{ fontSize: '12px', strokeWidth: 2.5 }} />
+                    ) : isCurrent ? (
+                      <FiRefreshCw style={{ animation: 'spin 1s linear infinite', fontSize: '11px' }} />
+                    ) : isFailed ? (
+                      <FiAlertCircle style={{ fontSize: '11px' }} />
+                    ) : (
+                      <span>{idx + 1}</span>
+                    )}
+                  </div>
+
+                  {/* Step Label (regular weight, no bold) */}
+                  <span
+                    style={{
+                      fontSize: '0.8125rem',
+                      fontWeight: 400,
+                      color: isCompleted
+                        ? 'var(--text-primary)'
+                        : isCurrent
+                        ? '#60A5FA'
+                        : isFailed
+                        ? '#F87171'
+                        : 'var(--text-muted)',
+                    }}
+                  >
+                    {step.label}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
         </div>
-      )}
+
+        {/* RIGHT COLUMN: LIVE ACTIVITY LOG CONSOLE */}
+        <div
+          style={{
+            backgroundColor: 'var(--bg-secondary)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '0.75rem',
+            padding: '1.25rem',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '1rem',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--text-primary)' }}>
+              Activity Log
+            </span>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>
+              {logs.length} events
+            </span>
+          </div>
+
+          <div
+            style={{
+              backgroundColor: '#0D0D0D',
+              border: '1px solid var(--border-color)',
+              borderRadius: '0.5rem',
+              padding: '0.875rem 1rem',
+              flex: 1,
+              minHeight: '260px',
+              maxHeight: '440px',
+              overflowY: 'auto',
+              fontFamily: 'monospace',
+              fontSize: '0.75rem',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.375rem',
+            }}
+          >
+            {logs.length === 0 ? (
+              <div style={{ color: 'var(--text-muted)', fontStyle: 'italic', padding: '1rem 0', fontWeight: 400 }}>
+                Waiting for Facebook import to start...
+              </div>
+            ) : (
+              logs.map((log, idx) => (
+                <div key={idx} style={{ display: 'flex', gap: '0.5rem', lineHeight: '1.4' }}>
+                  <span style={{ color: 'var(--text-muted)', flexShrink: 0, fontWeight: 400 }}>{log.timestamp}</span>
+                  <span
+                    style={{
+                      color:
+                        log.level === 'success'
+                          ? 'var(--status-success)'
+                          : log.level === 'error'
+                          ? 'var(--status-danger)'
+                          : log.level === 'warn'
+                          ? 'var(--status-warning)'
+                          : 'var(--text-secondary)',
+                      fontWeight: 400,
+                    }}
+                  >
+                    {log.message}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
 
       {/* LIVE BROWSER PREVIEW PANEL */}
       {isProcessing && liveScreenshot && (
