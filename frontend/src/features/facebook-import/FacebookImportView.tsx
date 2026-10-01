@@ -33,6 +33,7 @@ import {
   FiCpu,
   FiPlus,
   FiFileText,
+  FiMaximize2,
 } from 'react-icons/fi';
 import { FaFacebook } from 'react-icons/fa';
 import { SiGooglegemini } from 'react-icons/si';
@@ -46,6 +47,7 @@ import {
 } from './FacebookWorkflowCanvas';
 import {
   getSavedWorkflowFormats,
+  saveWorkflowFormatsList,
   getActiveWorkflowFormat,
   getActiveWorkflowFormatId,
   setActiveWorkflowFormatId,
@@ -229,6 +231,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
   });
   const [aiGeneratedOutputs, setAiGeneratedOutputs] = useState<Record<string, string>>({});
   const [aiBoxGenerating, setAiBoxGenerating] = useState<Record<string, boolean>>({});
+  const [showWorkflowCanvasModal, setShowWorkflowCanvasModal] = useState(false);
 
   // Reload formats when window/tab gains focus
   useEffect(() => {
@@ -1060,31 +1063,56 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
           </div>
         </div>
 
-        {/* Create / Edit in Workflow Menu Shortcut */}
-        <button
-          type="button"
-          onClick={() => {
-            if (onNavigateTab) onNavigateTab('create-workflow');
-            else window.location.href = '/create-workflow';
-          }}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '0.35rem',
-            padding: '4px 10px',
-            borderRadius: '4px',
-            border: '1px dashed rgba(139, 92, 246, 0.5)',
-            backgroundColor: 'rgba(139, 92, 246, 0.08)',
-            color: '#A78BFA',
-            fontSize: '0.71875rem',
-            fontWeight: 500,
-            cursor: 'pointer',
-            transition: 'all 0.15s ease',
-          }}
-        >
-          <FiGitBranch style={{ fontSize: '11px' }} />
-          <span>+ Create / Edit Workflows</span>
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+          {/* Open Canvas in Modal Button */}
+          <button
+            type="button"
+            onClick={() => setShowWorkflowCanvasModal(true)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+              padding: '4px 10px',
+              borderRadius: '4px',
+              border: '1px solid rgba(139, 92, 246, 0.4)',
+              backgroundColor: 'rgba(139, 92, 246, 0.12)',
+              color: '#C4B5FD',
+              fontSize: '0.71875rem',
+              fontWeight: 500,
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <FiMaximize2 style={{ fontSize: '11px' }} />
+            <span>Open Canvas (Modal)</span>
+          </button>
+
+          {/* Manage Formats Shortcut */}
+          <button
+            type="button"
+            onClick={() => {
+              if (onNavigateTab) onNavigateTab('create-workflow');
+              else window.location.href = '/create-workflow';
+            }}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+              padding: '4px 10px',
+              borderRadius: '4px',
+              border: '1px dashed rgba(139, 92, 246, 0.5)',
+              backgroundColor: 'rgba(139, 92, 246, 0.08)',
+              color: '#A78BFA',
+              fontSize: '0.71875rem',
+              fontWeight: 500,
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <FiGitBranch style={{ fontSize: '11px' }} />
+            <span>+ Manage Formats</span>
+          </button>
+        </div>
       </div>
 
           {/* SLEEK UNIFIED IMPORT BAR */}
@@ -2635,6 +2663,88 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
               Close
             </Button>
           </div>
+        </div>
+      </Modal>
+
+      {/* WORKFLOW CANVAS MODAL IN FACEBOOK IMPORT */}
+      <Modal
+        isOpen={showWorkflowCanvasModal}
+        onClose={() => setShowWorkflowCanvasModal(false)}
+        maxWidth="1480px"
+        height="90vh"
+        bodyPadding="0"
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <div
+              style={{
+                width: '28px',
+                height: '28px',
+                borderRadius: '6px',
+                backgroundColor: 'rgba(139, 92, 246, 0.15)',
+                color: '#A78BFA',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '14px',
+              }}
+            >
+              <FiGitBranch />
+            </div>
+            <span style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+              Workflow Format: {activeFormat.name}
+            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+              <Badge variant={workflowConfig.getContent.enabled ? 'info' : 'default'} size="sm">
+                Content: {workflowConfig.getContent.enabled ? 'ON' : 'OFF'}
+              </Badge>
+              <Badge variant={workflowConfig.getImages.enabled ? 'success' : 'default'} size="sm">
+                Images: {workflowConfig.getImages.enabled ? 'ON' : 'OFF'}
+              </Badge>
+              <Badge variant="warning" size="sm">
+                {workflowConfig.aiBoxes.length} AI Boxes
+              </Badge>
+            </div>
+          </div>
+        }
+        headerExtra={
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setShowWorkflowCanvasModal(false);
+                if (onNavigateTab) onNavigateTab('create-workflow');
+                else window.location.href = '/create-workflow';
+              }}
+              leftIcon={<FiSliders />}
+              style={{ height: '32px', fontSize: '0.75rem' }}
+            >
+              Manage All Formats
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setShowWorkflowCanvasModal(false)}
+              leftIcon={<FiCheck />}
+              style={{ height: '32px', fontSize: '0.75rem' }}
+            >
+              Done
+            </Button>
+          </div>
+        }
+      >
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+          <FacebookWorkflowCanvas
+            initialConfig={workflowConfig}
+            onConfigChange={(newCfg) => {
+              setWorkflowConfig(newCfg);
+              const updatedFmt: WorkflowFormat = { ...activeFormat, config: newCfg, updatedAt: Date.now() };
+              setActiveFormat(updatedFmt);
+              const updatedList = workflowFormats.map((f) => (f.id === activeFormat.id ? updatedFmt : f));
+              setWorkflowFormats(updatedList);
+              saveWorkflowFormatsList(updatedList);
+            }}
+          />
         </div>
       </Modal>
 

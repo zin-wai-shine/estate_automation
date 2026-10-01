@@ -4,11 +4,14 @@ import { FiX } from 'react-icons/fi';
 export interface ModalProps {
   isOpen: boolean;
   onClose: () => void;
-  title?: string;
+  title?: React.ReactNode;
   children: React.ReactNode;
   maxWidth?: string;
+  height?: string;
+  bodyPadding?: string;
   closeOnOverlayClick?: boolean;
   zIndex?: number;
+  headerExtra?: React.ReactNode;
 }
 
 export const Modal: React.FC<ModalProps> = ({
@@ -17,8 +20,11 @@ export const Modal: React.FC<ModalProps> = ({
   title,
   children,
   maxWidth = '450px',
+  height,
+  bodyPadding,
   closeOnOverlayClick = false,
   zIndex = 100000,
+  headerExtra,
 }) => {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -61,7 +67,8 @@ export const Modal: React.FC<ModalProps> = ({
         style={{
           width: '95%',
           maxWidth,
-          maxHeight: '90vh',
+          height: height || undefined,
+          maxHeight: height || '90vh',
           backgroundColor: 'var(--bg-surface)',
           border: '1px solid var(--border-color)',
           borderRadius: '0.75rem',
@@ -76,35 +83,55 @@ export const Modal: React.FC<ModalProps> = ({
         {/* Header */}
         <div
           style={{
-            padding: '1rem 1.25rem',
+            padding: '0.875rem 1.25rem',
             borderBottom: '1px solid var(--border-color)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
+            gap: '1rem',
           }}
         >
-          <h3 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-            {title}
-          </h3>
-          <button
-            onClick={onClose}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: 'var(--text-muted)',
-              fontSize: '1.125rem',
-              cursor: 'pointer',
-              display: 'inline-flex',
-              padding: '0.25rem',
-              borderRadius: '0.25rem',
-            }}
-          >
-            <FiX />
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: 1, minWidth: 0 }}>
+            {typeof title === 'string' ? (
+              <h3 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
+                {title}
+              </h3>
+            ) : (
+              title
+            )}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+            {headerExtra}
+            <button
+              onClick={onClose}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--text-muted)',
+                fontSize: '1.125rem',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                padding: '0.25rem',
+                borderRadius: '0.25rem',
+              }}
+            >
+              <FiX />
+            </button>
+          </div>
         </div>
 
         {/* Body */}
-        <div style={{ padding: '1.25rem', overflowY: 'auto', flex: 1 }}>{children}</div>
+        <div
+          style={{
+            padding: bodyPadding !== undefined ? bodyPadding : '1.25rem',
+            overflowY: 'auto',
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
+          {children}
+        </div>
       </div>
     </div>
   );
