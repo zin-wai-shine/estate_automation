@@ -1434,11 +1434,13 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
         </div>
       )}
 
-      {/* RESULTS AREA (Divided into Left: Post Content Panel & Right: Photos Panel) */}
+      {/* RESULTS AREA (Divided into Left: Content & AI Panels & Right: Photos Panel) */}
       {(caption || images.length > 0 || source) && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '1.25rem' }}>
-          {/* LEFT: POST CONTENT PANEL */}
-          <div
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '1.25rem', alignItems: 'start' }}>
+          {/* LEFT: POST CONTENT & AI GENERATOR (SEPARATE MOTHER BOXES) */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+            {/* MOTHER BOX 1: POST CONTENT PANEL */}
+            <div
             style={{
               backgroundColor: 'var(--bg-secondary)',
               border: '1px solid var(--border-color)',
@@ -1585,27 +1587,27 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                 Re-run Extraction
               </Button>
             </div>
+          </div>
 
-            {/* NEW BOX: AI Prompt Engine & Generated Listing Copy */}
-            <div
-              style={{
-                backgroundColor: 'rgba(20, 20, 20, 0.75)',
-                border: '1px solid rgba(78, 136, 255, 0.28)',
-                borderRadius: '0.75rem',
-                padding: '1rem',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '0.875rem',
-                marginTop: '0.5rem',
-                boxShadow: '0 4px 16px rgba(0, 0, 0, 0.35)',
-              }}
-            >
-              {/* Header: Title + Provider Switcher (Google AI vs OpenAI) + Status */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                    AI Prompt & Copy Generator
-                  </span>
+          {/* MOTHER BOX 2: AI PROMPT & COPY GENERATOR PANEL (SEPARATE STANDALONE BOX) */}
+          <div
+            style={{
+              backgroundColor: 'var(--bg-secondary)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '0.75rem',
+              padding: '1.25rem',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '1rem',
+              boxShadow: 'var(--shadow-sm)',
+            }}
+          >
+            {/* Header: Title + Provider Switcher (Google AI vs OpenAI) + Status */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', flexWrap: 'wrap' }}>
+                <h3 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
+                  AI Prompt & Copy Generator
+                </h3>
 
                   {/* Dual AI Provider Switcher */}
                   <div
