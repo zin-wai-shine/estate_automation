@@ -137,6 +137,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
 
   // UI helpers
   const [copiedCaption, setCopiedCaption] = useState(false);
+  const [copiedImageIndex, setCopiedImageIndex] = useState<number | null>(null);
   const [savedSuccessMsg, setSavedSuccessMsg] = useState(false);
   const [manualMode, setManualMode] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -340,6 +341,90 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
     navigator.clipboard.writeText(caption);
     setCopiedCaption(true);
     setTimeout(() => setCopiedCaption(false), 2000);
+  };
+
+  const handleCopyImage = async (imageUrl: string, index: number) => {
+    try {
+      // 1. Fetch image from URL
+      const response = await fetch(imageUrl);
+      const blob = await response.blob();
+
+      // Convert to image/png for ClipboardItem (required by Clipboard API in Chrome & Safari)
+      let pngBlob = blob;
+      if (blob.type !== 'image/png') {
+        pngBlob = await new Promise<Blob>((resolve) => {
+          const img = new window.Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.naturalWidth || img.width;
+            canvas.height = img.naturalHeight || img.height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+              resolve(blob);
+              return;
+            }
+            ctx.drawImage(img, 0, 0);
+            canvas.toBlob((b) => resolve(b || blob), 'image/png');
+          };
+          img.onerror = () => resolve(blob);
+          img.src = URL.createObjectURL(blob);
+        });
+      }
+
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          'image/png': pngBlob,
+        }),
+      ]);
+
+      setCopiedImageIndex(index);
+      setTimeout(() => setCopiedImageIndex(null), 2000);
+      addLog(`Copied photo #${String(index).padStart(2, '0')} to clipboard`, 'success');
+    } catch (err) {
+      console.warn('Direct clipboard write failed, trying canvas rendering fallback...', err);
+      try {
+        const img = new window.Image();
+        img.crossOrigin = 'anonymous';
+        await new Promise<void>((resolve, reject) => {
+          img.onload = () => resolve();
+          img.onerror = reject;
+          img.src = imageUrl;
+        });
+
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth || img.width;
+        canvas.height = img.naturalHeight || img.height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0);
+          const canvasBlob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+          if (canvasBlob) {
+            await navigator.clipboard.write([
+              new ClipboardItem({
+                'image/png': canvasBlob,
+              }),
+            ]);
+            setCopiedImageIndex(index);
+            setTimeout(() => setCopiedImageIndex(null), 2000);
+            addLog(`Copied photo #${String(index).padStart(2, '0')} to clipboard`, 'success');
+            return;
+          }
+        }
+      } catch (err2) {
+        console.warn('Canvas fallback failed, attempting URL copy...', err2);
+      }
+
+      // Ultimate fallback: copy image URL
+      try {
+        await navigator.clipboard.writeText(imageUrl);
+        setCopiedImageIndex(index);
+        setTimeout(() => setCopiedImageIndex(null), 2000);
+        addLog(`Copied photo #${String(index).padStart(2, '0')} URL to clipboard`, 'info');
+      } catch (err3) {
+        addLog(`Failed to copy photo #${index} to clipboard`, 'error');
+      }
+    }
   };
 
   const handleSaveToInbox = async () => {
@@ -1188,6 +1273,49 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                       >
                         #{String(img.index).padStart(2, '0')}
                       </span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const fullUrl = img.stored_url
+                            ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
+                            : img.source_url;
+                          handleCopyImage(fullUrl, img.index);
+                        }}
+                        title="Copy image to clipboard"
+                        style={{
+                          position: 'absolute',
+                          top: '4px',
+                          right: '4px',
+                          backgroundColor: copiedImageIndex === img.index ? '#10B981' : 'rgba(0, 0, 0, 0.75)',
+                          color: '#fff',
+                          border: '1px solid rgba(255, 255, 255, 0.3)',
+                          borderRadius: '4px',
+                          padding: '2px 6px',
+                          fontSize: '0.625rem',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '3px',
+                          backdropFilter: 'blur(4px)',
+                          boxShadow: '0 2px 4px rgba(0,0,0,0.4)',
+                          transition: 'all 0.15s ease',
+                          zIndex: 2,
+                        }}
+                      >
+                        {copiedImageIndex === img.index ? (
+                          <>
+                            <FiCheck style={{ fontSize: '0.6875rem' }} />
+                            <span>Copied</span>
+                          </>
+                        ) : (
+                          <>
+                            <FiCopy style={{ fontSize: '0.6875rem' }} />
+                            <span>Copy</span>
+                          </>
+                        )}
+                      </button>
                     </div>
                     <div style={{ padding: '0.375rem 0.5rem', fontSize: '0.6875rem' }}>
                       <div style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>
@@ -1433,9 +1561,22 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
               alt="Preview"
               style={{ maxWidth: '100%', maxHeight: '70vh', borderRadius: '0.375rem', objectFit: 'contain' }}
             />
-            <Button variant="outline" size="sm" onClick={() => setPreviewImage(null)}>
-              Close
-            </Button>
+            <div style={{ display: 'flex', gap: '0.5rem', width: '100%', justifyContent: 'center' }}>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  const url = previewImage.startsWith('/storage') ? `http://localhost:8085${previewImage}` : previewImage;
+                  handleCopyImage(url, 9999);
+                }}
+              >
+                {copiedImageIndex === 9999 ? <FiCheck /> : <FiCopy />}
+                <span>{copiedImageIndex === 9999 ? 'Copied Image!' : 'Copy Image'}</span>
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setPreviewImage(null)}>
+                Close
+              </Button>
+            </div>
           </div>
         </Modal>
       )}
