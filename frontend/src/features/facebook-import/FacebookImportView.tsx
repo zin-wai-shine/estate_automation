@@ -343,80 +343,134 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
     setTimeout(() => setCopiedCaption(false), 2000);
   };
 
-  const handleCopyImage = async (rawUrl: string, index: number) => {
-    try {
-      // 1. Determine optimal CORS-safe fetch URL
-      let fetchUrl = rawUrl;
-      if (rawUrl.startsWith('/storage')) {
-        fetchUrl = `http://localhost:8085${rawUrl}`;
-      } else if (rawUrl.includes('facebook.com') || rawUrl.includes('fbcdn.net')) {
-        fetchUrl = `http://localhost:8085/api/facebook-import/proxy-image?url=${encodeURIComponent(rawUrl)}`;
+  const handleCopyImage = async (
+    target: { index: number; url: string },
+    e?: React.MouseEvent
+  ) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+
+    const { index, url } = target;
+
+    if (!navigator.clipboard || typeof ClipboardItem === 'undefined') {
+      addLog('Clipboard image copying is not supported on this browser or connection.', 'error');
+      return;
+    }
+
+    // Function to produce a true image/png Blob
+    const producePngBlob = async (): Promise<Blob> => {
+      // 1. Try instant extraction from loaded DOM image
+      const domImg = document.getElementById(`imported-fb-photo-${index}`) as HTMLImageElement | null;
+      if (domImg && domImg.complete && domImg.naturalWidth > 0) {
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = domImg.naturalWidth;
+          canvas.height = domImg.naturalHeight;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(domImg, 0, 0);
+            const directPng = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+            if (directPng && directPng.size > 0) {
+              return directPng;
+            }
+          }
+        } catch (taintErr) {
+          console.warn('DOM canvas tainted or blocked, falling back to direct fetch:', taintErr);
+        }
       }
 
-      // 2. Fetch the image blob
+      // 2. Fetch via local storage or backend CORS proxy
+      let fetchUrl = url;
+      if (url.startsWith('/storage') || url.startsWith('/')) {
+        fetchUrl = `http://localhost:8085${url}`;
+      } else if (!url.startsWith('http://localhost:8085')) {
+        fetchUrl = `http://localhost:8085/api/facebook-import/proxy-image?url=${encodeURIComponent(url)}`;
+      }
+
       const res = await fetch(fetchUrl);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const blob = await res.blob();
+      const rawBlob = await res.blob();
 
-      // 3. Convert blob to a true PNG blob using canvas
-      // Chromium & Safari ClipboardItem strictly mandate a Blob whose blob.type is 'image/png'.
-      let pngBlob: Blob | null = null;
+      // If already image/png, return directly
+      if (rawBlob.type === 'image/png') {
+        return rawBlob;
+      }
 
+      // 3. Convert to image/png via createImageBitmap or Image element
       if (typeof createImageBitmap === 'function') {
         try {
-          const bmp = await createImageBitmap(blob);
+          const bmp = await createImageBitmap(rawBlob);
           const canvas = document.createElement('canvas');
           canvas.width = bmp.width;
           canvas.height = bmp.height;
           const ctx = canvas.getContext('2d');
           if (ctx) {
             ctx.drawImage(bmp, 0, 0);
-            pngBlob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+            const png = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+            if (png) return png;
           }
         } catch (bmpErr) {
-          console.warn('createImageBitmap failed, trying object URL fallback', bmpErr);
+          console.warn('createImageBitmap failed, using HTMLImageElement:', bmpErr);
         }
       }
 
-      if (!pngBlob) {
-        // Fallback: use HTMLImageElement with blob object URL (NO crossOrigin needed for blob:)
-        const objectUrl = URL.createObjectURL(blob);
-        try {
-          const img = new Image();
-          await new Promise<void>((resolve, reject) => {
-            img.onload = () => resolve();
-            img.onerror = () => reject(new Error('Image failed to decode from blob'));
-            img.src = objectUrl;
-          });
+      // Fallback conversion using HTMLImageElement
+      return new Promise<Blob>((resolve, reject) => {
+        const objUrl = URL.createObjectURL(rawBlob);
+        const img = new Image();
+        img.onload = () => {
+          URL.revokeObjectURL(objUrl);
           const canvas = document.createElement('canvas');
           canvas.width = img.naturalWidth || img.width;
           canvas.height = img.naturalHeight || img.height;
           const ctx = canvas.getContext('2d');
-          if (!ctx) throw new Error('No canvas 2D context');
+          if (!ctx) {
+            reject(new Error('Canvas 2D context not available'));
+            return;
+          }
           ctx.drawImage(img, 0, 0);
-          pngBlob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
-        } finally {
-          URL.revokeObjectURL(objectUrl);
-        }
-      }
+          canvas.toBlob((png) => {
+            if (png) resolve(png);
+            else reject(new Error('Failed to convert image to PNG'));
+          }, 'image/png');
+        };
+        img.onerror = () => {
+          URL.revokeObjectURL(objUrl);
+          reject(new Error('Failed to decode image'));
+        };
+        img.src = objUrl;
+      });
+    };
 
-      if (!pngBlob) {
-        throw new Error('Could not convert image to PNG format');
-      }
+    const pngPromise = producePngBlob();
 
-      // 4. Write image/png directly into system clipboard (pasting will paste the actual image, NOT text)
-      await navigator.clipboard.write([
-        new ClipboardItem({
-          'image/png': pngBlob,
-        }),
-      ]);
+    try {
+      // Primary: synchronous invocation with Promise<Blob> inside user gesture window (Safari & Chrome 97+)
+      const item = new ClipboardItem({
+        'image/png': pngPromise as any,
+      });
 
+      await navigator.clipboard.write([item]);
       setCopiedImageIndex(index);
       setTimeout(() => setCopiedImageIndex(null), 2000);
-      addLog(`Image #${String(index).padStart(2, '0')} copied! (Ready to paste image)`, 'success');
-    } catch (err: any) {
-      console.error('Failed to copy image to clipboard:', err);
-      addLog(`Failed to copy image #${index}: ${err.message || 'Clipboard permission error'}`, 'error');
+      addLog(`Image #${String(index).padStart(2, '0')} copied to clipboard! (Ready to paste image)`, 'success');
+    } catch (primaryErr: any) {
+      console.warn('Primary Promise<ClipboardItem> failed, trying resolved blob fallback:', primaryErr);
+      try {
+        const resolvedBlob = await pngPromise;
+        const item = new ClipboardItem({
+          'image/png': resolvedBlob,
+        });
+        await navigator.clipboard.write([item]);
+        setCopiedImageIndex(index);
+        setTimeout(() => setCopiedImageIndex(null), 2000);
+        addLog(`Image #${String(index).padStart(2, '0')} copied to clipboard! (Ready to paste image)`, 'success');
+      } catch (fallbackErr: any) {
+        console.error('Failed to copy image to clipboard:', fallbackErr);
+        addLog(`Failed to copy image #${index}: ${fallbackErr.message || 'Clipboard permission error'}`, 'error');
+      }
     }
   };
 
@@ -1246,6 +1300,8 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                   >
                     <div style={{ position: 'relative', height: '110px', backgroundColor: '#000' }}>
                       <img
+                        id={`imported-fb-photo-${img.index}`}
+                        crossOrigin="anonymous"
                         src={img.stored_url ? `http://localhost:8085${img.stored_url}` : img.source_url}
                         alt={`Photo ${img.index}`}
                         loading="lazy"
@@ -1254,14 +1310,17 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                       <span
                         style={{
                           position: 'absolute',
-                          top: '4px',
-                          left: '4px',
-                          backgroundColor: 'rgba(0,0,0,0.7)',
+                          top: '6px',
+                          left: '6px',
+                          backgroundColor: 'rgba(0,0,0,0.75)',
                           color: '#fff',
-                          fontSize: '0.625rem',
-                          padding: '2px 5px',
+                          fontSize: '0.6875rem',
+                          padding: '2px 6px',
                           borderRadius: '4px',
                           fontWeight: 600,
+                          backdropFilter: 'blur(4px)',
+                          boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+                          zIndex: 2,
                         }}
                       >
                         #{String(img.index).padStart(2, '0')}
@@ -1269,44 +1328,50 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                       <button
                         type="button"
                         onClick={(e) => {
-                          e.stopPropagation();
                           const fullUrl = img.stored_url
                             ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
                             : img.source_url;
-                          handleCopyImage(fullUrl, img.index);
+                          handleCopyImage({ index: img.index, url: fullUrl }, e);
                         }}
-                        title="Copy image to clipboard"
+                        title={copiedImageIndex === img.index ? 'Copied image to clipboard!' : 'Copy image to clipboard'}
+                        aria-label="Copy image"
                         style={{
                           position: 'absolute',
-                          top: '4px',
-                          right: '4px',
-                          backgroundColor: copiedImageIndex === img.index ? '#10B981' : 'rgba(0, 0, 0, 0.75)',
+                          top: '6px',
+                          right: '6px',
+                          width: '32px',
+                          height: '32px',
+                          backgroundColor: copiedImageIndex === img.index ? '#10B981' : 'rgba(15, 23, 42, 0.85)',
                           color: '#fff',
-                          border: '1px solid rgba(255, 255, 255, 0.3)',
-                          borderRadius: '4px',
-                          padding: '2px 6px',
-                          fontSize: '0.625rem',
-                          fontWeight: 600,
+                          border: copiedImageIndex === img.index ? '1px solid #059669' : '1px solid rgba(255, 255, 255, 0.35)',
+                          borderRadius: '6px',
+                          padding: 0,
                           cursor: 'pointer',
                           display: 'flex',
                           alignItems: 'center',
-                          gap: '3px',
+                          justifyContent: 'center',
                           backdropFilter: 'blur(4px)',
-                          boxShadow: '0 2px 4px rgba(0,0,0,0.4)',
+                          boxShadow: '0 2px 6px rgba(0,0,0,0.45)',
                           transition: 'all 0.15s ease',
                           zIndex: 2,
                         }}
+                        onMouseEnter={(e) => {
+                          if (copiedImageIndex !== img.index) {
+                            e.currentTarget.style.backgroundColor = 'rgba(30, 41, 59, 0.95)';
+                            e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.6)';
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (copiedImageIndex !== img.index) {
+                            e.currentTarget.style.backgroundColor = 'rgba(15, 23, 42, 0.85)';
+                            e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.35)';
+                          }
+                        }}
                       >
                         {copiedImageIndex === img.index ? (
-                          <>
-                            <FiCheck style={{ fontSize: '0.6875rem' }} />
-                            <span>Copied</span>
-                          </>
+                          <FiCheck style={{ fontSize: '18px', strokeWidth: 3 }} />
                         ) : (
-                          <>
-                            <FiCopy style={{ fontSize: '0.6875rem' }} />
-                            <span>Copy</span>
-                          </>
+                          <FiCopy style={{ fontSize: '18px' }} />
                         )}
                       </button>
                     </div>
@@ -1558,9 +1623,9 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
               <Button
                 variant="primary"
                 size="sm"
-                onClick={() => {
+                onClick={(e) => {
                   const url = previewImage.startsWith('/storage') ? `http://localhost:8085${previewImage}` : previewImage;
-                  handleCopyImage(url, 9999);
+                  handleCopyImage({ index: 9999, url }, e);
                 }}
               >
                 {copiedImageIndex === 9999 ? <FiCheck /> : <FiCopy />}
