@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"io"
+	"net/http"
 	"strings"
 	"time"
 
@@ -407,4 +408,34 @@ func UploadFacebookImportPhotos(c *fiber.Ctx) error {
 		"job_id":  jobID,
 		"images":  savedImages,
 	})
+}
+
+// ProxyFacebookImage streams an image through the backend with permissive CORS for clipboard copy
+func ProxyFacebookImage(c *fiber.Ctx) error {
+	targetURL := c.Query("url")
+	if strings.TrimSpace(targetURL) == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "url parameter required"})
+	}
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Get(targetURL)
+	if err != nil {
+		return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{"error": "Failed to fetch image"})
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to read image"})
+	}
+
+	contentType := resp.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = "image/jpeg"
+	}
+
+	c.Set("Content-Type", contentType)
+	c.Set("Access-Control-Allow-Origin", "*")
+	c.Set("Cache-Control", "public, max-age=86400")
+	return c.Send(bodyBytes)
 }

@@ -343,35 +343,68 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
     setTimeout(() => setCopiedCaption(false), 2000);
   };
 
-  const handleCopyImage = async (imageUrl: string, index: number) => {
+  const handleCopyImage = async (rawUrl: string, index: number) => {
     try {
-      // 1. Fetch image from URL
-      const response = await fetch(imageUrl);
-      const blob = await response.blob();
-
-      // Convert to image/png for ClipboardItem (required by Clipboard API in Chrome & Safari)
-      let pngBlob = blob;
-      if (blob.type !== 'image/png') {
-        pngBlob = await new Promise<Blob>((resolve) => {
-          const img = new window.Image();
-          img.crossOrigin = 'anonymous';
-          img.onload = () => {
-            const canvas = document.createElement('canvas');
-            canvas.width = img.naturalWidth || img.width;
-            canvas.height = img.naturalHeight || img.height;
-            const ctx = canvas.getContext('2d');
-            if (!ctx) {
-              resolve(blob);
-              return;
-            }
-            ctx.drawImage(img, 0, 0);
-            canvas.toBlob((b) => resolve(b || blob), 'image/png');
-          };
-          img.onerror = () => resolve(blob);
-          img.src = URL.createObjectURL(blob);
-        });
+      // 1. Determine optimal CORS-safe fetch URL
+      let fetchUrl = rawUrl;
+      if (rawUrl.startsWith('/storage')) {
+        fetchUrl = `http://localhost:8085${rawUrl}`;
+      } else if (rawUrl.includes('facebook.com') || rawUrl.includes('fbcdn.net')) {
+        fetchUrl = `http://localhost:8085/api/facebook-import/proxy-image?url=${encodeURIComponent(rawUrl)}`;
       }
 
+      // 2. Fetch the image blob
+      const res = await fetch(fetchUrl);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+
+      // 3. Convert blob to a true PNG blob using canvas
+      // Chromium & Safari ClipboardItem strictly mandate a Blob whose blob.type is 'image/png'.
+      let pngBlob: Blob | null = null;
+
+      if (typeof createImageBitmap === 'function') {
+        try {
+          const bmp = await createImageBitmap(blob);
+          const canvas = document.createElement('canvas');
+          canvas.width = bmp.width;
+          canvas.height = bmp.height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(bmp, 0, 0);
+            pngBlob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+          }
+        } catch (bmpErr) {
+          console.warn('createImageBitmap failed, trying object URL fallback', bmpErr);
+        }
+      }
+
+      if (!pngBlob) {
+        // Fallback: use HTMLImageElement with blob object URL (NO crossOrigin needed for blob:)
+        const objectUrl = URL.createObjectURL(blob);
+        try {
+          const img = new Image();
+          await new Promise<void>((resolve, reject) => {
+            img.onload = () => resolve();
+            img.onerror = () => reject(new Error('Image failed to decode from blob'));
+            img.src = objectUrl;
+          });
+          const canvas = document.createElement('canvas');
+          canvas.width = img.naturalWidth || img.width;
+          canvas.height = img.naturalHeight || img.height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) throw new Error('No canvas 2D context');
+          ctx.drawImage(img, 0, 0);
+          pngBlob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+        } finally {
+          URL.revokeObjectURL(objectUrl);
+        }
+      }
+
+      if (!pngBlob) {
+        throw new Error('Could not convert image to PNG format');
+      }
+
+      // 4. Write image/png directly into system clipboard (pasting will paste the actual image, NOT text)
       await navigator.clipboard.write([
         new ClipboardItem({
           'image/png': pngBlob,
@@ -380,50 +413,10 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
 
       setCopiedImageIndex(index);
       setTimeout(() => setCopiedImageIndex(null), 2000);
-      addLog(`Copied photo #${String(index).padStart(2, '0')} to clipboard`, 'success');
-    } catch (err) {
-      console.warn('Direct clipboard write failed, trying canvas rendering fallback...', err);
-      try {
-        const img = new window.Image();
-        img.crossOrigin = 'anonymous';
-        await new Promise<void>((resolve, reject) => {
-          img.onload = () => resolve();
-          img.onerror = reject;
-          img.src = imageUrl;
-        });
-
-        const canvas = document.createElement('canvas');
-        canvas.width = img.naturalWidth || img.width;
-        canvas.height = img.naturalHeight || img.height;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(img, 0, 0);
-          const canvasBlob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
-          if (canvasBlob) {
-            await navigator.clipboard.write([
-              new ClipboardItem({
-                'image/png': canvasBlob,
-              }),
-            ]);
-            setCopiedImageIndex(index);
-            setTimeout(() => setCopiedImageIndex(null), 2000);
-            addLog(`Copied photo #${String(index).padStart(2, '0')} to clipboard`, 'success');
-            return;
-          }
-        }
-      } catch (err2) {
-        console.warn('Canvas fallback failed, attempting URL copy...', err2);
-      }
-
-      // Ultimate fallback: copy image URL
-      try {
-        await navigator.clipboard.writeText(imageUrl);
-        setCopiedImageIndex(index);
-        setTimeout(() => setCopiedImageIndex(null), 2000);
-        addLog(`Copied photo #${String(index).padStart(2, '0')} URL to clipboard`, 'info');
-      } catch (err3) {
-        addLog(`Failed to copy photo #${index} to clipboard`, 'error');
-      }
+      addLog(`Image #${String(index).padStart(2, '0')} copied! (Ready to paste image)`, 'success');
+    } catch (err: any) {
+      console.error('Failed to copy image to clipboard:', err);
+      addLog(`Failed to copy image #${index}: ${err.message || 'Clipboard permission error'}`, 'error');
     }
   };
 
