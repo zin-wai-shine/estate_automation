@@ -716,10 +716,10 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', paddingBottom: '3rem' }}>
-      {/* Page Title & Interactive Info Icon */}
-      <div>
+      {/* Page Title & Nav Actions Bar */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
-          <FaFacebook style={{ color: '#1877F2', fontSize: '1.5rem' }} />
+          <FaFacebook style={{ color: '#1877F2', fontSize: '1.5rem', flexShrink: 0 }} />
           <h1 style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
             Facebook Post Import
           </h1>
@@ -747,27 +747,130 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
           </button>
         </div>
 
-        {showInfo && (
-          <div
+        {/* Top Header Actions: Auto Import + Advanced Toggle + Compact Live Browser */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.875rem', flexWrap: 'wrap' }}>
+          {/* Auto Import Toggle */}
+          <label
             style={{
-              marginTop: '0.5rem',
               display: 'inline-flex',
               alignItems: 'center',
               gap: '0.5rem',
-              padding: '0.4rem 0.75rem',
-              backgroundColor: 'var(--bg-secondary)',
-              border: '1px solid var(--border-color)',
-              borderRadius: '0.5rem',
               fontSize: '0.8125rem',
               color: 'var(--text-secondary)',
-              boxShadow: 'var(--shadow-sm)',
+              cursor: 'pointer',
+              userSelect: 'none',
             }}
           >
-            <FiInfo style={{ color: 'var(--accent-primary)', flexShrink: 0, fontSize: '13px' }} />
-            <span>Import property content, photos, and structured listing data from any Facebook post, group, or page.</span>
-          </div>
-        )}
+            <span>Auto Import</span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={autoImport}
+              onClick={() => setAutoImport(!autoImport)}
+              title={autoImport ? 'Auto import is enabled' : 'Auto import is disabled'}
+              style={{
+                width: '34px',
+                height: '18px',
+                backgroundColor: autoImport ? '#1877F2' : 'rgba(255, 255, 255, 0.15)',
+                borderRadius: '10px',
+                border: 'none',
+                cursor: 'pointer',
+                position: 'relative',
+                transition: 'background-color 0.2s ease',
+                padding: 0,
+                outline: 'none',
+              }}
+            >
+              <div
+                style={{
+                  width: '14px',
+                  height: '14px',
+                  backgroundColor: '#FFFFFF',
+                  borderRadius: '50%',
+                  position: 'absolute',
+                  top: '2px',
+                  left: autoImport ? '18px' : '2px',
+                  transition: 'left 0.2s ease',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                }}
+              />
+            </button>
+          </label>
+
+          {/* Advanced Settings Toggle */}
+          <button
+            type="button"
+            onClick={() => setShowAdvanced(!showAdvanced)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+              background: showAdvanced ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+              border: '1px solid',
+              borderColor: showAdvanced ? 'var(--border-color)' : 'transparent',
+              borderRadius: '0.375rem',
+              color: showAdvanced ? 'var(--text-primary)' : 'var(--text-muted)',
+              cursor: 'pointer',
+              fontSize: '0.8125rem',
+              padding: '0.25rem 0.5rem',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <FiSliders style={{ fontSize: '13px' }} />
+            <span>Advanced</span>
+            {showAdvanced ? <FiChevronUp style={{ fontSize: '12px' }} /> : <FiChevronDown style={{ fontSize: '12px' }} />}
+          </button>
+
+          {/* Adjusted Compact Live Browser Button */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              try {
+                window.open('http://localhost:6080/vnc.html?autoconnect=true&resize=scale', 'OpenClawLiveBrowser', 'width=1200,height=850,left=150,top=100');
+              } catch (e) {}
+              setShowLiveBrowserModal(true);
+            }}
+            title="Open live browser automation stream"
+            leftIcon={<FiMonitor style={{ fontSize: '14px' }} />}
+            style={{
+              height: '34px',
+              padding: '0 0.875rem',
+              fontWeight: 500,
+              fontSize: '0.8125rem',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '0.375rem',
+              whiteSpace: 'nowrap',
+              borderRadius: '0.375rem',
+            }}
+          >
+            Live Browser
+          </Button>
+        </div>
       </div>
+
+      {showInfo && (
+        <div
+          style={{
+            marginTop: '-0.5rem',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            padding: '0.4rem 0.75rem',
+            backgroundColor: 'var(--bg-secondary)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '0.5rem',
+            fontSize: '0.8125rem',
+            color: 'var(--text-secondary)',
+            boxShadow: 'var(--shadow-sm)',
+          }}
+        >
+          <FiInfo style={{ color: 'var(--accent-primary)', flexShrink: 0, fontSize: '13px' }} />
+          <span>Import property content, photos, and structured listing data from any Facebook post, group, or page.</span>
+        </div>
+      )}
 
       {/* TOP IMPORT CARD */}
       <div
@@ -779,87 +882,14 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
           display: 'flex',
           flexDirection: 'column',
           gap: '0.875rem',
+          boxShadow: 'var(--shadow-sm)',
         }}
       >
-        {/* Header: Label & Secondary Controls */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
-          <span style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--text-primary)' }}>
-            Facebook Post URL
-          </span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
-            {/* Auto Import Toggle (Clean switch, no redundant text badge) */}
-            <label
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem',
-                fontSize: '0.8125rem',
-                color: 'var(--text-secondary)',
-                cursor: 'pointer',
-                userSelect: 'none',
-              }}
-            >
-              <span>Auto Import</span>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={autoImport}
-                onClick={() => setAutoImport(!autoImport)}
-                title={autoImport ? 'Auto import is enabled' : 'Auto import is disabled'}
-                style={{
-                  width: '36px',
-                  height: '20px',
-                  backgroundColor: autoImport ? '#1877F2' : 'rgba(255, 255, 255, 0.15)',
-                  borderRadius: '10px',
-                  border: 'none',
-                  cursor: 'pointer',
-                  position: 'relative',
-                  transition: 'background-color 0.2s ease',
-                  padding: 0,
-                  outline: 'none',
-                }}
-              >
-                <div
-                  style={{
-                    width: '16px',
-                    height: '16px',
-                    backgroundColor: '#FFFFFF',
-                    borderRadius: '50%',
-                    position: 'absolute',
-                    top: '2px',
-                    left: autoImport ? '18px' : '2px',
-                    transition: 'left 0.2s ease',
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
-                  }}
-                />
-              </button>
-            </label>
-
-            {/* Advanced Settings Toggle */}
-            <button
-              type="button"
-              onClick={() => setShowAdvanced(!showAdvanced)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.35rem',
-                background: 'transparent',
-                border: 'none',
-                color: showAdvanced ? 'var(--text-primary)' : 'var(--text-muted)',
-                cursor: 'pointer',
-                fontSize: '0.8125rem',
-                padding: '2px 4px',
-                transition: 'color 0.15s ease',
-              }}
-            >
-              <FiSliders style={{ fontSize: '13px' }} />
-              <span>Advanced</span>
-              {showAdvanced ? <FiChevronUp style={{ fontSize: '12px' }} /> : <FiChevronDown style={{ fontSize: '12px' }} />}
-            </button>
-          </div>
+        <div style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--text-primary)' }}>
+          Facebook Post URL
         </div>
 
-        {/* Unified Input Bar & Action Buttons */}
+        {/* Unified Input Bar & Import Button */}
         <div style={{ display: 'flex', gap: '0.625rem', alignItems: 'center', flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: '280px' }}>
             <Input
@@ -902,6 +932,13 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
             variant="primary"
             onClick={handleStartImport}
             disabled={!url.trim() || isProcessing}
+            leftIcon={
+              isProcessing ? (
+                <FiRefreshCw className="spin" style={{ animation: 'spin 1s linear infinite', fontSize: '15px' }} />
+              ) : (
+                <FiDownload style={{ fontSize: '15px' }} />
+              )
+            }
             style={{
               height: '42px',
               paddingLeft: '1.25rem',
@@ -918,44 +955,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
               borderRadius: '0.5rem',
             }}
           >
-            {isProcessing ? (
-              <>
-                <FiRefreshCw className="spin" style={{ animation: 'spin 1s linear infinite', fontSize: '15px', flexShrink: 0 }} />
-                <span>Importing...</span>
-              </>
-            ) : (
-              <>
-                <FiDownload style={{ fontSize: '15px', flexShrink: 0 }} />
-                <span>Import Post</span>
-              </>
-            )}
-          </Button>
-
-          <Button
-            variant="outline"
-            onClick={() => {
-              try {
-                window.open('http://localhost:6080/vnc.html?autoconnect=true&resize=scale', 'OpenClawLiveBrowser', 'width=1200,height=850,left=150,top=100');
-              } catch (e) {}
-              setShowLiveBrowserModal(true);
-            }}
-            title="Open live browser automation stream"
-            style={{
-              height: '42px',
-              paddingLeft: '1.25rem',
-              paddingRight: '1.25rem',
-              fontWeight: 500,
-              fontSize: '0.875rem',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '0.5rem',
-              whiteSpace: 'nowrap',
-              borderRadius: '0.5rem',
-            }}
-          >
-            <FiMonitor style={{ fontSize: '15px', flexShrink: 0 }} />
-            <span>Live Browser</span>
+            {isProcessing ? 'Importing...' : 'Import Post'}
           </Button>
         </div>
 
