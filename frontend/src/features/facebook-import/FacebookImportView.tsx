@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import type { Property } from '../../types';
 import { Button } from '../../components/ui/Button';
 import { Select } from '../../components/ui/Select';
@@ -146,6 +147,13 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
   const [showRawJsonModal, setShowRawJsonModal] = useState(false);
   const [showLiveBrowserModal, setShowLiveBrowserModal] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+
+  // Top Nav Bar Portal Target
+  const [headerActionEl, setHeaderActionEl] = useState<HTMLElement | null>(null);
+
+  useEffect(() => {
+    setHeaderActionEl(document.getElementById('header-action-portal'));
+  }, []);
 
   // Status & Pipeline
   const [isProcessing, setIsProcessing] = useState(false);
@@ -716,8 +724,115 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', paddingBottom: '3rem' }}>
-      {/* Page Title & Nav Actions Bar */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+      {/* Top Nav Bar Portal Actions (Directly inside top navigation bar) */}
+      {headerActionEl &&
+        createPortal(
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexShrink: 0 }}>
+            {/* Auto Import Toggle */}
+            <label
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.375rem',
+                fontSize: '0.75rem',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                userSelect: 'none',
+              }}
+            >
+              <span>Auto Import</span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={autoImport}
+                onClick={() => setAutoImport(!autoImport)}
+                title={autoImport ? 'Auto import is enabled' : 'Auto import is disabled'}
+                style={{
+                  width: '30px',
+                  height: '16px',
+                  backgroundColor: autoImport ? '#1877F2' : 'rgba(255, 255, 255, 0.15)',
+                  borderRadius: '10px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  position: 'relative',
+                  transition: 'background-color 0.2s ease',
+                  padding: 0,
+                  outline: 'none',
+                }}
+              >
+                <div
+                  style={{
+                    width: '12px',
+                    height: '12px',
+                    backgroundColor: '#FFFFFF',
+                    borderRadius: '50%',
+                    position: 'absolute',
+                    top: '2px',
+                    left: autoImport ? '16px' : '2px',
+                    transition: 'left 0.2s ease',
+                    boxShadow: '0 1px 2px rgba(0,0,0,0.3)',
+                  }}
+                />
+              </button>
+            </label>
+
+            {/* Advanced Settings Toggle */}
+            <button
+              type="button"
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.3rem',
+                background: showAdvanced ? 'rgba(255, 255, 255, 0.1)' : 'transparent',
+                border: '1px solid',
+                borderColor: showAdvanced ? 'var(--border-color)' : 'transparent',
+                borderRadius: '0.375rem',
+                color: showAdvanced ? 'var(--text-primary)' : 'var(--text-muted)',
+                cursor: 'pointer',
+                fontSize: '0.75rem',
+                padding: '0.2rem 0.45rem',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              <FiSliders style={{ fontSize: '12px' }} />
+              <span>Advanced</span>
+              {showAdvanced ? <FiChevronUp style={{ fontSize: '11px' }} /> : <FiChevronDown style={{ fontSize: '11px' }} />}
+            </button>
+
+            {/* Compact Live Browser Button */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                try {
+                  window.open('http://localhost:6080/vnc.html?autoconnect=true&resize=scale', 'OpenClawLiveBrowser', 'width=1200,height=850,left=150,top=100');
+                } catch (e) {}
+                setShowLiveBrowserModal(true);
+              }}
+              title="Open live browser automation stream"
+              leftIcon={<FiMonitor style={{ fontSize: '13px' }} />}
+              style={{
+                height: '30px',
+                padding: '0 0.625rem',
+                fontWeight: 500,
+                fontSize: '0.75rem',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.375rem',
+                whiteSpace: 'nowrap',
+                borderRadius: '0.375rem',
+              }}
+            >
+              Live Browser
+            </Button>
+          </div>,
+          headerActionEl
+        )}
+
+      {/* Page Title & Interactive Info Icon */}
+      <div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
           <FaFacebook style={{ color: '#1877F2', fontSize: '1.5rem', flexShrink: 0 }} />
           <h1 style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
@@ -745,109 +860,6 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
           >
             <FiInfo style={{ fontSize: '13px' }} />
           </button>
-        </div>
-
-        {/* Top Header Actions: Auto Import + Advanced Toggle + Compact Live Browser */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.875rem', flexWrap: 'wrap' }}>
-          {/* Auto Import Toggle */}
-          <label
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              fontSize: '0.8125rem',
-              color: 'var(--text-secondary)',
-              cursor: 'pointer',
-              userSelect: 'none',
-            }}
-          >
-            <span>Auto Import</span>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={autoImport}
-              onClick={() => setAutoImport(!autoImport)}
-              title={autoImport ? 'Auto import is enabled' : 'Auto import is disabled'}
-              style={{
-                width: '34px',
-                height: '18px',
-                backgroundColor: autoImport ? '#1877F2' : 'rgba(255, 255, 255, 0.15)',
-                borderRadius: '10px',
-                border: 'none',
-                cursor: 'pointer',
-                position: 'relative',
-                transition: 'background-color 0.2s ease',
-                padding: 0,
-                outline: 'none',
-              }}
-            >
-              <div
-                style={{
-                  width: '14px',
-                  height: '14px',
-                  backgroundColor: '#FFFFFF',
-                  borderRadius: '50%',
-                  position: 'absolute',
-                  top: '2px',
-                  left: autoImport ? '18px' : '2px',
-                  transition: 'left 0.2s ease',
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
-                }}
-              />
-            </button>
-          </label>
-
-          {/* Advanced Settings Toggle */}
-          <button
-            type="button"
-            onClick={() => setShowAdvanced(!showAdvanced)}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '0.35rem',
-              background: showAdvanced ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
-              border: '1px solid',
-              borderColor: showAdvanced ? 'var(--border-color)' : 'transparent',
-              borderRadius: '0.375rem',
-              color: showAdvanced ? 'var(--text-primary)' : 'var(--text-muted)',
-              cursor: 'pointer',
-              fontSize: '0.8125rem',
-              padding: '0.25rem 0.5rem',
-              transition: 'all 0.15s ease',
-            }}
-          >
-            <FiSliders style={{ fontSize: '13px' }} />
-            <span>Advanced</span>
-            {showAdvanced ? <FiChevronUp style={{ fontSize: '12px' }} /> : <FiChevronDown style={{ fontSize: '12px' }} />}
-          </button>
-
-          {/* Adjusted Compact Live Browser Button */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              try {
-                window.open('http://localhost:6080/vnc.html?autoconnect=true&resize=scale', 'OpenClawLiveBrowser', 'width=1200,height=850,left=150,top=100');
-              } catch (e) {}
-              setShowLiveBrowserModal(true);
-            }}
-            title="Open live browser automation stream"
-            leftIcon={<FiMonitor style={{ fontSize: '14px' }} />}
-            style={{
-              height: '34px',
-              padding: '0 0.875rem',
-              fontWeight: 500,
-              fontSize: '0.8125rem',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '0.375rem',
-              whiteSpace: 'nowrap',
-              borderRadius: '0.375rem',
-            }}
-          >
-            Live Browser
-          </Button>
         </div>
       </div>
 
