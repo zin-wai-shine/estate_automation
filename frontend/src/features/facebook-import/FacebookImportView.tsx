@@ -1391,166 +1391,23 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
         </div>
       )}
 
-      {/* REVIEW & EDITABLE PROPERTY DETAILS SCREEN */}
-      {(source || caption || propertyData.project_name || propertyData.price || manualMode) && (
+      {/* IMPORT ACTION BAR */}
+      {(source || caption || images.length > 0 || manualMode) && (
         <div
           style={{
             backgroundColor: 'var(--bg-secondary)',
             border: '1px solid var(--border-color)',
             borderRadius: '0.75rem',
-            padding: '1.25rem',
+            padding: '1rem 1.25rem',
             display: 'flex',
-            flexDirection: 'column',
-            gap: '1.25rem',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '0.75rem',
             boxShadow: 'var(--shadow-sm)',
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
-              <Badge variant="success" size="md">
-                IMPORT COMPLETE
-              </Badge>
-              <h3 style={{ fontSize: '1.125rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
-                Review Extracted Property Fields
-              </h3>
-            </div>
-            <span style={{ fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
-              Verify and adjust extracted values before saving to your Property Inbox
-            </span>
-          </div>
-
-          {/* Editable Property Fields Grid */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-              gap: '1rem',
-            }}
-          >
-            <div>
-              <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Project Name</label>
-              <Input
-                value={propertyData.project_name}
-                onChange={(e) => setPropertyData({ ...propertyData, project_name: e.target.value })}
-                placeholder="e.g. Supalai Veranda Sukhumvit 117"
-              />
-            </div>
-
-            <div>
-              <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Listing Type</label>
-              <select
-                value={propertyData.listing_type}
-                onChange={(e) => setPropertyData({ ...propertyData, listing_type: e.target.value })}
-                style={{
-                  width: '100%',
-                  height: '38px',
-                  backgroundColor: 'var(--bg-main)',
-                  color: 'var(--text-primary)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: '0.375rem',
-                  padding: '0 0.75rem',
-                  fontSize: '0.875rem',
-                }}
-              >
-                <option value="RENT">Rent</option>
-                <option value="SALE">Sale</option>
-                <option value="RENT_AND_SALE">Rent & Sale</option>
-              </select>
-            </div>
-
-            <div>
-              <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Price (THB/mo or Total)</label>
-              <Input
-                value={propertyData.price}
-                onChange={(e) => setPropertyData({ ...propertyData, price: e.target.value })}
-                placeholder="e.g. 9500"
-              />
-            </div>
-
-            <div>
-              <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Bedrooms</label>
-              <Input
-                value={propertyData.bedrooms}
-                onChange={(e) => setPropertyData({ ...propertyData, bedrooms: e.target.value })}
-                placeholder="e.g. 1 (or 0 for Studio)"
-              />
-            </div>
-
-            <div>
-              <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Bathrooms</label>
-              <Input
-                value={propertyData.bathrooms}
-                onChange={(e) => setPropertyData({ ...propertyData, bathrooms: e.target.value })}
-                placeholder="e.g. 1"
-              />
-            </div>
-
-            <div>
-              <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Size (sqm)</label>
-              <Input
-                value={propertyData.size_sqm}
-                onChange={(e) => setPropertyData({ ...propertyData, size_sqm: e.target.value })}
-                placeholder="e.g. 28"
-              />
-            </div>
-
-            <div>
-              <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Floor</label>
-              <Input
-                value={propertyData.floor}
-                onChange={(e) => setPropertyData({ ...propertyData, floor: e.target.value })}
-                placeholder="e.g. 15"
-              />
-            </div>
-
-            <div>
-              <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Nearest Transit (BTS/MRT)</label>
-              <Input
-                value={propertyData.nearest_transit}
-                onChange={(e) => setPropertyData({ ...propertyData, nearest_transit: e.target.value })}
-                placeholder="e.g. BTS Pu Chao"
-              />
-            </div>
-
-            <div>
-              <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Furnishing</label>
-              <Input
-                value={propertyData.furnished}
-                onChange={(e) => setPropertyData({ ...propertyData, furnished: e.target.value })}
-                placeholder="e.g. Fully furnished"
-              />
-            </div>
-
-            <div>
-              <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Contact Phone</label>
-              <Input
-                value={propertyData.contact_phone}
-                onChange={(e) => setPropertyData({ ...propertyData, contact_phone: e.target.value })}
-                placeholder="e.g. 081-234-5678"
-              />
-            </div>
-
-            <div>
-              <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Contact Line ID</label>
-              <Input
-                value={propertyData.contact_line}
-                onChange={(e) => setPropertyData({ ...propertyData, contact_line: e.target.value })}
-                placeholder="e.g. @estateagent"
-              />
-            </div>
-          </div>
-
-          {/* Action Button Row */}
-          <div
-            style={{
-              display: 'flex',
-              gap: '0.75rem',
-              justifyContent: 'flex-end',
-              flexWrap: 'wrap',
-              borderTop: '1px solid var(--border-color)',
-              paddingTop: '1rem',
-            }}
-          >
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
             <Button variant="danger" size="sm" onClick={handleDeleteImport}>
               <FiTrash2 style={{ marginRight: '0.25rem' }} /> DELETE IMPORT
             </Button>
@@ -1561,6 +1418,9 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
             >
               <FiExternalLink style={{ marginRight: '0.25rem' }} /> OPEN ORIGINAL POST
             </Button>
+          </div>
+
+          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
             <Button variant="outline" size="sm" onClick={handleRerunExtraction}>
               <FiRefreshCw style={{ marginRight: '0.25rem' }} /> RE-EXTRACT
             </Button>
