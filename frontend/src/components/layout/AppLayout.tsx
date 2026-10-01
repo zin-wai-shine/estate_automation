@@ -16,6 +16,7 @@ import {
   FiX,
   FiZap
 } from 'react-icons/fi';
+import { FaFacebook } from 'react-icons/fa';
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -47,6 +48,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: <FiHome /> },
     { id: 'add-url', label: 'Add URL', icon: <FiPlusSquare /> },
+    { id: 'facebook-import', label: 'Facebook Import', icon: <FaFacebook /> },
     { id: 'inbox', label: 'Property Inbox', icon: <FiPlusSquare /> },
     { id: 'review', label: 'Review Center', icon: <FiCheckCircle /> },
     { id: 'projects', label: 'Projects / Condos', icon: <FiFolder /> },

@@ -45,7 +45,22 @@ export const FacebookLoginView: React.FC<FacebookLoginViewProps> = ({
   // Launch external browser window on desktop
   const launchExternalBrowser = async () => {
     setIsLaunchingBrowser(true);
-    setNotification('Opening external Google Chrome / Chromium browser on your desktop...');
+    setNotification('Opening external browser window on your Mac desktop...');
+
+    // Open real external browser window on Mac desktop immediately (ensures user gesture is captured)
+    try {
+      const extWin = window.open(
+        'https://www.facebook.com/login',
+        'FacebookExternalLogin',
+        'width=1020,height=800,left=200,top=100,menubar=no,status=no,toolbar=no'
+      );
+      if (extWin) {
+        extWin.focus();
+      }
+    } catch (e) {
+      console.warn('Popup blocked or error:', e);
+    }
+
     try {
       const res = await fetch('http://localhost:8085/api/social/facebook/browser/connect', {
         method: 'POST',
@@ -58,12 +73,10 @@ export const FacebookLoginView: React.FC<FacebookLoginViewProps> = ({
         setStep(4);
         setNotification('Facebook Session Connected! Persistent credentials stored.');
       } else {
-        setNotification('Real Google Chrome window opened on your desktop at https://www.facebook.com/login. Please log in there.');
+        setNotification('External browser window opened on your desktop at https://www.facebook.com/login. Please log in there.');
       }
     } catch (e) {
       setIsLaunchingBrowser(false);
-      // Fallback: open popup window directly
-      window.open('https://www.facebook.com/login', 'FacebookLogin', 'width=900,height=750');
       setNotification('Opened Facebook login in external browser window. Log in there to proceed.');
     }
   };

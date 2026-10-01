@@ -15,6 +15,7 @@ import { AutomationSettingsView } from './features/automation/AutomationSettings
 import { TestingView } from './features/testing/TestingView';
 import { SettingsView } from './features/settings/SettingsView';
 import { FacebookLoginView } from './features/auth/FacebookLoginView';
+import { FacebookImportView } from './features/facebook-import/FacebookImportView';
 import type { Property } from './types';
 
 const initialProperties: Property[] = [
@@ -202,6 +203,7 @@ const MainApp: React.FC = () => {
         <Route path="/" element={<Navigate to="/add-url" replace />} />
         <Route path="/dashboard" element={<DashboardView properties={properties} onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
         <Route path="/add-url" element={<AddUrlView properties={properties} onAddProperty={handleAddProperty} onProcessBatch={handleProcessBatch} />} />
+        <Route path="/facebook-import" element={<FacebookImportView onSaveToInbox={(prop) => handleAddProperty(prop.sourceUrl || '', prop)} onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
         <Route path="/inbox" element={<PropertyInboxView properties={properties} onProcessProperty={(id) => handleProcessBatch([id])} onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
         <Route path="/review" element={<ReviewCenterView properties={properties} onApproveProperty={handleApproveProperty} onRejectProperty={handleRejectProperty} />} />
         <Route path="/projects" element={<ProjectsView />} />

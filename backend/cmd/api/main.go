@@ -69,6 +69,18 @@ func main() {
 	fb.Get("/auth/callback", handlers.HandleFacebookCallback)
 	fb.Post("/disconnect", handlers.DisconnectFacebook)
 
+	// Standalone Facebook Post Importer Routes
+	fbImport := app.Group("/api/facebook-import")
+	fbImport.Post("/resolve", handlers.ResolveFacebookURL)
+	fbImport.Post("/extract", handlers.ExtractFacebookPost)
+	fbImport.Post("/browser/start", handlers.StartFacebookBrowser)
+	fbImport.Get("/browser/status", handlers.GetFacebookBrowserStatus)
+	fbImport.Post("/browser/continue", handlers.ContinueFacebookBrowser)
+	fbImport.Post("/analyze", handlers.AnalyzePropertyContent)
+	fbImport.Post("/save", handlers.SaveToPropertyInbox)
+	fbImport.Get("/jobs/:id", handlers.GetFacebookImportJob)
+	fbImport.Post("/upload-photos", handlers.UploadFacebookImportPhotos)
+
 	// Property Import & Multi-Provider Pipeline Routes
 	props := app.Group("/api/properties")
 	props.Post("/", handlers.CreateProperty)

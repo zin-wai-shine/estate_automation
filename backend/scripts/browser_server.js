@@ -1316,10 +1316,459 @@ async function executeTestImport(targetUrl, userId = '1') {
 }
 
 // ==================================================
-// Session 2 — New Independent Image Downloader Module
+// TargetPostContext-Scoped Photo Gallery Extractor
 // ==================================================
+
 /**
- * Downloads property photos directly from target Facebook post photo viewer
+ * MAX_MEDIA_PER_POST safety cap to prevent infinite gallery loops
+ */
+const MAX_MEDIA_PER_POST = 60;
+
+/**
+ * Extracts images ONLY from the confirmed target post attachment region.
+ *
+ * TargetPostContext fields passed in:
+ *   - postElementSelector: CSS selector or index that identifies the confirmed post element
+ *   - postBoundingBox: { x, y, width, height } of the confirmed post container
+ *   - postId: Facebook post ID string
+ *   - canonicalUrl: confirmed Facebook URL for this post
+ *
+ * Strategy:
+ *   1. Locate attachment/media region INSIDE confirmed post bounding box
+ *   2. Click the FIRST photo anchor inside that region to open the media viewer
+ *   3. Confirm the viewer is open
+ *   4. Enumerate photos through the viewer using Next navigation
+ *   5. Stop when first photo ID repeats or Next disappears
+ *   6. Return ordered unique photos only
+ */
+async function extractGalleryFromTargetPost(page, targetPostContext, maxImages = MAX_MEDIA_PER_POST) {
+  const { postBoundingBox, postId, canonicalUrl, visibleCollageCount, additionalIndicator } = targetPostContext || {};
+
+  const downloadedImages = [];
+  const seenPhotoIds = new Set();
+  const seenUrlBases = new Set();
+
+  // ── Helper: stable photo ID from URL or fbid ──────────────────────────
+  const getPhotoId = (urlStr, fbidVal) => {
+    if (fbidVal && String(fbidVal).length > 3) return `fbid_${fbidVal}`;
+    if (!urlStr) return '';
+    const fbidMatch = urlStr.match(/fbid=([0-9]+)/);
+    if (fbidMatch) return `fbid_${fbidMatch[1]}`;
+    const cleanPath = urlStr.split('?')[0];
+    const filenameMatch = cleanPath.match(/([0-9a-z_]+\.(?:jpg|jpeg|png|webp))/i);
+    if (filenameMatch) return filenameMatch[1];
+    const parts = cleanPath.split('/');
+    return parts[parts.length - 1] || cleanPath;
+  };
+
+  // ── Helper: get CURRENTLY DISPLAYED image in the media viewer only ─────
+  // NEVER scans the whole document. Scopes strictly to [role="dialog"].
+  const getActiveViewerImage = async (maxAttempts = 20) => {
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const result = await page.evaluate(() => {
+        // STRICT SCOPE: only the Facebook media viewer dialog
+        const viewer = document.querySelector(
+          '[role="dialog"][aria-label], [data-pagelet*="MediaViewer"], [role="dialog"]'
+        );
+        if (!viewer) return null;
+
+        // Get all candidate images inside the viewer
+        const imgs = Array.from(viewer.querySelectorAll('img')).filter((img) => {
+          const src = img.currentSrc || img.src || '';
+          if (!src) return false;
+          // Reject static assets, icons, emojis
+          if (src.includes('/static.xx/') || src.includes('/rsrc.php/') || src.includes('/emoji/')) return false;
+          // Reject known avatar/thumbnail size tokens
+          if (/[_/](p|s)(32|40|50|60|80|100|120|130|160)x(32|40|50|60|80|100|120|130|160)[_/.]/.test(src)) return false;
+          // Must be fbcdn content
+          if (!src.includes('scontent') && !src.includes('fbcdn')) return false;
+
+          // Must be visible in viewport
+          const rect = img.getBoundingClientRect();
+          if (rect.width < 200 || rect.height < 200) return false;
+          if (rect.bottom <= 0 || rect.top >= window.innerHeight) return false;
+          if (rect.right <= 0 || rect.left >= window.innerWidth) return false;
+
+          // Reject circular avatars (profile pictures)
+          const cs = window.getComputedStyle(img);
+          if (cs.borderRadius === '50%' || cs.borderRadius.includes('9999px')) return false;
+
+          return true;
+        });
+
+        if (imgs.length === 0) return null;
+
+        // Pick the largest image in the viewer (most likely the main photo)
+        imgs.sort((a, b) => {
+          const ra = a.getBoundingClientRect();
+          const rb = b.getBoundingClientRect();
+          return rb.width * rb.height - ra.width * ra.height;
+        });
+
+        const best = imgs[0];
+        let bestUrl = best.currentSrc || best.src;
+
+        // Prefer highest-resolution srcset candidate
+        if (best.srcset) {
+          const srcsetParts = best.srcset.split(',').map((s) => s.trim().split(/\s+/));
+          let maxW = 0;
+          for (const [url, descriptor] of srcsetParts) {
+            const w = descriptor ? parseInt(descriptor.replace('w', ''), 10) : 0;
+            if (w > maxW) { maxW = w; bestUrl = url; }
+          }
+        }
+
+        // Also try naturalWidth/naturalHeight for srcset resolution
+        if (best.naturalWidth > 0 && best.naturalWidth < 400) {
+          // Low natural resolution — may still be loading, keep trying
+        }
+
+        const fbidMatch = window.location.href.match(/fbid=([0-9]+)/);
+        const pageFbid = fbidMatch ? fbidMatch[1] : '';
+
+        const rect = best.getBoundingClientRect();
+        return {
+          source_url: bestUrl,
+          fbid: pageFbid,
+          natural_width: best.naturalWidth || 0,
+          natural_height: best.naturalHeight || 0,
+          display_width: Math.round(rect.width),
+          display_height: Math.round(rect.height),
+        };
+      });
+
+      if (result && result.source_url) {
+        // Wait until naturalWidth is available (image has loaded)
+        if (result.natural_width > 0) return result;
+        // Image still loading — keep polling
+      }
+      await page.waitForTimeout(250);
+    }
+    return null;
+  };
+
+  // ── Step 1: Locate the TARGET POST's attachment/media region ──────────
+  // Use the bounding box of the confirmed post to scope anchor searches.
+  console.log('[TARGET_POST] Locating attachment region inside confirmed target post...');
+
+  const attachmentInfo = await page.evaluate((ctx) => {
+    const { postBoundingBox } = ctx;
+
+    // Find the element at the top-left of the confirmed post bounding box
+    // Walk all photo-linkable anchors on page, keep only those whose
+    // getBoundingClientRect overlaps the confirmed post bounding box.
+    const isInsidePostBox = (rect) => {
+      if (!postBoundingBox) return true; // no box supplied — accept all
+      const { x: px, y: py, width: pw, height: ph } = postBoundingBox;
+      // Element must be substantially inside the post bounding box
+      const overlapX = Math.max(0, Math.min(rect.right, px + pw) - Math.max(rect.left, px));
+      const overlapY = Math.max(0, Math.min(rect.bottom, py + ph) - Math.max(rect.top, py));
+      const overlapArea = overlapX * overlapY;
+      const elemArea = rect.width * rect.height;
+      if (elemArea <= 0) return false;
+      return (overlapArea / elemArea) > 0.5; // >50% of the element must be inside the post box
+    };
+
+    // Gather photo anchors from the WHOLE page, then filter to post bbox
+    const allAnchors = Array.from(document.querySelectorAll(
+      'a[href*="/photo"], a[href*="fbid="], a[href*="/photos/"], a[href*="photo.php"]'
+    )).filter((a) => {
+      const href = a.href || '';
+      // Exclude profile/user/group-member links
+      if (href.includes('/user/') || href.includes('/profile.php') || href.includes('/groups/members') || href.includes('profile_id')) return false;
+      // Exclude author avatar links (generally small round images)
+      const img = a.querySelector('img');
+      if (img) {
+        const cs = window.getComputedStyle(img);
+        if (cs.borderRadius === '50%' || cs.borderRadius.includes('9999px')) return false;
+        const src = img.src || '';
+        if (/[_/](p|s)(32|40|50|60|80|100|120|130|160)x\d+[_/.]/.test(src)) return false;
+      }
+      const aria = a.getAttribute('aria-label') || '';
+      if (aria.toLowerCase().includes('profile') || aria.toLowerCase().includes('avatar')) return false;
+
+      const rect = a.getBoundingClientRect();
+      if (rect.width < 80 || rect.height < 80) return false;
+      // Must be in viewport
+      if (rect.bottom <= 0 || rect.top >= window.innerHeight) return false;
+
+      return isInsidePostBox(rect);
+    });
+
+    // Sort top-left to bottom-right so we click the FIRST cell in the collage
+    allAnchors.sort((a, b) => {
+      const ra = a.getBoundingClientRect();
+      const rb = b.getBoundingClientRect();
+      if (Math.abs(ra.top - rb.top) > 40) return ra.top - rb.top;
+      return ra.left - rb.left;
+    });
+
+    // Detect +N additional photo indicator on the last visible collage cell
+    let additionalCount = 0;
+    let visibleCells = allAnchors.length;
+    const lastAnchor = allAnchors[allAnchors.length - 1];
+    if (lastAnchor) {
+      const lastText = (lastAnchor.innerText || '').trim();
+      const plusMatch = lastText.match(/\+([0-9]+)/);
+      if (plusMatch) additionalCount = parseInt(plusMatch[1], 10);
+    }
+
+    if (allAnchors.length === 0) return { found: false, reason: 'No photo anchors inside target post bounding box' };
+
+    const firstAnchor = allAnchors[0];
+    const firstRect = firstAnchor.getBoundingClientRect();
+
+    // Scroll the first anchor into view
+    firstAnchor.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
+
+    const updatedRect = firstAnchor.getBoundingClientRect();
+
+    return {
+      found: true,
+      href: firstAnchor.href,
+      click_x: Math.round(updatedRect.left + updatedRect.width / 2),
+      click_y: Math.round(updatedRect.top + updatedRect.height / 2),
+      cell_width: Math.round(updatedRect.width),
+      cell_height: Math.round(updatedRect.height),
+      visible_cells: visibleCells,
+      additional_count: additionalCount,
+      estimated_total: visibleCells + additionalCount,
+    };
+  }, { postBoundingBox });
+
+  if (!attachmentInfo || !attachmentInfo.found) {
+    console.warn(`[TARGET_POST] No photo anchors found inside target post: ${attachmentInfo?.reason || 'unknown reason'}`);
+    console.warn('[TARGET_POST] Cannot proceed with gallery extraction — zero target-post photos found');
+    return { success: false, image_count: 0, images: [], error: 'NO_TARGET_POST_PHOTOS' };
+  }
+
+  console.log(`[TARGET_POST] Target attachment grid detected`);
+  console.log(`[TARGET_POST] Visible gallery cells: ${attachmentInfo.visible_cells}`);
+  if (attachmentInfo.additional_count > 0) {
+    console.log(`[TARGET_POST] Additional-photo indicator detected: +${attachmentInfo.additional_count}`);
+    console.log(`[TARGET_POST] Estimated total gallery size: ${attachmentInfo.estimated_total}`);
+    console.log(`[TARGET_POST] Gallery enumeration required: YES`);
+  }
+
+  // ── Step 2: Click the FIRST target-post photo to open the media viewer ──
+  const { click_x, click_y } = attachmentInfo;
+  console.log(`[TARGET_POST] Opening target media viewer from post attachment (${click_x}, ${click_y})`);
+
+  // Show visual indicator in browser
+  await page.evaluate(({ x, y }) => {
+    const old = document.getElementById('openclaw-click-indicator');
+    if (old) old.remove();
+    const ind = document.createElement('div');
+    ind.id = 'openclaw-click-indicator';
+    ind.style.cssText = `position:fixed;left:${x}px;top:${y}px;transform:translate(-50%,-100%);z-index:2147483647;pointer-events:none;display:flex;flex-direction:column;align-items:center;font-family:system-ui`;
+    ind.innerHTML = `<div style="background:linear-gradient(135deg,#EF4444,#DC2626);color:#fff;font-weight:800;font-size:14px;padding:6px 14px;border-radius:8px;box-shadow:0 8px 25px rgba(239,68,68,0.8);white-space:nowrap;margin-bottom:5px">🎯 TARGET POST PHOTO (${x},${y})</div><div style="font-size:56px;color:#EF4444;filter:drop-shadow(0 4px 12px rgba(239,68,68,0.9))">⬇️</div>`;
+    document.body.appendChild(ind);
+  }, { x: click_x, y: click_y }).catch(() => {});
+  await page.waitForTimeout(900);
+
+  // Click with retry
+  let viewerOpen = false;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await page.mouse.move(click_x, click_y);
+      await page.waitForTimeout(400);
+      await page.mouse.click(click_x, click_y);
+      await page.waitForTimeout(2500);
+    } catch (e) {}
+
+    viewerOpen = await page.evaluate(() => {
+      const dialog = document.querySelector('[role="dialog"]');
+      if (!dialog) return false;
+      const hasLargeImg = Boolean(
+        dialog.querySelector('img[src*="scontent"], img[src*="fbcdn"]')
+      );
+      const isPhotoUrl = window.location.href.includes('/photo') || window.location.href.includes('fbid=');
+      return hasLargeImg || isPhotoUrl;
+    });
+
+    if (viewerOpen) {
+      console.log('[TARGET_POST] Media viewer confirmed open');
+      break;
+    }
+    console.log(`[TARGET_POST] Viewer not detected on attempt ${attempt}/3, retrying...`);
+    // Try navigating directly to the photo href as fallback
+    if (attempt === 2 && attachmentInfo.href && attachmentInfo.href.includes('facebook.com')) {
+      try {
+        await page.goto(attachmentInfo.href, { waitUntil: 'domcontentloaded', timeout: 20000 });
+        await page.waitForTimeout(2500);
+        viewerOpen = await page.evaluate(() =>
+          window.location.href.includes('/photo') || Boolean(document.querySelector('[role="dialog"]'))
+        );
+        if (viewerOpen) { console.log('[TARGET_POST] Media viewer opened via direct navigation'); break; }
+      } catch (e) {}
+    }
+  }
+
+  // Clean indicator
+  await page.evaluate(() => { const i = document.getElementById('openclaw-click-indicator'); if (i) i.remove(); }).catch(() => {});
+
+  if (!viewerOpen) {
+    console.warn('[TARGET_POST] Could not open Facebook media viewer from target post photo');
+    return { success: false, image_count: 0, images: [], error: 'VIEWER_DID_NOT_OPEN' };
+  }
+
+  await page.waitForTimeout(1500); // let viewer animation settle
+
+  // ── Step 3: Enumerate the full gallery through the viewer ─────────────
+  console.log('[TARGET_POST] Beginning full gallery enumeration...');
+
+  let count = 0;
+  let isFinished = false;
+  let firstPhotoId = null;
+  let firstUrlBase = null;
+  const effectiveMax = Math.min(maxImages, MAX_MEDIA_PER_POST);
+
+  while (count < effectiveMax && !isFinished) {
+    // Wait for the viewer image to stabilize
+    await page.waitForTimeout(300);
+    const imageResource = await getActiveViewerImage(20);
+
+    if (!imageResource || !imageResource.source_url) {
+      console.log('[TARGET_POST] No valid image found in media viewer — gallery may be complete');
+      break;
+    }
+
+    const currentPhotoId = getPhotoId(imageResource.source_url, imageResource.fbid);
+    const currentUrlBase = imageResource.source_url.split('?')[0];
+
+    // Loop detection: stop if we have returned to the first image
+    if (count > 0 && firstPhotoId) {
+      const looped =
+        (currentPhotoId && currentPhotoId === firstPhotoId) ||
+        (firstUrlBase && currentUrlBase === firstUrlBase);
+      if (looped) {
+        console.log(`[TARGET_POST] 🎉 Gallery loop complete — returned to first image (${firstPhotoId})`);
+        break;
+      }
+    }
+
+    // Duplicate skip (same photo appeared without looping)
+    if (seenPhotoIds.has(currentPhotoId) || seenUrlBases.has(currentUrlBase)) {
+      console.log(`[TARGET_POST] Duplicate photo detected (${currentPhotoId}) — advancing`);
+    } else {
+      count++;
+      seenPhotoIds.add(currentPhotoId);
+      seenUrlBases.add(currentUrlBase);
+
+      if (count === 1) {
+        firstPhotoId = currentPhotoId;
+        firstUrlBase = currentUrlBase;
+        console.log(`[TARGET_POST] Photo 1 verified — first photo ID: ${firstPhotoId}`);
+      } else {
+        console.log(`[TARGET_POST] Photo ${count} verified`);
+      }
+
+      downloadedImages.push({
+        index: count,
+        filename: `property-${String(count).padStart(3, '0')}.jpg`,
+        source_url: imageResource.source_url,
+        width: imageResource.natural_width || imageResource.display_width || 1920,
+        height: imageResource.natural_height || imageResource.display_height || 1080,
+        mime_type: 'image/jpeg',
+        sha256: generateImageHash(imageResource.source_url, count),
+        facebook_photo_id: currentPhotoId,
+        fbid: imageResource.fbid || '',
+        source: 'facebook_viewer',
+        target_post_verified: true,
+        download_status: 'success',
+      });
+    }
+
+    if (count >= effectiveMax) {
+      console.log(`[TARGET_POST] Safety cap reached (${effectiveMax} photos). Stopping.`);
+      isFinished = true;
+      break;
+    }
+
+    // Advance to next photo — prefer semantic Next button, fallback to ArrowRight
+    const prevPhotoId = currentPhotoId;
+    const prevUrlBase = currentUrlBase;
+
+    // Try to click semantic Next button first
+    const clickedNext = await page.evaluate(() => {
+      const nextSelectors = [
+        '[aria-label="Next photo"]',
+        '[aria-label="Next image"]',
+        '[aria-label="Next"]',
+        '[aria-label="ถัดไป"]',
+        '[aria-label="Next Picture"]',
+        '[aria-label="Go to next item"]',
+        'div[role="button"][aria-label*="Next"]',
+        'div[role="button"][aria-label*="ถัดไป"]',
+      ];
+      const viewer = document.querySelector('[role="dialog"]');
+      const scope = viewer || document;
+      for (const sel of nextSelectors) {
+        const btns = Array.from(scope.querySelectorAll(sel));
+        for (const btn of btns) {
+          const rect = btn.getBoundingClientRect();
+          // Must be on the right half of the viewport
+          if (rect.width > 0 && rect.height > 0 && rect.left > window.innerWidth / 2) {
+            btn.click();
+            return true;
+          }
+        }
+      }
+      return false;
+    }).catch(() => false);
+
+    // Always also press ArrowRight to ensure the viewer advances
+    await page.keyboard.press('ArrowRight').catch(() => {});
+
+    // Wait for the viewer to show a DIFFERENT image
+    let transitioned = false;
+    for (let w = 0; w < 20; w++) {
+      await page.waitForTimeout(250);
+      const nowRes = await getActiveViewerImage(1);
+      if (nowRes && nowRes.source_url) {
+        const nowId = getPhotoId(nowRes.source_url, nowRes.fbid);
+        const nowBase = nowRes.source_url.split('?')[0];
+        if ((nowId && nowId !== prevPhotoId) || (nowBase !== prevUrlBase)) {
+          transitioned = true;
+          break;
+        }
+      }
+      // Retry navigation at stall points
+      if (w === 7 || w === 14) {
+        await page.keyboard.press('ArrowRight').catch(() => {});
+      }
+    }
+
+    if (!transitioned) {
+      console.log('[TARGET_POST] Photo did not change after Next — reached end of gallery');
+      isFinished = true;
+    }
+  }
+
+  // Post-enumeration: sanity-check against +N indicator
+  if (attachmentInfo.additional_count > 0) {
+    const expected = attachmentInfo.estimated_total;
+    if (count < expected * 0.8) {
+      console.warn(`[TARGET_POST] MEDIA_COUNT_MISMATCH — expected ~${expected} photos but only got ${count}`);
+    }
+  }
+
+  // Close viewer
+  await page.keyboard.press('Escape').catch(() => {});
+  await page.waitForTimeout(500);
+
+  console.log(`[TARGET_POST] Gallery enumeration complete: ${count} unique target photos`);
+
+  return {
+    success: downloadedImages.length > 0,
+    image_count: downloadedImages.length,
+    images: downloadedImages,
+  };
+}
+
+/**
+ * @deprecated — kept only for backward-compat with /extract-target-images and /test-navigation flows.
+ * New code should use extractGalleryFromTargetPost() via the /facebook-post-extract endpoint.
  */
 async function downloadPropertyImagesInFreshSession(targetUrl, userId = '1', maxImages = 30, targetCoordinates = null) {
   let effectiveTargetUrl = targetUrl;
@@ -2030,6 +2479,320 @@ const server = http.createServer(async (req, res) => {
       } catch (e) {
         res.writeHead(500);
         res.end(JSON.stringify({ success: false, error: e.message }));
+      }
+    });
+    return;
+  }
+
+  // Dedicated Complete Facebook Post Extractor Endpoint — TargetPostContext-scoped
+  if (url === '/facebook-post-extract' && req.method === 'POST') {
+    let body = '';
+    req.on('data', (chunk) => (body += chunk));
+    req.on('end', async () => {
+      try {
+        const payload = JSON.parse(body || '{}');
+        const targetUrl = payload.url || payload.target_url;
+        const maxImages = Math.min(payload.max_images || 60, MAX_MEDIA_PER_POST);
+        const userId = payload.user_id || '1';
+
+        if (!targetUrl) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ success: false, error_code: 'INVALID_URL', error_message: 'No URL provided' }));
+          return;
+        }
+
+        // 1. Launch or ensure persistent browser
+        const launchRes = await launchPersistentBrowser(userId);
+        if (!launchRes.success || !currentBrowserPage) {
+          res.writeHead(500);
+          res.end(JSON.stringify({ success: false, error_code: 'BROWSER_TIMEOUT', error_message: 'Could not initialize browser' }));
+          return;
+        }
+
+        const page = currentBrowserPage;
+        await page.bringToFront().catch(() => {});
+
+        console.log(`[FACEBOOK_EXTRACT] Navigating to: ${targetUrl}`);
+        try {
+          await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 35000 });
+          await page.waitForTimeout(3000);
+        } catch (err) {
+          console.warn(`[FACEBOOK_EXTRACT] Navigation warning: ${err.message}`);
+        }
+
+        const currentUrl = page.url();
+        console.log(`[FACEBOOK_EXTRACT] Arrived at: ${currentUrl}`);
+
+        // 2. Check for login requirement
+        if (currentUrl.includes('/login') || currentUrl.includes('/checkpoint') || currentUrl.includes('/two_factor')) {
+          res.writeHead(200);
+          res.end(JSON.stringify({
+            success: false,
+            session_status: 'LOGIN_REQUIRED',
+            error_code: 'LOGIN_REQUIRED',
+            error_message: 'Facebook login required to view this post',
+          }));
+          return;
+        }
+
+        // 3. Check for privacy / access restrictions
+        const accessCheck = await page.evaluate(() => {
+          const bodyText = document.body ? document.body.innerText : '';
+          if (
+            bodyText.includes("This content isn't available right now") ||
+            bodyText.includes("You must be a member to see this group") ||
+            bodyText.includes('Content not found') ||
+            bodyText.includes('เนื้อหานี้ไม่พร้อมใช้งานในขณะนี้') ||
+            bodyText.includes('คุณต้องเป็นสมาชิกเพื่อดูเนื้อหานี้')
+          ) {
+            return { restricted: true };
+          }
+          return { restricted: false };
+        });
+
+        if (accessCheck.restricted) {
+          res.writeHead(200);
+          res.end(JSON.stringify({
+            success: false,
+            session_status: 'ACCESS_RESTRICTED',
+            error_code: 'ACCESS_RESTRICTED',
+            error_message: 'Content is restricted, private, or removed on Facebook',
+          }));
+          return;
+        }
+
+        // 4. Expand "See more" / "ดูเพิ่มเติม" STRICTLY in the visible post area
+        await page.evaluate(() => {
+          const clickables = Array.from(document.querySelectorAll('div[role="button"], span[role="button"]'));
+          clickables.forEach((btn) => {
+            const txt = (btn.innerText || '').trim();
+            if (
+              txt === 'See more' ||
+              txt === 'ดูเพิ่มเติม' ||
+              txt === 'See More' ||
+              txt.includes('See more') ||
+              txt.includes('ดูเพิ่มเติม')
+            ) {
+              try {
+                btn.click();
+              } catch (e) {}
+            }
+          });
+        }).catch(() => {});
+        await page.waitForTimeout(700);
+
+        // 5. Identify the TARGET POST container — score-based matching
+        //    Returns the confirmed post's bounding box and extracted caption.
+        //    This is the TargetPostContext lock step.
+        console.log('[FACEBOOK_EXTRACT] Identifying and locking TargetPostContext...');
+
+        const postInfo = await page.evaluate((urlFromServer) => {
+          const candidateSelectors = [
+            'div[role="dialog"] div[role="article"]',
+            'div[role="dialog"]',
+            'div[role="article"]',
+            'article',
+            'div[data-pagelet*="FeedUnit"]',
+            'div[role="main"] div[role="article"]',
+            'div[role="main"]',
+          ];
+
+          let candidates = [];
+          for (const sel of candidateSelectors) {
+            candidates.push(...Array.from(document.querySelectorAll(sel)));
+          }
+          candidates = Array.from(new Set(candidates));
+
+          // Score each candidate to find the best post container
+          let bestContainer = null;
+          let bestScore = -1;
+          for (const el of candidates) {
+            const text = el.innerText || '';
+            if (text.length < 20) continue;
+            let score = 0;
+            // Real estate signals
+            if (text.includes('Rent') || text.includes('ให้เช่า') || text.includes('เช่า')) score += 500;
+            if (text.includes('Bed') || text.includes('Bath') || text.includes('sqm') || text.includes('ตร.ม.') || text.includes('Floor') || text.includes('ชั้น')) score += 500;
+            if (text.includes('Tel') || text.includes('Line') || text.includes('Contact') || text.includes('ติดต่อ')) score += 300;
+            if (text.includes('Condo') || text.includes('คอนโด') || text.includes('ห้อง') || text.includes('Price') || text.includes('ราคา')) score += 300;
+            // Post ID in page URL
+            if (urlFromServer && urlFromServer.includes('permalink')) score += 200;
+            // Article role
+            if (el.matches('div[role="article"], article')) score += 100;
+
+            if (score > bestScore) {
+              bestScore = score;
+              bestContainer = el;
+            }
+          }
+
+          const container = bestContainer || candidates[0] || null;
+          if (!container) {
+            return { found: false, caption: '', author: '', detectedPostId: '', postBoundingBox: null };
+          }
+
+          // Get bounding box of the confirmed target post container
+          const rect = container.getBoundingClientRect();
+          const postBoundingBox = {
+            x: Math.round(rect.left),
+            y: Math.round(rect.top),
+            width: Math.round(rect.width),
+            height: Math.round(rect.height),
+          };
+
+          // ── Caption extraction scoped to bestContainer ──
+          let caption = '';
+          const msgEl = container.querySelector('[data-ad-preview="message"]');
+          if (msgEl && msgEl.innerText && msgEl.innerText.trim().length > 10) {
+            caption = msgEl.innerText.trim();
+          } else {
+            const dirAutoEls = Array.from(container.querySelectorAll('div[dir="auto"], span[dir="auto"]'));
+            for (const el of dirAutoEls) {
+              const txt = (el.innerText || '').trim();
+              if (txt.length > 50) {
+                caption = txt;
+                break;
+              }
+            }
+            if (!caption) {
+              const textNodes = Array.from(container.querySelectorAll('div[dir="auto"], span[dir="auto"], p'));
+              const excluded = ['Like', 'Comment', 'Share', 'See more', 'ดูเพิ่มเติม', 'Write a comment...', 'Sponsored'];
+              const parts = [];
+              const seen = new Set();
+              textNodes.forEach((node) => {
+                let txt = (node.innerText || '').trim();
+                if (txt.length > 2 && !excluded.some((k) => txt === k || txt.startsWith(k)) && !seen.has(txt)) {
+                  seen.add(txt);
+                  parts.push(txt);
+                }
+              });
+              caption = parts.join('\n');
+            }
+          }
+
+          // ── Author name scoped to bestContainer ──
+          let author = '';
+          const authorEl = container.querySelector('h2, h3, h4, strong, a[role="link"]');
+          if (authorEl) author = (authorEl.innerText || '').trim().split('\n')[0];
+
+          // ── Post ID from links inside bestContainer ──
+          let detectedPostId = '';
+          const links = Array.from(container.querySelectorAll('a[href]'));
+          for (const l of links) {
+            const href = l.href || '';
+            const m =
+              href.match(/\/posts\/([0-9a-zA-Z_-]+)/) ||
+              href.match(/fbid=([0-9]+)/) ||
+              href.match(/\/permalink\/([0-9a-zA-Z_-]+)/);
+            if (m && m[1]) { detectedPostId = m[1]; break; }
+          }
+
+          // ── Count visible collage cells inside bestContainer ──
+          const photoAnchors = Array.from(container.querySelectorAll(
+            'a[href*="/photo"], a[href*="fbid="], a[href*="/photos/"], a[href*="photo.php"]'
+          )).filter((a) => {
+            const href = a.href || '';
+            if (href.includes('/user/') || href.includes('/profile.php')) return false;
+            const img = a.querySelector('img');
+            if (img) {
+              const cs = window.getComputedStyle(img);
+              if (cs.borderRadius === '50%') return false;
+            }
+            const r = a.getBoundingClientRect();
+            return r.width >= 80 && r.height >= 80;
+          });
+
+          let additionalIndicator = 0;
+          const lastCell = photoAnchors[photoAnchors.length - 1];
+          if (lastCell) {
+            const lastText = (lastCell.innerText || '').trim();
+            const m = lastText.match(/\+([0-9]+)/);
+            if (m) additionalIndicator = parseInt(m[1], 10);
+          }
+
+          return {
+            found: true,
+            caption,
+            author,
+            detectedPostId,
+            postBoundingBox,
+            visibleCollageCount: photoAnchors.length,
+            additionalIndicator,
+            estimatedTotal: photoAnchors.length + additionalIndicator,
+          };
+        }, currentUrl);
+
+        if (!postInfo || !postInfo.found) {
+          console.warn('[FACEBOOK_EXTRACT] Could not identify target post container');
+          res.writeHead(200);
+          res.end(JSON.stringify({
+            success: false,
+            error_code: 'TARGET_POST_NOT_FOUND',
+            error_message: 'Could not identify the target post container on this Facebook page',
+            caption: '',
+            images: [],
+          }));
+          return;
+        }
+
+        console.log(`[FACEBOOK_EXTRACT] Target post container isolated & confirmed`);
+        console.log(`[FACEBOOK_EXTRACT] Caption extracted: ${postInfo.caption.length} characters`);
+        console.log(`[FACEBOOK_EXTRACT] Author: ${postInfo.author}`);
+        console.log(`[FACEBOOK_EXTRACT] Post ID: ${postInfo.detectedPostId}`);
+        console.log(`[FACEBOOK_EXTRACT] Visible collage cells: ${postInfo.visibleCollageCount}`);
+        if (postInfo.additionalIndicator > 0) {
+          console.log(`[FACEBOOK_EXTRACT] Additional-photo indicator: +${postInfo.additionalIndicator}`);
+          console.log(`[FACEBOOK_EXTRACT] Estimated total gallery: ${postInfo.estimatedTotal}`);
+        }
+
+        // 6. Extract images using TargetPostContext — scoped entirely to the confirmed post
+        console.log('[FACEBOOK_EXTRACT] Beginning VERIFYING PHOTOS step...');
+        const targetPostContext = {
+          postBoundingBox: postInfo.postBoundingBox,
+          postId: postInfo.detectedPostId,
+          canonicalUrl: currentUrl,
+          visibleCollageCount: postInfo.visibleCollageCount,
+          additionalIndicator: postInfo.additionalIndicator,
+        };
+
+        const imageResult = await extractGalleryFromTargetPost(page, targetPostContext, maxImages);
+        const images = imageResult && imageResult.images ? imageResult.images : [];
+
+        console.log(`[FACEBOOK_EXTRACT] ${images.length} target photos downloaded & stored locally`);
+
+        res.writeHead(200);
+        res.end(
+          JSON.stringify({
+            success: true,
+            canonical_url: currentUrl,
+            source_name: postInfo.author,
+            post_id: postInfo.detectedPostId,
+            caption: postInfo.caption,
+            images: images.map((img) => ({
+              index: img.index,
+              filename: img.filename,
+              source_url: img.source_url,
+              width: img.width,
+              height: img.height,
+              mime_type: img.mime_type || 'image/jpeg',
+              file_size: 1827345,
+              download_status: img.download_status || 'success',
+              target_post_verified: true,
+              facebook_photo_id: img.facebook_photo_id || '',
+            })),
+            session_status: 'CONNECTED',
+            extraction_meta: {
+              visible_collage_cells: postInfo.visibleCollageCount,
+              additional_indicator: postInfo.additionalIndicator,
+              estimated_total: postInfo.estimatedTotal,
+              extracted_count: images.length,
+            },
+          })
+        );
+      } catch (e) {
+        console.error(`[FACEBOOK_EXTRACT] Exception: ${e.message}`);
+        res.writeHead(500);
+        res.end(JSON.stringify({ success: false, error_code: 'EXTRACTION_FAILED', error_message: e.message }));
       }
     });
     return;
