@@ -1362,34 +1362,41 @@ async function extractGalleryFromTargetPost(page, targetPostContext, maxImages =
   };
 
   // ── Helper: get CURRENTLY DISPLAYED image in the media viewer only ─────
-  // NEVER scans the whole document. Scopes strictly to [role="dialog"].
+  // Finds the active media viewer dialog (top-most dialog with large fbcdn photo)
   const getActiveViewerImage = async (maxAttempts = 20) => {
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       const result = await page.evaluate(() => {
-        // STRICT SCOPE: only the Facebook media viewer dialog
-        const viewer = document.querySelector(
-          '[role="dialog"][aria-label], [data-pagelet*="MediaViewer"], [role="dialog"]'
-        );
-        if (!viewer) return null;
+        // Find all dialogs on the page (e.g. notifications, post modal, media viewer)
+        const dialogs = Array.from(document.querySelectorAll('[role="dialog"], [data-pagelet*="MediaViewer"]'));
+        
+        // Pick the dialog that actually contains a large displayed image (the active viewer)
+        let viewer = null;
+        for (let i = dialogs.length - 1; i >= 0; i--) {
+          const d = dialogs[i];
+          const hasBigImg = Array.from(d.querySelectorAll('img')).some((img) => {
+            const src = img.currentSrc || img.src || '';
+            const isFb = src.includes('scontent') || src.includes('fbcdn');
+            const rect = img.getBoundingClientRect();
+            return isFb && rect.width >= 200 && rect.height >= 200;
+          });
+          if (hasBigImg) {
+            viewer = d;
+            break;
+          }
+        }
+        if (!viewer) viewer = dialogs[dialogs.length - 1] || document;
 
-        // Get all candidate images inside the viewer
+        // Get candidate images inside the active viewer
         const imgs = Array.from(viewer.querySelectorAll('img')).filter((img) => {
           const src = img.currentSrc || img.src || '';
           if (!src) return false;
-          // Reject static assets, icons, emojis
           if (src.includes('/static.xx/') || src.includes('/rsrc.php/') || src.includes('/emoji/')) return false;
-          // Reject known avatar/thumbnail size tokens
           if (/[_/](p|s)(32|40|50|60|80|100|120|130|160)x(32|40|50|60|80|100|120|130|160)[_/.]/.test(src)) return false;
-          // Must be fbcdn content
           if (!src.includes('scontent') && !src.includes('fbcdn')) return false;
 
-          // Must be visible in viewport
           const rect = img.getBoundingClientRect();
-          if (rect.width < 200 || rect.height < 200) return false;
-          if (rect.bottom <= 0 || rect.top >= window.innerHeight) return false;
-          if (rect.right <= 0 || rect.left >= window.innerWidth) return false;
+          if (rect.width < 150 || rect.height < 150) return false;
 
-          // Reject circular avatars (profile pictures)
           const cs = window.getComputedStyle(img);
           if (cs.borderRadius === '50%' || cs.borderRadius.includes('9999px')) return false;
 
@@ -1398,7 +1405,7 @@ async function extractGalleryFromTargetPost(page, targetPostContext, maxImages =
 
         if (imgs.length === 0) return null;
 
-        // Pick the largest image in the viewer (most likely the main photo)
+        // Pick largest image
         imgs.sort((a, b) => {
           const ra = a.getBoundingClientRect();
           const rb = b.getBoundingClientRect();
@@ -1408,7 +1415,6 @@ async function extractGalleryFromTargetPost(page, targetPostContext, maxImages =
         const best = imgs[0];
         let bestUrl = best.currentSrc || best.src;
 
-        // Prefer highest-resolution srcset candidate
         if (best.srcset) {
           const srcsetParts = best.srcset.split(',').map((s) => s.trim().split(/\s+/));
           let maxW = 0;
@@ -1418,12 +1424,7 @@ async function extractGalleryFromTargetPost(page, targetPostContext, maxImages =
           }
         }
 
-        // Also try naturalWidth/naturalHeight for srcset resolution
-        if (best.naturalWidth > 0 && best.naturalWidth < 400) {
-          // Low natural resolution — may still be loading, keep trying
-        }
-
-        const fbidMatch = window.location.href.match(/fbid=([0-9]+)/);
+        const fbidMatch = window.location.href.match(/fbid=([0-9]+)/) || window.location.href.match(/media_id=([0-9]+)/);
         const pageFbid = fbidMatch ? fbidMatch[1] : '';
 
         const rect = best.getBoundingClientRect();
@@ -1438,9 +1439,7 @@ async function extractGalleryFromTargetPost(page, targetPostContext, maxImages =
       });
 
       if (result && result.source_url) {
-        // Wait until naturalWidth is available (image has loaded)
         if (result.natural_width > 0) return result;
-        // Image still loading — keep polling
       }
       await page.waitForTimeout(250);
     }
@@ -1448,13 +1447,17 @@ async function extractGalleryFromTargetPost(page, targetPostContext, maxImages =
   };
 
   // ── Step 1: Locate the TARGET POST's attachment/media region ──────────
-  // First scroll the confirmed post into view so the attachment grid is visible
   console.log('[TARGET_POST] Scrolling confirmed target post into view...');
   await page.evaluate((bbox) => {
-    if (!bbox) return;
-    // Scroll to roughly the middle of the post so attachment photos are visible
-    const targetScrollY = Math.max(0, bbox.y + window.scrollY - 100);
-    window.scrollTo({ top: targetScrollY, behavior: 'instant' });
+    // Scroll both window and any modal dialogs to reveal photo grid
+    if (bbox) {
+      const targetScrollY = Math.max(0, bbox.y + window.scrollY - 100);
+      window.scrollTo({ top: targetScrollY, behavior: 'instant' });
+    }
+    const dialog = document.querySelector('[role="dialog"]');
+    if (dialog && dialog.scrollHeight > dialog.clientHeight) {
+      dialog.scrollTop = Math.min(dialog.scrollHeight, 400);
+    }
   }, postBoundingBox).catch(() => {});
   await page.waitForTimeout(800);
 
@@ -1463,7 +1466,6 @@ async function extractGalleryFromTargetPost(page, targetPostContext, maxImages =
   const attachmentInfo = await page.evaluate((ctx) => {
     const { postId } = ctx;
 
-    // Re-identify confirmed target post container (same scoring as caption step)
     const candidateSelectors = [
       'div[role="dialog"] div[role="article"]',
       'div[role="dialog"]',
@@ -1485,10 +1487,10 @@ async function extractGalleryFromTargetPost(page, targetPostContext, maxImages =
       const text = el.innerText || '';
       if (text.length < 20) continue;
       let score = 0;
-      if (text.includes('Rent') || text.includes('\u0e43\u0e2b\u0e49\u0e40\u0e0a\u0e48\u0e32') || text.includes('\u0e40\u0e0a\u0e48\u0e32')) score += 500;
-      if (text.includes('Bed') || text.includes('Bath') || text.includes('sqm') || text.includes('\u0e15\u0e23.\u0e21.') || text.includes('Floor') || text.includes('\u0e0a\u0e31\u0e49\u0e19')) score += 500;
-      if (text.includes('Tel') || text.includes('Line') || text.includes('Contact') || text.includes('\u0e15\u0e34\u0e14\u0e15\u0e48\u0e2d')) score += 300;
-      if (text.includes('Condo') || text.includes('\u0e04\u0e2d\u0e19\u0e42\u0e14') || text.includes('Price') || text.includes('\u0e23\u0e32\u0e04\u0e32')) score += 300;
+      if (text.includes('Rent') || text.includes('ให้เช่า') || text.includes('เช่า')) score += 500;
+      if (text.includes('Bed') || text.includes('Bath') || text.includes('sqm') || text.includes('ตร.ม.') || text.includes('Floor') || text.includes('ชั้น')) score += 500;
+      if (text.includes('Tel') || text.includes('Line') || text.includes('Contact') || text.includes('ติดต่อ')) score += 300;
+      if (text.includes('Condo') || text.includes('คอนโด') || text.includes('Price') || text.includes('ราคา')) score += 300;
       if (postId && postId.length > 3 && el.innerHTML && el.innerHTML.includes(postId)) score += 800;
       if (el.matches('div[role="article"], article')) score += 100;
       if (score > bestScore) { bestScore = score; bestContainer = el; }
@@ -1499,7 +1501,6 @@ async function extractGalleryFromTargetPost(page, targetPostContext, maxImages =
     }
     if (!bestContainer) return { found: false, reason: 'Could not re-identify target post container' };
 
-    // Helper to reject avatar/profile anchors
     const rejectAnchor = (a) => {
       const href = a.href || '';
       if (href.includes('/user/') || href.includes('/profile.php') || href.includes('/groups/members') || href.includes('profile_id')) return true;
@@ -1515,18 +1516,47 @@ async function extractGalleryFromTargetPost(page, targetPostContext, maxImages =
       return false;
     };
 
-    // Query photo anchors DIRECTLY inside the confirmed container
-    let photoAnchors = Array.from(bestContainer.querySelectorAll(
-      'a[href*="/photo"], a[href*="fbid="], a[href*="/photos/"], a[href*="photo.php"]'
-    )).filter(a => !rejectAnchor(a) && a.offsetWidth >= 60 && a.offsetHeight >= 60);
+    // Support standard photo posts, commerce/marketplace listings, and media attachments
+    const PHOTO_SELECTORS = [
+      'a[href*="/photo"]',
+      'a[href*="fbid="]',
+      'a[href*="/photos/"]',
+      'a[href*="photo.php"]',
+      'a[href*="/commerce/listing/"]',
+      'a[href*="media_id="]',
+      'a[href*="/marketplace/item/"]',
+      'a[href*="/marketplace/listing/"]',
+    ].join(', ');
 
-    // Fallback: any anchor in the container with a large fbcdn image
+    // Check bestContainer first; if it is a text-only inner wrapper, walk up to parent containers
+    const searchScopes = [bestContainer];
+    if (bestContainer.parentElement) searchScopes.push(bestContainer.parentElement);
+    if (bestContainer.parentElement && bestContainer.parentElement.parentElement) searchScopes.push(bestContainer.parentElement.parentElement);
+    const dialogWrapper = bestContainer.closest('[role="dialog"]') || document.querySelector('[role="dialog"]');
+    if (dialogWrapper) searchScopes.push(dialogWrapper);
+
+    let photoAnchors = [];
+    for (const scope of searchScopes) {
+      const found = Array.from(scope.querySelectorAll(PHOTO_SELECTORS)).filter(a => !rejectAnchor(a));
+      if (found.length > 0) {
+        photoAnchors = found;
+        break;
+      }
+    }
+
+    // Fallback: any anchor with a property-sized fbcdn/scontent image
     if (photoAnchors.length === 0) {
-      photoAnchors = Array.from(bestContainer.querySelectorAll('a[href*="facebook.com"]')).filter(a => {
-        if (rejectAnchor(a)) return false;
-        const img = a.querySelector('img[src*="scontent"], img[src*="fbcdn"]');
-        return img && a.offsetWidth >= 60 && a.offsetHeight >= 60;
-      });
+      for (const scope of searchScopes) {
+        const found = Array.from(scope.querySelectorAll('a')).filter(a => {
+          if (rejectAnchor(a)) return false;
+          const img = a.querySelector('img[src*="scontent"], img[src*="fbcdn"]');
+          return img && (a.offsetWidth >= 60 || img.offsetWidth >= 60);
+        });
+        if (found.length > 0) {
+          photoAnchors = found;
+          break;
+        }
+      }
     }
 
     // Sort top-left → bottom-right
@@ -1537,12 +1567,14 @@ async function extractGalleryFromTargetPost(page, targetPostContext, maxImages =
       return ra.left - rb.left;
     });
 
-    // Detect +N indicator
+    // Detect +N indicator or "X remaining items"
     let additionalCount = 0;
     const lastAnchor = photoAnchors[photoAnchors.length - 1];
     if (lastAnchor) {
-      const m = (lastAnchor.innerText || '').trim().match(/\+([0-9]+)/);
-      if (m) additionalCount = parseInt(m[1], 10);
+      const m1 = (lastAnchor.innerText || '').trim().match(/\+([0-9]+)/);
+      const m2 = (lastAnchor.getAttribute('aria-label') || '').match(/([0-9]+)\s+remaining/i);
+      if (m1) additionalCount = parseInt(m1[1], 10);
+      else if (m2) additionalCount = parseInt(m2[1], 10);
     }
 
     if (photoAnchors.length === 0) return { found: false, reason: 'No photo anchors found inside confirmed target post container' };
@@ -1575,43 +1607,37 @@ async function extractGalleryFromTargetPost(page, targetPostContext, maxImages =
   if (attachmentInfo.additional_count > 0) {
     console.log(`[TARGET_POST] Additional-photo indicator detected: +${attachmentInfo.additional_count}`);
     console.log(`[TARGET_POST] Estimated total gallery size: ${attachmentInfo.estimated_total}`);
-    console.log(`[TARGET_POST] Gallery enumeration required: YES`);
   }
 
   // ── Step 2: Click the FIRST target-post photo to open the media viewer ──
-  const { click_x, click_y } = attachmentInfo;
+  const { click_x, click_y, href: firstPhotoHref } = attachmentInfo;
   console.log(`[TARGET_POST] Opening target media viewer from post attachment (${click_x}, ${click_y})`);
 
-  // Show visual indicator in browser
-  await page.evaluate(({ x, y }) => {
-    const old = document.getElementById('openclaw-click-indicator');
-    if (old) old.remove();
-    const ind = document.createElement('div');
-    ind.id = 'openclaw-click-indicator';
-    ind.style.cssText = `position:fixed;left:${x}px;top:${y}px;transform:translate(-50%,-100%);z-index:2147483647;pointer-events:none;display:flex;flex-direction:column;align-items:center;font-family:system-ui`;
-    ind.innerHTML = `<div style="background:linear-gradient(135deg,#EF4444,#DC2626);color:#fff;font-weight:800;font-size:14px;padding:6px 14px;border-radius:8px;box-shadow:0 8px 25px rgba(239,68,68,0.8);white-space:nowrap;margin-bottom:5px">🎯 TARGET POST PHOTO (${x},${y})</div><div style="font-size:56px;color:#EF4444;filter:drop-shadow(0 4px 12px rgba(239,68,68,0.9))">⬇️</div>`;
-    document.body.appendChild(ind);
-  }, { x: click_x, y: click_y }).catch(() => {});
-  await page.waitForTimeout(900);
-
-  // Click with retry
   let viewerOpen = false;
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      await page.mouse.move(click_x, click_y);
-      await page.waitForTimeout(400);
-      await page.mouse.click(click_x, click_y);
-      await page.waitForTimeout(2500);
+      // Direct click on first anchor in DOM
+      await page.evaluate((targetHref) => {
+        const el = document.querySelector(`a[href="${targetHref}"]`) ||
+          document.querySelector('a[href*="/commerce/listing/"], a[href*="media_id="], a[href*="/photo"]');
+        if (el) el.click();
+      }, firstPhotoHref).catch(() => {});
+
+      await page.mouse.click(click_x, click_y).catch(() => {});
+      await page.waitForTimeout(2000);
     } catch (e) {}
 
     viewerOpen = await page.evaluate(() => {
-      const dialog = document.querySelector('[role="dialog"]');
-      if (!dialog) return false;
-      const hasLargeImg = Boolean(
-        dialog.querySelector('img[src*="scontent"], img[src*="fbcdn"]')
+      const dialogs = Array.from(document.querySelectorAll('[role="dialog"]'));
+      const hasBigImg = dialogs.some(d =>
+        Array.from(d.querySelectorAll('img')).some(i => {
+          const s = i.src || '';
+          return (s.includes('scontent') || s.includes('fbcdn')) && i.offsetWidth > 250;
+        })
       );
-      const isPhotoUrl = window.location.href.includes('/photo') || window.location.href.includes('fbid=');
-      return hasLargeImg || isPhotoUrl;
+      const isPhotoUrl = window.location.href.includes('/photo') || window.location.href.includes('fbid=') ||
+        window.location.href.includes('/commerce/listing/') || window.location.href.includes('media_id=');
+      return hasBigImg || isPhotoUrl;
     });
 
     if (viewerOpen) {
@@ -1619,41 +1645,29 @@ async function extractGalleryFromTargetPost(page, targetPostContext, maxImages =
       break;
     }
     console.log(`[TARGET_POST] Viewer not detected on attempt ${attempt}/3, retrying...`);
-    // Try navigating directly to the photo href as fallback
-    if (attempt === 2 && attachmentInfo.href && attachmentInfo.href.includes('facebook.com')) {
-      try {
-        await page.goto(attachmentInfo.href, { waitUntil: 'domcontentloaded', timeout: 20000 });
-        await page.waitForTimeout(2500);
-        viewerOpen = await page.evaluate(() =>
-          window.location.href.includes('/photo') || Boolean(document.querySelector('[role="dialog"]'))
-        );
-        if (viewerOpen) { console.log('[TARGET_POST] Media viewer opened via direct navigation'); break; }
-      } catch (e) {}
-    }
   }
-
-  // Clean indicator
-  await page.evaluate(() => { const i = document.getElementById('openclaw-click-indicator'); if (i) i.remove(); }).catch(() => {});
 
   if (!viewerOpen) {
     console.warn('[TARGET_POST] Could not open Facebook media viewer from target post photo');
     return { success: false, image_count: 0, images: [], error: 'VIEWER_DID_NOT_OPEN' };
   }
 
-  await page.waitForTimeout(1500); // let viewer animation settle
+  await page.waitForTimeout(1000);
 
-  // ── Step 3: Enumerate the full gallery through the viewer ─────────────
-  console.log('[TARGET_POST] Beginning full gallery enumeration...');
+  // ── Step 3: Enumerate the full gallery through the viewer (Publer style) ─────────────
+  // Open first image, click Next / ArrowRight repeatedly, stop when image/filename repeats
+  console.log('[TARGET_POST] Beginning full gallery enumeration (Publer style: click Next until filename repeats)...');
 
   let count = 0;
   let isFinished = false;
   let firstPhotoId = null;
   let firstUrlBase = null;
+  let firstFileToken = null;
   const effectiveMax = Math.min(maxImages, MAX_MEDIA_PER_POST);
+  let duplicateTries = 0;
 
   while (count < effectiveMax && !isFinished) {
-    // Wait for the viewer image to stabilize
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(350);
     const imageResource = await getActiveViewerImage(20);
 
     if (!imageResource || !imageResource.source_url) {
@@ -1661,24 +1675,31 @@ async function extractGalleryFromTargetPost(page, targetPostContext, maxImages =
       break;
     }
 
-    const currentPhotoId = getPhotoId(imageResource.source_url, imageResource.fbid);
     const currentUrlBase = imageResource.source_url.split('?')[0];
+    const fileToken = currentUrlBase.split('/').pop() || '';
+    const currentPhotoId = getPhotoId(imageResource.source_url, imageResource.fbid) || fileToken;
 
-    // Loop detection: stop if we have returned to the first image
-    if (count > 0 && firstPhotoId) {
+    // Loop detection: stop if we returned to the first image (same filename/ID)
+    if (count > 0 && (firstPhotoId || firstFileToken)) {
       const looped =
         (currentPhotoId && currentPhotoId === firstPhotoId) ||
-        (firstUrlBase && currentUrlBase === firstUrlBase);
+        (firstUrlBase && currentUrlBase === firstUrlBase) ||
+        (firstFileToken && fileToken === firstFileToken);
       if (looped) {
-        console.log(`[TARGET_POST] 🎉 Gallery loop complete — returned to first image (${firstPhotoId})`);
+        console.log(`[TARGET_POST] 🎉 Gallery loop complete — returned to first image (${firstPhotoId || fileToken}). Reached the end!`);
         break;
       }
     }
 
-    // Duplicate skip (same photo appeared without looping)
+    // Duplicate check
     if (seenPhotoIds.has(currentPhotoId) || seenUrlBases.has(currentUrlBase)) {
-      console.log(`[TARGET_POST] Duplicate photo detected (${currentPhotoId}) — advancing`);
+      duplicateTries++;
+      if (duplicateTries >= 3) {
+        console.log('[TARGET_POST] Image did not advance after multiple Next attempts — end of gallery reached.');
+        break;
+      }
     } else {
+      duplicateTries = 0;
       count++;
       seenPhotoIds.add(currentPhotoId);
       seenUrlBases.add(currentUrlBase);
@@ -1686,9 +1707,10 @@ async function extractGalleryFromTargetPost(page, targetPostContext, maxImages =
       if (count === 1) {
         firstPhotoId = currentPhotoId;
         firstUrlBase = currentUrlBase;
+        firstFileToken = fileToken;
         console.log(`[TARGET_POST] Photo 1 verified — first photo ID: ${firstPhotoId}`);
       } else {
-        console.log(`[TARGET_POST] Photo ${count} verified`);
+        console.log(`[TARGET_POST] Photo ${count} verified: ${fileToken}`);
       }
 
       downloadedImages.push({
@@ -1709,16 +1731,14 @@ async function extractGalleryFromTargetPost(page, targetPostContext, maxImages =
 
     if (count >= effectiveMax) {
       console.log(`[TARGET_POST] Safety cap reached (${effectiveMax} photos). Stopping.`);
-      isFinished = true;
       break;
     }
 
-    // Advance to next photo — prefer semantic Next button, fallback to ArrowRight
+    // Advance to next photo: click Next button AND press ArrowRight
     const prevPhotoId = currentPhotoId;
     const prevUrlBase = currentUrlBase;
 
-    // Try to click semantic Next button first
-    const clickedNext = await page.evaluate(() => {
+    await page.evaluate(() => {
       const nextSelectors = [
         '[aria-label="Next photo"]',
         '[aria-label="Next image"]',
@@ -1726,43 +1746,37 @@ async function extractGalleryFromTargetPost(page, targetPostContext, maxImages =
         '[aria-label="ถัดไป"]',
         '[aria-label="Next Picture"]',
         '[aria-label="Go to next item"]',
-        'div[role="button"][aria-label*="Next"]',
-        'div[role="button"][aria-label*="ถัดไป"]',
       ];
-      const viewer = document.querySelector('[role="dialog"]');
-      const scope = viewer || document;
       for (const sel of nextSelectors) {
-        const btns = Array.from(scope.querySelectorAll(sel));
+        const btns = Array.from(document.querySelectorAll(sel));
         for (const btn of btns) {
           const rect = btn.getBoundingClientRect();
-          // Must be on the right half of the viewport
           if (rect.width > 0 && rect.height > 0 && rect.left > window.innerWidth / 2) {
             btn.click();
-            return true;
+            return;
           }
         }
       }
-      return false;
-    }).catch(() => false);
+    }).catch(() => {});
 
-    // Always also press ArrowRight to ensure the viewer advances
     await page.keyboard.press('ArrowRight').catch(() => {});
+    await page.waitForTimeout(600);
 
     // Wait for the viewer to show a DIFFERENT image
     let transitioned = false;
-    for (let w = 0; w < 20; w++) {
+    for (let w = 0; w < 12; w++) {
       await page.waitForTimeout(250);
       const nowRes = await getActiveViewerImage(1);
       if (nowRes && nowRes.source_url) {
-        const nowId = getPhotoId(nowRes.source_url, nowRes.fbid);
-        const nowBase = nowRes.source_url.split('?')[0];
-        if ((nowId && nowId !== prevPhotoId) || (nowBase !== prevUrlBase)) {
+        const nowUrl = nowRes.source_url.split('?')[0];
+        const nowToken = nowUrl.split('/').pop() || '';
+        const nowId = getPhotoId(nowRes.source_url, nowRes.fbid) || nowToken;
+        if ((nowId && nowId !== prevPhotoId) || (nowUrl !== prevUrlBase)) {
           transitioned = true;
           break;
         }
       }
-      // Retry navigation at stall points
-      if (w === 7 || w === 14) {
+      if (w === 4 || w === 8) {
         await page.keyboard.press('ArrowRight').catch(() => {});
       }
     }
@@ -1770,6 +1784,7 @@ async function extractGalleryFromTargetPost(page, targetPostContext, maxImages =
     if (!transitioned) {
       console.log('[TARGET_POST] Photo did not change after Next — reached end of gallery');
       isFinished = true;
+      break;
     }
   }
 
@@ -2481,6 +2496,8 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+
+
   if (url === '/connect' && req.method === 'POST') {
     let body = '';
     req.on('data', (chunk) => (body += chunk));
@@ -2716,26 +2733,50 @@ const server = http.createServer(async (req, res) => {
           }
 
           // ── Count visible collage cells inside bestContainer ──
-          const photoAnchors = Array.from(container.querySelectorAll(
-            'a[href*="/photo"], a[href*="fbid="], a[href*="/photos/"], a[href*="photo.php"]'
-          )).filter((a) => {
-            const href = a.href || '';
-            if (href.includes('/user/') || href.includes('/profile.php')) return false;
-            const img = a.querySelector('img');
-            if (img) {
-              const cs = window.getComputedStyle(img);
-              if (cs.borderRadius === '50%') return false;
+          const PHOTO_SELECTORS = [
+            'a[href*="/photo"]',
+            'a[href*="fbid="]',
+            'a[href*="/photos/"]',
+            'a[href*="photo.php"]',
+            'a[href*="/commerce/listing/"]',
+            'a[href*="media_id="]',
+            'a[href*="/marketplace/item/"]',
+            'a[href*="/marketplace/listing/"]',
+          ].join(', ');
+
+          const searchScopes = [container];
+          if (container.parentElement) searchScopes.push(container.parentElement);
+          if (container.parentElement && container.parentElement.parentElement) searchScopes.push(container.parentElement.parentElement);
+          const dialogScope = container.closest('[role="dialog"]') || document.querySelector('[role="dialog"]');
+          if (dialogScope) searchScopes.push(dialogScope);
+
+          let photoAnchors = [];
+          for (const scope of searchScopes) {
+            const found = Array.from(scope.querySelectorAll(PHOTO_SELECTORS)).filter((a) => {
+              const href = a.href || '';
+              if (href.includes('/user/') || href.includes('/profile.php')) return false;
+              const img = a.querySelector('img');
+              if (img) {
+                const cs = window.getComputedStyle(img);
+                if (cs.borderRadius === '50%') return false;
+              }
+              const r = a.getBoundingClientRect();
+              return r.width >= 50 && r.height >= 50;
+            });
+            if (found.length > 0) {
+              photoAnchors = found;
+              break;
             }
-            const r = a.getBoundingClientRect();
-            return r.width >= 80 && r.height >= 80;
-          });
+          }
 
           let additionalIndicator = 0;
           const lastCell = photoAnchors[photoAnchors.length - 1];
           if (lastCell) {
             const lastText = (lastCell.innerText || '').trim();
-            const m = lastText.match(/\+([0-9]+)/);
-            if (m) additionalIndicator = parseInt(m[1], 10);
+            const m1 = lastText.match(/\+([0-9]+)/);
+            const m2 = (lastCell.getAttribute('aria-label') || '').match(/([0-9]+)\s+remaining/i);
+            if (m1) additionalIndicator = parseInt(m1[1], 10);
+            else if (m2) additionalIndicator = parseInt(m2[1], 10);
           }
 
           return {
