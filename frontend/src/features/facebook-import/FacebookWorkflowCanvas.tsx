@@ -1208,7 +1208,7 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
                 </div>
                 <div>
                   <div style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#fff' }}>Get Content</div>
-                  <div style={{ fontSize: '0.6875rem', color: '#60A5FA', fontWeight: 600 }}>TEXT EXTRACT</div>
+                  <div style={{ fontSize: '0.6875rem', color: '#60A5FA', fontWeight: 600 }}>FULL CONTENT</div>
                 </div>
               </div>
 
@@ -1251,99 +1251,28 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
               </button>
             </div>
 
-            {/* Options Checklist */}
-            <div style={{ padding: '0.75rem 0.875rem', display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-              <label
+            {/* Full Content Extraction Notice */}
+            <div style={{ padding: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.5rem',
-                  fontSize: '0.71875rem',
-                  color: 'var(--text-secondary)',
-                  cursor: 'pointer',
+                  width: '6px',
+                  height: '6px',
+                  borderRadius: '50%',
+                  backgroundColor: config.getContent.enabled ? '#3B82F6' : '#6B7280',
+                  flexShrink: 0,
+                }}
+              />
+              <span
+                style={{
+                  fontSize: '0.75rem',
+                  color: config.getContent.enabled ? '#E2E8F0' : 'var(--text-muted)',
+                  lineHeight: '1.4',
                 }}
               >
-                <input
-                  type="checkbox"
-                  checked={config.getContent.extractPrice}
-                  onChange={(e) =>
-                    updateConfig({
-                      ...config,
-                      getContent: { ...config.getContent, extractPrice: e.target.checked },
-                    })
-                  }
-                />
-                <span>Detect Rent/Sale Price</span>
-              </label>
-
-              <label
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.5rem',
-                  fontSize: '0.71875rem',
-                  color: 'var(--text-secondary)',
-                  cursor: 'pointer',
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={config.getContent.extractSpecs}
-                  onChange={(e) =>
-                    updateConfig({
-                      ...config,
-                      getContent: { ...config.getContent, extractSpecs: e.target.checked },
-                    })
-                  }
-                />
-                <span>Bed / Bath / Sqm Specs</span>
-              </label>
-
-              <label
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.5rem',
-                  fontSize: '0.71875rem',
-                  color: 'var(--text-secondary)',
-                  cursor: 'pointer',
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={config.getContent.cleanThai}
-                  onChange={(e) =>
-                    updateConfig({
-                      ...config,
-                      getContent: { ...config.getContent, cleanThai: e.target.checked },
-                    })
-                  }
-                />
-                <span>Clean Thai / English Text</span>
-              </label>
-
-              <label
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.5rem',
-                  fontSize: '0.71875rem',
-                  color: 'var(--text-secondary)',
-                  cursor: 'pointer',
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={config.getContent.extractContacts}
-                  onChange={(e) =>
-                    updateConfig({
-                      ...config,
-                      getContent: { ...config.getContent, extractContacts: e.target.checked },
-                    })
-                  }
-                />
-                <span>Line ID & Phone CTA</span>
-              </label>
+                {config.getContent.enabled
+                  ? 'Extracts 100% full original post content & caption'
+                  : 'Content extraction disabled'}
+              </span>
             </div>
 
             {/* Output Socket */}
@@ -1432,7 +1361,7 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
                 </div>
                 <div>
                   <div style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#fff' }}>Get Images</div>
-                  <div style={{ fontSize: '0.6875rem', color: '#34D399', fontWeight: 600 }}>MEDIA PIPELINE</div>
+                  <div style={{ fontSize: '0.6875rem', color: '#34D399', fontWeight: 600 }}>ALL IMAGES</div>
                 </div>
               </div>
 
@@ -1475,76 +1404,28 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
               </button>
             </div>
 
-            {/* Options Checklist */}
-            <div style={{ padding: '0.75rem 0.875rem', display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-              <label
+            {/* Full Images Extraction Notice */}
+            <div style={{ padding: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.5rem',
-                  fontSize: '0.71875rem',
-                  color: 'var(--text-secondary)',
-                  cursor: 'pointer',
+                  width: '6px',
+                  height: '6px',
+                  borderRadius: '50%',
+                  backgroundColor: config.getImages.enabled ? '#10B981' : '#6B7280',
+                  flexShrink: 0,
+                }}
+              />
+              <span
+                style={{
+                  fontSize: '0.75rem',
+                  color: config.getImages.enabled ? '#E2E8F0' : 'var(--text-muted)',
+                  lineHeight: '1.4',
                 }}
               >
-                <input
-                  type="checkbox"
-                  checked={config.getImages.downloadHD}
-                  onChange={(e) =>
-                    updateConfig({
-                      ...config,
-                      getImages: { ...config.getImages, downloadHD: e.target.checked },
-                    })
-                  }
-                />
-                <span>Download Full HD Images</span>
-              </label>
-
-              <label
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.5rem',
-                  fontSize: '0.71875rem',
-                  color: 'var(--text-secondary)',
-                  cursor: 'pointer',
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={config.getImages.preserveOrder}
-                  onChange={(e) =>
-                    updateConfig({
-                      ...config,
-                      getImages: { ...config.getImages, preserveOrder: e.target.checked },
-                    })
-                  }
-                />
-                <span>Preserve Original Sequence (#01..#08)</span>
-              </label>
-
-              <label
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.5rem',
-                  fontSize: '0.71875rem',
-                  color: 'var(--text-secondary)',
-                  cursor: 'pointer',
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={config.getImages.watermark}
-                  onChange={(e) =>
-                    updateConfig({
-                      ...config,
-                      getImages: { ...config.getImages, watermark: e.target.checked },
-                    })
-                  }
-                />
-                <span>Brand Watermark Auto-Overlay</span>
-              </label>
+                {config.getImages.enabled
+                  ? 'Downloads all original photos & media from post'
+                  : 'Image download disabled'}
+              </span>
             </div>
 
             {/* Output Socket */}
