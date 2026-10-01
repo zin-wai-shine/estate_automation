@@ -1,5 +1,6 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { FiChevronDown, FiCheck } from 'react-icons/fi';
+import React from 'react';
+import ReactSelect from 'react-select';
+import type { StylesConfig } from 'react-select';
 
 export interface SelectOption {
   value: string;
@@ -12,6 +13,11 @@ export interface SelectProps {
   onChange: (value: string) => void;
   placeholder?: string;
   width?: string;
+  height?: string;
+  isSearchable?: boolean;
+  isDisabled?: boolean;
+  className?: string;
+  id?: string;
 }
 
 export const Select: React.FC<SelectProps> = ({
@@ -19,110 +25,125 @@ export const Select: React.FC<SelectProps> = ({
   value,
   onChange,
   placeholder = 'Select option',
-  width = '180px',
+  width = '100%',
+  height = '40px',
+  isSearchable = false,
+  isDisabled = false,
+  className,
+  id,
 }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const selectedOption = options.find((opt) => String(opt.value) === String(value)) || null;
 
-  const selectedOption = options.find((opt) => opt.value === value);
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  const customStyles: StylesConfig<SelectOption, false> = {
+    container: (provided) => ({
+      ...provided,
+      width,
+    }),
+    control: (provided, state) => ({
+      ...provided,
+      minHeight: height,
+      height,
+      backgroundColor: 'var(--bg-main)',
+      borderColor: state.isFocused ? 'var(--accent-primary)' : 'var(--border-color)',
+      borderRadius: '0.5rem',
+      boxShadow: state.isFocused ? '0 0 0 1px var(--accent-primary)' : 'none',
+      fontSize: '0.8125rem',
+      color: 'var(--text-primary)',
+      cursor: 'pointer',
+      boxSizing: 'border-box',
+      '&:hover': {
+        borderColor: state.isFocused ? 'var(--accent-primary)' : 'var(--border-hover, #4B5563)',
+      },
+    }),
+    valueContainer: (provided) => ({
+      ...provided,
+      height,
+      padding: '0 0.75rem',
+      display: 'flex',
+      alignItems: 'center',
+    }),
+    singleValue: (provided) => ({
+      ...provided,
+      color: 'var(--text-primary)',
+      fontSize: '0.8125rem',
+      fontWeight: 500,
+      margin: 0,
+    }),
+    placeholder: (provided) => ({
+      ...provided,
+      color: 'var(--text-muted)',
+      fontSize: '0.8125rem',
+      margin: 0,
+    }),
+    input: (provided) => ({
+      ...provided,
+      color: 'var(--text-primary)',
+      fontSize: '0.8125rem',
+      margin: 0,
+      padding: 0,
+    }),
+    indicatorSeparator: () => ({
+      display: 'none',
+    }),
+    dropdownIndicator: (provided, state) => ({
+      ...provided,
+      color: state.isFocused ? 'var(--accent-primary)' : 'var(--text-muted)',
+      padding: '0 0.5rem',
+      transition: 'transform 0.2s ease',
+      transform: state.selectProps.menuIsOpen ? 'rotate(180deg)' : 'none',
+      '&:hover': {
+        color: 'var(--text-primary)',
+      },
+    }),
+    menu: (provided) => ({
+      ...provided,
+      backgroundColor: 'var(--bg-surface)',
+      border: '1px solid var(--border-color)',
+      borderRadius: '0.5rem',
+      boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.3)',
+      overflow: 'hidden',
+      zIndex: 9999,
+      marginTop: '4px',
+    }),
+    menuList: (provided) => ({
+      ...provided,
+      padding: '0.25rem',
+      maxHeight: '240px',
+    }),
+    option: (provided, state) => ({
+      ...provided,
+      backgroundColor: state.isSelected
+        ? 'var(--accent-primary)'
+        : state.isFocused
+        ? 'var(--bg-surface-hover)'
+        : 'transparent',
+      color: state.isSelected ? '#ffffff' : 'var(--text-primary)',
+      fontSize: '0.8125rem',
+      fontWeight: state.isSelected ? 600 : 400,
+      padding: '0.5rem 0.75rem',
+      borderRadius: '0.375rem',
+      cursor: 'pointer',
+      margin: '0.125rem 0',
+      transition: 'background-color 0.15s ease',
+      '&:active': {
+        backgroundColor: 'var(--accent-primary)',
+      },
+    }),
+  };
 
   return (
-    <div ref={dropdownRef} style={{ position: 'relative', width, display: 'inline-block' }}>
-      <button
-        type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        style={{
-          width: '100%',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '0.4375rem 0.75rem',
-          fontSize: '0.8125rem',
-          fontWeight: 500,
-          backgroundColor: 'var(--bg-surface)',
-          color: 'var(--text-primary)',
-          border: '1px solid var(--border-color)',
-          borderRadius: '0.375rem',
-          cursor: 'pointer',
-          outline: 'none',
-          transition: 'all 0.12s ease',
-        }}
-      >
-        <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {selectedOption ? selectedOption.label : placeholder}
-        </span>
-        <FiChevronDown
-          style={{
-            fontSize: '0.875rem',
-            color: 'var(--text-muted)',
-            transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)',
-            transition: 'transform 0.15s ease',
-            marginLeft: '0.375rem',
-            flexShrink: 0,
-          }}
-        />
-      </button>
-
-      {isOpen && (
-        <div
-          style={{
-            position: 'absolute',
-            top: 'calc(100% + 4px)',
-            left: 0,
-            right: 0,
-            backgroundColor: 'var(--bg-surface)',
-            border: '1px solid var(--border-color)',
-            borderRadius: '0.375rem',
-            boxShadow: 'var(--shadow-md)',
-            zIndex: 50,
-            maxHeight: '220px',
-            overflowY: 'auto',
-            padding: '0.25rem',
-          }}
-        >
-          {options.map((opt) => {
-            const isSelected = opt.value === value;
-            return (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => {
-                  onChange(opt.value);
-                  setIsOpen(false);
-                }}
-                style={{
-                  width: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '0.375rem 0.625rem',
-                  fontSize: '0.8125rem',
-                  color: isSelected ? 'var(--accent-primary)' : 'var(--text-primary)',
-                  backgroundColor: isSelected ? 'var(--bg-surface-hover)' : 'transparent',
-                  border: 'none',
-                  borderRadius: '0.25rem',
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                  fontWeight: isSelected ? 600 : 400,
-                }}
-              >
-                <span>{opt.label}</span>
-                {isSelected && <FiCheck style={{ fontSize: '0.75rem' }} />}
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
+    <ReactSelect<SelectOption, false>
+      id={id}
+      className={className}
+      value={selectedOption}
+      onChange={(opt) => {
+        if (opt) onChange(opt.value);
+      }}
+      options={options}
+      styles={customStyles}
+      placeholder={placeholder}
+      isSearchable={isSearchable}
+      isDisabled={isDisabled}
+    />
   );
 };

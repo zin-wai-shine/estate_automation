@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { Property } from '../../types';
 import { Button } from '../../components/ui/Button';
+import { Select } from '../../components/ui/Select';
 import { Input } from '../../components/ui/Input';
 import { Badge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
@@ -973,23 +974,18 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
           >
             <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <span style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>Extraction Method:</span>
-                <select
+                <span style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>Extraction Method:</span>
+                <Select
                   value={preferredMethod}
-                  onChange={(e: any) => setPreferredMethod(e.target.value)}
-                  style={{
-                    backgroundColor: 'var(--bg-secondary)',
-                    color: 'var(--text-primary)',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: '0.375rem',
-                    padding: '0.375rem 0.625rem',
-                    fontSize: '0.8125rem',
-                  }}
-                >
-                  <option value="auto">Auto (Meta API → OpenClaw)</option>
-                  <option value="openclaw_browser">OpenClaw Browser Only</option>
-                  <option value="meta_graph_api">Meta Graph API Only</option>
-                </select>
+                  onChange={(val) => setPreferredMethod(val as any)}
+                  width="230px"
+                  height="34px"
+                  options={[
+                    { value: 'auto', label: 'Auto (Meta API → OpenClaw)' },
+                    { value: 'openclaw_browser', label: 'OpenClaw Browser Only' },
+                    { value: 'meta_graph_api', label: 'Meta Graph API Only' },
+                  ]}
+                />
               </div>
 
               <Button variant="ghost" size="sm" onClick={() => handleStartImport()}>
@@ -1547,11 +1543,12 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
             </div>
 
             {/* Action Buttons for Raw Data */}
-            <div style={{ display: 'flex', gap: '0.5rem', paddingTop: '0.25rem' }}>
+            <div style={{ display: 'flex', gap: '0.625rem', paddingTop: '0.25rem', alignItems: 'center' }}>
               <Button
                 variant="outline"
                 size="md"
                 onClick={() => setShowRawJsonModal(true)}
+                leftIcon={<FiCode style={{ fontSize: '15px' }} />}
                 style={{
                   height: '38px',
                   display: 'inline-flex',
@@ -1565,13 +1562,13 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                   borderRadius: '0.375rem',
                 }}
               >
-                <FiCode style={{ fontSize: '15px', flexShrink: 0 }} />
-                <span>View Raw Data</span>
+                View Raw Data
               </Button>
               <Button
-                variant="ghost"
+                variant="outline"
                 size="md"
                 onClick={handleRerunExtraction}
+                leftIcon={<FiRefreshCw style={{ fontSize: '15px' }} />}
                 style={{
                   height: '38px',
                   display: 'inline-flex',
@@ -1585,8 +1582,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                   borderRadius: '0.375rem',
                 }}
               >
-                <FiRefreshCw style={{ fontSize: '15px', flexShrink: 0 }} />
-                <span>Re-run Extraction</span>
+                Re-run Extraction
               </Button>
             </div>
 
@@ -1678,33 +1674,20 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
 
               {/* Template Selection & Main Generate Button Row */}
               <div style={{ display: 'flex', gap: '0.625rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                <div style={{ flex: '1 1 220px', minWidth: '180px' }}>
+                <div style={{ flex: '1 1 240px', minWidth: '200px' }}>
                   <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.375rem', display: 'block' }}>
                     Select Prompt Template
                   </label>
-                  <select
+                  <Select
                     value={selectedTemplateId}
-                    onChange={(e) => setSelectedTemplateId(e.target.value)}
-                    style={{
-                      width: '100%',
-                      height: '40px',
-                      padding: '0 0.75rem',
-                      borderRadius: '0.5rem',
-                      backgroundColor: 'var(--bg-main)',
-                      border: '1px solid var(--border-color)',
-                      color: 'var(--text-primary)',
-                      fontSize: '0.8125rem',
-                      cursor: 'pointer',
-                      outline: 'none',
-                      boxSizing: 'border-box',
-                    }}
-                  >
-                    {promptTemplates.map((t) => (
-                      <option key={t.id} value={String(t.id)}>
-                        {t.name} ({t.category})
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(val) => setSelectedTemplateId(val)}
+                    height="40px"
+                    placeholder="Select prompt template..."
+                    options={promptTemplates.map((t) => ({
+                      value: String(t.id),
+                      label: `${t.name} (${t.category})`,
+                    }))}
+                  />
                 </div>
 
                 <Button
