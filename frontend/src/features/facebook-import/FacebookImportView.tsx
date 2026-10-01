@@ -23,8 +23,43 @@ import {
   FiEye,
   FiInfo,
   FiX,
+  FiZap,
+  FiEdit3,
 } from 'react-icons/fi';
 import { FaFacebook } from 'react-icons/fa';
+import { SiGooglegemini } from 'react-icons/si';
+import type { PromptTemplate } from '../../types';
+import { CustomDropdown } from '../../components/ui/CustomDropdown';
+
+const DEFAULT_PROMPT_TEMPLATES: PromptTemplate[] = [
+  {
+    id: 1,
+    name: 'Facebook Rental Listing Copy (Thai/English)',
+    category: 'FACEBOOK_RENT',
+    version: 'V1.2',
+    active: true,
+    templateText:
+      'Generate an attractive Facebook real estate rental post for a condo in Bangkok.\nTitle: {title}\nPrice: {price}\nLocation: {location}\nInclude high-converting CTA and relevant hashtags.',
+  },
+  {
+    id: 2,
+    name: 'TikTok Short Video Script & Hook Generator',
+    category: 'TIKTOK',
+    version: 'V1.0',
+    active: true,
+    templateText:
+      'Create a viral 15-second TikTok video script for property listing {title}.\nStart with a high-curiosity hook, list 3 key highlights, and end with Line ID CTA.',
+  },
+  {
+    id: 3,
+    name: 'Facebook Property Sale Copy Template',
+    category: 'FACEBOOK_SALE',
+    version: 'V1.0',
+    active: true,
+    templateText:
+      'Write a professional sales copy for property sale: {title}.\nHighlight investment yield, BTS access, and price {price}.',
+  },
+];
 
 interface FacebookImportViewProps {
   onSaveToInbox?: (property: Partial<Property>) => void;
@@ -144,6 +179,84 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
   const [savedSuccessMsg, setSavedSuccessMsg] = useState(false);
   const [manualMode, setManualMode] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Google AI Assistant & Prompt Templates
+  const [promptTemplates, setPromptTemplates] = useState<PromptTemplate[]>(DEFAULT_PROMPT_TEMPLATES);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('1');
+  const [customPromptTweak, setCustomPromptTweak] = useState<string>('');
+  const [showPromptTweak, setShowPromptTweak] = useState<boolean>(false);
+  const [isGeneratingAI, setIsGeneratingAI] = useState<boolean>(false);
+  const [aiGeneratedCopy, setAiGeneratedCopy] = useState<string>('');
+  const [captionTab, setCaptionTab] = useState<'raw' | 'ai'>('raw');
+  const [copiedAiCopy, setCopiedAiCopy] = useState<boolean>(false);
+  const [isEditingAiCopy, setIsEditingAiCopy] = useState<boolean>(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+
+  // Load saved prompt templates from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('estate_prompt_templates');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setPromptTemplates(parsed);
+          const firstActive = parsed.find((p: any) => p.active) || parsed[0];
+          if (firstActive) setSelectedTemplateId(String(firstActive.id));
+          return;
+        }
+      }
+    } catch {}
+    setPromptTemplates(DEFAULT_PROMPT_TEMPLATES);
+    setSelectedTemplateId(String(DEFAULT_PROMPT_TEMPLATES[0].id));
+  }, []);
+
+  const handleGenerateAICopy = async () => {
+    if (!caption.trim()) {
+      addLog('Cannot generate AI copy: caption is empty', 'warn');
+      return;
+    }
+
+    const template = promptTemplates.find((t) => String(t.id) === String(selectedTemplateId));
+    setIsGeneratingAI(true);
+    setAiError(null);
+    addLog(`Calling Google AI (Gemini) with template "${template?.name || 'Selected'}"...`, 'info');
+
+    try {
+      const resp = await fetch('http://localhost:8085/api/facebook-import/generate-ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          template_id: template ? String(template.id) : '',
+          template_name: template?.name || 'Facebook Template',
+          template_text: template?.templateText || '',
+          raw_content: caption,
+          custom_prompt: customPromptTweak,
+        }),
+      });
+
+      const data = await resp.json();
+      if (!resp.ok || !data.success) {
+        throw new Error(data.error || 'Failed to generate listing copy with Google AI');
+      }
+
+      setAiGeneratedCopy(data.generated_content);
+      setCaptionTab('ai');
+      addLog('✨ Google AI generated listing copy successfully!', 'success');
+    } catch (err: any) {
+      const msg = err.message || 'Error communicating with Google AI';
+      setAiError(msg);
+      addLog(`Google AI generation failed: ${msg}`, 'error');
+    } finally {
+      setIsGeneratingAI(false);
+    }
+  };
+
+  const handleCopyAiCopy = () => {
+    if (!aiGeneratedCopy) return;
+    navigator.clipboard.writeText(aiGeneratedCopy);
+    setCopiedAiCopy(true);
+    setTimeout(() => setCopiedAiCopy(false), 2000);
+  };
 
   // Live Browser Preview
   const [liveScreenshot, setLiveScreenshot] = useState<string | null>(null);
@@ -483,12 +596,14 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
 
     const originalImgUrls = images.map((img) => img.stored_url || img.source_url);
 
+    const finalDescription = (captionTab === 'ai' && aiGeneratedCopy) ? aiGeneratedCopy : (aiGeneratedCopy || caption);
+
     const payload: Partial<Property> = {
       projectName: propertyData.project_name || 'Bangkok Property',
       listingType: (propertyData.listing_type as any) || 'RENT',
       propertyType: 'CONDO',
       title: `${propertyData.project_name || 'Listing'} - ${propertyData.listing_type} (${propertyData.bedrooms ? propertyData.bedrooms + ' Bed' : 'Condo'})`,
-      description: caption,
+      description: finalDescription,
       rentPrice: rentNum,
       salePrice: saleNum,
       bedrooms: propertyData.bedrooms ? parseInt(propertyData.bedrooms, 10) : undefined,
@@ -525,7 +640,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
               bathrooms: propertyData.bathrooms ? parseInt(propertyData.bathrooms, 10) : null,
               size_sqm: propertyData.size_sqm ? parseFloat(propertyData.size_sqm) : null,
             },
-            caption: { original: caption, language_detected: languages },
+            caption: { original: caption, ai_copy: aiGeneratedCopy, language_detected: languages },
             images,
           },
         }),
@@ -1370,47 +1485,368 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
               )}
             </div>
 
-            {/* Caption Display (Preserving Unicode) */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+            {/* Google AI Studio Prompt Assistant */}
+            <div
+              style={{
+                backgroundColor: 'rgba(78, 136, 255, 0.05)',
+                border: '1px solid rgba(78, 136, 255, 0.22)',
+                borderRadius: '0.625rem',
+                padding: '0.875rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.625rem',
+              }}
+            >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <label style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                  Visible Caption
-                </label>
-                <button
-                  type="button"
-                  onClick={handleCopyCaption}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <SiGooglegemini style={{ color: '#4E88FF', fontSize: '1.125rem' }} />
+                  <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                    Google AI Studio
+                  </span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                  <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10B981' }} />
+                  <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>Connected (gemini-flash-latest)</span>
+                </div>
+              </div>
+
+              {/* Template Selection & Generate Action */}
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end' }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.25rem', display: 'block' }}>
+                    Prompt Template
+                  </label>
+                  <select
+                    value={selectedTemplateId}
+                    onChange={(e) => setSelectedTemplateId(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '0.5rem 0.75rem',
+                      borderRadius: '0.375rem',
+                      backgroundColor: 'var(--bg-main)',
+                      border: '1px solid var(--border-color)',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.8125rem',
+                      cursor: 'pointer',
+                      outline: 'none',
+                    }}
+                  >
+                    {promptTemplates.map((t) => (
+                      <option key={t.id} value={String(t.id)}>
+                        {t.name} ({t.category})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={handleGenerateAICopy}
+                  disabled={isGeneratingAI || !caption.trim()}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '0.25rem',
-                    background: 'transparent',
+                    gap: '0.375rem',
+                    background: 'linear-gradient(135deg, #2563EB 0%, #7C3AED 100%)',
                     border: 'none',
-                    color: copiedCaption ? 'var(--status-success)' : 'var(--accent-primary)',
-                    fontSize: '0.75rem',
-                    cursor: 'pointer',
+                    boxShadow: '0 2px 8px rgba(78, 136, 255, 0.3)',
+                    padding: '0.55rem 0.875rem',
+                    fontSize: '0.8125rem',
+                    whiteSpace: 'nowrap',
                   }}
                 >
-                  {copiedCaption ? <FiCheck /> : <FiCopy />}
-                  <span>{copiedCaption ? 'Copied!' : 'Copy Caption'}</span>
-                </button>
+                  {isGeneratingAI ? (
+                    <>
+                      <FiRefreshCw style={{ animation: 'spin 1s linear infinite' }} />
+                      <span>Generating...</span>
+                    </>
+                  ) : (
+                    <>
+                      <FiZap style={{ fontSize: '0.9375rem' }} />
+                      <span>Generate with AI</span>
+                    </>
+                  )}
+                </Button>
               </div>
 
-              <div
-                style={{
-                  backgroundColor: 'var(--bg-main)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: '0.5rem',
-                  padding: '0.75rem',
-                  fontSize: '0.8125rem',
-                  color: 'var(--text-primary)',
-                  whiteSpace: 'pre-wrap',
-                  maxHeight: '260px',
-                  overflowY: 'auto',
-                  lineHeight: 1.6,
-                }}
-              >
-                {caption || <span style={{ color: 'var(--text-muted)' }}>No caption extracted</span>}
+              {/* Optional Prompt Customization */}
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setShowPromptTweak(!showPromptTweak)}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'var(--accent-primary)',
+                    fontSize: '0.6875rem',
+                    cursor: 'pointer',
+                    padding: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.25rem',
+                  }}
+                >
+                  <FiSliders style={{ fontSize: '0.6875rem' }} />
+                  <span>{showPromptTweak ? 'Hide prompt tweak' : 'Customize prompt instructions'}</span>
+                </button>
+                {showPromptTweak && (
+                  <div style={{ marginTop: '0.375rem' }}>
+                    <input
+                      type="text"
+                      value={customPromptTweak}
+                      onChange={(e) => setCustomPromptTweak(e.target.value)}
+                      placeholder="e.g. Translate to English, highlight BTS station, add urgent CTA..."
+                      style={{
+                        width: '100%',
+                        padding: '0.45rem 0.625rem',
+                        borderRadius: '0.375rem',
+                        backgroundColor: 'var(--bg-main)',
+                        border: '1px solid var(--border-color)',
+                        color: 'var(--text-primary)',
+                        fontSize: '0.75rem',
+                        outline: 'none',
+                      }}
+                    />
+                  </div>
+                )}
               </div>
+
+              {aiError && (
+                <div
+                  style={{
+                    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                    border: '1px solid var(--status-error)',
+                    borderRadius: '0.375rem',
+                    padding: '0.5rem 0.75rem',
+                    fontSize: '0.75rem',
+                    color: '#F87171',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                  }}
+                >
+                  <span>{aiError}</span>
+                  <button
+                    type="button"
+                    onClick={() => setAiError(null)}
+                    style={{ background: 'transparent', border: 'none', color: '#F87171', cursor: 'pointer' }}
+                  >
+                    <FiX />
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Caption Display (Dual View: Raw Facebook Caption vs AI Polished Copy) */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                {/* Tab Switcher */}
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: '0.25rem',
+                    background: 'var(--bg-main)',
+                    padding: '0.1875rem',
+                    borderRadius: '0.375rem',
+                    border: '1px solid var(--border-color)',
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setCaptionTab('raw')}
+                    style={{
+                      padding: '0.25rem 0.625rem',
+                      borderRadius: '0.25rem',
+                      border: 'none',
+                      fontSize: '0.75rem',
+                      fontWeight: captionTab === 'raw' ? 600 : 400,
+                      backgroundColor: captionTab === 'raw' ? 'var(--bg-secondary)' : 'transparent',
+                      color: captionTab === 'raw' ? 'var(--text-primary)' : 'var(--text-muted)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Raw Facebook Caption
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCaptionTab('ai')}
+                    style={{
+                      padding: '0.25rem 0.625rem',
+                      borderRadius: '0.25rem',
+                      border: 'none',
+                      fontSize: '0.75rem',
+                      fontWeight: captionTab === 'ai' ? 600 : 400,
+                      backgroundColor: captionTab === 'ai' ? 'var(--bg-secondary)' : 'transparent',
+                      color: captionTab === 'ai' ? '#60A5FA' : 'var(--text-muted)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.375rem',
+                    }}
+                  >
+                    <span>AI Listing Copy</span>
+                    {aiGeneratedCopy && (
+                      <span
+                        style={{
+                          width: '6px',
+                          height: '6px',
+                          borderRadius: '50%',
+                          backgroundColor: '#3B82F6',
+                          display: 'inline-block',
+                        }}
+                      />
+                    )}
+                  </button>
+                </div>
+
+                {/* Tab specific action buttons */}
+                {captionTab === 'raw' ? (
+                  <button
+                    type="button"
+                    onClick={handleCopyCaption}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.25rem',
+                      background: 'transparent',
+                      border: 'none',
+                      color: copiedCaption ? 'var(--status-success)' : 'var(--accent-primary)',
+                      fontSize: '0.75rem',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {copiedCaption ? <FiCheck /> : <FiCopy />}
+                    <span>{copiedCaption ? 'Copied!' : 'Copy Caption'}</span>
+                  </button>
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    {aiGeneratedCopy && (
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingAiCopy(!isEditingAiCopy)}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.25rem',
+                          background: 'transparent',
+                          border: 'none',
+                          color: isEditingAiCopy ? 'var(--accent-primary)' : 'var(--text-muted)',
+                          fontSize: '0.75rem',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <FiEdit3 />
+                        <span>{isEditingAiCopy ? 'Done' : 'Edit'}</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleCopyAiCopy}
+                      disabled={!aiGeneratedCopy}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.25rem',
+                        background: 'transparent',
+                        border: 'none',
+                        color: !aiGeneratedCopy ? 'var(--text-muted)' : copiedAiCopy ? 'var(--status-success)' : 'var(--accent-primary)',
+                        fontSize: '0.75rem',
+                        cursor: aiGeneratedCopy ? 'pointer' : 'not-allowed',
+                      }}
+                    >
+                      {copiedAiCopy ? <FiCheck /> : <FiCopy />}
+                      <span>{copiedAiCopy ? 'Copied!' : 'Copy AI Copy'}</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Content Container */}
+              {captionTab === 'raw' ? (
+                <div
+                  style={{
+                    backgroundColor: 'var(--bg-main)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '0.5rem',
+                    padding: '0.75rem',
+                    fontSize: '0.8125rem',
+                    color: 'var(--text-primary)',
+                    whiteSpace: 'pre-wrap',
+                    maxHeight: '260px',
+                    overflowY: 'auto',
+                    lineHeight: 1.6,
+                  }}
+                >
+                  {caption || <span style={{ color: 'var(--text-muted)' }}>No caption extracted</span>}
+                </div>
+              ) : (
+                <div
+                  style={{
+                    backgroundColor: 'var(--bg-main)',
+                    border: '1px solid rgba(78, 136, 255, 0.3)',
+                    borderRadius: '0.5rem',
+                    padding: '0.75rem',
+                    minHeight: '140px',
+                    maxHeight: '260px',
+                    overflowY: 'auto',
+                    position: 'relative',
+                  }}
+                >
+                  {aiGeneratedCopy ? (
+                    isEditingAiCopy ? (
+                      <textarea
+                        value={aiGeneratedCopy}
+                        onChange={(e) => setAiGeneratedCopy(e.target.value)}
+                        style={{
+                          width: '100%',
+                          minHeight: '200px',
+                          backgroundColor: 'transparent',
+                          border: 'none',
+                          outline: 'none',
+                          color: 'var(--text-primary)',
+                          fontSize: '0.8125rem',
+                          lineHeight: 1.6,
+                          resize: 'none',
+                          fontFamily: 'inherit',
+                        }}
+                      />
+                    ) : (
+                      <div
+                        style={{
+                          fontSize: '0.8125rem',
+                          color: 'var(--text-primary)',
+                          whiteSpace: 'pre-wrap',
+                          lineHeight: 1.6,
+                        }}
+                      >
+                        {aiGeneratedCopy}
+                      </div>
+                    )
+                  ) : (
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        height: '140px',
+                        textAlign: 'center',
+                        gap: '0.625rem',
+                        color: 'var(--text-muted)',
+                        fontSize: '0.8125rem',
+                      }}
+                    >
+                      <SiGooglegemini style={{ fontSize: '1.75rem', color: '#4E88FF', opacity: 0.8 }} />
+                      <div>
+                        Select a prompt template above and click{' '}
+                        <strong style={{ color: 'var(--text-primary)' }}>Generate with AI</strong> to transform this raw post
+                        into formatted real estate copy.
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Action Buttons */}

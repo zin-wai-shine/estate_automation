@@ -21,6 +21,7 @@ var (
 	mediaDownloader = services.NewFacebookMediaDownloader("./storage/uploads/facebook-import")
 	aiExtractor     = services.NewPropertyAIExtractor()
 	importRepo      = services.GetFacebookImportRepository()
+	googleAIService = services.NewGoogleAIService()
 )
 
 // ResolveFacebookURL validates and resolves canonical Facebook URLs
@@ -439,3 +440,55 @@ func ProxyFacebookImage(c *fiber.Ctx) error {
 	c.Set("Cache-Control", "public, max-age=86400")
 	return c.Send(bodyBytes)
 }
+
+type GenerateAICopyRequest struct {
+	TemplateID   string `json:"template_id"`
+	TemplateName string `json:"template_name"`
+	TemplateText string `json:"template_text"`
+	RawContent   string `json:"raw_content"`
+	CustomPrompt string `json:"custom_prompt"`
+	APIKey       string `json:"api_key"`
+	Model        string `json:"model"`
+}
+
+// GenerateAICopy modifies raw content using Google AI (Gemini) and the selected prompt template
+func GenerateAICopy(c *fiber.Ctx) error {
+	var req GenerateAICopyRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"success": false,
+			"error":   "Invalid request payload",
+		})
+	}
+
+	if strings.TrimSpace(req.RawContent) == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"success": false,
+			"error":   "Raw content cannot be empty",
+		})
+	}
+
+	prompt := req.TemplateText
+	if strings.TrimSpace(req.CustomPrompt) != "" {
+		if strings.TrimSpace(prompt) != "" {
+			prompt = req.CustomPrompt + "\n\n" + prompt
+		} else {
+			prompt = req.CustomPrompt
+		}
+	}
+
+	generatedText, err := googleAIService.GenerateContent(prompt, req.RawContent, req.APIKey, req.Model)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"success": false,
+			"error":   fmt.Sprintf("Failed to generate AI copy: %v", err),
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"success":           true,
+		"generated_content": generatedText,
+		"template_name":     req.TemplateName,
+	})
+}
+

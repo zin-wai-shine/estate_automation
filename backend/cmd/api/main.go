@@ -81,6 +81,7 @@ func main() {
 	fbImport.Get("/jobs/:id", handlers.GetFacebookImportJob)
 	fbImport.Post("/upload-photos", handlers.UploadFacebookImportPhotos)
 	fbImport.Get("/proxy-image", handlers.ProxyFacebookImage)
+	fbImport.Post("/generate-ai", handlers.GenerateAICopy)
 
 	// Property Import & Multi-Provider Pipeline Routes
 	props := app.Group("/api/properties")
