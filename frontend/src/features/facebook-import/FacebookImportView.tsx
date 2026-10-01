@@ -1879,7 +1879,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
             </div>
           </div>
 
-          {/* MOTHER BOX 2: AI PROMPT & COPY GENERATOR PANEL (SEPARATE STANDALONE BOX) */}
+          {/* MOTHER BOX 2: AI COPY GENERATOR PANEL */}
           <div
             style={{
               backgroundColor: 'var(--bg-secondary)',
@@ -1892,482 +1892,245 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
               boxShadow: 'var(--shadow-sm)',
             }}
           >
-            {/* Header: Title + Provider Switcher (Google AI vs OpenAI) + Status */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', flexWrap: 'wrap' }}>
-                <h3 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
-                  AI Prompt & Copy Generator
-                </h3>
-
-                {/* Dual AI Provider Switcher */}
-                <div
-                  style={{
-                    display: 'inline-flex',
-                    backgroundColor: 'var(--bg-main)',
-                    padding: '2px',
-                    borderRadius: '6px',
-                    border: '1px solid var(--border-color)',
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => setAiProvider('google_ai')}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      padding: '4px 10px',
-                      borderRadius: '4px',
-                      border: 'none',
-                      fontSize: '0.75rem',
-                      fontWeight: aiProvider === 'google_ai' ? 600 : 400,
-                      backgroundColor: aiProvider === 'google_ai' ? 'rgba(78, 136, 255, 0.2)' : 'transparent',
-                      color: aiProvider === 'google_ai' ? '#60A5FA' : 'var(--text-muted)',
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    <SiGooglegemini style={{ fontSize: '13px', color: '#4E88FF', flexShrink: 0 }} />
-                    <span>Google AI Studio</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setAiProvider('openai')}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      padding: '4px 10px',
-                      borderRadius: '4px',
-                      border: 'none',
-                      fontSize: '0.75rem',
-                      fontWeight: aiProvider === 'openai' ? 600 : 400,
-                      backgroundColor: aiProvider === 'openai' ? 'rgba(16, 185, 129, 0.2)' : 'transparent',
-                      color: aiProvider === 'openai' ? '#34D399' : 'var(--text-muted)',
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    <OpenAIIcon size={13} color="#10B981" />
-                    <span>OpenAI</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Connection Status */}
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.6875rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10B981' }} />
-                <span>{aiProvider === 'google_ai' ? 'Connected (gemini-flash-latest)' : 'Connected (gpt-4o)'}</span>
-              </div>
-            </div>
-
-            {/* Dynamic AI Process Tabs from Workflow Canvas */}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                flexWrap: 'wrap',
-                gap: '0.5rem',
-                borderBottom: '1px solid var(--border-color)',
-                paddingBottom: '0.625rem',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', marginRight: '0.25rem' }}>
-                  Workflow Processes:
-                </span>
-                {workflowConfig.aiBoxes.map((box) => {
-                  const isActive = activeAIBoxId === box.id;
-                  const hasGenerated = Boolean(aiGeneratedOutputs[box.id]);
-                  const isBoxLoading = Boolean(aiBoxGenerating[box.id]);
-
-                  return (
-                    <button
-                      key={box.id}
-                      type="button"
-                      onClick={() => {
-                        setActiveAIBoxId(box.id);
-                        if (aiGeneratedOutputs[box.id]) {
-                          setAiGeneratedCopy(aiGeneratedOutputs[box.id]);
-                        }
-                      }}
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '0.375rem',
-                        padding: '0.25rem 0.625rem',
-                        borderRadius: '0.375rem',
-                        border: '1px solid',
-                        borderColor: isActive ? 'var(--accent-primary)' : 'var(--border-color)',
-                        backgroundColor: isActive ? 'rgba(78, 136, 255, 0.15)' : 'var(--bg-main)',
-                        color: isActive ? 'var(--text-primary)' : 'var(--text-muted)',
-                        fontSize: '0.75rem',
-                        fontWeight: isActive ? 600 : 500,
-                        cursor: 'pointer',
-                        transition: 'all 0.15s ease',
-                      }}
-                    >
-                      {box.provider === 'openai' ? (
-                        <OpenAIIcon size={13} color="#10B981" />
-                      ) : (
-                        <SiGooglegemini style={{ fontSize: '12px', color: '#4E88FF' }} />
-                      )}
-                      <span>{box.title}</span>
-                      {isBoxLoading ? (
-                        <FiRefreshCw className="spin" style={{ animation: 'spin 1s linear infinite', fontSize: '11px', color: 'var(--accent-primary)' }} />
-                      ) : hasGenerated ? (
-                        <FiCheck style={{ fontSize: '12px', color: 'var(--status-success)' }} />
-                      ) : null}
-                    </button>
-                  );
-                })}
-              </div>
-
+            {/* Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
+                AI Copy Generator
+              </h3>
               <button
                 type="button"
-                onClick={() => {
-                  if (onNavigateTab) onNavigateTab('create-workflow');
-                  else window.location.href = '/create-workflow';
-                }}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '0.3rem',
-                  padding: '0.25rem 0.55rem',
-                  borderRadius: '0.375rem',
-                  border: '1px dashed rgba(139, 92, 246, 0.4)',
-                  backgroundColor: 'rgba(139, 92, 246, 0.08)',
-                  color: '#A78BFA',
-                  fontSize: '0.71875rem',
-                  fontWeight: 500,
-                  cursor: 'pointer',
-                }}
-              >
-                <FiGitBranch style={{ fontSize: '11px' }} />
-                <span>+ Setup in Workflow</span>
-              </button>
-            </div>
-
-            {/* Template Selection & Main Generate Buttons Row */}
-            <div style={{ display: 'flex', gap: '0.625rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-              <div style={{ flex: '1 1 240px', minWidth: '200px' }}>
-                <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.375rem', display: 'block' }}>
-                  Select Prompt Template
-                </label>
-                <Select
-                  value={selectedTemplateId}
-                  onChange={(val) => setSelectedTemplateId(val)}
-                  height="40px"
-                  placeholder="Select prompt template..."
-                  options={promptTemplates.map((t) => ({
-                    value: String(t.id),
-                    label: `${t.name} (${t.category})`,
-                  }))}
-                />
-              </div>
-
-              {/* Generate Current Process Button */}
-              <Button
-                variant="primary"
-                size="md"
-                onClick={() => {
-                  if (activeAIBoxId) {
-                    handleGenerateDynamicBoxCopy(activeAIBoxId);
-                  } else {
-                    handleGenerateAICopy();
-                  }
-                }}
-                disabled={isGeneratingAI || Boolean(aiBoxGenerating[activeAIBoxId]) || !caption.trim()}
-                style={{
-                  height: '40px',
-                  minWidth: '150px',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '0.5rem',
-                  padding: '0 1rem',
-                  borderRadius: '0.5rem',
-                  background: aiProvider === 'openai'
-                    ? 'linear-gradient(135deg, #059669 0%, #10B981 100%)'
-                    : 'linear-gradient(135deg, #2563EB 0%, #7C3AED 100%)',
-                  border: 'none',
-                  boxShadow: aiProvider === 'openai'
-                    ? '0 2px 10px rgba(16, 185, 129, 0.25)'
-                    : '0 2px 10px rgba(78, 136, 255, 0.3)',
-                  fontSize: '0.8125rem',
-                  fontWeight: 600,
-                  whiteSpace: 'nowrap',
-                  flexShrink: 0,
-                  boxSizing: 'border-box',
-                }}
-              >
-                {aiBoxGenerating[activeAIBoxId] ? (
-                  <>
-                    <FiRefreshCw className="spin" style={{ animation: 'spin 1s linear infinite', fontSize: '15px', flexShrink: 0 }} />
-                    <span>Generating...</span>
-                  </>
-                ) : (
-                  <>
-                    <FiZap style={{ fontSize: '15px', flexShrink: 0 }} />
-                    <span>Generate Current</span>
-                  </>
-                )}
-              </Button>
-
-              {/* Generate All Active Processes in Parallel Button */}
-              <Button
-                variant="outline"
-                size="md"
                 onClick={handleGenerateAllDynamicBoxes}
                 disabled={isGeneratingAI || !caption.trim()}
                 style={{
-                  height: '40px',
-                  minWidth: '150px',
                   display: 'inline-flex',
                   alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '0.5rem',
-                  padding: '0 1rem',
-                  borderRadius: '0.5rem',
-                  borderColor: 'rgba(139, 92, 246, 0.5)',
-                  backgroundColor: 'rgba(139, 92, 246, 0.08)',
+                  gap: '0.375rem',
+                  height: '30px',
+                  padding: '0 0.75rem',
+                  borderRadius: '0.375rem',
+                  border: '1px solid rgba(139, 92, 246, 0.45)',
+                  backgroundColor: 'rgba(139, 92, 246, 0.1)',
                   color: '#A78BFA',
-                  fontSize: '0.8125rem',
+                  fontSize: '0.75rem',
                   fontWeight: 600,
+                  cursor: isGeneratingAI || !caption.trim() ? 'not-allowed' : 'pointer',
+                  opacity: isGeneratingAI || !caption.trim() ? 0.6 : 1,
                   whiteSpace: 'nowrap',
-                  flexShrink: 0,
-                  boxSizing: 'border-box',
                 }}
               >
                 {isGeneratingAI ? (
-                  <>
-                    <FiRefreshCw className="spin" style={{ animation: 'spin 1s linear infinite', fontSize: '15px', flexShrink: 0 }} />
-                    <span>Generating All...</span>
-                  </>
+                  <FiRefreshCw className="spin" style={{ animation: 'spin 1s linear infinite', fontSize: '12px' }} />
                 ) : (
-                  <>
-                    <FiCpu style={{ fontSize: '15px', flexShrink: 0 }} />
-                    <span>Generate All ({workflowConfig.aiBoxes.filter((b) => b.enabled).length})</span>
-                  </>
+                  <FiCpu style={{ fontSize: '12px' }} />
                 )}
-              </Button>
+                Generate All ({workflowConfig.aiBoxes.filter((b) => b.enabled).length})
+              </button>
             </div>
 
-            {/* Optional Prompt Customization */}
-            <div>
-              <button
-                type="button"
-                onClick={() => setShowPromptTweak(!showPromptTweak)}
+            {/* AI Process Card Grid */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
+                gap: '0.625rem',
+              }}
+            >
+              {workflowConfig.aiBoxes.map((box) => {
+                const isGoogle = box.provider === 'google_ai';
+                const themeColor = isGoogle ? '#60A5FA' : '#10B981';
+                const isActive = activeAIBoxId === box.id;
+                const hasGenerated = Boolean(aiGeneratedOutputs[box.id]);
+                const isBoxLoading = Boolean(aiBoxGenerating[box.id]);
+
+                return (
+                  <div
+                    key={box.id}
+                    onClick={() => {
+                      setActiveAIBoxId(box.id);
+                      if (aiGeneratedOutputs[box.id]) setAiGeneratedCopy(aiGeneratedOutputs[box.id]);
+                    }}
+                    style={{
+                      backgroundColor: isActive
+                        ? isGoogle ? 'rgba(59,130,246,0.08)' : 'rgba(16,185,129,0.08)'
+                        : 'var(--bg-main)',
+                      border: `1.5px solid ${isActive ? themeColor + '60' : 'var(--border-color)'}`,
+                      borderRadius: '0.5rem',
+                      padding: '0.625rem 0.75rem',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.5rem',
+                      cursor: 'pointer',
+                      transition: 'border-color 0.15s, background 0.15s',
+                      boxShadow: isActive ? `0 0 10px ${themeColor}20` : 'none',
+                    }}
+                  >
+                    {/* Name + done check */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', overflow: 'hidden' }}>
+                      {isGoogle
+                        ? <SiGooglegemini style={{ fontSize: '12px', color: themeColor, flexShrink: 0 }} />
+                        : <OpenAIIcon size={12} color={themeColor} />
+                      }
+                      <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                        {box.title}
+                      </span>
+                      {hasGenerated && !isBoxLoading && (
+                        <FiCheck style={{ fontSize: '11px', color: 'var(--status-success)', flexShrink: 0 }} />
+                      )}
+                    </div>
+
+                    {/* Model badge */}
+                    <span style={{ fontSize: '0.625rem', color: themeColor, fontWeight: 600, backgroundColor: `${themeColor}18`, border: `1px solid ${themeColor}30`, borderRadius: '3px', padding: '1px 5px', width: 'fit-content' }}>
+                      {isGoogle ? 'Gemini' : 'GPT-4o'}
+                    </span>
+
+                    {/* Generate button */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActiveAIBoxId(box.id);
+                        handleGenerateDynamicBoxCopy(box.id);
+                      }}
+                      disabled={isBoxLoading || !caption.trim()}
+                      style={{
+                        height: '28px',
+                        width: '100%',
+                        background: box.enabled
+                          ? isGoogle ? 'linear-gradient(90deg,#1d4ed8,#2563eb)' : 'linear-gradient(90deg,#065f46,#059669)'
+                          : 'rgba(255,255,255,0.05)',
+                        border: `1px solid ${box.enabled ? themeColor + '50' : 'var(--border-color)'}`,
+                        borderRadius: '0.375rem',
+                        color: box.enabled ? '#fff' : 'var(--text-muted)',
+                        fontSize: '0.6875rem',
+                        fontWeight: 700,
+                        cursor: isBoxLoading || !caption.trim() ? 'not-allowed' : 'pointer',
+                        opacity: isBoxLoading || !caption.trim() ? 0.65 : 1,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '4px',
+                      }}
+                    >
+                      {isBoxLoading
+                        ? <FiRefreshCw className="spin" style={{ animation: 'spin 1s linear infinite', fontSize: '11px' }} />
+                        : <FiZap style={{ fontSize: '11px' }} />
+                      }
+                      {isBoxLoading ? 'Generating...' : 'Generate'}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Error */}
+            {aiError && (
+              <div
                 style={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: 'var(--accent-primary)',
-                  fontSize: '0.6875rem',
-                  cursor: 'pointer',
-                  padding: 0,
-                  display: 'inline-flex',
+                  backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                  border: '1px solid var(--status-error)',
+                  borderRadius: '0.375rem',
+                  padding: '0.5rem 0.75rem',
+                  fontSize: '0.75rem',
+                  color: '#F87171',
+                  display: 'flex',
                   alignItems: 'center',
-                  gap: '0.25rem',
+                  justifyContent: 'space-between',
                 }}
               >
-                <FiSliders style={{ fontSize: '0.6875rem' }} />
-                <span>{showPromptTweak ? 'Hide prompt instructions tweak' : 'Customize prompt instructions'}</span>
-              </button>
-              {showPromptTweak && (
-                <div style={{ marginTop: '0.375rem' }}>
-                  <input
-                    type="text"
-                    value={customPromptTweak}
-                    onChange={(e) => setCustomPromptTweak(e.target.value)}
-                    placeholder="e.g. Translate to English, highlight BTS station, add urgent CTA..."
-                    style={{
-                      width: '100%',
-                      height: '34px',
-                      padding: '0 0.625rem',
-                      borderRadius: '0.375rem',
-                      backgroundColor: 'var(--bg-main)',
-                      border: '1px solid var(--border-color)',
-                      color: 'var(--text-primary)',
-                      fontSize: '0.75rem',
-                      outline: 'none',
-                      boxSizing: 'border-box',
-                    }}
-                  />
-                </div>
-              )}
-            </div>
+                <span>{aiError}</span>
+                <button
+                  type="button"
+                  onClick={() => setAiError(null)}
+                  style={{ background: 'transparent', border: 'none', color: '#F87171', cursor: 'pointer', fontSize: '1rem' }}
+                >×</button>
+              </div>
+            )}
 
-              {aiError && (
-                <div
-                  style={{
-                    backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                    border: '1px solid var(--status-error)',
-                    borderRadius: '0.375rem',
-                    padding: '0.5rem 0.75rem',
-                    fontSize: '0.75rem',
-                    color: '#F87171',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                  }}
-                >
-                  <span>{aiError}</span>
-                  <button
-                    type="button"
-                    onClick={() => setAiError(null)}
-                    style={{ background: 'transparent', border: 'none', color: '#F87171', cursor: 'pointer' }}
-                  >
-                    <FiX />
-                  </button>
-                </div>
-              )}
+            {/* AI Generated Output Display */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+              {(() => {
+                const activeBox = workflowConfig.aiBoxes.find((b) => b.id === activeAIBoxId) || workflowConfig.aiBoxes[0];
+                const currentDisplayCopy = (activeBox && aiGeneratedOutputs[activeBox.id]) || aiGeneratedCopy;
 
-              {/* AI Generated Output Display Box */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-                {(() => {
-                  const activeBox = workflowConfig.aiBoxes.find((b) => b.id === activeAIBoxId) || workflowConfig.aiBoxes[0];
-                  const currentDisplayCopy = (activeBox && aiGeneratedOutputs[activeBox.id]) || aiGeneratedCopy;
-
-                  return (
-                    <>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.375rem' }}>
-                          <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                            {activeBox ? `AI Copy: ${activeBox.title}` : 'AI Generated Listing Copy'}
-                          </label>
-                          {activeBox && (
-                            <Badge variant={activeBox.provider === 'openai' ? 'success' : 'info'} size="sm">
-                              {activeBox.provider === 'openai' ? 'OpenAI GPT-4o' : 'Google Gemini'}
-                            </Badge>
-                          )}
-                        </div>
-
-                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
-                          {currentDisplayCopy && (
-                            <button
-                              type="button"
-                              onClick={() => setIsEditingAiCopy(!isEditingAiCopy)}
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '0.25rem',
-                                background: 'transparent',
-                                border: 'none',
-                                color: isEditingAiCopy ? 'var(--accent-primary)' : 'var(--text-muted)',
-                                fontSize: '0.75rem',
-                                cursor: 'pointer',
-                              }}
-                            >
-                              <FiEdit3 />
-                              <span>{isEditingAiCopy ? 'Done' : 'Edit'}</span>
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (!currentDisplayCopy) return;
-                              navigator.clipboard.writeText(currentDisplayCopy);
-                              setCopiedAiCopy(true);
-                              setTimeout(() => setCopiedAiCopy(false), 2000);
-                            }}
-                            disabled={!currentDisplayCopy}
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '0.25rem',
-                              background: 'transparent',
-                              border: 'none',
-                              color: !currentDisplayCopy ? 'var(--text-muted)' : copiedAiCopy ? 'var(--status-success)' : 'var(--accent-primary)',
-                              fontSize: '0.75rem',
-                              cursor: currentDisplayCopy ? 'pointer' : 'not-allowed',
-                            }}
-                          >
-                            {copiedAiCopy ? <FiCheck /> : <FiCopy />}
-                            <span>{copiedAiCopy ? 'Copied!' : 'Copy AI Copy'}</span>
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Content Box */}
-                      <div
-                        style={{
-                          backgroundColor: 'var(--bg-main)',
-                          border: currentDisplayCopy ? '1px solid rgba(78, 136, 255, 0.35)' : '1px solid var(--border-color)',
-                          borderRadius: '0.5rem',
-                          padding: '0.75rem',
-                          minHeight: '120px',
-                          maxHeight: '260px',
-                          overflowY: 'auto',
-                        }}
-                      >
-                        {currentDisplayCopy ? (
-                          isEditingAiCopy ? (
-                            <textarea
-                              value={currentDisplayCopy}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                setAiGeneratedCopy(val);
-                                if (activeBox) {
-                                  setAiGeneratedOutputs((prev) => ({ ...prev, [activeBox.id]: val }));
-                                }
-                              }}
-                              style={{
-                                width: '100%',
-                                minHeight: '180px',
-                                backgroundColor: 'transparent',
-                                border: 'none',
-                                outline: 'none',
-                                color: 'var(--text-primary)',
-                                fontSize: '0.8125rem',
-                                lineHeight: 1.6,
-                                resize: 'none',
-                                fontFamily: 'inherit',
-                              }}
-                            />
-                          ) : (
-                            <div
-                              style={{
-                                fontSize: '0.8125rem',
-                                color: 'var(--text-primary)',
-                                whiteSpace: 'pre-wrap',
-                                lineHeight: 1.6,
-                              }}
-                            >
-                              {currentDisplayCopy}
-                            </div>
-                          )
-                        ) : (
-                          <div
-                            style={{
-                              display: 'flex',
-                              flexDirection: 'column',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              height: '110px',
-                              textAlign: 'center',
-                              gap: '0.5rem',
-                              color: 'var(--text-muted)',
-                              fontSize: '0.8125rem',
-                            }}
-                          >
-                            <div style={{ display: 'inline-flex', gap: '0.5rem', alignItems: 'center' }}>
-                              <SiGooglegemini style={{ fontSize: '1.25rem', color: '#4E88FF', opacity: 0.8 }} />
-                              <OpenAIIcon size={18} color="#10B981" />
-                            </div>
-                            <div>
-                              Select any process tab above and click <strong style={{ color: 'var(--text-primary)' }}>Generate Current</strong> or <strong style={{ color: '#A78BFA' }}>Generate All</strong> to produce structured real estate copies.
-                            </div>
-                          </div>
+                return (
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.375rem' }}>
+                        <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                          {activeBox ? `AI Copy: ${activeBox.title}` : 'AI Generated Listing Copy'}
+                        </label>
+                        {activeBox && (
+                          <Badge variant={activeBox.provider === 'openai' ? 'success' : 'info'} size="sm">
+                            {activeBox.provider === 'openai' ? 'OpenAI GPT-4o' : 'Google Gemini'}
+                          </Badge>
                         )}
                       </div>
-                    </>
-                  );
-                })()}
-              </div>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
+                        {currentDisplayCopy && (
+                          <button
+                            type="button"
+                            onClick={() => setIsEditingAiCopy(!isEditingAiCopy)}
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', background: 'transparent', border: 'none', color: isEditingAiCopy ? 'var(--accent-primary)' : 'var(--text-muted)', fontSize: '0.75rem', cursor: 'pointer' }}
+                          >
+                            <FiEdit3 /><span>{isEditingAiCopy ? 'Done' : 'Edit'}</span>
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!currentDisplayCopy) return;
+                            navigator.clipboard.writeText(currentDisplayCopy);
+                            setCopiedAiCopy(true);
+                            setTimeout(() => setCopiedAiCopy(false), 2000);
+                          }}
+                          disabled={!currentDisplayCopy}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', background: 'transparent', border: 'none', color: !currentDisplayCopy ? 'var(--text-muted)' : copiedAiCopy ? 'var(--status-success)' : 'var(--accent-primary)', fontSize: '0.75rem', cursor: currentDisplayCopy ? 'pointer' : 'not-allowed' }}
+                        >
+                          {copiedAiCopy ? <FiCheck /> : <FiCopy />}
+                          <span>{copiedAiCopy ? 'Copied!' : 'Copy AI Copy'}</span>
+                        </button>
+                      </div>
+                    </div>
+                    <div
+                      style={{
+                        backgroundColor: 'var(--bg-main)',
+                        border: currentDisplayCopy ? '1px solid rgba(78, 136, 255, 0.35)' : '1px solid var(--border-color)',
+                        borderRadius: '0.5rem',
+                        padding: '0.75rem',
+                        minHeight: '120px',
+                        maxHeight: '260px',
+                        overflowY: 'auto',
+                      }}
+                    >
+                      {currentDisplayCopy ? (
+                        isEditingAiCopy ? (
+                          <textarea
+                            value={currentDisplayCopy}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setAiGeneratedCopy(val);
+                              if (activeBox) setAiGeneratedOutputs((prev) => ({ ...prev, [activeBox.id]: val }));
+                            }}
+                            style={{ width: '100%', minHeight: '180px', backgroundColor: 'transparent', border: 'none', outline: 'none', color: 'var(--text-primary)', fontSize: '0.8125rem', lineHeight: 1.6, resize: 'none', fontFamily: 'inherit' }}
+                          />
+                        ) : (
+                          <div style={{ fontSize: '0.8125rem', color: 'var(--text-primary)', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
+                            {currentDisplayCopy}
+                          </div>
+                        )
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '110px', textAlign: 'center', gap: '0.5rem', color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
+                          <div style={{ display: 'inline-flex', gap: '0.5rem', alignItems: 'center' }}>
+                            <SiGooglegemini style={{ fontSize: '1.25rem', color: '#4E88FF', opacity: 0.8 }} />
+                            <OpenAIIcon size={18} color="#10B981" />
+                          </div>
+                          <div>Click <strong style={{ color: 'var(--text-primary)' }}>Generate</strong> on any card above to produce AI copy.</div>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           </div>
 
