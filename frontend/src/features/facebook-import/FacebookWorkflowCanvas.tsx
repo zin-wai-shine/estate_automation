@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
-import { Select } from '../../components/ui/Select';
 import { Modal } from '../../components/ui/Modal';
 import {
   FiCpu,
@@ -10,7 +9,6 @@ import {
   FiCheckCircle,
   FiFileText,
   FiImage,
-  FiSettings,
   FiZoomIn,
   FiZoomOut,
   FiMaximize2,
@@ -18,12 +16,9 @@ import {
   FiCrosshair,
   FiPlus,
   FiTrash2,
-  FiCopy,
   FiCheck,
   FiSliders,
   FiArrowRight,
-  FiX,
-  FiLayers,
 } from 'react-icons/fi';
 import { FaFacebook } from 'react-icons/fa';
 import { SiGooglegemini } from 'react-icons/si';
@@ -495,9 +490,13 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
     return `M ${start.x} ${start.y} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${end.x} ${end.y}`;
   };
 
-  // Circular Node Dimensions
+  // Circular Node Dimensions (for trigger, get-content, get-images, destination)
   const CIRCLE_SIZE = 72;
   const HALF_CIRCLE = CIRCLE_SIZE / 2; // 36
+
+  // AI Square Node Dimensions
+  const AI_BOX_W = 160;
+  const AI_BOX_H = 90;
 
   // Sockets for wires
   const trigOutContent = { x: config.trigger.x + CIRCLE_SIZE, y: config.trigger.y + HALF_CIRCLE - 10 };
@@ -940,7 +939,7 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
 
             {/* 4. Get Content -> Each AI Box Lines */}
             {config.aiBoxes.map((aiBox) => {
-              const aiIn = { x: aiBox.x, y: aiBox.y + HALF_CIRCLE };
+              const aiIn = { x: aiBox.x, y: aiBox.y + AI_BOX_H / 2 };
               const path = createBezierPath(contentOut, aiIn);
               const isFlowing = config.getContent.enabled && aiBox.enabled;
 
@@ -970,7 +969,7 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
 
             {/* 5. Each AI Box -> Destination Lines */}
             {config.aiBoxes.map((aiBox) => {
-              const aiOut = { x: aiBox.x + CIRCLE_SIZE, y: aiBox.y + HALF_CIRCLE };
+              const aiOut = { x: aiBox.x + AI_BOX_W, y: aiBox.y + AI_BOX_H / 2 };
               const path = createBezierPath(aiOut, destInTop);
               const isFlowing = aiBox.enabled;
 
@@ -1296,123 +1295,177 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
           </div>
 
           {/* ======================================================== */}
-          {/* NODE 3: DYNAMIC MULTI-BOX AI PROCESSORS (CIRCLES)        */}
+          {/* NODE 3: DYNAMIC MULTI-BOX AI PROCESSORS (SQUARES)        */}
           {/* ======================================================== */}
           {config.aiBoxes.map((box) => {
             const isSelected = selectedBoxId === box.id;
             const isCurrentSimulating = simulationStep === 2 && box.enabled;
             const isGoogle = box.provider === 'google_ai';
             const themeColor = isGoogle ? '#60A5FA' : '#10B981';
+            const glowColor = isGoogle ? 'rgba(59, 130, 246, 0.45)' : 'rgba(16, 185, 129, 0.45)';
 
             return (
               <div
                 key={box.id}
                 className="canvas-node"
                 onMouseDown={(e) => startDragNode(box.id, e)}
-                onClick={(e) => handleNodeClick({ type: 'ai-box', boxId: box.id }, e)}
-                title={`Click to configure ${box.title}`}
                 style={{
                   position: 'absolute',
                   left: `${box.x}px`,
                   top: `${box.y}px`,
-                  width: `${CIRCLE_SIZE}px`,
-                  height: `${CIRCLE_SIZE}px`,
-                  borderRadius: '50%',
+                  width: `${AI_BOX_W}px`,
+                  height: `${AI_BOX_H}px`,
+                  borderRadius: '10px',
                   backgroundColor: '#161B22',
-                  backgroundImage: box.enabled
-                    ? `radial-gradient(circle at 35% 35%, ${isGoogle ? 'rgba(59, 130, 246, 0.4)' : 'rgba(16, 185, 129, 0.4)'} 0%, #161B22 100%)`
-                    : 'none',
+                  background: box.enabled
+                    ? `linear-gradient(135deg, #161B22 0%, ${isGoogle ? 'rgba(59, 130, 246, 0.1)' : 'rgba(16, 185, 129, 0.1)'} 100%)`
+                    : '#161B22',
                   border: isCurrentSimulating
-                    ? '2.5px solid #8B5CF6'
+                    ? `2px solid #8B5CF6`
                     : isSelected
-                    ? '2.5px solid #A78BFA'
+                    ? `2px solid #A78BFA`
                     : box.enabled
-                    ? `2px solid ${themeColor}`
-                    : '2px dashed rgba(255, 255, 255, 0.2)',
-                  opacity: box.enabled ? 1 : 0.5,
+                    ? `1.5px solid ${themeColor}80`
+                    : '1.5px dashed rgba(255, 255, 255, 0.15)',
+                  opacity: box.enabled ? 1 : 0.55,
                   boxShadow: isCurrentSimulating
-                    ? '0 0 25px rgba(139, 92, 246, 0.85)'
+                    ? `0 0 22px rgba(139, 92, 246, 0.8), 0 4px 16px rgba(0,0,0,0.7)`
                     : box.enabled
-                    ? `0 0 16px ${isGoogle ? 'rgba(59, 130, 246, 0.35)' : 'rgba(16, 185, 129, 0.35)'}, 0 8px 24px rgba(0, 0, 0, 0.6)`
-                    : 'none',
+                    ? `0 0 14px ${glowColor}, 0 4px 16px rgba(0,0,0,0.7)`
+                    : '0 4px 12px rgba(0,0,0,0.5)',
                   zIndex: isSelected ? 20 : 15,
-                  cursor: 'pointer',
+                  cursor: 'grab',
                   display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+                  flexDirection: 'column',
+                  padding: '10px 12px 8px',
+                  boxSizing: 'border-box',
+                  gap: '6px',
+                  transition: 'box-shadow 0.15s ease, border-color 0.15s ease',
                 }}
-                onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.08)'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.boxShadow = `0 0 22px ${glowColor}, 0 6px 20px rgba(0,0,0,0.8)`;
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.boxShadow = box.enabled
+                    ? `0 0 14px ${glowColor}, 0 4px 16px rgba(0,0,0,0.7)`
+                    : '0 4px 12px rgba(0,0,0,0.5)';
+                }}
               >
-                {/* Center Icon */}
-                {isGoogle ? (
-                  <SiGooglegemini style={{ fontSize: '28px', color: box.enabled ? '#60A5FA' : '#9CA3AF' }} />
-                ) : (
-                  <OpenAIIcon size={28} color={box.enabled ? '#10B981' : '#9CA3AF'} />
-                )}
+                {/* Top row: icon + name */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
+                  {isGoogle ? (
+                    <SiGooglegemini style={{ fontSize: '13px', color: themeColor, flexShrink: 0 }} />
+                  ) : (
+                    <OpenAIIcon size={13} color={themeColor} />
+                  )}
+                  <span
+                    style={{
+                      fontSize: '0.7rem',
+                      fontWeight: 700,
+                      color: '#E5E7EB',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      flex: 1,
+                      letterSpacing: '0.01em',
+                    }}
+                  >
+                    {box.title}
+                  </span>
+                </div>
 
-                {/* Input Socket (Left) */}
+                {/* Provider badge */}
+                <div
+                  style={{
+                    fontSize: '0.6rem',
+                    color: themeColor,
+                    fontWeight: 600,
+                    backgroundColor: `${themeColor}15`,
+                    border: `1px solid ${themeColor}30`,
+                    borderRadius: '4px',
+                    padding: '1px 6px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '3px',
+                    width: 'fit-content',
+                  }}
+                >
+                  <span
+                    style={{
+                      width: '5px',
+                      height: '5px',
+                      borderRadius: '50%',
+                      backgroundColor: box.enabled ? themeColor : '#6B7280',
+                      flexShrink: 0,
+                    }}
+                  />
+                  {isGoogle ? 'Gemini' : 'GPT-4o'} · {box.enabled ? 'Active' : 'Off'}
+                </div>
+
+                {/* Generate button */}
+                <button
+                  type="button"
+                  className="canvas-control"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (!hasMoved.current) {
+                      setSelectedBoxId(box.id);
+                      setActiveModalNode({ type: 'ai-box', boxId: box.id });
+                    }
+                  }}
+                  style={{
+                    marginTop: 'auto',
+                    height: '24px',
+                    width: '100%',
+                    background: box.enabled
+                      ? `linear-gradient(90deg, ${isGoogle ? '#1d4ed8' : '#065f46'} 0%, ${isGoogle ? '#2563eb' : '#059669'} 100%)`
+                      : 'rgba(255,255,255,0.06)',
+                    border: `1px solid ${box.enabled ? themeColor + '60' : 'rgba(255,255,255,0.1)'}`,
+                    borderRadius: '6px',
+                    color: box.enabled ? '#fff' : '#6B7280',
+                    fontSize: '0.65rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '4px',
+                    letterSpacing: '0.03em',
+                    transition: 'opacity 0.15s ease',
+                  }}
+                >
+                  <FiCpu style={{ fontSize: '10px' }} />
+                  Generate
+                </button>
+
+                {/* Input Socket (Left center) */}
                 <div
                   style={{
                     position: 'absolute',
                     left: '-6px',
-                    top: `${HALF_CIRCLE - 6}px`,
+                    top: `${AI_BOX_H / 2 - 6}px`,
                     width: '12px',
                     height: '12px',
                     borderRadius: '50%',
-                    backgroundColor: box.enabled ? '#8B5CF6' : '#6B7280',
+                    backgroundColor: box.enabled ? '#8B5CF6' : '#374151',
                     border: '2px solid #161B22',
                     boxShadow: box.enabled ? '0 0 8px #8B5CF6' : 'none',
                   }}
                 />
-                {/* Output Socket (Right) */}
+                {/* Output Socket (Right center) */}
                 <div
                   style={{
                     position: 'absolute',
                     right: '-6px',
-                    top: `${HALF_CIRCLE - 6}px`,
+                    top: `${AI_BOX_H / 2 - 6}px`,
                     width: '12px',
                     height: '12px',
                     borderRadius: '50%',
-                    backgroundColor: box.enabled ? '#8B5CF6' : '#6B7280',
+                    backgroundColor: box.enabled ? '#8B5CF6' : '#374151',
                     border: '2px solid #161B22',
                     boxShadow: box.enabled ? '0 0 8px #8B5CF6' : 'none',
                   }}
                 />
-
-                {/* Label below circle */}
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: `${CIRCLE_SIZE + 8}px`,
-                    left: '50%',
-                    transform: 'translateX(-50%)',
-                    whiteSpace: 'nowrap',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: '2px',
-                    pointerEvents: 'none',
-                  }}
-                >
-                  <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#fff', textShadow: '0 1px 4px rgba(0,0,0,0.9)' }}>
-                    {box.title}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: '0.625rem',
-                      color: isGoogle ? '#93C5FD' : '#6EE7B7',
-                      fontWeight: 500,
-                      backgroundColor: 'rgba(0,0,0,0.7)',
-                      padding: '1px 6px',
-                      borderRadius: '4px',
-                      border: `1px solid ${themeColor}40`,
-                    }}
-                  >
-                    {isGoogle ? 'Gemini' : 'GPT-4o'} • {box.enabled ? 'ON' : 'OFF'}
-                  </span>
-                </div>
               </div>
             );
           })}
@@ -1750,188 +1803,139 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
             </div>
           )}
 
-          {/* DYNAMIC AI BOX MODAL CONTENT */}
+          {/* DYNAMIC AI BOX MODAL CONTENT — Read-only prompt view + Generate */}
           {activeModalNode.type === 'ai-box' && currentModalAIBox && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              {/* Box Title & Enable Toggle */}
-              <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-                <div style={{ flex: 1 }}>
-                  <label style={{ display: 'block', fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
-                    Node Title
-                  </label>
-                  <input
-                    type="text"
-                    value={currentModalAIBox.title}
-                    onChange={(e) => handleUpdateAIBox(currentModalAIBox.id, { title: e.target.value })}
-                    style={{
-                      width: '100%',
-                      height: '34px',
-                      backgroundColor: 'var(--bg-main)',
-                      border: '1px solid var(--border-color)',
-                      borderRadius: '0.375rem',
-                      padding: '0 0.625rem',
-                      color: 'var(--text-primary)',
-                      fontSize: '0.8125rem',
-                      outline: 'none',
-                      boxSizing: 'border-box',
-                    }}
-                  />
-                </div>
 
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
-                    Status
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => handleToggleAIBox(currentModalAIBox.id)}
-                    style={{
-                      height: '34px',
-                      padding: '0 0.75rem',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.375rem',
-                      borderRadius: '0.375rem',
-                      border: `1px solid ${currentModalAIBox.enabled ? 'rgba(16, 185, 129, 0.4)' : 'var(--border-color)'}`,
-                      backgroundColor: currentModalAIBox.enabled ? 'rgba(16, 185, 129, 0.12)' : 'rgba(255, 255, 255, 0.05)',
-                      color: currentModalAIBox.enabled ? '#34D399' : 'var(--text-muted)',
-                      fontSize: '0.75rem',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <span
-                      style={{
-                        width: '6px',
-                        height: '6px',
-                        borderRadius: '50%',
-                        backgroundColor: currentModalAIBox.enabled ? '#10B981' : '#6B7280',
-                      }}
-                    />
-                    <span>{currentModalAIBox.enabled ? 'Enabled' : 'Disabled'}</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Process Type Dropdown */}
-              <div>
-                <label style={{ display: 'block', fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
-                  Target Process Type
-                </label>
-                <Select
-                  options={PROCESS_TYPE_OPTIONS}
-                  value={currentModalAIBox.processType}
-                  onChange={(val) => handleUpdateAIBox(currentModalAIBox.id, { processType: val as any })}
-                  height="34px"
-                />
-              </div>
-
-              {/* Provider Selection Tabs */}
-              <div>
-                <label style={{ display: 'block', fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
-                  AI Engine & Provider
-                </label>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleUpdateAIBox(currentModalAIBox.id, {
-                        provider: 'google_ai',
-                        model: 'gemini-flash-latest',
-                      })
-                    }
-                    style={{
-                      height: '36px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '0.5rem',
-                      borderRadius: '0.375rem',
-                      border: `1.5px solid ${currentModalAIBox.provider === 'google_ai' ? '#3B82F6' : 'var(--border-color)'}`,
-                      backgroundColor: currentModalAIBox.provider === 'google_ai' ? 'rgba(59, 130, 246, 0.12)' : 'var(--bg-main)',
-                      color: currentModalAIBox.provider === 'google_ai' ? '#60A5FA' : 'var(--text-secondary)',
-                      fontSize: '0.75rem',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <SiGooglegemini style={{ fontSize: '15px' }} />
-                    <span>Google Gemini</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleUpdateAIBox(currentModalAIBox.id, {
-                        provider: 'openai',
-                        model: 'gpt-4o',
-                      })
-                    }
-                    style={{
-                      height: '36px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '0.5rem',
-                      borderRadius: '0.375rem',
-                      border: `1.5px solid ${currentModalAIBox.provider === 'openai' ? '#10B981' : 'var(--border-color)'}`,
-                      backgroundColor: currentModalAIBox.provider === 'openai' ? 'rgba(16, 185, 129, 0.12)' : 'var(--bg-main)',
-                      color: currentModalAIBox.provider === 'openai' ? '#34D399' : 'var(--text-secondary)',
-                      fontSize: '0.75rem',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <OpenAIIcon size={15} />
-                    <span>OpenAI ChatGPT</span>
-                  </button>
-                </div>
-
-                <Select
-                  options={
-                    currentModalAIBox.provider === 'google_ai'
-                      ? [
-                          { value: 'gemini-flash-latest', label: 'Gemini Flash (Ultra Fast & Responsive)' },
-                          { value: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro (Deep Multimodal Reasoning)' },
-                        ]
-                      : [
-                          { value: 'gpt-4o', label: 'GPT-4o (Omni High Precision)' },
-                          { value: 'gpt-4o-mini', label: 'GPT-4o-mini (Lightweight & Economical)' },
-                        ]
-                  }
-                  value={currentModalAIBox.model}
-                  onChange={(val) => handleUpdateAIBox(currentModalAIBox.id, { model: val })}
-                  height="34px"
-                />
-              </div>
-
-              {/* Custom Prompt Instructions */}
-              <div>
-                <label style={{ display: 'block', fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
-                  Custom Prompt Instructions (Optional)
-                </label>
-                <textarea
-                  value={currentModalAIBox.customPrompt}
-                  onChange={(e) => handleUpdateAIBox(currentModalAIBox.id, { customPrompt: e.target.value })}
-                  rows={3}
-                  placeholder="e.g. emphasize price negotiable, BTS Thong Lo 2 mins, urgent sale, contact via LINE ID..."
+              {/* Node info header */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.75rem',
+                  padding: '0.75rem',
+                  backgroundColor: 'var(--bg-main)',
+                  borderRadius: '0.5rem',
+                  border: '1px solid var(--border-color)',
+                }}
+              >
+                <div
                   style={{
-                    width: '100%',
+                    width: '36px',
+                    height: '36px',
+                    borderRadius: '8px',
+                    backgroundColor: currentModalAIBox.provider === 'google_ai' ? 'rgba(59,130,246,0.15)' : 'rgba(16,185,129,0.15)',
+                    border: `1px solid ${currentModalAIBox.provider === 'google_ai' ? 'rgba(59,130,246,0.35)' : 'rgba(16,185,129,0.35)'}`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  {currentModalAIBox.provider === 'google_ai' ? (
+                    <SiGooglegemini style={{ fontSize: '18px', color: '#60A5FA' }} />
+                  ) : (
+                    <OpenAIIcon size={18} />
+                  )}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '2px' }}>
+                    {currentModalAIBox.title}
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    {currentModalAIBox.provider === 'google_ai' ? 'Google Gemini' : 'OpenAI'} · {currentModalAIBox.model}
+                  </div>
+                </div>
+                <span
+                  style={{
+                    fontSize: '0.6875rem',
+                    padding: '3px 10px',
+                    borderRadius: '20px',
+                    fontWeight: 600,
+                    backgroundColor: currentModalAIBox.enabled ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255,255,255,0.06)',
+                    color: currentModalAIBox.enabled ? '#34D399' : '#6B7280',
+                    border: `1px solid ${currentModalAIBox.enabled ? 'rgba(16,185,129,0.35)' : 'rgba(255,255,255,0.1)'}`,
+                  }}
+                >
+                  {currentModalAIBox.enabled ? '● Active' : '○ Off'}
+                </span>
+              </div>
+
+              {/* Prompt used — read only */}
+              <div>
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.375rem',
+                    fontSize: '0.6875rem',
+                    fontWeight: 600,
+                    color: 'var(--text-muted)',
+                    marginBottom: '0.5rem',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.06em',
+                  }}
+                >
+                  <FiSliders style={{ fontSize: '11px' }} />
+                  Prompt Used
+                </label>
+                <div
+                  style={{
                     backgroundColor: 'var(--bg-main)',
                     border: '1px solid var(--border-color)',
-                    borderRadius: '0.375rem',
-                    padding: '0.5rem 0.625rem',
-                    color: 'var(--text-primary)',
-                    fontSize: '0.75rem',
-                    outline: 'none',
-                    fontFamily: 'inherit',
-                    resize: 'vertical',
-                    boxSizing: 'border-box',
+                    borderRadius: '0.5rem',
+                    padding: '0.875rem',
+                    fontSize: '0.8125rem',
+                    color: 'var(--text-secondary)',
+                    lineHeight: 1.65,
+                    whiteSpace: 'pre-wrap',
+                    minHeight: '80px',
+                    fontFamily: `'SF Mono', 'Fira Code', monospace`,
+                    letterSpacing: '0.01em',
                   }}
-                />
+                >
+                  {currentModalAIBox.templateText || '(No prompt configured)'}
+                </div>
               </div>
 
-              {/* Modal Footer Actions */}
+              {/* Generate button */}
+              <button
+                type="button"
+                style={{
+                  width: '100%',
+                  height: '44px',
+                  background: currentModalAIBox.enabled
+                    ? currentModalAIBox.provider === 'google_ai'
+                      ? 'linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%)'
+                      : 'linear-gradient(135deg, #065f46 0%, #059669 100%)'
+                    : 'rgba(255,255,255,0.06)',
+                  border: '1px solid',
+                  borderColor: currentModalAIBox.enabled
+                    ? currentModalAIBox.provider === 'google_ai' ? '#3B82F680' : '#10B98180'
+                    : 'rgba(255,255,255,0.1)',
+                  borderRadius: '0.5rem',
+                  color: currentModalAIBox.enabled ? '#fff' : '#6B7280',
+                  fontSize: '0.875rem',
+                  fontWeight: 700,
+                  cursor: currentModalAIBox.enabled ? 'pointer' : 'not-allowed',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.5rem',
+                  letterSpacing: '0.03em',
+                  transition: 'opacity 0.15s',
+                  boxShadow: currentModalAIBox.enabled
+                    ? `0 4px 14px ${currentModalAIBox.provider === 'google_ai' ? 'rgba(59,130,246,0.35)' : 'rgba(16,185,129,0.35)'}`
+                    : 'none',
+                }}
+                onMouseEnter={(e) => { if (currentModalAIBox.enabled) (e.currentTarget as HTMLButtonElement).style.opacity = '0.85'; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = '1'; }}
+              >
+                <FiCpu style={{ fontSize: '16px' }} />
+                Generate AI Copy
+              </button>
+
+              {/* Footer: delete only */}
               <div
                 style={{
                   display: 'flex',
@@ -1939,32 +1943,20 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
                   alignItems: 'center',
                   paddingTop: '0.75rem',
                   borderTop: '1px solid var(--border-color)',
-                  marginTop: '0.5rem',
                 }}
               >
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={(e) => handleDuplicateAIBox(currentModalAIBox, e)}
-                    leftIcon={<FiCopy />}
-                    style={{ height: '32px', fontSize: '0.75rem' }}
-                  >
-                    Duplicate
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={(e) => handleDeleteAIBox(currentModalAIBox.id, e)}
-                    leftIcon={<FiTrash2 style={{ color: '#EF4444' }} />}
-                    style={{ height: '32px', fontSize: '0.75rem', borderColor: 'rgba(239, 68, 68, 0.3)', color: '#EF4444' }}
-                  >
-                    Delete Node
-                  </Button>
-                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={(e) => handleDeleteAIBox(currentModalAIBox.id, e)}
+                  leftIcon={<FiTrash2 style={{ color: '#EF4444' }} />}
+                  style={{ height: '32px', fontSize: '0.75rem', borderColor: 'rgba(239, 68, 68, 0.3)', color: '#EF4444' }}
+                >
+                  Remove Node
+                </Button>
 
                 <Button variant="primary" size="sm" onClick={() => setActiveModalNode(null)}>
-                  Done
+                  Close
                 </Button>
               </div>
             </div>
