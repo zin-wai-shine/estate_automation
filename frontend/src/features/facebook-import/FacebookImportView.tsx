@@ -21,6 +21,7 @@ import {
   FiSliders,
   FiCode,
   FiEye,
+  FiInfo,
 } from 'react-icons/fi';
 import { FaFacebook } from 'react-icons/fa';
 
@@ -77,16 +78,16 @@ interface ActivityLog {
 }
 
 const PIPELINE_STEPS = [
-  { id: 'url_received', label: 'URL RECEIVED' },
-  { id: 'resolving', label: 'RESOLVING' },
-  { id: 'opening_browser', label: 'OPENING FACEBOOK' },
-  { id: 'target_found', label: 'TARGET POST FOUND' },
-  { id: 'caption_extracted', label: 'CAPTION EXTRACTED' },
-  { id: 'photos_detected', label: 'PHOTOS DETECTED' },
-  { id: 'verifying_photos', label: 'VERIFYING PHOTOS' },
-  { id: 'downloading_media', label: 'DOWNLOADING MEDIA' },
-  { id: 'ai_analysis', label: 'AI ANALYSIS' },
-  { id: 'complete', label: 'COMPLETE' },
+  { id: 'url_received', label: 'URL Received' },
+  { id: 'resolving', label: 'Resolving' },
+  { id: 'opening_browser', label: 'Opening Facebook' },
+  { id: 'target_found', label: 'Target Post Found' },
+  { id: 'caption_extracted', label: 'Caption Extracted' },
+  { id: 'photos_detected', label: 'Photos Detected' },
+  { id: 'verifying_photos', label: 'Verifying Photos' },
+  { id: 'downloading_media', label: 'Downloading Media' },
+  { id: 'ai_analysis', label: 'AI Analysis' },
+  { id: 'complete', label: 'Complete' },
 ];
 
 export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
@@ -98,6 +99,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
   const [autoImport, setAutoImport] = useState(true);
   const [preferredMethod, setPreferredMethod] = useState<'auto' | 'meta_graph_api' | 'openclaw_browser'>('auto');
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showInfo, setShowInfo] = useState(false);
   const [showRawJsonModal, setShowRawJsonModal] = useState(false);
   const [showLiveBrowserModal, setShowLiveBrowserModal] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
@@ -588,17 +590,57 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', paddingBottom: '3rem' }}>
-      {/* Page Title & Subtitle */}
+      {/* Page Title & Interactive Info Icon */}
       <div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
           <FaFacebook style={{ color: '#1877F2', fontSize: '1.5rem' }} />
           <h1 style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
             Facebook Post Import
           </h1>
+          <button
+            type="button"
+            onClick={() => setShowInfo(!showInfo)}
+            title={showInfo ? 'Hide description' : 'Show description'}
+            aria-label="Toggle description"
+            style={{
+              background: showInfo ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255, 255, 255, 0.06)',
+              border: `1px solid ${showInfo ? 'var(--accent-primary)' : 'rgba(255, 255, 255, 0.15)'}`,
+              borderRadius: '50%',
+              width: '24px',
+              height: '24px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              color: showInfo ? 'var(--accent-primary)' : 'var(--text-muted)',
+              transition: 'all 0.15s ease',
+              padding: 0,
+            }}
+          >
+            <FiInfo style={{ fontSize: '13px' }} />
+          </button>
         </div>
-        <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginTop: '0.25rem', margin: 0 }}>
-          Import property content, photos, and structured listing data from any Facebook post, group, or page.
-        </p>
+
+        {showInfo && (
+          <div
+            style={{
+              marginTop: '0.5rem',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              padding: '0.4rem 0.75rem',
+              backgroundColor: 'var(--bg-secondary)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '0.5rem',
+              fontSize: '0.8125rem',
+              color: 'var(--text-secondary)',
+              boxShadow: 'var(--shadow-sm)',
+            }}
+          >
+            <FiInfo style={{ color: 'var(--accent-primary)', flexShrink: 0, fontSize: '13px' }} />
+            <span>Import property content, photos, and structured listing data from any Facebook post, group, or page.</span>
+          </div>
+        )}
       </div>
 
       {/* TOP IMPORT CARD */}
@@ -650,7 +692,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                 />
               </button>
               <Badge variant={autoImport ? 'info' : 'default'} size="sm">
-                {autoImport ? 'ON' : 'OFF'}
+                {autoImport ? 'On' : 'Off'}
               </Badge>
             </div>
 
@@ -696,10 +738,10 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
             {isProcessing ? (
               <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <FiRefreshCw className="spin" style={{ animation: 'spin 1s linear infinite' }} />
-                IMPORTING...
+                Importing...
               </span>
             ) : (
-              'IMPORT POST'
+              'Import Post'
             )}
           </Button>
           <Button
@@ -713,7 +755,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
             style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
           >
             <FiMonitor />
-            OPEN LIVE BROWSER
+            Open Live Browser
           </Button>
         </div>
 
@@ -774,14 +816,21 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
           padding: '1rem',
           display: 'flex',
           flexDirection: 'column',
-          gap: '0.75rem',
+          gap: '0.875rem',
           boxShadow: 'var(--shadow-sm)',
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
-            Pipeline Status
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+              Pipeline Status
+            </span>
+            {currentStepIndex >= 0 && (
+              <span style={{ fontSize: '0.75rem', color: isProcessing ? 'var(--accent-primary)' : 'var(--status-success)', fontWeight: 500 }}>
+                ({currentStepIndex + 1}/{PIPELINE_STEPS.length}: {PIPELINE_STEPS[currentStepIndex]?.label})
+              </span>
+            )}
+          </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>OpenClaw Browser:</span>
             <Badge
@@ -799,14 +848,15 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
           </div>
         </div>
 
-        {/* Horizontal Pipeline Steps */}
+        {/* Connected Pipeline Stepper Track */}
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
             overflowX: 'auto',
-            paddingBottom: '0.25rem',
-            gap: '0.25rem',
+            padding: '0.4rem 0.25rem 0.6rem 0.25rem',
+            gap: 0,
+            scrollbarWidth: 'thin',
           }}
         >
           {PIPELINE_STEPS.map((step, idx) => {
@@ -815,57 +865,106 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
             const isFailed = currentStepIndex === idx && pipelineError !== null;
 
             return (
-              <React.Fragment key={step.id}>
+              <div key={step.id} style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+                {/* Step Node Pill */}
                 <div
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '0.375rem',
-                    padding: '0.375rem 0.625rem',
-                    borderRadius: '0.375rem',
+                    gap: '0.45rem',
+                    padding: '0.35rem 0.7rem',
+                    borderRadius: '9999px',
                     backgroundColor: isCompleted
                       ? 'rgba(34, 197, 94, 0.12)'
                       : isCurrent
-                      ? 'rgba(59, 130, 246, 0.15)'
+                      ? 'rgba(59, 130, 246, 0.16)'
                       : isFailed
-                      ? 'rgba(239, 68, 68, 0.15)'
-                      : 'transparent',
-                    border: `1px solid ${
+                      ? 'rgba(239, 68, 68, 0.16)'
+                      : 'rgba(255, 255, 255, 0.02)',
+                    border: `1.5px solid ${
                       isCompleted
-                        ? 'rgba(34, 197, 94, 0.3)'
+                        ? '#22C55E'
                         : isCurrent
-                        ? 'var(--accent-primary)'
+                        ? '#3B82F6'
                         : isFailed
-                        ? 'var(--status-danger)'
-                        : 'var(--border-color)'
+                        ? '#EF4444'
+                        : 'rgba(255, 255, 255, 0.08)'
                     }`,
-                    whiteSpace: 'nowrap',
-                    fontSize: '0.6875rem',
-                    fontWeight: 600,
-                    color: isCompleted
-                      ? 'var(--status-success)'
+                    boxShadow: isCompleted
+                      ? '0 0 10px rgba(34, 197, 94, 0.22)'
                       : isCurrent
-                      ? 'var(--accent-primary)'
-                      : isFailed
-                      ? 'var(--status-danger)'
-                      : 'var(--text-muted)',
+                      ? '0 0 14px rgba(59, 130, 246, 0.35)'
+                      : 'none',
+                    transition: 'all 0.2s ease',
                   }}
                 >
-                  {isCompleted ? (
-                    <FiCheck style={{ fontSize: '0.8125rem' }} />
-                  ) : isCurrent ? (
-                    <FiRefreshCw style={{ animation: 'spin 1s linear infinite' }} />
-                  ) : isFailed ? (
-                    <FiAlertCircle />
-                  ) : (
-                    <span style={{ opacity: 0.6 }}>{idx + 1}</span>
-                  )}
-                  <span>{step.label}</span>
+                  <div
+                    style={{
+                      width: '18px',
+                      height: '18px',
+                      borderRadius: '50%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: isCompleted
+                        ? '#22C55E'
+                        : isCurrent
+                        ? '#3B82F6'
+                        : isFailed
+                        ? '#EF4444'
+                        : 'rgba(255, 255, 255, 0.08)',
+                      color: '#FFFFFF',
+                      fontSize: '0.625rem',
+                      fontWeight: 700,
+                      flexShrink: 0,
+                    }}
+                  >
+                    {isCompleted ? (
+                      <FiCheck style={{ fontSize: '11px', strokeWidth: 3 }} />
+                    ) : isCurrent ? (
+                      <FiRefreshCw style={{ animation: 'spin 1s linear infinite', fontSize: '10px' }} />
+                    ) : isFailed ? (
+                      <FiAlertCircle style={{ fontSize: '10px' }} />
+                    ) : (
+                      <span>{idx + 1}</span>
+                    )}
+                  </div>
+                  <span
+                    style={{
+                      fontSize: '0.75rem',
+                      fontWeight: isCompleted || isCurrent ? 600 : 500,
+                      color: isCompleted
+                        ? '#4ADE80'
+                        : isCurrent
+                        ? '#60A5FA'
+                        : isFailed
+                        ? '#F87171'
+                        : 'var(--text-muted)',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {step.label}
+                  </span>
                 </div>
+
+                {/* Connecting Track Line */}
                 {idx < PIPELINE_STEPS.length - 1 && (
-                  <span style={{ color: 'var(--border-color)', fontSize: '0.75rem', padding: '0 0.125rem' }}>→</span>
+                  <div
+                    style={{
+                      width: '26px',
+                      height: '2px',
+                      backgroundColor: isCompleted
+                        ? '#22C55E'
+                        : isCurrent
+                        ? 'rgba(59, 130, 246, 0.5)'
+                        : 'rgba(255, 255, 255, 0.1)',
+                      boxShadow: isCompleted ? '0 0 6px rgba(34, 197, 94, 0.4)' : 'none',
+                      transition: 'background-color 0.25s ease, box-shadow 0.25s ease',
+                      flexShrink: 0,
+                    }}
+                  />
                 )}
-              </React.Fragment>
+              </div>
             );
           })}
         </div>
@@ -1069,8 +1168,8 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                   animation: 'pulse 1.5s infinite',
                 }}
               />
-              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--accent-primary)', letterSpacing: '0.04em' }}>
-                🔴 LIVE BROWSER PREVIEW
+              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--accent-primary)' }}>
+                🔴 Live Browser Preview
               </span>
               <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
                 — OpenClaw automation running
@@ -1102,14 +1201,13 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                 borderRadius: '0.375rem',
                 padding: '0.25rem 0.625rem',
                 fontSize: '0.6875rem',
-                fontWeight: 700,
+                fontWeight: 600,
                 color: 'var(--accent-primary)',
-                letterSpacing: '0.04em',
               }}
             >
               {currentStepIndex >= 0 && currentStepIndex < PIPELINE_STEPS.length
-                ? `STEP ${currentStepIndex + 1}/${PIPELINE_STEPS.length}: ${PIPELINE_STEPS[currentStepIndex].label}`
-                : 'INITIALIZING'}
+                ? `Step ${currentStepIndex + 1}/${PIPELINE_STEPS.length}: ${PIPELINE_STEPS[currentStepIndex].label}`
+                : 'Initializing'}
             </div>
           </div>
         </div>
@@ -1409,28 +1507,28 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
         >
           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
             <Button variant="danger" size="sm" onClick={handleDeleteImport}>
-              <FiTrash2 style={{ marginRight: '0.25rem' }} /> DELETE IMPORT
+              <FiTrash2 style={{ marginRight: '0.25rem' }} /> Delete Import
             </Button>
             <Button
               variant="outline"
               size="sm"
               onClick={() => window.open(source?.canonical_url || url, '_blank')}
             >
-              <FiExternalLink style={{ marginRight: '0.25rem' }} /> OPEN ORIGINAL POST
+              <FiExternalLink style={{ marginRight: '0.25rem' }} /> Open Original Post
             </Button>
           </div>
 
           <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
             <Button variant="outline" size="sm" onClick={handleRerunExtraction}>
-              <FiRefreshCw style={{ marginRight: '0.25rem' }} /> RE-EXTRACT
+              <FiRefreshCw style={{ marginRight: '0.25rem' }} /> Re-Extract
             </Button>
             <Button
               variant="primary"
               size="md"
               onClick={handleSaveToInbox}
-              style={{ fontWeight: 700, paddingLeft: '1.5rem', paddingRight: '1.5rem' }}
+              style={{ fontWeight: 600, paddingLeft: '1.25rem', paddingRight: '1.25rem' }}
             >
-              <FiSave style={{ marginRight: '0.375rem' }} /> SAVE TO PROPERTY INBOX
+              <FiSave style={{ marginRight: '0.375rem' }} /> Save to Property Inbox
             </Button>
           </div>
         </div>
