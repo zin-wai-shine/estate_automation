@@ -44,6 +44,13 @@ import {
   type FacebookWorkflowConfig,
   type DynamicAIBoxConfig,
 } from './FacebookWorkflowCanvas';
+import {
+  getSavedWorkflowFormats,
+  getActiveWorkflowFormat,
+  getActiveWorkflowFormatId,
+  setActiveWorkflowFormatId,
+  type WorkflowFormat,
+} from '../workflow/workflowFormats';
 
 const DEFAULT_PROMPT_TEMPLATES: PromptTemplate[] = [
   {
@@ -207,16 +214,53 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
   const [manualMode, setManualMode] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Facebook Workflow Configuration & Subview State
-  const [activeTabMode, setActiveTabMode] = useState<'import' | 'workflow'>('import');
-  const [workflowConfig, setWorkflowConfig] = useState<FacebookWorkflowConfig>(() => loadSavedFacebookWorkflowConfig());
+  // Facebook Workflow Formats Selection & State
+  const [workflowFormats, setWorkflowFormats] = useState<WorkflowFormat[]>(() => getSavedWorkflowFormats());
+  const [selectedFormatId, setSelectedFormatId] = useState<string>(() => getActiveWorkflowFormatId());
+  const [activeFormat, setActiveFormat] = useState<WorkflowFormat>(() => getActiveWorkflowFormat());
+  const [workflowConfig, setWorkflowConfig] = useState<FacebookWorkflowConfig>(() => {
+    const activeFmt = getActiveWorkflowFormat();
+    return activeFmt.config || loadSavedFacebookWorkflowConfig();
+  });
   const [activeAIBoxId, setActiveAIBoxId] = useState<string>(() => {
-    const saved = loadSavedFacebookWorkflowConfig();
-    const first = saved.aiBoxes.find((b) => b.enabled) || saved.aiBoxes[0];
+    const activeFmt = getActiveWorkflowFormat();
+    const first = activeFmt.config?.aiBoxes?.find((b) => b.enabled) || activeFmt.config?.aiBoxes?.[0];
     return first ? first.id : 'ai-box-rental';
   });
   const [aiGeneratedOutputs, setAiGeneratedOutputs] = useState<Record<string, string>>({});
   const [aiBoxGenerating, setAiBoxGenerating] = useState<Record<string, boolean>>({});
+
+  // Reload formats when window/tab gains focus
+  useEffect(() => {
+    const handleRefreshFormats = () => {
+      const savedList = getSavedWorkflowFormats();
+      setWorkflowFormats(savedList);
+      const activeId = getActiveWorkflowFormatId();
+      const current = savedList.find((f) => f.id === activeId) || savedList[0];
+      if (current) {
+        setSelectedFormatId(current.id);
+        setActiveFormat(current);
+        setWorkflowConfig(current.config);
+      }
+    };
+    window.addEventListener('focus', handleRefreshFormats);
+    return () => window.removeEventListener('focus', handleRefreshFormats);
+  }, []);
+
+  const handleFormatChange = (newFormatId: string) => {
+    setSelectedFormatId(newFormatId);
+    setActiveWorkflowFormatId(newFormatId);
+    const found = workflowFormats.find((f) => f.id === newFormatId);
+    if (found) {
+      setActiveFormat(found);
+      setWorkflowConfig(found.config);
+      const firstActive = found.config.aiBoxes.find((b) => b.enabled) || found.config.aiBoxes[0];
+      if (firstActive) {
+        setActiveAIBoxId(firstActive.id);
+      }
+      addLog(`Switched workflow format to: ${found.name}`, 'info');
+    }
+  };
 
   // AI Assistant & Prompt Templates (Google AI Studio & OpenAI)
   const [promptTemplates, setPromptTemplates] = useState<PromptTemplate[]>(DEFAULT_PROMPT_TEMPLATES);
@@ -832,63 +876,6 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
       {headerActionEl &&
         createPortal(
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', flexShrink: 0 }}>
-            {/* Mode Switcher: Live Import vs Workflow Setup */}
-            <div
-              style={{
-                display: 'inline-flex',
-                backgroundColor: 'var(--bg-main)',
-                padding: '2px',
-                borderRadius: '0.45rem',
-                border: '1px solid var(--border-color)',
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => setActiveTabMode('import')}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '0.3rem',
-                  padding: '0.2rem 0.6rem',
-                  borderRadius: '0.35rem',
-                  border: 'none',
-                  fontSize: '0.75rem',
-                  fontWeight: activeTabMode === 'import' ? 600 : 500,
-                  backgroundColor: activeTabMode === 'import' ? 'rgba(24, 119, 242, 0.2)' : 'transparent',
-                  color: activeTabMode === 'import' ? '#60A5FA' : 'var(--text-muted)',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                <FiDownloadCloud style={{ fontSize: '12px' }} />
-                <span>Live Import</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveTabMode('workflow')}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '0.3rem',
-                  padding: '0.2rem 0.6rem',
-                  borderRadius: '0.35rem',
-                  border: 'none',
-                  fontSize: '0.75rem',
-                  fontWeight: activeTabMode === 'workflow' ? 600 : 500,
-                  backgroundColor: activeTabMode === 'workflow' ? 'rgba(139, 92, 246, 0.25)' : 'transparent',
-                  color: activeTabMode === 'workflow' ? '#A78BFA' : 'var(--text-muted)',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                <FiGitBranch style={{ fontSize: '12px' }} />
-                <span>Workflow Setup</span>
-              </button>
-            </div>
-
             {/* Auto Import Toggle */}
             <label
               style={{
@@ -992,123 +979,113 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
           headerActionEl
         )}
 
-      {/* Conditionally Render Workflow Canvas Setup OR Live Import View */}
-      {activeTabMode === 'workflow' ? (
-        <FacebookWorkflowCanvas
-          onSwitchToLiveImport={() => setActiveTabMode('import')}
-          onConfigChange={(newCfg) => setWorkflowConfig(newCfg)}
-        />
-      ) : (
-        <>
-          {/* Quick Workflow Branches Bar */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              flexWrap: 'wrap',
-              gap: '0.5rem',
-              backgroundColor: 'var(--bg-secondary)',
-              border: '1px solid var(--border-color)',
-              borderRadius: '0.5rem',
-              padding: '0.375rem 0.75rem',
-              fontSize: '0.75rem',
-              boxShadow: 'var(--shadow-sm)',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-              <span style={{ color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.6875rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                Workflow Branches:
-              </span>
+      {/* Sleek Workflow Format Selection Bar */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '0.625rem',
+          backgroundColor: 'var(--bg-secondary)',
+          border: '1px solid var(--border-color)',
+          borderRadius: '0.625rem',
+          padding: '0.5rem 0.875rem',
+          boxShadow: 'var(--shadow-sm)',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', flex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', color: '#A78BFA', fontSize: '0.75rem', fontWeight: 600 }}>
+            <FiGitBranch style={{ fontSize: '14px' }} />
+            <span>Workflow Format:</span>
+          </div>
 
-              {/* Get Content Toggle Button */}
-              <button
-                type="button"
-                onClick={() => {
-                  const updated = {
-                    ...workflowConfig,
-                    getContent: { ...workflowConfig.getContent, enabled: !workflowConfig.getContent.enabled },
-                  };
-                  setWorkflowConfig(updated);
-                  localStorage.setItem('estate_fb_workflow_config_v1', JSON.stringify(updated));
-                }}
-                title={workflowConfig.getContent.enabled ? 'Click to disable Get Content branch' : 'Click to enable Get Content branch'}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '0.35rem',
-                  padding: '2px 8px',
-                  borderRadius: '4px',
-                  border: '1px solid',
-                  borderColor: workflowConfig.getContent.enabled ? 'rgba(59, 130, 246, 0.4)' : 'rgba(255, 255, 255, 0.1)',
-                  backgroundColor: workflowConfig.getContent.enabled ? 'rgba(59, 130, 246, 0.12)' : 'transparent',
-                  color: workflowConfig.getContent.enabled ? '#60A5FA' : 'var(--text-muted)',
-                  cursor: 'pointer',
-                  fontSize: '0.71875rem',
-                  fontWeight: 500,
-                  transition: 'all 0.15s ease',
-                }}
-              >
-                <FiFileText style={{ fontSize: '11px' }} />
-                <span>Get Content: {workflowConfig.getContent.enabled ? 'ON' : 'OFF'}</span>
-              </button>
+          <div style={{ minWidth: '280px', maxWidth: '440px', flex: '1 1 280px' }}>
+            <Select
+              options={workflowFormats.map((f) => ({
+                value: f.id,
+                label: `${f.name} (${f.config.aiBoxes.length} AI Processes)`,
+              }))}
+              value={selectedFormatId}
+              onChange={handleFormatChange}
+              height="34px"
+            />
+          </div>
 
-              {/* Get Images Toggle Button */}
-              <button
-                type="button"
-                onClick={() => {
-                  const updated = {
-                    ...workflowConfig,
-                    getImages: { ...workflowConfig.getImages, enabled: !workflowConfig.getImages.enabled },
-                  };
-                  setWorkflowConfig(updated);
-                  localStorage.setItem('estate_fb_workflow_config_v1', JSON.stringify(updated));
-                }}
-                title={workflowConfig.getImages.enabled ? 'Click to disable Get Images branch' : 'Click to enable Get Images branch'}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '0.35rem',
-                  padding: '2px 8px',
-                  borderRadius: '4px',
-                  border: '1px solid',
-                  borderColor: workflowConfig.getImages.enabled ? 'rgba(16, 185, 129, 0.4)' : 'rgba(255, 255, 255, 0.1)',
-                  backgroundColor: workflowConfig.getImages.enabled ? 'rgba(16, 185, 129, 0.12)' : 'transparent',
-                  color: workflowConfig.getImages.enabled ? '#34D399' : 'var(--text-muted)',
-                  cursor: 'pointer',
-                  fontSize: '0.71875rem',
-                  fontWeight: 500,
-                  transition: 'all 0.15s ease',
-                }}
-              >
-                <FiImage style={{ fontSize: '11px' }} />
-                <span>Get Images: {workflowConfig.getImages.enabled ? 'ON' : 'OFF'}</span>
-              </button>
-            </div>
-
-            {/* Workflow Builder Shortcut */}
-            <button
-              type="button"
-              onClick={() => setActiveTabMode('workflow')}
+          {/* Quick Format Info Badges */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+            <span
               style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.35rem',
+                fontSize: '0.6875rem',
                 padding: '2px 8px',
                 borderRadius: '4px',
-                border: '1px solid rgba(139, 92, 246, 0.3)',
-                backgroundColor: 'rgba(139, 92, 246, 0.1)',
-                color: '#A78BFA',
-                cursor: 'pointer',
-                fontSize: '0.71875rem',
+                backgroundColor: activeFormat.config.getContent.enabled ? 'rgba(59, 130, 246, 0.12)' : 'rgba(255, 255, 255, 0.05)',
+                color: activeFormat.config.getContent.enabled ? '#60A5FA' : 'var(--text-muted)',
+                border: '1px solid',
+                borderColor: activeFormat.config.getContent.enabled ? 'rgba(59, 130, 246, 0.3)' : 'transparent',
                 fontWeight: 500,
-                transition: 'all 0.15s ease',
               }}
             >
-              <FiGitBranch style={{ fontSize: '11px' }} />
-              <span>Configure Workflow ({workflowConfig.aiBoxes.length} AI Boxes)</span>
-            </button>
+              Get Content: {activeFormat.config.getContent.enabled ? 'ON' : 'OFF'}
+            </span>
+
+            <span
+              style={{
+                fontSize: '0.6875rem',
+                padding: '2px 8px',
+                borderRadius: '4px',
+                backgroundColor: activeFormat.config.getImages.enabled ? 'rgba(16, 185, 129, 0.12)' : 'rgba(255, 255, 255, 0.05)',
+                color: activeFormat.config.getImages.enabled ? '#34D399' : 'var(--text-muted)',
+                border: '1px solid',
+                borderColor: activeFormat.config.getImages.enabled ? 'rgba(16, 185, 129, 0.3)' : 'transparent',
+                fontWeight: 500,
+              }}
+            >
+              Get Images: {activeFormat.config.getImages.enabled ? 'ON' : 'OFF'}
+            </span>
+
+            <span
+              style={{
+                fontSize: '0.6875rem',
+                padding: '2px 8px',
+                borderRadius: '4px',
+                backgroundColor: 'rgba(139, 92, 246, 0.12)',
+                color: '#C4B5FD',
+                border: '1px solid rgba(139, 92, 246, 0.3)',
+                fontWeight: 500,
+              }}
+            >
+              {activeFormat.config.aiBoxes.length} AI Processes
+            </span>
           </div>
+        </div>
+
+        {/* Create / Edit in Workflow Menu Shortcut */}
+        <button
+          type="button"
+          onClick={() => {
+            if (onNavigateTab) onNavigateTab('create-workflow');
+            else window.location.href = '/create-workflow';
+          }}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '0.35rem',
+            padding: '4px 10px',
+            borderRadius: '4px',
+            border: '1px dashed rgba(139, 92, 246, 0.5)',
+            backgroundColor: 'rgba(139, 92, 246, 0.08)',
+            color: '#A78BFA',
+            fontSize: '0.71875rem',
+            fontWeight: 500,
+            cursor: 'pointer',
+            transition: 'all 0.15s ease',
+          }}
+        >
+          <FiGitBranch style={{ fontSize: '11px' }} />
+          <span>+ Create / Edit Workflows</span>
+        </button>
+      </div>
 
           {/* SLEEK UNIFIED IMPORT BAR */}
       <div
@@ -2024,7 +2001,10 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
 
               <button
                 type="button"
-                onClick={() => setActiveTabMode('workflow')}
+                onClick={() => {
+                  if (onNavigateTab) onNavigateTab('create-workflow');
+                  else window.location.href = '/create-workflow';
+                }}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -2622,8 +2602,6 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
             </Button>
           </div>
         </div>
-      )}
-        </>
       )}
 
       {/* RAW JSON MODAL */}

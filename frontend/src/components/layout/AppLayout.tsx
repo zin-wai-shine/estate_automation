@@ -14,7 +14,8 @@ import {
   FiChevronRight,
   FiMenu,
   FiX,
-  FiZap
+  FiZap,
+  FiGitBranch,
 } from 'react-icons/fi';
 import { FaFacebook } from 'react-icons/fa';
 
@@ -49,6 +50,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     { id: 'dashboard', label: 'Dashboard', icon: <FiHome /> },
     { id: 'add-url', label: 'Add URL', icon: <FiPlusSquare /> },
     { id: 'facebook-import', label: 'Facebook Import', icon: <FaFacebook /> },
+    { id: 'create-workflow', label: 'Create Workflow', icon: <FiGitBranch /> },
     { id: 'inbox', label: 'Property Inbox', icon: <FiPlusSquare /> },
     { id: 'review', label: 'Review Center', icon: <FiCheckCircle /> },
     { id: 'projects', label: 'Projects / Condos', icon: <FiFolder /> },

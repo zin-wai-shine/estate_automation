@@ -177,15 +177,23 @@ export const loadSavedFacebookWorkflowConfig = (): FacebookWorkflowConfig => {
 };
 
 interface FacebookWorkflowCanvasProps {
+  initialConfig?: FacebookWorkflowConfig;
   onSwitchToLiveImport?: () => void;
   onConfigChange?: (config: FacebookWorkflowConfig) => void;
 }
 
 export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
+  initialConfig,
   onSwitchToLiveImport,
   onConfigChange,
 }) => {
-  const [config, setConfig] = useState<FacebookWorkflowConfig>(() => loadSavedFacebookWorkflowConfig());
+  const [config, setConfig] = useState<FacebookWorkflowConfig>(() => initialConfig || loadSavedFacebookWorkflowConfig());
+
+  useEffect(() => {
+    if (initialConfig) {
+      setConfig(initialConfig);
+    }
+  }, [initialConfig]);
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null);
