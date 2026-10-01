@@ -141,6 +141,33 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
   const [manualMode, setManualMode] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Live Browser Preview
+  const [liveScreenshot, setLiveScreenshot] = useState<string | null>(null);
+  const livePreviewInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const startLivePreview = () => {
+    setLiveScreenshot(null);
+    if (livePreviewInterval.current) clearInterval(livePreviewInterval.current);
+    livePreviewInterval.current = setInterval(async () => {
+      try {
+        const res = await fetch('http://localhost:9223/live-screenshot');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.screenshot) setLiveScreenshot(data.screenshot);
+        }
+      } catch { /* browser worker may not be ready yet */ }
+    }, 1500);
+  };
+
+  const stopLivePreview = () => {
+    if (livePreviewInterval.current) {
+      clearInterval(livePreviewInterval.current);
+      livePreviewInterval.current = null;
+    }
+  };
+
+  useEffect(() => () => stopLivePreview(), []);
+
   // Check initial browser status
   useEffect(() => {
     checkBrowserStatus();
@@ -178,6 +205,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
 
     setIsProcessing(true);
     setPipelineError(null);
+    startLivePreview();
     setPipelineErrorCode(null);
     setManualMode(false);
     setSavedSuccessMsg(false);
@@ -303,6 +331,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
       addLog(`Failed: ${err.message}`, 'error');
     } finally {
       setIsProcessing(false);
+      stopLivePreview();
     }
   };
 
@@ -872,6 +901,85 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
               </span>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* LIVE BROWSER PREVIEW PANEL */}
+      {isProcessing && liveScreenshot && (
+        <div
+          style={{
+            backgroundColor: '#0A0A0A',
+            border: '1px solid var(--accent-primary)',
+            borderRadius: '0.75rem',
+            overflow: 'hidden',
+            boxShadow: '0 0 24px rgba(59,130,246,0.15)',
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              padding: '0.5rem 0.875rem',
+              backgroundColor: 'rgba(59,130,246,0.1)',
+              borderBottom: '1px solid rgba(59,130,246,0.25)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: '50%',
+                  backgroundColor: '#22C55E',
+                  display: 'inline-block',
+                  boxShadow: '0 0 6px #22C55E',
+                  animation: 'pulse 1.5s infinite',
+                }}
+              />
+              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--accent-primary)', letterSpacing: '0.04em' }}>
+                🔴 LIVE BROWSER PREVIEW
+              </span>
+              <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                — OpenClaw automation running
+              </span>
+            </div>
+            <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>updates every 1.5s</span>
+          </div>
+          <div style={{ position: 'relative', lineHeight: 0 }}>
+            <img
+              src={liveScreenshot}
+              alt="Live browser preview"
+              style={{
+                width: '100%',
+                display: 'block',
+                maxHeight: '420px',
+                objectFit: 'contain',
+                backgroundColor: '#000',
+              }}
+            />
+            {/* Step overlay badge */}
+            <div
+              style={{
+                position: 'absolute',
+                bottom: '0.5rem',
+                left: '0.5rem',
+                backgroundColor: 'rgba(0,0,0,0.75)',
+                backdropFilter: 'blur(8px)',
+                border: '1px solid rgba(59,130,246,0.4)',
+                borderRadius: '0.375rem',
+                padding: '0.25rem 0.625rem',
+                fontSize: '0.6875rem',
+                fontWeight: 700,
+                color: 'var(--accent-primary)',
+                letterSpacing: '0.04em',
+              }}
+            >
+              {currentStepIndex >= 0 && currentStepIndex < PIPELINE_STEPS.length
+                ? `STEP ${currentStepIndex + 1}/${PIPELINE_STEPS.length}: ${PIPELINE_STEPS[currentStepIndex].label}`
+                : 'INITIALIZING'}
+            </div>
+          </div>
         </div>
       )}
 
