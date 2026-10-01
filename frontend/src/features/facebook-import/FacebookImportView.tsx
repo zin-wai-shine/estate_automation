@@ -27,11 +27,23 @@ import {
   FiX,
   FiZap,
   FiEdit3,
+  FiGitBranch,
+  FiDownloadCloud,
+  FiLayers,
+  FiCpu,
+  FiPlus,
+  FiFileText,
 } from 'react-icons/fi';
 import { FaFacebook } from 'react-icons/fa';
 import { SiGooglegemini } from 'react-icons/si';
 import type { PromptTemplate } from '../../types';
 import { CustomDropdown } from '../../components/ui/CustomDropdown';
+import {
+  FacebookWorkflowCanvas,
+  loadSavedFacebookWorkflowConfig,
+  type FacebookWorkflowConfig,
+  type DynamicAIBoxConfig,
+} from './FacebookWorkflowCanvas';
 
 const DEFAULT_PROMPT_TEMPLATES: PromptTemplate[] = [
   {
@@ -195,6 +207,17 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
   const [manualMode, setManualMode] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Facebook Workflow Configuration & Subview State
+  const [activeTabMode, setActiveTabMode] = useState<'import' | 'workflow'>('import');
+  const [workflowConfig, setWorkflowConfig] = useState<FacebookWorkflowConfig>(() => loadSavedFacebookWorkflowConfig());
+  const [activeAIBoxId, setActiveAIBoxId] = useState<string>(() => {
+    const saved = loadSavedFacebookWorkflowConfig();
+    const first = saved.aiBoxes.find((b) => b.enabled) || saved.aiBoxes[0];
+    return first ? first.id : 'ai-box-rental';
+  });
+  const [aiGeneratedOutputs, setAiGeneratedOutputs] = useState<Record<string, string>>({});
+  const [aiBoxGenerating, setAiBoxGenerating] = useState<Record<string, boolean>>({});
+
   // AI Assistant & Prompt Templates (Google AI Studio & OpenAI)
   const [promptTemplates, setPromptTemplates] = useState<PromptTemplate[]>(DEFAULT_PROMPT_TEMPLATES);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('1');
@@ -225,6 +248,76 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
     setPromptTemplates(DEFAULT_PROMPT_TEMPLATES);
     setSelectedTemplateId(String(DEFAULT_PROMPT_TEMPLATES[0].id));
   }, []);
+
+  const handleGenerateDynamicBoxCopy = async (boxId: string) => {
+    if (!caption.trim()) {
+      addLog('Cannot generate AI copy: caption is empty', 'warn');
+      return;
+    }
+
+    const box = workflowConfig.aiBoxes.find((b) => b.id === boxId);
+    if (!box) return;
+
+    setAiBoxGenerating((prev) => ({ ...prev, [boxId]: true }));
+    setAiError(null);
+    const providerName = box.provider === 'openai' ? 'OpenAI (GPT-4o)' : 'Google AI (Gemini)';
+    addLog(`Calling ${providerName} for [${box.title}]...`, 'info');
+
+    try {
+      const resp = await fetch('http://localhost:8085/api/facebook-import/generate-ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: box.provider,
+          model: box.model,
+          template_id: box.templateId || '',
+          template_name: box.title,
+          template_text: box.templateText || '',
+          raw_content: caption,
+          custom_prompt: box.customPrompt || '',
+        }),
+      });
+
+      const data = await resp.json();
+      if (!resp.ok || !data.success) {
+        throw new Error(data.error || `Failed to generate listing copy with ${providerName}`);
+      }
+
+      setAiGeneratedOutputs((prev) => ({ ...prev, [boxId]: data.generated_content }));
+      setAiGeneratedCopy(data.generated_content);
+      setGeneratedProvider(box.provider);
+      addLog(`✨ [${box.title}] generated copy successfully!`, 'success');
+    } catch (err: any) {
+      const msg = err.message || `Error communicating with ${providerName}`;
+      setAiError(msg);
+      addLog(`[${box.title}] AI generation failed: ${msg}`, 'error');
+    } finally {
+      setAiBoxGenerating((prev) => ({ ...prev, [boxId]: false }));
+    }
+  };
+
+  const handleGenerateAllDynamicBoxes = async () => {
+    if (!caption.trim()) {
+      addLog('Cannot generate AI copies: caption is empty', 'warn');
+      return;
+    }
+
+    const activeBoxes = workflowConfig.aiBoxes.filter((b) => b.enabled);
+    if (activeBoxes.length === 0) {
+      addLog('No active AI process boxes in workflow', 'warn');
+      return;
+    }
+
+    setIsGeneratingAI(true);
+    addLog(`🚀 Generating ${activeBoxes.length} dynamic AI processes simultaneously...`, 'info');
+
+    try {
+      await Promise.all(activeBoxes.map((b) => handleGenerateDynamicBoxCopy(b.id)));
+      addLog(`🎉 All ${activeBoxes.length} dynamic AI processes completed!`, 'success');
+    } finally {
+      setIsGeneratingAI(false);
+    }
+  };
 
   const handleGenerateAICopy = async () => {
     if (!caption.trim()) {
@@ -411,25 +504,36 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
 
       // Step 5: Caption Extracted
       setCurrentStepIndex(4);
-      setCaption(result.caption.original || '');
-      setLanguages(result.caption.language_detected || []);
-      addLog(`Post caption extracted (${result.caption.original?.length || 0} characters)`, 'success');
+      if (workflowConfig.getContent.enabled) {
+        setCaption(result.caption.original || '');
+        setLanguages(result.caption.language_detected || []);
+        addLog(`Post caption extracted (${result.caption.original?.length || 0} characters)`, 'success');
+      } else {
+        setCaption('');
+        setLanguages([]);
+        addLog('Post caption extraction bypassed (disabled in Workflow Setup)', 'info');
+      }
 
       // Step 6: Photos Detected
-      setCurrentStepIndex(5);
-      const photoList: ExtractedImage[] = result.images || [];
-      addLog(`${photoList.length} photos detected in post container`);
+      if (workflowConfig.getImages.enabled) {
+        setCurrentStepIndex(5);
+        const photoList: ExtractedImage[] = result.images || [];
+        addLog(`${photoList.length} photos detected in post container`);
 
-      // Step 7: Verifying Photos
-      setCurrentStepIndex(6);
-      const verifiedCount = photoList.filter((img) => img.status !== 'rejected').length;
-      addLog(`Verifying ${photoList.length} photos against target post context...`);
+        // Step 7: Verifying Photos
+        setCurrentStepIndex(6);
+        const verifiedCount = photoList.filter((img) => img.status !== 'rejected').length;
+        addLog(`Verifying ${photoList.length} photos against target post context...`);
 
-      // Step 8: Downloading Media
-      setCurrentStepIndex(7);
-      setImages(photoList);
-      const downloadedCount = photoList.filter((img) => img.status === 'downloaded').length;
-      addLog(`${verifiedCount} target-verified photos downloaded & stored locally`, 'success');
+        // Step 8: Downloading Media
+        setCurrentStepIndex(7);
+        setImages(photoList);
+        const downloadedCount = photoList.filter((img) => img.status === 'downloaded').length;
+        addLog(`${verifiedCount} target-verified photos downloaded & stored locally`, 'success');
+      } else {
+        setImages([]);
+        addLog('Image downloading bypassed (disabled in Workflow Setup)', 'info');
+      }
 
       // Step 9: AI Analysis
       setCurrentStepIndex(8);
@@ -727,7 +831,64 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
       {/* Top Nav Bar Portal Actions (Directly inside top navigation bar) */}
       {headerActionEl &&
         createPortal(
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', flexShrink: 0 }}>
+            {/* Mode Switcher: Live Import vs Workflow Setup */}
+            <div
+              style={{
+                display: 'inline-flex',
+                backgroundColor: 'var(--bg-main)',
+                padding: '2px',
+                borderRadius: '0.45rem',
+                border: '1px solid var(--border-color)',
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setActiveTabMode('import')}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.3rem',
+                  padding: '0.2rem 0.6rem',
+                  borderRadius: '0.35rem',
+                  border: 'none',
+                  fontSize: '0.75rem',
+                  fontWeight: activeTabMode === 'import' ? 600 : 500,
+                  backgroundColor: activeTabMode === 'import' ? 'rgba(24, 119, 242, 0.2)' : 'transparent',
+                  color: activeTabMode === 'import' ? '#60A5FA' : 'var(--text-muted)',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                <FiDownloadCloud style={{ fontSize: '12px' }} />
+                <span>Live Import</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTabMode('workflow')}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.3rem',
+                  padding: '0.2rem 0.6rem',
+                  borderRadius: '0.35rem',
+                  border: 'none',
+                  fontSize: '0.75rem',
+                  fontWeight: activeTabMode === 'workflow' ? 600 : 500,
+                  backgroundColor: activeTabMode === 'workflow' ? 'rgba(139, 92, 246, 0.25)' : 'transparent',
+                  color: activeTabMode === 'workflow' ? '#A78BFA' : 'var(--text-muted)',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                <FiGitBranch style={{ fontSize: '12px' }} />
+                <span>Workflow Setup</span>
+              </button>
+            </div>
+
             {/* Auto Import Toggle */}
             <label
               style={{
@@ -831,9 +992,125 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
           headerActionEl
         )}
 
+      {/* Conditionally Render Workflow Canvas Setup OR Live Import View */}
+      {activeTabMode === 'workflow' ? (
+        <FacebookWorkflowCanvas
+          onSwitchToLiveImport={() => setActiveTabMode('import')}
+          onConfigChange={(newCfg) => setWorkflowConfig(newCfg)}
+        />
+      ) : (
+        <>
+          {/* Quick Workflow Branches Bar */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '0.5rem',
+              backgroundColor: 'var(--bg-secondary)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '0.5rem',
+              padding: '0.375rem 0.75rem',
+              fontSize: '0.75rem',
+              boxShadow: 'var(--shadow-sm)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <span style={{ color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.6875rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Workflow Branches:
+              </span>
 
+              {/* Get Content Toggle Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  const updated = {
+                    ...workflowConfig,
+                    getContent: { ...workflowConfig.getContent, enabled: !workflowConfig.getContent.enabled },
+                  };
+                  setWorkflowConfig(updated);
+                  localStorage.setItem('estate_fb_workflow_config_v1', JSON.stringify(updated));
+                }}
+                title={workflowConfig.getContent.enabled ? 'Click to disable Get Content branch' : 'Click to enable Get Content branch'}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  padding: '2px 8px',
+                  borderRadius: '4px',
+                  border: '1px solid',
+                  borderColor: workflowConfig.getContent.enabled ? 'rgba(59, 130, 246, 0.4)' : 'rgba(255, 255, 255, 0.1)',
+                  backgroundColor: workflowConfig.getContent.enabled ? 'rgba(59, 130, 246, 0.12)' : 'transparent',
+                  color: workflowConfig.getContent.enabled ? '#60A5FA' : 'var(--text-muted)',
+                  cursor: 'pointer',
+                  fontSize: '0.71875rem',
+                  fontWeight: 500,
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <FiFileText style={{ fontSize: '11px' }} />
+                <span>Get Content: {workflowConfig.getContent.enabled ? 'ON' : 'OFF'}</span>
+              </button>
 
-      {/* SLEEK UNIFIED IMPORT BAR */}
+              {/* Get Images Toggle Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  const updated = {
+                    ...workflowConfig,
+                    getImages: { ...workflowConfig.getImages, enabled: !workflowConfig.getImages.enabled },
+                  };
+                  setWorkflowConfig(updated);
+                  localStorage.setItem('estate_fb_workflow_config_v1', JSON.stringify(updated));
+                }}
+                title={workflowConfig.getImages.enabled ? 'Click to disable Get Images branch' : 'Click to enable Get Images branch'}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  padding: '2px 8px',
+                  borderRadius: '4px',
+                  border: '1px solid',
+                  borderColor: workflowConfig.getImages.enabled ? 'rgba(16, 185, 129, 0.4)' : 'rgba(255, 255, 255, 0.1)',
+                  backgroundColor: workflowConfig.getImages.enabled ? 'rgba(16, 185, 129, 0.12)' : 'transparent',
+                  color: workflowConfig.getImages.enabled ? '#34D399' : 'var(--text-muted)',
+                  cursor: 'pointer',
+                  fontSize: '0.71875rem',
+                  fontWeight: 500,
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <FiImage style={{ fontSize: '11px' }} />
+                <span>Get Images: {workflowConfig.getImages.enabled ? 'ON' : 'OFF'}</span>
+              </button>
+            </div>
+
+            {/* Workflow Builder Shortcut */}
+            <button
+              type="button"
+              onClick={() => setActiveTabMode('workflow')}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                padding: '2px 8px',
+                borderRadius: '4px',
+                border: '1px solid rgba(139, 92, 246, 0.3)',
+                backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                color: '#A78BFA',
+                cursor: 'pointer',
+                fontSize: '0.71875rem',
+                fontWeight: 500,
+                transition: 'all 0.15s ease',
+              }}
+            >
+              <FiGitBranch style={{ fontSize: '11px' }} />
+              <span>Configure Workflow ({workflowConfig.aiBoxes.length} AI Boxes)</span>
+            </button>
+          </div>
+
+          {/* SLEEK UNIFIED IMPORT BAR */}
       <div
         style={{
           backgroundColor: 'var(--bg-secondary)',
@@ -1617,174 +1894,304 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                   AI Prompt & Copy Generator
                 </h3>
 
-                  {/* Dual AI Provider Switcher */}
-                  <div
+                {/* Dual AI Provider Switcher */}
+                <div
+                  style={{
+                    display: 'inline-flex',
+                    backgroundColor: 'var(--bg-main)',
+                    padding: '2px',
+                    borderRadius: '6px',
+                    border: '1px solid var(--border-color)',
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setAiProvider('google_ai')}
                     style={{
                       display: 'inline-flex',
-                      backgroundColor: 'var(--bg-main)',
-                      padding: '2px',
-                      borderRadius: '6px',
-                      border: '1px solid var(--border-color)',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '4px 10px',
+                      borderRadius: '4px',
+                      border: 'none',
+                      fontSize: '0.75rem',
+                      fontWeight: aiProvider === 'google_ai' ? 600 : 400,
+                      backgroundColor: aiProvider === 'google_ai' ? 'rgba(78, 136, 255, 0.2)' : 'transparent',
+                      color: aiProvider === 'google_ai' ? '#60A5FA' : 'var(--text-muted)',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                      whiteSpace: 'nowrap',
                     }}
                   >
-                    <button
-                      type="button"
-                      onClick={() => setAiProvider('google_ai')}
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        padding: '4px 10px',
-                        borderRadius: '4px',
-                        border: 'none',
-                        fontSize: '0.75rem',
-                        fontWeight: aiProvider === 'google_ai' ? 600 : 400,
-                        backgroundColor: aiProvider === 'google_ai' ? 'rgba(78, 136, 255, 0.2)' : 'transparent',
-                        color: aiProvider === 'google_ai' ? '#60A5FA' : 'var(--text-muted)',
-                        cursor: 'pointer',
-                        transition: 'all 0.15s ease',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      <SiGooglegemini style={{ fontSize: '13px', color: '#4E88FF', flexShrink: 0 }} />
-                      <span>Google AI Studio</span>
-                    </button>
+                    <SiGooglegemini style={{ fontSize: '13px', color: '#4E88FF', flexShrink: 0 }} />
+                    <span>Google AI Studio</span>
+                  </button>
 
-                    <button
-                      type="button"
-                      onClick={() => setAiProvider('openai')}
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        padding: '4px 10px',
-                        borderRadius: '4px',
-                        border: 'none',
-                        fontSize: '0.75rem',
-                        fontWeight: aiProvider === 'openai' ? 600 : 400,
-                        backgroundColor: aiProvider === 'openai' ? 'rgba(16, 185, 129, 0.2)' : 'transparent',
-                        color: aiProvider === 'openai' ? '#34D399' : 'var(--text-muted)',
-                        cursor: 'pointer',
-                        transition: 'all 0.15s ease',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      <OpenAIIcon size={13} color="#10B981" />
-                      <span>OpenAI</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Connection Status */}
-                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.6875rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                  <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10B981' }} />
-                  <span>{aiProvider === 'google_ai' ? 'Connected (gemini-flash-latest)' : 'Connected (gpt-4o)'}</span>
+                  <button
+                    type="button"
+                    onClick={() => setAiProvider('openai')}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '4px 10px',
+                      borderRadius: '4px',
+                      border: 'none',
+                      fontSize: '0.75rem',
+                      fontWeight: aiProvider === 'openai' ? 600 : 400,
+                      backgroundColor: aiProvider === 'openai' ? 'rgba(16, 185, 129, 0.2)' : 'transparent',
+                      color: aiProvider === 'openai' ? '#34D399' : 'var(--text-muted)',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    <OpenAIIcon size={13} color="#10B981" />
+                    <span>OpenAI</span>
+                  </button>
                 </div>
               </div>
 
-              {/* Template Selection & Main Generate Button Row */}
-              <div style={{ display: 'flex', gap: '0.625rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                <div style={{ flex: '1 1 240px', minWidth: '200px' }}>
-                  <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.375rem', display: 'block' }}>
-                    Select Prompt Template
-                  </label>
-                  <Select
-                    value={selectedTemplateId}
-                    onChange={(val) => setSelectedTemplateId(val)}
-                    height="40px"
-                    placeholder="Select prompt template..."
-                    options={promptTemplates.map((t) => ({
-                      value: String(t.id),
-                      label: `${t.name} (${t.category})`,
-                    }))}
+              {/* Connection Status */}
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.6875rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10B981' }} />
+                <span>{aiProvider === 'google_ai' ? 'Connected (gemini-flash-latest)' : 'Connected (gpt-4o)'}</span>
+              </div>
+            </div>
+
+            {/* Dynamic AI Process Tabs from Workflow Canvas */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '0.5rem',
+                borderBottom: '1px solid var(--border-color)',
+                paddingBottom: '0.625rem',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', marginRight: '0.25rem' }}>
+                  Workflow Processes:
+                </span>
+                {workflowConfig.aiBoxes.map((box) => {
+                  const isActive = activeAIBoxId === box.id;
+                  const hasGenerated = Boolean(aiGeneratedOutputs[box.id]);
+                  const isBoxLoading = Boolean(aiBoxGenerating[box.id]);
+
+                  return (
+                    <button
+                      key={box.id}
+                      type="button"
+                      onClick={() => {
+                        setActiveAIBoxId(box.id);
+                        if (aiGeneratedOutputs[box.id]) {
+                          setAiGeneratedCopy(aiGeneratedOutputs[box.id]);
+                        }
+                      }}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.375rem',
+                        padding: '0.25rem 0.625rem',
+                        borderRadius: '0.375rem',
+                        border: '1px solid',
+                        borderColor: isActive ? 'var(--accent-primary)' : 'var(--border-color)',
+                        backgroundColor: isActive ? 'rgba(78, 136, 255, 0.15)' : 'var(--bg-main)',
+                        color: isActive ? 'var(--text-primary)' : 'var(--text-muted)',
+                        fontSize: '0.75rem',
+                        fontWeight: isActive ? 600 : 500,
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      {box.provider === 'openai' ? (
+                        <OpenAIIcon size={13} color="#10B981" />
+                      ) : (
+                        <SiGooglegemini style={{ fontSize: '12px', color: '#4E88FF' }} />
+                      )}
+                      <span>{box.title}</span>
+                      {isBoxLoading ? (
+                        <FiRefreshCw className="spin" style={{ animation: 'spin 1s linear infinite', fontSize: '11px', color: 'var(--accent-primary)' }} />
+                      ) : hasGenerated ? (
+                        <FiCheck style={{ fontSize: '12px', color: 'var(--status-success)' }} />
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setActiveTabMode('workflow')}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.3rem',
+                  padding: '0.25rem 0.55rem',
+                  borderRadius: '0.375rem',
+                  border: '1px dashed rgba(139, 92, 246, 0.4)',
+                  backgroundColor: 'rgba(139, 92, 246, 0.08)',
+                  color: '#A78BFA',
+                  fontSize: '0.71875rem',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                }}
+              >
+                <FiGitBranch style={{ fontSize: '11px' }} />
+                <span>+ Setup in Workflow</span>
+              </button>
+            </div>
+
+            {/* Template Selection & Main Generate Buttons Row */}
+            <div style={{ display: 'flex', gap: '0.625rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+              <div style={{ flex: '1 1 240px', minWidth: '200px' }}>
+                <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.375rem', display: 'block' }}>
+                  Select Prompt Template
+                </label>
+                <Select
+                  value={selectedTemplateId}
+                  onChange={(val) => setSelectedTemplateId(val)}
+                  height="40px"
+                  placeholder="Select prompt template..."
+                  options={promptTemplates.map((t) => ({
+                    value: String(t.id),
+                    label: `${t.name} (${t.category})`,
+                  }))}
+                />
+              </div>
+
+              {/* Generate Current Process Button */}
+              <Button
+                variant="primary"
+                size="md"
+                onClick={() => {
+                  if (activeAIBoxId) {
+                    handleGenerateDynamicBoxCopy(activeAIBoxId);
+                  } else {
+                    handleGenerateAICopy();
+                  }
+                }}
+                disabled={isGeneratingAI || Boolean(aiBoxGenerating[activeAIBoxId]) || !caption.trim()}
+                style={{
+                  height: '40px',
+                  minWidth: '150px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.5rem',
+                  padding: '0 1rem',
+                  borderRadius: '0.5rem',
+                  background: aiProvider === 'openai'
+                    ? 'linear-gradient(135deg, #059669 0%, #10B981 100%)'
+                    : 'linear-gradient(135deg, #2563EB 0%, #7C3AED 100%)',
+                  border: 'none',
+                  boxShadow: aiProvider === 'openai'
+                    ? '0 2px 10px rgba(16, 185, 129, 0.25)'
+                    : '0 2px 10px rgba(78, 136, 255, 0.3)',
+                  fontSize: '0.8125rem',
+                  fontWeight: 600,
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0,
+                  boxSizing: 'border-box',
+                }}
+              >
+                {aiBoxGenerating[activeAIBoxId] ? (
+                  <>
+                    <FiRefreshCw className="spin" style={{ animation: 'spin 1s linear infinite', fontSize: '15px', flexShrink: 0 }} />
+                    <span>Generating...</span>
+                  </>
+                ) : (
+                  <>
+                    <FiZap style={{ fontSize: '15px', flexShrink: 0 }} />
+                    <span>Generate Current</span>
+                  </>
+                )}
+              </Button>
+
+              {/* Generate All Active Processes in Parallel Button */}
+              <Button
+                variant="outline"
+                size="md"
+                onClick={handleGenerateAllDynamicBoxes}
+                disabled={isGeneratingAI || !caption.trim()}
+                style={{
+                  height: '40px',
+                  minWidth: '150px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.5rem',
+                  padding: '0 1rem',
+                  borderRadius: '0.5rem',
+                  borderColor: 'rgba(139, 92, 246, 0.5)',
+                  backgroundColor: 'rgba(139, 92, 246, 0.08)',
+                  color: '#A78BFA',
+                  fontSize: '0.8125rem',
+                  fontWeight: 600,
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0,
+                  boxSizing: 'border-box',
+                }}
+              >
+                {isGeneratingAI ? (
+                  <>
+                    <FiRefreshCw className="spin" style={{ animation: 'spin 1s linear infinite', fontSize: '15px', flexShrink: 0 }} />
+                    <span>Generating All...</span>
+                  </>
+                ) : (
+                  <>
+                    <FiCpu style={{ fontSize: '15px', flexShrink: 0 }} />
+                    <span>Generate All ({workflowConfig.aiBoxes.filter((b) => b.enabled).length})</span>
+                  </>
+                )}
+              </Button>
+            </div>
+
+            {/* Optional Prompt Customization */}
+            <div>
+              <button
+                type="button"
+                onClick={() => setShowPromptTweak(!showPromptTweak)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--accent-primary)',
+                  fontSize: '0.6875rem',
+                  cursor: 'pointer',
+                  padding: 0,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.25rem',
+                }}
+              >
+                <FiSliders style={{ fontSize: '0.6875rem' }} />
+                <span>{showPromptTweak ? 'Hide prompt instructions tweak' : 'Customize prompt instructions'}</span>
+              </button>
+              {showPromptTweak && (
+                <div style={{ marginTop: '0.375rem' }}>
+                  <input
+                    type="text"
+                    value={customPromptTweak}
+                    onChange={(e) => setCustomPromptTweak(e.target.value)}
+                    placeholder="e.g. Translate to English, highlight BTS station, add urgent CTA..."
+                    style={{
+                      width: '100%',
+                      height: '34px',
+                      padding: '0 0.625rem',
+                      borderRadius: '0.375rem',
+                      backgroundColor: 'var(--bg-main)',
+                      border: '1px solid var(--border-color)',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.75rem',
+                      outline: 'none',
+                      boxSizing: 'border-box',
+                    }}
                   />
                 </div>
-
-                <Button
-                  variant="primary"
-                  size="md"
-                  onClick={handleGenerateAICopy}
-                  disabled={isGeneratingAI || !caption.trim()}
-                  style={{
-                    height: '40px',
-                    minWidth: '160px',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '0.5rem',
-                    padding: '0 1.25rem',
-                    borderRadius: '0.5rem',
-                    background: aiProvider === 'openai'
-                      ? 'linear-gradient(135deg, #059669 0%, #10B981 100%)'
-                      : 'linear-gradient(135deg, #2563EB 0%, #7C3AED 100%)',
-                    border: 'none',
-                    boxShadow: aiProvider === 'openai'
-                      ? '0 2px 10px rgba(16, 185, 129, 0.25)'
-                      : '0 2px 10px rgba(78, 136, 255, 0.3)',
-                    fontSize: '0.8125rem',
-                    fontWeight: 600,
-                    whiteSpace: 'nowrap',
-                    flexShrink: 0,
-                    boxSizing: 'border-box',
-                  }}
-                >
-                  {isGeneratingAI ? (
-                    <>
-                      <FiRefreshCw className="spin" style={{ animation: 'spin 1s linear infinite', fontSize: '15px', flexShrink: 0 }} />
-                      <span>Generating...</span>
-                    </>
-                  ) : (
-                    <>
-                      <FiZap style={{ fontSize: '15px', flexShrink: 0 }} />
-                      <span>Generate with AI</span>
-                    </>
-                  )}
-                </Button>
-              </div>
-
-              {/* Optional Prompt Customization */}
-              <div>
-                <button
-                  type="button"
-                  onClick={() => setShowPromptTweak(!showPromptTweak)}
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    color: 'var(--accent-primary)',
-                    fontSize: '0.6875rem',
-                    cursor: 'pointer',
-                    padding: 0,
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '0.25rem',
-                  }}
-                >
-                  <FiSliders style={{ fontSize: '0.6875rem' }} />
-                  <span>{showPromptTweak ? 'Hide prompt instructions tweak' : 'Customize prompt instructions'}</span>
-                </button>
-                {showPromptTweak && (
-                  <div style={{ marginTop: '0.375rem' }}>
-                    <input
-                      type="text"
-                      value={customPromptTweak}
-                      onChange={(e) => setCustomPromptTweak(e.target.value)}
-                      placeholder="e.g. Translate to English, highlight BTS station, add urgent CTA..."
-                      style={{
-                        width: '100%',
-                        height: '34px',
-                        padding: '0 0.625rem',
-                        borderRadius: '0.375rem',
-                        backgroundColor: 'var(--bg-main)',
-                        border: '1px solid var(--border-color)',
-                        color: 'var(--text-primary)',
-                        fontSize: '0.75rem',
-                        outline: 'none',
-                        boxSizing: 'border-box',
-                      }}
-                    />
-                  </div>
-                )}
-              </div>
+              )}
+            </div>
 
               {aiError && (
                 <div
@@ -1813,125 +2220,145 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
 
               {/* AI Generated Output Display Box */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.375rem' }}>
-                    <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                      AI Generated Listing Copy
-                    </label>
-                    {generatedProvider && (
-                      <Badge variant={generatedProvider === 'openai' ? 'success' : 'info'} size="sm">
-                        {generatedProvider === 'openai' ? 'OpenAI GPT-4o' : 'Google Gemini'}
-                      </Badge>
-                    )}
-                  </div>
+                {(() => {
+                  const activeBox = workflowConfig.aiBoxes.find((b) => b.id === activeAIBoxId) || workflowConfig.aiBoxes[0];
+                  const currentDisplayCopy = (activeBox && aiGeneratedOutputs[activeBox.id]) || aiGeneratedCopy;
 
-                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
-                    {aiGeneratedCopy && (
-                      <button
-                        type="button"
-                        onClick={() => setIsEditingAiCopy(!isEditingAiCopy)}
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '0.25rem',
-                          background: 'transparent',
-                          border: 'none',
-                          color: isEditingAiCopy ? 'var(--accent-primary)' : 'var(--text-muted)',
-                          fontSize: '0.75rem',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        <FiEdit3 />
-                        <span>{isEditingAiCopy ? 'Done' : 'Edit'}</span>
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={handleCopyAiCopy}
-                      disabled={!aiGeneratedCopy}
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '0.25rem',
-                        background: 'transparent',
-                        border: 'none',
-                        color: !aiGeneratedCopy ? 'var(--text-muted)' : copiedAiCopy ? 'var(--status-success)' : 'var(--accent-primary)',
-                        fontSize: '0.75rem',
-                        cursor: aiGeneratedCopy ? 'pointer' : 'not-allowed',
-                      }}
-                    >
-                      {copiedAiCopy ? <FiCheck /> : <FiCopy />}
-                      <span>{copiedAiCopy ? 'Copied!' : 'Copy AI Copy'}</span>
-                    </button>
-                  </div>
-                </div>
+                  return (
+                    <>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.375rem' }}>
+                          <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                            {activeBox ? `AI Copy: ${activeBox.title}` : 'AI Generated Listing Copy'}
+                          </label>
+                          {activeBox && (
+                            <Badge variant={activeBox.provider === 'openai' ? 'success' : 'info'} size="sm">
+                              {activeBox.provider === 'openai' ? 'OpenAI GPT-4o' : 'Google Gemini'}
+                            </Badge>
+                          )}
+                        </div>
 
-                {/* Content Box */}
-                <div
-                  style={{
-                    backgroundColor: 'var(--bg-main)',
-                    border: aiGeneratedCopy ? '1px solid rgba(78, 136, 255, 0.35)' : '1px solid var(--border-color)',
-                    borderRadius: '0.5rem',
-                    padding: '0.75rem',
-                    minHeight: '120px',
-                    maxHeight: '260px',
-                    overflowY: 'auto',
-                  }}
-                >
-                  {aiGeneratedCopy ? (
-                    isEditingAiCopy ? (
-                      <textarea
-                        value={aiGeneratedCopy}
-                        onChange={(e) => setAiGeneratedCopy(e.target.value)}
-                        style={{
-                          width: '100%',
-                          minHeight: '180px',
-                          backgroundColor: 'transparent',
-                          border: 'none',
-                          outline: 'none',
-                          color: 'var(--text-primary)',
-                          fontSize: '0.8125rem',
-                          lineHeight: 1.6,
-                          resize: 'none',
-                          fontFamily: 'inherit',
-                        }}
-                      />
-                    ) : (
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
+                          {currentDisplayCopy && (
+                            <button
+                              type="button"
+                              onClick={() => setIsEditingAiCopy(!isEditingAiCopy)}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.25rem',
+                                background: 'transparent',
+                                border: 'none',
+                                color: isEditingAiCopy ? 'var(--accent-primary)' : 'var(--text-muted)',
+                                fontSize: '0.75rem',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              <FiEdit3 />
+                              <span>{isEditingAiCopy ? 'Done' : 'Edit'}</span>
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!currentDisplayCopy) return;
+                              navigator.clipboard.writeText(currentDisplayCopy);
+                              setCopiedAiCopy(true);
+                              setTimeout(() => setCopiedAiCopy(false), 2000);
+                            }}
+                            disabled={!currentDisplayCopy}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.25rem',
+                              background: 'transparent',
+                              border: 'none',
+                              color: !currentDisplayCopy ? 'var(--text-muted)' : copiedAiCopy ? 'var(--status-success)' : 'var(--accent-primary)',
+                              fontSize: '0.75rem',
+                              cursor: currentDisplayCopy ? 'pointer' : 'not-allowed',
+                            }}
+                          >
+                            {copiedAiCopy ? <FiCheck /> : <FiCopy />}
+                            <span>{copiedAiCopy ? 'Copied!' : 'Copy AI Copy'}</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Content Box */}
                       <div
                         style={{
-                          fontSize: '0.8125rem',
-                          color: 'var(--text-primary)',
-                          whiteSpace: 'pre-wrap',
-                          lineHeight: 1.6,
+                          backgroundColor: 'var(--bg-main)',
+                          border: currentDisplayCopy ? '1px solid rgba(78, 136, 255, 0.35)' : '1px solid var(--border-color)',
+                          borderRadius: '0.5rem',
+                          padding: '0.75rem',
+                          minHeight: '120px',
+                          maxHeight: '260px',
+                          overflowY: 'auto',
                         }}
                       >
-                        {aiGeneratedCopy}
+                        {currentDisplayCopy ? (
+                          isEditingAiCopy ? (
+                            <textarea
+                              value={currentDisplayCopy}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setAiGeneratedCopy(val);
+                                if (activeBox) {
+                                  setAiGeneratedOutputs((prev) => ({ ...prev, [activeBox.id]: val }));
+                                }
+                              }}
+                              style={{
+                                width: '100%',
+                                minHeight: '180px',
+                                backgroundColor: 'transparent',
+                                border: 'none',
+                                outline: 'none',
+                                color: 'var(--text-primary)',
+                                fontSize: '0.8125rem',
+                                lineHeight: 1.6,
+                                resize: 'none',
+                                fontFamily: 'inherit',
+                              }}
+                            />
+                          ) : (
+                            <div
+                              style={{
+                                fontSize: '0.8125rem',
+                                color: 'var(--text-primary)',
+                                whiteSpace: 'pre-wrap',
+                                lineHeight: 1.6,
+                              }}
+                            >
+                              {currentDisplayCopy}
+                            </div>
+                          )
+                        ) : (
+                          <div
+                            style={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              height: '110px',
+                              textAlign: 'center',
+                              gap: '0.5rem',
+                              color: 'var(--text-muted)',
+                              fontSize: '0.8125rem',
+                            }}
+                          >
+                            <div style={{ display: 'inline-flex', gap: '0.5rem', alignItems: 'center' }}>
+                              <SiGooglegemini style={{ fontSize: '1.25rem', color: '#4E88FF', opacity: 0.8 }} />
+                              <OpenAIIcon size={18} color="#10B981" />
+                            </div>
+                            <div>
+                              Select any process tab above and click <strong style={{ color: 'var(--text-primary)' }}>Generate Current</strong> or <strong style={{ color: '#A78BFA' }}>Generate All</strong> to produce structured real estate copies.
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    )
-                  ) : (
-                    <div
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        height: '110px',
-                        textAlign: 'center',
-                        gap: '0.5rem',
-                        color: 'var(--text-muted)',
-                        fontSize: '0.8125rem',
-                      }}
-                    >
-                      <div style={{ display: 'inline-flex', gap: '0.5rem', alignItems: 'center' }}>
-                        <SiGooglegemini style={{ fontSize: '1.25rem', color: '#4E88FF', opacity: 0.8 }} />
-                        <OpenAIIcon size={18} color="#10B981" />
-                      </div>
-                      <div>
-                        Select your template and AI provider above, then click <strong style={{ color: 'var(--text-primary)' }}>Generate with AI</strong> to transform the raw caption into structured real estate copy.
-                      </div>
-                    </div>
-                  )}
-                </div>
+                    </>
+                  );
+                })()}
               </div>
             </div>
           </div>
@@ -2195,6 +2622,8 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
             </Button>
           </div>
         </div>
+      )}
+        </>
       )}
 
       {/* RAW JSON MODAL */}
