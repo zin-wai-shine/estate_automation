@@ -442,6 +442,7 @@ func ProxyFacebookImage(c *fiber.Ctx) error {
 }
 
 type GenerateAICopyRequest struct {
+	Provider     string `json:"provider"` // "google_ai" or "openai"
 	TemplateID   string `json:"template_id"`
 	TemplateName string `json:"template_name"`
 	TemplateText string `json:"template_text"`
@@ -451,7 +452,7 @@ type GenerateAICopyRequest struct {
 	Model        string `json:"model"`
 }
 
-// GenerateAICopy modifies raw content using Google AI (Gemini) and the selected prompt template
+// GenerateAICopy modifies raw content using Google AI (Gemini) or OpenAI and the selected prompt template
 func GenerateAICopy(c *fiber.Ctx) error {
 	var req GenerateAICopyRequest
 	if err := c.BodyParser(&req); err != nil {
@@ -477,7 +478,16 @@ func GenerateAICopy(c *fiber.Ctx) error {
 		}
 	}
 
-	generatedText, err := googleAIService.GenerateContent(prompt, req.RawContent, req.APIKey, req.Model)
+	var generatedText string
+	var err error
+	provider := strings.ToLower(strings.TrimSpace(req.Provider))
+	if provider == "openai" {
+		generatedText, err = googleAIService.GenerateContentWithOpenAI(prompt, req.RawContent, req.APIKey, req.Model)
+	} else {
+		provider = "google_ai"
+		generatedText, err = googleAIService.GenerateContent(prompt, req.RawContent, req.APIKey, req.Model)
+	}
+
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"success": false,
@@ -489,6 +499,7 @@ func GenerateAICopy(c *fiber.Ctx) error {
 		"success":           true,
 		"generated_content": generatedText,
 		"template_name":     req.TemplateName,
+		"provider":          provider,
 	})
 }
 

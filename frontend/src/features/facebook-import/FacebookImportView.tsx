@@ -61,6 +61,12 @@ const DEFAULT_PROMPT_TEMPLATES: PromptTemplate[] = [
   },
 ];
 
+const OpenAIIcon: React.FC<{ size?: number; color?: string }> = ({ size = 15, color = '#10A37F' }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" style={{ color, flexShrink: 0 }}>
+    <path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.259 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7466-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.5045 4.5045 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.8956zm16.0993 3.8558L12.5973 8.3829l2.02-1.1638a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.402-.686zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.407 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813v6.7227zm1.1408-2.8252l2.5526-1.4727 2.5526 1.4727v2.9454l-2.5526 1.4727-2.5526-1.4727z" />
+  </svg>
+);
+
 interface FacebookImportViewProps {
   onSaveToInbox?: (property: Partial<Property>) => void;
   onNavigateTab?: (tab: string) => void;
@@ -180,14 +186,15 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
   const [manualMode, setManualMode] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Google AI Assistant & Prompt Templates
+  // AI Assistant & Prompt Templates (Google AI Studio & OpenAI)
   const [promptTemplates, setPromptTemplates] = useState<PromptTemplate[]>(DEFAULT_PROMPT_TEMPLATES);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('1');
+  const [aiProvider, setAiProvider] = useState<'google_ai' | 'openai'>('google_ai');
+  const [generatedProvider, setGeneratedProvider] = useState<'google_ai' | 'openai' | null>(null);
   const [customPromptTweak, setCustomPromptTweak] = useState<string>('');
   const [showPromptTweak, setShowPromptTweak] = useState<boolean>(false);
   const [isGeneratingAI, setIsGeneratingAI] = useState<boolean>(false);
   const [aiGeneratedCopy, setAiGeneratedCopy] = useState<string>('');
-  const [captionTab, setCaptionTab] = useState<'raw' | 'ai'>('raw');
   const [copiedAiCopy, setCopiedAiCopy] = useState<boolean>(false);
   const [isEditingAiCopy, setIsEditingAiCopy] = useState<boolean>(false);
   const [aiError, setAiError] = useState<string | null>(null);
@@ -219,13 +226,15 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
     const template = promptTemplates.find((t) => String(t.id) === String(selectedTemplateId));
     setIsGeneratingAI(true);
     setAiError(null);
-    addLog(`Calling Google AI (Gemini) with template "${template?.name || 'Selected'}"...`, 'info');
+    const providerName = aiProvider === 'openai' ? 'OpenAI (GPT-4o)' : 'Google AI (Gemini)';
+    addLog(`Calling ${providerName} with template "${template?.name || 'Selected'}"...`, 'info');
 
     try {
       const resp = await fetch('http://localhost:8085/api/facebook-import/generate-ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          provider: aiProvider,
           template_id: template ? String(template.id) : '',
           template_name: template?.name || 'Facebook Template',
           template_text: template?.templateText || '',
@@ -236,16 +245,16 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
 
       const data = await resp.json();
       if (!resp.ok || !data.success) {
-        throw new Error(data.error || 'Failed to generate listing copy with Google AI');
+        throw new Error(data.error || `Failed to generate listing copy with ${providerName}`);
       }
 
       setAiGeneratedCopy(data.generated_content);
-      setCaptionTab('ai');
-      addLog('✨ Google AI generated listing copy successfully!', 'success');
+      setGeneratedProvider(aiProvider);
+      addLog(`✨ ${providerName} generated listing copy successfully!`, 'success');
     } catch (err: any) {
-      const msg = err.message || 'Error communicating with Google AI';
+      const msg = err.message || `Error communicating with ${providerName}`;
       setAiError(msg);
-      addLog(`Google AI generation failed: ${msg}`, 'error');
+      addLog(`AI generation failed: ${msg}`, 'error');
     } finally {
       setIsGeneratingAI(false);
     }
@@ -596,7 +605,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
 
     const originalImgUrls = images.map((img) => img.stored_url || img.source_url);
 
-    const finalDescription = (captionTab === 'ai' && aiGeneratedCopy) ? aiGeneratedCopy : (aiGeneratedCopy || caption);
+    const finalDescription = aiGeneratedCopy || caption;
 
     const payload: Partial<Property> = {
       projectName: propertyData.project_name || 'Bangkok Property',
@@ -1485,50 +1494,194 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
               )}
             </div>
 
-            {/* Google AI Studio Prompt Assistant */}
+            {/* Original Raw Facebook Caption Box (Untouched) */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <label style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                  Visible Caption (Raw Extracted Data)
+                </label>
+                <button
+                  type="button"
+                  onClick={handleCopyCaption}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.25rem',
+                    background: 'transparent',
+                    border: 'none',
+                    color: copiedCaption ? 'var(--status-success)' : 'var(--accent-primary)',
+                    fontSize: '0.75rem',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {copiedCaption ? <FiCheck /> : <FiCopy />}
+                  <span>{copiedCaption ? 'Copied!' : 'Copy Caption'}</span>
+                </button>
+              </div>
+
+              <div
+                style={{
+                  backgroundColor: 'var(--bg-main)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '0.5rem',
+                  padding: '0.75rem',
+                  fontSize: '0.8125rem',
+                  color: 'var(--text-primary)',
+                  whiteSpace: 'pre-wrap',
+                  maxHeight: '200px',
+                  overflowY: 'auto',
+                  lineHeight: 1.6,
+                }}
+              >
+                {caption || <span style={{ color: 'var(--text-muted)' }}>No caption extracted</span>}
+              </div>
+            </div>
+
+            {/* Action Buttons for Raw Data */}
+            <div style={{ display: 'flex', gap: '0.5rem', paddingTop: '0.25rem' }}>
+              <Button
+                variant="outline"
+                size="md"
+                onClick={() => setShowRawJsonModal(true)}
+                style={{
+                  height: '38px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  whiteSpace: 'nowrap',
+                  padding: '0 1rem',
+                  fontSize: '0.8125rem',
+                }}
+              >
+                <FiCode style={{ fontSize: '14px', flexShrink: 0 }} />
+                <span>View Raw Data</span>
+              </Button>
+              <Button
+                variant="ghost"
+                size="md"
+                onClick={handleRerunExtraction}
+                style={{
+                  height: '38px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  whiteSpace: 'nowrap',
+                  padding: '0 1rem',
+                  fontSize: '0.8125rem',
+                }}
+              >
+                <FiRefreshCw style={{ fontSize: '14px', flexShrink: 0 }} />
+                <span>Re-run Extraction</span>
+              </Button>
+            </div>
+
+            {/* NEW BOX: AI Prompt Engine & Generated Listing Copy */}
             <div
               style={{
-                backgroundColor: 'rgba(78, 136, 255, 0.05)',
-                border: '1px solid rgba(78, 136, 255, 0.22)',
-                borderRadius: '0.625rem',
-                padding: '0.875rem',
+                backgroundColor: 'rgba(20, 20, 20, 0.75)',
+                border: '1px solid rgba(78, 136, 255, 0.28)',
+                borderRadius: '0.75rem',
+                padding: '1rem',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '0.625rem',
+                gap: '0.875rem',
+                marginTop: '0.5rem',
+                boxShadow: '0 4px 16px rgba(0, 0, 0, 0.35)',
               }}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <SiGooglegemini style={{ color: '#4E88FF', fontSize: '1.125rem' }} />
-                  <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                    Google AI Studio
+              {/* Header: Title + Provider Switcher (Google AI vs OpenAI) + Status */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                    AI Prompt & Copy Generator
                   </span>
+
+                  {/* Dual AI Provider Switcher */}
+                  <div
+                    style={{
+                      display: 'inline-flex',
+                      backgroundColor: 'var(--bg-main)',
+                      padding: '2px',
+                      borderRadius: '6px',
+                      border: '1px solid var(--border-color)',
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setAiProvider('google_ai')}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '4px 10px',
+                        borderRadius: '4px',
+                        border: 'none',
+                        fontSize: '0.75rem',
+                        fontWeight: aiProvider === 'google_ai' ? 600 : 400,
+                        backgroundColor: aiProvider === 'google_ai' ? 'rgba(78, 136, 255, 0.2)' : 'transparent',
+                        color: aiProvider === 'google_ai' ? '#60A5FA' : 'var(--text-muted)',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      <SiGooglegemini style={{ fontSize: '13px', color: '#4E88FF', flexShrink: 0 }} />
+                      <span>Google AI Studio</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setAiProvider('openai')}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '4px 10px',
+                        borderRadius: '4px',
+                        border: 'none',
+                        fontSize: '0.75rem',
+                        fontWeight: aiProvider === 'openai' ? 600 : 400,
+                        backgroundColor: aiProvider === 'openai' ? 'rgba(16, 185, 129, 0.2)' : 'transparent',
+                        color: aiProvider === 'openai' ? '#34D399' : 'var(--text-muted)',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      <OpenAIIcon size={13} color="#10B981" />
+                      <span>OpenAI</span>
+                    </button>
+                  </div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+
+                {/* Connection Status */}
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.6875rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
                   <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10B981' }} />
-                  <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>Connected (gemini-flash-latest)</span>
+                  <span>{aiProvider === 'google_ai' ? 'Connected (gemini-flash-latest)' : 'Connected (gpt-4o)'}</span>
                 </div>
               </div>
 
-              {/* Template Selection & Generate Action */}
-              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end' }}>
-                <div style={{ flex: 1 }}>
+              {/* Template Selection & Main Generate Button Row */}
+              <div style={{ display: 'flex', gap: '0.625rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                <div style={{ flex: '1 1 220px', minWidth: '180px' }}>
                   <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.25rem', display: 'block' }}>
-                    Prompt Template
+                    Select Prompt Template
                   </label>
                   <select
                     value={selectedTemplateId}
                     onChange={(e) => setSelectedTemplateId(e.target.value)}
                     style={{
                       width: '100%',
-                      padding: '0.5rem 0.75rem',
-                      borderRadius: '0.375rem',
+                      height: '38px',
+                      padding: '0 0.75rem',
+                      borderRadius: '0.5rem',
                       backgroundColor: 'var(--bg-main)',
                       border: '1px solid var(--border-color)',
                       color: 'var(--text-primary)',
                       fontSize: '0.8125rem',
                       cursor: 'pointer',
                       outline: 'none',
+                      boxSizing: 'border-box',
                     }}
                   >
                     {promptTemplates.map((t) => (
@@ -1541,29 +1694,38 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
 
                 <Button
                   variant="primary"
-                  size="sm"
+                  size="md"
                   onClick={handleGenerateAICopy}
                   disabled={isGeneratingAI || !caption.trim()}
                   style={{
-                    display: 'flex',
+                    height: '38px',
+                    minWidth: '160px',
+                    display: 'inline-flex',
                     alignItems: 'center',
-                    gap: '0.375rem',
-                    background: 'linear-gradient(135deg, #2563EB 0%, #7C3AED 100%)',
+                    justifyContent: 'center',
+                    gap: '0.5rem',
+                    padding: '0 1.25rem',
+                    background: aiProvider === 'openai'
+                      ? 'linear-gradient(135deg, #059669 0%, #10B981 100%)'
+                      : 'linear-gradient(135deg, #2563EB 0%, #7C3AED 100%)',
                     border: 'none',
-                    boxShadow: '0 2px 8px rgba(78, 136, 255, 0.3)',
-                    padding: '0.55rem 0.875rem',
+                    boxShadow: aiProvider === 'openai'
+                      ? '0 2px 10px rgba(16, 185, 129, 0.25)'
+                      : '0 2px 10px rgba(78, 136, 255, 0.3)',
                     fontSize: '0.8125rem',
+                    fontWeight: 600,
                     whiteSpace: 'nowrap',
+                    flexShrink: 0,
                   }}
                 >
                   {isGeneratingAI ? (
                     <>
-                      <FiRefreshCw className="spin" style={{ display: 'inline-block' }} />
+                      <FiRefreshCw className="spin" style={{ fontSize: '14px', flexShrink: 0 }} />
                       <span>Generating...</span>
                     </>
                   ) : (
                     <>
-                      <FiZap style={{ fontSize: '0.9375rem' }} />
+                      <FiZap style={{ fontSize: '15px', flexShrink: 0 }} />
                       <span>Generate with AI</span>
                     </>
                   )}
@@ -1582,13 +1744,13 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                     fontSize: '0.6875rem',
                     cursor: 'pointer',
                     padding: 0,
-                    display: 'flex',
+                    display: 'inline-flex',
                     alignItems: 'center',
                     gap: '0.25rem',
                   }}
                 >
                   <FiSliders style={{ fontSize: '0.6875rem' }} />
-                  <span>{showPromptTweak ? 'Hide prompt tweak' : 'Customize prompt instructions'}</span>
+                  <span>{showPromptTweak ? 'Hide prompt instructions tweak' : 'Customize prompt instructions'}</span>
                 </button>
                 {showPromptTweak && (
                   <div style={{ marginTop: '0.375rem' }}>
@@ -1599,13 +1761,15 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                       placeholder="e.g. Translate to English, highlight BTS station, add urgent CTA..."
                       style={{
                         width: '100%',
-                        padding: '0.45rem 0.625rem',
+                        height: '34px',
+                        padding: '0 0.625rem',
                         borderRadius: '0.375rem',
                         backgroundColor: 'var(--bg-main)',
                         border: '1px solid var(--border-color)',
                         color: 'var(--text-primary)',
                         fontSize: '0.75rem',
                         outline: 'none',
+                        boxSizing: 'border-box',
                       }}
                     />
                   </div>
@@ -1636,97 +1800,28 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                   </button>
                 </div>
               )}
-            </div>
 
-            {/* Caption Display (Dual View: Raw Facebook Caption vs AI Polished Copy) */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                {/* Tab Switcher */}
-                <div
-                  style={{
-                    display: 'flex',
-                    gap: '0.25rem',
-                    background: 'var(--bg-main)',
-                    padding: '0.1875rem',
-                    borderRadius: '0.375rem',
-                    border: '1px solid var(--border-color)',
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => setCaptionTab('raw')}
-                    style={{
-                      padding: '0.25rem 0.625rem',
-                      borderRadius: '0.25rem',
-                      border: 'none',
-                      fontSize: '0.75rem',
-                      fontWeight: captionTab === 'raw' ? 600 : 400,
-                      backgroundColor: captionTab === 'raw' ? 'var(--bg-secondary)' : 'transparent',
-                      color: captionTab === 'raw' ? 'var(--text-primary)' : 'var(--text-muted)',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Raw Facebook Caption
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setCaptionTab('ai')}
-                    style={{
-                      padding: '0.25rem 0.625rem',
-                      borderRadius: '0.25rem',
-                      border: 'none',
-                      fontSize: '0.75rem',
-                      fontWeight: captionTab === 'ai' ? 600 : 400,
-                      backgroundColor: captionTab === 'ai' ? 'var(--bg-secondary)' : 'transparent',
-                      color: captionTab === 'ai' ? '#60A5FA' : 'var(--text-muted)',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.375rem',
-                    }}
-                  >
-                    <span>AI Listing Copy</span>
-                    {aiGeneratedCopy && (
-                      <span
-                        style={{
-                          width: '6px',
-                          height: '6px',
-                          borderRadius: '50%',
-                          backgroundColor: '#3B82F6',
-                          display: 'inline-block',
-                        }}
-                      />
+              {/* AI Generated Output Display Box */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.375rem' }}>
+                    <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                      AI Generated Listing Copy
+                    </label>
+                    {generatedProvider && (
+                      <Badge variant={generatedProvider === 'openai' ? 'success' : 'info'} size="sm">
+                        {generatedProvider === 'openai' ? 'OpenAI GPT-4o' : 'Google Gemini'}
+                      </Badge>
                     )}
-                  </button>
-                </div>
+                  </div>
 
-                {/* Tab specific action buttons */}
-                {captionTab === 'raw' ? (
-                  <button
-                    type="button"
-                    onClick={handleCopyCaption}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.25rem',
-                      background: 'transparent',
-                      border: 'none',
-                      color: copiedCaption ? 'var(--status-success)' : 'var(--accent-primary)',
-                      fontSize: '0.75rem',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {copiedCaption ? <FiCheck /> : <FiCopy />}
-                    <span>{copiedCaption ? 'Copied!' : 'Copy Caption'}</span>
-                  </button>
-                ) : (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
                     {aiGeneratedCopy && (
                       <button
                         type="button"
                         onClick={() => setIsEditingAiCopy(!isEditingAiCopy)}
                         style={{
-                          display: 'flex',
+                          display: 'inline-flex',
                           alignItems: 'center',
                           gap: '0.25rem',
                           background: 'transparent',
@@ -1745,7 +1840,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                       onClick={handleCopyAiCopy}
                       disabled={!aiGeneratedCopy}
                       style={{
-                        display: 'flex',
+                        display: 'inline-flex',
                         alignItems: 'center',
                         gap: '0.25rem',
                         background: 'transparent',
@@ -1759,38 +1854,18 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                       <span>{copiedAiCopy ? 'Copied!' : 'Copy AI Copy'}</span>
                     </button>
                   </div>
-                )}
-              </div>
-
-              {/* Content Container */}
-              {captionTab === 'raw' ? (
-                <div
-                  style={{
-                    backgroundColor: 'var(--bg-main)',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: '0.5rem',
-                    padding: '0.75rem',
-                    fontSize: '0.8125rem',
-                    color: 'var(--text-primary)',
-                    whiteSpace: 'pre-wrap',
-                    maxHeight: '260px',
-                    overflowY: 'auto',
-                    lineHeight: 1.6,
-                  }}
-                >
-                  {caption || <span style={{ color: 'var(--text-muted)' }}>No caption extracted</span>}
                 </div>
-              ) : (
+
+                {/* Content Box */}
                 <div
                   style={{
                     backgroundColor: 'var(--bg-main)',
-                    border: '1px solid rgba(78, 136, 255, 0.3)',
+                    border: aiGeneratedCopy ? '1px solid rgba(78, 136, 255, 0.35)' : '1px solid var(--border-color)',
                     borderRadius: '0.5rem',
                     padding: '0.75rem',
-                    minHeight: '140px',
+                    minHeight: '120px',
                     maxHeight: '260px',
                     overflowY: 'auto',
-                    position: 'relative',
                   }}
                 >
                   {aiGeneratedCopy ? (
@@ -1800,7 +1875,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                         onChange={(e) => setAiGeneratedCopy(e.target.value)}
                         style={{
                           width: '100%',
-                          minHeight: '200px',
+                          minHeight: '180px',
                           backgroundColor: 'transparent',
                           border: 'none',
                           outline: 'none',
@@ -1830,33 +1905,24 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                         flexDirection: 'column',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        height: '140px',
+                        height: '110px',
                         textAlign: 'center',
-                        gap: '0.625rem',
+                        gap: '0.5rem',
                         color: 'var(--text-muted)',
                         fontSize: '0.8125rem',
                       }}
                     >
-                      <SiGooglegemini style={{ fontSize: '1.75rem', color: '#4E88FF', opacity: 0.8 }} />
+                      <div style={{ display: 'inline-flex', gap: '0.5rem', alignItems: 'center' }}>
+                        <SiGooglegemini style={{ fontSize: '1.25rem', color: '#4E88FF', opacity: 0.8 }} />
+                        <OpenAIIcon size={18} color="#10B981" />
+                      </div>
                       <div>
-                        Select a prompt template above and click{' '}
-                        <strong style={{ color: 'var(--text-primary)' }}>Generate with AI</strong> to transform this raw post
-                        into formatted real estate copy.
+                        Select your template and AI provider above, then click <strong style={{ color: 'var(--text-primary)' }}>Generate with AI</strong> to transform the raw caption into structured real estate copy.
                       </div>
                     </div>
                   )}
                 </div>
-              )}
-            </div>
-
-            {/* Action Buttons */}
-            <div style={{ display: 'flex', gap: '0.5rem', marginTop: 'auto', paddingTop: '0.5rem' }}>
-              <Button variant="outline" size="sm" onClick={() => setShowRawJsonModal(true)}>
-                <FiCode style={{ marginRight: '0.25rem' }} /> View Raw Data
-              </Button>
-              <Button variant="ghost" size="sm" onClick={handleRerunExtraction}>
-                <FiRefreshCw style={{ marginRight: '0.25rem' }} /> Re-run Extraction
-              </Button>
+              </div>
             </div>
           </div>
 
@@ -2033,30 +2099,78 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
             boxShadow: 'var(--shadow-sm)',
           }}
         >
-          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-            <Button variant="danger" size="sm" onClick={handleDeleteImport}>
-              <FiTrash2 style={{ marginRight: '0.25rem' }} /> Delete Import
+          <div style={{ display: 'flex', gap: '0.625rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            <Button
+              variant="danger"
+              size="md"
+              onClick={handleDeleteImport}
+              style={{
+                height: '38px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                whiteSpace: 'nowrap',
+                padding: '0 1rem',
+                fontSize: '0.8125rem',
+              }}
+            >
+              <FiTrash2 style={{ fontSize: '14px', flexShrink: 0 }} />
+              <span>Delete Import</span>
             </Button>
             <Button
               variant="outline"
-              size="sm"
+              size="md"
               onClick={() => window.open(source?.canonical_url || url, '_blank')}
+              style={{
+                height: '38px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                whiteSpace: 'nowrap',
+                padding: '0 1rem',
+                fontSize: '0.8125rem',
+              }}
             >
-              <FiExternalLink style={{ marginRight: '0.25rem' }} /> Open Original Post
+              <FiExternalLink style={{ fontSize: '14px', flexShrink: 0 }} />
+              <span>Open Original Post</span>
             </Button>
           </div>
 
-          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
-            <Button variant="outline" size="sm" onClick={handleRerunExtraction}>
-              <FiRefreshCw style={{ marginRight: '0.25rem' }} /> Re-Extract
+          <div style={{ display: 'flex', gap: '0.625rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            <Button
+              variant="outline"
+              size="md"
+              onClick={handleRerunExtraction}
+              style={{
+                height: '38px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                whiteSpace: 'nowrap',
+                padding: '0 1rem',
+                fontSize: '0.8125rem',
+              }}
+            >
+              <FiRefreshCw style={{ fontSize: '14px', flexShrink: 0 }} />
+              <span>Re-Extract</span>
             </Button>
             <Button
               variant="primary"
               size="md"
               onClick={handleSaveToInbox}
-              style={{ fontWeight: 600, paddingLeft: '1.25rem', paddingRight: '1.25rem' }}
+              style={{
+                height: '38px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                fontWeight: 600,
+                padding: '0 1.25rem',
+                whiteSpace: 'nowrap',
+                fontSize: '0.8125rem',
+              }}
             >
-              <FiSave style={{ marginRight: '0.375rem' }} /> Save to Property Inbox
+              <FiSave style={{ fontSize: '15px', flexShrink: 0 }} />
+              <span>Save to Property Inbox</span>
             </Button>
           </div>
         </div>
