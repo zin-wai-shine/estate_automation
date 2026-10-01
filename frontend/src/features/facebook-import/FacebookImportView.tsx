@@ -833,28 +833,38 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
 
 
 
-      {/* TOP IMPORT CARD */}
+      {/* SLEEK UNIFIED IMPORT BAR */}
       <div
         style={{
           backgroundColor: 'var(--bg-secondary)',
           border: '1px solid var(--border-color)',
-          borderRadius: '0.75rem',
-          padding: '1.25rem',
+          borderRadius: '0.625rem',
+          padding: '0.5rem 0.625rem',
           display: 'flex',
           flexDirection: 'column',
-          gap: '0.875rem',
+          gap: '0.5rem',
           boxShadow: 'var(--shadow-sm)',
         }}
       >
-        <div style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--text-primary)' }}>
-          Facebook Post URL
-        </div>
-
-        {/* Unified Input Bar & Import Button */}
-        <div style={{ display: 'flex', gap: '0.625rem', alignItems: 'center', flexWrap: 'wrap' }}>
-          <div style={{ flex: 1, minWidth: '280px' }}>
-            <Input
-              placeholder="Paste Facebook post link (e.g. https://www.facebook.com/share/p/...)"
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          {/* Integrated Input Container */}
+          <div
+            style={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              backgroundColor: 'var(--bg-main)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '0.375rem',
+              padding: '0 0.75rem',
+              height: '36px',
+              transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
+            }}
+          >
+            <FaFacebook style={{ color: '#1877F2', fontSize: '1rem', flexShrink: 0, marginRight: '0.5rem' }} />
+            <input
+              type="text"
+              placeholder="Paste Facebook post URL (e.g. https://www.facebook.com/share/p/...)"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               onKeyDown={(e) => {
@@ -863,57 +873,74 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                 }
               }}
               disabled={isProcessing}
-              leftIcon={<FaFacebook style={{ color: '#1877F2', fontSize: '1.125rem' }} />}
-              rightIcon={
-                url && !isProcessing ? (
-                  <button
-                    type="button"
-                    onClick={() => setUrl('')}
-                    title="Clear input"
-                    style={{
-                      background: 'transparent',
-                      border: 'none',
-                      color: 'var(--text-muted)',
-                      cursor: 'pointer',
-                      padding: 0,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    <FiX style={{ fontSize: '14px' }} />
-                  </button>
-                ) : undefined
-              }
-              style={{ height: '42px', fontSize: '0.875rem' }}
+              style={{
+                flex: 1,
+                background: 'transparent',
+                border: 'none',
+                outline: 'none',
+                color: 'var(--text-primary)',
+                fontSize: '0.8125rem',
+                minWidth: 0,
+              }}
             />
+            {url && !isProcessing && (
+              <button
+                type="button"
+                onClick={() => setUrl('')}
+                title="Clear input"
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  padding: '2px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  marginRight: '0.375rem',
+                }}
+              >
+                <FiX style={{ fontSize: '13px' }} />
+              </button>
+            )}
+            <kbd
+              style={{
+                fontSize: '0.6875rem',
+                padding: '2px 5px',
+                borderRadius: '3px',
+                backgroundColor: 'rgba(255, 255, 255, 0.06)',
+                border: '1px solid var(--border-color)',
+                color: 'var(--text-muted)',
+                lineHeight: 1,
+                fontFamily: 'monospace',
+                userSelect: 'none',
+              }}
+            >
+              ↵ Enter
+            </kbd>
           </div>
 
+          {/* Compact Primary Import Button */}
           <Button
             variant="primary"
             onClick={handleStartImport}
             disabled={!url.trim() || isProcessing}
             leftIcon={
               isProcessing ? (
-                <FiRefreshCw className="spin" style={{ animation: 'spin 1s linear infinite', fontSize: '15px' }} />
+                <FiRefreshCw className="spin" style={{ animation: 'spin 1s linear infinite', fontSize: '13px' }} />
               ) : (
-                <FiDownload style={{ fontSize: '15px' }} />
+                <FiDownload style={{ fontSize: '13px' }} />
               )
             }
             style={{
-              height: '42px',
-              paddingLeft: '1.25rem',
-              paddingRight: '1.25rem',
-              fontWeight: 500,
-              fontSize: '0.875rem',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '0.5rem',
-              whiteSpace: 'nowrap',
+              height: '36px',
+              padding: '0 1rem',
+              fontWeight: 600,
+              fontSize: '0.8125rem',
               backgroundColor: '#1877F2',
               borderColor: '#1877F2',
-              borderRadius: '0.5rem',
+              borderRadius: '0.375rem',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
             }}
           >
             {isProcessing ? 'Importing...' : 'Import Post'}
@@ -924,39 +951,59 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
         {showAdvanced && (
           <div
             style={{
-              padding: '0.875rem',
+              padding: '0.5rem 0.625rem',
               backgroundColor: 'var(--bg-main)',
               border: '1px solid var(--border-color)',
-              borderRadius: '0.5rem',
+              borderRadius: '0.375rem',
               display: 'flex',
-              flexDirection: 'column',
-              gap: '0.75rem',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '0.625rem',
             }}
           >
-            <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <span style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>Extraction Method:</span>
-                <Select
-                  value={preferredMethod}
-                  onChange={(val) => setPreferredMethod(val as any)}
-                  width="230px"
-                  height="34px"
-                  options={[
-                    { value: 'auto', label: 'Auto (Meta API → OpenClaw)' },
-                    { value: 'openclaw_browser', label: 'OpenClaw Browser Only' },
-                    { value: 'meta_graph_api', label: 'Meta Graph API Only' },
-                  ]}
-                />
-              </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                Method:
+              </span>
+              <Select
+                value={preferredMethod}
+                onChange={(val) => setPreferredMethod(val as any)}
+                width="200px"
+                height="30px"
+                options={[
+                  { value: 'auto', label: 'Auto (Meta API → OpenClaw)' },
+                  { value: 'openclaw_browser', label: 'OpenClaw Browser Only' },
+                  { value: 'meta_graph_api', label: 'Meta Graph API Only' },
+                ]}
+              />
+            </div>
 
-              <Button variant="ghost" size="sm" onClick={() => handleStartImport()}>
-                Re-resolve URL
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => handleStartImport()}
+                style={{ height: '28px', fontSize: '0.75rem', padding: '0 0.5rem' }}
+              >
+                Re-resolve
               </Button>
-              <Button variant="ghost" size="sm" onClick={() => setShowLiveBrowserModal(true)}>
-                Re-open Browser
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowLiveBrowserModal(true)}
+                style={{ height: '28px', fontSize: '0.75rem', padding: '0 0.5rem' }}
+              >
+                Browser
               </Button>
-              <Button variant="ghost" size="sm" onClick={() => setShowRawJsonModal(true)}>
-                <FiCode style={{ marginRight: '0.25rem' }} /> View Raw JSON
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowRawJsonModal(true)}
+                leftIcon={<FiCode style={{ fontSize: '12px' }} />}
+                style={{ height: '28px', fontSize: '0.75rem', padding: '0 0.5rem' }}
+              >
+                Raw JSON
               </Button>
             </div>
           </div>
