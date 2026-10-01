@@ -831,58 +831,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
           headerActionEl
         )}
 
-      {/* Page Title & Interactive Info Icon */}
-      <div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
-          <FaFacebook style={{ color: '#1877F2', fontSize: '1.5rem', flexShrink: 0 }} />
-          <h1 style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-            Facebook Post Import
-          </h1>
-          <button
-            type="button"
-            onClick={() => setShowInfo(!showInfo)}
-            title={showInfo ? 'Hide description' : 'Show description'}
-            aria-label="Toggle description"
-            style={{
-              background: showInfo ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255, 255, 255, 0.06)',
-              border: `1px solid ${showInfo ? 'var(--accent-primary)' : 'rgba(255, 255, 255, 0.15)'}`,
-              borderRadius: '50%',
-              width: '24px',
-              height: '24px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              color: showInfo ? 'var(--accent-primary)' : 'var(--text-muted)',
-              transition: 'all 0.15s ease',
-              padding: 0,
-            }}
-          >
-            <FiInfo style={{ fontSize: '13px' }} />
-          </button>
-        </div>
-      </div>
 
-      {showInfo && (
-        <div
-          style={{
-            marginTop: '-0.5rem',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '0.5rem',
-            padding: '0.4rem 0.75rem',
-            backgroundColor: 'var(--bg-secondary)',
-            border: '1px solid var(--border-color)',
-            borderRadius: '0.5rem',
-            fontSize: '0.8125rem',
-            color: 'var(--text-secondary)',
-            boxShadow: 'var(--shadow-sm)',
-          }}
-        >
-          <FiInfo style={{ color: 'var(--accent-primary)', flexShrink: 0, fontSize: '13px' }} />
-          <span>Import property content, photos, and structured listing data from any Facebook post, group, or page.</span>
-        </div>
-      )}
 
       {/* TOP IMPORT CARD */}
       <div
