@@ -211,11 +211,13 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
   const [showLiveBrowserModal, setShowLiveBrowserModal] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
 
-  // Top Nav Bar Portal Target
+  // Top Nav Bar Portal Targets
   const [headerActionEl, setHeaderActionEl] = useState<HTMLElement | null>(null);
+  const [headerCenterEl, setHeaderCenterEl] = useState<HTMLElement | null>(null);
 
   useEffect(() => {
     setHeaderActionEl(document.getElementById('header-action-portal'));
+    setHeaderCenterEl(document.getElementById('header-center-portal'));
   }, []);
 
   // Status & Pipeline
@@ -1066,6 +1068,23 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', paddingBottom: '3rem' }}>
+      {/* Top Nav Bar Center Portal: Select Workflow Format */}
+      {headerCenterEl &&
+        createPortal(
+          <div style={{ width: '280px', maxWidth: '100%', display: 'flex', alignItems: 'center' }}>
+            <Select
+              options={workflowFormats.map((f) => ({
+                value: f.id,
+                label: `${f.name} (${f.config.aiBoxes.length} AI Processes)`,
+              }))}
+              value={selectedFormatId}
+              onChange={handleFormatChange}
+              height="32px"
+            />
+          </div>,
+          headerCenterEl
+        )}
+
       {/* Top Nav Bar Portal Actions (Directly inside top navigation bar) */}
       {headerActionEl &&
         createPortal(
@@ -1142,6 +1161,29 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
               {showAdvanced ? <FiChevronUp style={{ fontSize: '11px' }} /> : <FiChevronDown style={{ fontSize: '11px' }} />}
             </button>
 
+            {/* Open Canvas in Modal Button */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowWorkflowCanvasModal(true)}
+              title="Open workflow canvas editor"
+              leftIcon={<FiMaximize2 style={{ fontSize: '12px' }} />}
+              style={{
+                height: '30px',
+                padding: '0 0.625rem',
+                fontWeight: 500,
+                fontSize: '0.75rem',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.375rem',
+                whiteSpace: 'nowrap',
+                borderRadius: '0.375rem',
+              }}
+            >
+              Canvas
+            </Button>
+
             {/* Compact Live Browser Button */}
             <Button
               variant="outline"
@@ -1172,139 +1214,6 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
           </div>,
           headerActionEl
         )}
-
-      {/* Sleek Workflow Format Selection Bar */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: '0.625rem',
-          backgroundColor: 'var(--bg-secondary)',
-          border: '1px solid var(--border-color)',
-          borderRadius: '0.625rem',
-          padding: '0.5rem 0.875rem',
-          boxShadow: 'var(--shadow-sm)',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', flex: 1 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', color: '#A78BFA', fontSize: '0.75rem', fontWeight: 600 }}>
-            <FiGitBranch style={{ fontSize: '14px' }} />
-            <span>Workflow Format:</span>
-          </div>
-
-          <div style={{ minWidth: '280px', maxWidth: '440px', flex: '1 1 280px' }}>
-            <Select
-              options={workflowFormats.map((f) => ({
-                value: f.id,
-                label: `${f.name} (${f.config.aiBoxes.length} AI Processes)`,
-              }))}
-              value={selectedFormatId}
-              onChange={handleFormatChange}
-              height="34px"
-            />
-          </div>
-
-          {/* Quick Format Info Badges */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-            <span
-              style={{
-                fontSize: '0.6875rem',
-                padding: '2px 8px',
-                borderRadius: '4px',
-                backgroundColor: activeFormat.config.getContent.enabled ? 'rgba(59, 130, 246, 0.12)' : 'rgba(255, 255, 255, 0.05)',
-                color: activeFormat.config.getContent.enabled ? '#60A5FA' : 'var(--text-muted)',
-                border: '1px solid',
-                borderColor: activeFormat.config.getContent.enabled ? 'rgba(59, 130, 246, 0.3)' : 'transparent',
-                fontWeight: 500,
-              }}
-            >
-              Get Content: {activeFormat.config.getContent.enabled ? 'ON' : 'OFF'}
-            </span>
-
-            <span
-              style={{
-                fontSize: '0.6875rem',
-                padding: '2px 8px',
-                borderRadius: '4px',
-                backgroundColor: activeFormat.config.getImages.enabled ? 'rgba(16, 185, 129, 0.12)' : 'rgba(255, 255, 255, 0.05)',
-                color: activeFormat.config.getImages.enabled ? '#34D399' : 'var(--text-muted)',
-                border: '1px solid',
-                borderColor: activeFormat.config.getImages.enabled ? 'rgba(16, 185, 129, 0.3)' : 'transparent',
-                fontWeight: 500,
-              }}
-            >
-              Get Images: {activeFormat.config.getImages.enabled ? 'ON' : 'OFF'}
-            </span>
-
-            <span
-              style={{
-                fontSize: '0.6875rem',
-                padding: '2px 8px',
-                borderRadius: '4px',
-                backgroundColor: 'rgba(139, 92, 246, 0.12)',
-                color: '#C4B5FD',
-                border: '1px solid rgba(139, 92, 246, 0.3)',
-                fontWeight: 500,
-              }}
-            >
-              {activeFormat.config.aiBoxes.length} AI Processes
-            </span>
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-          {/* Open Canvas in Modal Button */}
-          <button
-            type="button"
-            onClick={() => setShowWorkflowCanvasModal(true)}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '0.35rem',
-              padding: '4px 10px',
-              borderRadius: '4px',
-              border: '1px solid rgba(139, 92, 246, 0.4)',
-              backgroundColor: 'rgba(139, 92, 246, 0.12)',
-              color: '#C4B5FD',
-              fontSize: '0.71875rem',
-              fontWeight: 500,
-              cursor: 'pointer',
-              transition: 'all 0.15s ease',
-            }}
-          >
-            <FiMaximize2 style={{ fontSize: '11px' }} />
-            <span>Open Canvas (Modal)</span>
-          </button>
-
-          {/* Manage Formats Shortcut */}
-          <button
-            type="button"
-            onClick={() => {
-              if (onNavigateTab) onNavigateTab('create-workflow');
-              else window.location.href = '/create-workflow';
-            }}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '0.35rem',
-              padding: '4px 10px',
-              borderRadius: '4px',
-              border: '1px dashed rgba(139, 92, 246, 0.5)',
-              backgroundColor: 'rgba(139, 92, 246, 0.08)',
-              color: '#A78BFA',
-              fontSize: '0.71875rem',
-              fontWeight: 500,
-              cursor: 'pointer',
-              transition: 'all 0.15s ease',
-            }}
-          >
-            <FiGitBranch style={{ fontSize: '11px' }} />
-            <span>+ Manage Formats</span>
-          </button>
-        </div>
-      </div>
 
           {/* SLEEK UNIFIED IMPORT BAR */}
       <div
