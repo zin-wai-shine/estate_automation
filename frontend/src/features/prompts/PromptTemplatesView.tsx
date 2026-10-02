@@ -90,6 +90,11 @@ export const PromptTemplatesView: React.FC = () => {
 
   const handleDeletePrompt = (id: number, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
+    const target = prompts.find((p) => p.id === id);
+    const targetName = target ? target.name : 'this template';
+    if (!window.confirm(`Are you sure you want to delete "${targetName}"?\nThis action cannot be undone.`)) {
+      return;
+    }
     setPrompts((prev) => prev.filter((p) => p.id !== id));
     if (activePrompt && activePrompt.id === id) {
       setActivePrompt(null);

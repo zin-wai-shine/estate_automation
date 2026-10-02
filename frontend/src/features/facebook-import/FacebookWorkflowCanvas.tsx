@@ -364,6 +364,11 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
       alert('You must have at least one AI process box in the workflow.');
       return;
     }
+    const box = config.aiBoxes.find((b) => b.id === id);
+    const boxName = box ? box.title : 'this AI node';
+    if (!window.confirm(`Are you sure you want to delete "${boxName}"?`)) {
+      return;
+    }
     const newBoxes = config.aiBoxes.filter((b) => b.id !== id);
     const newConfig = {
       ...config,
