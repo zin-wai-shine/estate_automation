@@ -1862,31 +1862,70 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
                     </label>
                     <button
                       type="button"
+                      role="switch"
+                      aria-checked={currentModalAIBox.enabled}
                       onClick={() => handleToggleAIBox(currentModalAIBox.id)}
                       style={{
                         height: '36px',
-                        padding: '0 0.75rem',
-                        display: 'flex',
+                        padding: '0 0.625rem',
+                        display: 'inline-flex',
                         alignItems: 'center',
-                        gap: '0.375rem',
+                        gap: '0.5rem',
                         borderRadius: '0.375rem',
-                        border: `1px solid ${currentModalAIBox.enabled ? 'rgba(16, 185, 129, 0.4)' : 'var(--border-color)'}`,
-                        backgroundColor: currentModalAIBox.enabled ? 'rgba(16, 185, 129, 0.12)' : 'rgba(255, 255, 255, 0.05)',
-                        color: currentModalAIBox.enabled ? '#34D399' : 'var(--text-muted)',
-                        fontSize: '0.75rem',
-                        fontWeight: 600,
+                        border: '1px solid var(--border-color)',
+                        backgroundColor: 'var(--bg-main)',
                         cursor: 'pointer',
+                        transition: 'border-color 0.2s, background-color 0.2s',
+                        userSelect: 'none',
                       }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.borderColor = currentModalAIBox.enabled ? 'rgba(16, 185, 129, 0.6)' : 'rgba(255, 255, 255, 0.3)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = 'var(--border-color)';
+                      }}
+                      title={currentModalAIBox.enabled ? 'Click to disable' : 'Click to enable'}
                     >
+                      {/* Switch Track */}
+                      <div
+                        style={{
+                          width: '38px',
+                          height: '22px',
+                          borderRadius: '11px',
+                          backgroundColor: currentModalAIBox.enabled ? '#10B981' : 'rgba(255, 255, 255, 0.15)',
+                          border: `1px solid ${currentModalAIBox.enabled ? '#059669' : 'rgba(255, 255, 255, 0.25)'}`,
+                          position: 'relative',
+                          transition: 'background-color 0.2s ease, border-color 0.2s ease',
+                          flexShrink: 0,
+                          boxShadow: currentModalAIBox.enabled ? '0 0 8px rgba(16, 185, 129, 0.4)' : 'none',
+                        }}
+                      >
+                        {/* Switch Knob */}
+                        <div
+                          style={{
+                            position: 'absolute',
+                            top: '2px',
+                            left: currentModalAIBox.enabled ? '18px' : '2px',
+                            width: '16px',
+                            height: '16px',
+                            borderRadius: '50%',
+                            backgroundColor: '#FFFFFF',
+                            transition: 'left 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                            boxShadow: '0 1px 4px rgba(0, 0, 0, 0.35)',
+                          }}
+                        />
+                      </div>
                       <span
                         style={{
-                          width: '6px',
-                          height: '6px',
-                          borderRadius: '50%',
-                          backgroundColor: currentModalAIBox.enabled ? '#10B981' : '#6B7280',
+                          fontSize: '0.75rem',
+                          fontWeight: 600,
+                          color: currentModalAIBox.enabled ? '#34D399' : 'var(--text-muted)',
+                          minWidth: '52px',
+                          textAlign: 'left',
                         }}
-                      />
-                      <span>{currentModalAIBox.enabled ? 'Enabled' : 'Disabled'}</span>
+                      >
+                        {currentModalAIBox.enabled ? 'Enabled' : 'Disabled'}
+                      </span>
                     </button>
                   </div>
                 </div>

@@ -477,18 +477,59 @@ export const PromptTemplatesView: React.FC = () => {
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
               <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  leftIcon={<FiPower />}
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={activePrompt.active}
                   onClick={() => {
                     const updated = { ...activePrompt, active: !activePrompt.active };
                     setActivePrompt(updated);
                     setPrompts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
                   }}
+                  style={{
+                    height: '32px',
+                    padding: '0 0.625rem',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    borderRadius: '0.375rem',
+                    border: '1px solid var(--border-color)',
+                    backgroundColor: 'var(--bg-main)',
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                  }}
+                  title={activePrompt.active ? 'Click to deactivate' : 'Click to activate'}
                 >
-                  {activePrompt.active ? 'Deactivate' : 'Activate'}
-                </Button>
+                  <div
+                    style={{
+                      width: '32px',
+                      height: '18px',
+                      borderRadius: '9px',
+                      backgroundColor: activePrompt.active ? '#10B981' : 'rgba(255, 255, 255, 0.15)',
+                      border: `1px solid ${activePrompt.active ? '#059669' : 'rgba(255, 255, 255, 0.25)'}`,
+                      position: 'relative',
+                      transition: 'background-color 0.2s ease',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: '1px',
+                        left: activePrompt.active ? '15px' : '1px',
+                        width: '14px',
+                        height: '14px',
+                        borderRadius: '50%',
+                        backgroundColor: '#FFFFFF',
+                        transition: 'left 0.2s',
+                        boxShadow: '0 1px 3px rgba(0, 0, 0, 0.35)',
+                      }}
+                    />
+                  </div>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 600, color: activePrompt.active ? '#34D399' : 'var(--text-muted)' }}>
+                    {activePrompt.active ? 'Active' : 'Inactive'}
+                  </span>
+                </button>
 
                 <Button
                   variant="outline"
