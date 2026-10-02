@@ -12,6 +12,7 @@ import {
   FiCopy,
   FiCheck,
   FiAlertCircle,
+  FiAlertTriangle,
   FiRefreshCw,
   FiMonitor,
   FiChevronDown,
@@ -211,6 +212,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
   const [showLiveBrowserModal, setShowLiveBrowserModal] = useState(false);
   const [showPipelineModal, setShowPipelineModal] = useState(false);
   const [showPostContentModal, setShowPostContentModal] = useState(false);
+  const [showClearConfirmModal, setShowClearConfirmModal] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   // Top Nav Bar Portal Targets
@@ -1215,7 +1217,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
             <Button
               variant="outline"
               size="sm"
-              onClick={handleDeleteImport}
+              onClick={() => setShowClearConfirmModal(true)}
               disabled={!hasDataToClear}
               title={
                 hasDataToClear
@@ -2302,6 +2304,96 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
       </div>
 
 
+
+      {/* CLEAR ALL DATA CONFIRMATION MODAL */}
+      <Modal
+        isOpen={showClearConfirmModal}
+        onClose={() => setShowClearConfirmModal(false)}
+        closeOnOverlayClick={true}
+        maxWidth="440px"
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', color: '#EF4444' }}>
+            <div
+              style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '50%',
+                backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                border: '1px solid rgba(239, 68, 68, 0.3)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}
+            >
+              <FiAlertTriangle style={{ fontSize: '16px', color: '#EF4444' }} />
+            </div>
+            <span style={{ fontSize: '1rem', fontWeight: 600 }}>Clear All Data</span>
+          </div>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          <div>
+            <p style={{ margin: 0, fontSize: '0.875rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+              Are you sure you want to clear all imported data?
+            </p>
+            <div
+              style={{
+                marginTop: '0.75rem',
+                padding: '0.75rem',
+                backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                border: '1px solid rgba(239, 68, 68, 0.2)',
+                borderRadius: '0.375rem',
+                fontSize: '0.75rem',
+                color: '#F87171',
+                lineHeight: 1.6,
+              }}
+            >
+              ⚠️ This will reset the URL input, extracted caption, all {images.length > 0 ? `${images.length} imported photos` : 'photos'}, generated AI copy, and activity logs.
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'flex-end',
+              alignItems: 'center',
+              gap: '0.625rem',
+              paddingTop: '0.875rem',
+              borderTop: '1px solid var(--border-color)',
+            }}
+          >
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowClearConfirmModal(false)}
+              style={{ height: '36px', minWidth: '80px', fontSize: '0.8125rem' }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              leftIcon={<FiTrash2 />}
+              onClick={() => {
+                handleDeleteImport();
+                setShowClearConfirmModal(false);
+              }}
+              style={{
+                height: '36px',
+                backgroundColor: '#EF4444',
+                borderColor: '#DC2626',
+                color: '#FFFFFF',
+                fontWeight: 600,
+                fontSize: '0.8125rem',
+                padding: '0 1rem',
+              }}
+            >
+              Yes, Clear All
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       {/* POST CONTENT & RAW EXTRACTED DATA MODAL */}
       <Modal
