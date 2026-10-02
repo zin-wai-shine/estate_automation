@@ -142,6 +142,43 @@ interface ActivityLog {
   level: 'info' | 'warn' | 'error' | 'success';
 }
 
+const FB_IMPORT_SESSION_KEY = 'estate_facebook_import_session_v1';
+
+interface FacebookImportSessionState {
+  url: string;
+  source: SourceDetails | null;
+  caption: string;
+  languages: string[];
+  images: ExtractedImage[];
+  propertyData: PropertyData;
+  currentStepIndex: number;
+  logs: ActivityLog[];
+  pipelineError: string | null;
+  pipelineErrorCode: string | null;
+  browserState: string;
+  aiGeneratedOutputs: Record<string, string>;
+  aiGeneratedCopy: string;
+  activeAIBoxId: string;
+  selectedFormatId: string;
+  manualMode: boolean;
+  autoImport: boolean;
+  preferredMethod: 'auto' | 'meta_graph_api' | 'openclaw_browser';
+}
+
+const loadSavedImportSession = (): FacebookImportSessionState | null => {
+  try {
+    const raw = localStorage.getItem(FB_IMPORT_SESSION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object') {
+      return parsed as FacebookImportSessionState;
+    }
+  } catch (err) {
+    console.warn('Failed to parse saved Facebook import session:', err);
+  }
+  return null;
+};
+
 const PIPELINE_STEPS = [
   { id: 'url_received', label: 'URL Received' },
   { id: 'resolving', label: 'Resolving' },
@@ -159,10 +196,15 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
   onSaveToInbox,
   onNavigateTab,
 }) => {
+  // Saved Session Hydration (restores all imported info across navigation and page reloads)
+  const [savedSession] = useState<FacebookImportSessionState | null>(() => loadSavedImportSession());
+
   // Input & Modes
-  const [url, setUrl] = useState('');
-  const [autoImport, setAutoImport] = useState(true);
-  const [preferredMethod, setPreferredMethod] = useState<'auto' | 'meta_graph_api' | 'openclaw_browser'>('auto');
+  const [url, setUrl] = useState<string>(() => savedSession?.url || '');
+  const [autoImport, setAutoImport] = useState<boolean>(() => savedSession?.autoImport ?? true);
+  const [preferredMethod, setPreferredMethod] = useState<'auto' | 'meta_graph_api' | 'openclaw_browser'>(
+    () => savedSession?.preferredMethod || 'auto'
+  );
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
   const [showRawJsonModal, setShowRawJsonModal] = useState(false);
@@ -178,58 +220,72 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
 
   // Status & Pipeline
   const [isProcessing, setIsProcessing] = useState(false);
-  const [currentStepIndex, setCurrentStepIndex] = useState(-1);
-  const [pipelineError, setPipelineError] = useState<string | null>(null);
-  const [pipelineErrorCode, setPipelineErrorCode] = useState<string | null>(null);
-  const [browserState, setBrowserState] = useState<string>('Browser Ready');
-  const [logs, setLogs] = useState<ActivityLog[]>([]);
+  const [currentStepIndex, setCurrentStepIndex] = useState<number>(() => savedSession?.currentStepIndex ?? -1);
+  const [pipelineError, setPipelineError] = useState<string | null>(() => savedSession?.pipelineError ?? null);
+  const [pipelineErrorCode, setPipelineErrorCode] = useState<string | null>(() => savedSession?.pipelineErrorCode ?? null);
+  const [browserState, setBrowserState] = useState<string>(() => savedSession?.browserState || 'Browser Ready');
+  const [logs, setLogs] = useState<ActivityLog[]>(() => savedSession?.logs || []);
 
   // Extraction Result State
-  const [source, setSource] = useState<SourceDetails | null>(null);
-  const [caption, setCaption] = useState('');
-  const [languages, setLanguages] = useState<string[]>([]);
-  const [images, setImages] = useState<ExtractedImage[]>([]);
-  const [propertyData, setPropertyData] = useState<PropertyData>({
-    project_name: '',
-    listing_type: 'RENT',
-    price: '',
-    currency: 'THB',
-    bedrooms: '',
-    bathrooms: '',
-    size_sqm: '',
-    floor: '',
-    building: '',
-    unit_number: '',
-    furnished: '',
-    nearest_transit: '',
-    location: '',
-    move_in_status: '',
-    contact_name: '',
-    contact_phone: '',
-    contact_line: '',
-  });
+  const [source, setSource] = useState<SourceDetails | null>(() => savedSession?.source || null);
+  const [caption, setCaption] = useState<string>(() => savedSession?.caption || '');
+  const [languages, setLanguages] = useState<string[]>(() => savedSession?.languages || []);
+  const [images, setImages] = useState<ExtractedImage[]>(() => savedSession?.images || []);
+  const [propertyData, setPropertyData] = useState<PropertyData>(
+    () =>
+      savedSession?.propertyData || {
+        project_name: '',
+        listing_type: 'RENT',
+        price: '',
+        currency: 'THB',
+        bedrooms: '',
+        bathrooms: '',
+        size_sqm: '',
+        floor: '',
+        building: '',
+        unit_number: '',
+        furnished: '',
+        nearest_transit: '',
+        location: '',
+        move_in_status: '',
+        contact_name: '',
+        contact_phone: '',
+        contact_line: '',
+      }
+  );
 
   // UI helpers
   const [copiedCaption, setCopiedCaption] = useState(false);
   const [copiedImageIndex, setCopiedImageIndex] = useState<number | null>(null);
   const [savedSuccessMsg, setSavedSuccessMsg] = useState(false);
-  const [manualMode, setManualMode] = useState(false);
+  const [manualMode, setManualMode] = useState<boolean>(() => savedSession?.manualMode || false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Facebook Workflow Formats Selection & State
   const [workflowFormats, setWorkflowFormats] = useState<WorkflowFormat[]>(() => getSavedWorkflowFormats());
-  const [selectedFormatId, setSelectedFormatId] = useState<string>(() => getActiveWorkflowFormatId());
-  const [activeFormat, setActiveFormat] = useState<WorkflowFormat>(() => getActiveWorkflowFormat());
+  const [selectedFormatId, setSelectedFormatId] = useState<string>(
+    () => savedSession?.selectedFormatId || getActiveWorkflowFormatId()
+  );
+  const [activeFormat, setActiveFormat] = useState<WorkflowFormat>(() => {
+    const list = getSavedWorkflowFormats();
+    const targetId = savedSession?.selectedFormatId || getActiveWorkflowFormatId();
+    return list.find((f) => f.id === targetId) || getActiveWorkflowFormat();
+  });
   const [workflowConfig, setWorkflowConfig] = useState<FacebookWorkflowConfig>(() => {
-    const activeFmt = getActiveWorkflowFormat();
-    return activeFmt.config || loadSavedFacebookWorkflowConfig();
+    const list = getSavedWorkflowFormats();
+    const targetId = savedSession?.selectedFormatId || getActiveWorkflowFormatId();
+    const found = list.find((f) => f.id === targetId) || getActiveWorkflowFormat();
+    return found.config || loadSavedFacebookWorkflowConfig();
   });
   const [activeAIBoxId, setActiveAIBoxId] = useState<string>(() => {
+    if (savedSession?.activeAIBoxId) return savedSession.activeAIBoxId;
     const activeFmt = getActiveWorkflowFormat();
     const first = activeFmt.config?.aiBoxes?.find((b) => b.enabled) || activeFmt.config?.aiBoxes?.[0];
     return first ? first.id : 'ai-box-rental';
   });
-  const [aiGeneratedOutputs, setAiGeneratedOutputs] = useState<Record<string, string>>({});
+  const [aiGeneratedOutputs, setAiGeneratedOutputs] = useState<Record<string, string>>(
+    () => savedSession?.aiGeneratedOutputs || {}
+  );
   const [aiBoxGenerating, setAiBoxGenerating] = useState<Record<string, boolean>>({});
   const [showWorkflowCanvasModal, setShowWorkflowCanvasModal] = useState(false);
 
@@ -273,10 +329,94 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
   const [customPromptTweak, setCustomPromptTweak] = useState<string>('');
   const [showPromptTweak, setShowPromptTweak] = useState<boolean>(false);
   const [isGeneratingAI, setIsGeneratingAI] = useState<boolean>(false);
-  const [aiGeneratedCopy, setAiGeneratedCopy] = useState<string>('');
+  const [aiGeneratedCopy, setAiGeneratedCopy] = useState<string>(() => savedSession?.aiGeneratedCopy || '');
   const [copiedAiCopy, setCopiedAiCopy] = useState<boolean>(false);
   const [isEditingAiCopy, setIsEditingAiCopy] = useState<boolean>(false);
   const [aiError, setAiError] = useState<string | null>(null);
+
+  // Native beforeunload reload/cancel alert when there is unsaved import data or active processing
+  useEffect(() => {
+    const hasUnsavedData = Boolean(
+      isProcessing ||
+      caption.trim() ||
+      images.length > 0 ||
+      source ||
+      (logs.length > 0 && currentStepIndex >= 0)
+    );
+
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedData) {
+        e.preventDefault();
+        e.returnValue = '';
+        return '';
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [isProcessing, caption, images.length, source, logs.length, currentStepIndex]);
+
+  // Persist session to localStorage so navigating across pages or reloading preserves all information
+  useEffect(() => {
+    const hasData = Boolean(
+      url.trim() ||
+      caption.trim() ||
+      images.length > 0 ||
+      source ||
+      (logs.length > 0 && currentStepIndex >= 0) ||
+      aiGeneratedCopy.trim() ||
+      Object.keys(aiGeneratedOutputs).length > 0
+    );
+
+    if (hasData) {
+      try {
+        const sessionData: FacebookImportSessionState = {
+          url,
+          source,
+          caption,
+          languages,
+          images,
+          propertyData,
+          currentStepIndex,
+          logs,
+          pipelineError,
+          pipelineErrorCode,
+          browserState,
+          aiGeneratedOutputs,
+          aiGeneratedCopy,
+          activeAIBoxId,
+          selectedFormatId,
+          manualMode,
+          autoImport,
+          preferredMethod,
+        };
+        localStorage.setItem(FB_IMPORT_SESSION_KEY, JSON.stringify(sessionData));
+      } catch (err) {
+        console.warn('Failed to save Facebook import session:', err);
+      }
+    }
+  }, [
+    url,
+    source,
+    caption,
+    languages,
+    images,
+    propertyData,
+    currentStepIndex,
+    logs,
+    pipelineError,
+    pipelineErrorCode,
+    browserState,
+    aiGeneratedOutputs,
+    aiGeneratedCopy,
+    activeAIBoxId,
+    selectedFormatId,
+    manualMode,
+    autoImport,
+    preferredMethod,
+  ]);
 
   // Load saved prompt templates from localStorage on mount
   useEffect(() => {
@@ -485,6 +625,30 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
     setManualMode(false);
     setSavedSuccessMsg(false);
     setLogs([]);
+    setCaption('');
+    setImages([]);
+    setSource(null);
+    setAiGeneratedOutputs({});
+    setAiGeneratedCopy('');
+    setPropertyData({
+      project_name: '',
+      listing_type: 'RENT',
+      price: '',
+      currency: 'THB',
+      bedrooms: '',
+      bathrooms: '',
+      size_sqm: '',
+      floor: '',
+      building: '',
+      unit_number: '',
+      furnished: '',
+      nearest_transit: '',
+      location: '',
+      move_in_status: '',
+      contact_name: '',
+      contact_phone: '',
+      contact_line: '',
+    });
     setCurrentStepIndex(0);
     addLog(`URL received: ${url.trim()}`);
 
@@ -866,11 +1030,37 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
     setUrl('');
     setSource(null);
     setCaption('');
+    setLanguages([]);
     setImages([]);
     setCurrentStepIndex(-1);
     setPipelineError(null);
     setPipelineErrorCode(null);
     setLogs([]);
+    setAiGeneratedOutputs({});
+    setAiGeneratedCopy('');
+    setPropertyData({
+      project_name: '',
+      listing_type: 'RENT',
+      price: '',
+      currency: 'THB',
+      bedrooms: '',
+      bathrooms: '',
+      size_sqm: '',
+      floor: '',
+      building: '',
+      unit_number: '',
+      furnished: '',
+      nearest_transit: '',
+      location: '',
+      move_in_status: '',
+      contact_name: '',
+      contact_phone: '',
+      contact_line: '',
+    });
+    setManualMode(false);
+    try {
+      localStorage.removeItem(FB_IMPORT_SESSION_KEY);
+    } catch {}
   };
 
   return (
