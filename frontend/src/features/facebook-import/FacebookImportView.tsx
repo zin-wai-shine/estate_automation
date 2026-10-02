@@ -1655,18 +1655,13 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
       >
         {/* ==================== LEFT COLUMN (FULL HEIGHT TO BASE) ==================== */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', height: '100%', minHeight: 0 }}>
-          {/* TOP-LEFT: UNIFIED URL INPUT & ACTION BUTTONS CONTAINER */}
+          {/* URL INPUT & ACTION BUTTONS ROW (NO OUTER CONTAINER) */}
           <div
             style={{
-              backgroundColor: 'var(--bg-secondary)',
-              border: '1px solid var(--border-color)',
-              borderRadius: '0.625rem',
-              padding: '0.5rem 0.625rem',
               display: 'flex',
               alignItems: 'center',
               gap: '0.5rem',
-              height: '52px',
-              boxShadow: 'var(--shadow-sm)',
+              width: '100%',
             }}
           >
             {/* Integrated Input Container */}
