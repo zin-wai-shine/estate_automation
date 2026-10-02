@@ -288,7 +288,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
   );
   const [aiBoxGenerating, setAiBoxGenerating] = useState<Record<string, boolean>>({});
   const [showWorkflowCanvasModal, setShowWorkflowCanvasModal] = useState(false);
-  const [viewingPromptBox, setViewingPromptBox] = useState<DynamicAIBoxConfig | null>(null);
+  const [viewingResultBox, setViewingResultBox] = useState<DynamicAIBoxConfig | null>(null);
   const [copiedBoxId, setCopiedBoxId] = useState<string | null>(null);
 
   // Reload formats when window/tab gains focus
@@ -333,7 +333,6 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
   const [isGeneratingAI, setIsGeneratingAI] = useState<boolean>(false);
   const [aiGeneratedCopy, setAiGeneratedCopy] = useState<string>(() => savedSession?.aiGeneratedCopy || '');
   const [copiedAiCopy, setCopiedAiCopy] = useState<boolean>(false);
-  const [isEditingAiCopy, setIsEditingAiCopy] = useState<boolean>(false);
   const [aiError, setAiError] = useState<string | null>(null);
 
   // Native beforeunload reload/cancel alert when there is unsaved import data or active processing
@@ -2250,9 +2249,13 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              setViewingPromptBox(box);
+                              setActiveAIBoxId(box.id);
+                              if (aiGeneratedOutputs[box.id]) {
+                                setAiGeneratedCopy(aiGeneratedOutputs[box.id]);
+                              }
+                              setViewingResultBox(box);
                             }}
-                            title="View Prompt"
+                            title="View Result"
                             style={{
                               height: '24px',
                               padding: '0 4px',
@@ -2270,7 +2273,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                             }}
                           >
                             <FiFileText style={{ fontSize: '10px', color: 'var(--accent-primary)' }} />
-                            <span>Prompt</span>
+                            <span>Result</span>
                           </button>
                         </div>
                       </div>
@@ -2339,178 +2342,6 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                 >×</button>
               </div>
             )}
-
-            {/* AI Generated Output Display (Only rendered AFTER generate) */}
-            {(() => {
-              const activeBox = workflowConfig.aiBoxes.find((b) => b.id === activeAIBoxId) || workflowConfig.aiBoxes[0];
-              const currentDisplayCopy = (activeBox && aiGeneratedOutputs[activeBox.id]) || aiGeneratedCopy;
-              const isBoxLoading = Boolean(activeBox && aiBoxGenerating[activeBox.id]);
-
-              if (!currentDisplayCopy) return null;
-
-              return (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem', marginTop: '0.25rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
-                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.375rem' }}>
-                      <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                        {activeBox ? `AI Copy: ${activeBox.title}` : 'AI Generated Listing Copy'}
-                      </label>
-                      {activeBox && (
-                        <Badge variant={activeBox.provider === 'openai' ? 'success' : 'info'} size="sm">
-                          {activeBox.provider === 'openai' ? 'OpenAI GPT-4o' : 'Google Gemini'}
-                        </Badge>
-                      )}
-                    </div>
-                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                      {/* Regenerate button */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (activeBox) {
-                            handleGenerateDynamicBoxCopy(activeBox.id);
-                          }
-                        }}
-                        disabled={isBoxLoading || !caption.trim()}
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '0.25rem',
-                          background: 'transparent',
-                          border: '1px solid var(--border-color)',
-                          borderRadius: '0.25rem',
-                          padding: '3px 8px',
-                          color: 'var(--text-secondary)',
-                          fontSize: '0.75rem',
-                          fontWeight: 500,
-                          cursor: isBoxLoading ? 'not-allowed' : 'pointer',
-                          transition: 'all 0.15s ease',
-                        }}
-                      >
-                        <FiRefreshCw
-                          className={isBoxLoading ? 'spin' : ''}
-                          style={{
-                            animation: isBoxLoading ? 'spin 1s linear infinite' : 'none',
-                            fontSize: '11px',
-                          }}
-                        />
-                        <span>{isBoxLoading ? 'Regenerating...' : 'Regenerate'}</span>
-                      </button>
-
-                      {/* View Prompt button */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (activeBox) setViewingPromptBox(activeBox);
-                        }}
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '0.25rem',
-                          background: 'transparent',
-                          border: '1px solid var(--border-color)',
-                          borderRadius: '0.25rem',
-                          padding: '3px 8px',
-                          color: 'var(--text-secondary)',
-                          fontSize: '0.75rem',
-                          fontWeight: 500,
-                          cursor: 'pointer',
-                          transition: 'all 0.15s ease',
-                        }}
-                      >
-                        <FiFileText style={{ fontSize: '11px', color: 'var(--accent-primary)' }} />
-                        <span>View Prompt</span>
-                      </button>
-
-                      {/* Copy button */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (!currentDisplayCopy) return;
-                          navigator.clipboard.writeText(currentDisplayCopy);
-                          setCopiedAiCopy(true);
-                          setTimeout(() => setCopiedAiCopy(false), 2000);
-                        }}
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '0.25rem',
-                          background: copiedAiCopy ? 'rgba(16, 185, 129, 0.15)' : 'transparent',
-                          border: `1px solid ${copiedAiCopy ? 'rgba(16, 185, 129, 0.4)' : 'var(--border-color)'}`,
-                          borderRadius: '0.25rem',
-                          padding: '3px 8px',
-                          color: copiedAiCopy ? 'var(--status-success)' : 'var(--accent-primary)',
-                          fontSize: '0.75rem',
-                          fontWeight: 600,
-                          cursor: 'pointer',
-                          transition: 'all 0.15s ease',
-                        }}
-                      >
-                        {copiedAiCopy ? <FiCheck style={{ fontSize: '11px' }} /> : <FiCopy style={{ fontSize: '11px' }} />}
-                        <span>{copiedAiCopy ? 'Copied!' : 'Copy'}</span>
-                      </button>
-
-                      {/* Edit toggle */}
-                      <button
-                        type="button"
-                        onClick={() => setIsEditingAiCopy(!isEditingAiCopy)}
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '0.25rem',
-                          background: 'transparent',
-                          border: 'none',
-                          color: isEditingAiCopy ? 'var(--accent-primary)' : 'var(--text-muted)',
-                          fontSize: '0.75rem',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        <FiEdit3 style={{ fontSize: '11px' }} />
-                        <span>{isEditingAiCopy ? 'Done' : 'Edit'}</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  <div
-                    style={{
-                      backgroundColor: 'var(--bg-main)',
-                      border: '1px solid rgba(78, 136, 255, 0.35)',
-                      borderRadius: '0.5rem',
-                      padding: '0.75rem',
-                      minHeight: '120px',
-                      maxHeight: '260px',
-                      overflowY: 'auto',
-                    }}
-                  >
-                    {isEditingAiCopy ? (
-                      <textarea
-                        value={currentDisplayCopy}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setAiGeneratedCopy(val);
-                          if (activeBox) setAiGeneratedOutputs((prev) => ({ ...prev, [activeBox.id]: val }));
-                        }}
-                        style={{
-                          width: '100%',
-                          minHeight: '180px',
-                          backgroundColor: 'transparent',
-                          border: 'none',
-                          outline: 'none',
-                          color: 'var(--text-primary)',
-                          fontSize: '0.8125rem',
-                          lineHeight: 1.6,
-                          resize: 'none',
-                          fontFamily: 'inherit',
-                        }}
-                      />
-                    ) : (
-                      <div style={{ fontSize: '0.8125rem', color: 'var(--text-primary)', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
-                        {currentDisplayCopy}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })()}
           </div>
         </div>
 
@@ -2920,73 +2751,108 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
         </Modal>
       )}
 
-      {/* VIEW PROMPT MODAL */}
-      {viewingPromptBox && (
+      {/* VIEW / EDIT AI RESULT MODAL */}
+      {viewingResultBox && (
         <Modal
-          isOpen={Boolean(viewingPromptBox)}
-          onClose={() => setViewingPromptBox(null)}
+          isOpen={Boolean(viewingResultBox)}
+          onClose={() => setViewingResultBox(null)}
           title={
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <FiFileText style={{ color: viewingPromptBox.provider === 'google_ai' ? '#60A5FA' : '#10B981' }} />
-              <span>Prompt: {viewingPromptBox.title}</span>
+              <FiFileText style={{ color: viewingResultBox.provider === 'google_ai' ? '#60A5FA' : '#10B981' }} />
+              <span>AI Result: {viewingResultBox.title}</span>
             </div>
           }
-          maxWidth="560px"
+          maxWidth="700px"
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.625rem 0.75rem', backgroundColor: 'var(--bg-main)', borderRadius: '0.375rem', border: '1px solid var(--border-color)' }}>
               <div>
                 <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Engine & Model:</span>
                 <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)', marginTop: '2px' }}>
-                  {viewingPromptBox.provider === 'google_ai' ? 'Google Gemini' : 'OpenAI ChatGPT'} · {viewingPromptBox.model}
+                  {viewingResultBox.provider === 'google_ai' ? 'Google Gemini' : 'OpenAI ChatGPT'} · {viewingResultBox.model}
                 </div>
               </div>
-              <Badge variant={viewingPromptBox.provider === 'google_ai' ? 'info' : 'success'}>
-                {viewingPromptBox.provider === 'google_ai' ? 'Gemini' : 'GPT-4o'}
+              <Badge variant={viewingResultBox.provider === 'google_ai' ? 'info' : 'success'}>
+                {viewingResultBox.provider === 'google_ai' ? 'Gemini' : 'GPT-4o'}
               </Badge>
             </div>
 
             <div>
-              <label style={{ display: 'block', fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.375rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Prompt Instructions
-              </label>
-              <div
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.375rem' }}>
+                <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Generated Listing Copy
+                </label>
+                {aiGeneratedOutputs[viewingResultBox.id] && (
+                  <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                    {aiGeneratedOutputs[viewingResultBox.id].length} chars
+                  </span>
+                )}
+              </div>
+              <textarea
+                value={aiGeneratedOutputs[viewingResultBox.id] || ''}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setAiGeneratedOutputs((prev) => ({ ...prev, [viewingResultBox.id]: val }));
+                  if (activeAIBoxId === viewingResultBox.id) {
+                    setAiGeneratedCopy(val);
+                  }
+                }}
+                placeholder="No listing copy generated yet..."
                 style={{
+                  width: '100%',
+                  minHeight: '280px',
+                  maxHeight: '450px',
                   backgroundColor: 'var(--bg-main)',
                   border: '1px solid var(--border-color)',
                   borderRadius: '0.5rem',
                   padding: '0.875rem',
                   fontSize: '0.8125rem',
-                  color: 'var(--text-secondary)',
+                  color: 'var(--text-primary)',
                   lineHeight: 1.6,
-                  whiteSpace: 'pre-wrap',
-                  maxHeight: '300px',
-                  overflowY: 'auto',
-                  fontFamily: `'SF Mono', 'Fira Code', monospace`,
+                  resize: 'vertical',
+                  fontFamily: 'inherit',
+                  outline: 'none',
+                  boxSizing: 'border-box',
                 }}
-              >
-                {viewingPromptBox.templateText || '(No prompt instructions configured)'}
-              </div>
+              />
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border-color)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '0.75rem', borderTop: '1px solid var(--border-color)' }}>
               <Button
                 variant="outline"
                 size="sm"
-                leftIcon={<FiCopy />}
-                onClick={() => {
-                  if (viewingPromptBox.templateText) {
-                    navigator.clipboard.writeText(viewingPromptBox.templateText);
-                    setCopiedAiCopy(true);
-                    setTimeout(() => setCopiedAiCopy(false), 2000);
-                  }
-                }}
+                disabled={Boolean(aiBoxGenerating[viewingResultBox.id]) || !caption.trim()}
+                onClick={() => handleGenerateDynamicBoxCopy(viewingResultBox.id)}
+                leftIcon={
+                  <FiRefreshCw
+                    className={aiBoxGenerating[viewingResultBox.id] ? 'spin' : ''}
+                    style={{ animation: aiBoxGenerating[viewingResultBox.id] ? 'spin 1s linear infinite' : 'none' }}
+                  />
+                }
               >
-                {copiedAiCopy ? 'Copied!' : 'Copy Prompt'}
+                {aiBoxGenerating[viewingResultBox.id] ? 'Regenerating...' : 'Regenerate'}
               </Button>
-              <Button variant="primary" size="sm" onClick={() => setViewingPromptBox(null)}>
-                Close
-              </Button>
+
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  leftIcon={copiedBoxId === viewingResultBox.id ? <FiCheck /> : <FiCopy />}
+                  onClick={() => {
+                    const copyText = aiGeneratedOutputs[viewingResultBox.id];
+                    if (copyText) {
+                      navigator.clipboard.writeText(copyText);
+                      setCopiedBoxId(viewingResultBox.id);
+                      setTimeout(() => setCopiedBoxId(null), 2000);
+                    }
+                  }}
+                >
+                  {copiedBoxId === viewingResultBox.id ? 'Copied!' : 'Copy Result'}
+                </Button>
+                <Button variant="primary" size="sm" onClick={() => setViewingResultBox(null)}>
+                  Close
+                </Button>
+              </div>
             </div>
           </div>
         </Modal>
