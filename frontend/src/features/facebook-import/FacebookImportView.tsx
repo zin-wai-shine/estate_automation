@@ -2095,26 +2095,25 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
-                  gap: '0.5rem',
-                  height: '36px',
-                  padding: '0 1rem',
-                  borderRadius: '0.5rem',
-                  border: '1px solid rgba(167, 139, 250, 0.5)',
-                  backgroundColor: 'rgba(139, 92, 246, 0.15)',
-                  color: '#C4B5FD',
-                  fontSize: '0.8125rem',
-                  fontWeight: 600,
+                  gap: '0.375rem',
+                  height: '32px',
+                  padding: '0 0.75rem',
+                  borderRadius: '0.375rem',
+                  border: '1px solid var(--border-color)',
+                  backgroundColor: 'var(--bg-secondary)',
+                  color: 'var(--text-secondary)',
+                  fontSize: '0.75rem',
+                  fontWeight: 500,
                   cursor: isGeneratingAI || !caption.trim() ? 'not-allowed' : 'pointer',
                   opacity: isGeneratingAI || !caption.trim() ? 0.6 : 1,
                   whiteSpace: 'nowrap',
-                  boxShadow: '0 0 15px rgba(139, 92, 246, 0.3)',
-                  transition: 'all 0.2s ease',
+                  transition: 'all 0.15s ease',
                 }}
               >
                 {isGeneratingAI ? (
-                  <FiRefreshCw className="spin" style={{ animation: 'spin 1s linear infinite', fontSize: '13px' }} />
+                  <FiRefreshCw className="spin" style={{ animation: 'spin 1s linear infinite', fontSize: '12px' }} />
                 ) : (
-                  <FiCpu style={{ fontSize: '14px' }} />
+                  <FiCpu style={{ fontSize: '12px' }} />
                 )}
                 Generate All ({workflowConfig.aiBoxes.filter((b) => b.enabled).length})
               </button>
@@ -2124,13 +2123,12 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-                gap: '0.875rem',
+                gridTemplateColumns: 'repeat(auto-fill, 260px)',
+                gap: '0.75rem',
               }}
             >
               {workflowConfig.aiBoxes.map((box) => {
                 const isGoogle = box.provider === 'google_ai';
-                const themeColor = isGoogle ? '#60A5FA' : '#10B981';
                 const isActive = activeAIBoxId === box.id;
                 const hasGenerated = Boolean(aiGeneratedOutputs[box.id]);
                 const isBoxLoading = Boolean(aiBoxGenerating[box.id]);
@@ -2143,131 +2141,52 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                       if (aiGeneratedOutputs[box.id]) setAiGeneratedCopy(aiGeneratedOutputs[box.id]);
                     }}
                     style={{
-                      position: 'relative',
-                      overflow: 'hidden',
-                      backgroundColor: isActive
-                        ? isGoogle ? 'rgba(30, 58, 138, 0.18)' : 'rgba(6, 78, 59, 0.22)'
-                        : 'rgba(23, 27, 34, 0.85)',
-                      backgroundImage: isActive
-                        ? isGoogle
-                          ? 'radial-gradient(ellipse at 50% 0%, rgba(59, 130, 246, 0.25) 0%, rgba(15, 23, 42, 0) 80%)'
-                          : 'radial-gradient(ellipse at 50% 0%, rgba(16, 185, 129, 0.25) 0%, rgba(15, 23, 42, 0) 80%)'
-                        : 'none',
-                      border: `1.5px solid ${isActive ? themeColor : 'rgba(255, 255, 255, 0.08)'}`,
-                      borderRadius: '0.875rem',
-                      padding: '1.125rem',
+                      width: '260px',
+                      backgroundColor: 'var(--bg-main)',
+                      border: `1px solid ${isActive ? 'var(--accent-primary)' : 'var(--border-color)'}`,
+                      borderRadius: '0.5rem',
+                      padding: '0.875rem',
                       display: 'flex',
                       flexDirection: 'column',
-                      gap: '0.875rem',
+                      gap: '0.75rem',
                       cursor: 'pointer',
-                      transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-                      boxShadow: isActive
-                        ? isGoogle
-                          ? '0 0 24px rgba(59, 130, 246, 0.35), 0 8px 24px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.15)'
-                          : '0 0 24px rgba(16, 185, 129, 0.35), 0 8px 24px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.15)'
-                        : '0 4px 16px rgba(0, 0, 0, 0.3)',
-                      backdropFilter: 'blur(8px)',
+                      transition: 'border-color 0.15s ease',
                     }}
                   >
-                    {/* Top ambient glow line */}
-                    {isActive && (
-                      <div
-                        style={{
-                          position: 'absolute',
-                          top: 0,
-                          left: '15%',
-                          right: '15%',
-                          height: '2px',
-                          background: isGoogle
-                            ? 'linear-gradient(90deg, transparent, #60A5FA, transparent)'
-                            : 'linear-gradient(90deg, transparent, #34D399, transparent)',
-                          boxShadow: `0 0 12px ${themeColor}`,
-                        }}
-                      />
-                    )}
-
                     {/* Card Header: Icon + Title + Status */}
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', overflow: 'hidden' }}>
-                        <div
-                          style={{
-                            width: '36px',
-                            height: '36px',
-                            borderRadius: '10px',
-                            background: isGoogle ? 'rgba(59, 130, 246, 0.18)' : 'rgba(16, 185, 129, 0.18)',
-                            border: `1px solid ${themeColor}50`,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            boxShadow: `0 0 12px ${themeColor}30`,
-                            flexShrink: 0,
-                          }}
-                        >
-                          {isGoogle
-                            ? <SiGooglegemini style={{ fontSize: '18px', color: themeColor }} />
-                            : <OpenAIIcon size={18} color={themeColor} />
-                          }
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-                          <span style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {box.title}
-                          </span>
-                          <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-                            {isGoogle ? 'Google AI Engine' : 'OpenAI Model'}
-                          </span>
-                        </div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', overflow: 'hidden' }}>
+                        {isGoogle
+                          ? <SiGooglegemini style={{ fontSize: '15px', color: '#3B82F6', flexShrink: 0 }} />
+                          : <OpenAIIcon size={15} color="#10B981" />
+                        }
+                        <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {box.title}
+                        </span>
                       </div>
 
                       {hasGenerated && !isBoxLoading && (
-                        <span
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                            fontSize: '0.6875rem',
-                            fontWeight: 600,
-                            color: '#34D399',
-                            background: 'rgba(16, 185, 129, 0.15)',
-                            border: '1px solid rgba(16, 185, 129, 0.35)',
-                            borderRadius: '9999px',
-                            padding: '2px 8px',
-                            boxShadow: '0 0 10px rgba(16, 185, 129, 0.25)',
-                            flexShrink: 0,
-                          }}
-                        >
-                          <FiCheck style={{ fontSize: '11px' }} />
-                          Ready
+                        <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--status-success)', display: 'inline-flex', alignItems: 'center', gap: '3px', flexShrink: 0 }}>
+                          <FiCheck style={{ fontSize: '11px' }} /> Ready
                         </span>
                       )}
                     </div>
 
                     {/* Model badge line */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <span
-                        style={{
-                          fontSize: '0.6875rem',
-                          color: themeColor,
-                          fontWeight: 600,
-                          letterSpacing: '0.02em',
-                          backgroundColor: `${themeColor}18`,
-                          border: `1px solid ${themeColor}40`,
-                          borderRadius: '6px',
-                          padding: '2px 8px',
-                          boxShadow: `0 0 8px ${themeColor}15`,
-                        }}
-                      >
+                      <span style={{ fontSize: '0.6875rem', color: 'var(--text-secondary)', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '1px 6px' }}>
                         {isGoogle ? 'Gemini 1.5' : 'GPT-4o'}
                       </span>
                       {hasGenerated && (
                         <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-                          {aiGeneratedOutputs[box.id]?.length || 0} chars generated
+                          {aiGeneratedOutputs[box.id]?.length || 0} chars
                         </span>
                       )}
                     </div>
 
                     {/* Generate / Regenerate & Actions */}
                     {hasGenerated ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem', width: '100%', marginTop: 'auto' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', width: '100%', marginTop: 'auto' }}>
                         {/* Regenerate button: Normal size */}
                         <button
                           type="button"
@@ -2278,33 +2197,26 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                           }}
                           disabled={isBoxLoading || !caption.trim()}
                           style={{
-                            height: '38px',
+                            height: '34px',
                             width: '100%',
-                            background: box.enabled
-                              ? isGoogle
-                                ? 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)'
-                                : 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
-                              : 'rgba(255,255,255,0.05)',
-                            border: `1px solid ${box.enabled ? themeColor + '80' : 'var(--border-color)'}`,
-                            borderRadius: '0.5rem',
-                            color: box.enabled ? '#ffffff' : 'var(--text-muted)',
+                            backgroundColor: 'var(--accent-primary)',
+                            border: 'none',
+                            borderRadius: '0.375rem',
+                            color: '#ffffff',
                             fontSize: '0.8125rem',
-                            fontWeight: 700,
+                            fontWeight: 600,
                             cursor: isBoxLoading || !caption.trim() ? 'not-allowed' : 'pointer',
-                            opacity: isBoxLoading || !caption.trim() ? 0.65 : 1,
+                            opacity: isBoxLoading || !caption.trim() ? 0.6 : 1,
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
                             gap: '6px',
-                            boxShadow: box.enabled && !isBoxLoading
-                              ? (isGoogle ? '0 0 16px rgba(37, 99, 235, 0.45)' : '0 0 16px rgba(16, 185, 129, 0.45)')
-                              : 'none',
-                            transition: 'all 0.2s ease',
+                            transition: 'opacity 0.15s ease',
                           }}
                         >
                           <FiRefreshCw
                             className={isBoxLoading ? 'spin' : ''}
-                            style={{ animation: isBoxLoading ? 'spin 1s linear infinite' : 'none', fontSize: '13px' }}
+                            style={{ animation: isBoxLoading ? 'spin 1s linear infinite' : 'none', fontSize: '12px' }}
                           />
                           <span>{isBoxLoading ? 'Regenerating...' : 'Regenerate'}</span>
                         </button>
@@ -2323,24 +2235,23 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                             }}
                             title="Copy AI Copy"
                             style={{
-                              height: '36px',
-                              padding: '0 0.75rem',
+                              height: '32px',
+                              padding: '0 0.5rem',
                               display: 'inline-flex',
                               alignItems: 'center',
                               justifyContent: 'center',
-                              gap: '6px',
-                              borderRadius: '0.5rem',
-                              border: `1px solid ${copiedBoxId === box.id ? 'rgba(16, 185, 129, 0.6)' : 'rgba(255, 255, 255, 0.12)'}`,
-                              backgroundColor: copiedBoxId === box.id ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-                              color: copiedBoxId === box.id ? '#34D399' : 'var(--text-primary)',
+                              gap: '5px',
+                              borderRadius: '0.375rem',
+                              border: '1px solid var(--border-color)',
+                              backgroundColor: copiedBoxId === box.id ? 'rgba(16, 185, 129, 0.15)' : 'var(--bg-secondary)',
+                              color: copiedBoxId === box.id ? 'var(--status-success)' : 'var(--text-primary)',
                               fontSize: '0.8125rem',
-                              fontWeight: 600,
+                              fontWeight: 500,
                               cursor: 'pointer',
-                              boxShadow: copiedBoxId === box.id ? '0 0 12px rgba(16, 185, 129, 0.35)' : '0 2px 4px rgba(0,0,0,0.2)',
-                              transition: 'all 0.2s ease',
+                              transition: 'all 0.15s ease',
                             }}
                           >
-                            {copiedBoxId === box.id ? <FiCheck style={{ fontSize: '13px' }} /> : <FiCopy style={{ fontSize: '13px' }} />}
+                            {copiedBoxId === box.id ? <FiCheck style={{ fontSize: '12px' }} /> : <FiCopy style={{ fontSize: '12px' }} />}
                             <span>{copiedBoxId === box.id ? 'Copied' : 'Copy'}</span>
                           </button>
 
@@ -2356,24 +2267,23 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                             }}
                             title="View Result"
                             style={{
-                              height: '36px',
-                              padding: '0 0.75rem',
+                              height: '32px',
+                              padding: '0 0.5rem',
                               display: 'inline-flex',
                               alignItems: 'center',
                               justifyContent: 'center',
-                              gap: '6px',
-                              borderRadius: '0.5rem',
-                              border: `1px solid ${themeColor}60`,
-                              backgroundColor: isGoogle ? 'rgba(59, 130, 246, 0.15)' : 'rgba(16, 185, 129, 0.15)',
-                              color: themeColor,
+                              gap: '5px',
+                              borderRadius: '0.375rem',
+                              border: '1px solid var(--border-color)',
+                              backgroundColor: 'var(--bg-secondary)',
+                              color: 'var(--text-primary)',
                               fontSize: '0.8125rem',
-                              fontWeight: 600,
+                              fontWeight: 500,
                               cursor: 'pointer',
-                              boxShadow: `0 0 12px ${themeColor}25`,
-                              transition: 'all 0.2s ease',
+                              transition: 'all 0.15s ease',
                             }}
                           >
-                            <FiFileText style={{ fontSize: '13px' }} />
+                            <FiFileText style={{ fontSize: '12px', color: 'var(--accent-primary)' }} />
                             <span>Result</span>
                           </button>
                         </div>
@@ -2389,34 +2299,27 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                         }}
                         disabled={isBoxLoading || !caption.trim()}
                         style={{
-                          height: '38px',
+                          height: '34px',
                           width: '100%',
-                          background: box.enabled
-                            ? isGoogle
-                              ? 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)'
-                              : 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
-                            : 'rgba(255,255,255,0.05)',
-                          border: `1px solid ${box.enabled ? themeColor + '80' : 'var(--border-color)'}`,
-                          borderRadius: '0.5rem',
-                          color: box.enabled ? '#ffffff' : 'var(--text-muted)',
-                          fontSize: '0.875rem',
-                          fontWeight: 700,
+                          backgroundColor: 'var(--accent-primary)',
+                          border: 'none',
+                          borderRadius: '0.375rem',
+                          color: '#ffffff',
+                          fontSize: '0.8125rem',
+                          fontWeight: 600,
                           cursor: isBoxLoading || !caption.trim() ? 'not-allowed' : 'pointer',
-                          opacity: isBoxLoading || !caption.trim() ? 0.65 : 1,
+                          opacity: isBoxLoading || !caption.trim() ? 0.6 : 1,
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
                           gap: '6px',
                           marginTop: 'auto',
-                          boxShadow: box.enabled && !isBoxLoading
-                            ? (isGoogle ? '0 0 18px rgba(37, 99, 235, 0.45)' : '0 0 18px rgba(16, 185, 129, 0.45)')
-                            : 'none',
-                          transition: 'all 0.2s ease',
+                          transition: 'opacity 0.15s ease',
                         }}
                       >
                         {isBoxLoading
-                          ? <FiRefreshCw className="spin" style={{ animation: 'spin 1s linear infinite', fontSize: '14px' }} />
-                          : <FiZap style={{ fontSize: '14px' }} />
+                          ? <FiRefreshCw className="spin" style={{ animation: 'spin 1s linear infinite', fontSize: '13px' }} />
+                          : <FiZap style={{ fontSize: '13px' }} />
                         }
                         <span>{isBoxLoading ? 'Generating...' : 'Generate'}</span>
                       </button>
