@@ -14,6 +14,7 @@ import {
   FiEye,
   FiSearch,
   FiTrash2,
+  FiAlertTriangle,
 } from 'react-icons/fi';
 
 const INITIAL_DEFAULT_TEMPLATES: PromptTemplate[] = [
@@ -70,6 +71,7 @@ export const PromptTemplatesView: React.FC = () => {
 
   // Detail / Edit modal state
   const [activePrompt, setActivePrompt] = useState<PromptTemplate | null>(null);
+  const [deletePromptTarget, setDeletePromptTarget] = useState<PromptTemplate | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [newTemplate, setNewTemplate] = useState<{
     name: string;
@@ -91,14 +93,18 @@ export const PromptTemplatesView: React.FC = () => {
   const handleDeletePrompt = (id: number, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     const target = prompts.find((p) => p.id === id);
-    const targetName = target ? target.name : 'this template';
-    if (!window.confirm(`Are you sure you want to delete "${targetName}"?\nThis action cannot be undone.`)) {
-      return;
+    if (target) {
+      setDeletePromptTarget(target);
     }
-    setPrompts((prev) => prev.filter((p) => p.id !== id));
-    if (activePrompt && activePrompt.id === id) {
+  };
+
+  const confirmDeletePrompt = () => {
+    if (!deletePromptTarget) return;
+    setPrompts((prev) => prev.filter((p) => p.id !== deletePromptTarget.id));
+    if (activePrompt && activePrompt.id === deletePromptTarget.id) {
       setActivePrompt(null);
     }
+    setDeletePromptTarget(null);
   };
 
   const handleCreateNew = () => {
@@ -346,7 +352,11 @@ export const PromptTemplatesView: React.FC = () => {
 
                   {/* Status */}
                   <td style={{ padding: '1rem', whiteSpace: 'nowrap' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
+                    <div
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.75rem', whiteSpace: 'nowrap', cursor: 'pointer' }}
+                      onClick={(e) => toggleActive(prompt.id, e)}
+                      title="Click to toggle Active / Inactive"
+                    >
                       <span
                         style={{
                           width: '7px',
@@ -366,15 +376,6 @@ export const PromptTemplatesView: React.FC = () => {
                   {/* Actions */}
                   <td style={{ padding: '1rem 1.25rem', textAlign: 'right', whiteSpace: 'nowrap' }}>
                     <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        leftIcon={<FiPower />}
-                        onClick={(e) => toggleActive(prompt.id, e)}
-                        style={{ height: '32px', fontSize: '0.75rem', padding: '0 0.625rem', whiteSpace: 'nowrap' }}
-                      >
-                        {prompt.active ? 'Deactivate' : 'Activate'}
-                      </Button>
                       <Button
                         variant="secondary"
                         size="sm"
@@ -587,6 +588,98 @@ export const PromptTemplatesView: React.FC = () => {
                 onClick={handleCreateNew}
               >
                 Create Template
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* CUSTOM DELETE CONFIRMATION ALERT BOX */}
+      {deletePromptTarget && (
+        <Modal
+          isOpen={!!deletePromptTarget}
+          onClose={() => setDeletePromptTarget(null)}
+          title={
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', color: '#EF4444' }}>
+              <div
+                style={{
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '50%',
+                  backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <FiAlertTriangle style={{ fontSize: '16px', color: '#EF4444' }} />
+              </div>
+              <span style={{ fontSize: '1rem', fontWeight: 600 }}>Delete Prompt Template</span>
+            </div>
+          }
+          maxWidth="440px"
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+            <div>
+              <p style={{ margin: 0, fontSize: '0.875rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                Are you sure you want to delete{' '}
+                <strong style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
+                  "{deletePromptTarget.name}"
+                </strong>
+                ?
+              </p>
+              <div
+                style={{
+                  marginTop: '0.75rem',
+                  padding: '0.625rem 0.75rem',
+                  backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                  border: '1px solid rgba(239, 68, 68, 0.2)',
+                  borderRadius: '0.375rem',
+                  fontSize: '0.75rem',
+                  color: '#F87171',
+                  lineHeight: 1.5,
+                }}
+              >
+                ⚠️ This action cannot be undone and will permanently remove this template from your library.
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                alignItems: 'center',
+                gap: '0.625rem',
+                paddingTop: '0.875rem',
+                borderTop: '1px solid var(--border-color)',
+              }}
+            >
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setDeletePromptTarget(null)}
+                style={{ height: '36px', minWidth: '80px', fontSize: '0.8125rem' }}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                leftIcon={<FiTrash2 />}
+                onClick={confirmDeletePrompt}
+                style={{
+                  height: '36px',
+                  backgroundColor: '#EF4444',
+                  borderColor: '#DC2626',
+                  color: '#ffffff',
+                  fontSize: '0.8125rem',
+                  fontWeight: 600,
+                  boxShadow: '0 2px 8px rgba(239, 68, 68, 0.35)',
+                }}
+              >
+                Delete
               </Button>
             </div>
           </div>
