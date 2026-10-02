@@ -23,13 +23,11 @@ import {
   FiTrash2,
   FiCheck,
   FiArrowRight,
-  FiLayers,
   FiCheckCircle,
   FiFileText,
   FiImage,
   FiCpu,
   FiMaximize2,
-  FiSliders,
 } from 'react-icons/fi';
 
 export const CreateWorkflowView: React.FC = () => {
@@ -641,6 +639,7 @@ export const CreateWorkflowView: React.FC = () => {
           <FacebookWorkflowCanvas
             initialConfig={editingFormat.config}
             onConfigChange={handleCanvasConfigChange}
+            allowEditPrompt={true}
           />
         </div>
       </Modal>
