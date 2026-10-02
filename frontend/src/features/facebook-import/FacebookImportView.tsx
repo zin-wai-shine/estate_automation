@@ -1194,159 +1194,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
           headerActionEl
         )}
 
-          {/* SLEEK UNIFIED IMPORT BAR (2-COLUMN: LEFT INPUT & BUTTON, RIGHT VIEW MODAL BUTTON) */}
-      <div
-        style={{
-          backgroundColor: 'var(--bg-secondary)',
-          border: '1px solid var(--border-color)',
-          borderRadius: '0.625rem',
-          padding: '0.5rem 0.625rem',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '0.75rem',
-          boxShadow: 'var(--shadow-sm)',
-          flexWrap: 'wrap',
-        }}
-      >
-        {/* LEFT COLUMN: URL Input + Import Post Button */}
-        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flex: 1, minWidth: '320px' }}>
-          {/* Integrated Input Container */}
-          <div
-            style={{
-              flex: 1,
-              display: 'flex',
-              alignItems: 'center',
-              backgroundColor: 'var(--bg-main)',
-              border: '1px solid var(--border-color)',
-              borderRadius: '0.375rem',
-              padding: '0 0.75rem',
-              height: '36px',
-              transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
-            }}
-          >
-            <FaFacebook style={{ color: '#1877F2', fontSize: '1rem', flexShrink: 0, marginRight: '0.5rem' }} />
-            <input
-              type="text"
-              placeholder="Paste Facebook post URL (e.g. https://www.facebook.com/share/p/...)"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && url.trim() && !isProcessing) {
-                  handleStartImport();
-                }
-              }}
-              disabled={isProcessing}
-              style={{
-                flex: 1,
-                background: 'transparent',
-                border: 'none',
-                outline: 'none',
-                color: 'var(--text-primary)',
-                fontSize: '0.8125rem',
-                minWidth: 0,
-              }}
-            />
-            {url && !isProcessing && (
-              <button
-                type="button"
-                onClick={() => setUrl('')}
-                title="Clear input"
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: 'var(--text-muted)',
-                  cursor: 'pointer',
-                  padding: '2px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  marginRight: '0.375rem',
-                }}
-              >
-                <FiX style={{ fontSize: '13px' }} />
-              </button>
-            )}
-            <kbd
-              style={{
-                fontSize: '0.6875rem',
-                padding: '2px 5px',
-                borderRadius: '3px',
-                backgroundColor: 'rgba(255, 255, 255, 0.06)',
-                border: '1px solid var(--border-color)',
-                color: 'var(--text-muted)',
-                lineHeight: 1,
-                fontFamily: 'monospace',
-                userSelect: 'none',
-              }}
-            >
-              ↵ Enter
-            </kbd>
-          </div>
 
-          {/* Compact Primary Import Button */}
-          <Button
-            variant="primary"
-            onClick={handleStartImport}
-            disabled={!url.trim() || isProcessing}
-            leftIcon={
-              isProcessing ? (
-                <FiRefreshCw className="spin" style={{ animation: 'spin 1s linear infinite', fontSize: '13px' }} />
-              ) : (
-                <FiDownload style={{ fontSize: '13px' }} />
-              )
-            }
-            style={{
-              height: '36px',
-              padding: '0 1rem',
-              fontWeight: 600,
-              fontSize: '0.8125rem',
-              backgroundColor: '#1877F2',
-              borderColor: '#1877F2',
-              borderRadius: '0.375rem',
-              whiteSpace: 'nowrap',
-              flexShrink: 0,
-            }}
-          >
-            {isProcessing ? 'Importing...' : 'Import Post'}
-          </Button>
-        </div>
-
-        {/* RIGHT COLUMN: Button to View Pipeline & Activity Log Modal */}
-        <Button
-          variant="outline"
-          onClick={() => setShowPipelineModal(true)}
-          leftIcon={
-            isProcessing ? (
-              <FiRefreshCw className="spin" style={{ animation: 'spin 1s linear infinite', fontSize: '13px', color: '#3B82F6' }} />
-            ) : (
-              <FiActivity style={{ fontSize: '14px', color: currentStepIndex >= 0 ? '#22C55E' : 'var(--text-muted)' }} />
-            )
-          }
-          style={{
-            height: '36px',
-            padding: '0 0.875rem',
-            fontSize: '0.8125rem',
-            fontWeight: 500,
-            borderRadius: '0.375rem',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.5rem',
-            flexShrink: 0,
-            backgroundColor: 'var(--bg-main)',
-            border: '1px solid var(--border-color)',
-          }}
-        >
-          <span>Pipeline & Activity Log</span>
-          {currentStepIndex >= 0 && (
-            <Badge
-              variant={currentStepIndex === PIPELINE_STEPS.length - 1 ? 'success' : isProcessing ? 'info' : 'default'}
-              size="sm"
-            >
-              {currentStepIndex + 1}/{PIPELINE_STEPS.length}
-            </Badge>
-          )}
-        </Button>
-      </div>
 
       {/* ERROR / LOGIN REQUIRED BANNER */}
       {pipelineError && (
@@ -1795,13 +1643,106 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
         </div>
       )}
 
-      {/* RESULTS AREA (Divided into Left: Content & AI Panels & Right: Photos Panel) */}
-      {(caption || images.length > 0 || source) && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '1.25rem', alignItems: 'start' }}>
-          {/* LEFT: POST CONTENT & AI GENERATOR (SEPARATE MOTHER BOXES) */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-            {/* MOTHER BOX 1: POST CONTENT PANEL */}
+      {/* 2-COLUMN WORKSPACE: LEFT (URL INPUT + CONTENT + AI) / RIGHT (ACTION BUTTONS + PHOTOS) */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))',
+          gap: '1.25rem',
+          alignItems: 'stretch',
+          minHeight: 'calc(100vh - 120px)',
+        }}
+      >
+        {/* ==================== LEFT COLUMN (FULL HEIGHT TO BASE) ==================== */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', height: '100%', minHeight: 0 }}>
+          {/* TOP-LEFT: URL INPUT CONTAINER */}
+          <div
+            style={{
+              backgroundColor: 'var(--bg-secondary)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '0.625rem',
+              padding: '0.5rem 0.625rem',
+              display: 'flex',
+              alignItems: 'center',
+              height: '52px',
+              boxShadow: 'var(--shadow-sm)',
+            }}
+          >
+            {/* Integrated Input Container */}
             <div
+              style={{
+                flex: 1,
+                display: 'flex',
+                alignItems: 'center',
+                backgroundColor: 'var(--bg-main)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '0.375rem',
+                padding: '0 0.75rem',
+                height: '36px',
+                transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
+              }}
+            >
+              <FaFacebook style={{ color: '#1877F2', fontSize: '1rem', flexShrink: 0, marginRight: '0.5rem' }} />
+              <input
+                type="text"
+                placeholder="Paste Facebook post URL (e.g. https://www.facebook.com/share/p/...)"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && url.trim() && !isProcessing) {
+                    handleStartImport();
+                  }
+                }}
+                disabled={isProcessing}
+                style={{
+                  flex: 1,
+                  background: 'transparent',
+                  border: 'none',
+                  outline: 'none',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.8125rem',
+                  minWidth: 0,
+                }}
+              />
+              {url && !isProcessing && (
+                <button
+                  type="button"
+                  onClick={() => setUrl('')}
+                  title="Clear input"
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'var(--text-muted)',
+                    cursor: 'pointer',
+                    padding: '2px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    marginRight: '0.375rem',
+                  }}
+                >
+                  <FiX style={{ fontSize: '13px' }} />
+                </button>
+              )}
+              <kbd
+                style={{
+                  fontSize: '0.6875rem',
+                  padding: '2px 5px',
+                  borderRadius: '3px',
+                  backgroundColor: 'rgba(255, 255, 255, 0.06)',
+                  border: '1px solid var(--border-color)',
+                  color: 'var(--text-muted)',
+                  lineHeight: 1,
+                  fontFamily: 'monospace',
+                  userSelect: 'none',
+                }}
+              >
+                ↵ Enter
+              </kbd>
+            </div>
+          </div>
+
+          {/* MOTHER BOX 1: POST CONTENT PANEL */}
+          <div
             style={{
               backgroundColor: 'var(--bg-secondary)',
               border: '1px solid var(--border-color)',
@@ -2228,7 +2169,88 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
           </div>
         </div>
 
-        {/* RIGHT: IMPORTED PHOTOS PANEL */}
+        {/* ==================== RIGHT COLUMN (FULL HEIGHT TO BASE) ==================== */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', height: '100%', minHeight: 0 }}>
+          {/* TOP-RIGHT: ACTION BUTTONS CONTAINER */}
+          <div
+            style={{
+              backgroundColor: 'var(--bg-secondary)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '0.625rem',
+              padding: '0.5rem 0.625rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'flex-end',
+              gap: '0.625rem',
+              height: '52px',
+              boxShadow: 'var(--shadow-sm)',
+            }}
+          >
+            {/* Primary Import Button */}
+            <Button
+              variant="primary"
+              onClick={handleStartImport}
+              disabled={!url.trim() || isProcessing}
+              leftIcon={
+                isProcessing ? (
+                  <FiRefreshCw className="spin" style={{ animation: 'spin 1s linear infinite', fontSize: '13px' }} />
+                ) : (
+                  <FiDownload style={{ fontSize: '13px' }} />
+                )
+              }
+              style={{
+                height: '36px',
+                padding: '0 1rem',
+                fontWeight: 600,
+                fontSize: '0.8125rem',
+                backgroundColor: '#1877F2',
+                borderColor: '#1877F2',
+                borderRadius: '0.375rem',
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
+              }}
+            >
+              {isProcessing ? 'Importing...' : 'Import Post'}
+            </Button>
+
+            {/* Pipeline & Activity Log Modal Button */}
+            <Button
+              variant="outline"
+              onClick={() => setShowPipelineModal(true)}
+              leftIcon={
+                isProcessing ? (
+                  <FiRefreshCw className="spin" style={{ animation: 'spin 1s linear infinite', fontSize: '13px', color: '#3B82F6' }} />
+                ) : (
+                  <FiActivity style={{ fontSize: '14px', color: currentStepIndex >= 0 ? '#22C55E' : 'var(--text-muted)' }} />
+                )
+              }
+              style={{
+                height: '36px',
+                padding: '0 0.875rem',
+                fontSize: '0.8125rem',
+                fontWeight: 500,
+                borderRadius: '0.375rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                flexShrink: 0,
+                backgroundColor: 'var(--bg-main)',
+                border: '1px solid var(--border-color)',
+              }}
+            >
+              <span>Pipeline & Activity Log</span>
+              {currentStepIndex >= 0 && (
+                <Badge
+                  variant={currentStepIndex === PIPELINE_STEPS.length - 1 ? 'success' : isProcessing ? 'info' : 'default'}
+                  size="sm"
+                >
+                  {currentStepIndex + 1}/{PIPELINE_STEPS.length}
+                </Badge>
+              )}
+            </Button>
+          </div>
+
+          {/* MOTHER BOX 3: IMPORTED PHOTOS PANEL (STRETCH TO BASE) */}
           <div
             style={{
               backgroundColor: 'var(--bg-secondary)',
@@ -2239,6 +2261,8 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
               flexDirection: 'column',
               gap: '1rem',
               boxShadow: 'var(--shadow-sm)',
+              flex: 1,
+              minHeight: 0,
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -2262,6 +2286,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                   color: 'var(--text-muted)',
                   border: '1px dashed var(--border-color)',
                   borderRadius: '0.5rem',
+                  minHeight: '260px',
                 }}
               >
                 <FiImage style={{ fontSize: '2rem', marginBottom: '0.5rem', opacity: 0.5 }} />
@@ -2273,9 +2298,11 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                   display: 'grid',
                   gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
                   gap: '0.75rem',
-                  maxHeight: '400px',
+                  flex: 1,
                   overflowY: 'auto',
                   paddingRight: '0.25rem',
+                  maxHeight: 'calc(100vh - 270px)',
+                  minHeight: '300px',
                 }}
               >
                 {images.map((img) => (
@@ -2383,7 +2410,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
             )}
           </div>
         </div>
-      )}
+      </div>
 
 
 
