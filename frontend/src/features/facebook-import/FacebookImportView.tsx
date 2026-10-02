@@ -2225,100 +2225,74 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                     key={img.index}
                     onClick={() => setPreviewImage(img.stored_url || img.source_url)}
                     style={{
-                      backgroundColor: 'var(--bg-main)',
+                      position: 'relative',
+                      backgroundColor: '#000',
                       border: '1px solid var(--border-color)',
                       borderRadius: '0.5rem',
                       overflow: 'hidden',
                       cursor: 'pointer',
+                      aspectRatio: '4 / 3',
                       display: 'flex',
-                      flexDirection: 'column',
                     }}
                   >
-                    <div style={{ position: 'relative', height: '110px', backgroundColor: '#000' }}>
-                      <img
-                        id={`imported-fb-photo-${img.index}`}
-                        crossOrigin="anonymous"
-                        src={img.stored_url ? `http://localhost:8085${img.stored_url}` : img.source_url}
-                        alt={`Photo ${img.index}`}
-                        loading="lazy"
-                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                      />
-                      <span
-                        style={{
-                          position: 'absolute',
-                          top: '6px',
-                          left: '6px',
-                          backgroundColor: 'rgba(0,0,0,0.75)',
-                          color: '#fff',
-                          fontSize: '0.6875rem',
-                          padding: '2px 6px',
-                          borderRadius: '4px',
-                          fontWeight: 600,
-                          backdropFilter: 'blur(4px)',
-                          boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
-                          zIndex: 2,
-                        }}
-                      >
-                        #{String(img.index).padStart(2, '0')}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          const fullUrl = img.stored_url
-                            ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
-                            : img.source_url;
-                          handleCopyImage({ index: img.index, url: fullUrl }, e);
-                        }}
-                        title={copiedImageIndex === img.index ? 'Copied image to clipboard!' : 'Copy image to clipboard'}
-                        aria-label="Copy image"
-                        style={{
-                          position: 'absolute',
-                          top: '6px',
-                          right: '6px',
-                          width: '32px',
-                          height: '32px',
-                          backgroundColor: copiedImageIndex === img.index ? '#10B981' : 'rgba(15, 23, 42, 0.85)',
-                          color: '#fff',
-                          border: copiedImageIndex === img.index ? '1px solid #059669' : '1px solid rgba(255, 255, 255, 0.35)',
-                          borderRadius: '6px',
-                          padding: 0,
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          backdropFilter: 'blur(4px)',
-                          boxShadow: '0 2px 6px rgba(0,0,0,0.45)',
-                          transition: 'all 0.15s ease',
-                          zIndex: 2,
-                        }}
-                        onMouseEnter={(e) => {
-                          if (copiedImageIndex !== img.index) {
-                            e.currentTarget.style.backgroundColor = 'rgba(30, 41, 59, 0.95)';
-                            e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.6)';
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          if (copiedImageIndex !== img.index) {
-                            e.currentTarget.style.backgroundColor = 'rgba(15, 23, 42, 0.85)';
-                            e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.35)';
-                          }
-                        }}
-                      >
-                        {copiedImageIndex === img.index ? (
-                          <FiCheck style={{ fontSize: '18px', strokeWidth: 3 }} />
-                        ) : (
-                          <FiCopy style={{ fontSize: '18px' }} />
-                        )}
-                      </button>
-                    </div>
-                    <div style={{ padding: '0.375rem 0.5rem', fontSize: '0.6875rem' }}>
-                      <div style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>
-                        {img.width > 0 && img.height > 0 ? `${img.width} × ${img.height}` : 'Imported'}
-                      </div>
-                      <div style={{ color: 'var(--status-success)', fontSize: '0.625rem' }}>
-                        {img.status === 'downloaded' ? 'Stored Locally' : 'Ready'}
-                      </div>
-                    </div>
+                    <img
+                      id={`imported-fb-photo-${img.index}`}
+                      crossOrigin="anonymous"
+                      src={img.stored_url ? `http://localhost:8085${img.stored_url}` : img.source_url}
+                      alt={`Photo ${img.index}`}
+                      loading="lazy"
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    />
+                    <span
+                      style={{
+                        position: 'absolute',
+                        top: '6px',
+                        left: '6px',
+                        backgroundColor: 'rgba(0, 0, 0, 0.65)',
+                        color: '#fff',
+                        fontSize: '0.6875rem',
+                        padding: '2px 6px',
+                        borderRadius: '4px',
+                        fontWeight: 600,
+                        zIndex: 2,
+                      }}
+                    >
+                      #{String(img.index).padStart(2, '0')}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        const fullUrl = img.stored_url
+                          ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
+                          : img.source_url;
+                        handleCopyImage({ index: img.index, url: fullUrl }, e);
+                      }}
+                      title={copiedImageIndex === img.index ? 'Copied image to clipboard!' : 'Copy image to clipboard'}
+                      aria-label="Copy image"
+                      style={{
+                        position: 'absolute',
+                        top: '6px',
+                        right: '6px',
+                        width: '26px',
+                        height: '26px',
+                        backgroundColor: 'rgba(0, 0, 0, 0.65)',
+                        color: copiedImageIndex === img.index ? '#10B981' : '#FFFFFF',
+                        border: copiedImageIndex === img.index ? '1px solid rgba(16, 185, 129, 0.5)' : '1px solid rgba(255, 255, 255, 0.25)',
+                        borderRadius: '4px',
+                        padding: 0,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        zIndex: 2,
+                      }}
+                    >
+                      {copiedImageIndex === img.index ? (
+                        <FiCheck style={{ fontSize: '13px' }} />
+                      ) : (
+                        <FiCopy style={{ fontSize: '13px' }} />
+                      )}
+                    </button>
                   </div>
                 ))}
               </div>
