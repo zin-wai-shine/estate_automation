@@ -210,6 +210,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
   const [showRawJsonModal, setShowRawJsonModal] = useState(false);
   const [showLiveBrowserModal, setShowLiveBrowserModal] = useState(false);
   const [showPipelineModal, setShowPipelineModal] = useState(false);
+  const [showPostContentModal, setShowPostContentModal] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   // Top Nav Bar Portal Targets
@@ -1764,6 +1765,41 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
               )}
             </Button>
 
+            {/* View Post Content & Raw Data Modal Button (Icon Only) */}
+            <Button
+              variant="outline"
+              onClick={() => setShowPostContentModal(true)}
+              disabled={!caption && !source}
+              title={
+                caption || source
+                  ? 'View Post Content & Raw Data'
+                  : 'Post Content (Import a post first)'
+              }
+              aria-label="View Post Content & Raw Data"
+              style={{
+                width: '36px',
+                height: '36px',
+                padding: 0,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: '0.375rem',
+                flexShrink: 0,
+                backgroundColor: caption || source ? 'rgba(59, 130, 246, 0.1)' : 'var(--bg-main)',
+                border: caption || source ? '1px solid rgba(59, 130, 246, 0.4)' : '1px solid var(--border-color)',
+                opacity: !caption && !source ? 0.45 : 1,
+                cursor: !caption && !source ? 'not-allowed' : 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              <FiFileText
+                style={{
+                  fontSize: '15px',
+                  color: caption || source ? '#3B82F6' : 'var(--text-muted)',
+                }}
+              />
+            </Button>
+
             {/* Pipeline & Activity Log Modal Button (Icon Only) */}
             <Button
               variant="outline"
@@ -1795,156 +1831,6 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
             </Button>
           </div>
 
-          {/* MOTHER BOX 1: POST CONTENT PANEL */}
-          <div
-            style={{
-              backgroundColor: 'var(--bg-secondary)',
-              border: '1px solid var(--border-color)',
-              borderRadius: '0.75rem',
-              padding: '1.25rem',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '1rem',
-              boxShadow: 'var(--shadow-sm)',
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
-                Post Content
-              </h3>
-              <Badge variant="info" size="sm">
-                {source?.extraction_method || 'OpenClaw Browser'}
-              </Badge>
-            </div>
-
-            {/* Source Meta Metadata */}
-            <div
-              style={{
-                backgroundColor: 'var(--bg-main)',
-                border: '1px solid var(--border-color)',
-                borderRadius: '0.5rem',
-                padding: '0.75rem',
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: '0.5rem',
-                fontSize: '0.75rem',
-              }}
-            >
-              <div>
-                <span style={{ color: 'var(--text-muted)' }}>Source:</span>{' '}
-                <strong style={{ color: 'var(--text-primary)' }}>{source?.source_type || 'Facebook Post'}</strong>
-              </div>
-              <div>
-                <span style={{ color: 'var(--text-muted)' }}>Author:</span>{' '}
-                <strong style={{ color: 'var(--text-primary)' }}>{source?.source_name || 'N/A'}</strong>
-              </div>
-              <div style={{ gridColumn: 'span 2', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                <span style={{ color: 'var(--text-muted)' }}>Canonical:</span>{' '}
-                <a
-                  href={source?.canonical_url || url}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{ color: 'var(--accent-primary)', textDecoration: 'none' }}
-                >
-                  {source?.canonical_url || url} <FiExternalLink style={{ fontSize: '0.6875rem' }} />
-                </a>
-              </div>
-              {languages.length > 0 && (
-                <div style={{ gridColumn: 'span 2' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>Languages:</span>{' '}
-                  <span style={{ color: 'var(--text-secondary)' }}>{languages.join(', ')}</span>
-                </div>
-              )}
-            </div>
-
-            {/* Original Raw Facebook Caption Box (Untouched) */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <label style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                  Visible Caption (Raw Extracted Data)
-                </label>
-                <button
-                  type="button"
-                  onClick={handleCopyCaption}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '0.25rem',
-                    background: 'transparent',
-                    border: 'none',
-                    color: copiedCaption ? 'var(--status-success)' : 'var(--accent-primary)',
-                    fontSize: '0.75rem',
-                    cursor: 'pointer',
-                  }}
-                >
-                  {copiedCaption ? <FiCheck /> : <FiCopy />}
-                  <span>{copiedCaption ? 'Copied!' : 'Copy Caption'}</span>
-                </button>
-              </div>
-
-              <div
-                style={{
-                  backgroundColor: 'var(--bg-main)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: '0.5rem',
-                  padding: '0.75rem',
-                  fontSize: '0.8125rem',
-                  color: 'var(--text-primary)',
-                  whiteSpace: 'pre-wrap',
-                  maxHeight: '200px',
-                  overflowY: 'auto',
-                  lineHeight: 1.6,
-                }}
-              >
-                {caption || <span style={{ color: 'var(--text-muted)' }}>No caption extracted</span>}
-              </div>
-            </div>
-
-            {/* Action Buttons for Raw Data */}
-            <div style={{ display: 'flex', gap: '0.625rem', paddingTop: '0.25rem', alignItems: 'center' }}>
-              <Button
-                variant="outline"
-                size="md"
-                onClick={() => setShowRawJsonModal(true)}
-                leftIcon={<FiCode style={{ fontSize: '15px' }} />}
-                style={{
-                  height: '38px',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '0.5rem',
-                  whiteSpace: 'nowrap',
-                  padding: '0 1.125rem',
-                  fontSize: '0.8125rem',
-                  fontWeight: 500,
-                  borderRadius: '0.375rem',
-                }}
-              >
-                View Raw Data
-              </Button>
-              <Button
-                variant="outline"
-                size="md"
-                onClick={handleRerunExtraction}
-                leftIcon={<FiRefreshCw style={{ fontSize: '15px' }} />}
-                style={{
-                  height: '38px',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '0.5rem',
-                  whiteSpace: 'nowrap',
-                  padding: '0 1.125rem',
-                  fontSize: '0.8125rem',
-                  fontWeight: 500,
-                  borderRadius: '0.375rem',
-                }}
-              >
-                Re-run Extraction
-              </Button>
-            </div>
-          </div>
-
           {/* MOTHER BOX 2: AI COPY GENERATOR PANEL */}
           <div
             style={{
@@ -1956,6 +1842,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
               flexDirection: 'column',
               gap: '1rem',
               boxShadow: 'var(--shadow-sm)',
+              flex: 1,
             }}
           >
             {/* Header */}
@@ -2389,8 +2276,168 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
 
 
 
+      {/* POST CONTENT & RAW EXTRACTED DATA MODAL */}
+      <Modal
+        isOpen={showPostContentModal}
+        onClose={() => setShowPostContentModal(false)}
+        closeOnOverlayClick={true}
+        maxWidth="760px"
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+            <FiFileText style={{ color: 'var(--accent-primary)', fontSize: '1.25rem' }} />
+            <span style={{ fontSize: '1.05rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+              Post Content & Raw Data
+            </span>
+            {source?.extraction_method && (
+              <Badge variant="info" size="sm">
+                {source.extraction_method}
+              </Badge>
+            )}
+          </div>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          {/* Source Meta Metadata */}
+          <div
+            style={{
+              backgroundColor: 'var(--bg-main)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '0.5rem',
+              padding: '0.875rem',
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: '0.625rem',
+              fontSize: '0.8125rem',
+            }}
+          >
+            <div>
+              <span style={{ color: 'var(--text-muted)' }}>Source:</span>{' '}
+              <strong style={{ color: 'var(--text-primary)' }}>{source?.source_type || 'Facebook Post'}</strong>
+            </div>
+            <div>
+              <span style={{ color: 'var(--text-muted)' }}>Author:</span>{' '}
+              <strong style={{ color: 'var(--text-primary)' }}>{source?.source_name || 'N/A'}</strong>
+            </div>
+            <div style={{ gridColumn: 'span 2', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <span style={{ color: 'var(--text-muted)' }}>Canonical:</span>{' '}
+              <a
+                href={source?.canonical_url || url}
+                target="_blank"
+                rel="noreferrer"
+                style={{ color: 'var(--accent-primary)', textDecoration: 'none' }}
+              >
+                {source?.canonical_url || url} <FiExternalLink style={{ fontSize: '0.6875rem' }} />
+              </a>
+            </div>
+            {languages.length > 0 && (
+              <div style={{ gridColumn: 'span 2' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Languages:</span>{' '}
+                <span style={{ color: 'var(--text-secondary)' }}>{languages.join(', ')}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Original Raw Facebook Caption Box */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <label style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                Visible Caption (Raw Extracted Data)
+              </label>
+              <button
+                type="button"
+                onClick={handleCopyCaption}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.25rem',
+                  background: 'transparent',
+                  border: 'none',
+                  color: copiedCaption ? 'var(--status-success)' : 'var(--accent-primary)',
+                  fontSize: '0.75rem',
+                  cursor: 'pointer',
+                }}
+              >
+                {copiedCaption ? <FiCheck /> : <FiCopy />}
+                <span>{copiedCaption ? 'Copied!' : 'Copy Caption'}</span>
+              </button>
+            </div>
+
+            <div
+              style={{
+                backgroundColor: 'var(--bg-main)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '0.5rem',
+                padding: '0.875rem',
+                fontSize: '0.8125rem',
+                color: 'var(--text-primary)',
+                whiteSpace: 'pre-wrap',
+                maxHeight: '280px',
+                overflowY: 'auto',
+                lineHeight: 1.6,
+              }}
+            >
+              {caption || <span style={{ color: 'var(--text-muted)' }}>No caption extracted</span>}
+            </div>
+          </div>
+
+          {/* Action Buttons for Raw Data */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '0.25rem' }}>
+            <div style={{ display: 'flex', gap: '0.625rem', alignItems: 'center' }}>
+              <Button
+                variant="outline"
+                size="md"
+                onClick={() => setShowRawJsonModal(true)}
+                leftIcon={<FiCode style={{ fontSize: '15px' }} />}
+                style={{
+                  height: '38px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.5rem',
+                  whiteSpace: 'nowrap',
+                  padding: '0 1.125rem',
+                  fontSize: '0.8125rem',
+                  fontWeight: 500,
+                  borderRadius: '0.375rem',
+                }}
+              >
+                View Raw JSON
+              </Button>
+              <Button
+                variant="outline"
+                size="md"
+                onClick={handleRerunExtraction}
+                leftIcon={<FiRefreshCw style={{ fontSize: '15px' }} />}
+                style={{
+                  height: '38px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.5rem',
+                  whiteSpace: 'nowrap',
+                  padding: '0 1.125rem',
+                  fontSize: '0.8125rem',
+                  fontWeight: 500,
+                  borderRadius: '0.375rem',
+                }}
+              >
+                Re-run Extraction
+              </Button>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => setShowPostContentModal(false)}>
+              Close
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
       {/* RAW JSON MODAL */}
-      <Modal isOpen={showRawJsonModal} onClose={() => setShowRawJsonModal(false)} title="Raw Extraction JSON Data">
+      <Modal
+        isOpen={showRawJsonModal}
+        onClose={() => setShowRawJsonModal(false)}
+        title="Raw Extraction JSON Data"
+        zIndex={100010}
+      >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
           <pre
             style={{
