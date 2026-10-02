@@ -1032,6 +1032,17 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
     handleStartImport();
   };
 
+  const hasDataToClear = Boolean(
+    url.trim() ||
+    caption.trim() ||
+    images.length > 0 ||
+    source ||
+    logs.length > 0 ||
+    aiGeneratedCopy ||
+    Object.keys(aiGeneratedOutputs).length > 0 ||
+    propertyData.project_name
+  );
+
   const handleDeleteImport = () => {
     setUrl('');
     setSource(null);
@@ -1041,6 +1052,8 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
     setCurrentStepIndex(-1);
     setPipelineError(null);
     setPipelineErrorCode(null);
+    setBrowserState('Browser Ready');
+    setIsProcessing(false);
     setLogs([]);
     setAiGeneratedOutputs({});
     setAiGeneratedCopy('');
@@ -1064,6 +1077,12 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
       contact_line: '',
     });
     setManualMode(false);
+    setCopiedCaption(false);
+    setCopiedImageIndex(null);
+    setPreviewImage(null);
+    setShowPostContentModal(false);
+    setShowRawJsonModal(false);
+    setShowPipelineModal(false);
     try {
       localStorage.removeItem(FB_IMPORT_SESSION_KEY);
     } catch {}
@@ -1190,6 +1209,40 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
               }}
             >
               Live Browser
+            </Button>
+
+            {/* Clear All Data Button */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleDeleteImport}
+              disabled={!hasDataToClear}
+              title={
+                hasDataToClear
+                  ? 'Clear all imported data and reset view'
+                  : 'No data to clear'
+              }
+              leftIcon={<FiTrash2 style={{ fontSize: '12px' }} />}
+              style={{
+                height: '30px',
+                padding: '0 0.625rem',
+                fontWeight: 500,
+                fontSize: '0.75rem',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.375rem',
+                whiteSpace: 'nowrap',
+                borderRadius: '0.375rem',
+                color: hasDataToClear ? 'var(--status-danger, #EF4444)' : 'var(--text-muted)',
+                borderColor: hasDataToClear ? 'rgba(239, 68, 68, 0.35)' : 'var(--border-color)',
+                backgroundColor: hasDataToClear ? 'rgba(239, 68, 68, 0.06)' : 'transparent',
+                opacity: hasDataToClear ? 1 : 0.45,
+                cursor: hasDataToClear ? 'pointer' : 'not-allowed',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              Clear
             </Button>
           </div>,
           headerActionEl
