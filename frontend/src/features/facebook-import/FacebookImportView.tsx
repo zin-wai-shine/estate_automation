@@ -1655,7 +1655,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
       >
         {/* ==================== LEFT COLUMN (FULL HEIGHT TO BASE) ==================== */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', height: '100%', minHeight: 0 }}>
-          {/* TOP-LEFT: URL INPUT CONTAINER */}
+          {/* TOP-LEFT: UNIFIED URL INPUT & ACTION BUTTONS CONTAINER */}
           <div
             style={{
               backgroundColor: 'var(--bg-secondary)',
@@ -1664,6 +1664,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
               padding: '0.5rem 0.625rem',
               display: 'flex',
               alignItems: 'center',
+              gap: '0.5rem',
               height: '52px',
               boxShadow: 'var(--shadow-sm)',
             }}
@@ -1679,6 +1680,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                 borderRadius: '0.375rem',
                 padding: '0 0.75rem',
                 height: '36px',
+                minWidth: 0,
                 transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
               }}
             >
@@ -1739,6 +1741,69 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                 ↵ Enter
               </kbd>
             </div>
+
+            {/* Primary Import Button */}
+            <Button
+              variant="primary"
+              onClick={handleStartImport}
+              disabled={!url.trim() || isProcessing}
+              leftIcon={
+                isProcessing ? (
+                  <FiRefreshCw className="spin" style={{ animation: 'spin 1s linear infinite', fontSize: '13px' }} />
+                ) : (
+                  <FiDownload style={{ fontSize: '13px' }} />
+                )
+              }
+              style={{
+                height: '36px',
+                padding: '0 0.875rem',
+                fontWeight: 600,
+                fontSize: '0.8125rem',
+                backgroundColor: '#1877F2',
+                borderColor: '#1877F2',
+                borderRadius: '0.375rem',
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
+              }}
+            >
+              {isProcessing ? 'Importing...' : 'Import Post'}
+            </Button>
+
+            {/* Pipeline & Activity Log Modal Button */}
+            <Button
+              variant="outline"
+              onClick={() => setShowPipelineModal(true)}
+              leftIcon={
+                isProcessing ? (
+                  <FiRefreshCw className="spin" style={{ animation: 'spin 1s linear infinite', fontSize: '13px', color: '#3B82F6' }} />
+                ) : (
+                  <FiActivity style={{ fontSize: '14px', color: currentStepIndex >= 0 ? '#22C55E' : 'var(--text-muted)' }} />
+                )
+              }
+              style={{
+                height: '36px',
+                padding: '0 0.75rem',
+                fontSize: '0.8125rem',
+                fontWeight: 500,
+                borderRadius: '0.375rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.375rem',
+                flexShrink: 0,
+                backgroundColor: 'var(--bg-main)',
+                border: '1px solid var(--border-color)',
+              }}
+            >
+              <span>Pipeline & Activity Log</span>
+              {currentStepIndex >= 0 && (
+                <Badge
+                  variant={currentStepIndex === PIPELINE_STEPS.length - 1 ? 'success' : isProcessing ? 'info' : 'default'}
+                  size="sm"
+                >
+                  {currentStepIndex + 1}/{PIPELINE_STEPS.length}
+                </Badge>
+              )}
+            </Button>
           </div>
 
           {/* MOTHER BOX 1: POST CONTENT PANEL */}
@@ -2171,85 +2236,6 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
 
         {/* ==================== RIGHT COLUMN (FULL HEIGHT TO BASE) ==================== */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', height: '100%', minHeight: 0 }}>
-          {/* TOP-RIGHT: ACTION BUTTONS CONTAINER */}
-          <div
-            style={{
-              backgroundColor: 'var(--bg-secondary)',
-              border: '1px solid var(--border-color)',
-              borderRadius: '0.625rem',
-              padding: '0.5rem 0.625rem',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'flex-end',
-              gap: '0.625rem',
-              height: '52px',
-              boxShadow: 'var(--shadow-sm)',
-            }}
-          >
-            {/* Primary Import Button */}
-            <Button
-              variant="primary"
-              onClick={handleStartImport}
-              disabled={!url.trim() || isProcessing}
-              leftIcon={
-                isProcessing ? (
-                  <FiRefreshCw className="spin" style={{ animation: 'spin 1s linear infinite', fontSize: '13px' }} />
-                ) : (
-                  <FiDownload style={{ fontSize: '13px' }} />
-                )
-              }
-              style={{
-                height: '36px',
-                padding: '0 1rem',
-                fontWeight: 600,
-                fontSize: '0.8125rem',
-                backgroundColor: '#1877F2',
-                borderColor: '#1877F2',
-                borderRadius: '0.375rem',
-                whiteSpace: 'nowrap',
-                flexShrink: 0,
-              }}
-            >
-              {isProcessing ? 'Importing...' : 'Import Post'}
-            </Button>
-
-            {/* Pipeline & Activity Log Modal Button */}
-            <Button
-              variant="outline"
-              onClick={() => setShowPipelineModal(true)}
-              leftIcon={
-                isProcessing ? (
-                  <FiRefreshCw className="spin" style={{ animation: 'spin 1s linear infinite', fontSize: '13px', color: '#3B82F6' }} />
-                ) : (
-                  <FiActivity style={{ fontSize: '14px', color: currentStepIndex >= 0 ? '#22C55E' : 'var(--text-muted)' }} />
-                )
-              }
-              style={{
-                height: '36px',
-                padding: '0 0.875rem',
-                fontSize: '0.8125rem',
-                fontWeight: 500,
-                borderRadius: '0.375rem',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem',
-                flexShrink: 0,
-                backgroundColor: 'var(--bg-main)',
-                border: '1px solid var(--border-color)',
-              }}
-            >
-              <span>Pipeline & Activity Log</span>
-              {currentStepIndex >= 0 && (
-                <Badge
-                  variant={currentStepIndex === PIPELINE_STEPS.length - 1 ? 'success' : isProcessing ? 'info' : 'default'}
-                  size="sm"
-                >
-                  {currentStepIndex + 1}/{PIPELINE_STEPS.length}
-                </Badge>
-              )}
-            </Button>
-          </div>
-
           {/* MOTHER BOX 3: IMPORTED PHOTOS PANEL (STRETCH TO BASE) */}
           <div
             style={{
