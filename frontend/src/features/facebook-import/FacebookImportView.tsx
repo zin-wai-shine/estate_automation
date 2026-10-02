@@ -2186,8 +2186,8 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
 
                     {/* Generate / Regenerate & Actions */}
                     {hasGenerated ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', width: '100%', marginTop: 'auto' }}>
-                        {/* Regenerate button: Normal size */}
+                      <div style={{ display: 'flex', gap: '0.375rem', alignItems: 'center', width: '100%', marginTop: 'auto' }}>
+                        {/* Regenerate button */}
                         <button
                           type="button"
                           onClick={(e) => {
@@ -2197,8 +2197,8 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                           }}
                           disabled={isBoxLoading || !caption.trim()}
                           style={{
-                            height: '34px',
-                            width: '100%',
+                            flex: 1,
+                            height: '32px',
                             backgroundColor: 'var(--accent-primary)',
                             border: 'none',
                             borderRadius: '0.375rem',
@@ -2210,7 +2210,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            gap: '6px',
+                            gap: '5px',
                             transition: 'opacity 0.15s ease',
                           }}
                         >
@@ -2221,72 +2221,65 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                           <span>{isBoxLoading ? 'Regenerating...' : 'Regenerate'}</span>
                         </button>
 
-                        {/* Copy & Result buttons: Normal size */}
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', width: '100%' }}>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              const copyText = aiGeneratedOutputs[box.id];
-                              if (!copyText) return;
-                              navigator.clipboard.writeText(copyText);
-                              setCopiedBoxId(box.id);
-                              setTimeout(() => setCopiedBoxId(null), 2000);
-                            }}
-                            title="Copy AI Copy"
-                            style={{
-                              height: '32px',
-                              padding: '0 0.5rem',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              gap: '5px',
-                              borderRadius: '0.375rem',
-                              border: '1px solid var(--border-color)',
-                              backgroundColor: copiedBoxId === box.id ? 'rgba(16, 185, 129, 0.15)' : 'var(--bg-secondary)',
-                              color: copiedBoxId === box.id ? 'var(--status-success)' : 'var(--text-primary)',
-                              fontSize: '0.8125rem',
-                              fontWeight: 500,
-                              cursor: 'pointer',
-                              transition: 'all 0.15s ease',
-                            }}
-                          >
-                            {copiedBoxId === box.id ? <FiCheck style={{ fontSize: '12px' }} /> : <FiCopy style={{ fontSize: '12px' }} />}
-                            <span>{copiedBoxId === box.id ? 'Copied' : 'Copy'}</span>
-                          </button>
+                        {/* Copy button: Icon only */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const copyText = aiGeneratedOutputs[box.id];
+                            if (!copyText) return;
+                            navigator.clipboard.writeText(copyText);
+                            setCopiedBoxId(box.id);
+                            setTimeout(() => setCopiedBoxId(null), 2000);
+                          }}
+                          title={copiedBoxId === box.id ? 'Copied!' : 'Copy AI Copy'}
+                          style={{
+                            width: '32px',
+                            height: '32px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            borderRadius: '0.375rem',
+                            border: '1px solid var(--border-color)',
+                            backgroundColor: copiedBoxId === box.id ? 'rgba(16, 185, 129, 0.15)' : 'var(--bg-secondary)',
+                            color: copiedBoxId === box.id ? 'var(--status-success)' : 'var(--text-secondary)',
+                            cursor: 'pointer',
+                            flexShrink: 0,
+                            transition: 'all 0.15s ease',
+                          }}
+                        >
+                          {copiedBoxId === box.id ? <FiCheck style={{ fontSize: '13px' }} /> : <FiCopy style={{ fontSize: '13px' }} />}
+                        </button>
 
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setActiveAIBoxId(box.id);
-                              if (aiGeneratedOutputs[box.id]) {
-                                setAiGeneratedCopy(aiGeneratedOutputs[box.id]);
-                              }
-                              setViewingResultBox(box);
-                            }}
-                            title="View Result"
-                            style={{
-                              height: '32px',
-                              padding: '0 0.5rem',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              gap: '5px',
-                              borderRadius: '0.375rem',
-                              border: '1px solid var(--border-color)',
-                              backgroundColor: 'var(--bg-secondary)',
-                              color: 'var(--text-primary)',
-                              fontSize: '0.8125rem',
-                              fontWeight: 500,
-                              cursor: 'pointer',
-                              transition: 'all 0.15s ease',
-                            }}
-                          >
-                            <FiFileText style={{ fontSize: '12px', color: 'var(--accent-primary)' }} />
-                            <span>Result</span>
-                          </button>
-                        </div>
+                        {/* Result button: Icon only */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveAIBoxId(box.id);
+                            if (aiGeneratedOutputs[box.id]) {
+                              setAiGeneratedCopy(aiGeneratedOutputs[box.id]);
+                            }
+                            setViewingResultBox(box);
+                          }}
+                          title="View Result"
+                          style={{
+                            width: '32px',
+                            height: '32px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            borderRadius: '0.375rem',
+                            border: '1px solid var(--border-color)',
+                            backgroundColor: 'var(--bg-secondary)',
+                            color: 'var(--accent-primary)',
+                            cursor: 'pointer',
+                            flexShrink: 0,
+                            transition: 'all 0.15s ease',
+                          }}
+                        >
+                          <FiFileText style={{ fontSize: '13px' }} />
+                        </button>
                       </div>
                     ) : (
                       /* Generate button: Normal size */
