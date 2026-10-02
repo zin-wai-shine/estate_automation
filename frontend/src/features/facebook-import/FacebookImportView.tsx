@@ -2214,7 +2214,10 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                 style={{
                   display: 'grid',
                   gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
-                  gap: '0.75rem',
+                  gap: '0.625rem',
+                  alignContent: 'start',
+                  alignItems: 'start',
+                  gridAutoRows: 'max-content',
                   flex: 1,
                   overflowY: 'auto',
                   paddingRight: '0.25rem',
