@@ -1742,66 +1742,60 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
               </kbd>
             </div>
 
-            {/* Primary Import Button */}
+            {/* Primary Import Button (Icon Only) */}
             <Button
               variant="primary"
               onClick={handleStartImport}
               disabled={!url.trim() || isProcessing}
-              leftIcon={
-                isProcessing ? (
-                  <FiRefreshCw className="spin" style={{ animation: 'spin 1s linear infinite', fontSize: '13px' }} />
-                ) : (
-                  <FiDownload style={{ fontSize: '13px' }} />
-                )
-              }
+              title={isProcessing ? 'Importing Facebook post...' : 'Import Post'}
+              aria-label="Import Post"
               style={{
+                width: '36px',
                 height: '36px',
-                padding: '0 0.875rem',
-                fontWeight: 600,
-                fontSize: '0.8125rem',
+                padding: 0,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
                 backgroundColor: '#1877F2',
                 borderColor: '#1877F2',
                 borderRadius: '0.375rem',
-                whiteSpace: 'nowrap',
                 flexShrink: 0,
               }}
             >
-              {isProcessing ? 'Importing...' : 'Import Post'}
+              {isProcessing ? (
+                <FiRefreshCw className="spin" style={{ animation: 'spin 1s linear infinite', fontSize: '15px' }} />
+              ) : (
+                <FiDownload style={{ fontSize: '15px' }} />
+              )}
             </Button>
 
-            {/* Pipeline & Activity Log Modal Button */}
+            {/* Pipeline & Activity Log Modal Button (Icon Only) */}
             <Button
               variant="outline"
               onClick={() => setShowPipelineModal(true)}
-              leftIcon={
-                isProcessing ? (
-                  <FiRefreshCw className="spin" style={{ animation: 'spin 1s linear infinite', fontSize: '13px', color: '#3B82F6' }} />
-                ) : (
-                  <FiActivity style={{ fontSize: '14px', color: currentStepIndex >= 0 ? '#22C55E' : 'var(--text-muted)' }} />
-                )
+              title={
+                currentStepIndex >= 0
+                  ? `Pipeline Status & Activity Log (${currentStepIndex + 1}/${PIPELINE_STEPS.length})`
+                  : 'Pipeline Status & Activity Log'
               }
+              aria-label="Pipeline & Activity Log"
               style={{
+                width: '36px',
                 height: '36px',
-                padding: '0 0.75rem',
-                fontSize: '0.8125rem',
-                fontWeight: 500,
-                borderRadius: '0.375rem',
-                display: 'flex',
+                padding: 0,
+                display: 'inline-flex',
                 alignItems: 'center',
-                gap: '0.375rem',
+                justifyContent: 'center',
+                borderRadius: '0.375rem',
                 flexShrink: 0,
                 backgroundColor: 'var(--bg-main)',
                 border: '1px solid var(--border-color)',
               }}
             >
-              <span>Pipeline & Activity Log</span>
-              {currentStepIndex >= 0 && (
-                <Badge
-                  variant={currentStepIndex === PIPELINE_STEPS.length - 1 ? 'success' : isProcessing ? 'info' : 'default'}
-                  size="sm"
-                >
-                  {currentStepIndex + 1}/{PIPELINE_STEPS.length}
-                </Badge>
+              {isProcessing ? (
+                <FiRefreshCw className="spin" style={{ animation: 'spin 1s linear infinite', fontSize: '15px', color: '#3B82F6' }} />
+              ) : (
+                <FiActivity style={{ fontSize: '15px', color: currentStepIndex >= 0 ? '#22C55E' : 'var(--text-muted)' }} />
               )}
             </Button>
           </div>
