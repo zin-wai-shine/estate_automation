@@ -2133,8 +2133,9 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
               })()}
             </div>
           </div>
+        </div>
 
-          {/* RIGHT: IMPORTED PHOTOS PANEL */}
+        {/* RIGHT: IMPORTED PHOTOS PANEL */}
           <div
             style={{
               backgroundColor: 'var(--bg-secondary)',
