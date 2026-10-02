@@ -25,10 +25,63 @@ import {
 import { FaFacebook } from 'react-icons/fa';
 import { SiGooglegemini } from 'react-icons/si';
 
+export interface CanvasPromptOption {
+  id: string;
+  name: string;
+  category?: string;
+  templateText: string;
+  model?: string;
+}
+
+export const loadAvailablePromptTemplates = (): CanvasPromptOption[] => {
+  try {
+    const raw = localStorage.getItem('estate_prompt_templates');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed
+          .filter((item: any) => item && (item.templateText || item.name))
+          .map((item: any) => ({
+            id: String(item.id),
+            name: item.name || 'Untitled Prompt',
+            category: item.category || 'GENERAL',
+            templateText: item.templateText || '',
+            model: item.model,
+          }));
+      }
+    }
+  } catch (e) {
+    console.error('Failed to load prompt templates', e);
+  }
+  return [
+    {
+      id: '1',
+      name: 'Facebook Rental Listing Copy (Thai/English)',
+      category: 'FACEBOOK_RENT',
+      templateText:
+        'Generate an attractive Facebook real estate rental post for a condo in Bangkok.\nTitle: {title}\nPrice: {price}\nLocation: {location}\nInclude high-converting CTA and relevant hashtags.',
+    },
+    {
+      id: '2',
+      name: 'TikTok Short Video Script & Hook Generator',
+      category: 'TIKTOK',
+      templateText:
+        'Create a viral 15-second TikTok video script for property listing {title}.\nStart with a high-curiosity hook, list 3 key highlights, and end with Line ID CTA.',
+    },
+    {
+      id: '3',
+      name: 'Facebook Property Sale Copy Template',
+      category: 'FACEBOOK_SALE',
+      templateText:
+        'Write a professional sales copy for property sale: {title}.\nHighlight investment yield, BTS access, and price {price}.',
+    },
+  ];
+};
+
 export interface DynamicAIBoxConfig {
   id: string;
   title: string;
-  processType: 'rental' | 'sale' | 'tiktok' | 'line_oa' | 'seo_tags' | 'custom';
+  processType?: 'rental' | 'sale' | 'tiktok' | 'line_oa' | 'seo_tags' | 'custom' | string;
   provider: 'google_ai' | 'openai';
   model: string;
   templateId: string;
@@ -224,6 +277,18 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
   const dragStartCoord = useRef({ x: 0, y: 0 });
   const hasMoved = useRef(false);
 
+  // Available prompt templates from library (synced with PromptTemplatesView)
+  const [availablePrompts, setAvailablePrompts] = useState<CanvasPromptOption[]>(() => loadAvailablePromptTemplates());
+
+  useEffect(() => {
+    const syncPrompts = () => {
+      setAvailablePrompts(loadAvailablePromptTemplates());
+    };
+    syncPrompts();
+    window.addEventListener('storage', syncPrompts);
+    return () => window.removeEventListener('storage', syncPrompts);
+  }, [activeModalNode]);
+
   const canvasRef = useRef<HTMLDivElement>(null);
 
   // Sync to parent and localStorage
@@ -257,20 +322,26 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
   };
 
   // Add Dynamic AI Box
-  const handleAddAIBox = () => {
-    const newId = `ai-box-${Date.now()}`;
+  const handleAddAIBox = (templateOverride?: CanvasPromptOption) => {
+    const prompts = loadAvailablePromptTemplates();
     const boxCount = config.aiBoxes.length;
     const newY = 80 + boxCount * 140;
 
+    // Pick next prompt template from library
+    const chosenTemplate =
+      templateOverride ||
+      (prompts.length > 0 ? prompts[boxCount % prompts.length] : undefined);
+
+    const newId = `ai-box-${Date.now()}`;
     const newBox: DynamicAIBoxConfig = {
       id: newId,
-      title: `AI Process #${boxCount + 1}`,
-      processType: 'rental',
+      title: chosenTemplate ? chosenTemplate.name : `AI Process #${boxCount + 1}`,
       provider: boxCount % 2 === 0 ? 'google_ai' : 'openai',
       model: boxCount % 2 === 0 ? 'gemini-flash-latest' : 'gpt-4o',
-      templateId: '1',
-      templateText:
-        'Generate optimized marketing copy for this property listing.\nHighlight rent/sale price, transit access, and clear call-to-action.',
+      templateId: chosenTemplate ? String(chosenTemplate.id) : 'custom',
+      templateText: chosenTemplate
+        ? chosenTemplate.templateText
+        : 'Generate optimized marketing copy for this property listing.\nHighlight rent/sale price, transit access, and clear call-to-action.',
       customPrompt: '',
       enabled: true,
       x: 640,
@@ -600,7 +671,7 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
           <Button
             variant="outline"
             size="sm"
-            onClick={handleAddAIBox}
+            onClick={() => handleAddAIBox()}
             leftIcon={<FiPlus style={{ color: '#10B981' }} />}
             style={{ height: '32px', fontSize: '0.75rem', borderColor: 'rgba(16, 185, 129, 0.4)', color: '#10B981' }}
           >
@@ -1815,16 +1886,64 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
                   </div>
                 </div>
 
-                {/* Target Process Type */}
+                {/* Select Prompt Template */}
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
-                    Target Process Type
-                  </label>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                      <FiFileText style={{ fontSize: '12px', color: 'var(--accent-primary, #3B82F6)' }} />
+                      Select Prompt Template
+                    </label>
+                    {currentModalAIBox.templateId && currentModalAIBox.templateId !== 'custom' && (
+                      <span style={{ fontSize: '0.625rem', color: '#10B981', fontWeight: 500 }}>
+                        ● Linked to Template
+                      </span>
+                    )}
+                  </div>
                   <Select
-                    options={PROCESS_TYPE_OPTIONS}
-                    value={currentModalAIBox.processType}
-                    onChange={(val) => handleUpdateAIBox(currentModalAIBox.id, { processType: val as any })}
+                    options={[
+                      ...availablePrompts.map((p) => ({
+                        value: String(p.id),
+                        label: p.name,
+                      })),
+                      { value: 'custom', label: '✨ Custom Prompt (Manual Input)' },
+                    ]}
+                    value={
+                      availablePrompts.some((p) => String(p.id) === String(currentModalAIBox.templateId))
+                        ? String(currentModalAIBox.templateId)
+                        : availablePrompts.some((p) => p.name === currentModalAIBox.title)
+                        ? String(availablePrompts.find((p) => p.name === currentModalAIBox.title)!.id)
+                        : currentModalAIBox.templateId === 'custom'
+                        ? 'custom'
+                        : availablePrompts[0]?.id ? String(availablePrompts[0].id) : 'custom'
+                    }
+                    onChange={(val) => {
+                      if (val === 'custom') {
+                        handleUpdateAIBox(currentModalAIBox.id, {
+                          templateId: 'custom',
+                        });
+                        return;
+                      }
+                      const matched = availablePrompts.find((p) => String(p.id) === String(val));
+                      if (matched) {
+                        const isGenericTitle =
+                          !currentModalAIBox.title ||
+                          /^AI Process #\d+/i.test(currentModalAIBox.title) ||
+                          availablePrompts.some(
+                            (p) =>
+                              currentModalAIBox.title === p.name ||
+                              currentModalAIBox.title === `${p.name} - Prompt` ||
+                              currentModalAIBox.title === `${p.name} - Content - Prompt`
+                          );
+
+                        handleUpdateAIBox(currentModalAIBox.id, {
+                          templateId: String(matched.id),
+                          templateText: matched.templateText,
+                          title: isGenericTitle ? matched.name : currentModalAIBox.title,
+                        });
+                      }
+                    }}
                     height="36px"
+                    placeholder="Select prompt template..."
                   />
                 </div>
 
