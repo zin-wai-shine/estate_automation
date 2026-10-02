@@ -205,7 +205,6 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
   const [preferredMethod, setPreferredMethod] = useState<'auto' | 'meta_graph_api' | 'openclaw_browser'>(
     () => savedSession?.preferredMethod || 'auto'
   );
-  const [showAdvanced, setShowAdvanced] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
   const [showRawJsonModal, setShowRawJsonModal] = useState(false);
   const [showLiveBrowserModal, setShowLiveBrowserModal] = useState(false);
@@ -1137,29 +1136,6 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
               </button>
             </label>
 
-            {/* Advanced Settings Toggle */}
-            <button
-              type="button"
-              onClick={() => setShowAdvanced(!showAdvanced)}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.3rem',
-                background: showAdvanced ? 'rgba(255, 255, 255, 0.1)' : 'transparent',
-                border: '1px solid',
-                borderColor: showAdvanced ? 'var(--border-color)' : 'transparent',
-                borderRadius: '0.375rem',
-                color: showAdvanced ? 'var(--text-primary)' : 'var(--text-muted)',
-                cursor: 'pointer',
-                fontSize: '0.75rem',
-                padding: '0.2rem 0.45rem',
-                transition: 'all 0.15s ease',
-              }}
-            >
-              <FiSliders style={{ fontSize: '12px' }} />
-              <span>Advanced</span>
-              {showAdvanced ? <FiChevronUp style={{ fontSize: '11px' }} /> : <FiChevronDown style={{ fontSize: '11px' }} />}
-            </button>
 
             {/* Open Canvas in Modal Button */}
             <Button
@@ -1328,68 +1304,6 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
             {isProcessing ? 'Importing...' : 'Import Post'}
           </Button>
         </div>
-
-        {/* Advanced Controls Dropdown Panel */}
-        {showAdvanced && (
-          <div
-            style={{
-              padding: '0.5rem 0.625rem',
-              backgroundColor: 'var(--bg-main)',
-              border: '1px solid var(--border-color)',
-              borderRadius: '0.375rem',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              flexWrap: 'wrap',
-              gap: '0.625rem',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-                Method:
-              </span>
-              <Select
-                value={preferredMethod}
-                onChange={(val) => setPreferredMethod(val as any)}
-                width="200px"
-                height="30px"
-                options={[
-                  { value: 'auto', label: 'Auto (Meta API → OpenClaw)' },
-                  { value: 'openclaw_browser', label: 'OpenClaw Browser Only' },
-                  { value: 'meta_graph_api', label: 'Meta Graph API Only' },
-                ]}
-              />
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => handleStartImport()}
-                style={{ height: '28px', fontSize: '0.75rem', padding: '0 0.5rem' }}
-              >
-                Re-resolve
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowLiveBrowserModal(true)}
-                style={{ height: '28px', fontSize: '0.75rem', padding: '0 0.5rem' }}
-              >
-                Browser
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowRawJsonModal(true)}
-                leftIcon={<FiCode style={{ fontSize: '12px' }} />}
-                style={{ height: '28px', fontSize: '0.75rem', padding: '0 0.5rem' }}
-              >
-                Raw JSON
-              </Button>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* ERROR / LOGIN REQUIRED BANNER */}
