@@ -442,7 +442,7 @@ func ProxyFacebookImage(c *fiber.Ctx) error {
 }
 
 type GenerateAICopyRequest struct {
-	Provider     string `json:"provider"` // "google_ai" or "openai"
+	Provider     string `json:"provider"` // "google_ai", "openai", or "laozhang_ai"
 	TemplateID   string `json:"template_id"`
 	TemplateName string `json:"template_name"`
 	TemplateText string `json:"template_text"`
@@ -481,7 +481,10 @@ func GenerateAICopy(c *fiber.Ctx) error {
 	var generatedText string
 	var err error
 	provider := strings.ToLower(strings.TrimSpace(req.Provider))
-	if provider == "openai" {
+	if provider == "laozhang_ai" || provider == "laozhang" {
+		provider = "laozhang_ai"
+		generatedText, err = googleAIService.GenerateContentWithLaoZhangAI(prompt, req.RawContent, req.APIKey, req.Model)
+	} else if provider == "openai" {
 		generatedText, err = googleAIService.GenerateContentWithOpenAI(prompt, req.RawContent, req.APIKey, req.Model)
 	} else {
 		provider = "google_ai"

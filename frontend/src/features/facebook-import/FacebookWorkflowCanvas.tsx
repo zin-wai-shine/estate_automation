@@ -24,7 +24,7 @@ import {
 } from 'react-icons/fi';
 import { FaFacebook } from 'react-icons/fa';
 import { SiGooglegemini } from 'react-icons/si';
-import { AITrainingChatbot, ModelSelectorMenu } from './AITrainingChatbot';
+import { AITrainingChatbot, ModelSelectorMenu, LaoZhangIcon } from './AITrainingChatbot';
 import { useTheme } from '../../context/ThemeContext';
 
 export interface CanvasPromptOption {
@@ -84,7 +84,7 @@ export interface DynamicAIBoxConfig {
   id: string;
   title: string;
   processType?: 'rental' | 'sale' | 'tiktok' | 'line_oa' | 'seo_tags' | 'custom' | string;
-  provider: 'google_ai' | 'openai';
+  provider: 'google_ai' | 'openai' | 'laozhang_ai';
   model: string;
   templateId: string;
   templateText: string;
@@ -1478,7 +1478,7 @@ export const FacebookWorkflowCanvas = forwardRef<
               else if (dragWire.fromNodeId === 'get-images') wireColor = '#2EA043';
               else if (dragWire.fromNodeId.startsWith('ai-box-')) {
                 const box = config.aiBoxes.find((b) => b.id === dragWire.fromNodeId);
-                wireColor = box?.provider === 'google_ai' ? '#388BFD' : '#2EA043';
+                wireColor = box?.provider === 'laozhang_ai' ? '#3B82F6' : box?.provider === 'google_ai' ? '#388BFD' : '#2EA043';
               }
 
               return (
@@ -1752,7 +1752,8 @@ export const FacebookWorkflowCanvas = forwardRef<
           {config.aiBoxes.map((box) => {
             const isSelected = selectedBoxId === box.id;
             const isGoogle = box.provider === 'google_ai';
-            const themeColor = isGoogle ? '#388BFD' : '#2EA043';
+            const isLaoZhang = box.provider === 'laozhang_ai';
+            const themeColor = isLaoZhang ? '#2563EB' : isGoogle ? '#388BFD' : '#2EA043';
             const strokeColor = isSelected ? '#A371F7' : box.enabled ? themeColor : '#30363D';
             const strokeDasharray = !isSelected && !box.enabled ? '4, 4' : 'none';
             const isBoxInputConnected = (config.connections || []).some((c) => c.toNodeId === box.id);
@@ -1808,7 +1809,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                     justifyContent: 'center',
                   }}
                 >
-                  {isGoogle ? (
+                  {isLaoZhang ? (
+                    <LaoZhangIcon size={28} />
+                  ) : isGoogle ? (
                     <SiGooglegemini style={{ fontSize: '28px', color: box.enabled ? '#58A6FF' : '#8B949E' }} />
                   ) : (
                     <OpenAIIcon size={28} color={box.enabled ? '#3FB950' : '#8B949E'} />
@@ -1960,7 +1963,9 @@ export const FacebookWorkflowCanvas = forwardRef<
             ) : currentModalAIBox ? (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', position: 'relative', minHeight: '32px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', minWidth: 0, zIndex: 1 }}>
-                  {currentModalAIBox.provider === 'openai' ? (
+                  {currentModalAIBox.provider === 'laozhang_ai' ? (
+                    <LaoZhangIcon size={18} />
+                  ) : currentModalAIBox.provider === 'openai' ? (
                     <OpenAIIcon size={18} />
                   ) : (
                     <SiGooglegemini style={{ fontSize: '18px', color: '#60A5FA' }} />

@@ -301,3 +301,109 @@ func (s *GoogleAIService) GenerateContentWithOpenAI(templateText string, rawCont
 	return "", fmt.Errorf("OpenAI returned no completion choices")
 }
 
+// GenerateContentWithLaoZhangAI calls LaoZhang API to format and modify raw content using models like deepseek-v3, deepseek-r1, etc.
+func (s *GoogleAIService) GenerateContentWithLaoZhangAI(templateText string, rawContent string, apiKeyOverride string, modelOverride string) (string, error) {
+	key := os.Getenv("LAOZHANG_API_KEY")
+	if apiKeyOverride != "" {
+		key = apiKeyOverride
+	}
+
+	if key == "" {
+		// Fallback check in .env
+		envPaths := []string{".env", "../.env", "../../.env"}
+		for _, p := range envPaths {
+			if b, err := os.ReadFile(p); err == nil {
+				for _, line := range strings.Split(string(b), "\n") {
+					trimmed := strings.TrimSpace(line)
+					if strings.HasPrefix(trimmed, "LAOZHANG_API_KEY=") {
+						key = strings.TrimSpace(strings.TrimPrefix(trimmed, "LAOZHANG_API_KEY="))
+						break
+					}
+				}
+			}
+			if key != "" {
+				break
+			}
+		}
+	}
+
+	if key == "" {
+		return "", fmt.Errorf("LAOZHANG_API_KEY is not configured. Please set LAOZHANG_API_KEY in your environment or .env file")
+	}
+
+	baseURL := os.Getenv("LAOZHANG_BASE_URL")
+	if baseURL == "" {
+		baseURL = "https://api.laozhang.ai/v1"
+	}
+
+	model := "gpt-4o"
+	if modelOverride != "" {
+		model = modelOverride
+	} else if os.Getenv("LAOZHANG_MODEL") != "" {
+		model = os.Getenv("LAOZHANG_MODEL")
+	}
+
+	var fullPrompt strings.Builder
+	if strings.TrimSpace(templateText) != "" {
+		fullPrompt.WriteString("=== TEMPLATE & INSTRUCTIONS ===\n")
+		fullPrompt.WriteString(templateText)
+		fullPrompt.WriteString("\n\n")
+	}
+
+	fullPrompt.WriteString("=== RAW EXTRACTED FACEBOOK CONTENT ===\n")
+	fullPrompt.WriteString(rawContent)
+	fullPrompt.WriteString("\n\n")
+	fullPrompt.WriteString("=== TASK ===\n")
+	fullPrompt.WriteString("Transform and format the raw Facebook content according to the template instructions above.\n")
+	fullPrompt.WriteString("Ensure all core property details (price, condo/project name, size, floor, bedrooms, contact details) remain accurate.\n")
+	fullPrompt.WriteString("Generate the polished, ready-to-publish listing copy directly without unnecessary conversational preamble.")
+
+	reqBody := OpenAIChatCompletionRequest{
+		Model: model,
+		Messages: []OpenAIChatMessage{
+			{Role: "system", Content: "You are a professional real estate marketing copywriter."},
+			{Role: "user", Content: fullPrompt.String()},
+		},
+	}
+
+	bodyBytes, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	endpoint := strings.TrimRight(baseURL, "/") + "/chat/completions"
+	req, err := http.NewRequest("POST", endpoint, bytes.NewBuffer(bodyBytes))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+key)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	var chatResp OpenAIChatCompletionResponse
+	if err := json.Unmarshal(respBody, &chatResp); err != nil {
+		return "", fmt.Errorf("failed to decode LaoZhang API response: %w", err)
+	}
+
+	if chatResp.Error != nil {
+		return "", fmt.Errorf("LaoZhang API error: %s", chatResp.Error.Message)
+	}
+
+	if len(chatResp.Choices) > 0 {
+		return strings.TrimSpace(chatResp.Choices[0].Message.Content), nil
+	}
+
+	return "", fmt.Errorf("LaoZhang API returned no completion choices")
+}
+
+

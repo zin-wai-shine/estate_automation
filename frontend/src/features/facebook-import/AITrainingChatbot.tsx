@@ -31,16 +31,24 @@ export const OpenAIIcon: React.FC<{ size?: number; color?: string }> = ({ size =
   </svg>
 );
 
+export const LaoZhangIcon: React.FC<{ size?: number; color?: string }> = ({ size = 15, color = '#2563EB' }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+    <circle cx="12" cy="12" r="10.5" fill={color} />
+    <text x="12" y="15.5" textAnchor="middle" fill="#FFFFFF" fontSize="8.5" fontWeight="800" fontFamily="system-ui, -apple-system, BlinkMacSystemFont, sans-serif" letterSpacing="-0.3px">API</text>
+  </svg>
+);
+
 export const ModelSelectorMenu: React.FC<{
-  provider: 'google_ai' | 'openai';
+  provider: 'google_ai' | 'openai' | 'laozhang_ai';
   model: string;
-  onSelectModel: (provider: 'google_ai' | 'openai', model: string) => void;
+  onSelectModel: (provider: 'google_ai' | 'openai' | 'laozhang_ai', model: string) => void;
 }> = ({ provider, model, onSelectModel }) => {
   const { actualTheme } = useTheme();
   const isDark = actualTheme === 'dark';
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const isGoogle = provider === 'google_ai';
+  const isLaoZhang = provider === 'laozhang_ai';
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -82,12 +90,14 @@ export const ModelSelectorMenu: React.FC<{
           e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)';
         }}
       >
-        {isGoogle ? (
+        {isLaoZhang ? (
+          <LaoZhangIcon size={15} />
+        ) : isGoogle ? (
           <SiGooglegemini style={{ fontSize: '15px', color: '#60A5FA' }} />
         ) : (
           <OpenAIIcon size={15} color="#34D399" />
         )}
-        <span style={{ fontWeight: 500 }}>{isGoogle ? 'Gemini' : 'ChatGPT'}</span>
+        <span style={{ fontWeight: 500 }}>{isLaoZhang ? 'LaoZhang AI' : isGoogle ? 'Gemini' : 'ChatGPT'}</span>
         <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', fontWeight: 400 }}>· {model}</span>
         <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)', marginLeft: '2px' }}>▾</span>
       </button>
@@ -99,7 +109,7 @@ export const ModelSelectorMenu: React.FC<{
             top: 'calc(100% + 6px)',
             left: '50%',
             transform: 'translateX(-50%)',
-            width: '240px',
+            width: '260px',
             backgroundColor: isDark ? '#1C2128' : 'var(--bg-surface)',
             border: '1px solid var(--border-color)',
             borderRadius: '8px',
@@ -108,8 +118,9 @@ export const ModelSelectorMenu: React.FC<{
             zIndex: 100005,
           }}
         >
-          <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', padding: '4px 8px', fontWeight: 400 }}>
-            Select AI Engine & Model
+          {/* GOOGLE GEMINI */}
+          <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', padding: '4px 8px', fontWeight: 500, letterSpacing: '0.3px' }}>
+            Google Gemini
           </div>
 
           <button
@@ -186,6 +197,11 @@ export const ModelSelectorMenu: React.FC<{
 
           <div style={{ height: '1px', backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'var(--border-color)', margin: '4px 0' }} />
 
+          {/* OPENAI CHATGPT */}
+          <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', padding: '4px 8px', fontWeight: 500, letterSpacing: '0.3px' }}>
+            OpenAI ChatGPT
+          </div>
+
           <button
             type="button"
             onClick={() => {
@@ -200,7 +216,7 @@ export const ModelSelectorMenu: React.FC<{
               padding: '6px 8px',
               borderRadius: '4px',
               border: 'none',
-              backgroundColor: !isGoogle && model === 'gpt-4o' ? (isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.1)') : 'transparent',
+              backgroundColor: !isGoogle && !isLaoZhang && model === 'gpt-4o' ? (isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.1)') : 'transparent',
               color: 'var(--text-primary)',
               fontSize: '0.75rem',
               fontWeight: 400,
@@ -208,12 +224,12 @@ export const ModelSelectorMenu: React.FC<{
               textAlign: 'left',
             }}
             onMouseEnter={(e) => {
-              if (!(!isGoogle && model === 'gpt-4o')) {
+              if (!(!isGoogle && !isLaoZhang && model === 'gpt-4o')) {
                 e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
               }
             }}
             onMouseLeave={(e) => {
-              if (!(!isGoogle && model === 'gpt-4o')) {
+              if (!(!isGoogle && !isLaoZhang && model === 'gpt-4o')) {
                 e.currentTarget.style.backgroundColor = 'transparent';
               }
             }}
@@ -236,7 +252,7 @@ export const ModelSelectorMenu: React.FC<{
               padding: '6px 8px',
               borderRadius: '4px',
               border: 'none',
-              backgroundColor: !isGoogle && model === 'gpt-4o-mini' ? (isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.1)') : 'transparent',
+              backgroundColor: !isGoogle && !isLaoZhang && model === 'gpt-4o-mini' ? (isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.1)') : 'transparent',
               color: 'var(--text-primary)',
               fontSize: '0.75rem',
               fontWeight: 400,
@@ -244,18 +260,170 @@ export const ModelSelectorMenu: React.FC<{
               textAlign: 'left',
             }}
             onMouseEnter={(e) => {
-              if (!(!isGoogle && model === 'gpt-4o-mini')) {
+              if (!(!isGoogle && !isLaoZhang && model === 'gpt-4o-mini')) {
                 e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
               }
             }}
             onMouseLeave={(e) => {
-              if (!(!isGoogle && model === 'gpt-4o-mini')) {
+              if (!(!isGoogle && !isLaoZhang && model === 'gpt-4o-mini')) {
                 e.currentTarget.style.backgroundColor = 'transparent';
               }
             }}
           >
             <OpenAIIcon size={13} color="#34D399" />
             <span>GPT-4o-mini (Lightweight)</span>
+          </button>
+
+          <div style={{ height: '1px', backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'var(--border-color)', margin: '4px 0' }} />
+
+          {/* LAOZHANG AI */}
+          <div style={{ fontSize: '0.6875rem', color: '#60A5FA', padding: '4px 8px', fontWeight: 600, letterSpacing: '0.3px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <LaoZhangIcon size={12} />
+            <span>LaoZhang API Models</span>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              onSelectModel('laozhang_ai', 'gpt-4o');
+              setIsOpen(false);
+            }}
+            style={{
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              padding: '6px 8px',
+              borderRadius: '4px',
+              border: 'none',
+              backgroundColor: isLaoZhang && model === 'gpt-4o' ? (isDark ? 'rgba(37, 99, 235, 0.18)' : 'rgba(37, 99, 235, 0.12)') : 'transparent',
+              color: 'var(--text-primary)',
+              fontSize: '0.75rem',
+              fontWeight: 400,
+              cursor: 'pointer',
+              textAlign: 'left',
+            }}
+            onMouseEnter={(e) => {
+              if (!(isLaoZhang && model === 'gpt-4o')) {
+                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!(isLaoZhang && model === 'gpt-4o')) {
+                e.currentTarget.style.backgroundColor = 'transparent';
+              }
+            }}
+          >
+            <LaoZhangIcon size={13} color="#2563EB" />
+            <span>GPT-4o (LaoZhang Relay)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              onSelectModel('laozhang_ai', 'gpt-4.1');
+              setIsOpen(false);
+            }}
+            style={{
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              padding: '6px 8px',
+              borderRadius: '4px',
+              border: 'none',
+              backgroundColor: isLaoZhang && model === 'gpt-4.1' ? (isDark ? 'rgba(37, 99, 235, 0.18)' : 'rgba(37, 99, 235, 0.12)') : 'transparent',
+              color: 'var(--text-primary)',
+              fontSize: '0.75rem',
+              fontWeight: 400,
+              cursor: 'pointer',
+              textAlign: 'left',
+            }}
+            onMouseEnter={(e) => {
+              if (!(isLaoZhang && model === 'gpt-4.1')) {
+                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!(isLaoZhang && model === 'gpt-4.1')) {
+                e.currentTarget.style.backgroundColor = 'transparent';
+              }
+            }}
+          >
+            <LaoZhangIcon size={13} color="#3B82F6" />
+            <span>GPT-4.1 (Next Gen)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              onSelectModel('laozhang_ai', 'gpt-4o-mini');
+              setIsOpen(false);
+            }}
+            style={{
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              padding: '6px 8px',
+              borderRadius: '4px',
+              border: 'none',
+              backgroundColor: isLaoZhang && model === 'gpt-4o-mini' ? (isDark ? 'rgba(37, 99, 235, 0.18)' : 'rgba(37, 99, 235, 0.12)') : 'transparent',
+              color: 'var(--text-primary)',
+              fontSize: '0.75rem',
+              fontWeight: 400,
+              cursor: 'pointer',
+              textAlign: 'left',
+            }}
+            onMouseEnter={(e) => {
+              if (!(isLaoZhang && model === 'gpt-4o-mini')) {
+                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!(isLaoZhang && model === 'gpt-4o-mini')) {
+                e.currentTarget.style.backgroundColor = 'transparent';
+              }
+            }}
+          >
+            <LaoZhangIcon size={13} color="#10B981" />
+            <span>GPT-4o-mini (Lightweight)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              onSelectModel('laozhang_ai', 'deepseek-v3');
+              setIsOpen(false);
+            }}
+            style={{
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              padding: '6px 8px',
+              borderRadius: '4px',
+              border: 'none',
+              backgroundColor: isLaoZhang && model === 'deepseek-v3' ? (isDark ? 'rgba(37, 99, 235, 0.18)' : 'rgba(37, 99, 235, 0.12)') : 'transparent',
+              color: 'var(--text-primary)',
+              fontSize: '0.75rem',
+              fontWeight: 400,
+              cursor: 'pointer',
+              textAlign: 'left',
+            }}
+            onMouseEnter={(e) => {
+              if (!(isLaoZhang && model === 'deepseek-v3')) {
+                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!(isLaoZhang && model === 'deepseek-v3')) {
+                e.currentTarget.style.backgroundColor = 'transparent';
+              }
+            }}
+          >
+            <LaoZhangIcon size={13} color="#8B5CF6" />
+            <span>DeepSeek V3 (State of the Art)</span>
           </button>
         </div>
       )}
@@ -324,7 +492,8 @@ export const AITrainingChatbot: React.FC<AITrainingChatbotProps> = ({
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const isGoogle = box.provider === 'google_ai';
-  const brandColor = isGoogle ? '#3B82F6' : '#10A37F';
+  const isLaoZhang = box.provider === 'laozhang_ai';
+  const brandColor = isLaoZhang ? '#2563EB' : isGoogle ? '#3B82F6' : '#10A37F';
 
   // Auto-scroll messages
   useEffect(() => {
@@ -828,11 +997,15 @@ export const AITrainingChatbot: React.FC<AITrainingChatbotProps> = ({
                     width: '56px',
                     height: '56px',
                     borderRadius: '50%',
-                    backgroundColor: isGoogle
+                    backgroundColor: isLaoZhang
+                      ? (isDark ? 'rgba(37, 99, 235, 0.15)' : 'rgba(37, 99, 235, 0.1)')
+                      : isGoogle
                       ? (isDark ? 'rgba(59, 130, 246, 0.1)' : 'rgba(59, 130, 246, 0.08)')
                       : (isDark ? 'rgba(16, 185, 129, 0.1)' : 'rgba(16, 185, 129, 0.08)'),
                     border: `1px solid ${
-                      isGoogle
+                      isLaoZhang
+                        ? (isDark ? 'rgba(37, 99, 235, 0.35)' : 'rgba(37, 99, 235, 0.25)')
+                        : isGoogle
                         ? (isDark ? 'rgba(59, 130, 246, 0.3)' : 'rgba(59, 130, 246, 0.2)')
                         : (isDark ? 'rgba(16, 185, 129, 0.3)' : 'rgba(16, 185, 129, 0.2)')
                     }`,
@@ -842,7 +1015,9 @@ export const AITrainingChatbot: React.FC<AITrainingChatbotProps> = ({
                     marginBottom: '1rem',
                   }}
                 >
-                  {isGoogle ? (
+                  {isLaoZhang ? (
+                    <LaoZhangIcon size={28} />
+                  ) : isGoogle ? (
                     <SiGooglegemini style={{ fontSize: '28px', color: '#60A5FA' }} />
                   ) : (
                     <OpenAIIcon size={28} color="#34D399" />
@@ -1397,13 +1572,15 @@ export const AITrainingChatbot: React.FC<AITrainingChatbotProps> = ({
                     width: '28px',
                     height: '28px',
                     borderRadius: '50%',
-                    backgroundColor: isGoogle ? 'rgba(59,130,246,0.15)' : 'rgba(16,185,129,0.15)',
+                    backgroundColor: isLaoZhang ? 'rgba(37,99,235,0.15)' : isGoogle ? 'rgba(59,130,246,0.15)' : 'rgba(16,185,129,0.15)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                   }}
                 >
-                  {isGoogle ? (
+                  {isLaoZhang ? (
+                    <LaoZhangIcon size={14} />
+                  ) : isGoogle ? (
                     <SiGooglegemini style={{ fontSize: '14px', color: '#60A5FA' }} />
                   ) : (
                     <OpenAIIcon size={14} color="#34D399" />
@@ -1420,7 +1597,7 @@ export const AITrainingChatbot: React.FC<AITrainingChatbotProps> = ({
                     fontWeight: 400,
                   }}
                 >
-                  {isGoogle ? 'Gemini is running prompt...' : 'ChatGPT is generating...'}
+                  {isLaoZhang ? 'LaoZhang AI is generating...' : isGoogle ? 'Gemini is running prompt...' : 'ChatGPT is generating...'}
                 </div>
               </div>
             )}

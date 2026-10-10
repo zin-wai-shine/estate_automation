@@ -1778,18 +1778,17 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
         </div>
       )}
 
-      {/* 2-COLUMN WORKSPACE: LEFT (URL INPUT + CONTENT + AI) / RIGHT (ACTION BUTTONS + PHOTOS) */}
+      {/* 2-COLUMN WORKSPACE: LEFT (URL INPUT + CONTENT + AI) / RIGHT (PHOTOS) */}
       <div
         style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))',
           gap: '1.25rem',
-          alignItems: 'stretch',
-          minHeight: 'calc(100vh - 120px)',
+          alignItems: 'start',
         }}
       >
-        {/* ==================== LEFT COLUMN (FULL HEIGHT TO BASE) ==================== */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', height: '100%', minHeight: 0 }}>
+        {/* ==================== LEFT COLUMN ==================== */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
           {/* URL INPUT & ACTION BUTTONS ROW (NO OUTER CONTAINER) */}
           <div
             style={{
@@ -1976,7 +1975,6 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
               flexDirection: 'column',
               gap: '1rem',
               boxShadow: 'var(--shadow-sm)',
-              flex: 1,
             }}
           >
             {/* Header */}
@@ -2244,9 +2242,9 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
           </div>
         </div>
 
-        {/* ==================== RIGHT COLUMN (FULL HEIGHT TO BASE) ==================== */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', height: '100%', minHeight: 0 }}>
-          {/* MOTHER BOX 3: IMPORTED PHOTOS PANEL (STRETCH TO BASE) */}
+        {/* ==================== RIGHT COLUMN ==================== */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', height: 'fit-content' }}>
+          {/* MOTHER BOX 3: IMPORTED PHOTOS PANEL */}
           <div
             style={{
               backgroundColor: 'var(--bg-secondary)',
@@ -2257,8 +2255,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
               flexDirection: 'column',
               gap: '1rem',
               boxShadow: 'var(--shadow-sm)',
-              flex: 1,
-              minHeight: 0,
+              height: 'fit-content',
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -2297,11 +2294,9 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                   alignContent: 'start',
                   alignItems: 'start',
                   gridAutoRows: 'max-content',
-                  flex: 1,
                   overflowY: 'auto',
                   paddingRight: '0.25rem',
-                  maxHeight: 'calc(100vh - 270px)',
-                  minHeight: '300px',
+                  maxHeight: 'calc(100vh - 140px)',
                 }}
               >
                 {images.map((img, idx) => (
