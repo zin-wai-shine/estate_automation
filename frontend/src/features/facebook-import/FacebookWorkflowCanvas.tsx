@@ -2350,25 +2350,27 @@ export const FacebookWorkflowCanvas = forwardRef<
                     })
                   }
                   style={{
-                    width: '36px',
-                    height: '20px',
-                    backgroundColor: config.trigger.autoImport ? '#1877F2' : 'rgba(255, 255, 255, 0.2)',
-                    borderRadius: '10px',
+                    width: '40px',
+                    height: '22px',
+                    backgroundColor: config.trigger.autoImport ? '#1877F2' : (isDark ? '#374151' : '#CBD5E1'),
+                    borderRadius: '11px',
                     border: 'none',
                     cursor: 'pointer',
                     position: 'relative',
                     padding: 0,
+                    transition: 'background-color 0.2s ease',
                   }}
                 >
                   <div
                     style={{
-                      width: '16px',
-                      height: '16px',
+                      width: '18px',
+                      height: '18px',
                       backgroundColor: '#FFFFFF',
                       borderRadius: '50%',
                       position: 'absolute',
                       top: '2px',
-                      left: config.trigger.autoImport ? '18px' : '2px',
+                      left: config.trigger.autoImport ? '20px' : '2px',
+                      boxShadow: '0 1px 3px rgba(0, 0, 0, 0.25)',
                       transition: 'left 0.2s ease',
                     }}
                   />
@@ -2418,25 +2420,27 @@ export const FacebookWorkflowCanvas = forwardRef<
                     })
                   }
                   style={{
-                    width: '36px',
-                    height: '20px',
-                    backgroundColor: config.getContent.enabled ? '#3B82F6' : 'rgba(255, 255, 255, 0.2)',
-                    borderRadius: '10px',
+                    width: '40px',
+                    height: '22px',
+                    backgroundColor: config.getContent.enabled ? '#388BFD' : (isDark ? '#374151' : '#CBD5E1'),
+                    borderRadius: '11px',
                     border: 'none',
                     cursor: 'pointer',
                     position: 'relative',
                     padding: 0,
+                    transition: 'background-color 0.2s ease',
                   }}
                 >
                   <div
                     style={{
-                      width: '16px',
-                      height: '16px',
+                      width: '18px',
+                      height: '18px',
                       backgroundColor: '#FFFFFF',
                       borderRadius: '50%',
                       position: 'absolute',
                       top: '2px',
-                      left: config.getContent.enabled ? '18px' : '2px',
+                      left: config.getContent.enabled ? '20px' : '2px',
+                      boxShadow: '0 1px 3px rgba(0, 0, 0, 0.25)',
                       transition: 'left 0.2s ease',
                     }}
                   />
@@ -2486,25 +2490,27 @@ export const FacebookWorkflowCanvas = forwardRef<
                     })
                   }
                   style={{
-                    width: '36px',
-                    height: '20px',
-                    backgroundColor: config.getImages.enabled ? '#10B981' : 'rgba(255, 255, 255, 0.2)',
-                    borderRadius: '10px',
+                    width: '40px',
+                    height: '22px',
+                    backgroundColor: config.getImages.enabled ? '#10B981' : (isDark ? '#374151' : '#CBD5E1'),
+                    borderRadius: '11px',
                     border: 'none',
                     cursor: 'pointer',
                     position: 'relative',
                     padding: 0,
+                    transition: 'background-color 0.2s ease',
                   }}
                 >
                   <div
                     style={{
-                      width: '16px',
-                      height: '16px',
+                      width: '18px',
+                      height: '18px',
                       backgroundColor: '#FFFFFF',
                       borderRadius: '50%',
                       position: 'absolute',
                       top: '2px',
-                      left: config.getImages.enabled ? '18px' : '2px',
+                      left: config.getImages.enabled ? '20px' : '2px',
+                      boxShadow: '0 1px 3px rgba(0, 0, 0, 0.25)',
                       transition: 'left 0.2s ease',
                     }}
                   />
