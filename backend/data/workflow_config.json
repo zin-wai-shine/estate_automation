@@ -1,5 +1,5 @@
 {
-  "timestamp": 1791667147137,
+  "timestamp": 1791667338841,
   "workflow_formats": [
     {
       "config": {
@@ -33,9 +33,9 @@
             "customPrompt": "Real estate interior luxury enhancement, warm lighting, high detail, remove noise",
             "enabled": true,
             "id": "ai-box-1791648839670",
-            "model": "gpt-image-2.5-flare",
+            "model": "runware:101@1",
             "processType": "image_enhance",
-            "provider": "openai",
+            "provider": "runware_ai",
             "strength": 0.5,
             "templateId": "1791648993271",
             "templateText": "Enhance this interior photograph into an ultra-high-resolution, premium luxury architectural real-estate image while preserving complete realism, the exact original interior design, and the room’s authentic lighting, color palette, atmosphere, and visual identity.\n\nOUTPUT SIZE AND FORMAT REQUIREMENT:\n\nCreate the final image in:\n- Resolution: 1080 × 1350 pixels\n- Aspect ratio: 4:5 vertical format\n- Optimized for Facebook Feed, Instagram Feed, and premium real-estate listing presentation.\n\nMaintain the original composition and framing identity while adapting naturally to the 4:5 vertical format.\n\nDo not crop important architectural features, furniture, windows, décor, or room elements.\nIf slight reframing is required, preserve the original viewing direction, room proportions, and visual balance.\n\nThe purpose is to improve the photograph’s technical quality, perspective, clarity, detail, and professional presentation—not to redesign, recolor, restyle, or artificially relight the room.\n\n---\n\nSTEP 1 — Preserve the Original Scene and Interior Design\n\nKeep the original:\n\n- room design,\n- camera angle,\n- viewing direction,\n- framing,\n- crop identity,\n- perspective,\n- room proportions,\n- furniture placement,\n- décor arrangement,\n- wall positions,\n- window positions,\n- architectural features,\n- materials,\n- textures,\n- objects,\n- interior styling.\n\nDo not add, remove, redesign, replace, resize, mutate, duplicate, recolor, or reposition any furniture, decoration, architectural element, material, or object.\n\nThe enhanced image must remain an accurate, faithful, and immediately recognizable representation of the original photograph.\n\n---\n\nSTEP 2 — Preserve Original Colors, Lighting, and Atmosphere\n\nStrictly preserve:\n\n- original color palette,\n- color temperature,\n- white balance,\n- lighting mood,\n- atmosphere,\n- natural shadows,\n- highlight relationships,\n- exposure character,\n- contrast character.\n\nDo not force:\n- warm grading,\n- cool grading,\n- cinematic grading,\n- luxury hotel lighting,\n- artificial sunlight,\n- brighter artificial atmosphere.\n\nThe final result must look like a professionally corrected version of the original photograph, not a newly created interior.\n\n---\n\nSTEP 3 — Remove Human Presence\n\nRemove any:\n\n- person,\n- photographer,\n- reflection of people,\n- silhouette,\n- camera reflection,\n- tripod reflection,\n- body parts,\n- unwanted human shadows.\n\nReconstruct the surrounding environment naturally while preserving:\n\n- materials,\n- reflections,\n- furniture,\n- lighting,\n- shadows,\n- décor.\n\nDo not remove natural object reflections or architectural shadows.\n\n---\n\nSTEP 4 — Professional Perspective Correction and Architectural Alignment\n\nThe camera perspective may look slightly unbalanced, tilted left/right, or uneven around the lower base area.\n\nAdjust the image to create a more centered, level, balanced, and professional real-estate photography angle.\n\nProfessionally:\n\n- straighten vertical architectural lines,\n- level horizontal lines,\n- correct camera tilt,\n- correct minor perspective distortion,\n- reduce lens distortion,\n- balance the lower base area,\n- improve spatial balance,\n- refine visual center,\n- improve architectural alignment.\n\nKeep:\n\n- exact room design,\n- furniture placement,\n- colors,\n- layout,\n- viewing direction,\n- original composition.\n\nDo not create artificial symmetry.\nDo not mirror elements.\nDo not change room proportions.\n\nOnly correct alignment so the image feels professionally photographed.\n\n---\n\nSTEP 5 — Ultra High Resolution Restoration\n\nRestore and improve:\n\n- sharpness,\n- clarity,\n- fine details,\n- texture quality,\n- image resolution,\n- architectural edges.\n\nRemove:\n\n- blur,\n- compression artifacts,\n- digital noise,\n- color noise,\n- pixelation,\n- softness,\n- lens imperfections.\n\nCreate realistic DSLR-quality detail.\n\nAvoid:\n\n- oversharpening,\n- halos,\n- fake details,\n- CGI appearance,\n- artificial textures.\n\nMaintain realistic depth of field.\n\n---\n\nSTEP 6 — Premium Architectural Enhancement\n\nApply subtle professional improvements to:\n\n- tonal balance,\n- color accuracy,\n- local contrast,\n- depth,\n- highlight control,\n- shadow detail,\n- reflection clarity,\n- material definition.\n\nKeep the original atmosphere.\n\nA warm room remains warm.\nA cool room remains cool.\nA neutral room remains neutral.\n\nDo not change the visual identity.\n\n---\n\nSTEP 7 — Material Refinement\n\nEnhance realistic details of:\n\n- wood grain,\n- fabric,\n- upholstery,\n- marble,\n- stone,\n- glass,\n- metal,\n- curtains,\n- flooring,\n- walls,\n- accessories.\n\nPreserve:\n\n- original color,\n- texture,\n- finish,\n- reflectivity,\n- physical appearance.\n\nDo not invent missing textures.\n\n---\n\nSTEP 8 — Botanical Preservation\n\nIf plants exist:\n\nPreserve:\n\n- original plant type,\n- size,\n- position,\n- color,\n- shape,\n- density.\n\nEnhance only natural details.\n\nDo not add new plants.\nDo not redesign greenery.\n\n---\n\nSTEP 9 — Final Output Quality\n\nThe final image must look:\n\n- ultra-clean,\n- ultra-detailed,\n- luxury real-estate quality,\n- editorial architectural photography,\n- realistic,\n- balanced,\n- professionally captured,\n- premium,\n- authentic.\n\nThe image should look suitable for:\n\n- international property listings,\n- luxury real-estate advertisements,\n- architectural magazines.\n\nThe room must remain exactly recognizable as the original interior.\n\nFinal output:\n1080 × 1350 px\n4:5 vertical format\nHigh-resolution premium real-estate photography style.\n\n---\n\nSTRICT NEGATIVE INSTRUCTIONS\n\nNo:\n\n- redesign,\n- furniture changes,\n- object replacement,\n- added decoration,\n- removed objects,\n- changed layout,\n- changed materials,\n- changed colors,\n- changed lighting direction,\n- fake sunlight,\n- artificial shadows,\n- HDR effect,\n- cinematic grading,\n- CGI rendering,\n- unrealistic reflections,\n- plastic textures,\n- over-sharpening,\n- excessive noise reduction,\n- distorted perspective,\n- warped walls,\n- warped furniture,\n- fake symmetry,\n- altered room proportions.\n\nThe final image must be a technically enhanced, high-resolution, professionally corrected version of the exact original photograph — not a redesigned or newly generated interior.",
@@ -64,6 +64,16 @@
             "fromNodeId": "ai-box-1790885461679",
             "id": "conn-1791646475999-wra8",
             "toNodeId": "destination"
+          },
+          {
+            "fromNodeId": "ai-box-1791648839670",
+            "id": "conn-1791667186731-v1dy",
+            "toNodeId": "destination"
+          },
+          {
+            "fromNodeId": "get-images",
+            "id": "conn-1791667223160-7p8p",
+            "toNodeId": "ai-box-1791648839670"
           }
         ],
         "destination": {
@@ -102,7 +112,7 @@
       "description": "Customized Facebook import extraction and dynamic AI generation pipeline",
       "id": "format-1790885461679",
       "name": "General Engine",
-      "updatedAt": 1791667147137
+      "updatedAt": 1791667338841
     }
   ]
 }

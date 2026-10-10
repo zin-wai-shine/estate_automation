@@ -343,6 +343,7 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
   fillColor,
   strokeWidth = 2,
   strokeDasharray = 'none',
+  socketDotColor,
   highlightInput = false,
   highlightOutput = false,
   isConnectedInput = false,
@@ -429,18 +430,16 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
         )}
 
         {/* ======================================================== */}
-        {/* LEFT INPUT SOCKET: BACK ICON (←), MERGES WITH CYCLE      */}
+        {/* LEFT INPUT SOCKET: STATIC RECEPTIVE DOT (•)               */}
         {/* ======================================================== */}
         {(sockets === 'left' || sockets === 'both') && (
-          <path
-            d="M 1 36 L -7.5 36 M -4 32.5 L -7.5 36 L -4 39.5"
-            fill="none"
-            stroke={isReceptiveInput ? DEEP_YELLOW : (hoveredSocket === 'input' && !isConnectedInput ? '#FFFFFF' : strokeColor)}
-            strokeWidth={isReceptiveInput ? 2.5 : 2}
-            strokeLinecap="round"
-            strokeLinejoin="round"
+          <circle
+            cx="-7.3"
+            cy="36"
+            r={isReceptiveInput ? 4.5 : 3.5}
+            fill={isReceptiveInput ? DEEP_YELLOW : (socketDotColor || strokeColor)}
             style={{
-              transition: 'stroke 0.15s ease, stroke-width 0.15s ease',
+              transition: 'r 0.15s ease, fill 0.15s ease',
             }}
           />
         )}
@@ -474,15 +473,16 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
         />
       )}
 
-      {/* Left Input Socket Hitbox for drag-to-connect */}
+      {/* Left Input Socket Hitbox - receives incoming wires only ("can't do anything" / can't drag back) */}
       {(sockets === 'left' || sockets === 'both') && (
         <div
           className="socket-handle socket-handle-input"
           onMouseEnter={() => setHoveredSocket('input')}
           onMouseLeave={() => setHoveredSocket(null)}
           onMouseDown={(e) => {
+            // Cannot start dragging backwards from input socket ("can't do anything")
             e.stopPropagation();
-            onSocketMouseDown?.('input', e);
+            e.preventDefault();
           }}
           onMouseUp={(e) => {
             e.stopPropagation();
@@ -494,7 +494,7 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
             top: '18px',
             width: '32px',
             height: '36px',
-            cursor: 'crosshair',
+            cursor: isReceptiveInput ? 'crosshair' : 'default',
             pointerEvents: 'auto',
             zIndex: 50,
             borderRadius: '16px 0 0 16px',
@@ -820,8 +820,8 @@ export const FacebookWorkflowCanvas = forwardRef<
       return;
     }
 
-    // Trigger is permanently wired, do not start drag from trigger
-    if (nodeId === 'trigger') return;
+    // Do not start drag from input sockets or trigger ("can't connect back")
+    if (socketType === 'input' || nodeId === 'trigger') return;
 
     // Start dragging a new wire from this socket
     dragWireStartTime.current = Date.now();
