@@ -26,6 +26,10 @@ import { FaFacebook } from 'react-icons/fa';
 import { SiGooglegemini } from 'react-icons/si';
 import { AITrainingChatbot, ModelSelectorMenu, LaoZhangIcon, RunwareIcon } from './AITrainingChatbot';
 import { useTheme } from '../../context/ThemeContext';
+import { getAIModelDisplayName, isImageAIBox, isImageModel } from './aiModelUtils';
+import { AIImageStudio } from './AIImageStudio';
+
+export { getAIModelDisplayName };
 
 export interface CanvasPromptOption {
   id: string;
@@ -90,6 +94,7 @@ export interface DynamicAIBoxConfig {
   templateText: string;
   customPrompt: string;
   enabled: boolean;
+  strength?: number;
   x: number;
   y: number;
 }
@@ -647,9 +652,12 @@ export const FacebookWorkflowCanvas = forwardRef<
       return !aiAlreadyHasInput;
     }
 
-    // Step 2: get-images -> destination (already statically connected)
+    // Step 2b: get-images -> dynamic AI nodes (Image Edit & Enhance)
     if (fromId === 'get-images') {
-      return false;
+      if (!toId.startsWith('ai-box-')) return false;
+      // Target AI box must NOT already have an incoming connection
+      const aiAlreadyHasInput = conns.some((c) => c.toNodeId === toId);
+      return !aiAlreadyHasInput;
     }
 
     // Step 3: dynamic AI nodes -> destination only
@@ -690,8 +698,36 @@ export const FacebookWorkflowCanvas = forwardRef<
               fromNodeId: sourceId,
               toNodeId: destId,
             };
+            let updatedBoxes = config.aiBoxes;
+            if (sourceId === 'get-content') {
+              updatedBoxes = config.aiBoxes.map((b) => {
+                if (b.id === destId) {
+                  const isImg = isImageModel(b.model, b.provider) || b.processType === 'image_enhance';
+                  return {
+                    ...b,
+                    processType: 'rental',
+                    provider: isImg ? 'google_ai' : b.provider,
+                    model: isImg ? 'gemini-flash-latest' : b.model,
+                  };
+                }
+                return b;
+              });
+            } else if (sourceId === 'get-images') {
+              updatedBoxes = config.aiBoxes.map((b) => {
+                if (b.id === destId) {
+                  return {
+                    ...b,
+                    processType: 'image_enhance',
+                    provider: 'runware_ai',
+                    model: b.model?.startsWith('runware:') ? b.model : 'runware:101@1',
+                  };
+                }
+                return b;
+              });
+            }
             updateConfig({
               ...config,
+              aiBoxes: updatedBoxes,
               connections: [...currentConnections, newConn],
             });
           }
@@ -776,8 +812,36 @@ export const FacebookWorkflowCanvas = forwardRef<
         fromNodeId: sourceId,
         toNodeId: destId,
       };
+      let updatedBoxes = config.aiBoxes;
+      if (sourceId === 'get-content') {
+        updatedBoxes = config.aiBoxes.map((b) => {
+          if (b.id === destId) {
+            const isImg = isImageModel(b.model, b.provider) || b.processType === 'image_enhance';
+            return {
+              ...b,
+              processType: 'rental',
+              provider: isImg ? 'google_ai' : b.provider,
+              model: isImg ? 'gemini-flash-latest' : b.model,
+            };
+          }
+          return b;
+        });
+      } else if (sourceId === 'get-images') {
+        updatedBoxes = config.aiBoxes.map((b) => {
+          if (b.id === destId) {
+            return {
+              ...b,
+              processType: 'image_enhance',
+              provider: 'runware_ai',
+              model: b.model?.startsWith('runware:') ? b.model : 'runware:101@1',
+            };
+          }
+          return b;
+        });
+      }
       updateConfig({
         ...config,
+        aiBoxes: updatedBoxes,
         connections: [...currentConnections, newConn],
       });
     }
@@ -825,6 +889,45 @@ export const FacebookWorkflowCanvas = forwardRef<
     const newConn: WorkflowWireConnection = {
       id: `conn-content-${newId}`,
       fromNodeId: 'get-content',
+      toNodeId: newId,
+    };
+
+    const newConfig: FacebookWorkflowConfig = {
+      ...config,
+      aiBoxes: [...config.aiBoxes, newBox],
+      connections: [...(config.connections || []), newConn],
+    };
+
+    updateConfig(newConfig);
+    setSelectedBoxId(newId);
+  };
+
+  // Add Dynamic Image AI Box connected from Get Images
+  const handleAddAIBoxConnectedFromImages = () => {
+    const boxCount = config.aiBoxes.length;
+    const maxY = config.aiBoxes.reduce((max, b) => Math.max(max, b.y), 0);
+    const newY = boxCount === 0 ? 360 : Math.max(maxY + 150, 260 + boxCount * 140);
+
+    const newId = `ai-box-${Date.now()}`;
+    const newBox: DynamicAIBoxConfig = {
+      id: newId,
+      title: `Image Enhancer #${boxCount + 1}`,
+      processType: 'image_enhance',
+      provider: 'runware_ai',
+      model: 'runware:101@1',
+      templateId: 'image-hdr',
+      templateText:
+        'Enhance real estate property photo: clean natural lighting, architectural clarity, realistic interior staging, ultra sharp 8k detail.',
+      customPrompt: 'Real estate interior luxury enhancement, warm lighting, high detail, remove noise',
+      enabled: true,
+      x: 640,
+      y: newY,
+    };
+
+    // Automatically connect Get Images -> this new AI image node
+    const newConn: WorkflowWireConnection = {
+      id: `conn-images-${newId}`,
+      fromNodeId: 'get-images',
       toNodeId: newId,
     };
 
@@ -984,7 +1087,7 @@ export const FacebookWorkflowCanvas = forwardRef<
         setSimulationStep(2);
         const activeAI = config.aiBoxes.filter((b) => b.enabled);
         setSimulationMessage(
-          `3. Triggering ${activeAI.length} AI Generation Models (${activeAI.map((b) => b.model.includes('gemini') ? 'Gemini' : 'GPT-4o').join(', ')})...`
+          `3. Triggering ${activeAI.length} AI Generation Models (${activeAI.map((b) => getAIModelDisplayName(b.provider, b.model)).join(', ')})...`
         );
 
         setTimeout(() => {
@@ -1375,8 +1478,10 @@ export const FacebookWorkflowCanvas = forwardRef<
               );
             })()}
 
-            {/* 3. Get Images -> Destination Line */}
+            {/* 3. Get Images -> Destination Line (only when not branching through AI Image nodes) */}
             {(() => {
+              const hasImageAIBranch = (config.connections || []).some((c) => c.fromNodeId === 'get-images');
+              if (hasImageAIBranch) return null;
               const path = createBaseChannelPath(imagesOut, destIn);
               const isFlowing = config.getImages.enabled;
               return (
@@ -1407,6 +1512,8 @@ export const FacebookWorkflowCanvas = forwardRef<
               const fromEnabled =
                 conn.fromNodeId === 'get-content'
                   ? config.getContent.enabled
+                  : conn.fromNodeId === 'get-images'
+                  ? config.getImages.enabled
                   : config.aiBoxes.find((b) => b.id === conn.fromNodeId)?.enabled ?? true;
               const toEnabled =
                 conn.toNodeId === 'destination'
@@ -1414,6 +1521,11 @@ export const FacebookWorkflowCanvas = forwardRef<
                   : config.aiBoxes.find((b) => b.id === conn.toNodeId)?.enabled ?? true;
               const isFlowing = fromEnabled && toEnabled;
               const isHovered = hoveredWireId === conn.id;
+
+              const isFromImages = conn.fromNodeId === 'get-images' || (
+                (config.connections || []).some((c) => c.fromNodeId === 'get-images' && c.toNodeId === conn.fromNodeId)
+              );
+              const wireStrokeColor = isHovered ? '#F85149' : isFlowing ? (isFromImages ? '#10B981' : '#A371F7') : (isDark ? '#30363D' : '#CBD5E1');
 
               const midX = (fromPos.x + toPos.x) / 2;
               const midY = (fromPos.y + toPos.y) / 2;
@@ -1438,7 +1550,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   <path
                     d={path}
                     fill="none"
-                    stroke={isHovered ? '#F85149' : isFlowing ? '#A371F7' : (isDark ? '#30363D' : '#CBD5E1')}
+                    stroke={wireStrokeColor}
                     strokeWidth={isHovered ? '2.5' : '2'}
                     strokeDasharray={isFlowing ? '8, 8' : 'none'}
                     strokeLinecap="round"
@@ -1713,7 +1825,7 @@ export const FacebookWorkflowCanvas = forwardRef<
               isConnectedInput={true}
               isConnectedOutput={true}
               highlightInput={false}
-              highlightOutput={false}
+              highlightOutput={dragWire?.fromType === 'input' && isValidConnection('get-images', dragWire.fromNodeId)}
               onSocketMouseDown={(type, e) => handleSocketMouseDown('get-images', type, e)}
               onSocketMouseUp={(type, e) => handleSocketMouseUp('get-images', type, e)}
             />
@@ -1725,6 +1837,51 @@ export const FacebookWorkflowCanvas = forwardRef<
                 zIndex: 2,
               }}
             />
+
+            {/* Plus Icon Button to add AI image branch node & connect immediately */}
+            <button
+              type="button"
+              className="canvas-control add-ai-branch-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleAddAIBoxConnectedFromImages();
+              }}
+              style={{
+                position: 'absolute',
+                right: '-36px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                width: '24px',
+                height: '24px',
+                borderRadius: '50%',
+                backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                border: '1.5px solid #2EA043',
+                color: '#2EA043',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                zIndex: 35,
+                padding: 0,
+                boxShadow: isDark ? '0 2px 8px rgba(0, 0, 0, 0.45)' : '0 2px 8px rgba(0, 0, 0, 0.1)',
+                transition: 'all 0.18s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = '#2EA043';
+                e.currentTarget.style.color = '#FFFFFF';
+                e.currentTarget.style.borderColor = '#3FB950';
+                e.currentTarget.style.boxShadow = '0 0 12px rgba(46, 160, 67, 0.65)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = isDark ? '#161B22' : '#FFFFFF';
+                e.currentTarget.style.color = '#2EA043';
+                e.currentTarget.style.borderColor = '#2EA043';
+                e.currentTarget.style.boxShadow = isDark ? '0 2px 8px rgba(0, 0, 0, 0.45)' : '0 2px 8px rgba(0, 0, 0, 0.1)';
+              }}
+              title="Add Image Enhancement Node"
+            >
+              <FiPlus style={{ fontSize: '13px', strokeWidth: '2.5' }} />
+            </button>
 
             {/* Label below circle */}
             <div
@@ -1755,9 +1912,10 @@ export const FacebookWorkflowCanvas = forwardRef<
           {/* ======================================================== */}
           {config.aiBoxes.map((box) => {
             const isSelected = selectedBoxId === box.id;
-            const isGoogle = box.provider === 'google_ai';
-            const isLaoZhang = box.provider === 'laozhang_ai';
-            const isRunware = box.provider === 'runware_ai';
+            const isImageNode = isImageAIBox(box, config.connections);
+            const isGoogle = !isImageNode && (box.provider === 'google_ai' || isImageModel(box.model, box.provider) || (!box.provider && !box.model?.startsWith('runware:')));
+            const isLaoZhang = !isImageNode && box.provider === 'laozhang_ai';
+            const isRunware = isImageNode;
             const themeColor = isRunware ? '#10B981' : isLaoZhang ? '#2563EB' : isGoogle ? '#388BFD' : '#2EA043';
             const strokeColor = isSelected ? '#A371F7' : box.enabled ? themeColor : '#30363D';
             const strokeDasharray = !isSelected && !box.enabled ? '4, 4' : 'none';
@@ -1848,7 +2006,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                     {box.title}
                   </span>
                   <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', fontWeight: 400 }}>
-                    {isGoogle ? 'Gemini' : 'GPT-4o'} · {box.enabled ? 'Active' : 'Off'}
+                    {!isImageNode && isImageModel(box.model, box.provider)
+                      ? 'Gemini Flash'
+                      : getAIModelDisplayName(box.provider, box.model)}{' '}
+                    · {box.enabled ? 'Active' : 'Off'}
                   </span>
                 </div>
               </div>
@@ -1924,32 +2085,7 @@ export const FacebookWorkflowCanvas = forwardRef<
           maxWidth={activeModalNode.type === 'ai-box' ? '1120px' : '560px'}
           height={activeModalNode.type === 'ai-box' ? '88vh' : undefined}
           bodyPadding={activeModalNode.type === 'ai-box' ? '0' : undefined}
-          headerExtra={
-            activeModalNode.type === 'ai-box' && currentModalAIBox ? (
-              <button
-                type="button"
-                onClick={() => setIsAISettingsDrawerOpen((prev) => !prev)}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '0.375rem',
-                  padding: '5px 11px',
-                  borderRadius: '6px',
-                  border: `1px solid ${isAISettingsDrawerOpen ? (currentModalAIBox.provider === 'google_ai' ? '#3B82F6' : '#10B981') : 'var(--border-color)'}`,
-                  backgroundColor: isAISettingsDrawerOpen ? (isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)') : 'transparent',
-                  color: isAISettingsDrawerOpen ? 'var(--text-primary)' : 'var(--text-secondary)',
-                  fontSize: '0.75rem',
-                  fontWeight: 400,
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease',
-                }}
-                title="Toggle Prompt & Settings Drawer"
-              >
-                <FiSliders style={{ fontSize: '13px', color: isAISettingsDrawerOpen ? (currentModalAIBox.provider === 'google_ai' ? '#3B82F6' : '#10B981') : 'inherit' }} />
-                <span>Prompt & Settings</span>
-              </button>
-            ) : undefined
-          }
+
           title={
             activeModalNode.type === 'trigger' ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
@@ -1972,31 +2108,37 @@ export const FacebookWorkflowCanvas = forwardRef<
                 <span>Property Inbox Destination</span>
               </div>
             ) : currentModalAIBox ? (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', position: 'relative', minHeight: '32px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', minWidth: 0, zIndex: 1 }}>
-                  {currentModalAIBox.provider === 'runware_ai' ? (
-                    <RunwareIcon size={18} color="#10B981" />
-                  ) : currentModalAIBox.provider === 'laozhang_ai' ? (
-                    <LaoZhangIcon size={18} />
-                  ) : currentModalAIBox.provider === 'openai' ? (
-                    <OpenAIIcon size={18} />
-                  ) : (
-                    <SiGooglegemini style={{ fontSize: '18px', color: '#60A5FA' }} />
-                  )}
-                  <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '240px' }}>
-                    {currentModalAIBox.title}
-                  </span>
-                </div>
+              (() => {
+                const isModalImageBox = isImageAIBox(currentModalAIBox, config.connections);
+                return (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', position: 'relative', minHeight: '32px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', minWidth: 0, zIndex: 1 }}>
+                      {isModalImageBox ? (
+                        <RunwareIcon size={18} color="#10B981" />
+                      ) : currentModalAIBox.provider === 'laozhang_ai' ? (
+                        <LaoZhangIcon size={18} />
+                      ) : currentModalAIBox.provider === 'openai' ? (
+                        <OpenAIIcon size={18} />
+                      ) : (
+                        <SiGooglegemini style={{ fontSize: '18px', color: '#60A5FA' }} />
+                      )}
+                      <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '240px' }}>
+                        {currentModalAIBox.title}
+                      </span>
+                    </div>
 
-                {/* Center AI Model Selector */}
-                <div style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', zIndex: 10 }}>
-                  <ModelSelectorMenu
-                    provider={currentModalAIBox.provider}
-                    model={currentModalAIBox.model}
-                    onSelectModel={(provider, model) => handleUpdateAIBox(currentModalAIBox.id, { provider, model })}
-                  />
-                </div>
-              </div>
+                    {/* Center AI Model Selector */}
+                    <div style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', zIndex: 10 }}>
+                      <ModelSelectorMenu
+                        provider={currentModalAIBox.provider}
+                        model={currentModalAIBox.model}
+                        filterType={isModalImageBox ? 'image' : 'text'}
+                        onSelectModel={(provider, model) => handleUpdateAIBox(currentModalAIBox.id, { provider, model })}
+                      />
+                    </div>
+                  </div>
+                );
+              })()
             ) : null
           }
         >
@@ -2206,18 +2348,31 @@ export const FacebookWorkflowCanvas = forwardRef<
 
           {/* DYNAMIC AI BOX MODAL CONTENT (Interactive AI Training & Testing Studio) */}
           {activeModalNode.type === 'ai-box' && currentModalAIBox && (
-            <AITrainingChatbot
-              box={currentModalAIBox}
-              availablePrompts={availablePrompts}
-              allowEditPrompt={allowEditPrompt}
-              isSettingsOpen={isAISettingsDrawerOpen}
-              onCloseSettings={() => setIsAISettingsDrawerOpen(false)}
-              onUpdateBox={(id, updates) => handleUpdateAIBox(id, updates)}
-              onToggleBox={(id) => handleToggleAIBox(id)}
-              onDuplicateBox={(boxToDup) => handleDuplicateAIBox(boxToDup)}
-              onDeleteBox={(id) => handleDeleteAIBox(id)}
-              onClose={handleCloseModal}
-            />
+            isImageAIBox(currentModalAIBox, config.connections) ? (
+              <AIImageStudio
+                box={currentModalAIBox}
+                availablePrompts={availablePrompts}
+                isSettingsOpen={isAISettingsDrawerOpen}
+                onCloseSettings={() => setIsAISettingsDrawerOpen(false)}
+                onUpdateBox={(id, updates) => handleUpdateAIBox(id, updates)}
+                onToggleBox={(id) => handleToggleAIBox(id)}
+                onDeleteBox={(id) => handleDeleteAIBox(id)}
+                onClose={handleCloseModal}
+              />
+            ) : (
+              <AITrainingChatbot
+                box={currentModalAIBox}
+                availablePrompts={availablePrompts}
+                allowEditPrompt={allowEditPrompt}
+                isSettingsOpen={isAISettingsDrawerOpen}
+                onCloseSettings={() => setIsAISettingsDrawerOpen(false)}
+                onUpdateBox={(id, updates) => handleUpdateAIBox(id, updates)}
+                onToggleBox={(id) => handleToggleAIBox(id)}
+                onDuplicateBox={(boxToDup) => handleDuplicateAIBox(boxToDup)}
+                onDeleteBox={(id) => handleDeleteAIBox(id)}
+                onClose={handleCloseModal}
+              />
+            )
           )}
 
           {/* DESTINATION MODAL CONTENT */}

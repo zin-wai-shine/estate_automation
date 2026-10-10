@@ -4,11 +4,11 @@
   font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
   line-height: 1.5;
   font-weight: 400;
-  color-scheme: dark light;
 }
 
 /* Dark Mode Tokens (Matching sleek #1A1A1A sidebar and container background) */
 [data-theme='dark'], :root:not([data-theme='light']) {
+  color-scheme: dark;
   --bg-main: #141414;
   --bg-secondary: #1A1A1A;
   --bg-surface: #1A1A1A;
@@ -39,6 +39,7 @@
 
 /* White Light Mode Tokens */
 [data-theme='light'] {
+  color-scheme: light;
   --bg-main: #FFFFFF;
   --bg-secondary: #F8FAFC;
   --bg-surface: #FFFFFF;

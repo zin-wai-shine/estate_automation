@@ -3388,7 +3388,7 @@ export const TestingView: React.FC = () => {
                         setShowOriginalInPreview(false);
                         setPreviewModal({
                           isOpen: true,
-                          title: `Property Photo #${realIndex + 1} of ${activeTestRun.images?.length || 0} (${isEnh ? 'AI Enhanced Studio' : 'Original Extracted'})`,
+                          title: `Property Photo #${realIndex + 1} of ${activeTestRun.images?.length || 0} (${isEnh ? 'Enhanced Studio' : 'Original Extracted'})`,
                           type: 'property_photo',
                           photoIndex: realIndex,
                           imageSrc: activeUrl,
@@ -5565,7 +5565,7 @@ export const TestingView: React.FC = () => {
                             }}
                           >
                             <FiZap style={{ fontSize: '0.85rem' }} />
-                            <span>AI Enhanced ({enhancedCount})</span>
+                            <span>Enhanced ({enhancedCount})</span>
                           </button>
                           <button
                             type="button"
@@ -6698,7 +6698,7 @@ export const TestingView: React.FC = () => {
                     const targetUrl = enhancedImages[targetImg.public_url] || targetImg.public_url;
                     setPreviewModal({
                       isOpen: true,
-                      title: `Property Photo #${nextIdx + 1} of ${images.length} (${targetEnh ? 'AI Enhanced Studio' : 'Original Extracted'})`,
+                      title: `Property Photo #${nextIdx + 1} of ${images.length} (${targetEnh ? 'Enhanced Studio' : 'Original Extracted'})`,
                       type: 'property_photo',
                       photoIndex: nextIdx,
                       imageSrc: targetUrl,
@@ -7355,7 +7355,7 @@ export const TestingView: React.FC = () => {
                                 <span style={{ color: 'var(--text-muted)' }}>Enhance Status:</span>
                                 {isEnh ? (
                                   <span style={{ color: '#10B981', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
-                                    <FiCheckCircle /> AI Enhanced
+                                    <FiCheckCircle /> Enhanced
                                   </span>
                                 ) : (
                                   <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>Original Capture</span>

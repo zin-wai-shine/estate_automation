@@ -4,6 +4,7 @@ import { Button } from '../../components/ui/Button';
 import { Select } from '../../components/ui/Select';
 import { useTheme } from '../../context/ThemeContext';
 import { useScrollLock } from '../../hooks/useScrollLock';
+import { getAIModelDisplayName, isImagePrompt } from './aiModelUtils';
 import {
   FiArrowUp,
   FiCopy,
@@ -48,8 +49,9 @@ export const RunwareIcon: React.FC<{ size?: number; color?: string }> = ({ size 
 export const ModelSelectorMenu: React.FC<{
   provider: 'google_ai' | 'openai' | 'laozhang_ai' | 'runware_ai';
   model: string;
+  filterType?: 'text' | 'image' | 'all';
   onSelectModel: (provider: 'google_ai' | 'openai' | 'laozhang_ai' | 'runware_ai', model: string) => void;
-}> = ({ provider, model, onSelectModel }) => {
+}> = ({ provider, model, filterType = 'all', onSelectModel }) => {
   const { actualTheme } = useTheme();
   const isDark = actualTheme === 'dark';
   const [isOpen, setIsOpen] = useState(false);
@@ -108,7 +110,7 @@ export const ModelSelectorMenu: React.FC<{
           <OpenAIIcon size={15} color="#34D399" />
         )}
         <span style={{ fontWeight: 500 }}>{isRunware ? 'Runware AI' : isLaoZhang ? 'LaoZhang AI' : isGoogle ? 'Gemini' : 'ChatGPT'}</span>
-        <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', fontWeight: 400 }}>· {model}</span>
+        <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', fontWeight: 400 }}>· {getAIModelDisplayName(provider, model)}</span>
         <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)', marginLeft: '2px' }}>▾</span>
       </button>
 
@@ -128,465 +130,492 @@ export const ModelSelectorMenu: React.FC<{
             zIndex: 100005,
           }}
         >
-          {/* GOOGLE GEMINI */}
-          <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', padding: '4px 8px', fontWeight: 500, letterSpacing: '0.3px' }}>
-            Google Gemini
-          </div>
+          {/* GOOGLE GEMINI (Text Only) */}
+          {filterType !== 'image' && (
+            <>
+              <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', padding: '4px 8px', fontWeight: 500, letterSpacing: '0.3px' }}>
+                Google Gemini
+              </div>
 
-          <button
-            type="button"
-            onClick={() => {
-              onSelectModel('google_ai', 'gemini-flash-latest');
-              setIsOpen(false);
-            }}
-            style={{
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              padding: '6px 8px',
-              borderRadius: '4px',
-              border: 'none',
-              backgroundColor: isGoogle && model === 'gemini-flash-latest' ? (isDark ? 'rgba(59, 130, 246, 0.15)' : 'rgba(59, 130, 246, 0.1)') : 'transparent',
-              color: 'var(--text-primary)',
-              fontSize: '0.75rem',
-              fontWeight: 400,
-              cursor: 'pointer',
-              textAlign: 'left',
-            }}
-            onMouseEnter={(e) => {
-              if (!(isGoogle && model === 'gemini-flash-latest')) {
-                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (!(isGoogle && model === 'gemini-flash-latest')) {
-                e.currentTarget.style.backgroundColor = 'transparent';
-              }
-            }}
-          >
-            <SiGooglegemini style={{ fontSize: '13px', color: '#60A5FA' }} />
-            <span>Gemini Flash (Fast)</span>
-          </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onSelectModel('google_ai', 'gemini-flash-latest');
+                  setIsOpen(false);
+                }}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '6px 8px',
+                  borderRadius: '4px',
+                  border: 'none',
+                  backgroundColor: isGoogle && model === 'gemini-flash-latest' ? (isDark ? 'rgba(59, 130, 246, 0.15)' : 'rgba(59, 130, 246, 0.1)') : 'transparent',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.75rem',
+                  fontWeight: 400,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+                onMouseEnter={(e) => {
+                  if (!(isGoogle && model === 'gemini-flash-latest')) {
+                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!(isGoogle && model === 'gemini-flash-latest')) {
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                  }
+                }}
+              >
+                <SiGooglegemini style={{ fontSize: '13px', color: '#60A5FA' }} />
+                <span>Gemini Flash (Fast)</span>
+              </button>
 
-          <button
-            type="button"
-            onClick={() => {
-              onSelectModel('google_ai', 'gemini-1.5-pro');
-              setIsOpen(false);
-            }}
-            style={{
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              padding: '6px 8px',
-              borderRadius: '4px',
-              border: 'none',
-              backgroundColor: isGoogle && model === 'gemini-1.5-pro' ? (isDark ? 'rgba(59, 130, 246, 0.15)' : 'rgba(59, 130, 246, 0.1)') : 'transparent',
-              color: 'var(--text-primary)',
-              fontSize: '0.75rem',
-              fontWeight: 400,
-              cursor: 'pointer',
-              textAlign: 'left',
-            }}
-            onMouseEnter={(e) => {
-              if (!(isGoogle && model === 'gemini-1.5-pro')) {
-                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (!(isGoogle && model === 'gemini-1.5-pro')) {
-                e.currentTarget.style.backgroundColor = 'transparent';
-              }
-            }}
-          >
-            <SiGooglegemini style={{ fontSize: '13px', color: '#60A5FA' }} />
-            <span>Gemini 1.5 Pro (Deep Reasoning)</span>
-          </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onSelectModel('google_ai', 'gemini-1.5-pro');
+                  setIsOpen(false);
+                }}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '6px 8px',
+                  borderRadius: '4px',
+                  border: 'none',
+                  backgroundColor: isGoogle && model === 'gemini-1.5-pro' ? (isDark ? 'rgba(59, 130, 246, 0.15)' : 'rgba(59, 130, 246, 0.1)') : 'transparent',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.75rem',
+                  fontWeight: 400,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+                onMouseEnter={(e) => {
+                  if (!(isGoogle && model === 'gemini-1.5-pro')) {
+                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!(isGoogle && model === 'gemini-1.5-pro')) {
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                  }
+                }}
+              >
+                <SiGooglegemini style={{ fontSize: '13px', color: '#60A5FA' }} />
+                <span>Gemini 1.5 Pro (Deep Reasoning)</span>
+              </button>
 
-          <div style={{ height: '1px', backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'var(--border-color)', margin: '4px 0' }} />
+              <div style={{ height: '1px', backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'var(--border-color)', margin: '4px 0' }} />
+            </>
+          )}
 
-          {/* OPENAI CHATGPT */}
-          <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', padding: '4px 8px', fontWeight: 500, letterSpacing: '0.3px' }}>
-            OpenAI ChatGPT
-          </div>
+          {/* OPENAI CHATGPT (Text Models) */}
+          {filterType !== 'image' && (
+            <>
+              <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', padding: '4px 8px', fontWeight: 500, letterSpacing: '0.3px' }}>
+                OpenAI ChatGPT
+              </div>
 
-          <button
-            type="button"
-            onClick={() => {
-              onSelectModel('openai', 'gpt-4o');
-              setIsOpen(false);
-            }}
-            style={{
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              padding: '6px 8px',
-              borderRadius: '4px',
-              border: 'none',
-              backgroundColor: !isGoogle && !isLaoZhang && model === 'gpt-4o' ? (isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.1)') : 'transparent',
-              color: 'var(--text-primary)',
-              fontSize: '0.75rem',
-              fontWeight: 400,
-              cursor: 'pointer',
-              textAlign: 'left',
-            }}
-            onMouseEnter={(e) => {
-              if (!(!isGoogle && !isLaoZhang && model === 'gpt-4o')) {
-                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (!(!isGoogle && !isLaoZhang && model === 'gpt-4o')) {
-                e.currentTarget.style.backgroundColor = 'transparent';
-              }
-            }}
-          >
-            <OpenAIIcon size={13} color="#34D399" />
-            <span>GPT-4o (High Precision)</span>
-          </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onSelectModel('openai', 'gpt-4o');
+                  setIsOpen(false);
+                }}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '6px 8px',
+                  borderRadius: '4px',
+                  border: 'none',
+                  backgroundColor: !isGoogle && !isLaoZhang && model === 'gpt-4o' ? (isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.1)') : 'transparent',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.75rem',
+                  fontWeight: 400,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+                onMouseEnter={(e) => {
+                  if (!(!isGoogle && !isLaoZhang && model === 'gpt-4o')) {
+                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!(!isGoogle && !isLaoZhang && model === 'gpt-4o')) {
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                  }
+                }}
+              >
+                <OpenAIIcon size={13} color="#34D399" />
+                <span>GPT-4o (High Precision)</span>
+              </button>
 
-          <button
-            type="button"
-            onClick={() => {
-              onSelectModel('openai', 'gpt-4o-mini');
-              setIsOpen(false);
-            }}
-            style={{
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              padding: '6px 8px',
-              borderRadius: '4px',
-              border: 'none',
-              backgroundColor: !isGoogle && !isLaoZhang && model === 'gpt-4o-mini' ? (isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.1)') : 'transparent',
-              color: 'var(--text-primary)',
-              fontSize: '0.75rem',
-              fontWeight: 400,
-              cursor: 'pointer',
-              textAlign: 'left',
-            }}
-            onMouseEnter={(e) => {
-              if (!(!isGoogle && !isLaoZhang && model === 'gpt-4o-mini')) {
-                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (!(!isGoogle && !isLaoZhang && model === 'gpt-4o-mini')) {
-                e.currentTarget.style.backgroundColor = 'transparent';
-              }
-            }}
-          >
-            <OpenAIIcon size={13} color="#34D399" />
-            <span>GPT-4o-mini (Lightweight)</span>
-          </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onSelectModel('openai', 'gpt-4o-mini');
+                  setIsOpen(false);
+                }}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '6px 8px',
+                  borderRadius: '4px',
+                  border: 'none',
+                  backgroundColor: !isGoogle && !isLaoZhang && model === 'gpt-4o-mini' ? (isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.1)') : 'transparent',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.75rem',
+                  fontWeight: 400,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+                onMouseEnter={(e) => {
+                  if (!(!isGoogle && !isLaoZhang && model === 'gpt-4o-mini')) {
+                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!(!isGoogle && !isLaoZhang && model === 'gpt-4o-mini')) {
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                  }
+                }}
+              >
+                <OpenAIIcon size={13} color="#34D399" />
+                <span>GPT-4o-mini (Lightweight)</span>
+              </button>
 
-          <button
-            type="button"
-            onClick={() => {
-              onSelectModel('openai', 'gpt-image-2.5-sunburst');
-              setIsOpen(false);
-            }}
-            style={{
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              padding: '6px 8px',
-              borderRadius: '4px',
-              border: 'none',
-              backgroundColor: !isGoogle && !isLaoZhang && model === 'gpt-image-2.5-sunburst' ? (isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.1)') : 'transparent',
-              color: 'var(--text-primary)',
-              fontSize: '0.75rem',
-              fontWeight: 400,
-              cursor: 'pointer',
-              textAlign: 'left',
-            }}
-            onMouseEnter={(e) => {
-              if (!(!isGoogle && !isLaoZhang && model === 'gpt-image-2.5-sunburst')) {
-                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (!(!isGoogle && !isLaoZhang && model === 'gpt-image-2.5-sunburst')) {
-                e.currentTarget.style.backgroundColor = 'transparent';
-              }
-            }}
-          >
-            <OpenAIIcon size={13} color="#34D399" />
-            <span>GPT Image 2.5 Sunburst</span>
-          </button>
+              <div style={{ height: '1px', backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'var(--border-color)', margin: '4px 0' }} />
+            </>
+          )}
 
-          <button
-            type="button"
-            onClick={() => {
-              onSelectModel('openai', 'gpt-image-2.5-flare');
-              setIsOpen(false);
-            }}
-            style={{
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              padding: '6px 8px',
-              borderRadius: '4px',
-              border: 'none',
-              backgroundColor: !isGoogle && !isLaoZhang && model === 'gpt-image-2.5-flare' ? (isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.1)') : 'transparent',
-              color: 'var(--text-primary)',
-              fontSize: '0.75rem',
-              fontWeight: 400,
-              cursor: 'pointer',
-              textAlign: 'left',
-            }}
-            onMouseEnter={(e) => {
-              if (!(!isGoogle && !isLaoZhang && model === 'gpt-image-2.5-flare')) {
-                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (!(!isGoogle && !isLaoZhang && model === 'gpt-image-2.5-flare')) {
-                e.currentTarget.style.backgroundColor = 'transparent';
-              }
-            }}
-          >
-            <OpenAIIcon size={13} color="#34D399" />
-            <span>GPT Image 2.5 Flare</span>
-          </button>
+          {/* OPENAI IMAGE GENERATION (Image Models Only) */}
+          {filterType !== 'text' && (
+            <>
+              <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', padding: '4px 8px', fontWeight: 500, letterSpacing: '0.3px' }}>
+                OpenAI Image AI
+              </div>
 
-          <div style={{ height: '1px', backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'var(--border-color)', margin: '4px 0' }} />
+              <button
+                type="button"
+                onClick={() => {
+                  onSelectModel('openai', 'gpt-image-2.5-sunburst');
+                  setIsOpen(false);
+                }}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '6px 8px',
+                  borderRadius: '4px',
+                  border: 'none',
+                  backgroundColor: !isGoogle && !isLaoZhang && model === 'gpt-image-2.5-sunburst' ? (isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.1)') : 'transparent',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.75rem',
+                  fontWeight: 400,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+                onMouseEnter={(e) => {
+                  if (!(!isGoogle && !isLaoZhang && model === 'gpt-image-2.5-sunburst')) {
+                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!(!isGoogle && !isLaoZhang && model === 'gpt-image-2.5-sunburst')) {
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                  }
+                }}
+              >
+                <OpenAIIcon size={13} color="#34D399" />
+                <span>GPT Image 2.5 Sunburst</span>
+              </button>
 
-          {/* LAOZHANG AI */}
-          <div style={{ fontSize: '0.6875rem', color: '#60A5FA', padding: '4px 8px', fontWeight: 600, letterSpacing: '0.3px', display: 'flex', alignItems: 'center', gap: '5px' }}>
-            <LaoZhangIcon size={12} />
-            <span>LaoZhang API Models</span>
-          </div>
+              <button
+                type="button"
+                onClick={() => {
+                  onSelectModel('openai', 'gpt-image-2.5-flare');
+                  setIsOpen(false);
+                }}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '6px 8px',
+                  borderRadius: '4px',
+                  border: 'none',
+                  backgroundColor: !isGoogle && !isLaoZhang && model === 'gpt-image-2.5-flare' ? (isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.1)') : 'transparent',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.75rem',
+                  fontWeight: 400,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+                onMouseEnter={(e) => {
+                  if (!(!isGoogle && !isLaoZhang && model === 'gpt-image-2.5-flare')) {
+                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!(!isGoogle && !isLaoZhang && model === 'gpt-image-2.5-flare')) {
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                  }
+                }}
+              >
+                <OpenAIIcon size={13} color="#34D399" />
+                <span>GPT Image 2.5 Flare</span>
+              </button>
 
-          <button
-            type="button"
-            onClick={() => {
-              onSelectModel('laozhang_ai', 'gpt-4o');
-              setIsOpen(false);
-            }}
-            style={{
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              padding: '6px 8px',
-              borderRadius: '4px',
-              border: 'none',
-              backgroundColor: isLaoZhang && model === 'gpt-4o' ? (isDark ? 'rgba(37, 99, 235, 0.18)' : 'rgba(37, 99, 235, 0.12)') : 'transparent',
-              color: 'var(--text-primary)',
-              fontSize: '0.75rem',
-              fontWeight: 400,
-              cursor: 'pointer',
-              textAlign: 'left',
-            }}
-            onMouseEnter={(e) => {
-              if (!(isLaoZhang && model === 'gpt-4o')) {
-                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (!(isLaoZhang && model === 'gpt-4o')) {
-                e.currentTarget.style.backgroundColor = 'transparent';
-              }
-            }}
-          >
-            <LaoZhangIcon size={13} color="#2563EB" />
-            <span>GPT-4o (LaoZhang Relay)</span>
-          </button>
+              <div style={{ height: '1px', backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'var(--border-color)', margin: '4px 0' }} />
+            </>
+          )}
 
-          <button
-            type="button"
-            onClick={() => {
-              onSelectModel('laozhang_ai', 'gpt-4.1');
-              setIsOpen(false);
-            }}
-            style={{
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              padding: '6px 8px',
-              borderRadius: '4px',
-              border: 'none',
-              backgroundColor: isLaoZhang && model === 'gpt-4.1' ? (isDark ? 'rgba(37, 99, 235, 0.18)' : 'rgba(37, 99, 235, 0.12)') : 'transparent',
-              color: 'var(--text-primary)',
-              fontSize: '0.75rem',
-              fontWeight: 400,
-              cursor: 'pointer',
-              textAlign: 'left',
-            }}
-            onMouseEnter={(e) => {
-              if (!(isLaoZhang && model === 'gpt-4.1')) {
-                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (!(isLaoZhang && model === 'gpt-4.1')) {
-                e.currentTarget.style.backgroundColor = 'transparent';
-              }
-            }}
-          >
-            <LaoZhangIcon size={13} color="#3B82F6" />
-            <span>GPT-4.1 (Next Gen)</span>
-          </button>
+          {/* LAOZHANG AI (Text Models) */}
+          {filterType !== 'image' && (
+            <>
+              <div style={{ fontSize: '0.6875rem', color: '#60A5FA', padding: '4px 8px', fontWeight: 600, letterSpacing: '0.3px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <LaoZhangIcon size={12} />
+                <span>LaoZhang API Models</span>
+              </div>
 
-          <button
-            type="button"
-            onClick={() => {
-              onSelectModel('laozhang_ai', 'gpt-4o-mini');
-              setIsOpen(false);
-            }}
-            style={{
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              padding: '6px 8px',
-              borderRadius: '4px',
-              border: 'none',
-              backgroundColor: isLaoZhang && model === 'gpt-4o-mini' ? (isDark ? 'rgba(37, 99, 235, 0.18)' : 'rgba(37, 99, 235, 0.12)') : 'transparent',
-              color: 'var(--text-primary)',
-              fontSize: '0.75rem',
-              fontWeight: 400,
-              cursor: 'pointer',
-              textAlign: 'left',
-            }}
-            onMouseEnter={(e) => {
-              if (!(isLaoZhang && model === 'gpt-4o-mini')) {
-                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (!(isLaoZhang && model === 'gpt-4o-mini')) {
-                e.currentTarget.style.backgroundColor = 'transparent';
-              }
-            }}
-          >
-            <LaoZhangIcon size={13} color="#10B981" />
-            <span>GPT-4o-mini (Lightweight)</span>
-          </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onSelectModel('laozhang_ai', 'gpt-4o');
+                  setIsOpen(false);
+                }}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '6px 8px',
+                  borderRadius: '4px',
+                  border: 'none',
+                  backgroundColor: isLaoZhang && model === 'gpt-4o' ? (isDark ? 'rgba(37, 99, 235, 0.18)' : 'rgba(37, 99, 235, 0.12)') : 'transparent',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.75rem',
+                  fontWeight: 400,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+                onMouseEnter={(e) => {
+                  if (!(isLaoZhang && model === 'gpt-4o')) {
+                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!(isLaoZhang && model === 'gpt-4o')) {
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                  }
+                }}
+              >
+                <LaoZhangIcon size={13} color="#2563EB" />
+                <span>GPT-4o (LaoZhang Relay)</span>
+              </button>
 
-          <button
-            type="button"
-            onClick={() => {
-              onSelectModel('laozhang_ai', 'deepseek-v3');
-              setIsOpen(false);
-            }}
-            style={{
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              padding: '6px 8px',
-              borderRadius: '4px',
-              border: 'none',
-              backgroundColor: isLaoZhang && model === 'deepseek-v3' ? (isDark ? 'rgba(37, 99, 235, 0.18)' : 'rgba(37, 99, 235, 0.12)') : 'transparent',
-              color: 'var(--text-primary)',
-              fontSize: '0.75rem',
-              fontWeight: 400,
-              cursor: 'pointer',
-              textAlign: 'left',
-            }}
-            onMouseEnter={(e) => {
-              if (!(isLaoZhang && model === 'deepseek-v3')) {
-                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (!(isLaoZhang && model === 'deepseek-v3')) {
-                e.currentTarget.style.backgroundColor = 'transparent';
-              }
-            }}
-          >
-            <LaoZhangIcon size={13} color="#8B5CF6" />
-            <span>DeepSeek V3 (State of the Art)</span>
-          </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onSelectModel('laozhang_ai', 'gpt-4.1');
+                  setIsOpen(false);
+                }}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '6px 8px',
+                  borderRadius: '4px',
+                  border: 'none',
+                  backgroundColor: isLaoZhang && model === 'gpt-4.1' ? (isDark ? 'rgba(37, 99, 235, 0.18)' : 'rgba(37, 99, 235, 0.12)') : 'transparent',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.75rem',
+                  fontWeight: 400,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+                onMouseEnter={(e) => {
+                  if (!(isLaoZhang && model === 'gpt-4.1')) {
+                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!(isLaoZhang && model === 'gpt-4.1')) {
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                  }
+                }}
+              >
+                <LaoZhangIcon size={13} color="#3B82F6" />
+                <span>GPT-4.1 (Next Gen)</span>
+              </button>
 
-          <div style={{ height: '1px', backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'var(--border-color)', margin: '4px 0' }} />
+              <button
+                type="button"
+                onClick={() => {
+                  onSelectModel('laozhang_ai', 'gpt-4o-mini');
+                  setIsOpen(false);
+                }}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '6px 8px',
+                  borderRadius: '4px',
+                  border: 'none',
+                  backgroundColor: isLaoZhang && model === 'gpt-4o-mini' ? (isDark ? 'rgba(37, 99, 235, 0.18)' : 'rgba(37, 99, 235, 0.12)') : 'transparent',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.75rem',
+                  fontWeight: 400,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+                onMouseEnter={(e) => {
+                  if (!(isLaoZhang && model === 'gpt-4o-mini')) {
+                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!(isLaoZhang && model === 'gpt-4o-mini')) {
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                  }
+                }}
+              >
+                <LaoZhangIcon size={13} color="#10B981" />
+                <span>GPT-4o-mini (Lightweight)</span>
+              </button>
 
-          {/* RUNWARE AI */}
-          <div style={{ fontSize: '0.6875rem', color: '#10B981', padding: '4px 8px', fontWeight: 600, letterSpacing: '0.3px', display: 'flex', alignItems: 'center', gap: '5px' }}>
-            <RunwareIcon size={12} />
-            <span>Runware Image & AI Models</span>
-          </div>
+              <button
+                type="button"
+                onClick={() => {
+                  onSelectModel('laozhang_ai', 'deepseek-v3');
+                  setIsOpen(false);
+                }}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '6px 8px',
+                  borderRadius: '4px',
+                  border: 'none',
+                  backgroundColor: isLaoZhang && model === 'deepseek-v3' ? (isDark ? 'rgba(37, 99, 235, 0.18)' : 'rgba(37, 99, 235, 0.12)') : 'transparent',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.75rem',
+                  fontWeight: 400,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+                onMouseEnter={(e) => {
+                  if (!(isLaoZhang && model === 'deepseek-v3')) {
+                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!(isLaoZhang && model === 'deepseek-v3')) {
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                  }
+                }}
+              >
+                <LaoZhangIcon size={13} color="#8B5CF6" />
+                <span>DeepSeek V3 (State of the Art)</span>
+              </button>
 
-          <button
-            type="button"
-            onClick={() => {
-              onSelectModel('runware_ai', 'runware:100@1');
-              setIsOpen(false);
-            }}
-            style={{
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              padding: '6px 8px',
-              borderRadius: '4px',
-              border: 'none',
-              backgroundColor: isRunware && model === 'runware:100@1' ? (isDark ? 'rgba(16, 185, 129, 0.18)' : 'rgba(16, 185, 129, 0.12)') : 'transparent',
-              color: 'var(--text-primary)',
-              fontSize: '0.75rem',
-              fontWeight: 400,
-              cursor: 'pointer',
-              textAlign: 'left',
-            }}
-            onMouseEnter={(e) => {
-              if (!(isRunware && model === 'runware:100@1')) {
-                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (!(isRunware && model === 'runware:100@1')) {
-                e.currentTarget.style.backgroundColor = 'transparent';
-              }
-            }}
-          >
-            <RunwareIcon size={13} color="#10B981" />
-            <span>SDXL Realism (runware:100@1)</span>
-          </button>
+              <div style={{ height: '1px', backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'var(--border-color)', margin: '4px 0' }} />
+            </>
+          )}
 
-          <button
-            type="button"
-            onClick={() => {
-              onSelectModel('runware_ai', 'runware:101@1');
-              setIsOpen(false);
-            }}
-            style={{
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              padding: '6px 8px',
-              borderRadius: '4px',
-              border: 'none',
-              backgroundColor: isRunware && model === 'runware:101@1' ? (isDark ? 'rgba(16, 185, 129, 0.18)' : 'rgba(16, 185, 129, 0.12)') : 'transparent',
-              color: 'var(--text-primary)',
-              fontSize: '0.75rem',
-              fontWeight: 400,
-              cursor: 'pointer',
-              textAlign: 'left',
-            }}
-            onMouseEnter={(e) => {
-              if (!(isRunware && model === 'runware:101@1')) {
-                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (!(isRunware && model === 'runware:101@1')) {
-                e.currentTarget.style.backgroundColor = 'transparent';
-              }
-            }}
-          >
-            <RunwareIcon size={13} color="#10B981" />
-            <span>FLUX.1 Schnell (runware:101@1)</span>
-          </button>
+          {/* RUNWARE AI (Image Models Only) */}
+          {filterType !== 'text' && (
+            <>
+              <div style={{ fontSize: '0.6875rem', color: '#10B981', padding: '4px 8px', fontWeight: 600, letterSpacing: '0.3px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <RunwareIcon size={12} />
+                <span>Runware Image & AI Models</span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  onSelectModel('runware_ai', 'runware:100@1');
+                  setIsOpen(false);
+                }}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '6px 8px',
+                  borderRadius: '4px',
+                  border: 'none',
+                  backgroundColor: isRunware && model === 'runware:100@1' ? (isDark ? 'rgba(16, 185, 129, 0.18)' : 'rgba(16, 185, 129, 0.12)') : 'transparent',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.75rem',
+                  fontWeight: 400,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+                onMouseEnter={(e) => {
+                  if (!(isRunware && model === 'runware:100@1')) {
+                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!(isRunware && model === 'runware:100@1')) {
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                  }
+                }}
+              >
+                <RunwareIcon size={13} color="#10B981" />
+                <span>SDXL Realism (runware:100@1)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  onSelectModel('runware_ai', 'runware:101@1');
+                  setIsOpen(false);
+                }}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '6px 8px',
+                  borderRadius: '4px',
+                  border: 'none',
+                  backgroundColor: isRunware && model === 'runware:101@1' ? (isDark ? 'rgba(16, 185, 129, 0.18)' : 'rgba(16, 185, 129, 0.12)') : 'transparent',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.75rem',
+                  fontWeight: 400,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+                onMouseEnter={(e) => {
+                  if (!(isRunware && model === 'runware:101@1')) {
+                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!(isRunware && model === 'runware:101@1')) {
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                  }
+                }}
+              >
+                <RunwareIcon size={13} color="#10B981" />
+                <span>FLUX.1 Schnell (runware:101@1)</span>
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>
@@ -1009,44 +1038,49 @@ export const AITrainingChatbot: React.FC<AITrainingChatbotProps> = ({
                 </button>
               </div>
 
-              {/* Template Picker - Non-bold select text */}
-              <div>
-                <label style={{ display: 'block', fontSize: '0.6875rem', fontWeight: 400, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
-                  Load from Template
-                </label>
-                <Select
-                  options={[
-                    ...availablePrompts.map((p) => ({
-                      value: String(p.id),
-                      label: p.name,
-                    })),
-                    { value: 'custom', label: 'Custom Prompt' },
-                  ]}
-                  value={
-                    availablePrompts.some((p) => String(p.id) === String(box.templateId))
-                      ? String(box.templateId)
-                      : availablePrompts.some((p) => p.name === box.title)
-                      ? String(availablePrompts.find((p) => p.name === box.title)!.id)
-                      : 'custom'
-                  }
-                  onChange={(val) => {
-                    if (val === 'custom') {
-                      onUpdateBox(box.id, { templateId: 'custom' });
-                      return;
-                    }
-                    const matched = availablePrompts.find((p) => String(p.id) === String(val));
-                    if (matched) {
-                      onUpdateBox(box.id, {
-                        templateId: String(matched.id),
-                        templateText: matched.templateText,
-                        title: box.title || matched.name,
-                      });
-                      showToast(`Loaded: ${matched.name}`);
-                    }
-                  }}
-                  height="32px"
-                />
-              </div>
+                {/* Template Picker - Non-bold select text (Content prompts only) */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.6875rem', fontWeight: 400, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                    Load from Template
+                  </label>
+                  {(() => {
+                    const contentPrompts = availablePrompts.filter((p) => !isImagePrompt(p));
+                    return (
+                      <Select
+                        options={[
+                          ...contentPrompts.map((p) => ({
+                            value: String(p.id),
+                            label: p.name,
+                          })),
+                          { value: 'custom', label: 'Custom Prompt' },
+                        ]}
+                        value={
+                          contentPrompts.some((p) => String(p.id) === String(box.templateId))
+                            ? String(box.templateId)
+                            : contentPrompts.some((p) => p.name === box.title)
+                            ? String(contentPrompts.find((p) => p.name === box.title)!.id)
+                            : 'custom'
+                        }
+                        onChange={(val) => {
+                          if (val === 'custom') {
+                            onUpdateBox(box.id, { templateId: 'custom' });
+                            return;
+                          }
+                          const matched = contentPrompts.find((p) => String(p.id) === String(val));
+                          if (matched) {
+                            onUpdateBox(box.id, {
+                              templateId: String(matched.id),
+                              templateText: matched.templateText,
+                              title: box.title || matched.name,
+                            });
+                            showToast(`Loaded: ${matched.name}`);
+                          }
+                        }}
+                        height="32px"
+                      />
+                    );
+                  })()}
+                </div>
 
               {/* Prompt Textarea */}
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: '200px' }}>

@@ -25,9 +25,6 @@ import {
   FiCheck,
   FiArrowRight,
   FiCheckCircle,
-  FiFileText,
-  FiImage,
-  FiCpu,
   FiMaximize2,
   FiCrosshair,
 } from 'react-icons/fi';
@@ -265,9 +262,6 @@ export const CreateWorkflowView: React.FC = () => {
       >
         {formats.map((format) => {
           const isActive = format.id === activeFormatId;
-          const aiCount = format.config.aiBoxes.length;
-          const hasContent = format.config.getContent.enabled;
-          const hasImages = format.config.getImages.enabled;
 
           return (
             <div
@@ -275,24 +269,26 @@ export const CreateWorkflowView: React.FC = () => {
               onClick={() => handleOpenCanvasModal(format)}
               style={{
                 backgroundColor: 'var(--bg-secondary)',
-                border: `1.5px solid ${isActive ? '#3B82F6' : 'var(--border-color)'}`,
+                border: '1px solid var(--border-color)',
                 borderRadius: '0.75rem',
                 padding: '1.25rem',
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '1rem',
                 cursor: 'pointer',
-                transition: 'all 0.2s ease',
+                transition: 'box-shadow 0.2s ease, border-color 0.2s ease',
                 position: 'relative',
-                boxShadow: isActive ? '0 0 15px rgba(59, 130, 246, 0.15)' : 'var(--shadow-sm)',
+                boxShadow: 'var(--shadow-sm)',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.borderColor = isActive ? '#3B82F6' : 'rgba(139, 92, 246, 0.5)';
-                e.currentTarget.style.transform = 'translateY(-2px)';
+                e.currentTarget.style.borderColor = 'var(--border-color-hover)';
+                e.currentTarget.style.boxShadow = isDark
+                  ? '0 10px 25px -3px rgba(0, 0, 0, 0.6)'
+                  : '0 10px 25px -3px rgba(0, 0, 0, 0.08)';
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = isActive ? '#3B82F6' : 'var(--border-color)';
-                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.borderColor = 'var(--border-color)';
+                e.currentTarget.style.boxShadow = 'var(--shadow-sm)';
               }}
             >
               {/* Card Top: Title & Active Badge */}
@@ -347,7 +343,7 @@ export const CreateWorkflowView: React.FC = () => {
                   fontSize: '0.8125rem',
                   color: 'var(--text-secondary)',
                   margin: 0,
-                  lineHeight: '1.35',
+                  lineHeight: '1.4',
                   height: '38px',
                   overflow: 'hidden',
                   display: '-webkit-box',
@@ -357,110 +353,6 @@ export const CreateWorkflowView: React.FC = () => {
               >
                 {format.description || 'Configured Facebook import extraction and multi-box dynamic AI prompts.'}
               </p>
-
-              {/* Branch Feature Indicators */}
-              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                <span
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '0.3rem',
-                    fontSize: '0.6875rem',
-                    padding: '2px 7px',
-                    borderRadius: '4px',
-                    backgroundColor: hasContent ? 'rgba(59, 130, 246, 0.12)' : (isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.04)'),
-                    color: hasContent ? (isDark ? '#60A5FA' : '#2563EB') : 'var(--text-muted)',
-                    border: `1px solid ${hasContent ? 'rgba(59, 130, 246, 0.3)' : (isDark ? 'rgba(255, 255, 255, 0.08)' : 'var(--border-color)')}`,
-                    fontWeight: 500,
-                  }}
-                >
-                  <FiFileText style={{ fontSize: '10px' }} />
-                  <span>Content: {hasContent ? 'ON' : 'OFF'}</span>
-                </span>
-
-                <span
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '0.3rem',
-                    fontSize: '0.6875rem',
-                    padding: '2px 7px',
-                    borderRadius: '4px',
-                    backgroundColor: hasImages ? (isDark ? 'rgba(34, 197, 94, 0.12)' : '#DCFCE7') : (isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.04)'),
-                    color: hasImages ? (isDark ? '#4ADE80' : '#16A34A') : 'var(--text-muted)',
-                    border: `1px solid ${hasImages ? (isDark ? 'rgba(34, 197, 94, 0.3)' : '#86EFAC') : (isDark ? 'rgba(255, 255, 255, 0.08)' : 'var(--border-color)')}`,
-                    fontWeight: 500,
-                  }}
-                >
-                  <FiImage style={{ fontSize: '10px' }} />
-                  <span>Images: {hasImages ? 'ON' : 'OFF'}</span>
-                </span>
-
-                <span
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '0.3rem',
-                    fontSize: '0.6875rem',
-                    padding: '2px 7px',
-                    borderRadius: '4px',
-                    backgroundColor: isDark ? 'rgba(139, 92, 246, 0.12)' : '#F3E8FF',
-                    color: isDark ? '#C4B5FD' : '#7C3AED',
-                    border: isDark ? '1px solid rgba(139, 92, 246, 0.3)' : '1px solid #D8B4FE',
-                    fontWeight: 500,
-                  }}
-                >
-                  <FiCpu style={{ fontSize: '10px' }} />
-                  <span>{aiCount} AI Box{aiCount > 1 ? 'es' : ''}</span>
-                </span>
-              </div>
-
-              {/* Dynamic AI Boxes Preview Tags */}
-              <div
-                style={{
-                  display: 'flex',
-                  gap: '0.375rem',
-                  flexWrap: 'wrap',
-                  backgroundColor: 'var(--bg-main)',
-                  padding: '0.5rem 0.625rem',
-                  borderRadius: '0.5rem',
-                  border: '1px solid var(--border-color)',
-                  minHeight: '28px',
-                }}
-              >
-                {format.config.aiBoxes.length > 0 ? (
-                  format.config.aiBoxes.map((box, bIdx) => (
-                    <span
-                      key={box.id || bIdx}
-                      style={{
-                        fontSize: '0.6875rem',
-                        color: 'var(--text-secondary)',
-                        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'var(--bg-surface)',
-                        border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid var(--border-color)',
-                        borderRadius: '3px',
-                        padding: '1px 5px',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '0.25rem',
-                      }}
-                    >
-                      <span
-                        style={{
-                          width: '5px',
-                          height: '5px',
-                          borderRadius: '50%',
-                          backgroundColor: box.provider === 'openai' ? '#10B981' : '#3B82F6',
-                        }}
-                      />
-                      <span>{box.title}</span>
-                    </span>
-                  ))
-                ) : (
-                  <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                    No dynamic AI boxes configured yet
-                  </span>
-                )}
-              </div>
 
               {/* Action Buttons */}
               <div

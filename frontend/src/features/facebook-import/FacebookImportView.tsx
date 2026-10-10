@@ -7,6 +7,7 @@ import { Select } from '../../components/ui/Select';
 import { Input } from '../../components/ui/Input';
 import { Badge } from '../../components/ui/Badge';
 import { Modal, useScrollLock } from '../../components/ui/Modal';
+import { useTheme } from '../../context/ThemeContext';
 import {
   FiDownload,
   FiExternalLink,
@@ -25,6 +26,8 @@ import {
   FiSliders,
   FiCode,
   FiEye,
+  FiEyeOff,
+  FiRotateCcw,
   FiInfo,
   FiX,
   FiZap,
@@ -44,6 +47,7 @@ import {
 } from 'react-icons/fi';
 import { FaFacebook } from 'react-icons/fa';
 import { SiGooglegemini } from 'react-icons/si';
+import { HiSparkles } from 'react-icons/hi2';
 import type { PromptTemplate } from '../../types';
 import { CustomDropdown } from '../../components/ui/CustomDropdown';
 import {
@@ -53,6 +57,14 @@ import {
   type DynamicAIBoxConfig,
 } from './FacebookWorkflowCanvas';
 import { RunwareIcon, LaoZhangIcon } from './AITrainingChatbot';
+import {
+  getAIModelDisplayName,
+  isImageAIBox,
+  isAIBoxConnected,
+  isContentConnectedAIBox,
+  isImageConnectedAIBox,
+} from './aiModelUtils';
+import { AIImageStudio, type AttachedPhotoItem } from './AIImageStudio';
 import {
   getSavedWorkflowFormats,
   saveWorkflowFormatsList,
@@ -171,6 +183,7 @@ interface FacebookImportSessionState {
   manualMode: boolean;
   autoImport: boolean;
   preferredMethod: 'auto' | 'meta_graph_api' | 'openclaw_browser';
+  enhancedPhotos?: Record<number, string>;
 }
 
 const loadSavedImportSession = (): FacebookImportSessionState | null => {
@@ -204,6 +217,9 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
   onSaveToInbox,
   onNavigateTab,
 }) => {
+  const { actualTheme } = useTheme();
+  const isDark = actualTheme === 'dark';
+
   // Saved Session Hydration (restores all imported info across navigation and page reloads)
   const [savedSession] = useState<FacebookImportSessionState | null>(() => loadSavedImportSession());
 
@@ -348,6 +364,44 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
   const [copiedAiCopy, setCopiedAiCopy] = useState<boolean>(false);
   const [aiError, setAiError] = useState<string | null>(null);
 
+  // AI Image Enhancement states
+  const [enhancedPhotos, setEnhancedPhotos] = useState<Record<number, string>>(
+    () => savedSession?.enhancedPhotos || {}
+  );
+  const [enhancingPhotos, setEnhancingPhotos] = useState<Record<number, boolean>>({});
+  const [isEnhancingAllPhotos, setIsEnhancingAllPhotos] = useState(false);
+  const [selectedImageAIBoxModal, setSelectedImageAIBoxModal] = useState<DynamicAIBoxConfig | null>(null);
+  const [studioStartWithNewChat, setStudioStartWithNewChat] = useState(false);
+  const [studioInitialImages, setStudioInitialImages] = useState<AttachedPhotoItem[]>([]);
+  const [lightboxShowOriginal, setLightboxShowOriginal] = useState(false);
+  const [hoveredPhotoIndex, setHoveredPhotoIndex] = useState<number | null>(null);
+
+  const handleOpenImageStudio = (targetBox?: DynamicAIBoxConfig, specificPhoto?: ExtractedImage) => {
+    const chosenBox = targetBox || imageAIBoxes[0];
+    if (!chosenBox) return;
+
+    let photosToAttach: AttachedPhotoItem[] = [];
+    if (specificPhoto) {
+      const url = specificPhoto.stored_url
+        ? (specificPhoto.stored_url.startsWith('http') ? specificPhoto.stored_url : `http://localhost:8085${specificPhoto.stored_url}`)
+        : specificPhoto.source_url;
+      photosToAttach = [{ url, photoIndex: specificPhoto.index, name: `Photo #${specificPhoto.index}` }];
+    }
+    // No specific photo: open a clean new chat with nothing pre-selected
+
+    setStudioStartWithNewChat(true);
+    setStudioInitialImages(photosToAttach);
+    setSelectedImageAIBoxModal(chosenBox);
+  };
+
+  // Differentiate text/copy generation AI boxes from image enhancement AI boxes (only showing connected nodes)
+  const contentAIBoxes = workflowConfig.aiBoxes.filter(
+    (b) => isContentConnectedAIBox(b, workflowConfig.connections)
+  );
+  const imageAIBoxes = workflowConfig.aiBoxes.filter(
+    (b) => isImageConnectedAIBox(b, workflowConfig.connections)
+  );
+
   // Native beforeunload reload/cancel alert when there is unsaved import data or active processing
   useEffect(() => {
     const hasUnsavedData = Boolean(
@@ -381,7 +435,8 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
       source ||
       (logs.length > 0 && currentStepIndex >= 0) ||
       aiGeneratedCopy.trim() ||
-      Object.keys(aiGeneratedOutputs).length > 0
+      Object.keys(aiGeneratedOutputs).length > 0 ||
+      Object.keys(enhancedPhotos).length > 0
     );
 
     if (hasData) {
@@ -405,6 +460,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
           manualMode,
           autoImport,
           preferredMethod,
+          enhancedPhotos,
         };
         localStorage.setItem(FB_IMPORT_SESSION_KEY, JSON.stringify(sessionData));
       } catch (err) {
@@ -430,6 +486,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
     manualMode,
     autoImport,
     preferredMethod,
+    enhancedPhotos,
   ]);
 
   // Load saved prompt templates from localStorage on mount
@@ -461,7 +518,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
 
     setAiBoxGenerating((prev) => ({ ...prev, [boxId]: true }));
     setAiError(null);
-    const providerName = box.provider === 'runware_ai' ? `Runware AI (${box.model || 'runware:100@1'})` : box.provider === 'laozhang_ai' ? `LaoZhang AI (${box.model || 'deepseek-v3'})` : box.provider === 'openai' ? `OpenAI (${box.model || 'GPT-4o'})` : 'Google AI (Gemini)';
+    const providerName = `${box.provider === 'runware_ai' ? 'Runware AI' : box.provider === 'laozhang_ai' ? 'LaoZhang AI' : box.provider === 'openai' ? 'OpenAI' : 'Google AI'} (${getAIModelDisplayName(box.provider, box.model)})`;
     addLog(`Calling ${providerName} for [${box.title}]...`, 'info');
 
     try {
@@ -503,21 +560,94 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
       return;
     }
 
-    const activeBoxes = workflowConfig.aiBoxes.filter((b) => b.enabled);
-    if (activeBoxes.length === 0) {
-      addLog('No active AI process boxes in workflow', 'warn');
+    const activeContentBoxes = contentAIBoxes.filter((b) => b.enabled);
+    if (activeContentBoxes.length === 0) {
+      addLog('No active text copy AI process boxes in workflow', 'warn');
       return;
     }
 
     setIsGeneratingAI(true);
-    addLog(`🚀 Generating ${activeBoxes.length} dynamic AI processes simultaneously...`, 'info');
+    addLog(`🚀 Generating ${activeContentBoxes.length} dynamic AI copy processes simultaneously...`, 'info');
 
     try {
-      await Promise.all(activeBoxes.map((b) => handleGenerateDynamicBoxCopy(b.id)));
-      addLog(`🎉 All ${activeBoxes.length} dynamic AI processes completed!`, 'success');
+      await Promise.all(activeContentBoxes.map((b) => handleGenerateDynamicBoxCopy(b.id)));
+      addLog(`🎉 All ${activeContentBoxes.length} dynamic AI copy processes completed!`, 'success');
     } finally {
       setIsGeneratingAI(false);
     }
+  };
+
+  // Image Enhancement: single photo enhancement using active or specified image AI box
+  const handleEnhanceSinglePhoto = async (img: ExtractedImage, targetBox?: DynamicAIBoxConfig) => {
+    const chosenBox = targetBox || imageAIBoxes.find((b) => b.enabled) || imageAIBoxes[0];
+    const provider = chosenBox?.provider || 'runware_ai';
+    const model = chosenBox?.model || 'runware:101@1';
+    const prompt =
+      chosenBox?.customPrompt ||
+      chosenBox?.templateText ||
+      'Ultra-high clarity architectural photography, 8k resolution, perfectly balanced HDR interior lighting, luxury real estate editorial staging';
+    const strength = chosenBox?.strength ?? 0.65;
+
+    const rawUrl = img.stored_url
+      ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
+      : img.source_url;
+
+    setEnhancingPhotos((prev) => ({ ...prev, [img.index]: true }));
+    addLog(`🎨 AI Enhancing Photo #${img.index} using ${getAIModelDisplayName(provider, model)}...`, 'info');
+
+    try {
+      const res = await fetch('http://localhost:8085/api/facebook-import/enhance-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image_url: rawUrl,
+          provider,
+          model,
+          prompt_name: chosenBox?.title || 'AI Image Enhancement',
+          prompt_instructions: prompt,
+          strength,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.status !== 'success' || !data.enhanced_url) {
+        throw new Error(data.message || 'Image enhancement failed');
+      }
+
+      setEnhancedPhotos((prev) => ({ ...prev, [img.index]: data.enhanced_url }));
+      addLog(`✨ Photo #${img.index} enhanced successfully!`, 'success');
+    } catch (err: any) {
+      console.error('Enhance failed:', err);
+      addLog(`Failed to enhance Photo #${img.index}: ${err.message}`, 'error');
+    } finally {
+      setEnhancingPhotos((prev) => ({ ...prev, [img.index]: false }));
+    }
+  };
+
+  // Image Enhancement: batch enhancement for all extracted photos
+  const handleEnhanceAllPhotos = async () => {
+    if (images.length === 0 || isEnhancingAllPhotos) return;
+    setIsEnhancingAllPhotos(true);
+    addLog(`🚀 Starting AI enhancement for all ${images.length} photos...`, 'info');
+    try {
+      for (const img of images) {
+        await handleEnhanceSinglePhoto(img);
+      }
+      addLog(`🎉 All ${images.length} photos enhanced successfully!`, 'success');
+    } finally {
+      setIsEnhancingAllPhotos(false);
+    }
+  };
+
+  // Revert an enhanced photo back to the original image
+  const handleRevertPhotoToOriginal = (imgIndex: number, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setEnhancedPhotos((prev) => {
+      const next = { ...prev };
+      delete next[imgIndex];
+      return next;
+    });
+    setLightboxShowOriginal(false);
+    addLog(`↩ Photo #${imgIndex} restored to original photo`, 'info');
   };
 
   const handleGenerateAICopy = async () => {
@@ -987,16 +1117,17 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
 
       for (let i = 0; i < images.length; i++) {
         const img = images[i];
-        const rawUrl = img.stored_url
+        const rawUrl = enhancedPhotos[img.index] || (img.stored_url
           ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
-          : img.source_url;
+          : img.source_url);
 
         try {
           const resp = await fetch(rawUrl, { mode: 'cors' });
           const blob = await resp.blob();
           const ext = blob.type.includes('png') ? 'png' : 'jpg';
           const padIndex = String(img.index !== undefined ? img.index : i + 1).padStart(2, '0');
-          zip.file(`photo-${padIndex}.${ext}`, blob);
+          const isEnh = Boolean(enhancedPhotos[img.index]);
+          zip.file(`photo-${padIndex}${isEnh ? '-enhanced' : ''}.${ext}`, blob);
         } catch (fetchErr) {
           console.warn(`Failed to package photo #${img.index || i + 1}:`, fetchErr);
         }
@@ -1019,9 +1150,9 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
       addLog('ZIP creation failed, downloading photos individually...', 'warn');
       for (let i = 0; i < images.length; i++) {
         const img = images[i];
-        const fullUrl = img.stored_url
+        const fullUrl = enhancedPhotos[img.index] || (img.stored_url
           ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
-          : img.source_url;
+          : img.source_url);
         await handleDownloadImage(fullUrl, img.index);
         setDownloadProgress(i + 1);
         await new Promise((res) => setTimeout(res, 250));
@@ -1084,6 +1215,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
     const saleNum = propertyData.listing_type === 'SALE' && propertyData.price ? parseFloat(propertyData.price) : undefined;
 
     const originalImgUrls = images.map((img) => img.stored_url || img.source_url);
+    const finalEnhancedUrls = images.map((img) => enhancedPhotos[img.index] || img.stored_url || img.source_url);
 
     const finalDescription = aiGeneratedCopy || caption;
 
@@ -1104,8 +1236,8 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
       sourceUrl: source?.canonical_url || url,
       sourceAuthor: source?.source_name || 'Facebook Import',
       originalImages: originalImgUrls,
-      enhancedImages: originalImgUrls,
-      finalImages: originalImgUrls,
+      enhancedImages: finalEnhancedUrls,
+      finalImages: finalEnhancedUrls,
       contactInfo: [
         propertyData.contact_phone ? `Tel: ${propertyData.contact_phone}` : '',
         propertyData.contact_line ? `Line: ${propertyData.contact_line}` : '',
@@ -1130,7 +1262,10 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
               size_sqm: propertyData.size_sqm ? parseFloat(propertyData.size_sqm) : null,
             },
             caption: { original: caption, ai_copy: aiGeneratedCopy, language_detected: languages },
-            images,
+            images: images.map((img) => ({
+              ...img,
+              stored_url: enhancedPhotos[img.index] || img.stored_url,
+            })),
           },
         }),
       });
@@ -1207,6 +1342,9 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
     setLogs([]);
     setAiGeneratedOutputs({});
     setAiGeneratedCopy('');
+    setEnhancedPhotos({});
+    setEnhancingPhotos({});
+    setIsEnhancingAllPhotos(false);
     setPropertyData({
       project_name: '',
       listing_type: 'RENT',
@@ -1245,10 +1383,15 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
         createPortal(
           <div style={{ width: '280px', maxWidth: '100%', display: 'flex', alignItems: 'center' }}>
             <Select
-              options={workflowFormats.map((f) => ({
-                value: f.id,
-                label: `${f.name} (${f.config.aiBoxes.length} AI Processes)`,
-              }))}
+              options={workflowFormats.map((f) => {
+                const connectedCount = (f.config?.aiBoxes || []).filter((b: any) =>
+                  isAIBoxConnected(b, f.config?.connections)
+                ).length;
+                return {
+                  value: f.id,
+                  label: `${f.name} (${connectedCount} AI Processes)`,
+                };
+              })}
               value={selectedFormatId}
               onChange={handleFormatChange}
               height="32px"
@@ -2061,9 +2204,9 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                   gap: '0.375rem',
                   height: '32px',
                   padding: '0 0.75rem',
-                  borderRadius: '0.375rem',
-                  border: '1px solid var(--border-color)',
-                  backgroundColor: 'var(--bg-secondary)',
+                  borderRadius: '8px',
+                  border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
                   color: 'var(--text-secondary)',
                   fontSize: '0.75rem',
                   fontWeight: 500,
@@ -2071,6 +2214,19 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                   opacity: isGeneratingAI || !caption.trim() ? 0.6 : 1,
                   whiteSpace: 'nowrap',
                   transition: 'all 0.15s ease',
+                  boxShadow: 'none',
+                }}
+                onMouseEnter={(e) => {
+                  if (!isGeneratingAI && caption.trim()) {
+                    e.currentTarget.style.borderColor = 'var(--accent-primary)';
+                    e.currentTarget.style.color = 'var(--accent-primary)';
+                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(59, 130, 246, 0.1)' : 'rgba(37, 99, 235, 0.06)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.08)';
+                  e.currentTarget.style.color = 'var(--text-secondary)';
+                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)';
                 }}
               >
                 {isGeneratingAI ? (
@@ -2078,7 +2234,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                 ) : (
                   <FiCpu style={{ fontSize: '12px' }} />
                 )}
-                Generate All ({workflowConfig.aiBoxes.filter((b) => b.enabled).length})
+                Generate All ({contentAIBoxes.filter((b) => b.enabled).length})
               </button>
             </div>
 
@@ -2086,75 +2242,237 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, 260px)',
-                gap: '0.75rem',
+                gridTemplateColumns: 'repeat(auto-fill, 272px)',
+                gap: '0.875rem',
               }}
             >
-              {workflowConfig.aiBoxes.map((box) => {
-                const isGoogle = box.provider === 'google_ai';
-                const isActive = activeAIBoxId === box.id;
-                const hasGenerated = Boolean(aiGeneratedOutputs[box.id]);
-                const isBoxLoading = Boolean(aiBoxGenerating[box.id]);
+              {contentAIBoxes.length === 0 ? (
+                <div
+                  style={{
+                    gridColumn: '1 / -1',
+                    padding: '1.25rem',
+                    color: 'var(--text-secondary)',
+                    fontSize: '0.8125rem',
+                    backgroundColor: isDark ? '#161B22' : 'var(--bg-main)',
+                    border: isDark ? '1px dashed rgba(255, 255, 255, 0.12)' : '1px dashed var(--border-color)',
+                    borderRadius: '12px',
+                    textAlign: 'center',
+                  }}
+                >
+                  No text copy generators configured. Image enhancement AI models are active under Imported Photos.
+                </div>
+              ) : (
+                contentAIBoxes.map((box) => {
+                  const isGoogle = box.provider === 'google_ai';
+                  const isActive = activeAIBoxId === box.id;
+                  const hasGenerated = Boolean(aiGeneratedOutputs[box.id]);
+                  const isBoxLoading = Boolean(aiBoxGenerating[box.id]);
 
-                return (
-                  <div
-                    key={box.id}
-                    onClick={() => {
-                      setActiveAIBoxId(box.id);
-                      if (aiGeneratedOutputs[box.id]) setAiGeneratedCopy(aiGeneratedOutputs[box.id]);
-                    }}
-                    style={{
-                      width: '260px',
-                      backgroundColor: 'var(--bg-main)',
-                      border: `1px solid ${isActive ? 'var(--accent-primary)' : 'var(--border-color)'}`,
-                      borderRadius: '0.5rem',
-                      padding: '0.875rem',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '0.75rem',
-                      cursor: 'pointer',
-                      transition: 'border-color 0.15s ease',
-                    }}
-                  >
-                    {/* Card Header: Icon + Title + Status */}
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', overflow: 'hidden' }}>
-                        {box.provider === 'runware_ai'
-                          ? <RunwareIcon size={15} color="#10B981" />
-                          : box.provider === 'laozhang_ai'
-                          ? <LaoZhangIcon size={15} />
-                          : isGoogle
-                          ? <SiGooglegemini style={{ fontSize: '15px', color: '#3B82F6', flexShrink: 0 }} />
-                          : <OpenAIIcon size={15} color="#10B981" />
-                        }
-                        <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {box.title}
-                        </span>
+                  return (
+                    <div
+                      key={box.id}
+                      onClick={() => {
+                        setActiveAIBoxId(box.id);
+                        if (aiGeneratedOutputs[box.id]) setAiGeneratedCopy(aiGeneratedOutputs[box.id]);
+                      }}
+                      style={{
+                        width: '272px',
+                        backgroundColor: isDark ? '#161B22' : 'var(--bg-main)',
+                        border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid var(--border-color)',
+                        borderRadius: '12px',
+                        padding: '1rem',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '0.875rem',
+                        cursor: 'pointer',
+                        boxShadow: 'none',
+                        transition: 'all 0.18s cubic-bezier(0.16, 1, 0.3, 1)',
+                      }}
+                    >
+                      {/* Card Header: Icon + Title + Status */}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', overflow: 'hidden' }}>
+                          {box.provider === 'runware_ai'
+                            ? <RunwareIcon size={16} color="#10B981" />
+                            : box.provider === 'laozhang_ai'
+                            ? <LaoZhangIcon size={16} />
+                            : isGoogle
+                            ? <SiGooglegemini style={{ fontSize: '16px', color: '#3B82F6', flexShrink: 0 }} />
+                            : <OpenAIIcon size={16} color="#10B981" />
+                          }
+                          <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {box.title}
+                          </span>
+                        </div>
+
+                        {hasGenerated && !isBoxLoading && (
+                          <span style={{
+                            fontSize: '0.6875rem',
+                            fontWeight: 500,
+                            color: '#10B981',
+                            backgroundColor: isDark ? 'rgba(16, 185, 129, 0.12)' : 'rgba(16, 185, 129, 0.08)',
+                            padding: '2px 7px',
+                            borderRadius: '10px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '3px',
+                            flexShrink: 0,
+                          }}>
+                            <FiCheck style={{ fontSize: '11px' }} /> Ready
+                          </span>
+                        )}
                       </div>
 
-                      {hasGenerated && !isBoxLoading && (
-                        <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--status-success)', display: 'inline-flex', alignItems: 'center', gap: '3px', flexShrink: 0 }}>
-                          <FiCheck style={{ fontSize: '11px' }} /> Ready
+                      {/* Model badge line */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span style={{
+                          fontSize: '0.6875rem',
+                          fontWeight: 500,
+                          color: isDark ? '#A1A1AA' : '#52525B',
+                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+                          border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid rgba(0, 0, 0, 0.06)',
+                          borderRadius: '6px',
+                          padding: '2px 7px',
+                        }}>
+                          {getAIModelDisplayName(box.provider, box.model)}
                         </span>
-                      )}
-                    </div>
+                        {hasGenerated && (
+                          <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                            · {aiGeneratedOutputs[box.id]?.length || 0} chars
+                          </span>
+                        )}
+                      </div>
 
-                    {/* Model badge line */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <span style={{ fontSize: '0.6875rem', color: 'var(--text-secondary)', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '1px 6px' }}>
-                        {box.provider === 'runware_ai' ? (box.model || 'Runware') : box.provider === 'laozhang_ai' ? (box.model || 'DeepSeek') : isGoogle ? 'Gemini' : (box.model || 'GPT-4o')}
-                      </span>
-                      {hasGenerated && (
-                        <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-                          {aiGeneratedOutputs[box.id]?.length || 0} chars
-                        </span>
-                      )}
-                    </div>
+                      {/* Generate / Regenerate & Actions */}
+                      {hasGenerated ? (
+                        <div style={{ display: 'flex', gap: '0.375rem', alignItems: 'center', width: '100%', marginTop: 'auto' }}>
+                          {/* Regenerate button */}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveAIBoxId(box.id);
+                              handleGenerateDynamicBoxCopy(box.id);
+                            }}
+                            disabled={isBoxLoading || !caption.trim()}
+                            style={{
+                              flex: 1,
+                              height: '36px',
+                              backgroundColor: 'var(--accent-primary)',
+                              border: '1px solid var(--accent-primary)',
+                              borderRadius: '8px',
+                              color: '#FFFFFF',
+                              fontSize: '0.8125rem',
+                              fontWeight: 500,
+                              cursor: isBoxLoading || !caption.trim() ? 'not-allowed' : 'pointer',
+                              opacity: isBoxLoading || !caption.trim() ? 0.6 : 1,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '6px',
+                              transition: 'all 0.15s ease',
+                              boxShadow: 'none',
+                            }}
+                            onMouseEnter={(e) => {
+                              if (!isBoxLoading && caption.trim()) {
+                                e.currentTarget.style.backgroundColor = 'var(--accent-hover)';
+                                e.currentTarget.style.borderColor = 'var(--accent-hover)';
+                              }
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = 'var(--accent-primary)';
+                              e.currentTarget.style.borderColor = 'var(--accent-primary)';
+                            }}
+                          >
+                            <FiRefreshCw
+                              className={isBoxLoading ? 'spin' : ''}
+                              style={{ animation: isBoxLoading ? 'spin 1s linear infinite' : 'none', fontSize: '12px' }}
+                            />
+                            <span>{isBoxLoading ? 'Regenerating...' : 'Regenerate'}</span>
+                          </button>
 
-                    {/* Generate / Regenerate & Actions */}
-                    {hasGenerated ? (
-                      <div style={{ display: 'flex', gap: '0.375rem', alignItems: 'center', width: '100%', marginTop: 'auto' }}>
-                        {/* Regenerate button */}
+                          {/* Copy button: Icon only */}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const copyText = aiGeneratedOutputs[box.id];
+                              if (!copyText) return;
+                              navigator.clipboard.writeText(copyText);
+                              setCopiedBoxId(box.id);
+                              setTimeout(() => setCopiedBoxId(null), 2000);
+                            }}
+                            title={copiedBoxId === box.id ? 'Copied!' : 'Copy AI Copy'}
+                            style={{
+                              width: '36px',
+                              height: '36px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              borderRadius: '8px',
+                              border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
+                              backgroundColor: copiedBoxId === box.id
+                                ? (isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.1)')
+                                : (isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.03)'),
+                              color: copiedBoxId === box.id ? '#10B981' : 'var(--text-secondary)',
+                              cursor: 'pointer',
+                              flexShrink: 0,
+                              transition: 'all 0.15s ease',
+                              boxShadow: 'none',
+                            }}
+                            onMouseEnter={(e) => {
+                              if (copiedBoxId !== box.id) {
+                                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)';
+                              }
+                            }}
+                            onMouseLeave={(e) => {
+                              if (copiedBoxId !== box.id) {
+                                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.03)';
+                              }
+                            }}
+                          >
+                            {copiedBoxId === box.id ? <FiCheck style={{ fontSize: '13px' }} /> : <FiCopy style={{ fontSize: '13px' }} />}
+                          </button>
+
+                          {/* Result button: Icon only */}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveAIBoxId(box.id);
+                              if (aiGeneratedOutputs[box.id]) {
+                                setAiGeneratedCopy(aiGeneratedOutputs[box.id]);
+                              }
+                              setViewingResultBox(box);
+                            }}
+                            title="View Result"
+                            style={{
+                              width: '36px',
+                              height: '36px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              borderRadius: '8px',
+                              border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
+                              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.03)',
+                              color: 'var(--text-primary)',
+                              cursor: 'pointer',
+                              flexShrink: 0,
+                              transition: 'all 0.15s ease',
+                              boxShadow: 'none',
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.03)';
+                            }}
+                          >
+                            <FiFileText style={{ fontSize: '13px' }} />
+                          </button>
+                        </div>
+                      ) : (
+                        /* Generate button: Theme accent color */
                         <button
                           type="button"
                           onClick={(e) => {
@@ -2164,129 +2482,46 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                           }}
                           disabled={isBoxLoading || !caption.trim()}
                           style={{
-                            flex: 1,
-                            height: '32px',
+                            height: '36px',
+                            width: '100%',
                             backgroundColor: 'var(--accent-primary)',
-                            border: 'none',
-                            borderRadius: '0.375rem',
-                            color: '#ffffff',
+                            border: '1px solid var(--accent-primary)',
+                            borderRadius: '8px',
+                            color: '#FFFFFF',
                             fontSize: '0.8125rem',
-                            fontWeight: 600,
+                            fontWeight: 500,
                             cursor: isBoxLoading || !caption.trim() ? 'not-allowed' : 'pointer',
                             opacity: isBoxLoading || !caption.trim() ? 0.6 : 1,
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            gap: '5px',
-                            transition: 'opacity 0.15s ease',
-                          }}
-                        >
-                          <FiRefreshCw
-                            className={isBoxLoading ? 'spin' : ''}
-                            style={{ animation: isBoxLoading ? 'spin 1s linear infinite' : 'none', fontSize: '12px' }}
-                          />
-                          <span>{isBoxLoading ? 'Regenerating...' : 'Regenerate'}</span>
-                        </button>
-
-                        {/* Copy button: Icon only */}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const copyText = aiGeneratedOutputs[box.id];
-                            if (!copyText) return;
-                            navigator.clipboard.writeText(copyText);
-                            setCopiedBoxId(box.id);
-                            setTimeout(() => setCopiedBoxId(null), 2000);
-                          }}
-                          title={copiedBoxId === box.id ? 'Copied!' : 'Copy AI Copy'}
-                          style={{
-                            width: '32px',
-                            height: '32px',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            borderRadius: '0.375rem',
-                            border: '1px solid var(--border-color)',
-                            backgroundColor: copiedBoxId === box.id ? 'rgba(16, 185, 129, 0.15)' : 'var(--bg-secondary)',
-                            color: copiedBoxId === box.id ? 'var(--status-success)' : 'var(--text-secondary)',
-                            cursor: 'pointer',
-                            flexShrink: 0,
+                            gap: '6px',
+                            marginTop: 'auto',
                             transition: 'all 0.15s ease',
+                            boxShadow: 'none',
                           }}
-                        >
-                          {copiedBoxId === box.id ? <FiCheck style={{ fontSize: '13px' }} /> : <FiCopy style={{ fontSize: '13px' }} />}
-                        </button>
-
-                        {/* Result button: Icon only */}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setActiveAIBoxId(box.id);
-                            if (aiGeneratedOutputs[box.id]) {
-                              setAiGeneratedCopy(aiGeneratedOutputs[box.id]);
+                          onMouseEnter={(e) => {
+                            if (!isBoxLoading && caption.trim()) {
+                              e.currentTarget.style.backgroundColor = 'var(--accent-hover)';
+                              e.currentTarget.style.borderColor = 'var(--accent-hover)';
                             }
-                            setViewingResultBox(box);
                           }}
-                          title="View Result"
-                          style={{
-                            width: '32px',
-                            height: '32px',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            borderRadius: '0.375rem',
-                            border: '1px solid var(--border-color)',
-                            backgroundColor: 'var(--bg-secondary)',
-                            color: 'var(--accent-primary)',
-                            cursor: 'pointer',
-                            flexShrink: 0,
-                            transition: 'all 0.15s ease',
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = 'var(--accent-primary)';
+                            e.currentTarget.style.borderColor = 'var(--accent-primary)';
                           }}
                         >
-                          <FiFileText style={{ fontSize: '13px' }} />
+                          {isBoxLoading
+                            ? <FiRefreshCw className="spin" style={{ animation: 'spin 1s linear infinite', fontSize: '13px' }} />
+                            : <FiZap style={{ fontSize: '13px' }} />
+                          }
+                          <span>{isBoxLoading ? 'Generating...' : 'Generate'}</span>
                         </button>
-                      </div>
-                    ) : (
-                      /* Generate button: Normal size */
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setActiveAIBoxId(box.id);
-                          handleGenerateDynamicBoxCopy(box.id);
-                        }}
-                        disabled={isBoxLoading || !caption.trim()}
-                        style={{
-                          height: '34px',
-                          width: '100%',
-                          backgroundColor: 'var(--accent-primary)',
-                          border: 'none',
-                          borderRadius: '0.375rem',
-                          color: '#ffffff',
-                          fontSize: '0.8125rem',
-                          fontWeight: 600,
-                          cursor: isBoxLoading || !caption.trim() ? 'not-allowed' : 'pointer',
-                          opacity: isBoxLoading || !caption.trim() ? 0.6 : 1,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '6px',
-                          marginTop: 'auto',
-                          transition: 'opacity 0.15s ease',
-                        }}
-                      >
-                        {isBoxLoading
-                          ? <FiRefreshCw className="spin" style={{ animation: 'spin 1s linear infinite', fontSize: '13px' }} />
-                          : <FiZap style={{ fontSize: '13px' }} />
-                        }
-                        <span>{isBoxLoading ? 'Generating...' : 'Generate'}</span>
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
+                      )}
+                    </div>
+                  );
+                })
+              )}
             </div>
 
             {/* Error */}
@@ -2331,17 +2566,78 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
               height: 'fit-content',
             }}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-              <h3 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.625rem', flexWrap: 'wrap' }}>
+              <h3 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0, whiteSpace: 'nowrap' }}>
                 Imported Photos ({images.length})
               </h3>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <Badge variant={images.length > 0 ? 'success' : 'default'} size="sm">
-                  Preserved Order
-                </Badge>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'nowrap' }}>
+                {imageAIBoxes.length > 0 && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => handleOpenImageStudio(imageAIBoxes[0])}
+                    leftIcon={<RunwareIcon size={12} color="var(--text-secondary)" />}
+                    rightIcon={<FiSliders style={{ fontSize: '11px', opacity: 0.7 }} />}
+                    title="Open Image Studio"
+                    style={{
+                      height: '28px',
+                      padding: '0 0.625rem',
+                      fontSize: '0.75rem',
+                      fontWeight: 500,
+                      borderRadius: '6px',
+                      backgroundColor: 'var(--bg-main)',
+                      border: '1px solid var(--border-color)',
+                      color: 'var(--text-primary)',
+                      boxShadow: 'var(--shadow-sm)',
+                      whiteSpace: 'nowrap',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {imageAIBoxes[0].title ? imageAIBoxes[0].title.replace(/\bAI\s+/gi, '') : getAIModelDisplayName(imageAIBoxes[0].provider, imageAIBoxes[0].model)}
+                  </Button>
+                )}
+                {imageAIBoxes.length > 0 && images.length > 0 && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleEnhanceAllPhotos}
+                    disabled={isEnhancingAllPhotos}
+                    leftIcon={
+                      isEnhancingAllPhotos ? (
+                        <FiRefreshCw className="animate-spin" style={{ fontSize: '12px' }} />
+                      ) : (
+                        <HiSparkles style={{ fontSize: '13px', color: '#F59E0B' }} />
+                      )
+                    }
+                    style={{
+                      height: '28px',
+                      padding: '0 0.625rem',
+                      fontSize: '0.75rem',
+                      fontWeight: 500,
+                      borderRadius: '6px',
+                      backgroundColor: 'var(--bg-main)',
+                      border: '1px solid var(--border-color)',
+                      color: 'var(--text-primary)',
+                      boxShadow: 'var(--shadow-sm)',
+                      whiteSpace: 'nowrap',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
+                      cursor: isEnhancingAllPhotos ? 'not-allowed' : 'pointer',
+                    }}
+                    title="Enhance all photos using AI model"
+                  >
+                    {isEnhancingAllPhotos
+                      ? `Enhancing (${Object.keys(enhancedPhotos).length}/${images.length})...`
+                      : 'Enhance All Photos'}
+                  </Button>
+                )}
                 {images.length > 0 && (
                   <Button
-                    variant="outline"
+                    variant="secondary"
                     size="sm"
                     onClick={handleDownloadAllImages}
                     disabled={isDownloadingAll}
@@ -2353,18 +2649,19 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                       )
                     }
                     style={{
-                      height: '24px',
+                      height: '28px',
                       padding: '0 0.625rem',
                       fontSize: '0.75rem',
                       fontWeight: 500,
-                      borderRadius: '9999px',
-                      borderColor: 'var(--border-color)',
+                      borderRadius: '6px',
                       backgroundColor: 'var(--bg-main)',
+                      border: '1px solid var(--border-color)',
                       color: 'var(--text-primary)',
                       boxShadow: 'var(--shadow-sm)',
                       display: 'inline-flex',
                       alignItems: 'center',
-                      gap: '0.25rem',
+                      gap: '0.35rem',
+                      whiteSpace: 'nowrap',
                       cursor: isDownloadingAll ? 'not-allowed' : 'pointer',
                     }}
                     title="Download all photos as a ZIP package"
@@ -2407,134 +2704,277 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                   maxHeight: 'calc(100vh - 140px)',
                 }}
               >
-                {images.map((img, idx) => (
-                  <div
-                    key={img.index}
-                    onClick={() => {
-                      setPreviewImageIndex(idx);
-                      setZoomScale(1);
-                    }}
-                    style={{
-                      position: 'relative',
-                      backgroundColor: '#000',
-                      border: '1px solid var(--border-color)',
-                      borderRadius: '0.5rem',
-                      overflow: 'hidden',
-                      cursor: 'pointer',
-                      aspectRatio: '4 / 3',
-                      display: 'flex',
-                    }}
-                  >
-                    <img
-                      id={`imported-fb-photo-${img.index}`}
-                      crossOrigin="anonymous"
-                      src={img.stored_url ? `http://localhost:8085${img.stored_url}` : img.source_url}
-                      alt={`Photo ${img.index}`}
-                      loading="lazy"
-                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                    />
-                    {/* Circular index badge (e.g. 1 instead of #01) */}
-                    <span
-                      style={{
-                        position: 'absolute',
-                        top: '6px',
-                        left: '6px',
-                        width: '24px',
-                        height: '24px',
-                        borderRadius: '50%',
-                        backgroundColor: 'rgba(0, 0, 0, 0.65)',
-                        backdropFilter: 'blur(4px)',
-                        border: '1px solid rgba(255, 255, 255, 0.2)',
-                        color: '#FFFFFF',
-                        fontSize: '0.75rem',
-                        fontWeight: 600,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        zIndex: 2,
-                      }}
-                    >
-                      {img.index}
-                    </span>
+                {images.map((img, idx) => {
+                  const isEnhanced = Boolean(enhancedPhotos[img.index]);
+                  const isEnhancing = Boolean(enhancingPhotos[img.index]);
+                  const displayUrl = isEnhanced
+                    ? enhancedPhotos[img.index]
+                    : (img.stored_url ? `http://localhost:8085${img.stored_url}` : img.source_url);
 
-                    {/* Action buttons: Copy & Download icon buttons */}
+                  return (
                     <div
+                      key={img.index}
+                      onMouseEnter={() => setHoveredPhotoIndex(img.index)}
+                      onMouseLeave={() => setHoveredPhotoIndex(null)}
+                      onClick={() => {
+                        setPreviewImageIndex(idx);
+                        setZoomScale(1);
+                      }}
                       style={{
-                        position: 'absolute',
-                        top: '6px',
-                        right: '6px',
+                        position: 'relative',
+                        backgroundColor: '#000',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '0.5rem',
+                        overflow: 'hidden',
+                        cursor: 'pointer',
+                        aspectRatio: '4 / 3',
                         display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                        zIndex: 2,
                       }}
                     >
-                      {/* Copy Image Button */}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          const fullUrl = img.stored_url
-                            ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
-                            : img.source_url;
-                          handleCopyImage({ index: img.index, url: fullUrl }, e);
-                        }}
-                        title={copiedImageIndex === img.index ? 'Copied image to clipboard!' : 'Copy image'}
-                        aria-label="Copy image"
+                      <img
+                        id={`imported-fb-photo-${img.index}`}
+                        crossOrigin="anonymous"
+                        src={displayUrl}
+                        alt={`Photo ${img.index}`}
+                        loading="lazy"
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                      />
+                      {/* Circular index badge (e.g. 1 instead of #01) */}
+                      <span
                         style={{
-                          width: '26px',
-                          height: '26px',
-                          backgroundColor: 'rgba(0, 0, 0, 0.65)',
-                          backdropFilter: 'blur(4px)',
-                          color: copiedImageIndex === img.index ? '#10B981' : '#FFFFFF',
-                          border: copiedImageIndex === img.index ? '1px solid rgba(16, 185, 129, 0.5)' : '1px solid rgba(255, 255, 255, 0.25)',
+                          position: 'absolute',
+                          top: '6px',
+                          left: '6px',
+                          width: '24px',
+                          height: '24px',
                           borderRadius: '50%',
-                          padding: 0,
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          transition: 'all 0.15s ease',
-                        }}
-                      >
-                        {copiedImageIndex === img.index ? (
-                          <FiCheck style={{ fontSize: '13px' }} />
-                        ) : (
-                          <FiCopy style={{ fontSize: '13px' }} />
-                        )}
-                      </button>
-
-                      {/* Download Image Button */}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          const fullUrl = img.stored_url
-                            ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
-                            : img.source_url;
-                          handleDownloadImage(fullUrl, img.index, e);
-                        }}
-                        title="Download image"
-                        aria-label="Download image"
-                        style={{
-                          width: '26px',
-                          height: '26px',
                           backgroundColor: 'rgba(0, 0, 0, 0.65)',
                           backdropFilter: 'blur(4px)',
+                          border: '1px solid rgba(255, 255, 255, 0.2)',
                           color: '#FFFFFF',
-                          border: '1px solid rgba(255, 255, 255, 0.25)',
-                          borderRadius: '50%',
-                          padding: 0,
-                          cursor: 'pointer',
+                          fontSize: '0.75rem',
+                          fontWeight: 600,
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          transition: 'all 0.15s ease',
+                          zIndex: 2,
                         }}
                       >
-                        <FiDownload style={{ fontSize: '13px' }} />
-                      </button>
+                        {img.index}
+                      </span>
+
+                      {/* Enhanced badge */}
+                      {isEnhanced && (
+                        <span
+                          style={{
+                            position: 'absolute',
+                            bottom: '6px',
+                            left: '6px',
+                            padding: '3px 7px',
+                            borderRadius: '4px',
+                            backgroundColor: 'rgba(0, 0, 0, 0.72)',
+                            backdropFilter: 'blur(6px)',
+                            border: '1px solid rgba(255, 255, 255, 0.16)',
+                            color: '#FFFFFF',
+                            fontSize: '0.625rem',
+                            fontWeight: 600,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            zIndex: 2,
+                            letterSpacing: '0.2px',
+                          }}
+                        >
+                          <HiSparkles style={{ fontSize: '10px', color: '#FFFFFF' }} />
+                          Enhanced
+                        </span>
+                      )}
+
+                      {/* Enhancing overlay */}
+                      {isEnhancing && (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            inset: 0,
+                            backgroundColor: 'rgba(0, 0, 0, 0.72)',
+                            backdropFilter: 'blur(2px)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px',
+                            color: '#FFFFFF',
+                            fontSize: '0.6875rem',
+                            fontWeight: 600,
+                            zIndex: 3,
+                          }}
+                        >
+                          <FiRefreshCw className="animate-spin" style={{ fontSize: '18px' }} />
+                          <span>Enhancing...</span>
+                        </div>
+                      )}
+
+                      {/* Action buttons: Enhance + Copy + Download (smooth opacity animation on hover) */}
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: '6px',
+                          right: '6px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          zIndex: 2,
+                          opacity: hoveredPhotoIndex === img.index || isEnhancing ? 1 : 0,
+                          pointerEvents: hoveredPhotoIndex === img.index || isEnhancing ? 'auto' : 'none',
+                          transition: hoveredPhotoIndex === img.index || isEnhancing
+                            ? 'opacity 0.28s cubic-bezier(0.2, 0.8, 0.2, 1)'
+                            : 'opacity 0.2s ease-out',
+                        }}
+                      >
+                        {/* Enhance Single Photo Button */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleEnhanceSinglePhoto(img);
+                          }}
+                          disabled={isEnhancing}
+                          title={isEnhanced ? 'Re-enhance photo' : 'Enhance photo'}
+                          aria-label="Enhance photo"
+                          style={{
+                            width: '26px',
+                            height: '26px',
+                            backgroundColor: 'rgba(0, 0, 0, 0.65)',
+                            backdropFilter: 'blur(4px)',
+                            color: '#FFFFFF',
+                            border: '1px solid rgba(255, 255, 255, 0.25)',
+                            borderRadius: '50%',
+                            padding: 0,
+                            cursor: isEnhancing ? 'not-allowed' : 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            boxShadow: '0 2px 6px rgba(0, 0, 0, 0.3)',
+                            transition: 'background-color 0.2s ease, border-color 0.2s ease, transform 0.15s ease',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.85)';
+                            e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.45)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.65)';
+                            e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.25)';
+                          }}
+                        >
+                          {isEnhancing ? (
+                            <FiRefreshCw className="animate-spin" style={{ fontSize: '12px' }} />
+                          ) : (
+                            <HiSparkles style={{ fontSize: '12px', color: '#FFFFFF' }} />
+                          )}
+                        </button>
+
+                        {/* Revert to Original Photo Button */}
+                        {isEnhanced && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRevertPhotoToOriginal(img.index, e);
+                            }}
+                            title="Revert to original photo"
+                            aria-label="Revert to original photo"
+                            style={{
+                              width: '26px',
+                              height: '26px',
+                              backgroundColor: 'rgba(0, 0, 0, 0.65)',
+                              backdropFilter: 'blur(4px)',
+                              color: '#FFFFFF',
+                              border: '1px solid rgba(255, 255, 255, 0.25)',
+                              borderRadius: '50%',
+                              padding: 0,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              boxShadow: '0 2px 6px rgba(0, 0, 0, 0.3)',
+                              transition: 'background-color 0.2s ease, border-color 0.2s ease, transform 0.15s ease',
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.75)';
+                              e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.9)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.65)';
+                              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.25)';
+                            }}
+                          >
+                            <FiRotateCcw style={{ fontSize: '11px' }} />
+                          </button>
+                        )}
+
+                        {/* Copy Image Button */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            handleCopyImage({ index: img.index, url: displayUrl }, e);
+                          }}
+                          title={copiedImageIndex === img.index ? 'Copied image to clipboard!' : 'Copy image'}
+                          aria-label="Copy image"
+                          style={{
+                            width: '26px',
+                            height: '26px',
+                            backgroundColor: 'rgba(0, 0, 0, 0.65)',
+                            backdropFilter: 'blur(4px)',
+                            color: copiedImageIndex === img.index ? '#10B981' : '#FFFFFF',
+                            border: copiedImageIndex === img.index ? '1px solid rgba(16, 185, 129, 0.5)' : '1px solid rgba(255, 255, 255, 0.25)',
+                            borderRadius: '50%',
+                            padding: 0,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            boxShadow: '0 2px 6px rgba(0, 0, 0, 0.3)',
+                            transition: 'background-color 0.2s ease, border-color 0.2s ease, transform 0.15s ease',
+                          }}
+                        >
+                          {copiedImageIndex === img.index ? (
+                            <FiCheck style={{ fontSize: '13px' }} />
+                          ) : (
+                            <FiCopy style={{ fontSize: '13px' }} />
+                          )}
+                        </button>
+
+                        {/* Download Image Button */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            handleDownloadImage(displayUrl, img.index, e);
+                          }}
+                          title="Download image"
+                          aria-label="Download image"
+                          style={{
+                            width: '26px',
+                            height: '26px',
+                            backgroundColor: 'rgba(0, 0, 0, 0.65)',
+                            backdropFilter: 'blur(4px)',
+                            color: '#FFFFFF',
+                            border: '1px solid rgba(255, 255, 255, 0.25)',
+                            borderRadius: '50%',
+                            padding: 0,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            boxShadow: '0 2px 6px rgba(0, 0, 0, 0.3)',
+                            transition: 'background-color 0.2s ease, border-color 0.2s ease, transform 0.15s ease',
+                          }}
+                        >
+                          <FiDownload style={{ fontSize: '13px' }} />
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -2703,14 +3143,20 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
               <button
                 type="button"
                 onClick={handleCopyCaption}
-                style={{
+style={{
+                  height: '36px',
                   display: 'inline-flex',
                   alignItems: 'center',
-                  gap: '0.25rem',
+                  justifyContent: 'center',
+                  gap: '0.5rem',
+                  padding: '0 1rem',
+                  borderRadius: '8px',
                   background: 'transparent',
-                  border: 'none',
-                  color: copiedCaption ? 'var(--status-success)' : 'var(--accent-primary)',
-                  fontSize: '0.75rem',
+                  border: '1px solid var(--border-color)',
+                  color: copiedCaption ? 'var(--status-success)' : 'var(--text-primary)',
+                  fontSize: '0.8125rem',
+                  fontWeight: 500,
+                  whiteSpace: 'nowrap',
                   cursor: 'pointer',
                 }}
               >
@@ -2746,16 +3192,16 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                 onClick={() => setShowRawJsonModal(true)}
                 leftIcon={<FiCode style={{ fontSize: '15px' }} />}
                 style={{
-                  height: '38px',
+                  height: '36px',
                   display: 'inline-flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: '0.5rem',
                   whiteSpace: 'nowrap',
-                  padding: '0 1.125rem',
+                  padding: '0 1rem',
                   fontSize: '0.8125rem',
                   fontWeight: 500,
-                  borderRadius: '0.375rem',
+                  borderRadius: '8px',
                 }}
               >
                 View Raw JSON
@@ -2766,22 +3212,33 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                 onClick={handleRerunExtraction}
                 leftIcon={<FiRefreshCw style={{ fontSize: '15px' }} />}
                 style={{
-                  height: '38px',
+                  height: '36px',
                   display: 'inline-flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: '0.5rem',
                   whiteSpace: 'nowrap',
-                  padding: '0 1.125rem',
+                  padding: '0 1rem',
                   fontSize: '0.8125rem',
                   fontWeight: 500,
-                  borderRadius: '0.375rem',
+                  borderRadius: '8px',
                 }}
               >
                 Re-run Extraction
               </Button>
             </div>
-            <Button variant="outline" size="sm" onClick={() => setShowPostContentModal(false)}>
+            <Button variant="outline" size="md" onClick={() => setShowPostContentModal(false)} style={{
+              height: '36px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '0.5rem',
+              whiteSpace: 'nowrap',
+              padding: '0 1rem',
+              fontSize: '0.8125rem',
+              fontWeight: 500,
+              borderRadius: '8px',
+                }}>
               Close
             </Button>
           </div>
@@ -2820,7 +3277,18 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
             )}
           </pre>
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <Button variant="outline" size="sm" onClick={() => setShowRawJsonModal(false)}>
+            <Button variant="outline" size="md" onClick={() => setShowRawJsonModal(false)} style={{
+              height: '36px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '0.5rem',
+              whiteSpace: 'nowrap',
+              padding: '0 1rem',
+              fontSize: '0.8125rem',
+              fontWeight: 500,
+              borderRadius: '8px',
+                }}>
               Close
             </Button>
           </div>
@@ -2862,7 +3330,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                 Images: {workflowConfig.getImages.enabled ? 'ON' : 'OFF'}
               </Badge>
               <Badge variant="warning" size="sm">
-                {workflowConfig.aiBoxes.length} AI Boxes
+                {(workflowConfig.aiBoxes || []).filter((b) => isAIBoxConnected(b, workflowConfig.connections)).length} AI Boxes
               </Badge>
             </div>
           </div>
@@ -2912,9 +3380,13 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
       {/* FULLSCREEN STUDIO IMAGE LIGHTBOX (Image 2 style) */}
       {previewImageIndex !== null && images[previewImageIndex] && (() => {
         const activeImg = images[previewImageIndex];
-        const activeImgUrl = activeImg.stored_url
-          ? (activeImg.stored_url.startsWith('http') ? activeImg.stored_url : `http://localhost:8085${activeImg.stored_url}`)
-          : activeImg.source_url;
+        const isEnhanced = Boolean(enhancedPhotos[activeImg.index]);
+        const isEnhancing = Boolean(enhancingPhotos[activeImg.index]);
+        const activeImgUrl = (isEnhanced && !lightboxShowOriginal)
+          ? enhancedPhotos[activeImg.index]
+          : (activeImg.stored_url
+            ? (activeImg.stored_url.startsWith('http') ? activeImg.stored_url : `http://localhost:8085${activeImg.stored_url}`)
+            : activeImg.source_url);
 
         return (
           <div
@@ -2938,7 +3410,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
             }}
             onClick={() => setPreviewImageIndex(null)}
           >
-            {/* Top-Left: Image Counter (e.g. 1 / 5) */}
+            {/* Top-Left: Image Counter & Enhancement Status */}
             <div
               style={{
                 position: 'absolute',
@@ -2965,6 +3437,31 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
               >
                 {previewImageIndex + 1} / {images.length}
               </span>
+
+              {isEnhanced && (
+                <span
+                  style={{
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    color: '#FFFFFF',
+                    backgroundColor: 'rgba(0, 0, 0, 0.72)',
+                    backdropFilter: 'blur(6px)',
+                    padding: '4px 10px',
+                    borderRadius: '16px',
+                    border: '1px solid rgba(255, 255, 255, 0.18)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                  }}
+                >
+                  {lightboxShowOriginal ? 'Original Photo' : (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                      <HiSparkles style={{ fontSize: '11px', color: '#FFFFFF' }} />
+                      Enhanced
+                    </span>
+                  )}
+                </span>
+              )}
             </div>
 
             {/* Top-Right: Close Button (Circle with X) */}
@@ -3226,6 +3723,108 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                 {/* Divider */}
                 <div style={{ width: '1px', height: '18px', backgroundColor: 'rgba(255, 255, 255, 0.15)', margin: '0 4px' }} />
 
+                {/* Compare / View Original Photo Toggle Button */}
+                {isEnhanced && (
+                  <button
+                    type="button"
+                    onClick={() => setLightboxShowOriginal((v) => !v)}
+                    title={lightboxShowOriginal ? 'Show enhanced photo' : 'Compare: view original photo'}
+                    aria-label="Toggle compare original"
+                    style={{
+                      width: '30px',
+                      height: '30px',
+                      borderRadius: '50%',
+                      backgroundColor: lightboxShowOriginal ? 'rgba(255, 255, 255, 0.2)' : 'transparent',
+                      border: 'none',
+                      color: lightboxShowOriginal ? '#FBBF24' : '#FFFFFF',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.12)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = lightboxShowOriginal ? 'rgba(255, 255, 255, 0.2)' : 'transparent';
+                    }}
+                  >
+                    {lightboxShowOriginal ? (
+                      <FiEyeOff style={{ fontSize: '15px' }} />
+                    ) : (
+                      <FiEye style={{ fontSize: '15px' }} />
+                    )}
+                  </button>
+                )}
+
+                {/* Revert / Restore Original Photo Button */}
+                {isEnhanced && (
+                  <button
+                    type="button"
+                    onClick={() => handleRevertPhotoToOriginal(activeImg.index)}
+                    title="Revert to original photo"
+                    aria-label="Revert to original photo"
+                    style={{
+                      width: '30px',
+                      height: '30px',
+                      borderRadius: '50%',
+                      backgroundColor: 'transparent',
+                      border: 'none',
+                      color: '#FFFFFF',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.25)';
+                      e.currentTarget.style.color = '#F87171';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = 'transparent';
+                      e.currentTarget.style.color = '#FFFFFF';
+                    }}
+                  >
+                    <FiRotateCcw style={{ fontSize: '14px' }} />
+                  </button>
+                )}
+
+                {/* Quick Enhance Button */}
+                <button
+                  type="button"
+                  onClick={() => handleEnhanceSinglePhoto(activeImg)}
+                  disabled={isEnhancing}
+                  title={isEnhanced ? 'Re-enhance photo' : 'Enhance photo'}
+                  aria-label="Enhance photo"
+                  style={{
+                    width: '30px',
+                    height: '30px',
+                    borderRadius: '50%',
+                    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                    border: 'none',
+                    color: '#FFFFFF',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: isEnhancing ? 'not-allowed' : 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.16)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)';
+                  }}
+                >
+                  {isEnhancing ? (
+                    <FiRefreshCw className="animate-spin" style={{ fontSize: '13px', color: '#FFFFFF' }} />
+                  ) : (
+                    <HiSparkles style={{ fontSize: '14px', color: '#FFFFFF' }} />
+                  )}
+                </button>
+
                 {/* Copy Image Button */}
                 <button
                   type="button"
@@ -3293,6 +3892,64 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
         );
       })()}
 
+      {/* AI IMAGE ENHANCEMENT STUDIO MODAL */}
+      {selectedImageAIBoxModal && (
+        <Modal
+          isOpen={Boolean(selectedImageAIBoxModal)}
+          onClose={() => {
+            setSelectedImageAIBoxModal(null);
+            setStudioStartWithNewChat(false);
+            setStudioInitialImages([]);
+          }}
+          title={
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <HiSparkles style={{ fontSize: '1.25rem', color: '#10B981' }} />
+              <span>Image Studio · {selectedImageAIBoxModal.title ? selectedImageAIBoxModal.title.replace(/\bAI\s+/gi, '') : 'Image Enhancer'}</span>
+            </div>
+          }
+          maxWidth="1160px"
+          height="88vh"
+          bodyPadding="0"
+        >
+          <AIImageStudio
+            box={selectedImageAIBoxModal}
+            importedPhotos={images}
+            enhancedPhotosMap={enhancedPhotos}
+            startWithNewChat={studioStartWithNewChat}
+            initialAttachedImages={studioInitialImages}
+            availablePrompts={promptTemplates.map((p) => ({
+              id: String(p.id),
+              name: p.name,
+              category: p.category,
+              templateText: p.templateText,
+              model: p.model,
+            }))}
+            onPhotoEnhanced={(photoIndex, enhancedUrl) => {
+              setEnhancedPhotos((prev) => ({ ...prev, [photoIndex]: enhancedUrl }));
+              addLog(`✨ Photo #${photoIndex} enhanced via Image Studio`, 'success');
+            }}
+            onUpdateBox={(id, updates) => {
+              setWorkflowConfig((prev) => ({
+                ...prev,
+                aiBoxes: prev.aiBoxes.map((b) => (b.id === id ? { ...b, ...updates } : b)),
+              }));
+              setSelectedImageAIBoxModal((prev) => (prev ? { ...prev, ...updates } : null));
+            }}
+            onToggleBox={(id) => {
+              setWorkflowConfig((prev) => ({
+                ...prev,
+                aiBoxes: prev.aiBoxes.map((b) => (b.id === id ? { ...b, enabled: !b.enabled } : b)),
+              }));
+            }}
+            onClose={() => {
+              setSelectedImageAIBoxModal(null);
+              setStudioStartWithNewChat(false);
+              setStudioInitialImages([]);
+            }}
+          />
+        </Modal>
+      )}
+
       {/* VIEW / EDIT AI RESULT MODAL */}
       {viewingResultBox && (
         <Modal
@@ -3315,7 +3972,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                 </div>
               </div>
               <Badge variant={viewingResultBox.provider === 'runware_ai' ? 'success' : viewingResultBox.provider === 'google_ai' ? 'info' : 'success'}>
-                {viewingResultBox.provider === 'runware_ai' ? (viewingResultBox.model || 'Runware') : viewingResultBox.provider === 'laozhang_ai' ? (viewingResultBox.model || 'DeepSeek') : viewingResultBox.provider === 'google_ai' ? 'Gemini' : (viewingResultBox.model || 'GPT-4o')}
+                {getAIModelDisplayName(viewingResultBox.provider, viewingResultBox.model)}
               </Badge>
             </div>
 
