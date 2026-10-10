@@ -1,5 +1,5 @@
 {
-  "timestamp": 1791668682945,
+  "timestamp": 1791668832590,
   "workflow_formats": [
     {
       "config": {
@@ -93,8 +93,8 @@
           "y": 380
         },
         "panOffset": {
-          "x": 38,
-          "y": 39
+          "x": 30,
+          "y": 30
         },
         "trigger": {
           "autoImport": true,
@@ -107,7 +107,7 @@
       "description": "Customized Facebook import extraction and dynamic AI generation pipeline",
       "id": "format-1790885461679",
       "name": "General Engine",
-      "updatedAt": 1791668682945
+      "updatedAt": 1791668832590
     }
   ]
 }
