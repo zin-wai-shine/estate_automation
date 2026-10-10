@@ -297,13 +297,19 @@ export interface MergedNodeShapeProps {
 
 const CANVAS_NODE_ACTION_CSS = `
 .canvas-node::before{content:'';position:absolute;inset:-7px;border-radius:50%;border:1.5px dashed var(--ring,#388BFD);opacity:0;transform:scale(.88);transition:opacity .2s ease,transform .35s cubic-bezier(.34,1.56,.64,1);pointer-events:none}
-.canvas-node:hover::before{opacity:.7;transform:scale(1);animation:nodeRingSpin 10s linear infinite}
+.canvas-node:hover::before,
+.canvas-node.is-hovered::before{opacity:.7;transform:scale(1);animation:nodeRingSpin 10s linear infinite}
 @keyframes nodeRingSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
-.node-hit{position:absolute;display:flex;align-items:center;justify-content:center;gap:8px;pointer-events:none;z-index:35}
-.canvas-node:hover .node-hit{pointer-events:auto}
-.node-action{width:26px;height:26px;border-radius:50%;background:var(--na-bg);border:1.5px solid var(--na-color);color:var(--na-color);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;opacity:0;transform:scale(.3) translateY(6px);box-shadow:0 2px 8px rgba(0,0,0,.15);transition:opacity .2s ease,transform .35s cubic-bezier(.34,1.56,.64,1),background-color .15s ease,color .15s ease,box-shadow .15s ease}
-.canvas-node:hover .node-action{opacity:1;transform:scale(1) translateY(0)}
-.canvas-node .node-action:hover{background:var(--na-color);color:#fff;box-shadow:0 0 12px var(--na-color);transform:scale(1.14)}
+.node-hit{position:absolute;display:flex;align-items:center;pointer-events:none;z-index:35}
+.canvas-node:hover .node-hit,
+.canvas-node.is-hovered .node-hit,
+.node-hit:hover{pointer-events:auto}
+.node-action{width:26px;height:26px;border-radius:50%;background:var(--na-bg);border:1.5px solid var(--na-color);color:var(--na-color);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;opacity:0;transform:scale(.3) translateX(-4px);box-shadow:0 2px 6px rgba(0,0,0,.15);transition:opacity .18s ease,transform .25s cubic-bezier(.34,1.56,.64,1),background-color .15s ease,color .15s ease;pointer-events:none}
+.canvas-node:hover .node-action,
+.canvas-node.is-hovered .node-action,
+.node-hit:hover .node-action{opacity:1;transform:scale(1) translateX(0);pointer-events:auto}
+.canvas-node .node-action:hover,
+.node-hit .node-action:hover{background:var(--na-color);color:#fff;box-shadow:0 2px 8px rgba(0,0,0,.25);transform:scale(1.14)}
 `;
 
 const NodeActionButton: React.FC<{
@@ -562,6 +568,33 @@ export const FacebookWorkflowCanvas = forwardRef<
   const [dragWire, setDragWire] = useState<DragWireState | null>(null);
   const [hoveredWireId, setHoveredWireId] = useState<string | null>(null);
   const [hoveredXId, setHoveredXId] = useState<string | null>(null);
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+  const hoverLeaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleNodeMouseEnter = (nodeId: string) => {
+    if (hoverLeaveTimeoutRef.current) {
+      clearTimeout(hoverLeaveTimeoutRef.current);
+      hoverLeaveTimeoutRef.current = null;
+    }
+    setHoveredNodeId(nodeId);
+  };
+
+  const handleNodeMouseLeave = (nodeId: string) => {
+    if (hoverLeaveTimeoutRef.current) {
+      clearTimeout(hoverLeaveTimeoutRef.current);
+    }
+    hoverLeaveTimeoutRef.current = setTimeout(() => {
+      setHoveredNodeId((curr) => (curr === nodeId ? null : curr));
+    }, 240);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (hoverLeaveTimeoutRef.current) {
+        clearTimeout(hoverLeaveTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Node Modal State
   const [activeModalNode, setActiveModalNode] = useState<ActiveModalNode>(null);
@@ -1735,7 +1768,9 @@ export const FacebookWorkflowCanvas = forwardRef<
           {/* NODE 1: FACEBOOK URL IMPORTER (TRIGGER CIRCLE)           */}
           {/* ======================================================== */}
           <div
-            className="canvas-node"
+            className={`canvas-node ${hoveredNodeId === 'trigger' ? 'is-hovered' : ''}`}
+            onMouseEnter={() => handleNodeMouseEnter('trigger')}
+            onMouseLeave={() => handleNodeMouseLeave('trigger')}
             onMouseDown={(e) => startDragNode('trigger', e)}
             onClick={(e) => handleNodeClick({ type: 'trigger' }, e)}
             style={{
@@ -1749,10 +1784,7 @@ export const FacebookWorkflowCanvas = forwardRef<
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              transition: 'filter 0.18s ease',
             }}
-            onMouseEnter={(e) => { e.currentTarget.style.filter = 'drop-shadow(0 0 10px rgba(56, 139, 253, 0.5))'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.filter = 'none'; }}
           >
             <MergedNodeShape
               sockets="right"
@@ -1793,7 +1825,9 @@ export const FacebookWorkflowCanvas = forwardRef<
           {/* NODE 2A: GET CONTENT BRANCH (CIRCLE)                     */}
           {/* ======================================================== */}
           <div
-            className="canvas-node"
+            className={`canvas-node ${hoveredNodeId === 'get-content' ? 'is-hovered' : ''}`}
+            onMouseEnter={() => handleNodeMouseEnter('get-content')}
+            onMouseLeave={() => handleNodeMouseLeave('get-content')}
             onMouseDown={(e) => startDragNode('get-content', e)}
             onClick={(e) => handleNodeClick({ type: 'get-content' }, e)}
             style={{
@@ -1803,15 +1837,12 @@ export const FacebookWorkflowCanvas = forwardRef<
               width: `${CIRCLE_SIZE}px`,
               height: `${CIRCLE_SIZE}px`,
               opacity: config.getContent.enabled ? 1 : 0.6,
-              zIndex: 15,
+              zIndex: hoveredNodeId === 'get-content' ? 25 : 15,
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              transition: 'filter 0.18s ease',
             }}
-            onMouseEnter={(e) => { e.currentTarget.style.filter = 'drop-shadow(0 0 10px rgba(56, 139, 253, 0.5))'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.filter = 'none'; }}
           >
             <MergedNodeShape
               sockets="both"
@@ -1833,8 +1864,22 @@ export const FacebookWorkflowCanvas = forwardRef<
               }}
             />
 
-            {/* Hover: animated plus to add + connect a node */}
-            <div className="node-hit" style={{ left: '100%', top: 0, height: '100%', display: 'flex', alignItems: 'center', paddingLeft: '12px', boxSizing: 'border-box' }}>
+            {/* Hover: animated plus to add + connect a node with seamless hover bridge */}
+            <div
+              className="node-hit"
+              onMouseEnter={() => handleNodeMouseEnter('get-content')}
+              onMouseLeave={() => handleNodeMouseLeave('get-content')}
+              style={{
+                left: '36px',
+                top: '-12px',
+                bottom: '-12px',
+                paddingLeft: '50px',
+                paddingRight: '16px',
+                display: 'flex',
+                alignItems: 'center',
+                boxSizing: 'border-box',
+              }}
+            >
               <NodeActionButton title="Add AI node" color="#388BFD" isDark={isDark} onClick={() => handleAddAIBoxConnectedFromContent()}>
                 <FiPlus style={{ fontSize: '14px' }} />
               </NodeActionButton>
@@ -1868,7 +1913,9 @@ export const FacebookWorkflowCanvas = forwardRef<
           {/* NODE 2B: GET IMAGES BRANCH (CIRCLE)                      */}
           {/* ======================================================== */}
           <div
-            className="canvas-node"
+            className={`canvas-node ${hoveredNodeId === 'get-images' ? 'is-hovered' : ''}`}
+            onMouseEnter={() => handleNodeMouseEnter('get-images')}
+            onMouseLeave={() => handleNodeMouseLeave('get-images')}
             onMouseDown={(e) => startDragNode('get-images', e)}
             onClick={(e) => handleNodeClick({ type: 'get-images' }, e)}
             style={{
@@ -1879,15 +1926,12 @@ export const FacebookWorkflowCanvas = forwardRef<
               height: `${CIRCLE_SIZE}px`,
               ['--ring' as any]: '#2EA043',
               opacity: config.getImages.enabled ? 1 : 0.6,
-              zIndex: 15,
+              zIndex: hoveredNodeId === 'get-images' ? 25 : 15,
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              transition: 'filter 0.18s ease',
             }}
-            onMouseEnter={(e) => { e.currentTarget.style.filter = 'drop-shadow(0 0 10px rgba(46, 160, 67, 0.5))'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.filter = 'none'; }}
           >
             <MergedNodeShape
               sockets="both"
@@ -1909,8 +1953,22 @@ export const FacebookWorkflowCanvas = forwardRef<
               }}
             />
 
-            {/* Hover: animated plus to add + connect a node */}
-            <div className="node-hit" style={{ left: '100%', top: 0, height: '100%', display: 'flex', alignItems: 'center', paddingLeft: '12px', boxSizing: 'border-box' }}>
+            {/* Hover: animated plus to add + connect a node with seamless hover bridge */}
+            <div
+              className="node-hit"
+              onMouseEnter={() => handleNodeMouseEnter('get-images')}
+              onMouseLeave={() => handleNodeMouseLeave('get-images')}
+              style={{
+                left: '36px',
+                top: '-12px',
+                bottom: '-12px',
+                paddingLeft: '50px',
+                paddingRight: '16px',
+                display: 'flex',
+                alignItems: 'center',
+                boxSizing: 'border-box',
+              }}
+            >
               <NodeActionButton title="Add Image Enhancement node" color="#2EA043" isDark={isDark} onClick={() => handleAddAIBoxConnectedFromImages()}>
                 <FiPlus style={{ fontSize: '14px' }} />
               </NodeActionButton>
@@ -1958,7 +2016,9 @@ export const FacebookWorkflowCanvas = forwardRef<
             return (
               <div
                 key={box.id}
-                className="canvas-node"
+                className={`canvas-node ${hoveredNodeId === box.id ? 'is-hovered' : ''}`}
+                onMouseEnter={() => handleNodeMouseEnter(box.id)}
+                onMouseLeave={() => handleNodeMouseLeave(box.id)}
                 onMouseDown={(e) => startDragNode(box.id, e)}
                 onClick={(e) => handleNodeClick({ type: 'ai-box', boxId: box.id }, e)}
                 style={{
@@ -1969,23 +2029,12 @@ export const FacebookWorkflowCanvas = forwardRef<
                   height: `${CIRCLE_SIZE}px`,
                   ['--ring' as any]: themeColor,
                   opacity: box.enabled ? 1 : 0.6,
-                  zIndex: isSelected ? 20 : 15,
+                  zIndex: isSelected ? 30 : hoveredNodeId === box.id ? 25 : 15,
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  transition: 'filter 0.18s ease',
                 }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.filter = isRunware
-                    ? 'drop-shadow(0 0 10px rgba(16, 185, 129, 0.55))'
-                    : isGoogle
-                    ? 'drop-shadow(0 0 10px rgba(56, 139, 253, 0.55))'
-                    : isLaoZhang
-                    ? 'drop-shadow(0 0 10px rgba(37, 99, 235, 0.55))'
-                    : 'drop-shadow(0 0 10px rgba(46, 160, 67, 0.55))';
-                }}
-                onMouseLeave={(e) => { e.currentTarget.style.filter = 'none'; }}
               >
                 <MergedNodeShape
                   sockets="both"
@@ -2021,18 +2070,21 @@ export const FacebookWorkflowCanvas = forwardRef<
                   )}
                 </div>
 
-                {/* Hover: animated duplicate + delete actions at the right of the node */}
+                {/* Hover: animated duplicate + delete actions with seamless hover bridge */}
                 <div
                   className="node-hit"
+                  onMouseEnter={() => handleNodeMouseEnter(box.id)}
+                  onMouseLeave={() => handleNodeMouseLeave(box.id)}
                   style={{
-                    left: '100%',
-                    top: '50%',
-                    transform: 'translateY(-50%)',
+                    left: '36px',
+                    top: '-12px',
+                    bottom: '-12px',
+                    paddingLeft: '50px',
+                    paddingRight: '16px',
                     display: 'flex',
                     flexDirection: 'row',
                     alignItems: 'center',
                     gap: '6px',
-                    paddingLeft: '12px',
                     boxSizing: 'border-box',
                   }}
                 >
@@ -2077,7 +2129,9 @@ export const FacebookWorkflowCanvas = forwardRef<
           {/* NODE 4: PROPERTY INBOX (DESTINATION CIRCLE)               */}
           {/* ======================================================== */}
           <div
-            className="canvas-node"
+            className={`canvas-node ${hoveredNodeId === 'destination' ? 'is-hovered' : ''}`}
+            onMouseEnter={() => handleNodeMouseEnter('destination')}
+            onMouseLeave={() => handleNodeMouseLeave('destination')}
             onMouseDown={(e) => startDragNode('destination', e)}
             onClick={(e) => handleNodeClick({ type: 'destination' }, e)}
             style={{
@@ -2091,10 +2145,7 @@ export const FacebookWorkflowCanvas = forwardRef<
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              transition: 'filter 0.18s ease',
             }}
-            onMouseEnter={(e) => { e.currentTarget.style.filter = 'drop-shadow(0 0 10px rgba(46, 160, 67, 0.5))'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.filter = 'none'; }}
           >
             <MergedNodeShape
               sockets="left"
