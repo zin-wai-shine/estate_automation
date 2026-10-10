@@ -1202,39 +1202,12 @@ export const AITrainingChatbot: React.FC<AITrainingChatbotProps> = ({
             height: '100%',
           }}
         >
-          {/* Top Bar: Model Selector at left top */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '0.625rem 1rem',
-              borderBottom: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid var(--border-color)',
-              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.015)',
-              minHeight: '44px',
-              flexShrink: 0,
-              zIndex: 20,
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <ModelSelectorMenu
-                provider={box.provider}
-                model={box.model}
-                filterType="text"
-                align="left"
-                onSelectModel={(provider, model) => {
-                  onUpdateBox(box.id, { provider, model });
-                }}
-              />
-            </div>
-          </div>
-
           {/* MESSAGES FLOW */}
           <div
             style={{
               flex: 1,
               overflowY: 'auto',
-              padding: '1.5rem 1.25rem',
+              padding: '0.75rem 1.25rem',
               display: 'flex',
               flexDirection: 'column',
             }}

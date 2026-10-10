@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import type { DynamicAIBoxConfig, CanvasPromptOption } from './FacebookWorkflowCanvas';
-import { RunwareIcon, LaoZhangIcon, OpenAIIcon, ModelSelectorMenu } from './AITrainingChatbot';
+import { RunwareIcon, LaoZhangIcon, OpenAIIcon } from './AITrainingChatbot';
 import { Select } from '../../components/ui/Select';
 import { useTheme } from '../../context/ThemeContext';
 import { getAIModelDisplayName, isImagePrompt } from './aiModelUtils';
@@ -2222,43 +2222,12 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
         {/* CENTER COLUMN: ChatGPT-style Conversation & Input Area    */}
         {/* ========================================================= */}
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, height: '100%', position: 'relative' }}>
-          {/* Top Bar: Model Selector at left top */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '0.625rem 1rem',
-              borderBottom: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid var(--border-color)',
-              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.015)',
-              minHeight: '44px',
-              flexShrink: 0,
-              zIndex: 20,
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <ModelSelectorMenu
-                provider={(box.provider as any) || 'runware_ai'}
-                model={box.model || 'runware:101@1'}
-                filterType="image"
-                align="left"
-                onSelectModel={(provider, model) => {
-                  onUpdateBox(box.id, { provider, model });
-                }}
-              />
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              <span style={{ fontWeight: 500 }}>Strength: {Math.round((box.strength ?? 0.65) * 100)}%</span>
-            </div>
-          </div>
-
           {/* Scrollable Conversation Stream */}
           <div
             style={{
               flex: 1,
               overflowY: 'auto',
-              padding: '1.25rem 1.5rem',
+              padding: '0.75rem 1.25rem',
               display: 'flex',
               flexDirection: 'column',
               boxSizing: 'border-box',

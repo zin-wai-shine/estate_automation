@@ -2657,6 +2657,13 @@ export const FacebookWorkflowCanvas = forwardRef<
           maxWidth={activeModalNode.type === 'ai-box' ? '1120px' : '560px'}
           height={activeModalNode.type === 'ai-box' ? '88vh' : undefined}
           bodyPadding={activeModalNode.type === 'ai-box' ? '0' : undefined}
+          headerExtra={
+            currentModalAIBox && isImageAIBox(currentModalAIBox, config.connections) ? (
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 500, marginRight: '0.25rem' }}>
+                Strength: {Math.round((currentModalAIBox.strength ?? 0.65) * 100)}%
+              </span>
+            ) : undefined
+          }
 
           title={
             activeModalNode.type === 'trigger' ? (
@@ -2683,8 +2690,8 @@ export const FacebookWorkflowCanvas = forwardRef<
               (() => {
                 const isModalImageBox = isImageAIBox(currentModalAIBox, config.connections);
                 return (
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', position: 'relative', minHeight: '32px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', minWidth: 0, zIndex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0, minHeight: '32px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
                       {isModalImageBox ? (
                         <RunwareIcon size={18} color="#10B981" />
                       ) : currentModalAIBox.provider === 'laozhang_ai' ? (
@@ -2694,20 +2701,19 @@ export const FacebookWorkflowCanvas = forwardRef<
                       ) : (
                         <SiGooglegemini style={{ fontSize: '18px', color: '#60A5FA' }} />
                       )}
-                      <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '240px' }}>
+                      <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '200px' }}>
                         {currentModalAIBox.title}
                       </span>
                     </div>
 
-                    {/* Center AI Model Selector */}
-                    <div style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', zIndex: 10 }}>
-                      <ModelSelectorMenu
-                        provider={currentModalAIBox.provider}
-                        model={currentModalAIBox.model}
-                        filterType={isModalImageBox ? 'image' : 'text'}
-                        onSelectModel={(provider, model) => handleUpdateAIBox(currentModalAIBox.id, { provider, model })}
-                      />
-                    </div>
+                    {/* AI Model Selector at left top */}
+                    <ModelSelectorMenu
+                      provider={currentModalAIBox.provider}
+                      model={currentModalAIBox.model}
+                      filterType={isModalImageBox ? 'image' : 'text'}
+                      align="left"
+                      onSelectModel={(provider, model) => handleUpdateAIBox(currentModalAIBox.id, { provider, model })}
+                    />
                   </div>
                 );
               })()
