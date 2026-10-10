@@ -2212,7 +2212,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   )}
                 </div>
 
-                {/* Hover: animated duplicate + delete actions curving around node with delete below plus */}
+                {/* Hover: animated duplicate + delete actions with arrow centered between both buttons */}
                 {isEffectiveEnabled && (
                   <div
                     className="node-hit"
@@ -2220,10 +2220,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                     onMouseLeave={() => handleNodeMouseLeave(box.id)}
                     style={{
                       left: '36px',
-                      top: '-6px',
-                      bottom: '-6px',
-                      paddingLeft: '44px',
-                      paddingRight: '14px',
+                      top: '-8px',
+                      bottom: '-8px',
+                      paddingLeft: '26px',
+                      paddingRight: '12px',
                       display: 'flex',
                       flexDirection: 'column',
                       justifyContent: 'space-between',
