@@ -731,10 +731,45 @@ export const FacebookWorkflowCanvas = forwardRef<
     return false;
   };
 
+  // Check if a node is effectively enabled (cascading disabled state down from upstream relatives,
+  // excluding the endpoint destination):
+  // "if that connect disabled that receiver taht relative I means just necessary relative not end point just relative must be disabled too"
+  const isNodeEffectivelyEnabled = (nodeId: string, visited: Set<string> = new Set()): boolean => {
+    if (visited.has(nodeId)) return false;
+    visited.add(nodeId);
+
+    if (nodeId === 'trigger') return true;
+    if (nodeId === 'destination') return true; // endpoint stays ready
+    if (nodeId === 'get-content') return Boolean(config.getContent.enabled);
+    if (nodeId === 'get-images') return Boolean(config.getImages.enabled);
+
+    const box = config.aiBoxes.find((b) => b.id === nodeId);
+    if (!box) return false;
+    if (!box.enabled) return false;
+
+    // Relative node must have active upstream inputs:
+    // If incoming connections exist, all upstream branches must not be disabled.
+    const conns = config.connections || [];
+    const incoming = conns.filter((c) => c.toNodeId === nodeId);
+    if (incoming.length > 0) {
+      const hasActiveUpstream = incoming.some((c) =>
+        isNodeEffectivelyEnabled(c.fromNodeId, new Set(visited))
+      );
+      if (!hasActiveUpstream) return false;
+    }
+
+    return true;
+  };
+
   // Directional forward-only connection validation with strict duplicate rejection:
   // "and that can't connect back with other and that only can connect next other step"
   const isValidConnection = (fromId: string, toId: string): boolean => {
     if (!fromId || !toId || fromId === toId) return false;
+
+    // Disallow connections originating from disabled nodes
+    if (!isNodeEffectivelyEnabled(fromId)) {
+      return false;
+    }
 
     // Reject if already connected in either direction
     if (isAlreadyConnected(fromId, toId)) {
@@ -1370,10 +1405,10 @@ export const FacebookWorkflowCanvas = forwardRef<
     : null;
 
   const isContentOutputConnected = (config.connections || []).some((c) => c.fromNodeId === 'get-content');
-  const contentHasReceiver = config.aiBoxes.some((b) => isValidConnection('get-content', b.id));
+  const contentHasReceiver = Boolean(config.getContent.enabled) && config.aiBoxes.some((b) => isValidConnection('get-content', b.id));
 
   const isImagesOutputConnected = (config.connections || []).some((c) => c.fromNodeId === 'get-images');
-  const imagesHasReceiver = config.aiBoxes.some((b) => isValidConnection('get-images', b.id));
+  const imagesHasReceiver = Boolean(config.getImages.enabled) && config.aiBoxes.some((b) => isValidConnection('get-images', b.id));
 
   return (
     <div
@@ -1629,16 +1664,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                   ? createBaseChannelPath(fromPos, toPos)
                   : createBezierPath(fromPos, toPos);
 
-              const fromEnabled =
-                conn.fromNodeId === 'get-content'
-                  ? config.getContent.enabled
-                  : conn.fromNodeId === 'get-images'
-                  ? config.getImages.enabled
-                  : config.aiBoxes.find((b) => b.id === conn.fromNodeId)?.enabled ?? true;
-              const toEnabled =
-                conn.toNodeId === 'destination'
-                  ? true
-                  : config.aiBoxes.find((b) => b.id === conn.toNodeId)?.enabled ?? true;
+              const fromEnabled = isNodeEffectivelyEnabled(conn.fromNodeId);
+              const toEnabled = isNodeEffectivelyEnabled(conn.toNodeId);
               const isFlowing = fromEnabled && toEnabled;
               const isWireHovered = hoveredWireId === conn.id;
               const isXHovered = hoveredXId === conn.id;
@@ -1688,8 +1715,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                       filter: isXHovered ? 'drop-shadow(0 0 6px rgba(248, 81, 73, 0.65))' : 'none',
                     }}
                   />
-                  {/* Disconnect indicator on hover - only clicking on this (X) button removes the wire */}
-                  {isWireHovered && (
+                  {/* Disconnect indicator on hover - only active when connection is enabled ("if that disabled these action are not work too") */}
+                  {isWireHovered && isFlowing && (
                     <g
                       transform={`translate(${midX}, ${midY})`}
                       style={{ cursor: 'pointer' }}
@@ -1894,25 +1921,27 @@ export const FacebookWorkflowCanvas = forwardRef<
             />
 
             {/* Hover: animated plus to add + connect a node with seamless hover bridge */}
-            <div
-              className="node-hit"
-              onMouseEnter={() => handleNodeMouseEnter('get-content')}
-              onMouseLeave={() => handleNodeMouseLeave('get-content')}
-              style={{
-                left: '36px',
-                top: '-12px',
-                bottom: '-12px',
-                paddingLeft: '50px',
-                paddingRight: '16px',
-                display: 'flex',
-                alignItems: 'center',
-                boxSizing: 'border-box',
-              }}
-            >
-              <NodeActionButton title="Add AI node" color="#388BFD" isDark={isDark} onClick={() => handleAddAIBoxConnectedFromContent()}>
-                <FiPlus style={{ fontSize: '14px' }} />
-              </NodeActionButton>
-            </div>
+            {config.getContent.enabled && (
+              <div
+                className="node-hit"
+                onMouseEnter={() => handleNodeMouseEnter('get-content')}
+                onMouseLeave={() => handleNodeMouseLeave('get-content')}
+                style={{
+                  left: '36px',
+                  top: '-12px',
+                  bottom: '-12px',
+                  paddingLeft: '50px',
+                  paddingRight: '16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  boxSizing: 'border-box',
+                }}
+              >
+                <NodeActionButton title="Add AI node" color="#388BFD" isDark={isDark} onClick={() => handleAddAIBoxConnectedFromContent()}>
+                  <FiPlus style={{ fontSize: '14px' }} />
+                </NodeActionButton>
+              </div>
+            )}
 
             {/* Label below circle */}
             <div
@@ -1984,25 +2013,27 @@ export const FacebookWorkflowCanvas = forwardRef<
             />
 
             {/* Hover: animated plus to add + connect a node with seamless hover bridge */}
-            <div
-              className="node-hit"
-              onMouseEnter={() => handleNodeMouseEnter('get-images')}
-              onMouseLeave={() => handleNodeMouseLeave('get-images')}
-              style={{
-                left: '36px',
-                top: '-12px',
-                bottom: '-12px',
-                paddingLeft: '50px',
-                paddingRight: '16px',
-                display: 'flex',
-                alignItems: 'center',
-                boxSizing: 'border-box',
-              }}
-            >
-              <NodeActionButton title="Add Image Enhancement node" color="#2EA043" isDark={isDark} onClick={() => handleAddAIBoxConnectedFromImages()}>
-                <FiPlus style={{ fontSize: '14px' }} />
-              </NodeActionButton>
-            </div>
+            {config.getImages.enabled && (
+              <div
+                className="node-hit"
+                onMouseEnter={() => handleNodeMouseEnter('get-images')}
+                onMouseLeave={() => handleNodeMouseLeave('get-images')}
+                style={{
+                  left: '36px',
+                  top: '-12px',
+                  bottom: '-12px',
+                  paddingLeft: '50px',
+                  paddingRight: '16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  boxSizing: 'border-box',
+                }}
+              >
+                <NodeActionButton title="Add Image Enhancement node" color="#2EA043" isDark={isDark} onClick={() => handleAddAIBoxConnectedFromImages()}>
+                  <FiPlus style={{ fontSize: '14px' }} />
+                </NodeActionButton>
+              </div>
+            )}
 
             {/* Label below circle */}
             <div
@@ -2032,19 +2063,20 @@ export const FacebookWorkflowCanvas = forwardRef<
           {/* NODE 3: DYNAMIC MULTI-BOX AI PROCESSORS (CIRCLES)        */}
           {/* ======================================================== */}
           {config.aiBoxes.map((box) => {
+            const isEffectiveEnabled = isNodeEffectivelyEnabled(box.id);
             const isSelected = selectedBoxId === box.id;
             const isImageNode = isImageAIBox(box, config.connections);
             const isGoogle = !isImageNode && (box.provider === 'google_ai' || isImageModel(box.model, box.provider) || (!box.provider && !box.model?.startsWith('runware:')));
             const isLaoZhang = !isImageNode && box.provider === 'laozhang_ai';
             const isRunware = isImageNode;
             const themeColor = isRunware ? '#10B981' : isLaoZhang ? '#2563EB' : isGoogle ? '#388BFD' : '#2EA043';
-            const strokeColor = isSelected ? '#A371F7' : box.enabled ? themeColor : '#30363D';
-            const strokeDasharray = !isSelected && !box.enabled ? '4, 4' : 'none';
+            const strokeColor = isSelected ? '#A371F7' : isEffectiveEnabled ? themeColor : '#30363D';
+            const strokeDasharray = !isSelected && !isEffectiveEnabled ? '4, 4' : 'none';
             const isBoxInputConnected = (config.connections || []).some((c) => c.toNodeId === box.id);
             const isBoxOutputConnected = (config.connections || []).some((c) => c.fromNodeId === box.id);
             const boxCanConnectToDest = isValidConnection(box.id, 'destination');
             const boxCanConnectToOther = config.aiBoxes.some((b) => isValidConnection(box.id, b.id));
-            const boxHasReceiver = boxCanConnectToDest || boxCanConnectToOther;
+            const boxHasReceiver = isEffectiveEnabled && (boxCanConnectToDest || boxCanConnectToOther);
 
             return (
               <div
@@ -2060,8 +2092,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                   top: `${box.y}px`,
                   width: `${CIRCLE_SIZE}px`,
                   height: `${CIRCLE_SIZE}px`,
-                  ['--ring' as any]: themeColor,
-                  opacity: box.enabled ? 1 : 0.6,
+                  ['--ring' as any]: isEffectiveEnabled ? themeColor : '#30363D',
+                  opacity: isEffectiveEnabled ? 1 : 0.6,
                   zIndex: isSelected ? 30 : hoveredNodeId === box.id ? 25 : 15,
                   cursor: 'pointer',
                   display: 'flex',
@@ -2094,41 +2126,43 @@ export const FacebookWorkflowCanvas = forwardRef<
                   }}
                 >
                   {isRunware ? (
-                    <RunwareIcon size={26} color={box.enabled ? '#10B981' : '#8B949E'} />
+                    <RunwareIcon size={26} color={isEffectiveEnabled ? '#10B981' : '#8B949E'} />
                   ) : isLaoZhang ? (
                     <LaoZhangIcon size={28} />
                   ) : isGoogle ? (
-                    <SiGooglegemini style={{ fontSize: '28px', color: box.enabled ? '#58A6FF' : '#8B949E' }} />
+                    <SiGooglegemini style={{ fontSize: '28px', color: isEffectiveEnabled ? '#58A6FF' : '#8B949E' }} />
                   ) : (
-                    <OpenAIIcon size={28} color={box.enabled ? '#3FB950' : '#8B949E'} />
+                    <OpenAIIcon size={28} color={isEffectiveEnabled ? '#3FB950' : '#8B949E'} />
                   )}
                 </div>
 
                 {/* Hover: animated duplicate + delete actions curving around node with delete below plus */}
-                <div
-                  className="node-hit"
-                  onMouseEnter={() => handleNodeMouseEnter(box.id)}
-                  onMouseLeave={() => handleNodeMouseLeave(box.id)}
-                  style={{
-                    left: '36px',
-                    top: '-6px',
-                    bottom: '-6px',
-                    paddingLeft: '44px',
-                    paddingRight: '14px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    boxSizing: 'border-box',
-                  }}
-                >
-                  <NodeActionButton title="Duplicate node" color={themeColor} isDark={isDark} delay={0} onClick={(e) => handleDuplicateAIBox(box, e)}>
-                    <FiPlus style={{ fontSize: '14px' }} />
-                  </NodeActionButton>
-                  <NodeActionButton title="Delete node" color="#EF4444" isDark={isDark} delay={40} onClick={(e) => handleDeleteAIBox(box.id, e)}>
-                    <FiTrash2 style={{ fontSize: '13px' }} />
-                  </NodeActionButton>
-                </div>
+                {isEffectiveEnabled && (
+                  <div
+                    className="node-hit"
+                    onMouseEnter={() => handleNodeMouseEnter(box.id)}
+                    onMouseLeave={() => handleNodeMouseLeave(box.id)}
+                    style={{
+                      left: '36px',
+                      top: '-6px',
+                      bottom: '-6px',
+                      paddingLeft: '44px',
+                      paddingRight: '14px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      boxSizing: 'border-box',
+                    }}
+                  >
+                    <NodeActionButton title="Duplicate node" color={themeColor} isDark={isDark} delay={0} onClick={(e) => handleDuplicateAIBox(box, e)}>
+                      <FiPlus style={{ fontSize: '14px' }} />
+                    </NodeActionButton>
+                    <NodeActionButton title="Delete node" color="#EF4444" isDark={isDark} delay={40} onClick={(e) => handleDeleteAIBox(box.id, e)}>
+                      <FiTrash2 style={{ fontSize: '13px' }} />
+                    </NodeActionButton>
+                  </div>
+                )}
 
                 {/* Label below circle */}
                 <div
@@ -2152,7 +2186,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                     {!isImageNode && isImageModel(box.model, box.provider)
                       ? 'Gemini Flash'
                       : getAIModelDisplayName(box.provider, box.model)}{' '}
-                    · {box.enabled ? 'Active' : 'Off'}
+                    · {isEffectiveEnabled ? 'Active' : 'Disabled'}
                   </span>
                 </div>
               </div>
