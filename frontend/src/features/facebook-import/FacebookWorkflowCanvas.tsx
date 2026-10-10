@@ -291,6 +291,7 @@ export interface MergedNodeShapeProps {
   highlightOutput?: boolean;
   isConnectedInput?: boolean;
   isConnectedOutput?: boolean;
+  hasReceiver?: boolean;
   onSocketMouseDown?: (type: 'input' | 'output', e: React.MouseEvent) => void;
   onSocketMouseUp?: (type: 'input' | 'output', e: React.MouseEvent) => void;
 }
@@ -348,6 +349,7 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
   highlightOutput = false,
   isConnectedInput = false,
   isConnectedOutput = false,
+  hasReceiver = true,
   onSocketMouseDown,
   onSocketMouseUp,
 }) => {
@@ -359,6 +361,10 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
   const isReceptiveInput = highlightInput && !isConnectedInput;
   const isReceptiveOutput = highlightOutput && !isConnectedOutput;
   const isReceptive = isReceptiveInput || isReceptiveOutput;
+
+  // An output socket displays an interactive arrow (→) only when it has a valid downstream receiver
+  // AND is not already connected with a wire. Otherwise, it displays a solid terminal dot (•).
+  const showArrow = hasReceiver && !isConnectedOutput;
 
   // Deep yellow representing receptive connect state (no glow)
   const DEEP_YELLOW = '#D29922';
@@ -413,30 +419,42 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
         />
 
         {/* ======================================================== */}
-        {/* RIGHT OUTPUT SOCKET: NEXT ICON (→), MERGES WITH CYCLE    */}
+        {/* RIGHT OUTPUT SOCKET: NEXT ARROW (→) OR STATIC DOT (•)     */}
         {/* ======================================================== */}
         {(sockets === 'right' || sockets === 'both') && (
-          <path
-            d="M 71 36 L 79.5 36 M 76 32.5 L 79.5 36 L 76 39.5"
-            fill="none"
-            stroke={isReceptiveOutput ? DEEP_YELLOW : (hoveredSocket === 'output' && !isConnectedOutput ? '#FFFFFF' : strokeColor)}
-            strokeWidth={isReceptiveOutput ? 2.5 : 2}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            style={{
-              transition: 'stroke 0.15s ease, stroke-width 0.15s ease',
-            }}
-          />
+          showArrow ? (
+            <path
+              d="M 71 36 L 79.5 36 M 76 32.5 L 79.5 36 L 76 39.5"
+              fill="none"
+              stroke={isReceptiveOutput ? DEEP_YELLOW : (hoveredSocket === 'output' ? '#FFFFFF' : strokeColor)}
+              strokeWidth={isReceptiveOutput ? 2.5 : 2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              style={{
+                transition: 'stroke 0.15s ease, stroke-width 0.15s ease',
+              }}
+            />
+          ) : (
+            <circle
+              cx="79.3"
+              cy="36"
+              r={hoveredSocket === 'output' ? 6.5 : 6}
+              fill={socketDotColor || strokeColor}
+              style={{
+                transition: 'r 0.15s ease, fill 0.15s ease',
+              }}
+            />
+          )
         )}
 
         {/* ======================================================== */}
-        {/* LEFT INPUT SOCKET: STATIC RECEPTIVE DOT (•)               */}
+        {/* LEFT INPUT SOCKET: ENLARGED RECEPTIVE DOT (•)             */}
         {/* ======================================================== */}
         {(sockets === 'left' || sockets === 'both') && (
           <circle
             cx="-7.3"
             cy="36"
-            r={isReceptiveInput ? 4.5 : 3.5}
+            r={isReceptiveInput ? 7.5 : (hoveredSocket === 'input' ? 6.5 : 6)}
             fill={isReceptiveInput ? DEEP_YELLOW : (socketDotColor || strokeColor)}
             style={{
               transition: 'r 0.15s ease, fill 0.15s ease',
@@ -453,6 +471,7 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
           onMouseLeave={() => setHoveredSocket(null)}
           onMouseDown={(e) => {
             e.stopPropagation();
+            if (!showArrow) return;
             onSocketMouseDown?.('output', e);
           }}
           onMouseUp={(e) => {
@@ -465,7 +484,7 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
             top: '18px',
             width: '32px',
             height: '36px',
-            cursor: 'grab',
+            cursor: showArrow ? 'grab' : 'default',
             pointerEvents: 'auto',
             zIndex: 50,
             borderRadius: '0 16px 16px 0',
@@ -1350,6 +1369,12 @@ export const FacebookWorkflowCanvas = forwardRef<
     ? config.aiBoxes.find((b) => b.id === activeModalNode.boxId)
     : null;
 
+  const isContentOutputConnected = (config.connections || []).some((c) => c.fromNodeId === 'get-content');
+  const contentHasReceiver = config.aiBoxes.some((b) => isValidConnection('get-content', b.id));
+
+  const isImagesOutputConnected = (config.connections || []).some((c) => c.fromNodeId === 'get-images');
+  const imagesHasReceiver = config.aiBoxes.some((b) => isValidConnection('get-images', b.id));
+
   return (
     <div
       style={{
@@ -1794,6 +1819,7 @@ export const FacebookWorkflowCanvas = forwardRef<
               socketDotColor="#388BFD"
               isConnectedOutput={true}
               highlightOutput={false}
+              hasReceiver={false}
               onSocketMouseDown={(type, e) => handleSocketMouseDown('trigger', type, e)}
               onSocketMouseUp={(type, e) => handleSocketMouseUp('trigger', type, e)}
             />
@@ -1851,9 +1877,10 @@ export const FacebookWorkflowCanvas = forwardRef<
               strokeColor={config.getContent.enabled ? '#388BFD' : '#30363D'}
               socketDotColor={config.getContent.enabled ? '#388BFD' : '#484F58'}
               isConnectedInput={true}
-              isConnectedOutput={false}
+              isConnectedOutput={isContentOutputConnected}
               highlightInput={false}
               highlightOutput={dragWire?.fromType === 'input' && isValidConnection('get-content', dragWire.fromNodeId)}
+              hasReceiver={contentHasReceiver}
               onSocketMouseDown={(type, e) => handleSocketMouseDown('get-content', type, e)}
               onSocketMouseUp={(type, e) => handleSocketMouseUp('get-content', type, e)}
             />
@@ -1940,9 +1967,10 @@ export const FacebookWorkflowCanvas = forwardRef<
               strokeColor={config.getImages.enabled ? '#2EA043' : '#30363D'}
               socketDotColor={config.getImages.enabled ? '#2EA043' : '#484F58'}
               isConnectedInput={true}
-              isConnectedOutput={true}
+              isConnectedOutput={isImagesOutputConnected}
               highlightInput={false}
               highlightOutput={dragWire?.fromType === 'input' && isValidConnection('get-images', dragWire.fromNodeId)}
+              hasReceiver={imagesHasReceiver}
               onSocketMouseDown={(type, e) => handleSocketMouseDown('get-images', type, e)}
               onSocketMouseUp={(type, e) => handleSocketMouseUp('get-images', type, e)}
             />
@@ -2014,6 +2042,9 @@ export const FacebookWorkflowCanvas = forwardRef<
             const strokeDasharray = !isSelected && !box.enabled ? '4, 4' : 'none';
             const isBoxInputConnected = (config.connections || []).some((c) => c.toNodeId === box.id);
             const isBoxOutputConnected = (config.connections || []).some((c) => c.fromNodeId === box.id);
+            const boxCanConnectToDest = isValidConnection(box.id, 'destination');
+            const boxCanConnectToOther = config.aiBoxes.some((b) => isValidConnection(box.id, b.id));
+            const boxHasReceiver = boxCanConnectToDest || boxCanConnectToOther;
 
             return (
               <div
@@ -2047,6 +2078,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   isConnectedOutput={isBoxOutputConnected}
                   highlightInput={dragWire?.fromType === 'output' && isValidConnection(dragWire.fromNodeId, box.id)}
                   highlightOutput={dragWire?.fromType === 'input' && isValidConnection(box.id, dragWire.fromNodeId)}
+                  hasReceiver={boxHasReceiver}
                   onSocketMouseDown={(type, e) => handleSocketMouseDown(box.id, type, e)}
                   onSocketMouseUp={(type, e) => handleSocketMouseUp(box.id, type, e)}
                 />
@@ -2153,6 +2185,7 @@ export const FacebookWorkflowCanvas = forwardRef<
               sockets="left"
               strokeColor="#2EA043"
               socketDotColor="#2EA043"
+              isConnectedInput={(config.connections || []).some((c) => c.toNodeId === 'destination')}
               highlightInput={dragWire?.fromType === 'output' && isValidConnection(dragWire.fromNodeId, 'destination')}
               onSocketMouseDown={(type, e) => handleSocketMouseDown('destination', type, e)}
               onSocketMouseUp={(type, e) => handleSocketMouseUp('destination', type, e)}
