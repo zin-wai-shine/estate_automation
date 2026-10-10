@@ -295,7 +295,8 @@ export interface MergedNodeShapeProps {
   highlightOutput?: boolean;
   isConnectedInput?: boolean;
   isConnectedOutput?: boolean;
-  hasReceiver?: boolean;
+  hasReceiver?: boolean; // Can connect NEXT (downstream)
+  hasSource?: boolean;   // Can connect BACK (upstream)
   onSocketMouseDown?: (type: 'input' | 'output', e: React.MouseEvent) => void;
   onSocketMouseUp?: (type: 'input' | 'output', e: React.MouseEvent) => void;
   onSocketMouseEnter?: (type: 'input' | 'output') => void;
@@ -355,8 +356,9 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
   highlightInput = false,
   highlightOutput = false,
   isConnectedInput: _isConnectedInput = false,
-  isConnectedOutput = false,
+  isConnectedOutput: _isConnectedOutput = false,
   hasReceiver = true,
+  hasSource = false,
   onSocketMouseDown,
   onSocketMouseUp,
   onSocketMouseEnter,
@@ -371,9 +373,11 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
   const isReceptiveOutput = Boolean(highlightOutput);
   const isReceptive = isReceptiveInput || isReceptiveOutput;
 
-  // An output socket displays an interactive arrow (→) only when it has a valid downstream receiver
-  // AND is not already connected with a wire. Otherwise, it displays a solid terminal dot (•).
-  const showArrow = hasReceiver && !isConnectedOutput;
+  // An output socket displays an interactive NEXT arrow (→) whenever it can connect to downstream nodes
+  const showNextArrow = Boolean(hasReceiver);
+
+  // An input socket displays an interactive BACK arrow (←) whenever it can connect back to upstream nodes
+  const showBackArrow = Boolean(hasSource);
 
   // Soft refined warm gold representing receptive connect state (reduced glow, gentle tint)
   const RECEPTIVE_COLOR = isDark ? '#EAB308' : '#D97706';
@@ -431,33 +435,44 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
         {/* RIGHT OUTPUT SOCKET: NEXT ARROW (→) OR STATIC DOT (•)     */}
         {/* ======================================================== */}
         {(sockets === 'right' || sockets === 'both') && (
-          showArrow ? (
-            <path
-              d="M 70 36 L 78 36 M 74.5 32.5 L 78 36 L 74.5 39.5"
-              fill="none"
-              stroke={isReceptiveOutput ? RECEPTIVE_COLOR : (hoveredSocket === 'output' ? '#FFFFFF' : strokeColor)}
-              strokeWidth={isReceptiveOutput ? 2.5 : 2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              style={{
-                transition: 'stroke 0.15s ease, stroke-width 0.15s ease',
-              }}
-            />
-          ) : (
-            <circle
-              cx="75"
-              cy="36"
-              r={hoveredSocket === 'output' ? 5.5 : 4.5}
-              fill={socketDotColor || strokeColor}
-              style={{
-                transition: 'r 0.15s ease, fill 0.15s ease',
-              }}
-            />
-          )
+          <g>
+            {isReceptiveOutput && (
+              <circle
+                cx="75"
+                cy="36"
+                r="8.5"
+                fill={RECEPTIVE_COLOR}
+                opacity="0.35"
+              />
+            )}
+            {showNextArrow ? (
+              <path
+                d="M 70 36 L 78 36 M 74.5 32.5 L 78 36 L 74.5 39.5"
+                fill="none"
+                stroke={isReceptiveOutput ? RECEPTIVE_COLOR : (hoveredSocket === 'output' ? (isDark ? '#58A6FF' : '#0969DA') : strokeColor)}
+                strokeWidth={isReceptiveOutput || hoveredSocket === 'output' ? 2.5 : 2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                style={{
+                  transition: 'stroke 0.15s ease, stroke-width 0.15s ease',
+                }}
+              />
+            ) : (
+              <circle
+                cx="75"
+                cy="36"
+                r={isReceptiveOutput ? 6 : (hoveredSocket === 'output' ? 5.5 : 4.5)}
+                fill={isReceptiveOutput ? RECEPTIVE_COLOR : (socketDotColor || strokeColor)}
+                style={{
+                  transition: 'r 0.15s ease, fill 0.15s ease',
+                }}
+              />
+            )}
+          </g>
         )}
 
         {/* ======================================================== */}
-        {/* LEFT INPUT SOCKET: ENLARGED RECEPTIVE DOT (•)             */}
+        {/* LEFT INPUT SOCKET: BACK ARROW (←) OR RECEPTIVE DOT (•)    */}
         {/* ======================================================== */}
         {(sockets === 'left' || sockets === 'both') && (
           <g>
@@ -470,20 +485,34 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
                 opacity="0.35"
               />
             )}
-            <circle
-              cx="-3"
-              cy="36"
-              r={isReceptiveInput ? 6 : (hoveredSocket === 'input' ? 5.5 : 4.5)}
-              fill={isReceptiveInput ? RECEPTIVE_COLOR : (socketDotColor || strokeColor)}
-              style={{
-                transition: 'r 0.15s ease, fill 0.15s ease',
-              }}
-            />
+            {showBackArrow ? (
+              <path
+                d="M 1 36 L -7 36 M -3.5 32.5 L -7 36 L -3.5 39.5"
+                fill="none"
+                stroke={isReceptiveInput ? RECEPTIVE_COLOR : (hoveredSocket === 'input' ? (isDark ? '#58A6FF' : '#0969DA') : strokeColor)}
+                strokeWidth={isReceptiveInput || hoveredSocket === 'input' ? 2.5 : 2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                style={{
+                  transition: 'stroke 0.15s ease, stroke-width 0.15s ease',
+                }}
+              />
+            ) : (
+              <circle
+                cx="-3"
+                cy="36"
+                r={isReceptiveInput ? 6 : (hoveredSocket === 'input' ? 5.5 : 4.5)}
+                fill={isReceptiveInput ? RECEPTIVE_COLOR : (socketDotColor || strokeColor)}
+                style={{
+                  transition: 'r 0.15s ease, fill 0.15s ease',
+                }}
+              />
+            )}
           </g>
         )}
       </svg>
 
-      {/* Right Output Socket Hitbox for drag-to-connect */}
+      {/* Right Output Socket Hitbox for drag-to-connect NEXT */}
       {(sockets === 'right' || sockets === 'both') && (
         <div
           className="socket-handle socket-handle-output"
@@ -497,7 +526,7 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
           }}
           onMouseDown={(e) => {
             e.stopPropagation();
-            if (!showArrow) return;
+            if (!showNextArrow) return;
             onSocketMouseDown?.('output', e);
           }}
           onMouseUp={(e) => {
@@ -510,7 +539,7 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
             top: '18px',
             width: '32px',
             height: '36px',
-            cursor: showArrow ? 'grab' : 'default',
+            cursor: showNextArrow ? 'grab' : (isReceptiveOutput ? 'pointer' : 'default'),
             pointerEvents: 'auto',
             zIndex: 50,
             borderRadius: '0 16px 16px 0',
@@ -518,7 +547,7 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
         />
       )}
 
-      {/* Left Input Socket Hitbox - receives incoming wires only ("can't do anything" / can't drag back) */}
+      {/* Left Input Socket Hitbox for drag-to-connect BACK */}
       {(sockets === 'left' || sockets === 'both') && (
         <div
           className="socket-handle socket-handle-input"
@@ -531,9 +560,9 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
             onSocketMouseLeave?.('input');
           }}
           onMouseDown={(e) => {
-            // Cannot start dragging backwards from input socket ("can't do anything")
             e.stopPropagation();
-            e.preventDefault();
+            if (!showBackArrow) return;
+            onSocketMouseDown?.('input', e);
           }}
           onMouseUp={(e) => {
             e.stopPropagation();
@@ -545,7 +574,7 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
             top: '18px',
             width: '32px',
             height: '36px',
-            cursor: isReceptiveInput ? 'crosshair' : 'default',
+            cursor: showBackArrow ? 'grab' : (isReceptiveInput ? 'pointer' : 'default'),
             pointerEvents: 'auto',
             zIndex: 50,
             borderRadius: '16px 0 0 16px',
@@ -661,6 +690,7 @@ export const FacebookWorkflowCanvas = forwardRef<
   const [hoveredXId, setHoveredXId] = useState<string | null>(null);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [hoveredOutputNodeId, setHoveredOutputNodeId] = useState<string | null>(null);
+  const [hoveredInputNodeId, setHoveredInputNodeId] = useState<string | null>(null);
   const hoverLeaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const handleNodeMouseEnter = (nodeId: string) => {
@@ -859,22 +889,26 @@ export const FacebookWorkflowCanvas = forwardRef<
       return false;
     }
 
-    // Step 2: get-content -> dynamic AI copywriting nodes only (cannot connect to image nodes or nodes already receiving input)
+    // Step 2: get-content -> dynamic AI copywriting nodes
     if (fromId === 'get-content') {
       if (!toId.startsWith('ai-box-')) return false;
       const targetBox = config.aiBoxes.find((b) => b.id === toId);
       if (!targetBox) return false;
-      if (isImageAIBox(targetBox, conns)) return false;
+      // Cannot connect if already connected to get-images
+      const isConnectedToImages = conns.some((c) => c.fromNodeId === 'get-images' && c.toNodeId === toId);
+      if (isConnectedToImages) return false;
       const alreadyHasInput = conns.some((c) => c.toNodeId === toId);
       return !alreadyHasInput;
     }
 
-    // Step 2b: get-images -> dynamic AI image enhancer nodes only (cannot connect to text nodes or nodes already receiving input)
+    // Step 2b: get-images -> dynamic AI image enhancer nodes
     if (fromId === 'get-images') {
       if (!toId.startsWith('ai-box-')) return false;
       const targetBox = config.aiBoxes.find((b) => b.id === toId);
       if (!targetBox) return false;
-      if (!isImageAIBox(targetBox, conns)) return false;
+      // Cannot connect if already connected to get-content
+      const isConnectedToContent = conns.some((c) => c.fromNodeId === 'get-content' && c.toNodeId === toId);
+      if (isConnectedToContent) return false;
       const alreadyHasInput = conns.some((c) => c.toNodeId === toId);
       return !alreadyHasInput;
     }
@@ -895,7 +929,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     return false;
   };
 
-  // Socket Drag-to-Connect Handlers ("Drag that string")
+  // Socket Drag-to-Connect Handlers ("Drag that string" - supports connecting NEXT and BACK)
   const handleSocketMouseDown = (
     nodeId: string,
     socketType: 'input' | 'output',
@@ -957,11 +991,12 @@ export const FacebookWorkflowCanvas = forwardRef<
       }
       setDragWire(null);
       setHoveredOutputNodeId(null);
+      setHoveredInputNodeId(null);
       return;
     }
 
-    // Do not start drag from input sockets or trigger ("can't connect back")
-    if (socketType === 'input' || nodeId === 'trigger') return;
+    // Trigger has static connections and cannot initiate dragging
+    if (nodeId === 'trigger') return;
 
     // Start dragging a new wire from this socket
     setHoveredOutputNodeId(null);
@@ -984,6 +1019,7 @@ export const FacebookWorkflowCanvas = forwardRef<
   ) => {
     e.stopPropagation();
     setHoveredOutputNodeId(null);
+    setHoveredInputNodeId(null);
     if (!dragWire) return;
 
     // Released on the exact same socket it originated from
@@ -1544,6 +1580,7 @@ export const FacebookWorkflowCanvas = forwardRef<
 
   const handleCanvasMouseUp = () => {
     setHoveredOutputNodeId(null);
+    setHoveredInputNodeId(null);
     if (dragWire) {
       setDragWire(null);
     }
@@ -1628,8 +1665,9 @@ export const FacebookWorkflowCanvas = forwardRef<
   const isImagesOutputConnected = (config.connections || []).some((c) => c.fromNodeId === 'get-images');
   const imagesHasReceiver = Boolean(config.getImages.enabled) && config.aiBoxes.some((b) => isValidConnection('get-images', b.id));
 
-  // Source node currently initiating a connection (either dragging a wire or hovering the connect arrow)
+  // Connection currently initiating: forward (dragging/hovering NEXT arrow) or backward (dragging/hovering BACK arrow)
   const activeConnectingNodeId = dragWire?.fromType === 'output' ? dragWire.fromNodeId : hoveredOutputNodeId;
+  const activeConnectingTargetId = dragWire?.fromType === 'input' ? dragWire.fromNodeId : hoveredInputNodeId;
 
   return (
     <div
@@ -2100,158 +2138,191 @@ export const FacebookWorkflowCanvas = forwardRef<
           {/* ======================================================== */}
           {/* NODE 2A: GET CONTENT BRANCH (CIRCLE)                     */}
           {/* ======================================================== */}
-          <div
-            className={`canvas-node ${hoveredNodeId === 'get-content' ? 'is-hovered' : ''}`}
-            onMouseEnter={() => handleNodeMouseEnter('get-content')}
-            onMouseLeave={() => handleNodeMouseLeave('get-content')}
-            onMouseDown={(e) => startDragNode('get-content', e)}
-            onClick={(e) => handleNodeClick({ type: 'get-content' }, e)}
-            style={{
-              position: 'absolute',
-              left: `${config.getContent.x}px`,
-              top: `${config.getContent.y}px`,
-              width: `${CIRCLE_SIZE}px`,
-              height: `${CIRCLE_SIZE}px`,
-              opacity: config.getContent.enabled ? 1 : 0.6,
-              zIndex: hoveredNodeId === 'get-content' ? 25 : 15,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <MergedNodeShape
-              sockets="both"
-              strokeColor={config.getContent.enabled ? '#388BFD' : '#30363D'}
-              socketDotColor={config.getContent.enabled ? '#388BFD' : '#484F58'}
-              isConnectedInput={true}
-              isConnectedOutput={isContentOutputConnected}
-              highlightInput={false}
-              highlightOutput={dragWire?.fromType === 'input' && isValidConnection('get-content', dragWire.fromNodeId)}
-              hasReceiver={contentHasReceiver}
-              onSocketMouseDown={(type, e) => handleSocketMouseDown('get-content', type, e)}
-              onSocketMouseUp={(type, e) => handleSocketMouseUp('get-content', type, e)}
-              onSocketMouseEnter={(type) => {
-                if (type === 'output' && contentHasReceiver && !isContentOutputConnected) {
-                  setHoveredOutputNodeId('get-content');
-                }
-              }}
-              onSocketMouseLeave={(type) => {
-                if (type === 'output') {
-                  setHoveredOutputNodeId((curr) => (curr === 'get-content' ? null : curr));
-                }
-              }}
-            />
-            <FiFileText
-              style={{
-                fontSize: '28px',
-                color: config.getContent.enabled ? '#58A6FF' : '#8B949E',
-                position: 'relative',
-                zIndex: 2,
-              }}
-            />
+          {(() => {
+            const isContentReceptive = Boolean(
+              activeConnectingTargetId && isValidConnection('get-content', activeConnectingTargetId)
+            );
 
-            {/* Hover: animated plus to add + connect a node with seamless hover bridge */}
-            {config.getContent.enabled && (
+            return (
               <div
-                className="node-hit"
+                className={`canvas-node ${hoveredNodeId === 'get-content' ? 'is-hovered' : ''} ${isContentReceptive ? 'is-receptive' : ''}`}
                 onMouseEnter={() => handleNodeMouseEnter('get-content')}
                 onMouseLeave={() => handleNodeMouseLeave('get-content')}
+                onMouseDown={(e) => startDragNode('get-content', e)}
+                onMouseUp={(e) => {
+                  if (dragWire && dragWire.fromType === 'input' && isValidConnection('get-content', dragWire.fromNodeId)) {
+                    handleSocketMouseUp('get-content', 'output', e);
+                  }
+                }}
+                onClick={(e) => handleNodeClick({ type: 'get-content' }, e)}
                 style={{
-                  left: '36px',
-                  top: '-12px',
-                  bottom: '-12px',
-                  paddingLeft: '50px',
-                  paddingRight: '16px',
+                  position: 'absolute',
+                  left: `${config.getContent.x}px`,
+                  top: `${config.getContent.y}px`,
+                  width: `${CIRCLE_SIZE}px`,
+                  height: `${CIRCLE_SIZE}px`,
+                  ['--ring' as any]: isContentReceptive ? RECEPTIVE_COLOR : '#388BFD',
+                  ['--receptive-color' as any]: RECEPTIVE_COLOR,
+                  opacity: config.getContent.enabled ? 1 : 0.6,
+                  zIndex: isContentReceptive ? 35 : hoveredNodeId === 'get-content' ? 25 : 15,
+                  cursor: isContentReceptive ? 'crosshair' : 'pointer',
                   display: 'flex',
                   alignItems: 'center',
-                  boxSizing: 'border-box',
+                  justifyContent: 'center',
+                  filter: isContentReceptive ? RECEPTIVE_GLOW : undefined,
+                  transition: 'filter 0.2s ease, transform 0.2s ease',
                 }}
               >
-                <NodeActionButton title="Add AI node" color="#388BFD" isDark={isDark} onClick={() => handleAddAIBoxConnectedFromContent()}>
-                  <FiPlus style={{ fontSize: '14px' }} />
-                </NodeActionButton>
-              </div>
-            )}
+                <MergedNodeShape
+                  sockets="both"
+                  strokeColor={isContentReceptive ? RECEPTIVE_COLOR : config.getContent.enabled ? '#388BFD' : '#30363D'}
+                  socketDotColor={isContentReceptive ? RECEPTIVE_COLOR : config.getContent.enabled ? '#388BFD' : '#484F58'}
+                  isConnectedInput={true}
+                  isConnectedOutput={isContentOutputConnected}
+                  highlightInput={false}
+                  highlightOutput={isContentReceptive}
+                  hasReceiver={contentHasReceiver}
+                  hasSource={false}
+                  onSocketMouseDown={(type, e) => handleSocketMouseDown('get-content', type, e)}
+                  onSocketMouseUp={(type, e) => handleSocketMouseUp('get-content', type, e)}
+                  onSocketMouseEnter={(type) => {
+                    if (type === 'output' && contentHasReceiver) {
+                      setHoveredOutputNodeId('get-content');
+                    }
+                  }}
+                  onSocketMouseLeave={(type) => {
+                    if (type === 'output') {
+                      setHoveredOutputNodeId((curr) => (curr === 'get-content' ? null : curr));
+                    }
+                  }}
+                />
+                <FiFileText
+                  style={{
+                    fontSize: '28px',
+                    color: config.getContent.enabled ? '#58A6FF' : '#8B949E',
+                    position: 'relative',
+                    zIndex: 2,
+                  }}
+                />
 
-            {/* Label below circle */}
-            <div
-              style={{
-                position: 'absolute',
-                top: `${CIRCLE_SIZE + 8}px`,
-                left: '50%',
-                transform: 'translateX(-50%)',
-                whiteSpace: 'nowrap',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                gap: '2px',
-                pointerEvents: 'none',
-              }}
-            >
-              <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                Get Content
-              </span>
-              <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', fontWeight: 400 }}>
-                {config.getContent.enabled ? 'Full Content' : 'Disabled'}
-              </span>
-            </div>
-          </div>
+                {/* Hover: animated plus to add + connect a node with seamless hover bridge */}
+                {config.getContent.enabled && (
+                  <div
+                    className="node-hit"
+                    onMouseEnter={() => handleNodeMouseEnter('get-content')}
+                    onMouseLeave={() => handleNodeMouseLeave('get-content')}
+                    style={{
+                      left: '36px',
+                      top: '-12px',
+                      bottom: '-12px',
+                      paddingLeft: '50px',
+                      paddingRight: '16px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      boxSizing: 'border-box',
+                    }}
+                  >
+                    <NodeActionButton title="Add AI node" color="#388BFD" isDark={isDark} onClick={() => handleAddAIBoxConnectedFromContent()}>
+                      <FiPlus style={{ fontSize: '14px' }} />
+                    </NodeActionButton>
+                  </div>
+                )}
+
+                {/* Label below circle */}
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: `${CIRCLE_SIZE + 8}px`,
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    whiteSpace: 'nowrap',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '2px',
+                    pointerEvents: 'none',
+                  }}
+                >
+                  <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                    Get Content
+                  </span>
+                  <span style={{ fontSize: '0.6875rem', color: isContentReceptive ? RECEPTIVE_COLOR : 'var(--text-muted)', fontWeight: isContentReceptive ? 600 : 400 }}>
+                    {isContentReceptive ? 'Connect Back Here' : config.getContent.enabled ? 'Full Content' : 'Disabled'}
+                  </span>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* ======================================================== */}
           {/* NODE 2B: GET IMAGES BRANCH (CIRCLE)                      */}
           {/* ======================================================== */}
-          <div
-            className={`canvas-node ${hoveredNodeId === 'get-images' ? 'is-hovered' : ''}`}
-            onMouseEnter={() => handleNodeMouseEnter('get-images')}
-            onMouseLeave={() => handleNodeMouseLeave('get-images')}
-            onMouseDown={(e) => startDragNode('get-images', e)}
-            onClick={(e) => handleNodeClick({ type: 'get-images' }, e)}
-            style={{
-              position: 'absolute',
-              left: `${config.getImages.x}px`,
-              top: `${config.getImages.y}px`,
-              width: `${CIRCLE_SIZE}px`,
-              height: `${CIRCLE_SIZE}px`,
-              ['--ring' as any]: '#2EA043',
-              opacity: config.getImages.enabled ? 1 : 0.6,
-              zIndex: hoveredNodeId === 'get-images' ? 25 : 15,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <MergedNodeShape
-              sockets="both"
-              strokeColor={config.getImages.enabled ? '#2EA043' : '#30363D'}
-              socketDotColor={config.getImages.enabled ? '#2EA043' : '#484F58'}
-              isConnectedInput={true}
-              isConnectedOutput={isImagesOutputConnected}
-              highlightInput={false}
-              highlightOutput={dragWire?.fromType === 'input' && isValidConnection('get-images', dragWire.fromNodeId)}
-              hasReceiver={imagesHasReceiver}
-              onSocketMouseDown={(type, e) => handleSocketMouseDown('get-images', type, e)}
-              onSocketMouseUp={(type, e) => handleSocketMouseUp('get-images', type, e)}
-              onSocketMouseEnter={(type) => {
-                if (type === 'output' && imagesHasReceiver && !isImagesOutputConnected) {
-                  setHoveredOutputNodeId('get-images');
-                }
-              }}
-              onSocketMouseLeave={(type) => {
-                if (type === 'output') {
-                  setHoveredOutputNodeId((curr) => (curr === 'get-images' ? null : curr));
-                }
-              }}
-            />
-            <FiImage
-              style={{
-                fontSize: '28px',
-                color: config.getImages.enabled ? '#3FB950' : '#8B949E',
-                position: 'relative',
-                zIndex: 2,
-              }}
-            />
+          {(() => {
+            const isImagesReceptive = Boolean(
+              activeConnectingTargetId && isValidConnection('get-images', activeConnectingTargetId)
+            );
+
+            return (
+              <div
+                className={`canvas-node ${hoveredNodeId === 'get-images' ? 'is-hovered' : ''} ${isImagesReceptive ? 'is-receptive' : ''}`}
+                onMouseEnter={() => handleNodeMouseEnter('get-images')}
+                onMouseLeave={() => handleNodeMouseLeave('get-images')}
+                onMouseDown={(e) => startDragNode('get-images', e)}
+                onMouseUp={(e) => {
+                  if (dragWire && dragWire.fromType === 'input' && isValidConnection('get-images', dragWire.fromNodeId)) {
+                    handleSocketMouseUp('get-images', 'output', e);
+                  }
+                }}
+                onClick={(e) => handleNodeClick({ type: 'get-images' }, e)}
+                style={{
+                  position: 'absolute',
+                  left: `${config.getImages.x}px`,
+                  top: `${config.getImages.y}px`,
+                  width: `${CIRCLE_SIZE}px`,
+                  height: `${CIRCLE_SIZE}px`,
+                  ['--ring' as any]: isImagesReceptive ? RECEPTIVE_COLOR : '#2EA043',
+                  ['--receptive-color' as any]: RECEPTIVE_COLOR,
+                  opacity: config.getImages.enabled ? 1 : 0.6,
+                  zIndex: isImagesReceptive ? 35 : hoveredNodeId === 'get-images' ? 25 : 15,
+                  cursor: isImagesReceptive ? 'crosshair' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  filter: isImagesReceptive ? RECEPTIVE_GLOW : undefined,
+                  transition: 'filter 0.2s ease, transform 0.2s ease',
+                }}
+              >
+                <MergedNodeShape
+                  sockets="both"
+                  strokeColor={isImagesReceptive ? RECEPTIVE_COLOR : config.getImages.enabled ? '#2EA043' : '#30363D'}
+                  socketDotColor={isImagesReceptive ? RECEPTIVE_COLOR : config.getImages.enabled ? '#2EA043' : '#484F58'}
+                  isConnectedInput={true}
+                  isConnectedOutput={isImagesOutputConnected}
+                  highlightInput={false}
+                  highlightOutput={isImagesReceptive}
+                  hasReceiver={imagesHasReceiver}
+                  hasSource={false}
+                  onSocketMouseDown={(type, e) => handleSocketMouseDown('get-images', type, e)}
+                  onSocketMouseUp={(type, e) => handleSocketMouseUp('get-images', type, e)}
+                  onSocketMouseEnter={(type) => {
+                    if (type === 'output' && imagesHasReceiver) {
+                      setHoveredOutputNodeId('get-images');
+                    }
+                  }}
+                  onSocketMouseLeave={(type) => {
+                    if (type === 'output') {
+                      setHoveredOutputNodeId((curr) => (curr === 'get-images' ? null : curr));
+                    }
+                  }}
+                />
+                <FiImage
+                  style={{
+                    fontSize: '28px',
+                    color: config.getImages.enabled ? '#3FB950' : '#8B949E',
+                    position: 'relative',
+                    zIndex: 2,
+                  }}
+                />
 
             {/* Hover: animated plus to add + connect a node with seamless hover bridge */}
             {config.getImages.enabled && (
@@ -2294,11 +2365,13 @@ export const FacebookWorkflowCanvas = forwardRef<
               <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                 Get Images
               </span>
-              <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', fontWeight: 400 }}>
-                {config.getImages.enabled ? 'All Media' : 'Disabled'}
+              <span style={{ fontSize: '0.6875rem', color: isImagesReceptive ? RECEPTIVE_COLOR : 'var(--text-muted)', fontWeight: isImagesReceptive ? 600 : 400 }}>
+                {isImagesReceptive ? 'Connect Back Here' : config.getImages.enabled ? 'All Media' : 'Disabled'}
               </span>
             </div>
           </div>
+        );
+      })()}
 
           {/* ======================================================== */}
           {/* NODE 3: DYNAMIC MULTI-BOX AI PROCESSORS (CIRCLES)        */}
@@ -2312,7 +2385,8 @@ export const FacebookWorkflowCanvas = forwardRef<
             const isRunware = isImageNode;
             const themeColor = isRunware ? '#10B981' : isLaoZhang ? '#2563EB' : isGoogle ? '#388BFD' : '#2EA043';
             const isBoxReceptive = Boolean(
-              activeConnectingNodeId && isValidConnection(activeConnectingNodeId, box.id)
+              (activeConnectingNodeId && isValidConnection(activeConnectingNodeId, box.id)) ||
+              (activeConnectingTargetId && isValidConnection(box.id, activeConnectingTargetId))
             );
             const strokeColor = isSelected ? '#A371F7' : isBoxReceptive ? RECEPTIVE_COLOR : isEffectiveEnabled ? themeColor : '#30363D';
             const strokeDasharray = !isSelected && !isEffectiveEnabled ? '4, 4' : 'none';
@@ -2320,6 +2394,8 @@ export const FacebookWorkflowCanvas = forwardRef<
             const isBoxOutputConnected = (config.connections || []).some((c) => c.fromNodeId === box.id);
             const boxCanConnectToDest = isValidConnection(box.id, 'destination');
             const boxHasReceiver = isEffectiveEnabled && boxCanConnectToDest;
+            const boxCanConnectBack = !isBoxInputConnected && (isValidConnection('get-content', box.id) || isValidConnection('get-images', box.id));
+            const boxHasSource = isEffectiveEnabled && boxCanConnectBack;
 
             return (
               <div
@@ -2331,6 +2407,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                 onMouseUp={(e) => {
                   if (dragWire && dragWire.fromType === 'output' && isValidConnection(dragWire.fromNodeId, box.id)) {
                     handleSocketMouseUp(box.id, 'input', e);
+                  } else if (dragWire && dragWire.fromType === 'input' && isValidConnection(box.id, dragWire.fromNodeId)) {
+                    handleSocketMouseUp(box.id, 'output', e);
                   }
                 }}
                 onClick={(e) => handleNodeClick({ type: 'ai-box', boxId: box.id }, e)}
@@ -2362,16 +2440,21 @@ export const FacebookWorkflowCanvas = forwardRef<
                   highlightInput={isBoxReceptive}
                   highlightOutput={dragWire?.fromType === 'input' && isValidConnection(box.id, dragWire.fromNodeId)}
                   hasReceiver={boxHasReceiver}
+                  hasSource={boxHasSource}
                   onSocketMouseDown={(type, e) => handleSocketMouseDown(box.id, type, e)}
                   onSocketMouseUp={(type, e) => handleSocketMouseUp(box.id, type, e)}
                   onSocketMouseEnter={(type) => {
-                    if (type === 'output' && boxHasReceiver && !isBoxOutputConnected) {
+                    if (type === 'output' && boxHasReceiver) {
                       setHoveredOutputNodeId(box.id);
+                    } else if (type === 'input' && boxHasSource) {
+                      setHoveredInputNodeId(box.id);
                     }
                   }}
                   onSocketMouseLeave={(type) => {
                     if (type === 'output') {
                       setHoveredOutputNodeId((curr) => (curr === box.id ? null : curr));
+                    } else if (type === 'input') {
+                      setHoveredInputNodeId((curr) => (curr === box.id ? null : curr));
                     }
                   }}
                 />
@@ -2460,6 +2543,7 @@ export const FacebookWorkflowCanvas = forwardRef<
             const isDestReceptive = Boolean(
               activeConnectingNodeId && isValidConnection(activeConnectingNodeId, 'destination')
             );
+            const destHasSource = config.aiBoxes.some((b) => isValidConnection(b.id, 'destination'));
 
             return (
               <div
@@ -2496,8 +2580,20 @@ export const FacebookWorkflowCanvas = forwardRef<
                   socketDotColor={isDestReceptive ? RECEPTIVE_COLOR : '#2EA043'}
                   isConnectedInput={(config.connections || []).some((c) => c.toNodeId === 'destination')}
                   highlightInput={isDestReceptive}
+                  hasReceiver={false}
+                  hasSource={destHasSource}
                   onSocketMouseDown={(type, e) => handleSocketMouseDown('destination', type, e)}
                   onSocketMouseUp={(type, e) => handleSocketMouseUp('destination', type, e)}
+                  onSocketMouseEnter={(type) => {
+                    if (type === 'input' && destHasSource) {
+                      setHoveredInputNodeId('destination');
+                    }
+                  }}
+                  onSocketMouseLeave={(type) => {
+                    if (type === 'input') {
+                      setHoveredInputNodeId((curr) => (curr === 'destination' ? null : curr));
+                    }
+                  }}
                 />
                 <FiCheckCircle
                   style={{
