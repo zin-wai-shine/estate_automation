@@ -31,11 +31,74 @@ type RunwareTaskInference struct {
 	TaskUUID       string   `json:"taskUUID"`
 	Model          string   `json:"model"`
 	PositivePrompt string   `json:"positivePrompt"`
+	NegativePrompt string   `json:"negativePrompt,omitempty"`
 	InputImage     string   `json:"inputImage,omitempty"`
 	Strength       *float64 `json:"strength,omitempty"`
 	Width          int      `json:"width,omitempty"`
 	Height         int      `json:"height,omitempty"`
 	NumberResults  int      `json:"numberResults,omitempty"`
+	Steps          int      `json:"steps,omitempty"`
+}
+
+// sanitizeRunwarePrompt separates positive and negative instructions, strips out excessive text,
+// and ensures the positive prompt is strictly non-empty, non-whitespace, and between 2 and 2800 characters
+// (comfortably beneath Runware's hard 3,000 character limit).
+func sanitizeRunwarePrompt(rawPrompt string) (positive string, negative string) {
+	trimmed := strings.TrimSpace(rawPrompt)
+	if trimmed == "" {
+		return "Ultra realistic professional architectural photo, crystal clear lighting, crisp detail, realistic textures, high resolution", ""
+	}
+
+	negativeMarkers := []string{
+		"STRICT NEGATIVE INSTRUCTIONS",
+		"NEGATIVE INSTRUCTIONS:",
+		"NEGATIVE PROMPT:",
+		"Negative prompt:",
+		"Negative instructions:",
+		"NEGATIVE:",
+		"Negative:",
+	}
+
+	posPart := trimmed
+	negPart := ""
+
+	for _, marker := range negativeMarkers {
+		idx := strings.Index(posPart, marker)
+		if idx != -1 {
+			negPart = strings.TrimSpace(posPart[idx+len(marker):])
+			posPart = strings.TrimSpace(posPart[:idx])
+			break
+		}
+	}
+
+	posPart = strings.TrimRight(posPart, "-\n\r\t :")
+
+	// Runware requires positivePrompt <= 3000 chars. We clamp to 2800 at a clean word boundary.
+	if len(posPart) > 2800 {
+		cutoff := 2800
+		lastSpace := strings.LastIndex(posPart[:cutoff], " ")
+		if lastSpace > 2000 {
+			posPart = strings.TrimSpace(posPart[:lastSpace])
+		} else {
+			posPart = strings.TrimSpace(posPart[:cutoff])
+		}
+	}
+
+	if len(posPart) < 2 {
+		posPart = "Ultra realistic professional architectural photo, crystal clear lighting, crisp detail, realistic textures, high resolution"
+	}
+
+	if len(negPart) > 2800 {
+		cutoff := 2800
+		lastSpace := strings.LastIndex(negPart[:cutoff], " ")
+		if lastSpace > 2000 {
+			negPart = strings.TrimSpace(negPart[:lastSpace])
+		} else {
+			negPart = strings.TrimSpace(negPart[:cutoff])
+		}
+	}
+
+	return posPart, negPart
 }
 
 type RunwareResponseItem struct {
@@ -108,28 +171,32 @@ func (s *RunwareService) EnhanceImageWithRunware(ctx context.Context, inputImage
 		strength = 0.35 // Preserves geometry, enhances clarity and texture
 	}
 
-	prompt := customPrompt
-	if prompt == "" {
-		prompt = "Ultra realistic professional architectural photo, crystal clear lighting, crisp detail, realistic textures, high resolution"
+	positivePrompt, negativePrompt := sanitizeRunwarePrompt(customPrompt)
+
+	task := RunwareTaskInference{
+		TaskType:       "imageInference",
+		TaskUUID:       uuid.New().String(),
+		Model:          model,
+		PositivePrompt: positivePrompt,
+		NegativePrompt: negativePrompt,
+		InputImage:     inputImageURL,
+		Strength:       &strength,
+		Width:          1024,
+		Height:         1024,
+		NumberResults:  1,
 	}
 
-	taskID := uuid.New().String()
+	// FLUX.1 Schnell is optimized for exactly 4 steps (fastest inference & minimal token/credit consumption)
+	if model == "runware:101@1" {
+		task.Steps = 4
+	}
+
 	payload := []interface{}{
 		RunwareTaskAuth{
 			TaskType: "authentication",
 			APIKey:   s.APIKey,
 		},
-		RunwareTaskInference{
-			TaskType:       "imageInference",
-			TaskUUID:       taskID,
-			Model:          model,
-			PositivePrompt: prompt,
-			InputImage:     inputImageURL,
-			Strength:       &strength,
-			Width:          1024,
-			Height:         1024,
-			NumberResults:  1,
-		},
+		task,
 	}
 
 	bodyBytes, err := json.Marshal(payload)

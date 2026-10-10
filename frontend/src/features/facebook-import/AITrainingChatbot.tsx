@@ -545,42 +545,7 @@ export const ModelSelectorMenu: React.FC<{
                 <span>Runware Image & AI Models</span>
               </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  onSelectModel('runware_ai', 'runware:100@1');
-                  setIsOpen(false);
-                }}
-                style={{
-                  width: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.5rem',
-                  padding: '6px 8px',
-                  borderRadius: '4px',
-                  border: 'none',
-                  backgroundColor: isRunware && model === 'runware:100@1' ? (isDark ? 'rgba(16, 185, 129, 0.18)' : 'rgba(16, 185, 129, 0.12)') : 'transparent',
-                  color: 'var(--text-primary)',
-                  fontSize: '0.75rem',
-                  fontWeight: 400,
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                }}
-                onMouseEnter={(e) => {
-                  if (!(isRunware && model === 'runware:100@1')) {
-                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!(isRunware && model === 'runware:100@1')) {
-                    e.currentTarget.style.backgroundColor = 'transparent';
-                  }
-                }}
-              >
-                <RunwareIcon size={13} color="#10B981" />
-                <span>SDXL Realism (runware:100@1)</span>
-              </button>
-
+              {/* FLUX.1 Schnell - Least tokens / compute */}
               <button
                 type="button"
                 onClick={() => {
@@ -614,7 +579,90 @@ export const ModelSelectorMenu: React.FC<{
                 }}
               >
                 <RunwareIcon size={13} color="#10B981" />
-                <span>FLUX.1 Schnell (runware:101@1)</span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                  <span style={{ fontWeight: 500 }}>FLUX.1 Schnell <span style={{ fontSize: '0.6875rem', color: '#10B981', fontWeight: 600 }}>⚡ Least Tokens (4 Steps)</span></span>
+                  <span style={{ fontSize: '0.6875rem', color: 'var(--text-secondary)' }}>runware:101@1 · Fastest & lowest compute cost</span>
+                </div>
+              </button>
+
+              {/* SDXL Realism */}
+              <button
+                type="button"
+                onClick={() => {
+                  onSelectModel('runware_ai', 'runware:100@1');
+                  setIsOpen(false);
+                }}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '6px 8px',
+                  borderRadius: '4px',
+                  border: 'none',
+                  backgroundColor: isRunware && model === 'runware:100@1' ? (isDark ? 'rgba(16, 185, 129, 0.18)' : 'rgba(16, 185, 129, 0.12)') : 'transparent',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.75rem',
+                  fontWeight: 400,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+                onMouseEnter={(e) => {
+                  if (!(isRunware && model === 'runware:100@1')) {
+                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!(isRunware && model === 'runware:100@1')) {
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                  }
+                }}
+              >
+                <RunwareIcon size={13} color="#10B981" />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                  <span style={{ fontWeight: 500 }}>SDXL Realism <span style={{ fontSize: '0.6875rem', color: '#3B82F6', fontWeight: 600 }}>🏛️ Photorealistic</span></span>
+                  <span style={{ fontSize: '0.6875rem', color: 'var(--text-secondary)' }}>runware:100@1 · Real estate architecture</span>
+                </div>
+              </button>
+
+              {/* Juggernaut XL */}
+              <button
+                type="button"
+                onClick={() => {
+                  onSelectModel('runware_ai', 'civitai:133005@782002');
+                  setIsOpen(false);
+                }}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '6px 8px',
+                  borderRadius: '4px',
+                  border: 'none',
+                  backgroundColor: isRunware && model === 'civitai:133005@782002' ? (isDark ? 'rgba(16, 185, 129, 0.18)' : 'rgba(16, 185, 129, 0.12)') : 'transparent',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.75rem',
+                  fontWeight: 400,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+                onMouseEnter={(e) => {
+                  if (!(isRunware && model === 'civitai:133005@782002')) {
+                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!(isRunware && model === 'civitai:133005@782002')) {
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                  }
+                }}
+              >
+                <RunwareIcon size={13} color="#10B981" />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                  <span style={{ fontWeight: 500 }}>Juggernaut XL <span style={{ fontSize: '0.6875rem', color: '#8B5CF6', fontWeight: 600 }}>✨ Ultra Detail</span></span>
+                  <span style={{ fontSize: '0.6875rem', color: 'var(--text-secondary)' }}>civitai:133005@782002 · High-end interior styling</span>
+                </div>
               </button>
             </>
           )}

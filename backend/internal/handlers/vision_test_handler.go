@@ -353,7 +353,7 @@ func EnhanceVisionImage(c *fiber.Ctx) error {
 	outFilePath := filepath.Join(enhancedDir, cleanName)
 
 	var modelUsed string
-	if req.Provider == "runware" || req.Provider == "runware_ai" || strings.HasPrefix(req.Model, "runware:") {
+	if req.Provider == "runware" || req.Provider == "runware_ai" || strings.HasPrefix(req.Model, "runware:") || strings.HasPrefix(req.Model, "civitai:") {
 		runwareSvc := services.NewRunwareService()
 		if runwareSvc.APIKey == "" {
 			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{

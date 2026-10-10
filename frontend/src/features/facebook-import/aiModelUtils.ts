@@ -2,10 +2,12 @@
  * Utility helper to get clean display names for AI providers and models.
  */
 export const getAIModelDisplayName = (provider?: string, model?: string): string => {
-  if (provider === 'runware_ai' || model?.startsWith('runware:')) {
-    if (model === 'runware:101@1') return 'FLUX.1 Schnell';
-    if (model === 'runware:100@1') return 'SDXL Realism';
-    return model ? model.replace('runware:', '') : 'Runware AI';
+  if (provider === 'runware_ai' || model?.startsWith('runware:') || model?.startsWith('civitai:')) {
+    if (model === 'runware:101@1') return 'FLUX.1 Schnell (Fastest · 4 Steps)';
+    if (model === 'runware:100@1') return 'SDXL Realism (Budget)';
+    if (model === 'civitai:133005@782002') return 'Juggernaut XL (High Detail)';
+    if (model === 'runware:102@1') return 'FLUX.1 Dev';
+    return model ? model.replace('runware:', '').replace('civitai:', '') : 'Runware AI';
   }
   if (provider === 'laozhang_ai') {
     if (model === 'deepseek-v3') return 'DeepSeek V3';
@@ -35,8 +37,8 @@ export const getAIModelDisplayName = (provider?: string, model?: string): string
 export const isImageModel = (model?: string, provider?: string): boolean => {
   if (!model && !provider) return false;
   if (provider === 'runware_ai' || provider === 'runware') return true;
-  if (model?.startsWith('runware:')) return true;
-  if (model?.includes('image-2.5') || model?.includes('flux') || model?.includes('sdxl')) return true;
+  if (model?.startsWith('runware:') || model?.startsWith('civitai:')) return true;
+  if (model?.includes('image-2.5') || model?.includes('flux') || model?.includes('sdxl') || model?.includes('juggernaut')) return true;
   return false;
 };
 

@@ -1,5 +1,5 @@
 {
-  "timestamp": 1791673732338,
+  "timestamp": 1791673996348,
   "workflow_formats": [
     {
       "config": {
@@ -42,14 +42,22 @@
             "title": "AI Image Enhancer #3",
             "x": 640,
             "y": 380
+          },
+          {
+            "customPrompt": "",
+            "enabled": true,
+            "id": "ai-box-1791673976564",
+            "model": "runware:101@1",
+            "processType": "rental",
+            "provider": "runware_ai",
+            "templateId": "1790878372830",
+            "templateText": "Convert the raw property listing below into a SHORT, CLEAN, PROFESSIONAL Facebook rental post in ENGLISH ONLY.\n\nIMPORTANT RULES:\n\n1. INFORMATION\n\n* Use ONLY information provided in the raw data.\n* Never invent, assume, or add property details.\n* If information is not provided, omit it.\n* Translate Thai into natural, professional English.\n* Keep all prices, sizes, floors, buildings, dates, distances, and other factual information accurate.\n* Convert \"ตรม.\" to \"Sq.m.\"\n* Use \"THB/month\" for monthly rental prices.\n* Use natural real estate wording such as \"1 Bed\", \"2 Bed\", \"Corner Unit\", \"High Floor\", \"Pool View\", \"Fully Furnished\", \"Ready to Move In\", etc.\n\n2. KEEP THE POST SHORT\n\n* The final post should be concise and easy to scan.\n* Do not make it look like a long property brochure.\n* Do not repeat the same information in multiple sections.\n* Combine related information naturally, but DO NOT put too much information into one bullet.\n* If a bullet becomes long, split it into 2 bullets.\n* Prefer short bullets of one clear idea each.\n* Do not create unnecessary sections.\n\n3. REMOVE AGENT / OWNER META INFORMATION\n   Remove information such as:\n\n* Owner post\n* Agent post\n* Owner\n* Agent\n* Co-Agent\n* Co-broker\n* Agent commission\n* Agent contact information from the original post\n* \"No Co-Agent welcome\"\n* \"Agents welcome\"\n* \"รับโค\"\n* \"ไม่รับ Co-Agent\"\n* Similar agent-to-agent information\n\nDo NOT include any agent/owner/co-agent status in the final post.\n\n4. DEFAULT SERVICE FEE\n   ALWAYS include this exact line:\n\n🔴 𝗦𝗲𝗿𝘃𝗶𝗰𝗲 𝗙𝗲𝗲 လုံးဝမရှိပါဘူးရှင့် 🔴\n\nIf the raw data explicitly states a DIFFERENT service fee, use the actual service fee information instead.\n\n5. DEFAULT CONTACT\n   Unless specifically instructed otherwise, ALWAYS use this exact contact section:\n\n𝗖𝗼𝗻𝘁𝗮𝗰𝘁 for Viewing\n• Call / WhatsApp: 062-718-8699\n• LINE: @sweetiehsu\n• Property Code: [GENERATED CODE]\n\nDo NOT use the phone number, LINE ID, or contact details from the raw property post.\n\n6. PROPERTY CODE\n   Generate a UNIQUE property code for every listing.\n\nFormat:\nDOT-XXXXX-XXXXX\n\nRules:\n\n* Start with \"DOT-\"\n* First section = exactly 5 random uppercase letters/numbers\n* Second section = exactly 5 random uppercase letters/numbers\n* Example: DOT-K7M2Q-X9P4L\n* Never copy a property code from the raw data.\n* Always generate a new unique code.\n* Use the same generated code only in the Contact section.\n\n7. RENTAL CONDITIONS\n   Only include information explicitly provided in the raw data.\n\nUse this section when applicable:\n\n𝗥𝗲𝗻𝘁𝗮𝗹 𝗖𝗼𝗻𝗱𝗶𝘁𝗶𝗼𝗻𝘀:\n• Minimum 1-Year contract\n• 2 months deposit\n• 1 month advance rent\n\nDo not automatically add deposit or contract terms if they are not in the raw data.\n\n8. UNIT INFO\n   Use this section:\n\n𝗨𝗻𝗶𝘁 𝗜𝗻𝗳𝗼:\n\nInclude only the most useful information, such as:\n\n* Project name\n* Bedroom / bathroom\n* Floor\n* Building\n* Size\n* View\n* BTS / MRT distance\n* Nearby landmark\n* Furniture\n* Appliances\n* Important unit features\n* Move-in availability\n\nDo not list every small detail if it makes the post too long.\n\n9. FACILITIES\n   Do NOT create a separate Facilities section unless the raw data contains useful project facilities.\n\nIf facilities are provided, select only the most relevant ones.\n\nFor example:\n• Swimming Pool\n• 360° Fitness Center\n• Co-Working Space\n• 24-Hour Security\n• Keycard Access\n• 24-Hour Convenience Store\n\nDo not list every facility just because it is available in the raw data.\n\n10. LOCATION\n    Include useful location information inside Unit Info or a short location bullet.\n\nPrioritize:\n\n* BTS / MRT\n* Walking distance\n* Nearby shopping malls\n* Major roads\n* Important landmarks\n\nDo not repeat the same location information.\n\n11. PET POLICY\n    If the raw data explicitly says pets are NOT allowed, include:\n    • Pets are not allowed\n\nIf there is no pet information, do not mention pets.\n\n12. SERVICE / SHUTTLE\n    If the raw data explicitly mentions useful services such as:\n\n* Free Shuttle Bus\n* Free Wi-Fi\n* Laundry\n* Convenience store\n\nYou may include them if relevant.\n\n13. TITLE FORMAT\n    Use:\n\n[Project Name] | [Room Type] | [Rental Price] THB/month\n\nExample:\n\nElio Del Nest Udomsuk | 1 Bed | 13,500 THB/month\n\n14. FINAL FORMAT\n\n[Project Name] | [Room Type] | [Rental Price] THB/month\n\n𝗨𝗻𝗶𝘁 𝗜𝗻𝗳𝗼:\n• [Project / room information]\n• [Floor / building / size / view]\n• [Location / BTS / nearby landmark]\n• [Furniture / appliances / important feature]\n• [Other useful information]\n\n[Only include if useful information exists]\n\n𝗙𝗮𝗰𝗶𝗹𝗶𝘁𝗶𝗲𝘀:\n• [Facility]\n• [Facility]\n• [Facility]\n\n🔴 𝗦𝗲𝗿𝘃𝗶𝗰𝗲 𝗙𝗲𝗲 လုံးဝမရှိပါဘူးရှင့် 🔴\n\n[Only include if rental conditions exist]\n\n𝗥𝗲𝗻𝘁𝗮𝗹 𝗖𝗼𝗻𝗱𝗶𝘁𝗶𝗼𝗻𝘀:\n• [Condition]\n• [Condition]\n• [Condition]\n\n𝗖𝗼𝗻𝘁𝗮𝗰𝘁 for Viewing\n• Call / WhatsApp: 062-718-8699\n• LINE: @sweetiehsu\n• Property Code: DOT-XXXXX-XXXXX\n\n[Relevant hashtags only]\n\n15. HASHTAGS\n    Generate relevant hashtags based ONLY on the property information.\n\nUse around 8–15 useful hashtags.\n\nPrioritize:\n\n* Project name\n* Location\n* BTS/MRT\n* Room type\n* Condo rental\n* Bangkok rental\n* Relevant property features\n\nDo NOT use unrelated hashtags.\nDo NOT create hashtags for information that does not exist in the raw data.\n\n16. OUTPUT\n\n* Output ONLY the finished Facebook post.\n* Do not explain what you changed.\n* Do not show the raw data.\n* Do not show the generated prompt.\n* Do not add an introduction or conclusion.\n\nRAW PROPERTY DATA:\n[PASTE RAW PROPERTY DATA HERE]",
+            "title": "FB - Dot BKK Living (Copy)",
+            "x": 642.6315789473676,
+            "y": -57.89473684210511
           }
         ],
         "connections": [
-          {
-            "fromNodeId": "get-content",
-            "id": "conn-1791483261550-3h8q",
-            "toNodeId": "ai-box-1790885461679"
-          },
           {
             "fromNodeId": "get-content",
             "id": "conn-1791483947505-1p8i",
@@ -73,6 +81,11 @@
           {
             "fromNodeId": "ai-box-1790942968916",
             "id": "conn-1791673731424-sm9h",
+            "toNodeId": "destination"
+          },
+          {
+            "fromNodeId": "ai-box-1791673976564",
+            "id": "conn-1791673987244-i1zt",
             "toNodeId": "destination"
           }
         ],
@@ -98,8 +111,8 @@
           "y": 380
         },
         "panOffset": {
-          "x": 30,
-          "y": 30
+          "x": 117,
+          "y": 231
         },
         "trigger": {
           "autoImport": true,
@@ -112,7 +125,7 @@
       "description": "Customized Facebook import extraction and dynamic AI generation pipeline",
       "id": "format-1790885461679",
       "name": "General Engine",
-      "updatedAt": 1791673732338
+      "updatedAt": 1791673996348
     }
   ]
 }
