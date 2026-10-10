@@ -24,6 +24,7 @@ import {
   FiRotateCcw,
   FiX,
   FiAlertTriangle,
+  FiEdit2,
 } from 'react-icons/fi';
 import { FaFacebook } from 'react-icons/fa';
 import { SiGooglegemini } from 'react-icons/si';
@@ -692,6 +693,10 @@ export const FacebookWorkflowCanvas = forwardRef<
   const [hoveredOutputNodeId, setHoveredOutputNodeId] = useState<string | null>(null);
   const [hoveredInputNodeId, setHoveredInputNodeId] = useState<string | null>(null);
   const hoverLeaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Canvas Node Title Editing State
+  const [editingCanvasBoxId, setEditingCanvasBoxId] = useState<string | null>(null);
+  const [editingCanvasBoxTitle, setEditingCanvasBoxTitle] = useState('');
 
   const handleNodeMouseEnter = (nodeId: string) => {
     if (hoverLeaveTimeoutRef.current) {
@@ -2520,12 +2525,85 @@ export const FacebookWorkflowCanvas = forwardRef<
                     flexDirection: 'column',
                     alignItems: 'center',
                     gap: '2px',
-                    pointerEvents: 'none',
+                    pointerEvents: 'auto',
+                    zIndex: 2,
                   }}
+                  onClick={(e) => e.stopPropagation()}
                 >
-                  <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)', transition: 'color 0.2s ease' }}>
-                    {box.title}
-                  </span>
+                  {editingCanvasBoxId === box.id ? (
+                    <input
+                      autoFocus
+                      type="text"
+                      value={editingCanvasBoxTitle}
+                      onChange={(e) => setEditingCanvasBoxTitle(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          if (editingCanvasBoxTitle.trim()) {
+                            handleUpdateAIBox(box.id, { title: editingCanvasBoxTitle.trim() });
+                          }
+                          setEditingCanvasBoxId(null);
+                        } else if (e.key === 'Escape') {
+                          setEditingCanvasBoxId(null);
+                        }
+                      }}
+                      onBlur={() => {
+                        if (editingCanvasBoxTitle.trim()) {
+                          handleUpdateAIBox(box.id, { title: editingCanvasBoxTitle.trim() });
+                        }
+                        setEditingCanvasBoxId(null);
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      style={{
+                        fontSize: '0.8125rem',
+                        fontWeight: 600,
+                        color: 'var(--text-primary)',
+                        backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
+                        border: '1px solid #3B82F6',
+                        borderRadius: '4px',
+                        padding: '1px 6px',
+                        outline: 'none',
+                        textAlign: 'center',
+                        minWidth: '110px',
+                        maxWidth: '220px',
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.18)',
+                      }}
+                    />
+                  ) : (
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        cursor: 'pointer',
+                        padding: '1px 4px',
+                        borderRadius: '4px',
+                      }}
+                      title="Click or double-click to rename"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingCanvasBoxId(box.id);
+                        setEditingCanvasBoxTitle(box.title);
+                      }}
+                      onDoubleClick={(e) => {
+                        e.stopPropagation();
+                        setEditingCanvasBoxId(box.id);
+                        setEditingCanvasBoxTitle(box.title);
+                      }}
+                    >
+                      <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)', transition: 'color 0.2s ease' }}>
+                        {box.title}
+                      </span>
+                      <FiEdit2
+                        style={{
+                          fontSize: '11px',
+                          color: 'var(--text-muted)',
+                          opacity: hoveredNodeId === box.id ? 0.8 : 0.35,
+                          transition: 'opacity 0.15s ease',
+                        }}
+                      />
+                    </div>
+                  )}
                   <span style={{ fontSize: '0.6875rem', color: isBoxReceptive ? RECEPTIVE_COLOR : 'var(--text-muted)', fontWeight: isBoxReceptive ? 600 : 400, transition: 'color 0.2s ease' }}>
                     {isBoxReceptive
                       ? 'Ready to Connect'
@@ -2701,9 +2779,49 @@ export const FacebookWorkflowCanvas = forwardRef<
                       ) : (
                         <SiGooglegemini style={{ fontSize: '18px', color: '#60A5FA' }} />
                       )}
-                      <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '200px' }}>
-                        {currentModalAIBox.title}
-                      </span>
+
+                      {/* Directly Editable Node Name in Modal Header */}
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
+                          borderRadius: '6px',
+                          padding: '2px 6px',
+                          border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
+                          transition: 'all 0.15s ease',
+                        }}
+                      >
+                        <input
+                          type="text"
+                          value={currentModalAIBox.title}
+                          onChange={(e) => handleUpdateAIBox(currentModalAIBox.id, { title: e.target.value })}
+                          placeholder="Node Name"
+                          title="Click to rename node"
+                          style={{
+                            fontSize: '0.875rem',
+                            fontWeight: 600,
+                            color: 'var(--text-primary)',
+                            backgroundColor: 'transparent',
+                            border: 'none',
+                            outline: 'none',
+                            width: `${Math.max(120, Math.min(260, (currentModalAIBox.title?.length || 8) * 9 + 16))}px`,
+                            cursor: 'text',
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') e.currentTarget.blur();
+                          }}
+                        />
+                        <FiEdit2
+                          style={{
+                            fontSize: '11px',
+                            color: 'var(--text-muted)',
+                            opacity: 0.6,
+                            flexShrink: 0,
+                          }}
+                        />
+                      </div>
                     </div>
 
                     {/* AI Model Selector at left top */}

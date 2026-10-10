@@ -2264,9 +2264,41 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                     <RunwareIcon size={26} color="#10B981" />
                   </div>
 
-                  <h3 style={{ fontSize: '1.25rem', fontWeight: 600, color: isDark ? '#FFFFFF' : 'var(--text-primary)', margin: '0 0 0.375rem 0' }}>
-                    {box.title ? box.title.replace(/\bAI\s+/gi, '') : 'Image Enhancement'}
-                  </h3>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.375rem', margin: '0 0 0.375rem 0' }}>
+                    <input
+                      type="text"
+                      value={box.title || ''}
+                      onChange={(e) => onUpdateBox(box.id, { title: e.target.value })}
+                      placeholder="Image Enhancement"
+                      title="Click to rename"
+                      style={{
+                        fontSize: '1.25rem',
+                        fontWeight: 600,
+                        color: isDark ? '#FFFFFF' : 'var(--text-primary)',
+                        backgroundColor: 'transparent',
+                        border: '1px solid transparent',
+                        borderRadius: '6px',
+                        padding: '2px 8px',
+                        textAlign: 'center',
+                        outline: 'none',
+                        width: `${Math.max(160, Math.min(340, (box.title?.length || 16) * 11 + 20))}px`,
+                        cursor: 'text',
+                        transition: 'all 0.15s ease',
+                      }}
+                      onFocus={(e) => {
+                        e.currentTarget.style.borderColor = '#10B981';
+                        e.currentTarget.style.backgroundColor = isDark ? '#1E293B' : '#FFFFFF';
+                      }}
+                      onBlur={(e) => {
+                        e.currentTarget.style.borderColor = 'transparent';
+                        e.currentTarget.style.backgroundColor = 'transparent';
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') e.currentTarget.blur();
+                      }}
+                    />
+                    <FiEdit2 style={{ fontSize: '12px', color: 'var(--text-muted)', opacity: 0.5, pointerEvents: 'none' }} />
+                  </div>
 
                   <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', maxWidth: '440px', lineHeight: 1.5, margin: 0 }}>
                     Click or drag any post photo from the right panel into the input box to enhance or generate new variations.

@@ -1277,9 +1277,41 @@ export const AITrainingChatbot: React.FC<AITrainingChatbotProps> = ({
                     )}
                   </div>
 
-                <h3 style={{ fontSize: '1.125rem', fontWeight: 500, margin: '0 0 0.375rem 0', color: isDark ? '#FFFFFF' : 'var(--text-primary)' }}>
-                  {box.title}
-                </h3>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.375rem', margin: '0 0 0.375rem 0' }}>
+                  <input
+                    type="text"
+                    value={box.title}
+                    onChange={(e) => onUpdateBox(box.id, { title: e.target.value })}
+                    placeholder="Node Name"
+                    title="Click to rename"
+                    style={{
+                      fontSize: '1.125rem',
+                      fontWeight: 600,
+                      color: isDark ? '#FFFFFF' : 'var(--text-primary)',
+                      backgroundColor: 'transparent',
+                      border: '1px solid transparent',
+                      borderRadius: '6px',
+                      padding: '2px 8px',
+                      textAlign: 'center',
+                      outline: 'none',
+                      width: `${Math.max(140, Math.min(320, (box.title?.length || 10) * 11 + 20))}px`,
+                      cursor: 'text',
+                      transition: 'all 0.15s ease',
+                    }}
+                    onFocus={(e) => {
+                      e.currentTarget.style.borderColor = '#3B82F6';
+                      e.currentTarget.style.backgroundColor = isDark ? '#1E293B' : '#FFFFFF';
+                    }}
+                    onBlur={(e) => {
+                      e.currentTarget.style.borderColor = 'transparent';
+                      e.currentTarget.style.backgroundColor = 'transparent';
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') e.currentTarget.blur();
+                    }}
+                  />
+                  <FiEdit3 style={{ fontSize: '12px', color: 'var(--text-muted)', opacity: 0.5, pointerEvents: 'none' }} />
+                </div>
                 <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', margin: '0 0 1.5rem 0', lineHeight: 1.5, fontWeight: 400 }}>
                   Test your prompt with sample property listings or chat to refine it.
                 </p>
