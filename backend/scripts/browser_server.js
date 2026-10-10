@@ -2606,17 +2606,19 @@ const server = http.createServer(async (req, res) => {
           return;
         }
 
-        // 4. Expand "See more" / "ดูเพิ่มเติม" STRICTLY in the visible post area
+        // 4. Expand "See more" / "ดูเพิ่มเติม" across the visible post area
         await page.evaluate(() => {
-          const clickables = Array.from(document.querySelectorAll('div[role="button"], span[role="button"]'));
+          const clickables = Array.from(document.querySelectorAll('div[role="button"], span[role="button"], a[role="button"]'));
           clickables.forEach((btn) => {
             const txt = (btn.innerText || '').trim();
             if (
               txt === 'See more' ||
               txt === 'ดูเพิ่มเติม' ||
               txt === 'See More' ||
+              txt === 'နောက်ထပ်ကြည့်ရန်' ||
               txt.includes('See more') ||
-              txt.includes('ดูเพิ่มเติม')
+              txt.includes('ดูเพิ่มเติม') ||
+              txt.includes('နောက်ထပ်')
             ) {
               try {
                 btn.click();
@@ -2624,59 +2626,118 @@ const server = http.createServer(async (req, res) => {
             }
           });
         }).catch(() => {});
-        await page.waitForTimeout(700);
+        await page.waitForTimeout(800);
 
-        // 5. Identify the TARGET POST container — score-based matching
-        //    Returns the confirmed post's bounding box and extracted caption.
-        //    This is the TargetPostContext lock step.
+        // 5. Identify the TARGET POST container — direct message locator + comment exclusion
         console.log('[FACEBOOK_EXTRACT] Identifying and locking TargetPostContext...');
 
         const postInfo = await page.evaluate((urlFromServer) => {
-          const candidateSelectors = [
-            'div[role="dialog"] div[role="article"]',
-            'div[role="dialog"]',
-            'div[role="article"]',
-            'article',
-            'div[data-pagelet*="FeedUnit"]',
-            'div[role="main"] div[role="article"]',
-            'div[role="main"]',
+          // Helper to strictly exclude comment threads, replies, and non-main elements
+          const isCommentOrReply = (el) => {
+            if (!el) return true;
+            const aria = (el.getAttribute('aria-label') || '').toLowerCase();
+            if (
+              aria.includes('comment by') ||
+              aria.includes('ความคิดเห็นโดย') ||
+              aria.includes('reply by') ||
+              aria.includes('ตอบกลับโดย')
+            ) return true;
+            if (
+              el.closest('[aria-label*="Comments"], [aria-label*="Comment list"], [aria-label*="ความคิดเห็น"], ul[role="group"], form[role="presentation"]')
+            ) return true;
+            if (el.closest('div[role="complementary"], [role="navigation"]')) return true;
+            return false;
+          };
+
+          let container = null;
+          let caption = '';
+
+          // ── Strategy A: Collect & Score All Candidate Messages ──
+          // Prioritizes the comprehensive original property listing description over 1-line reshare quotes
+          const postMsgSelectors = [
+            '[data-ad-preview="message"]',
+            '[data-ad-rendering-role="story_message"]',
+            '[data-ad-comet-preview="message"]',
+            'div[dir="auto"][style*="-webkit-line-clamp"]',
           ];
 
-          let candidates = [];
-          for (const sel of candidateSelectors) {
-            candidates.push(...Array.from(document.querySelectorAll(sel)));
-          }
-          candidates = Array.from(new Set(candidates));
-
-          // Score each candidate to find the best post container
-          let bestContainer = null;
-          let bestScore = -1;
-          for (const el of candidates) {
-            const text = el.innerText || '';
-            if (text.length < 20) continue;
-            let score = 0;
-            // Real estate signals
-            if (text.includes('Rent') || text.includes('ให้เช่า') || text.includes('เช่า')) score += 500;
-            if (text.includes('Bed') || text.includes('Bath') || text.includes('sqm') || text.includes('ตร.ม.') || text.includes('Floor') || text.includes('ชั้น')) score += 500;
-            if (text.includes('Tel') || text.includes('Line') || text.includes('Contact') || text.includes('ติดต่อ')) score += 300;
-            if (text.includes('Condo') || text.includes('คอนโด') || text.includes('ห้อง') || text.includes('Price') || text.includes('ราคา')) score += 300;
-            // Post ID in page URL
-            if (urlFromServer && urlFromServer.includes('permalink')) score += 200;
-            // Article role
-            if (el.matches('div[role="article"], article')) score += 100;
-
-            if (score > bestScore) {
-              bestScore = score;
-              bestContainer = el;
+          let candidateMessages = [];
+          for (const sel of postMsgSelectors) {
+            const msgs = Array.from(document.querySelectorAll(sel)).filter((el) => !isCommentOrReply(el));
+            for (const m of msgs) {
+              const txt = (m.innerText || '').trim();
+              if (txt.length > 10) {
+                let score = Math.min(txt.length, 2500);
+                if (txt.includes('Rent') || txt.includes('เช่า') || txt.includes('ให้เช่า') || txt.includes('ငှား')) score += 1000;
+                if (txt.includes('Bed') || txt.includes('Bath') || txt.includes('BR') || txt.includes('ห้องนอน')) score += 1000;
+                if (txt.includes('Floor') || txt.includes('Building') || txt.includes('ชั้น') || txt.includes('ตึก') || txt.includes('လွှာ')) score += 800;
+                if (txt.includes('THB') || txt.includes('บาท') || txt.includes('Price') || txt.includes('Deposit')) score += 800;
+                if (txt.includes('BTS') || txt.includes('MRT') || txt.includes('Station') || txt.includes('ဘူတာ')) score += 800;
+                if (txt.includes('Tel') || txt.includes('Line') || txt.includes('WhatsApp') || txt.includes('Contact') || txt.includes('Call')) score += 600;
+                if (txt.includes('Furnished') || txt.includes('Overview') || txt.includes('Facilities') || txt.includes('Appliances')) score += 500;
+                candidateMessages.push({ el: m, text: txt, score });
+              }
             }
           }
 
-          const container = bestContainer || candidates[0] || null;
+          // Sort by score descending so the rich original listing wins
+          candidateMessages.sort((a, b) => b.score - a.score);
+
+          if (candidateMessages.length > 0) {
+            const best = candidateMessages[0];
+            caption = best.text;
+            container =
+              best.el.closest('div[role="article"]') ||
+              best.el.closest('article') ||
+              best.el.closest('div[data-pagelet*="FeedUnit"]') ||
+              best.el.closest('div[role="main"]') ||
+              best.el.parentElement;
+          }
+
+          // ── Strategy B: Fallback candidate search (strictly excluding comments) ──
+          if (!container) {
+            const candidateSelectors = [
+              'div[role="dialog"] > div[role="article"]',
+              'div[role="dialog"]',
+              'div[role="main"] div[role="article"]',
+              'div[role="article"]',
+              'article',
+              'div[data-pagelet*="FeedUnit"]',
+              'div[role="main"]',
+            ];
+
+            let candidates = [];
+            for (const sel of candidateSelectors) {
+              candidates.push(...Array.from(document.querySelectorAll(sel)));
+            }
+            candidates = Array.from(new Set(candidates)).filter((el) => !isCommentOrReply(el));
+
+            let bestContainer = null;
+            let bestScore = -1;
+            for (const el of candidates) {
+              const text = el.innerText || '';
+              if (text.length < 20) continue;
+              let score = 0;
+              score += Math.min(text.length, 1000);
+              if (text.includes('Rent') || text.includes('ให้เช่า') || text.includes('เช่า') || text.includes('ငှား')) score += 500;
+              if (text.includes('Bed') || text.includes('Bath') || text.includes('sqm') || text.includes('ตร.ม.') || text.includes('Floor') || text.includes('လွှာ')) score += 500;
+              if (text.includes('Tel') || text.includes('Line') || text.includes('Contact') || text.includes('WhatsApp')) score += 300;
+              if (text.includes('Condo') || text.includes('Price') || text.includes('THB')) score += 300;
+              if (el.matches('div[role="article"], article')) score += 100;
+
+              if (score > bestScore) {
+                bestScore = score;
+                bestContainer = el;
+              }
+            }
+            container = bestContainer || candidates[0] || null;
+          }
+
           if (!container) {
             return { found: false, caption: '', author: '', detectedPostId: '', postBoundingBox: null };
           }
 
-          // Get bounding box of the confirmed target post container
+          // Get bounding box of confirmed target post container
           const rect = container.getBoundingClientRect();
           const postBoundingBox = {
             x: Math.round(rect.left),
@@ -2685,40 +2746,59 @@ const server = http.createServer(async (req, res) => {
             height: Math.round(rect.height),
           };
 
-          // ── Caption extraction scoped to bestContainer ──
-          let caption = '';
-          const msgEl = container.querySelector('[data-ad-preview="message"]');
-          if (msgEl && msgEl.innerText && msgEl.innerText.trim().length > 10) {
-            caption = msgEl.innerText.trim();
-          } else {
-            const dirAutoEls = Array.from(container.querySelectorAll('div[dir="auto"], span[dir="auto"]'));
-            for (const el of dirAutoEls) {
-              const txt = (el.innerText || '').trim();
-              if (txt.length > 50) {
-                caption = txt;
-                break;
-              }
-            }
-            if (!caption) {
-              const textNodes = Array.from(container.querySelectorAll('div[dir="auto"], span[dir="auto"], p'));
-              const excluded = ['Like', 'Comment', 'Share', 'See more', 'ดูเพิ่มเติม', 'Write a comment...', 'Sponsored'];
-              const parts = [];
-              const seen = new Set();
-              textNodes.forEach((node) => {
-                let txt = (node.innerText || '').trim();
-                if (txt.length > 2 && !excluded.some((k) => txt === k || txt.startsWith(k)) && !seen.has(txt)) {
-                  seen.add(txt);
-                  parts.push(txt);
+          // ── If caption not yet retrieved via Strategy A, extract scoped to container ──
+          if (!caption) {
+            const msgEl = container.querySelector('[data-ad-preview="message"], [data-ad-rendering-role="story_message"]');
+            if (msgEl && msgEl.innerText && msgEl.innerText.trim().length > 10) {
+              caption = msgEl.innerText.trim();
+            } else {
+              const dirAutoEls = Array.from(container.querySelectorAll('div[dir="auto"], span[dir="auto"]')).filter((el) => !isCommentOrReply(el));
+              for (const el of dirAutoEls) {
+                const txt = (el.innerText || '').trim();
+                if (txt.length > 50) {
+                  caption = txt;
+                  break;
                 }
-              });
-              caption = parts.join('\n');
+              }
+              if (!caption) {
+                const textNodes = Array.from(container.querySelectorAll('div[dir="auto"], span[dir="auto"], p')).filter((el) => !isCommentOrReply(el));
+                const excluded = ['Like', 'Comment', 'Share', 'See more', 'ดูเพิ่มเติม', 'Write a comment...', 'Sponsored'];
+                const parts = [];
+                const seen = new Set();
+                textNodes.forEach((node) => {
+                  let txt = (node.innerText || '').trim();
+                  if (txt.length > 2 && !excluded.some((k) => txt === k || txt.startsWith(k)) && !seen.has(txt)) {
+                    seen.add(txt);
+                    parts.push(txt);
+                  }
+                });
+                caption = parts.join('\n');
+              }
             }
           }
 
-          // ── Author name scoped to bestContainer ──
+          // ── Author name scoped to post header ──
           let author = '';
-          const authorEl = container.querySelector('h2, h3, h4, strong, a[role="link"]');
-          if (authorEl) author = (authorEl.innerText || '').trim().split('\n')[0];
+          const authorHeaderLinks = Array.from(container.querySelectorAll('h2 a[role="link"], h3 a[role="link"], h4 a[role="link"], h2 a, h3 a, h4 a, [role="heading"] a, header a[role="link"], strong a[role="link"], strong a'));
+          for (const a of authorHeaderLinks) {
+            const txt = (a.innerText || '').trim();
+            if (txt && txt.length > 1 && txt.length < 80 && !['See more', 'ดูเพิ่มเติม', 'Follow', 'Like', 'Share', 'Comment'].includes(txt)) {
+              author = txt.split('\n')[0];
+              break;
+            }
+          }
+          if (!author) {
+            const topLinks = Array.from(container.querySelectorAll('a[role="link"], strong, a[href]')).filter((el) => !isCommentOrReply(el));
+            for (const a of topLinks) {
+              const href = a.href || '';
+              if (href.includes('/groups/') && !href.includes('/user/')) continue;
+              const txt = (a.innerText || '').trim();
+              if (txt && txt.length > 1 && txt.length < 60 && !['See more', 'ดูเพิ่มเติม', 'Follow', 'Like', 'Share', 'Comment'].includes(txt)) {
+                author = txt.split('\n')[0];
+                break;
+              }
+            }
+          }
 
           // ── Post ID from links inside bestContainer ──
           let detectedPostId = '';
@@ -3100,12 +3180,40 @@ const server = http.createServer(async (req, res) => {
       await page.waitForTimeout(500);
 
       const postText = await page.evaluate(() => {
-        const isExcluded = (el) => {
-          if (el.getAttribute && (el.getAttribute('aria-label') === 'Notifications' || el.getAttribute('aria-label') === 'Chats')) return true;
-          const txt = (el.innerText || '');
-          if (txt.includes('Your push notifications are off') && !txt.includes('Rent') && !txt.includes('ให้เช่า')) return true;
+        const isCommentOrReply = (el) => {
+          if (!el) return true;
+          const aria = (el.getAttribute('aria-label') || '').toLowerCase();
+          if (
+            aria.includes('comment') ||
+            aria.includes('ความคิดเห็น') ||
+            aria.includes('reply') ||
+            aria.includes('replies') ||
+            aria.includes('ตอบกลับ')
+          ) return true;
+          if (
+            el.closest('[aria-label*="Comments"], [aria-label*="Comment list"], [aria-label*="ความคิดเห็น"], ul[role="group"], form[role="presentation"]')
+          ) return true;
+          if (el.parentElement && el.parentElement.closest('div[role="article"], article')) return true;
+          if (el.closest('div[role="complementary"], [role="navigation"]')) return true;
           return false;
         };
+
+        // Method 1: Check for Facebook standard post message container directly on page
+        const postMsgSelectors = [
+          '[data-ad-preview="message"]',
+          '[data-ad-rendering-role="story_message"]',
+          '[data-ad-comet-preview="message"]',
+          'div[dir="auto"][style*="-webkit-line-clamp"]',
+        ];
+        for (const sel of postMsgSelectors) {
+          const msgs = Array.from(document.querySelectorAll(sel)).filter((el) => !isCommentOrReply(el));
+          for (const m of msgs) {
+            const txt = (m.innerText || '').trim();
+            if (txt.length > 20) {
+              return txt;
+            }
+          }
+        }
 
         const candidateSelectors = [
           'div[role="dialog"] div[role="article"]',
@@ -3122,7 +3230,7 @@ const server = http.createServer(async (req, res) => {
         for (const sel of candidateSelectors) {
           candidateElements.push(...Array.from(document.querySelectorAll(sel)));
         }
-        candidateElements = Array.from(new Set(candidateElements)).filter(el => !isExcluded(el));
+        candidateElements = Array.from(new Set(candidateElements)).filter(el => !isCommentOrReply(el));
 
         // Score containers for real estate post markers
         let bestContainer = null;
@@ -3130,10 +3238,11 @@ const server = http.createServer(async (req, res) => {
         for (const el of candidateElements) {
           const text = el.innerText || '';
           let score = 0;
-          if (text.includes('Rent') || text.includes('ให้เช่า') || text.includes('เช่า')) score += 500;
-          if (text.includes('Bed') || text.includes('Bath') || text.includes('sqm') || text.includes('ตร.ม.') || text.includes('Floor')) score += 500;
-          if (text.includes('Tel') || text.includes('Line') || text.includes('Contact')) score += 300;
-          if (text.includes('Bangna') || text.includes('Regent') || text.includes('Condo')) score += 300;
+          score += Math.min(text.length, 1000);
+          if (text.includes('Rent') || text.includes('ให้เช่า') || text.includes('เช่า') || text.includes('ငှား')) score += 500;
+          if (text.includes('Bed') || text.includes('Bath') || text.includes('sqm') || text.includes('ตร.ม.') || text.includes('Floor') || text.includes('လွှာ')) score += 500;
+          if (text.includes('Tel') || text.includes('Line') || text.includes('Contact') || text.includes('WhatsApp')) score += 300;
+          if (text.includes('Bangna') || text.includes('Regent') || text.includes('Condo') || text.includes('THB')) score += 300;
           if (score > bestScore) {
             bestScore = score;
             bestContainer = el;
@@ -3142,8 +3251,7 @@ const server = http.createServer(async (req, res) => {
 
         const container = bestContainer || candidateElements[0] || document.body;
 
-        // Method 1: Check for Facebook standard post message container
-        const messageEl = container.querySelector('[data-ad-preview="message"]');
+        const messageEl = container.querySelector('[data-ad-preview="message"], [data-ad-rendering-role="story_message"]');
         if (messageEl && messageEl.innerText && messageEl.innerText.trim().length > 20) {
           return messageEl.innerText.trim();
         }
