@@ -1,5 +1,5 @@
 {
-  "timestamp": 1791664419044,
+  "timestamp": 1791666843635,
   "workflow_formats": [
     {
       "config": {
@@ -79,19 +79,9 @@
             "toNodeId": "destination"
           },
           {
-            "fromNodeId": "get-images",
-            "id": "conn-images-ai-box-1791648839670",
-            "toNodeId": "ai-box-1791648839670"
-          },
-          {
             "fromNodeId": "get-content",
             "id": "conn-1791663546288-0wdf",
             "toNodeId": "ai-box-1791663399495"
-          },
-          {
-            "fromNodeId": "ai-box-1791648839670",
-            "id": "conn-1791664120957-iqo3",
-            "toNodeId": "destination"
           }
         ],
         "destination": {
@@ -116,8 +106,8 @@
           "y": 530
         },
         "panOffset": {
-          "x": 30,
-          "y": 30
+          "x": 48,
+          "y": 26
         },
         "trigger": {
           "autoImport": true,
@@ -130,7 +120,7 @@
       "description": "Customized Facebook import extraction and dynamic AI generation pipeline",
       "id": "format-1790885461679",
       "name": "General Engine",
-      "updatedAt": 1791664419044
+      "updatedAt": 1791666843635
     }
   ]
 }

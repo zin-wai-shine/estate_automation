@@ -2070,21 +2070,21 @@ export const FacebookWorkflowCanvas = forwardRef<
                   )}
                 </div>
 
-                {/* Hover: animated duplicate + delete actions with seamless hover bridge */}
+                {/* Hover: animated duplicate + delete actions curving around node with delete below plus */}
                 <div
                   className="node-hit"
                   onMouseEnter={() => handleNodeMouseEnter(box.id)}
                   onMouseLeave={() => handleNodeMouseLeave(box.id)}
                   style={{
                     left: '36px',
-                    top: '-12px',
-                    bottom: '-12px',
-                    paddingLeft: '50px',
-                    paddingRight: '16px',
+                    top: '-6px',
+                    bottom: '-6px',
+                    paddingLeft: '44px',
+                    paddingRight: '14px',
                     display: 'flex',
-                    flexDirection: 'row',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
                     alignItems: 'center',
-                    gap: '6px',
                     boxSizing: 'border-box',
                   }}
                 >
