@@ -305,7 +305,7 @@ const CANVAS_NODE_ACTION_CSS = `
 .canvas-node::before{content:'';position:absolute;inset:-7px;border-radius:50%;border:1.5px dashed var(--ring,#388BFD);opacity:0;transform:scale(.88);transition:opacity .2s ease,transform .35s cubic-bezier(.34,1.56,.64,1);pointer-events:none}
 .canvas-node:hover::before,
 .canvas-node.is-hovered::before{opacity:.7;transform:scale(1);animation:nodeRingSpin 10s linear infinite}
-.canvas-node.is-receptive::before{opacity:1;border-color:#F59E0B;transform:scale(1.06);animation:nodeRingSpin 6s linear infinite}
+.canvas-node.is-receptive::before{opacity:.5;border-color:var(--receptive-color,#D97706);transform:scale(1.02);animation:nodeRingSpin 8s linear infinite}
 @keyframes nodeRingSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
 .node-hit{position:absolute;display:flex;align-items:center;pointer-events:none !important;z-index:35}
 .node-action{width:26px;height:26px;border-radius:50%;background:var(--na-bg);border:1.5px solid var(--na-color);color:var(--na-color);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;opacity:0;transform:scale(.3) translateX(-4px);box-shadow:0 2px 6px rgba(0,0,0,.15);transition:opacity .18s ease,transform .25s cubic-bezier(.34,1.56,.64,1),background-color .15s ease,color .15s ease;pointer-events:none}
@@ -374,8 +374,8 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
   // AND is not already connected with a wire. Otherwise, it displays a solid terminal dot (•).
   const showArrow = hasReceiver && !isConnectedOutput;
 
-  // Vibrant amber gold representing receptive connect state ("show change color when I press that connect")
-  const RECEPTIVE_COLOR = '#F59E0B';
+  // Soft refined warm gold representing receptive connect state (reduced glow, gentle tint)
+  const RECEPTIVE_COLOR = isDark ? '#EAB308' : '#D97706';
   const effectiveStrokeColor = isReceptive ? RECEPTIVE_COLOR : strokeColor;
 
   // Center is (36, 36), radius R = 35
@@ -606,6 +606,10 @@ export const FacebookWorkflowCanvas = forwardRef<
 ) {
   const { actualTheme } = useTheme();
   const isDark = actualTheme === 'dark';
+  const RECEPTIVE_COLOR = isDark ? '#EAB308' : '#D97706';
+  const RECEPTIVE_GLOW = isDark
+    ? 'drop-shadow(0 0 5px rgba(234, 179, 8, 0.35))'
+    : 'drop-shadow(0 0 4px rgba(217, 119, 6, 0.22))';
   const [config, setConfig] = useState<FacebookWorkflowConfig>(() => initialConfig || loadSavedFacebookWorkflowConfig());
 
   useEffect(() => {
@@ -854,26 +858,35 @@ export const FacebookWorkflowCanvas = forwardRef<
       return false;
     }
 
-    // Step 2: get-content -> dynamic AI nodes
+    // Step 2: get-content -> dynamic AI copywriting nodes only (cannot connect to image nodes or nodes already receiving input)
     if (fromId === 'get-content') {
-      return toId.startsWith('ai-box-');
+      if (!toId.startsWith('ai-box-')) return false;
+      const targetBox = config.aiBoxes.find((b) => b.id === toId);
+      if (!targetBox) return false;
+      if (isImageAIBox(targetBox, conns)) return false;
+      const alreadyHasInput = conns.some((c) => c.toNodeId === toId);
+      return !alreadyHasInput;
     }
 
-    // Step 2b: get-images -> dynamic AI nodes (Image Edit & Enhance)
+    // Step 2b: get-images -> dynamic AI image enhancer nodes only (cannot connect to text nodes or nodes already receiving input)
     if (fromId === 'get-images') {
-      return toId.startsWith('ai-box-');
+      if (!toId.startsWith('ai-box-')) return false;
+      const targetBox = config.aiBoxes.find((b) => b.id === toId);
+      if (!targetBox) return false;
+      if (!isImageAIBox(targetBox, conns)) return false;
+      const alreadyHasInput = conns.some((c) => c.toNodeId === toId);
+      return !alreadyHasInput;
     }
 
-    // Step 3: dynamic AI nodes -> destination or another AI node (chaining)
+    // Step 3: dynamic AI nodes -> destination ONLY
+    // An AI node cannot connect to other AI nodes (neither the same copywriter type nor the image enhancer below it).
+    // It can ONLY connect forward to the final Property Inbox destination!
     if (fromId.startsWith('ai-box-')) {
       if (toId === 'destination') {
         const alreadyConnectedToDest = conns.some(
           (c) => c.fromNodeId === fromId && c.toNodeId === 'destination'
         );
         return !alreadyConnectedToDest;
-      }
-      if (toId.startsWith('ai-box-')) {
-        return !isReachable(toId, fromId, conns);
       }
       return false;
     }
@@ -2300,13 +2313,12 @@ export const FacebookWorkflowCanvas = forwardRef<
             const isBoxReceptive = Boolean(
               activeConnectingNodeId && isValidConnection(activeConnectingNodeId, box.id)
             );
-            const strokeColor = isSelected ? '#A371F7' : isBoxReceptive ? '#F59E0B' : isEffectiveEnabled ? themeColor : '#30363D';
+            const strokeColor = isSelected ? '#A371F7' : isBoxReceptive ? RECEPTIVE_COLOR : isEffectiveEnabled ? themeColor : '#30363D';
             const strokeDasharray = !isSelected && !isEffectiveEnabled ? '4, 4' : 'none';
             const isBoxInputConnected = (config.connections || []).some((c) => c.toNodeId === box.id);
             const isBoxOutputConnected = (config.connections || []).some((c) => c.fromNodeId === box.id);
             const boxCanConnectToDest = isValidConnection(box.id, 'destination');
-            const boxCanConnectToOther = config.aiBoxes.some((b) => isValidConnection(box.id, b.id));
-            const boxHasReceiver = isEffectiveEnabled && (boxCanConnectToDest || boxCanConnectToOther);
+            const boxHasReceiver = isEffectiveEnabled && boxCanConnectToDest;
 
             return (
               <div
@@ -2327,14 +2339,15 @@ export const FacebookWorkflowCanvas = forwardRef<
                   top: `${box.y}px`,
                   width: `${CIRCLE_SIZE}px`,
                   height: `${CIRCLE_SIZE}px`,
-                  ['--ring' as any]: isBoxReceptive ? '#F59E0B' : isEffectiveEnabled ? themeColor : '#30363D',
+                  ['--ring' as any]: isBoxReceptive ? RECEPTIVE_COLOR : isEffectiveEnabled ? themeColor : '#30363D',
+                  ['--receptive-color' as any]: RECEPTIVE_COLOR,
                   opacity: isEffectiveEnabled ? 1 : 0.6,
                   zIndex: isSelected ? 30 : isBoxReceptive ? 35 : hoveredNodeId === box.id ? 25 : 15,
                   cursor: isBoxReceptive ? 'crosshair' : 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  filter: isBoxReceptive ? 'drop-shadow(0 0 14px rgba(245, 158, 11, 0.55))' : undefined,
+                  filter: isBoxReceptive ? RECEPTIVE_GLOW : undefined,
                   transition: 'filter 0.2s ease, transform 0.2s ease',
                 }}
               >
@@ -2342,7 +2355,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   sockets="both"
                   strokeColor={strokeColor}
                   strokeDasharray={strokeDasharray}
-                  socketDotColor={isBoxReceptive ? '#F59E0B' : strokeColor}
+                  socketDotColor={isBoxReceptive ? RECEPTIVE_COLOR : strokeColor}
                   isConnectedInput={isBoxInputConnected}
                   isConnectedOutput={isBoxOutputConnected}
                   highlightInput={isBoxReceptive}
@@ -2362,7 +2375,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   }}
                 />
 
-                {/* Center Icon */}
+                {/* Center Icon - preserves natural brand colors with clear visibility */}
                 <div
                   style={{
                     position: 'relative',
@@ -2373,13 +2386,13 @@ export const FacebookWorkflowCanvas = forwardRef<
                   }}
                 >
                   {isRunware ? (
-                    <RunwareIcon size={26} color={isBoxReceptive ? '#F59E0B' : isEffectiveEnabled ? '#10B981' : '#8B949E'} />
+                    <RunwareIcon size={26} color={isEffectiveEnabled ? '#10B981' : '#8B949E'} />
                   ) : isLaoZhang ? (
-                    <LaoZhangIcon size={28} color={isBoxReceptive ? '#F59E0B' : undefined} />
+                    <LaoZhangIcon size={28} />
                   ) : isGoogle ? (
-                    <SiGooglegemini style={{ fontSize: '28px', color: isBoxReceptive ? '#F59E0B' : isEffectiveEnabled ? '#58A6FF' : '#8B949E', transition: 'color 0.2s ease' }} />
+                    <SiGooglegemini style={{ fontSize: '28px', color: isEffectiveEnabled ? '#58A6FF' : '#8B949E', transition: 'color 0.2s ease' }} />
                   ) : (
-                    <OpenAIIcon size={28} color={isBoxReceptive ? '#F59E0B' : isEffectiveEnabled ? '#3FB950' : '#8B949E'} />
+                    <OpenAIIcon size={28} color={isEffectiveEnabled ? '#3FB950' : '#8B949E'} />
                   )}
                 </div>
 
@@ -2426,10 +2439,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                     pointerEvents: 'none',
                   }}
                 >
-                  <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: isBoxReceptive ? '#F59E0B' : 'var(--text-primary)', transition: 'color 0.2s ease' }}>
+                  <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)', transition: 'color 0.2s ease' }}>
                     {box.title}
                   </span>
-                  <span style={{ fontSize: '0.6875rem', color: isBoxReceptive ? '#F59E0B' : 'var(--text-muted)', fontWeight: isBoxReceptive ? 500 : 400, transition: 'color 0.2s ease' }}>
+                  <span style={{ fontSize: '0.6875rem', color: isBoxReceptive ? RECEPTIVE_COLOR : 'var(--text-muted)', fontWeight: isBoxReceptive ? 600 : 400, transition: 'color 0.2s ease' }}>
                     {isBoxReceptive
                       ? 'Ready to Connect'
                       : `${!isImageNode && isImageModel(box.model, box.provider) ? 'Gemini Flash' : getAIModelDisplayName(box.provider, box.model)} · ${isEffectiveEnabled ? 'Active' : 'Disabled'}`}
@@ -2465,19 +2478,21 @@ export const FacebookWorkflowCanvas = forwardRef<
                   top: `${config.destination.y}px`,
                   width: `${CIRCLE_SIZE}px`,
                   height: `${CIRCLE_SIZE}px`,
+                  ['--ring' as any]: isDestReceptive ? RECEPTIVE_COLOR : '#2EA043',
+                  ['--receptive-color' as any]: RECEPTIVE_COLOR,
                   zIndex: isDestReceptive ? 35 : 15,
                   cursor: isDestReceptive ? 'crosshair' : 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  filter: isDestReceptive ? 'drop-shadow(0 0 14px rgba(245, 158, 11, 0.55))' : undefined,
+                  filter: isDestReceptive ? RECEPTIVE_GLOW : undefined,
                   transition: 'filter 0.2s ease, transform 0.2s ease',
                 }}
               >
                 <MergedNodeShape
                   sockets="left"
-                  strokeColor={isDestReceptive ? '#F59E0B' : '#2EA043'}
-                  socketDotColor={isDestReceptive ? '#F59E0B' : '#2EA043'}
+                  strokeColor={isDestReceptive ? RECEPTIVE_COLOR : '#2EA043'}
+                  socketDotColor={isDestReceptive ? RECEPTIVE_COLOR : '#2EA043'}
                   isConnectedInput={(config.connections || []).some((c) => c.toNodeId === 'destination')}
                   highlightInput={isDestReceptive}
                   onSocketMouseDown={(type, e) => handleSocketMouseDown('destination', type, e)}
@@ -2486,7 +2501,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 <FiCheckCircle
                   style={{
                     fontSize: '30px',
-                    color: isDestReceptive ? '#F59E0B' : '#2EA043',
+                    color: '#2EA043',
                     position: 'relative',
                     zIndex: 2,
                     transition: 'color 0.2s ease',
@@ -2512,7 +2527,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                     style={{
                       fontSize: '0.8125rem',
                       fontWeight: 600,
-                      color: isDestReceptive ? '#F59E0B' : 'var(--text-primary)',
+                      color: 'var(--text-primary)',
                       transition: 'color 0.2s ease',
                     }}
                   >
@@ -2521,8 +2536,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                   <span
                     style={{
                       fontSize: '0.6875rem',
-                      color: isDestReceptive ? '#F59E0B' : 'var(--text-muted)',
-                      fontWeight: isDestReceptive ? 500 : 400,
+                      color: isDestReceptive ? RECEPTIVE_COLOR : 'var(--text-muted)',
+                      fontWeight: isDestReceptive ? 600 : 400,
                       transition: 'color 0.2s ease',
                     }}
                   >

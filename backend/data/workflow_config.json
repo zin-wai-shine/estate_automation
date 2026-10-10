@@ -1,5 +1,5 @@
 {
-  "timestamp": 1791672952170,
+  "timestamp": 1791673358767,
   "workflow_formats": [
     {
       "config": {
@@ -82,7 +82,7 @@
           "extractPrice": true,
           "extractSpecs": true,
           "x": 340,
-          "y": 110
+          "y": 155
         },
         "getImages": {
           "downloadHD": true,
@@ -107,7 +107,7 @@
       "description": "Customized Facebook import extraction and dynamic AI generation pipeline",
       "id": "format-1790885461679",
       "name": "General Engine",
-      "updatedAt": 1791672952170
+      "updatedAt": 1791673358767
     }
   ]
 }
