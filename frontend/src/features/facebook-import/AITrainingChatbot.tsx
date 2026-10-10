@@ -50,8 +50,9 @@ export const ModelSelectorMenu: React.FC<{
   provider: 'google_ai' | 'openai' | 'laozhang_ai' | 'runware_ai';
   model: string;
   filterType?: 'text' | 'image' | 'all';
+  align?: 'left' | 'center' | 'right';
   onSelectModel: (provider: 'google_ai' | 'openai' | 'laozhang_ai' | 'runware_ai', model: string) => void;
-}> = ({ provider, model, filterType = 'all', onSelectModel }) => {
+}> = ({ provider, model, filterType = 'all', align = 'center', onSelectModel }) => {
   const { actualTheme } = useTheme();
   const isDark = actualTheme === 'dark';
   const [isOpen, setIsOpen] = useState(false);
@@ -119,8 +120,9 @@ export const ModelSelectorMenu: React.FC<{
           style={{
             position: 'absolute',
             top: 'calc(100% + 6px)',
-            left: '50%',
-            transform: 'translateX(-50%)',
+            left: align === 'left' ? 0 : align === 'right' ? 'auto' : '50%',
+            right: align === 'right' ? 0 : 'auto',
+            transform: align === 'center' ? 'translateX(-50%)' : 'none',
             width: '260px',
             backgroundColor: isDark ? '#1C2128' : 'var(--bg-surface)',
             border: '1px solid var(--border-color)',
@@ -1152,6 +1154,33 @@ export const AITrainingChatbot: React.FC<AITrainingChatbotProps> = ({
             height: '100%',
           }}
         >
+          {/* Top Bar: Model Selector at left top */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '0.625rem 1rem',
+              borderBottom: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid var(--border-color)',
+              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.015)',
+              minHeight: '44px',
+              flexShrink: 0,
+              zIndex: 20,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <ModelSelectorMenu
+                provider={box.provider}
+                model={box.model}
+                filterType="text"
+                align="left"
+                onSelectModel={(provider, model) => {
+                  onUpdateBox(box.id, { provider, model });
+                }}
+              />
+            </div>
+          </div>
+
           {/* MESSAGES FLOW */}
           <div
             style={{
