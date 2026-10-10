@@ -24,7 +24,7 @@ import {
 } from 'react-icons/fi';
 import { FaFacebook } from 'react-icons/fa';
 import { SiGooglegemini } from 'react-icons/si';
-import { AITrainingChatbot, ModelSelectorMenu, LaoZhangIcon } from './AITrainingChatbot';
+import { AITrainingChatbot, ModelSelectorMenu, LaoZhangIcon, RunwareIcon } from './AITrainingChatbot';
 import { useTheme } from '../../context/ThemeContext';
 
 export interface CanvasPromptOption {
@@ -84,7 +84,7 @@ export interface DynamicAIBoxConfig {
   id: string;
   title: string;
   processType?: 'rental' | 'sale' | 'tiktok' | 'line_oa' | 'seo_tags' | 'custom' | string;
-  provider: 'google_ai' | 'openai' | 'laozhang_ai';
+  provider: 'google_ai' | 'openai' | 'laozhang_ai' | 'runware_ai';
   model: string;
   templateId: string;
   templateText: string;
@@ -149,6 +149,10 @@ export const MODEL_OPTIONS = [
   { value: 'gemini-1.5-pro', label: 'Google Gemini 1.5 Pro (Deep Reasoning)' },
   { value: 'gpt-4o', label: 'OpenAI GPT-4o (Omni High Precision)' },
   { value: 'gpt-4o-mini', label: 'OpenAI GPT-4o-mini (Lightweight)' },
+  { value: 'gpt-image-2.5-sunburst', label: 'OpenAI GPT Image 2.5 Sunburst' },
+  { value: 'gpt-image-2.5-flare', label: 'OpenAI GPT Image 2.5 Flare' },
+  { value: 'runware:100@1', label: 'Runware SDXL Realism (runware:100@1)' },
+  { value: 'runware:101@1', label: 'Runware FLUX.1 Schnell (runware:101@1)' },
 ];
 
 export const DEFAULT_FB_WORKFLOW_CONFIG: FacebookWorkflowConfig = {
@@ -1478,7 +1482,7 @@ export const FacebookWorkflowCanvas = forwardRef<
               else if (dragWire.fromNodeId === 'get-images') wireColor = '#2EA043';
               else if (dragWire.fromNodeId.startsWith('ai-box-')) {
                 const box = config.aiBoxes.find((b) => b.id === dragWire.fromNodeId);
-                wireColor = box?.provider === 'laozhang_ai' ? '#3B82F6' : box?.provider === 'google_ai' ? '#388BFD' : '#2EA043';
+                wireColor = box?.provider === 'runware_ai' ? '#10B981' : box?.provider === 'laozhang_ai' ? '#3B82F6' : box?.provider === 'google_ai' ? '#388BFD' : '#2EA043';
               }
 
               return (
@@ -1753,7 +1757,8 @@ export const FacebookWorkflowCanvas = forwardRef<
             const isSelected = selectedBoxId === box.id;
             const isGoogle = box.provider === 'google_ai';
             const isLaoZhang = box.provider === 'laozhang_ai';
-            const themeColor = isLaoZhang ? '#2563EB' : isGoogle ? '#388BFD' : '#2EA043';
+            const isRunware = box.provider === 'runware_ai';
+            const themeColor = isRunware ? '#10B981' : isLaoZhang ? '#2563EB' : isGoogle ? '#388BFD' : '#2EA043';
             const strokeColor = isSelected ? '#A371F7' : box.enabled ? themeColor : '#30363D';
             const strokeDasharray = !isSelected && !box.enabled ? '4, 4' : 'none';
             const isBoxInputConnected = (config.connections || []).some((c) => c.toNodeId === box.id);
@@ -1780,8 +1785,12 @@ export const FacebookWorkflowCanvas = forwardRef<
                   transition: 'filter 0.18s ease',
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.filter = isGoogle
+                  e.currentTarget.style.filter = isRunware
+                    ? 'drop-shadow(0 0 10px rgba(16, 185, 129, 0.55))'
+                    : isGoogle
                     ? 'drop-shadow(0 0 10px rgba(56, 139, 253, 0.55))'
+                    : isLaoZhang
+                    ? 'drop-shadow(0 0 10px rgba(37, 99, 235, 0.55))'
                     : 'drop-shadow(0 0 10px rgba(46, 160, 67, 0.55))';
                 }}
                 onMouseLeave={(e) => { e.currentTarget.style.filter = 'none'; }}
@@ -1809,7 +1818,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                     justifyContent: 'center',
                   }}
                 >
-                  {isLaoZhang ? (
+                  {isRunware ? (
+                    <RunwareIcon size={26} color={box.enabled ? '#10B981' : '#8B949E'} />
+                  ) : isLaoZhang ? (
                     <LaoZhangIcon size={28} />
                   ) : isGoogle ? (
                     <SiGooglegemini style={{ fontSize: '28px', color: box.enabled ? '#58A6FF' : '#8B949E' }} />
@@ -1963,7 +1974,9 @@ export const FacebookWorkflowCanvas = forwardRef<
             ) : currentModalAIBox ? (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', position: 'relative', minHeight: '32px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', minWidth: 0, zIndex: 1 }}>
-                  {currentModalAIBox.provider === 'laozhang_ai' ? (
+                  {currentModalAIBox.provider === 'runware_ai' ? (
+                    <RunwareIcon size={18} color="#10B981" />
+                  ) : currentModalAIBox.provider === 'laozhang_ai' ? (
                     <LaoZhangIcon size={18} />
                   ) : currentModalAIBox.provider === 'openai' ? (
                     <OpenAIIcon size={18} />

@@ -28,11 +28,14 @@ type VisionTestActionRequest struct {
 }
 
 type VisionTestEnhanceRequest struct {
-	TestRunID          string `json:"test_run_id"`
-	ImageURL           string `json:"image_url"`
-	PromptID           string `json:"prompt_id"`
-	PromptName         string `json:"prompt_name"`
-	PromptInstructions string `json:"prompt_instructions"`
+	TestRunID          string  `json:"test_run_id"`
+	ImageURL           string  `json:"image_url"`
+	PromptID           string  `json:"prompt_id"`
+	PromptName         string  `json:"prompt_name"`
+	PromptInstructions string  `json:"prompt_instructions"`
+	Provider           string  `json:"provider"`
+	Model              string  `json:"model"`
+	Strength           float64 `json:"strength"`
 }
 
 // TestFacebookNavigation handles POST /api/facebook/test/navigation
@@ -327,6 +330,7 @@ func AnalyzeSingleImage(c *fiber.Ctx) error {
 
 // EnhanceVisionImage handles POST /api/facebook/test/enhance-image
 func EnhanceVisionImage(c *fiber.Ctx) error {
+	startTime := time.Now()
 	var req VisionTestEnhanceRequest
 	if err := c.BodyParser(&req); err != nil || req.ImageURL == "" {
 		return c.Status(http.StatusBadRequest).JSON(fiber.Map{
@@ -348,25 +352,47 @@ func EnhanceVisionImage(c *fiber.Ctx) error {
 	cleanName := fmt.Sprintf("enhanced-%d.png", time.Now().UnixNano())
 	outFilePath := filepath.Join(enhancedDir, cleanName)
 
-	openAISvc := services.NewOpenAIService()
-	startTime := time.Now()
-
-	if openAISvc.APIKey == "" {
-		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
-			"status":  "error",
-			"message": "OPENAI_API_KEY is not configured on the server",
-		})
-	}
-
-	// Call Responses API via OpenAI Service — no silent fallback to a worse model
-	_, err := openAISvc.EnhancePropertyImageWithAI(c.Context(), req.ImageURL, req.PromptID, req.PromptName, req.PromptInstructions, outFilePath)
-	if err != nil {
-		fmt.Printf("[ENHANCE_HANDLER] Responses API enhancement failed: %v\n", err)
-		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
-			"status":      "error",
-			"message":     fmt.Sprintf("Image enhancement failed: %v", err),
-			"model_used":  openAISvc.ResponsesModel,
-		})
+	var modelUsed string
+	if req.Provider == "runware" || req.Provider == "runware_ai" || strings.HasPrefix(req.Model, "runware:") {
+		runwareSvc := services.NewRunwareService()
+		if runwareSvc.APIKey == "" {
+			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+				"status":  "error",
+				"message": "RUNWARE_API_KEY is not configured on the server",
+			})
+		}
+		modelToUse := req.Model
+		if modelToUse == "" {
+			modelToUse = runwareSvc.Model
+		}
+		modelUsed = modelToUse
+		_, err := runwareSvc.EnhanceImageWithRunware(c.Context(), req.ImageURL, req.PromptInstructions, req.Strength, modelToUse, outFilePath)
+		if err != nil {
+			fmt.Printf("[ENHANCE_HANDLER] Runware API enhancement failed: %v\n", err)
+			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+				"status":     "error",
+				"message":    fmt.Sprintf("Runware image enhancement failed: %v", err),
+				"model_used": modelUsed,
+			})
+		}
+	} else {
+		openAISvc := services.NewOpenAIService()
+		if openAISvc.APIKey == "" {
+			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+				"status":  "error",
+				"message": "OPENAI_API_KEY is not configured on the server",
+			})
+		}
+		modelUsed = openAISvc.ResponsesModel
+		_, err := openAISvc.EnhancePropertyImageWithAI(c.Context(), req.ImageURL, req.PromptID, req.PromptName, req.PromptInstructions, outFilePath)
+		if err != nil {
+			fmt.Printf("[ENHANCE_HANDLER] Responses API enhancement failed: %v\n", err)
+			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+				"status":     "error",
+				"message":    fmt.Sprintf("Image enhancement failed: %v", err),
+				"model_used": modelUsed,
+			})
+		}
 	}
 
 	processingMs := time.Since(startTime).Milliseconds()
@@ -380,7 +406,7 @@ func EnhanceVisionImage(c *fiber.Ctx) error {
 		"prompt_instructions": req.PromptInstructions,
 		"storage_key":         fmt.Sprintf("test-runs/%s/enhanced-images/%s", testRunID, cleanName),
 		"enhancement_id":      fmt.Sprintf("ENH-%d", time.Now().UnixNano()),
-		"model_used":          openAISvc.ResponsesModel,
+		"model_used":          modelUsed,
 		"processing_time_ms":  processingMs,
 		"output_format":       "png",
 	})

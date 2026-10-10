@@ -38,10 +38,17 @@ export const LaoZhangIcon: React.FC<{ size?: number; color?: string }> = ({ size
   </svg>
 );
 
+export const RunwareIcon: React.FC<{ size?: number; color?: string }> = ({ size = 15, color = '#10B981' }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+    <rect width="24" height="24" rx="5" fill={color} />
+    <path d="M7 6h6a3.5 3.5 0 0 1 3.5 3.5c0 1.6-1 2.9-2.4 3.3L17 18h-2.8l-2.5-4.8H9.5V18H7V6zm2.5 5h3.5a1.5 1.5 0 0 0 0-3H9.5v3z" fill="#FFFFFF" />
+  </svg>
+);
+
 export const ModelSelectorMenu: React.FC<{
-  provider: 'google_ai' | 'openai' | 'laozhang_ai';
+  provider: 'google_ai' | 'openai' | 'laozhang_ai' | 'runware_ai';
   model: string;
-  onSelectModel: (provider: 'google_ai' | 'openai' | 'laozhang_ai', model: string) => void;
+  onSelectModel: (provider: 'google_ai' | 'openai' | 'laozhang_ai' | 'runware_ai', model: string) => void;
 }> = ({ provider, model, onSelectModel }) => {
   const { actualTheme } = useTheme();
   const isDark = actualTheme === 'dark';
@@ -49,6 +56,7 @@ export const ModelSelectorMenu: React.FC<{
   const menuRef = useRef<HTMLDivElement>(null);
   const isGoogle = provider === 'google_ai';
   const isLaoZhang = provider === 'laozhang_ai';
+  const isRunware = provider === 'runware_ai';
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -90,14 +98,16 @@ export const ModelSelectorMenu: React.FC<{
           e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)';
         }}
       >
-        {isLaoZhang ? (
+        {isRunware ? (
+          <RunwareIcon size={15} />
+        ) : isLaoZhang ? (
           <LaoZhangIcon size={15} />
         ) : isGoogle ? (
           <SiGooglegemini style={{ fontSize: '15px', color: '#60A5FA' }} />
         ) : (
           <OpenAIIcon size={15} color="#34D399" />
         )}
-        <span style={{ fontWeight: 500 }}>{isLaoZhang ? 'LaoZhang AI' : isGoogle ? 'Gemini' : 'ChatGPT'}</span>
+        <span style={{ fontWeight: 500 }}>{isRunware ? 'Runware AI' : isLaoZhang ? 'LaoZhang AI' : isGoogle ? 'Gemini' : 'ChatGPT'}</span>
         <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', fontWeight: 400 }}>· {model}</span>
         <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)', marginLeft: '2px' }}>▾</span>
       </button>
@@ -274,6 +284,78 @@ export const ModelSelectorMenu: React.FC<{
             <span>GPT-4o-mini (Lightweight)</span>
           </button>
 
+          <button
+            type="button"
+            onClick={() => {
+              onSelectModel('openai', 'gpt-image-2.5-sunburst');
+              setIsOpen(false);
+            }}
+            style={{
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              padding: '6px 8px',
+              borderRadius: '4px',
+              border: 'none',
+              backgroundColor: !isGoogle && !isLaoZhang && model === 'gpt-image-2.5-sunburst' ? (isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.1)') : 'transparent',
+              color: 'var(--text-primary)',
+              fontSize: '0.75rem',
+              fontWeight: 400,
+              cursor: 'pointer',
+              textAlign: 'left',
+            }}
+            onMouseEnter={(e) => {
+              if (!(!isGoogle && !isLaoZhang && model === 'gpt-image-2.5-sunburst')) {
+                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!(!isGoogle && !isLaoZhang && model === 'gpt-image-2.5-sunburst')) {
+                e.currentTarget.style.backgroundColor = 'transparent';
+              }
+            }}
+          >
+            <OpenAIIcon size={13} color="#34D399" />
+            <span>GPT Image 2.5 Sunburst</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              onSelectModel('openai', 'gpt-image-2.5-flare');
+              setIsOpen(false);
+            }}
+            style={{
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              padding: '6px 8px',
+              borderRadius: '4px',
+              border: 'none',
+              backgroundColor: !isGoogle && !isLaoZhang && model === 'gpt-image-2.5-flare' ? (isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.1)') : 'transparent',
+              color: 'var(--text-primary)',
+              fontSize: '0.75rem',
+              fontWeight: 400,
+              cursor: 'pointer',
+              textAlign: 'left',
+            }}
+            onMouseEnter={(e) => {
+              if (!(!isGoogle && !isLaoZhang && model === 'gpt-image-2.5-flare')) {
+                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!(!isGoogle && !isLaoZhang && model === 'gpt-image-2.5-flare')) {
+                e.currentTarget.style.backgroundColor = 'transparent';
+              }
+            }}
+          >
+            <OpenAIIcon size={13} color="#34D399" />
+            <span>GPT Image 2.5 Flare</span>
+          </button>
+
           <div style={{ height: '1px', backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'var(--border-color)', margin: '4px 0' }} />
 
           {/* LAOZHANG AI */}
@@ -425,6 +507,86 @@ export const ModelSelectorMenu: React.FC<{
             <LaoZhangIcon size={13} color="#8B5CF6" />
             <span>DeepSeek V3 (State of the Art)</span>
           </button>
+
+          <div style={{ height: '1px', backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'var(--border-color)', margin: '4px 0' }} />
+
+          {/* RUNWARE AI */}
+          <div style={{ fontSize: '0.6875rem', color: '#10B981', padding: '4px 8px', fontWeight: 600, letterSpacing: '0.3px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <RunwareIcon size={12} />
+            <span>Runware Image & AI Models</span>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              onSelectModel('runware_ai', 'runware:100@1');
+              setIsOpen(false);
+            }}
+            style={{
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              padding: '6px 8px',
+              borderRadius: '4px',
+              border: 'none',
+              backgroundColor: isRunware && model === 'runware:100@1' ? (isDark ? 'rgba(16, 185, 129, 0.18)' : 'rgba(16, 185, 129, 0.12)') : 'transparent',
+              color: 'var(--text-primary)',
+              fontSize: '0.75rem',
+              fontWeight: 400,
+              cursor: 'pointer',
+              textAlign: 'left',
+            }}
+            onMouseEnter={(e) => {
+              if (!(isRunware && model === 'runware:100@1')) {
+                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!(isRunware && model === 'runware:100@1')) {
+                e.currentTarget.style.backgroundColor = 'transparent';
+              }
+            }}
+          >
+            <RunwareIcon size={13} color="#10B981" />
+            <span>SDXL Realism (runware:100@1)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              onSelectModel('runware_ai', 'runware:101@1');
+              setIsOpen(false);
+            }}
+            style={{
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              padding: '6px 8px',
+              borderRadius: '4px',
+              border: 'none',
+              backgroundColor: isRunware && model === 'runware:101@1' ? (isDark ? 'rgba(16, 185, 129, 0.18)' : 'rgba(16, 185, 129, 0.12)') : 'transparent',
+              color: 'var(--text-primary)',
+              fontSize: '0.75rem',
+              fontWeight: 400,
+              cursor: 'pointer',
+              textAlign: 'left',
+            }}
+            onMouseEnter={(e) => {
+              if (!(isRunware && model === 'runware:101@1')) {
+                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!(isRunware && model === 'runware:101@1')) {
+                e.currentTarget.style.backgroundColor = 'transparent';
+              }
+            }}
+          >
+            <RunwareIcon size={13} color="#10B981" />
+            <span>FLUX.1 Schnell (runware:101@1)</span>
+          </button>
         </div>
       )}
     </div>
@@ -493,7 +655,8 @@ export const AITrainingChatbot: React.FC<AITrainingChatbotProps> = ({
 
   const isGoogle = box.provider === 'google_ai';
   const isLaoZhang = box.provider === 'laozhang_ai';
-  const brandColor = isLaoZhang ? '#2563EB' : isGoogle ? '#3B82F6' : '#10A37F';
+  const isRunware = box.provider === 'runware_ai';
+  const brandColor = isRunware ? '#10B981' : isLaoZhang ? '#2563EB' : isGoogle ? '#3B82F6' : '#10A37F';
 
   // Auto-scroll messages
   useEffect(() => {
@@ -978,51 +1141,57 @@ export const AITrainingChatbot: React.FC<AITrainingChatbotProps> = ({
               }}
             >
               {/* CLEAN EMPTY STATE (Just like ChatGPT and Gemini) */}
-            {messages.length === 0 && (
-              <div
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  margin: 'auto',
-                  maxWidth: '480px',
-                  textAlign: 'center',
-                  padding: '2rem 1rem',
-                }}
-              >
-                {/* Logo */}
+              {messages.length === 0 && (
                 <div
                   style={{
-                    width: '56px',
-                    height: '56px',
-                    borderRadius: '50%',
-                    backgroundColor: isLaoZhang
-                      ? (isDark ? 'rgba(37, 99, 235, 0.15)' : 'rgba(37, 99, 235, 0.1)')
-                      : isGoogle
-                      ? (isDark ? 'rgba(59, 130, 246, 0.1)' : 'rgba(59, 130, 246, 0.08)')
-                      : (isDark ? 'rgba(16, 185, 129, 0.1)' : 'rgba(16, 185, 129, 0.08)'),
-                    border: `1px solid ${
-                      isLaoZhang
-                        ? (isDark ? 'rgba(37, 99, 235, 0.35)' : 'rgba(37, 99, 235, 0.25)')
-                        : isGoogle
-                        ? (isDark ? 'rgba(59, 130, 246, 0.3)' : 'rgba(59, 130, 246, 0.2)')
-                        : (isDark ? 'rgba(16, 185, 129, 0.3)' : 'rgba(16, 185, 129, 0.2)')
-                    }`,
                     display: 'flex',
+                    flexDirection: 'column',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    marginBottom: '1rem',
+                    margin: 'auto',
+                    maxWidth: '480px',
+                    textAlign: 'center',
+                    padding: '2rem 1rem',
                   }}
                 >
-                  {isLaoZhang ? (
-                    <LaoZhangIcon size={28} />
-                  ) : isGoogle ? (
-                    <SiGooglegemini style={{ fontSize: '28px', color: '#60A5FA' }} />
-                  ) : (
-                    <OpenAIIcon size={28} color="#34D399" />
-                  )}
-                </div>
+                  {/* Logo */}
+                  <div
+                    style={{
+                      width: '56px',
+                      height: '56px',
+                      borderRadius: '50%',
+                      backgroundColor: isRunware
+                        ? (isDark ? 'rgba(16, 185, 129, 0.18)' : 'rgba(16, 185, 129, 0.12)')
+                        : isLaoZhang
+                        ? (isDark ? 'rgba(37, 99, 235, 0.15)' : 'rgba(37, 99, 235, 0.1)')
+                        : isGoogle
+                        ? (isDark ? 'rgba(59, 130, 246, 0.1)' : 'rgba(59, 130, 246, 0.08)')
+                        : (isDark ? 'rgba(16, 185, 129, 0.1)' : 'rgba(16, 185, 129, 0.08)'),
+                      border: `1px solid ${
+                        isRunware
+                          ? (isDark ? 'rgba(16, 185, 129, 0.4)' : 'rgba(16, 185, 129, 0.3)')
+                          : isLaoZhang
+                          ? (isDark ? 'rgba(37, 99, 235, 0.35)' : 'rgba(37, 99, 235, 0.25)')
+                          : isGoogle
+                          ? (isDark ? 'rgba(59, 130, 246, 0.3)' : 'rgba(59, 130, 246, 0.2)')
+                          : (isDark ? 'rgba(16, 185, 129, 0.3)' : 'rgba(16, 185, 129, 0.2)')
+                      }`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      marginBottom: '1rem',
+                    }}
+                  >
+                    {isRunware ? (
+                      <RunwareIcon size={28} />
+                    ) : isLaoZhang ? (
+                      <LaoZhangIcon size={28} />
+                    ) : isGoogle ? (
+                      <SiGooglegemini style={{ fontSize: '28px', color: '#60A5FA' }} />
+                    ) : (
+                      <OpenAIIcon size={28} color="#34D399" />
+                    )}
+                  </div>
 
                 <h3 style={{ fontSize: '1.125rem', fontWeight: 500, margin: '0 0 0.375rem 0', color: isDark ? '#FFFFFF' : 'var(--text-primary)' }}>
                   {box.title}
@@ -1572,13 +1741,21 @@ export const AITrainingChatbot: React.FC<AITrainingChatbotProps> = ({
                     width: '28px',
                     height: '28px',
                     borderRadius: '50%',
-                    backgroundColor: isLaoZhang ? 'rgba(37,99,235,0.15)' : isGoogle ? 'rgba(59,130,246,0.15)' : 'rgba(16,185,129,0.15)',
+                    backgroundColor: isRunware
+                      ? 'rgba(16,185,129,0.18)'
+                      : isLaoZhang
+                      ? 'rgba(37,99,235,0.15)'
+                      : isGoogle
+                      ? 'rgba(59,130,246,0.15)'
+                      : 'rgba(16,185,129,0.15)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                   }}
                 >
-                  {isLaoZhang ? (
+                  {isRunware ? (
+                    <RunwareIcon size={14} />
+                  ) : isLaoZhang ? (
                     <LaoZhangIcon size={14} />
                   ) : isGoogle ? (
                     <SiGooglegemini style={{ fontSize: '14px', color: '#60A5FA' }} />
@@ -1597,7 +1774,7 @@ export const AITrainingChatbot: React.FC<AITrainingChatbotProps> = ({
                     fontWeight: 400,
                   }}
                 >
-                  {isLaoZhang ? 'LaoZhang AI is generating...' : isGoogle ? 'Gemini is running prompt...' : 'ChatGPT is generating...'}
+                  {isRunware ? 'Runware AI is generating...' : isLaoZhang ? 'LaoZhang AI is generating...' : isGoogle ? 'Gemini is running prompt...' : 'ChatGPT is generating...'}
                 </div>
               </div>
             )}

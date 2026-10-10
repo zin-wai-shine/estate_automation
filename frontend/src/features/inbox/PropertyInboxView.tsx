@@ -15,7 +15,7 @@ interface PropertyInboxViewProps {
 export const PropertyInboxView: React.FC<PropertyInboxViewProps> = ({
   properties,
   onProcessProperty,
-  onNavigateTab,
+  onNavigateTab: _onNavigateTab,
 }) => {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');

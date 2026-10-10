@@ -51,6 +51,7 @@ import {
   type FacebookWorkflowConfig,
   type DynamicAIBoxConfig,
 } from './FacebookWorkflowCanvas';
+import { RunwareIcon, LaoZhangIcon } from './AITrainingChatbot';
 import {
   getSavedWorkflowFormats,
   saveWorkflowFormatsList,
@@ -337,8 +338,8 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
   // AI Assistant & Prompt Templates (Google AI Studio & OpenAI)
   const [promptTemplates, setPromptTemplates] = useState<PromptTemplate[]>(DEFAULT_PROMPT_TEMPLATES);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('1');
-  const [aiProvider, setAiProvider] = useState<'google_ai' | 'openai'>('google_ai');
-  const [generatedProvider, setGeneratedProvider] = useState<'google_ai' | 'openai' | null>(null);
+  const [aiProvider, setAiProvider] = useState<'google_ai' | 'openai' | 'laozhang_ai' | 'runware_ai'>('google_ai');
+  const [generatedProvider, setGeneratedProvider] = useState<'google_ai' | 'openai' | 'laozhang_ai' | 'runware_ai' | null>(null);
   const [customPromptTweak, setCustomPromptTweak] = useState<string>('');
   const [showPromptTweak, setShowPromptTweak] = useState<boolean>(false);
   const [isGeneratingAI, setIsGeneratingAI] = useState<boolean>(false);
@@ -459,7 +460,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
 
     setAiBoxGenerating((prev) => ({ ...prev, [boxId]: true }));
     setAiError(null);
-    const providerName = box.provider === 'openai' ? 'OpenAI (GPT-4o)' : 'Google AI (Gemini)';
+    const providerName = box.provider === 'runware_ai' ? `Runware AI (${box.model || 'runware:100@1'})` : box.provider === 'laozhang_ai' ? `LaoZhang AI (${box.model || 'deepseek-v3'})` : box.provider === 'openai' ? `OpenAI (${box.model || 'GPT-4o'})` : 'Google AI (Gemini)';
     addLog(`Calling ${providerName} for [${box.title}]...`, 'info');
 
     try {
@@ -527,7 +528,14 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
     const template = promptTemplates.find((t) => String(t.id) === String(selectedTemplateId));
     setIsGeneratingAI(true);
     setAiError(null);
-    const providerName = aiProvider === 'openai' ? 'OpenAI (GPT-4o)' : 'Google AI (Gemini)';
+    const providerName =
+      aiProvider === 'runware_ai'
+        ? 'Runware AI'
+        : aiProvider === 'laozhang_ai'
+        ? 'LaoZhang AI'
+        : aiProvider === 'openai'
+        ? 'OpenAI'
+        : 'Google AI (Gemini)';
     addLog(`Calling ${providerName} with template "${template?.name || 'Selected'}"...`, 'info');
 
     try {
@@ -1560,7 +1568,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                           top: '22px',
                           bottom: '-12px',
                           width: '2px',
-                          backgroundColor: isCompleted ? '#22C55E' : 'rgba(255, 255, 255, 0.1)',
+                          backgroundColor: isCompleted ? '#22C55E' : 'var(--border-color)',
                           zIndex: 0,
                         }}
                       />
@@ -1581,7 +1589,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                           ? '#3B82F6'
                           : isFailed
                           ? '#EF4444'
-                          : 'rgba(255, 255, 255, 0.05)',
+                          : 'var(--bg-main)',
                         border: `1px solid ${
                           isCompleted
                             ? '#22C55E'
@@ -1589,7 +1597,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                             ? '#3B82F6'
                             : isFailed
                             ? '#EF4444'
-                            : 'rgba(255, 255, 255, 0.12)'
+                            : 'var(--border-color)'
                         }`,
                         color: isCompleted || isCurrent || isFailed ? '#FFFFFF' : 'var(--text-muted)',
                         fontSize: '0.6875rem',
@@ -1654,7 +1662,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
 
             <div
               style={{
-                backgroundColor: '#0D0D0D',
+                backgroundColor: 'var(--bg-main)',
                 border: '1px solid var(--border-color)',
                 borderRadius: '0.5rem',
                 padding: '0.875rem 1rem',
@@ -1686,7 +1694,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                             ? 'var(--status-danger)'
                             : log.level === 'warn'
                             ? 'var(--status-warning)'
-                            : 'var(--text-secondary)',
+                            : 'var(--text-primary)',
                         fontWeight: 400,
                       }}
                     >
@@ -2050,7 +2058,11 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                     {/* Card Header: Icon + Title + Status */}
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', overflow: 'hidden' }}>
-                        {isGoogle
+                        {box.provider === 'runware_ai'
+                          ? <RunwareIcon size={15} color="#10B981" />
+                          : box.provider === 'laozhang_ai'
+                          ? <LaoZhangIcon size={15} />
+                          : isGoogle
                           ? <SiGooglegemini style={{ fontSize: '15px', color: '#3B82F6', flexShrink: 0 }} />
                           : <OpenAIIcon size={15} color="#10B981" />
                         }
@@ -2069,7 +2081,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                     {/* Model badge line */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                       <span style={{ fontSize: '0.6875rem', color: 'var(--text-secondary)', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '1px 6px' }}>
-                        {isGoogle ? 'Gemini 1.5' : 'GPT-4o'}
+                        {box.provider === 'runware_ai' ? (box.model || 'Runware') : box.provider === 'laozhang_ai' ? (box.model || 'DeepSeek') : isGoogle ? 'Gemini' : (box.model || 'GPT-4o')}
                       </span>
                       {hasGenerated && (
                         <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
@@ -2690,12 +2702,12 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
           <pre
             style={{
-              backgroundColor: '#0D0D0D',
+              backgroundColor: 'var(--bg-main)',
               border: '1px solid var(--border-color)',
               borderRadius: '0.5rem',
               padding: '0.75rem',
               fontSize: '0.75rem',
-              color: '#A3E635',
+              color: 'var(--text-primary)',
               overflowX: 'auto',
               maxHeight: '450px',
             }}
@@ -3203,11 +3215,11 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
               <div>
                 <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Engine & Model:</span>
                 <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)', marginTop: '2px' }}>
-                  {viewingResultBox.provider === 'google_ai' ? 'Google Gemini' : 'OpenAI ChatGPT'} · {viewingResultBox.model}
+                  {viewingResultBox.provider === 'runware_ai' ? 'Runware AI' : viewingResultBox.provider === 'laozhang_ai' ? 'LaoZhang AI' : viewingResultBox.provider === 'google_ai' ? 'Google Gemini' : 'OpenAI ChatGPT'} · {viewingResultBox.model}
                 </div>
               </div>
-              <Badge variant={viewingResultBox.provider === 'google_ai' ? 'info' : 'success'}>
-                {viewingResultBox.provider === 'google_ai' ? 'Gemini' : 'GPT-4o'}
+              <Badge variant={viewingResultBox.provider === 'runware_ai' ? 'success' : viewingResultBox.provider === 'google_ai' ? 'info' : 'success'}>
+                {viewingResultBox.provider === 'runware_ai' ? (viewingResultBox.model || 'Runware') : viewingResultBox.provider === 'laozhang_ai' ? (viewingResultBox.model || 'DeepSeek') : viewingResultBox.provider === 'google_ai' ? 'Gemini' : (viewingResultBox.model || 'GPT-4o')}
               </Badge>
             </div>
 

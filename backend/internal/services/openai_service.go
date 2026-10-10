@@ -182,7 +182,7 @@ func NewOpenAIService() *OpenAIService {
 		model = "gpt-4o"
 	}
 	if imageModel == "" {
-		imageModel = "gpt-image-2-2026-04-21"
+		imageModel = "gpt-image-2.5-sunburst"
 	}
 	if responsesModel == "" {
 		responsesModel = "gpt-5.6"
