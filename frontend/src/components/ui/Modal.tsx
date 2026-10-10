@@ -1,5 +1,8 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { FiX } from 'react-icons/fi';
+import { useScrollLock } from '../../hooks/useScrollLock';
+
+export { useScrollLock };
 
 export interface ModalProps {
   isOpen: boolean;
@@ -26,6 +29,11 @@ export const Modal: React.FC<ModalProps> = ({
   zIndex = 100000,
   headerExtra,
 }) => {
+  const overlayRef = useRef<HTMLDivElement>(null);
+
+  // Universal scroll isolation: completely isolates background containers from wheel / touch overscroll
+  useScrollLock(isOpen, { containerRef: overlayRef });
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -34,19 +42,18 @@ export const Modal: React.FC<ModalProps> = ({
       }
     };
     if (isOpen) {
-      document.body.style.overflow = 'hidden';
       window.addEventListener('keydown', handleKeyDown);
+      return () => {
+        window.removeEventListener('keydown', handleKeyDown);
+      };
     }
-    return () => {
-      document.body.style.overflow = 'unset';
-      window.removeEventListener('keydown', handleKeyDown);
-    };
   }, [isOpen, onClose, closeOnOverlayClick]);
 
   if (!isOpen) return null;
 
   return (
     <div
+      ref={overlayRef}
       style={{
         position: 'fixed',
         top: 0,
@@ -60,6 +67,11 @@ export const Modal: React.FC<ModalProps> = ({
         justifyContent: 'center',
         zIndex,
         padding: '1rem',
+        overscrollBehavior: 'contain',
+        touchAction: 'none',
+      }}
+      onWheel={(e) => {
+        e.stopPropagation();
       }}
       onClick={closeOnOverlayClick ? onClose : undefined}
     >
@@ -76,6 +88,7 @@ export const Modal: React.FC<ModalProps> = ({
           overflow: 'hidden',
           display: 'flex',
           flexDirection: 'column',
+          overscrollBehavior: 'contain',
           animation: 'fadeIn 0.15s ease-out',
         }}
         onClick={(e) => e.stopPropagation()}
@@ -89,6 +102,7 @@ export const Modal: React.FC<ModalProps> = ({
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: '1rem',
+            position: 'relative',
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: 1, minWidth: 0 }}>
@@ -122,12 +136,17 @@ export const Modal: React.FC<ModalProps> = ({
 
         {/* Body */}
         <div
+          className="modal-scrollable-body"
           style={{
             padding: bodyPadding !== undefined ? bodyPadding : '1.25rem',
             overflowY: 'auto',
+            overscrollBehavior: 'contain',
             flex: 1,
             display: 'flex',
             flexDirection: 'column',
+          }}
+          onWheel={(e) => {
+            e.stopPropagation();
           }}
         >
           {children}

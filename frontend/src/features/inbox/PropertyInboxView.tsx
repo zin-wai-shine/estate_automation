@@ -4,7 +4,7 @@ import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Badge } from '../../components/ui/Badge';
 import { Select } from '../../components/ui/Select';
-import { FiSearch, FiPlay, FiCheckCircle, FiExternalLink, FiChevronLeft, FiChevronRight } from 'react-icons/fi';
+import { FiSearch, FiPlay, FiExternalLink, FiChevronLeft, FiChevronRight } from 'react-icons/fi';
 
 interface PropertyInboxViewProps {
   properties: Property[];
@@ -176,16 +176,6 @@ export const PropertyInboxView: React.FC<PropertyInboxViewProps> = ({
                             onClick={() => onProcessProperty(p.id)}
                           >
                             Process
-                          </Button>
-                        )}
-                        {p.status === 'READY_FOR_REVIEW' && (
-                          <Button
-                            variant="primary"
-                            size="sm"
-                            leftIcon={<FiCheckCircle />}
-                            onClick={() => onNavigateTab('review')}
-                          >
-                            Review
                           </Button>
                         )}
                         <Button

@@ -66,7 +66,7 @@ export const Select: React.FC<SelectProps> = ({
       ...provided,
       color: 'var(--text-primary)',
       fontSize: '0.8125rem',
-      fontWeight: 500,
+      fontWeight: 400,
       margin: 0,
     }),
     placeholder: (provided) => ({
@@ -119,7 +119,7 @@ export const Select: React.FC<SelectProps> = ({
         : 'transparent',
       color: state.isSelected ? '#ffffff' : 'var(--text-primary)',
       fontSize: '0.8125rem',
-      fontWeight: state.isSelected ? 600 : 400,
+      fontWeight: 400,
       padding: '0.5rem 0.75rem',
       borderRadius: '0.375rem',
       cursor: 'pointer',

@@ -1,86 +1,49 @@
 {
-  "timestamp": 1790886474671,
-  "workflow_formats": [
+  "nodes": [
     {
-      "config": {
-        "aiBoxes": [
-          {
-            "customPrompt": "",
-            "enabled": true,
-            "id": "ai-box-1790885461679",
-            "model": "gemini-flash-latest",
-            "processType": "rental",
-            "provider": "google_ai",
-            "templateId": "1",
-            "templateText": "Generate an attractive Facebook real estate listing post from the extracted caption.",
-            "title": "Dynamic AI Copywriter",
-            "x": 741.1111111111113,
-            "y": 68.88888888888894
-          },
-          {
-            "customPrompt": "",
-            "enabled": true,
-            "id": "ai-box-1790885991352",
-            "model": "gpt-4o",
-            "processType": "rental",
-            "provider": "openai",
-            "templateId": "1",
-            "templateText": "Generate optimized marketing copy for this property listing.\nHighlight rent/sale price, transit access, and clear call-to-action.",
-            "title": "AI Process #2",
-            "x": 647.7777777777779,
-            "y": 264.44444444444474
-          },
-          {
-            "customPrompt": "",
-            "enabled": true,
-            "id": "ai-box-1790886474671",
-            "model": "gemini-flash-latest",
-            "processType": "rental",
-            "provider": "google_ai",
-            "templateId": "1",
-            "templateText": "Generate optimized marketing copy for this property listing.\nHighlight rent/sale price, transit access, and clear call-to-action.",
-            "title": "AI Process #3",
-            "x": 640,
-            "y": 360
-          }
-        ],
-        "destination": {
-          "x": 1115.5555555555543,
-          "y": 342.2222222222217
-        },
-        "getContent": {
-          "cleanThai": true,
-          "enabled": true,
-          "extractContacts": true,
-          "extractPrice": true,
-          "extractSpecs": true,
-          "x": 411.1111111111104,
-          "y": 97.77777777777784
-        },
-        "getImages": {
-          "downloadHD": true,
-          "enabled": true,
-          "preserveOrder": true,
-          "watermark": false,
-          "x": 457.77777777777686,
-          "y": 464.4444444444442
-        },
-        "panOffset": {
-          "x": 30,
-          "y": 30
-        },
-        "trigger": {
-          "autoImport": true,
-          "x": 150.0000000000001,
-          "y": 220.00000000000009
-        },
-        "zoom": 0.85
-      },
-      "createdAt": 1790885461679,
-      "description": "Customized Facebook import extraction and dynamic AI generation pipeline",
-      "id": "format-1790885461679",
-      "name": "Custom Workflow #13",
-      "updatedAt": 1790886474671
+      "enabled": true,
+      "id": "input-trigger",
+      "x": 40,
+      "y": 190
+    },
+    {
+      "enabled": true,
+      "id": "ai-chatgpt",
+      "model": "gpt-4o",
+      "x": 350,
+      "y": 60
+    },
+    {
+      "enabled": true,
+      "id": "ai-gemini",
+      "model": "gemini-1.5-pro",
+      "x": 350,
+      "y": 300
+    },
+    {
+      "enabled": true,
+      "id": "content-path",
+      "model": "gemini-1.5-pro",
+      "x": 680,
+      "y": 300
+    },
+    {
+      "enabled": true,
+      "id": "image-path",
+      "model": "gpt-4o",
+      "x": 680,
+      "y": 60
+    },
+    {
+      "enabled": true,
+      "id": "output-publish",
+      "x": 1010,
+      "y": 190
     }
-  ]
+  ],
+  "panOffset": {
+    "x": 25,
+    "y": 54
+  },
+  "zoom": 0.8
 }

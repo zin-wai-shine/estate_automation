@@ -5,7 +5,7 @@ import { Button } from '../../components/ui/Button';
 import { Select } from '../../components/ui/Select';
 import { Input } from '../../components/ui/Input';
 import { Badge } from '../../components/ui/Badge';
-import { Modal } from '../../components/ui/Modal';
+import { Modal, useScrollLock } from '../../components/ui/Modal';
 import {
   FiDownload,
   FiExternalLink,
@@ -36,6 +36,10 @@ import {
   FiFileText,
   FiMaximize2,
   FiActivity,
+  FiChevronLeft,
+  FiChevronRight,
+  FiZoomIn,
+  FiZoomOut,
 } from 'react-icons/fi';
 import { FaFacebook } from 'react-icons/fa';
 import { SiGooglegemini } from 'react-icons/si';
@@ -213,7 +217,8 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
   const [showPipelineModal, setShowPipelineModal] = useState(false);
   const [showPostContentModal, setShowPostContentModal] = useState(false);
   const [showClearConfirmModal, setShowClearConfirmModal] = useState(false);
-  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [previewImageIndex, setPreviewImageIndex] = useState<number | null>(null);
+  const [zoomScale, setZoomScale] = useState<number>(1);
 
   // Top Nav Bar Portal Targets
   const [headerActionEl, setHeaderActionEl] = useState<HTMLElement | null>(null);
@@ -931,6 +936,80 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
     }
   };
 
+  const handleDownloadImage = async (imgUrl: string, index?: number, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    try {
+      const fullUrl = imgUrl.startsWith('/storage') ? `http://localhost:8085${imgUrl}` : imgUrl;
+      const response = await fetch(fullUrl, { mode: 'cors' });
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = `property-photo-${index !== undefined ? index : Date.now()}.jpg`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(blobUrl);
+      addLog(`Image #${index !== undefined ? index : ''} downloaded successfully`, 'success');
+    } catch (err: any) {
+      console.warn('Direct blob download failed, falling back to window download:', err);
+      const fullUrl = imgUrl.startsWith('/storage') ? `http://localhost:8085${imgUrl}` : imgUrl;
+      const a = document.createElement('a');
+      a.href = fullUrl;
+      a.target = '_blank';
+      a.download = `property-photo-${index !== undefined ? index : Date.now()}.jpg`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+  };
+
+  // Scroll isolation & smooth wheel zoom for studio image lightbox
+  useScrollLock(previewImageIndex !== null, {
+    onWheel: (e) => {
+      // Zoom with wheel/trackpad without any bleed or scroll to container underneath
+      if (e.deltaY < 0) {
+        setZoomScale((s) => Math.min(s + 0.15, 3));
+      } else if (e.deltaY > 0) {
+        setZoomScale((s) => Math.max(s - 0.15, 0.5));
+      }
+    },
+  });
+
+  // Keyboard navigation for studio image lightbox
+  useEffect(() => {
+    if (previewImageIndex === null) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setPreviewImageIndex(null);
+      } else if (e.key === 'ArrowLeft') {
+        setPreviewImageIndex((prev) => {
+          if (prev === null || images.length <= 1) return prev;
+          setZoomScale(1);
+          return (prev - 1 + images.length) % images.length;
+        });
+      } else if (e.key === 'ArrowRight') {
+        setPreviewImageIndex((prev) => {
+          if (prev === null || images.length <= 1) return prev;
+          setZoomScale(1);
+          return (prev + 1) % images.length;
+        });
+      } else if (e.key === '+' || e.key === '=') {
+        setZoomScale((s) => Math.min(s + 0.25, 3));
+      } else if (e.key === '-') {
+        setZoomScale((s) => Math.max(s - 0.25, 0.5));
+      } else if (e.key === '0') {
+        setZoomScale(1);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [previewImageIndex, images.length]);
+
   const handleSaveToInbox = async () => {
     const rentNum = propertyData.listing_type === 'RENT' && propertyData.price ? parseFloat(propertyData.price) : undefined;
     const saleNum = propertyData.listing_type === 'SALE' && propertyData.price ? parseFloat(propertyData.price) : undefined;
@@ -1081,7 +1160,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
     setManualMode(false);
     setCopiedCaption(false);
     setCopiedImageIndex(null);
-    setPreviewImage(null);
+    setPreviewImageIndex(null);
     setShowPostContentModal(false);
     setShowRawJsonModal(false);
     setShowPipelineModal(false);
@@ -2225,10 +2304,13 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                   minHeight: '300px',
                 }}
               >
-                {images.map((img) => (
+                {images.map((img, idx) => (
                   <div
                     key={img.index}
-                    onClick={() => setPreviewImage(img.stored_url || img.source_url)}
+                    onClick={() => {
+                      setPreviewImageIndex(idx);
+                      setZoomScale(1);
+                    }}
                     style={{
                       position: 'relative',
                       backgroundColor: '#000',
@@ -2248,56 +2330,106 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                       loading="lazy"
                       style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                     />
+                    {/* Circular index badge (e.g. 1 instead of #01) */}
                     <span
                       style={{
                         position: 'absolute',
                         top: '6px',
                         left: '6px',
+                        width: '24px',
+                        height: '24px',
+                        borderRadius: '50%',
                         backgroundColor: 'rgba(0, 0, 0, 0.65)',
-                        color: '#fff',
-                        fontSize: '0.6875rem',
-                        padding: '2px 6px',
-                        borderRadius: '4px',
+                        backdropFilter: 'blur(4px)',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        color: '#FFFFFF',
+                        fontSize: '0.75rem',
                         fontWeight: 600,
-                        zIndex: 2,
-                      }}
-                    >
-                      #{String(img.index).padStart(2, '0')}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        const fullUrl = img.stored_url
-                          ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
-                          : img.source_url;
-                        handleCopyImage({ index: img.index, url: fullUrl }, e);
-                      }}
-                      title={copiedImageIndex === img.index ? 'Copied image to clipboard!' : 'Copy image to clipboard'}
-                      aria-label="Copy image"
-                      style={{
-                        position: 'absolute',
-                        top: '6px',
-                        right: '6px',
-                        width: '26px',
-                        height: '26px',
-                        backgroundColor: 'rgba(0, 0, 0, 0.65)',
-                        color: copiedImageIndex === img.index ? '#10B981' : '#FFFFFF',
-                        border: copiedImageIndex === img.index ? '1px solid rgba(16, 185, 129, 0.5)' : '1px solid rgba(255, 255, 255, 0.25)',
-                        borderRadius: '4px',
-                        padding: 0,
-                        cursor: 'pointer',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
                         zIndex: 2,
                       }}
                     >
-                      {copiedImageIndex === img.index ? (
-                        <FiCheck style={{ fontSize: '13px' }} />
-                      ) : (
-                        <FiCopy style={{ fontSize: '13px' }} />
-                      )}
-                    </button>
+                      {img.index}
+                    </span>
+
+                    {/* Action buttons: Copy & Download icon buttons */}
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: '6px',
+                        right: '6px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        zIndex: 2,
+                      }}
+                    >
+                      {/* Copy Image Button */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          const fullUrl = img.stored_url
+                            ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
+                            : img.source_url;
+                          handleCopyImage({ index: img.index, url: fullUrl }, e);
+                        }}
+                        title={copiedImageIndex === img.index ? 'Copied image to clipboard!' : 'Copy image'}
+                        aria-label="Copy image"
+                        style={{
+                          width: '26px',
+                          height: '26px',
+                          backgroundColor: 'rgba(0, 0, 0, 0.65)',
+                          backdropFilter: 'blur(4px)',
+                          color: copiedImageIndex === img.index ? '#10B981' : '#FFFFFF',
+                          border: copiedImageIndex === img.index ? '1px solid rgba(16, 185, 129, 0.5)' : '1px solid rgba(255, 255, 255, 0.25)',
+                          borderRadius: '50%',
+                          padding: 0,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          transition: 'all 0.15s ease',
+                        }}
+                      >
+                        {copiedImageIndex === img.index ? (
+                          <FiCheck style={{ fontSize: '13px' }} />
+                        ) : (
+                          <FiCopy style={{ fontSize: '13px' }} />
+                        )}
+                      </button>
+
+                      {/* Download Image Button */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          const fullUrl = img.stored_url
+                            ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
+                            : img.source_url;
+                          handleDownloadImage(fullUrl, img.index, e);
+                        }}
+                        title="Download image"
+                        aria-label="Download image"
+                        style={{
+                          width: '26px',
+                          height: '26px',
+                          backgroundColor: 'rgba(0, 0, 0, 0.65)',
+                          backdropFilter: 'blur(4px)',
+                          color: '#FFFFFF',
+                          border: '1px solid rgba(255, 255, 255, 0.25)',
+                          borderRadius: '50%',
+                          padding: 0,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          transition: 'all 0.15s ease',
+                        }}
+                      >
+                        <FiDownload style={{ fontSize: '13px' }} />
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -2674,34 +2806,389 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
         </div>
       </Modal>
 
-      {/* PHOTO PREVIEW MODAL */}
-      {previewImage && (
-        <Modal isOpen={Boolean(previewImage)} onClose={() => setPreviewImage(null)} title="Photo Preview" maxWidth="800px">
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
-            <img
-              src={previewImage.startsWith('/storage') ? `http://localhost:8085${previewImage}` : previewImage}
-              alt="Preview"
-              style={{ maxWidth: '100%', maxHeight: '70vh', borderRadius: '0.375rem', objectFit: 'contain' }}
-            />
-            <div style={{ display: 'flex', gap: '0.5rem', width: '100%', justifyContent: 'center' }}>
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={(e) => {
-                  const url = previewImage.startsWith('/storage') ? `http://localhost:8085${previewImage}` : previewImage;
-                  handleCopyImage({ index: 9999, url }, e);
+      {/* FULLSCREEN STUDIO IMAGE LIGHTBOX (Image 2 style) */}
+      {previewImageIndex !== null && images[previewImageIndex] && (() => {
+        const activeImg = images[previewImageIndex];
+        const activeImgUrl = activeImg.stored_url
+          ? (activeImg.stored_url.startsWith('http') ? activeImg.stored_url : `http://localhost:8085${activeImg.stored_url}`)
+          : activeImg.source_url;
+
+        return (
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              backgroundColor: 'rgba(0, 0, 0, 0.88)',
+              backdropFilter: 'blur(8px)',
+              zIndex: 99999,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              userSelect: 'none',
+              overscrollBehavior: 'contain',
+              touchAction: 'none',
+              animation: 'fadeIn 0.15s ease',
+            }}
+            onWheel={(e) => {
+              e.stopPropagation();
+            }}
+            onClick={() => setPreviewImageIndex(null)}
+          >
+            {/* Top-Left: Image Counter (e.g. 1 / 5) */}
+            <div
+              style={{
+                position: 'absolute',
+                top: '20px',
+                left: '24px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                zIndex: 10,
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <span
+                style={{
+                  fontSize: '0.875rem',
+                  fontWeight: 600,
+                  color: '#FFFFFF',
+                  backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                  backdropFilter: 'blur(4px)',
+                  padding: '4px 12px',
+                  borderRadius: '16px',
+                  border: '1px solid rgba(255, 255, 255, 0.15)',
                 }}
               >
-                {copiedImageIndex === 9999 ? <FiCheck /> : <FiCopy />}
-                <span>{copiedImageIndex === 9999 ? 'Copied Image!' : 'Copy Image'}</span>
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setPreviewImage(null)}>
-                Close
-              </Button>
+                {previewImageIndex + 1} / {images.length}
+              </span>
+            </div>
+
+            {/* Top-Right: Close Button (Circle with X) */}
+            <button
+              type="button"
+              onClick={() => setPreviewImageIndex(null)}
+              aria-label="Close preview"
+              style={{
+                position: 'absolute',
+                top: '20px',
+                right: '24px',
+                width: '38px',
+                height: '38px',
+                borderRadius: '50%',
+                backgroundColor: 'rgba(255, 255, 255, 0.12)',
+                border: '1px solid rgba(255, 255, 255, 0.15)',
+                color: '#FFFFFF',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                zIndex: 10,
+                transition: 'background-color 0.15s ease',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.22)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.12)'; }}
+            >
+              <FiX style={{ fontSize: '18px' }} />
+            </button>
+
+            {/* Previous Navigation Arrow (Left side) */}
+            {images.length > 1 && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setZoomScale(1);
+                  setPreviewImageIndex((prev) => (prev! - 1 + images.length) % images.length);
+                }}
+                title="Previous photo (Left arrow)"
+                aria-label="Previous photo"
+                style={{
+                  position: 'absolute',
+                  left: '24px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  width: '44px',
+                  height: '44px',
+                  borderRadius: '50%',
+                  backgroundColor: 'rgba(0, 0, 0, 0.55)',
+                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                  color: '#FFFFFF',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  zIndex: 10,
+                  backdropFilter: 'blur(4px)',
+                  transition: 'all 0.15s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)';
+                  e.currentTarget.style.transform = 'translateY(-50%) scale(1.05)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.55)';
+                  e.currentTarget.style.transform = 'translateY(-50%) scale(1)';
+                }}
+              >
+                <FiChevronLeft style={{ fontSize: '24px' }} />
+              </button>
+            )}
+
+            {/* Next Navigation Arrow (Right side) */}
+            {images.length > 1 && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setZoomScale(1);
+                  setPreviewImageIndex((prev) => (prev! + 1) % images.length);
+                }}
+                title="Next photo (Right arrow)"
+                aria-label="Next photo"
+                style={{
+                  position: 'absolute',
+                  right: '24px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  width: '44px',
+                  height: '44px',
+                  borderRadius: '50%',
+                  backgroundColor: 'rgba(0, 0, 0, 0.55)',
+                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                  color: '#FFFFFF',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  zIndex: 10,
+                  backdropFilter: 'blur(4px)',
+                  transition: 'all 0.15s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)';
+                  e.currentTarget.style.transform = 'translateY(-50%) scale(1.05)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.55)';
+                  e.currentTarget.style.transform = 'translateY(-50%) scale(1)';
+                }}
+              >
+                <FiChevronRight style={{ fontSize: '24px' }} />
+              </button>
+            )}
+
+            {/* Center Main Image Canvas */}
+            <div
+              style={{
+                position: 'relative',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                maxWidth: '85vw',
+                maxHeight: '78vh',
+                overflow: 'visible',
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <img
+                src={activeImgUrl}
+                alt={`Photo ${activeImg.index}`}
+                style={{
+                  maxWidth: '85vw',
+                  maxHeight: '78vh',
+                  objectFit: 'contain',
+                  borderRadius: '16px',
+                  boxShadow: '0 20px 60px rgba(0, 0, 0, 0.85)',
+                  transform: `scale(${zoomScale})`,
+                  transition: 'transform 0.12s ease-out',
+                  display: 'block',
+                }}
+                draggable={false}
+              />
+            </div>
+
+            {/* Bottom Controls Area (Floating Pill + Hint text) */}
+            <div
+              style={{
+                position: 'absolute',
+                bottom: '24px',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '8px',
+                zIndex: 10,
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Hint Text (from Image 2) */}
+              <span
+                style={{
+                  fontSize: '0.6875rem',
+                  color: 'rgba(255, 255, 255, 0.5)',
+                  fontWeight: 400,
+                  letterSpacing: '0.3px',
+                }}
+              >
+                Scroll to zoom · Arrow keys · ESC to close
+              </span>
+
+              {/* Floating Toolbar Pill */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.375rem',
+                  backgroundColor: 'rgba(24, 25, 28, 0.88)',
+                  border: '1px solid rgba(255, 255, 255, 0.12)',
+                  borderRadius: '24px',
+                  padding: '5px 12px',
+                  backdropFilter: 'blur(12px)',
+                  boxShadow: '0 8px 32px rgba(0, 0, 0, 0.6)',
+                }}
+              >
+                {/* Zoom Out */}
+                <button
+                  type="button"
+                  onClick={() => setZoomScale((s) => Math.max(s - 0.25, 0.5))}
+                  title="Zoom Out (-)"
+                  aria-label="Zoom Out"
+                  style={{
+                    width: '30px',
+                    height: '30px',
+                    borderRadius: '50%',
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    color: '#FFFFFF',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    transition: 'background-color 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.12)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                >
+                  <FiZoomOut style={{ fontSize: '15px' }} />
+                </button>
+
+                {/* Percentage / Reset Button */}
+                <button
+                  type="button"
+                  onClick={() => setZoomScale(1)}
+                  title="Reset Zoom (0)"
+                  style={{
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    color: '#FFFFFF',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    minWidth: '46px',
+                    textAlign: 'center',
+                  }}
+                >
+                  {Math.round(zoomScale * 100)}%
+                </button>
+
+                {/* Zoom In */}
+                <button
+                  type="button"
+                  onClick={() => setZoomScale((s) => Math.min(s + 0.25, 3))}
+                  title="Zoom In (+)"
+                  aria-label="Zoom In"
+                  style={{
+                    width: '30px',
+                    height: '30px',
+                    borderRadius: '50%',
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    color: '#FFFFFF',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    transition: 'background-color 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.12)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                >
+                  <FiZoomIn style={{ fontSize: '15px' }} />
+                </button>
+
+                {/* Divider */}
+                <div style={{ width: '1px', height: '18px', backgroundColor: 'rgba(255, 255, 255, 0.15)', margin: '0 4px' }} />
+
+                {/* Copy Image Button */}
+                <button
+                  type="button"
+                  onClick={(e) => handleCopyImage({ index: activeImg.index, url: activeImgUrl }, e)}
+                  title={copiedImageIndex === activeImg.index ? 'Copied image!' : 'Copy image to clipboard'}
+                  aria-label="Copy image"
+                  style={{
+                    width: '30px',
+                    height: '30px',
+                    borderRadius: '50%',
+                    backgroundColor: copiedImageIndex === activeImg.index ? 'rgba(16, 185, 129, 0.2)' : 'transparent',
+                    border: 'none',
+                    color: copiedImageIndex === activeImg.index ? '#10B981' : '#FFFFFF',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    if (copiedImageIndex !== activeImg.index) {
+                      e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.12)';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (copiedImageIndex !== activeImg.index) {
+                      e.currentTarget.style.backgroundColor = 'transparent';
+                    }
+                  }}
+                >
+                  {copiedImageIndex === activeImg.index ? (
+                    <FiCheck style={{ fontSize: '15px' }} />
+                  ) : (
+                    <FiCopy style={{ fontSize: '15px' }} />
+                  )}
+                </button>
+
+                {/* Download Image Button */}
+                <button
+                  type="button"
+                  onClick={(e) => handleDownloadImage(activeImgUrl, activeImg.index, e)}
+                  title="Download photo"
+                  aria-label="Download photo"
+                  style={{
+                    width: '30px',
+                    height: '30px',
+                    borderRadius: '50%',
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    color: '#FFFFFF',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    transition: 'background-color 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.12)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                >
+                  <FiDownload style={{ fontSize: '15px' }} />
+                </button>
+              </div>
             </div>
           </div>
-        </Modal>
-      )}
+        );
+      })()}
 
       {/* VIEW / EDIT AI RESULT MODAL */}
       {viewingResultBox && (

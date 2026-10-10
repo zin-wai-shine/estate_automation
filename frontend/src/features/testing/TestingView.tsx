@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '../../components/ui/Button';
-import { Modal } from '../../components/ui/Modal';
+import { Modal, useScrollLock } from '../../components/ui/Modal';
 import { LiveBrowserModal } from './LiveBrowserModal';
 import {
   FiFileText,
@@ -873,6 +873,9 @@ export const TestingView: React.FC = () => {
   // Huge Lightbox Viewer State
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [lightboxViewMode, setLightboxViewMode] = useState<'enhanced' | 'original'>('enhanced');
+
+  // Prevent background container scroll bleed when lightbox or previewModal is open
+  useScrollLock(!!(lightboxIndex !== null || (previewModal && previewModal.isOpen)));
 
   // Keyboard navigation for Lightbox
   useEffect(() => {

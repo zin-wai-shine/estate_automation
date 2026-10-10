@@ -61,7 +61,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
 
         <div
-          onClick={() => onNavigateTab('review')}
+          onClick={() => onNavigateTab('inbox')}
           style={{
             padding: '1rem',
             borderRadius: '0.5rem',
@@ -165,15 +165,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     </Badge>
                   </td>
                   <td style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>
-                    {property.status === 'READY_FOR_REVIEW' ? (
-                      <Button variant="primary" size="sm" onClick={() => onNavigateTab('review')}>
-                        Review & Approve
-                      </Button>
-                    ) : (
-                      <Button variant="outline" size="sm" onClick={() => onNavigateTab('inbox')}>
-                        View Details
-                      </Button>
-                    )}
+                    <Button variant="outline" size="sm" onClick={() => onNavigateTab('inbox')}>
+                      View Details
+                    </Button>
                   </td>
                 </tr>
               ))}

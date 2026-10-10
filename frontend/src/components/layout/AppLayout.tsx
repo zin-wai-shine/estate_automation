@@ -1,23 +1,32 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { Button } from '../ui/Button';
+import { useTheme } from '../../context/ThemeContext';
 import { 
   FiHome, 
   FiPlusSquare, 
-  FiCheckCircle, 
-  FiFolder, 
   FiSettings, 
-  FiSliders,
-  FiFileText,
-  FiGitMerge,
-  FiChevronRight,
-  FiMenu,
-  FiX,
-  FiZap,
-  FiGitBranch,
+  FiFileText, 
+  FiChevronRight, 
+  FiMenu, 
+  FiX, 
+  FiZap, 
+  FiGitBranch, 
+  FiInbox, 
+  FiSidebar, 
 } from 'react-icons/fi';
 import { FaFacebook } from 'react-icons/fa';
+
+interface NavItem {
+  id: string;
+  label: string;
+  icon: React.ReactNode;
+}
+
+interface NavSection {
+  title: string;
+  items: NavItem[];
+}
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -25,10 +34,21 @@ interface AppLayoutProps {
 
 export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
   const { user } = useAuth();
+  const { actualTheme } = useTheme();
+  const isDark = actualTheme === 'dark';
+
   const location = useLocation();
   const navigate = useNavigate();
 
   const activeTab = location.pathname.split('/')[1] || 'add-url';
+
+  // Desktop sidebar collapse state
+  const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('ea_sidebar_collapsed') === 'true';
+    }
+    return false;
+  });
 
   // Mobile drawer state & screen size detection
   const [isMobileOpen, setIsMobileOpen] = useState(false);
@@ -46,26 +66,46 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  const navItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: <FiHome /> },
-    { id: 'add-url', label: 'Add URL', icon: <FiPlusSquare /> },
-    { id: 'facebook-import', label: 'Facebook Import', icon: <FaFacebook /> },
-    { id: 'create-workflow', label: 'Create Workflow', icon: <FiGitBranch /> },
-    { id: 'inbox', label: 'Property Inbox', icon: <FiPlusSquare /> },
-    { id: 'review', label: 'Review Center', icon: <FiCheckCircle /> },
-    { id: 'projects', label: 'Projects / Condos', icon: <FiFolder /> },
-    { id: 'prompts', label: 'Prompt Templates', icon: <FiFileText /> },
-    { id: 'workflow', label: 'Workflow Map', icon: <FiGitMerge /> },
-    { id: 'automation', label: 'Automation & Sync', icon: <FiSliders /> },
-    { id: 'testing', label: 'Testing', icon: <FiZap /> },
-    { id: 'settings', label: 'Settings', icon: <FiSettings /> },
+  const toggleCollapse = () => {
+    setIsCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem('ea_sidebar_collapsed', String(next));
+      return next;
+    });
+  };
+
+  // Structured sidebar navigation matching modern clean UI
+  const navSections: NavSection[] = [
+    {
+      title: 'Workspace',
+      items: [
+        { id: 'dashboard', label: 'Dashboard', icon: <FiHome /> },
+        { id: 'inbox', label: 'Property Inbox', icon: <FiInbox /> },
+      ],
+    },
+    {
+      title: 'Automation & AI',
+      items: [
+        { id: 'facebook-import', label: 'Facebook Import', icon: <FaFacebook /> },
+        { id: 'create-workflow', label: 'Create Workflow', icon: <FiGitBranch /> },
+        { id: 'add-url', label: 'Add URL', icon: <FiPlusSquare /> },
+        { id: 'prompts', label: 'Prompt Templates', icon: <FiFileText /> },
+      ],
+    },
+    {
+      title: 'System & Tools',
+      items: [
+        { id: 'testing', label: 'Testing Lab', icon: <FiZap /> },
+        { id: 'settings', label: 'Settings', icon: <FiSettings /> },
+      ],
+    },
   ];
 
-  const currentNav = navItems.find((item) => item.id === activeTab) || navItems[0];
+  const allNavItems = navSections.flatMap((section) => section.items);
+  const currentNav = allNavItems.find((item) => item.id === activeTab) || allNavItems[0];
 
   const handleNavClick = (e: React.MouseEvent<HTMLAnchorElement | HTMLButtonElement>, id: string) => {
     if (e.metaKey || e.ctrlKey || e.button === 1) {
-      // Command/Ctrl/Middle-click: Allow native browser behavior to open link in NEW TAB!
       return;
     }
     e.preventDefault();
@@ -73,9 +113,11 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     setIsMobileOpen(false);
   };
 
+  const currentSidebarWidth = isMobile ? '250px' : (isCollapsed ? '72px' : '250px');
+
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-main)' }}>
-      {/* Full-Width Top Navigation Bar */}
+      {/* Top Navigation Bar */}
       <header
         style={{
           height: '56px',
@@ -93,7 +135,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         }}
       >
         {isMobile ? (
-          /* Mobile Top Bar: Hamburger + Brand + Page Title + Settings */
+          /* Mobile Top Bar */
           <div style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.375rem', overflow: 'hidden' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0, overflow: 'hidden' }}>
               <button
@@ -109,7 +151,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                   alignItems: 'center',
                   justifyContent: 'center',
                   padding: '0.375rem',
-                  borderRadius: '0.375rem',
+                  borderRadius: '0.5rem',
                   backgroundColor: 'var(--bg-surface)',
                   flexShrink: 0,
                 }}
@@ -118,24 +160,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                 {isMobileOpen ? <FiX /> : <FiMenu />}
               </button>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', minWidth: 0, overflow: 'hidden' }}>
-                <div
-                  style={{
-                    width: '26px',
-                    height: '26px',
-                    borderRadius: '0.375rem',
-                    backgroundColor: 'var(--accent-primary)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: '#FFFFFF',
-                    fontWeight: 700,
-                    fontSize: '0.8125rem',
-                    flexShrink: 0,
-                  }}
-                >
-                  E
-                </div>
+              <div style={{ display: 'flex', alignItems: 'center', minWidth: 0, overflow: 'hidden' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
                   <h1 style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {currentNav.label}
@@ -150,48 +175,38 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         ) : (
           /* Desktop Top Bar */
           <>
-            {/* Top-Left: Sidebar Header (Brand Logo & Title) */}
+            {/* Top-Left Brand Logo */}
             <div
               style={{
-                width: '240px',
-                minWidth: '240px',
+                width: currentSidebarWidth,
+                minWidth: currentSidebarWidth,
                 height: '100%',
-                padding: '0 1.25rem',
+                padding: isCollapsed ? '0 0.875rem' : '0 1.25rem',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '0.625rem',
+                justifyContent: isCollapsed ? 'center' : 'flex-start',
                 borderRight: '1px solid var(--border-color)',
                 boxSizing: 'border-box',
+                transition: 'width 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
               }}
             >
-              <div
-                style={{
-                  width: '32px',
-                  height: '32px',
-                  borderRadius: '0.375rem',
-                  backgroundColor: 'var(--accent-primary)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: '#FFFFFF',
-                  fontWeight: 700,
-                  fontSize: '1rem',
-                  flexShrink: 0,
-                }}
-              >
-                E
-              </div>
-              <div>
-                <h1 style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.2, margin: 0 }}>
-                  EstateAutomate
-                </h1>
-                <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-                  Real Estate Platform
+              {!isCollapsed ? (
+                <div style={{ overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                  <h1 style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.2, margin: 0, letterSpacing: '-0.01em' }}>
+                    EstateAutomate
+                  </h1>
+                  <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                    AI Automation Studio
+                  </span>
+                </div>
+              ) : (
+                <span style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
+                  EA
                 </span>
-              </div>
+              )}
             </div>
 
-            {/* Top-Right Header Content: Active Page Title & Action Portal */}
+            {/* Top-Right Header Content */}
             <div
               style={{
                 flex: 1,
@@ -205,19 +220,43 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
             >
               <div id="header-title-portal" style={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
                 {activeTab !== 'testing' && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <span style={{ fontSize: '1rem', color: 'var(--accent-primary)', display: 'inline-flex' }}>
-                      {currentNav.icon}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <h2 style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
+                        {currentNav.label}
+                      </h2>
+                    </div>
+                    <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                      Workflow Engine · Real Estate SaaS
                     </span>
-                    <h2 style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
-                      {currentNav.label}
-                    </h2>
                   </div>
                 )}
               </div>
               <div id="header-center-portal" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1 }} />
 
-              <div id="header-action-portal" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexShrink: 0 }}>
+                {/* Status Indicator Pill */}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.375rem',
+                    padding: '4px 10px',
+                    borderRadius: '20px',
+                    backgroundColor: isDark ? 'rgba(34, 197, 94, 0.08)' : 'rgba(22, 163, 74, 0.08)',
+                    border: `1px solid ${isDark ? 'rgba(34, 197, 94, 0.25)' : 'rgba(22, 163, 74, 0.25)'}`,
+                    color: isDark ? '#4ADE80' : '#16A34A',
+                    fontSize: '0.6875rem',
+                    fontWeight: 600,
+                  }}
+                  title="All AI & API Services Operational"
+                >
+                  <div style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#22C55E' }} />
+                  <span>API Online</span>
+                </div>
+
+                <div id="header-action-portal" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }} />
+              </div>
             </div>
           </>
         )}
@@ -240,10 +279,10 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         />
       )}
 
-      {/* Sidebar Navigation (Positioned Below Top Nav Bar) */}
+      {/* Sidebar Navigation */}
       <aside
         style={{
-          width: '240px',
+          width: currentSidebarWidth,
           backgroundColor: 'var(--bg-secondary)',
           borderRight: '1px solid var(--border-color)',
           display: 'flex',
@@ -255,118 +294,276 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
           left: 0,
           zIndex: 30,
           transform: isMobile ? (isMobileOpen ? 'translateX(0)' : 'translateX(-100%)') : 'none',
-          transition: 'transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-          boxShadow: isMobile && isMobileOpen ? '4px 0 20px rgba(0, 0, 0, 0.5)' : 'none',
+          transition: 'width 0.25s cubic-bezier(0.4, 0, 0.2, 1), transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+          overflow: 'hidden',
         }}
       >
-        <div>
-          {/* Vertical Menu Links */}
-          <nav style={{ padding: '1rem 0.75rem', display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-            <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)', padding: '0.25rem 0.5rem', marginBottom: '0.25rem', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-              Main Navigation
-            </span>
-            {navItems.map((item) => {
-              const isActive = activeTab === item.id;
-              return (
-                <a
-                  key={item.id}
-                  href={`/${item.id}`}
-                  onClick={(e) => handleNavClick(e, item.id)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    width: '100%',
-                    padding: '0.625rem 0.75rem',
-                    borderRadius: '0.5rem',
-                    fontSize: '0.84375rem',
-                    fontWeight: isActive ? 600 : 500,
-                    color: isActive ? '#FFFFFF' : 'var(--text-secondary)',
-                    backgroundColor: isActive ? 'var(--accent-primary)' : 'transparent',
-                    border: 'none',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                    textDecoration: 'none',
-                    boxSizing: 'border-box',
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!isActive) {
-                      e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
-                      e.currentTarget.style.color = 'var(--text-primary)';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!isActive) {
-                      e.currentTarget.style.backgroundColor = 'transparent';
-                      e.currentTarget.style.color = 'var(--text-secondary)';
-                    }
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <span style={{ fontSize: '1.05rem', display: 'inline-flex', opacity: isActive ? 1 : 0.85 }}>{item.icon}</span>
-                    <span>{item.label}</span>
-                  </div>
-                  {isActive && <FiChevronRight style={{ fontSize: '0.875rem' }} />}
-                </a>
-              );
-            })}
+        <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
+          {/* Menu Sections */}
+          <nav style={{ padding: isCollapsed ? '0.75rem 0.375rem' : '0.875rem 0.625rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            {navSections.map((section, sIdx) => (
+              <div key={section.title} style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                {/* Section Title */}
+                {!isCollapsed ? (
+                  <span
+                    style={{
+                      fontSize: '0.6875rem',
+                      fontWeight: 700,
+                      color: 'var(--text-muted)',
+                      padding: '0.5rem 0.625rem 0.25rem',
+                      letterSpacing: '0.06em',
+                      textTransform: 'uppercase',
+                    }}
+                  >
+                    {section.title}
+                  </span>
+                ) : (
+                  sIdx > 0 && (
+                    <div style={{ height: '1px', backgroundColor: 'var(--border-color)', margin: '0.375rem 0.5rem' }} />
+                  )
+                )}
+
+                {/* Section Items */}
+                {section.items.map((item) => {
+                  const isActive = activeTab === item.id;
+
+                  // Colors cleanly adapted for both light and dark mode with ZERO glow
+                  const activeBg = isDark
+                    ? 'rgba(59, 130, 246, 0.14)'
+                    : 'rgba(37, 99, 235, 0.08)';
+                  const activeBorder = isDark
+                    ? '1px solid rgba(59, 130, 246, 0.28)'
+                    : '1px solid rgba(37, 99, 235, 0.22)';
+                  const activeTextColor = isDark
+                    ? '#FFFFFF'
+                    : '#1D4ED8';
+
+                  const iconColor = isActive
+                    ? (isDark ? '#60A5FA' : '#1D4ED8')
+                    : 'var(--text-secondary)';
+
+                  return (
+                    <a
+                      key={item.id}
+                      href={`/${item.id}`}
+                      onClick={(e) => handleNavClick(e, item.id)}
+                      title={isCollapsed ? item.label : undefined}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: isCollapsed ? 'center' : 'space-between',
+                        width: '100%',
+                        padding: isCollapsed ? '0.5rem 0' : '0.5rem 0.625rem',
+                        borderRadius: '0.625rem',
+                        fontSize: '0.8125rem',
+                        fontWeight: isActive ? 600 : 500,
+                        color: isActive ? activeTextColor : 'var(--text-secondary)',
+                        backgroundColor: isActive ? activeBg : 'transparent',
+                        border: isActive ? activeBorder : '1px solid transparent',
+                        cursor: 'pointer',
+                        transition: 'background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease',
+                        textDecoration: 'none',
+                        boxSizing: 'border-box',
+                        position: 'relative',
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!isActive) {
+                          e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.04)';
+                          e.currentTarget.style.borderColor = isDark ? 'rgba(255, 255, 255, 0.07)' : 'rgba(0, 0, 0, 0.07)';
+                          e.currentTarget.style.color = 'var(--text-primary)';
+                          const iconSpan = e.currentTarget.querySelector('.nav-item-icon') as HTMLElement | null;
+                          if (iconSpan) iconSpan.style.color = 'var(--text-primary)';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!isActive) {
+                          e.currentTarget.style.backgroundColor = 'transparent';
+                          e.currentTarget.style.borderColor = 'transparent';
+                          e.currentTarget.style.color = 'var(--text-secondary)';
+                          const iconSpan = e.currentTarget.querySelector('.nav-item-icon') as HTMLElement | null;
+                          if (iconSpan) iconSpan.style.color = 'var(--text-secondary)';
+                        }
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', minWidth: 0 }}>
+                        <span
+                          className="nav-item-icon"
+                          style={{
+                            width: '20px',
+                            height: '20px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '1.125rem',
+                            flexShrink: 0,
+                            color: iconColor,
+                            transition: 'color 0.15s ease',
+                          }}
+                        >
+                          {item.icon}
+                        </span>
+
+                        {!isCollapsed && (
+                          <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {item.label}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Right Elements (Chevron) */}
+                      {!isCollapsed && isActive && (
+                        <div style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+                          <FiChevronRight
+                            style={{
+                              fontSize: '0.75rem',
+                              color: isDark ? '#60A5FA' : '#2563EB',
+                            }}
+                          />
+                        </div>
+                      )}
+                    </a>
+                  );
+                })}
+              </div>
+            ))}
           </nav>
         </div>
 
-        {/* Sidebar Footer - Settings Trigger */}
-        <div style={{ padding: '0.75rem 0.625rem', borderTop: '1px solid var(--border-color)' }}>
-          <a
-            href="/settings"
-            onClick={(e) => handleNavClick(e, 'settings')}
-            style={{
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '0.5rem 0.625rem',
-              borderRadius: '0.375rem',
-              backgroundColor: activeTab === 'settings' ? 'var(--accent-primary)' : 'var(--bg-surface)',
-              border: '1px solid var(--border-color)',
-              color: activeTab === 'settings' ? '#FFFFFF' : 'var(--text-primary)',
-              cursor: 'pointer',
-              transition: 'all 0.12s ease',
-              textDecoration: 'none',
-              boxSizing: 'border-box',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <div
+        {/* Sidebar Footer Section */}
+        <div style={{ borderTop: '1px solid var(--border-color)', backgroundColor: 'var(--bg-secondary)' }}>
+          {/* User Settings Row */}
+          <div style={{ padding: isCollapsed ? '0.5rem 0.375rem' : '0.5rem 0.625rem' }}>
+            <a
+              href="/settings"
+              onClick={(e) => handleNavClick(e, 'settings')}
+              title={isCollapsed ? (user?.name || 'Settings') : undefined}
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: isCollapsed ? 'center' : 'space-between',
+                padding: isCollapsed ? '0.45rem 0' : '0.5rem 0.625rem',
+                borderRadius: '0.5rem',
+                backgroundColor: activeTab === 'settings' 
+                  ? (isDark ? 'rgba(59, 130, 246, 0.15)' : 'rgba(37, 99, 235, 0.08)')
+                  : 'var(--bg-surface)',
+                border: activeTab === 'settings'
+                  ? `1px solid ${isDark ? 'rgba(59, 130, 246, 0.3)' : 'rgba(37, 99, 235, 0.22)'}`
+                  : '1px solid var(--border-color)',
+                color: activeTab === 'settings' 
+                  ? (isDark ? '#FFFFFF' : '#1D4ED8') 
+                  : 'var(--text-primary)',
+                cursor: 'pointer',
+                transition: 'all 0.12s ease',
+                textDecoration: 'none',
+                boxSizing: 'border-box',
+              }}
+              onMouseEnter={(e) => {
+                if (activeTab !== 'settings') {
+                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (activeTab !== 'settings') {
+                  e.currentTarget.style.backgroundColor = 'var(--bg-surface)';
+                }
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <div
+                  style={{
+                    width: '26px',
+                    height: '26px',
+                    borderRadius: '50%',
+                    background: isDark ? 'linear-gradient(135deg, #3B82F6 0%, #8B5CF6 100%)' : 'linear-gradient(135deg, #2563EB 0%, #7C3AED 100%)',
+                    color: '#FFFFFF',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    flexShrink: 0,
+                  }}
+                >
+                  {user?.name?.[0] || 'U'}
+                </div>
+                {!isCollapsed && (
+                  <div style={{ textAlign: 'left', overflow: 'hidden' }}>
+                    <p style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.1, margin: 0, whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
+                      {user?.name || 'Administrator'}
+                    </p>
+                    <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>Settings</span>
+                  </div>
+                )}
+              </div>
+              {!isCollapsed && (
+                <FiSettings style={{ color: activeTab === 'settings' ? (isDark ? '#60A5FA' : '#2563EB') : 'var(--text-muted)', fontSize: '0.875rem' }} />
+              )}
+            </a>
+          </div>
+
+          {/* Collapse Sidebar Button */}
+          {!isMobile && (
+            <div style={{ padding: '0.25rem 0.625rem 0.625rem', borderTop: '1px solid var(--border-color)' }}>
+              <button
+                type="button"
+                onClick={toggleCollapse}
                 style={{
-                  width: '26px',
-                  height: '26px',
-                  borderRadius: '50%',
-                  backgroundColor: activeTab === 'settings' ? '#FFFFFF' : 'var(--accent-primary)',
-                  color: activeTab === 'settings' ? 'var(--accent-primary)' : '#FFFFFF',
+                  width: '100%',
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'center',
+                  justifyContent: isCollapsed ? 'center' : 'flex-start',
+                  gap: '0.5rem',
+                  padding: '0.5rem 0.625rem',
+                  color: 'var(--text-muted)',
                   fontSize: '0.75rem',
-                  fontWeight: 600,
+                  fontWeight: 500,
+                  border: 'none',
+                  background: 'transparent',
+                  cursor: 'pointer',
+                  borderRadius: '0.375rem',
+                  transition: 'color 0.15s ease',
                 }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.color = 'var(--text-primary)';
+                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.04)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.color = 'var(--text-muted)';
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                }}
+                title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
               >
-                {user?.name?.[0] || 'U'}
-              </div>
-              <div style={{ textAlign: 'left' }}>
-                <p style={{ fontSize: '0.75rem', fontWeight: 600, color: activeTab === 'settings' ? '#FFFFFF' : 'var(--text-primary)', lineHeight: 1.1, margin: 0 }}>
-                  {user?.name}
-                </p>
-                <span style={{ fontSize: '0.625rem', color: activeTab === 'settings' ? 'rgba(255,255,255,0.8)' : 'var(--text-muted)' }}>Settings</span>
-              </div>
+                <FiSidebar style={{ fontSize: '0.9375rem', flexShrink: 0 }} />
+                {!isCollapsed && <span>Collapse sidebar</span>}
+              </button>
             </div>
-            <FiSettings style={{ color: activeTab === 'settings' ? '#FFFFFF' : 'var(--text-muted)', fontSize: '0.875rem' }} />
-          </a>
+          )}
         </div>
       </aside>
 
       {/* Main Right Content Area */}
-      <div style={{ flex: 1, marginLeft: isMobile ? 0 : '240px', marginTop: '56px', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-        {/* Page Content View */}
-        <main style={{ flex: 1, padding: isMobile ? '0.875rem 0.75rem' : '1.25rem', maxWidth: '1400px', width: '100%', margin: '0 auto', boxSizing: 'border-box' }}>
+      <div
+        style={{
+          flex: 1,
+          marginLeft: isMobile ? 0 : currentSidebarWidth,
+          marginTop: '56px',
+          display: 'flex',
+          flexDirection: 'column',
+          minWidth: 0,
+          transition: 'margin-left 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+        }}
+      >
+        <main
+          style={{
+            flex: 1,
+            padding: isMobile ? '0.875rem 0.75rem' : '1.25rem',
+            maxWidth: '1400px',
+            width: '100%',
+            margin: '0 auto',
+            boxSizing: 'border-box',
+          }}
+        >
           {children}
         </main>
       </div>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
@@ -7,6 +7,7 @@ import {
   FacebookWorkflowCanvas,
   DEFAULT_FB_WORKFLOW_CONFIG,
   type FacebookWorkflowConfig,
+  type FacebookWorkflowCanvasRef,
 } from '../facebook-import/FacebookWorkflowCanvas';
 import {
   getSavedWorkflowFormats,
@@ -28,10 +29,15 @@ import {
   FiImage,
   FiCpu,
   FiMaximize2,
+  FiCrosshair,
 } from 'react-icons/fi';
+import { useTheme } from '../../context/ThemeContext';
 
 export const CreateWorkflowView: React.FC = () => {
+  const { actualTheme } = useTheme();
+  const isDark = actualTheme === 'dark';
   const navigate = useNavigate();
+  const canvasRef = useRef<FacebookWorkflowCanvasRef>(null);
   const [formats, setFormats] = useState<WorkflowFormat[]>(() => getSavedWorkflowFormats());
   const [activeFormatId, setActiveId] = useState<string>(() => getActiveWorkflowFormatId());
 
@@ -297,8 +303,8 @@ export const CreateWorkflowView: React.FC = () => {
                       width: '34px',
                       height: '34px',
                       borderRadius: '0.5rem',
-                      backgroundColor: isActive ? 'rgba(59, 130, 246, 0.15)' : 'rgba(255, 255, 255, 0.05)',
-                      color: isActive ? '#60A5FA' : 'var(--text-secondary)',
+                      backgroundColor: isActive ? 'rgba(59, 130, 246, 0.15)' : (isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)'),
+                      color: isActive ? (isDark ? '#60A5FA' : '#2563EB') : 'var(--text-secondary)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -362,9 +368,9 @@ export const CreateWorkflowView: React.FC = () => {
                     fontSize: '0.6875rem',
                     padding: '2px 7px',
                     borderRadius: '4px',
-                    backgroundColor: hasContent ? 'rgba(59, 130, 246, 0.12)' : 'rgba(255, 255, 255, 0.04)',
-                    color: hasContent ? '#60A5FA' : 'var(--text-muted)',
-                    border: `1px solid ${hasContent ? 'rgba(59, 130, 246, 0.3)' : 'rgba(255, 255, 255, 0.08)'}`,
+                    backgroundColor: hasContent ? 'rgba(59, 130, 246, 0.12)' : (isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.04)'),
+                    color: hasContent ? (isDark ? '#60A5FA' : '#2563EB') : 'var(--text-muted)',
+                    border: `1px solid ${hasContent ? 'rgba(59, 130, 246, 0.3)' : (isDark ? 'rgba(255, 255, 255, 0.08)' : 'var(--border-color)')}`,
                     fontWeight: 500,
                   }}
                 >
@@ -380,9 +386,9 @@ export const CreateWorkflowView: React.FC = () => {
                     fontSize: '0.6875rem',
                     padding: '2px 7px',
                     borderRadius: '4px',
-                    backgroundColor: hasImages ? 'rgba(34, 197, 94, 0.12)' : 'rgba(255, 255, 255, 0.04)',
-                    color: hasImages ? '#4ADE80' : 'var(--text-muted)',
-                    border: `1px solid ${hasImages ? 'rgba(34, 197, 94, 0.3)' : 'rgba(255, 255, 255, 0.08)'}`,
+                    backgroundColor: hasImages ? (isDark ? 'rgba(34, 197, 94, 0.12)' : '#DCFCE7') : (isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.04)'),
+                    color: hasImages ? (isDark ? '#4ADE80' : '#16A34A') : 'var(--text-muted)',
+                    border: `1px solid ${hasImages ? (isDark ? 'rgba(34, 197, 94, 0.3)' : '#86EFAC') : (isDark ? 'rgba(255, 255, 255, 0.08)' : 'var(--border-color)')}`,
                     fontWeight: 500,
                   }}
                 >
@@ -398,9 +404,9 @@ export const CreateWorkflowView: React.FC = () => {
                     fontSize: '0.6875rem',
                     padding: '2px 7px',
                     borderRadius: '4px',
-                    backgroundColor: 'rgba(139, 92, 246, 0.12)',
-                    color: '#C4B5FD',
-                    border: '1px solid rgba(139, 92, 246, 0.3)',
+                    backgroundColor: isDark ? 'rgba(139, 92, 246, 0.12)' : '#F3E8FF',
+                    color: isDark ? '#C4B5FD' : '#7C3AED',
+                    border: isDark ? '1px solid rgba(139, 92, 246, 0.3)' : '1px solid #D8B4FE',
                     fontWeight: 500,
                   }}
                 >
@@ -429,8 +435,8 @@ export const CreateWorkflowView: React.FC = () => {
                       style={{
                         fontSize: '0.6875rem',
                         color: 'var(--text-secondary)',
-                        backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                        border: '1px solid rgba(255, 255, 255, 0.08)',
+                        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'var(--bg-surface)',
+                        border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid var(--border-color)',
                         borderRadius: '3px',
                         padding: '1px 5px',
                         display: 'inline-flex',
@@ -555,18 +561,19 @@ export const CreateWorkflowView: React.FC = () => {
         height="90vh"
         bodyPadding="0"
         title={
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
             <div
               style={{
                 width: '28px',
                 height: '28px',
                 borderRadius: '6px',
-                backgroundColor: 'rgba(139, 92, 246, 0.15)',
-                color: '#A78BFA',
+                backgroundColor: isDark ? 'rgba(139, 92, 246, 0.15)' : 'rgba(139, 92, 246, 0.1)',
+                color: isDark ? '#A78BFA' : '#7C3AED',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 fontSize: '14px',
+                flexShrink: 0,
               }}
             >
               <FiGitBranch />
@@ -577,32 +584,51 @@ export const CreateWorkflowView: React.FC = () => {
               onChange={(e) => setModalFormatName(e.target.value)}
               placeholder="Format Name"
               style={{
-                background: 'var(--bg-main)',
-                border: '1px solid var(--border-color)',
-                borderRadius: '0.375rem',
+                background: 'transparent',
+                border: 'none',
                 color: 'var(--text-primary)',
-                fontSize: '0.875rem',
+                fontSize: '0.9375rem',
                 fontWeight: 600,
-                padding: '4px 8px',
+                padding: '4px 6px',
                 outline: 'none',
                 minWidth: '240px',
               }}
             />
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-              <Badge variant={editingFormat.config.getContent.enabled ? 'info' : 'default'} size="sm">
-                Content: {editingFormat.config.getContent.enabled ? 'ON' : 'OFF'}
-              </Badge>
-              <Badge variant={editingFormat.config.getImages.enabled ? 'success' : 'default'} size="sm">
-                Images: {editingFormat.config.getImages.enabled ? 'ON' : 'OFF'}
-              </Badge>
-              <Badge variant="warning" size="sm">
-                {editingFormat.config.aiBoxes.length} AI Boxes
-              </Badge>
-            </div>
           </div>
         }
         headerExtra={
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => canvasRef.current?.addAIBox()}
+              leftIcon={<FiPlus style={{ fontSize: '13px' }} />}
+              style={{
+                height: '32px',
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                backgroundColor: '#10B981',
+                borderColor: '#10B981',
+                color: '#FFFFFF',
+                boxShadow: 'none',
+              }}
+            >
+              Add Dynamic AI Node
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => canvasRef.current?.resetLayout()}
+              leftIcon={<FiCrosshair style={{ fontSize: '13px' }} />}
+              style={{
+                height: '32px',
+                fontSize: '0.75rem',
+                fontWeight: 500,
+                boxShadow: 'none',
+              }}
+            >
+              Reset Layout
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -614,6 +640,7 @@ export const CreateWorkflowView: React.FC = () => {
                 fontWeight: 600,
                 borderColor: saveSuccess ? '#10B981' : undefined,
                 color: saveSuccess ? '#10B981' : undefined,
+                boxShadow: 'none',
               }}
             >
               {saveSuccess ? 'Saved!' : 'Save Format'}
@@ -627,7 +654,10 @@ export const CreateWorkflowView: React.FC = () => {
                 height: '32px',
                 fontSize: '0.75rem',
                 fontWeight: 600,
-                background: 'linear-gradient(135deg, #1877F2 0%, #3B82F6 100%)',
+                backgroundColor: '#1877F2',
+                borderColor: '#1877F2',
+                color: '#FFFFFF',
+                boxShadow: 'none',
               }}
             >
               Use in Facebook Import
@@ -637,6 +667,7 @@ export const CreateWorkflowView: React.FC = () => {
       >
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
           <FacebookWorkflowCanvas
+            ref={canvasRef}
             initialConfig={editingFormat.config}
             onConfigChange={handleCanvasConfigChange}
             allowEditPrompt={true}

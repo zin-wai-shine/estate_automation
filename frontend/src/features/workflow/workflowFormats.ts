@@ -31,7 +31,7 @@ export const INITIAL_DEFAULT_FORMATS: WorkflowFormat[] = [
         cleanThai: true,
         extractContacts: true,
         x: 340,
-        y: 80,
+        y: 110,
       },
       getImages: {
         enabled: true,
@@ -39,7 +39,7 @@ export const INITIAL_DEFAULT_FORMATS: WorkflowFormat[] = [
         preserveOrder: true,
         watermark: false,
         x: 340,
-        y: 380,
+        y: 390,
       },
       aiBoxes: [
         {
@@ -53,8 +53,8 @@ export const INITIAL_DEFAULT_FORMATS: WorkflowFormat[] = [
             'Transform the raw Facebook post into a compelling high-converting condo rental listing.\nHighlight: Rent Price, BTS/MRT station, Unit Size, Room Layout, Deposit terms, and Line ID CTA.\nLanguages: Thai primary, English summary.',
           customPrompt: '',
           enabled: true,
-          x: 680,
-          y: 50,
+          x: 640,
+          y: 80,
         },
         {
           id: 'ai-box-tiktok',
@@ -67,8 +67,8 @@ export const INITIAL_DEFAULT_FORMATS: WorkflowFormat[] = [
             'Create a viral 15-second TikTok script for this property.\nHook in the first 3 seconds, 3 quick visual highlights, and clear urgent call-to-action.',
           customPrompt: '',
           enabled: true,
-          x: 680,
-          y: 330,
+          x: 640,
+          y: 230,
         },
       ],
     },
@@ -89,7 +89,7 @@ export const INITIAL_DEFAULT_FORMATS: WorkflowFormat[] = [
         cleanThai: true,
         extractContacts: true,
         x: 340,
-        y: 80,
+        y: 110,
       },
       getImages: {
         enabled: true,
@@ -97,7 +97,7 @@ export const INITIAL_DEFAULT_FORMATS: WorkflowFormat[] = [
         preserveOrder: true,
         watermark: true,
         x: 340,
-        y: 380,
+        y: 390,
       },
       aiBoxes: [
         {
@@ -111,8 +111,8 @@ export const INITIAL_DEFAULT_FORMATS: WorkflowFormat[] = [
             'Write a professional sales copy for property sale.\nHighlight investment rental yield %, capital appreciation, BTS access, and sale price.\nAdd professional Line ID CTA.',
           customPrompt: '',
           enabled: true,
-          x: 680,
-          y: 50,
+          x: 640,
+          y: 80,
         },
         {
           id: 'ai-box-line-oa',
@@ -125,8 +125,8 @@ export const INITIAL_DEFAULT_FORMATS: WorkflowFormat[] = [
             'Craft an exclusive LINE Official broadcast message for VIP buyers.\nConcise bullet points, pricing, room specs, and direct appointment link.',
           customPrompt: '',
           enabled: true,
-          x: 680,
-          y: 330,
+          x: 640,
+          y: 230,
         },
       ],
     },
@@ -147,7 +147,7 @@ export const INITIAL_DEFAULT_FORMATS: WorkflowFormat[] = [
         cleanThai: false,
         extractContacts: false,
         x: 340,
-        y: 80,
+        y: 110,
       },
       getImages: {
         enabled: true,
@@ -155,7 +155,7 @@ export const INITIAL_DEFAULT_FORMATS: WorkflowFormat[] = [
         preserveOrder: true,
         watermark: false,
         x: 340,
-        y: 380,
+        y: 390,
       },
       aiBoxes: [
         {
@@ -168,8 +168,8 @@ export const INITIAL_DEFAULT_FORMATS: WorkflowFormat[] = [
           templateText: 'Generate clean photo captions and high-engagement social media hashtags.',
           customPrompt: '',
           enabled: true,
-          x: 680,
-          y: 180,
+          x: 640,
+          y: 160,
         },
       ],
     },
@@ -190,7 +190,7 @@ export const INITIAL_DEFAULT_FORMATS: WorkflowFormat[] = [
         cleanThai: true,
         extractContacts: true,
         x: 340,
-        y: 80,
+        y: 110,
       },
       getImages: {
         enabled: false,
@@ -198,7 +198,7 @@ export const INITIAL_DEFAULT_FORMATS: WorkflowFormat[] = [
         preserveOrder: false,
         watermark: false,
         x: 340,
-        y: 380,
+        y: 390,
       },
       aiBoxes: [
         {
@@ -212,8 +212,8 @@ export const INITIAL_DEFAULT_FORMATS: WorkflowFormat[] = [
             'Translate and polish the Thai listing into fluent, professional English for foreign expats.\nFormat with clean emojis, price in THB, and near BTS/MRT.',
           customPrompt: '',
           enabled: true,
-          x: 680,
-          y: 50,
+          x: 640,
+          y: 80,
         },
         {
           id: 'ai-box-seo',
@@ -225,8 +225,8 @@ export const INITIAL_DEFAULT_FORMATS: WorkflowFormat[] = [
           templateText: 'Generate 20 top-ranking real estate hashtags for Bangkok condos and rentals.',
           customPrompt: '',
           enabled: true,
-          x: 680,
-          y: 330,
+          x: 640,
+          y: 230,
         },
       ],
     },
@@ -239,7 +239,32 @@ export const getSavedWorkflowFormats = (): WorkflowFormat[] => {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+        return parsed.map((format: WorkflowFormat) => {
+          if (!format.config) return format;
+          const conf = format.config;
+          const updatedGetImages =
+            !conf.getImages?.y || conf.getImages.y <= 350
+              ? { ...conf.getImages, y: 390 }
+              : conf.getImages;
+          const updatedGetContent =
+            !conf.getContent?.y || conf.getContent.y >= 120
+              ? { ...conf.getContent, y: 110 }
+              : conf.getContent;
+          const updatedAiBoxes = (conf.aiBoxes || []).map((b, idx) => {
+            if (idx === 0 && (!b.y || b.y >= 95)) return { ...b, y: 80 };
+            if (idx === 1 && (!b.y || b.y >= 260)) return { ...b, y: 230 };
+            return b;
+          });
+          return {
+            ...format,
+            config: {
+              ...conf,
+              getContent: updatedGetContent,
+              getImages: updatedGetImages,
+              aiBoxes: updatedAiBoxes,
+            },
+          };
+        });
       }
     }
   } catch (e) {

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useImperativeHandle, forwardRef } from 'react';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
@@ -24,6 +24,8 @@ import {
 } from 'react-icons/fi';
 import { FaFacebook } from 'react-icons/fa';
 import { SiGooglegemini } from 'react-icons/si';
+import { AITrainingChatbot, ModelSelectorMenu } from './AITrainingChatbot';
+import { useTheme } from '../../context/ThemeContext';
 
 export interface CanvasPromptOption {
   id: string;
@@ -92,6 +94,12 @@ export interface DynamicAIBoxConfig {
   y: number;
 }
 
+export interface WorkflowWireConnection {
+  id: string;
+  fromNodeId: string;
+  toNodeId: string;
+}
+
 export interface FacebookWorkflowConfig {
   getContent: {
     enabled: boolean;
@@ -120,6 +128,7 @@ export interface FacebookWorkflowConfig {
     y: number;
   };
   aiBoxes: DynamicAIBoxConfig[];
+  connections?: WorkflowWireConnection[];
   zoom: number;
   panOffset: { x: number; y: number };
 }
@@ -155,7 +164,7 @@ export const DEFAULT_FB_WORKFLOW_CONFIG: FacebookWorkflowConfig = {
     cleanThai: true,
     extractContacts: true,
     x: 340,
-    y: 120,
+    y: 110,
   },
   getImages: {
     enabled: true,
@@ -163,7 +172,7 @@ export const DEFAULT_FB_WORKFLOW_CONFIG: FacebookWorkflowConfig = {
     preserveOrder: true,
     watermark: false,
     x: 340,
-    y: 320,
+    y: 390,
   },
   aiBoxes: [
     {
@@ -178,7 +187,7 @@ export const DEFAULT_FB_WORKFLOW_CONFIG: FacebookWorkflowConfig = {
       customPrompt: '',
       enabled: true,
       x: 640,
-      y: 100,
+      y: 80,
     },
     {
       id: 'ai-box-tiktok',
@@ -192,8 +201,14 @@ export const DEFAULT_FB_WORKFLOW_CONFIG: FacebookWorkflowConfig = {
       customPrompt: '',
       enabled: true,
       x: 640,
-      y: 280,
+      y: 230,
     },
+  ],
+  connections: [
+    { id: 'conn-content-rental', fromNodeId: 'get-content', toNodeId: 'ai-box-rental' },
+    { id: 'conn-rental-dest', fromNodeId: 'ai-box-rental', toNodeId: 'destination' },
+    { id: 'conn-content-tiktok', fromNodeId: 'get-content', toNodeId: 'ai-box-tiktok' },
+    { id: 'conn-tiktok-dest', fromNodeId: 'ai-box-tiktok', toNodeId: 'destination' },
   ],
   destination: {
     x: 960,
@@ -209,14 +224,38 @@ export const loadSavedFacebookWorkflowConfig = (): FacebookWorkflowConfig => {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && parsed.getContent && parsed.getImages && Array.isArray(parsed.aiBoxes)) {
+        let connections = Array.isArray(parsed.connections) ? parsed.connections : undefined;
+        if (!connections) {
+          connections = [];
+          parsed.aiBoxes.forEach((b: any) => {
+            connections.push({ id: `conn-content-${b.id}`, fromNodeId: 'get-content', toNodeId: b.id });
+            connections.push({ id: `conn-${b.id}-dest`, fromNodeId: b.id, toNodeId: 'destination' });
+          });
+        }
+        // Auto-migrate old cramped layout to ensure clean base lane and gap:
+        const updatedGetImages =
+          !parsed.getImages.y || parsed.getImages.y <= 350
+            ? { ...parsed.getImages, y: 390 }
+            : parsed.getImages;
+        const updatedGetContent =
+          !parsed.getContent.y || parsed.getContent.y >= 120
+            ? { ...parsed.getContent, y: 110 }
+            : parsed.getContent;
+        const updatedAiBoxes = parsed.aiBoxes.map((b: any, idx: number) => {
+          if (idx === 0 && (!b.y || b.y >= 95)) return { ...b, y: 80 };
+          if (idx === 1 && (!b.y || b.y >= 260)) return { ...b, y: 230 };
+          return b;
+        });
+
         return {
           ...DEFAULT_FB_WORKFLOW_CONFIG,
           ...parsed,
-          getContent: { ...DEFAULT_FB_WORKFLOW_CONFIG.getContent, ...parsed.getContent },
-          getImages: { ...DEFAULT_FB_WORKFLOW_CONFIG.getImages, ...parsed.getImages },
+          getContent: { ...DEFAULT_FB_WORKFLOW_CONFIG.getContent, ...updatedGetContent },
+          getImages: { ...DEFAULT_FB_WORKFLOW_CONFIG.getImages, ...updatedGetImages },
           trigger: { ...DEFAULT_FB_WORKFLOW_CONFIG.trigger, ...parsed.trigger },
           destination: { ...DEFAULT_FB_WORKFLOW_CONFIG.destination, ...parsed.destination },
-          aiBoxes: parsed.aiBoxes.length > 0 ? parsed.aiBoxes : DEFAULT_FB_WORKFLOW_CONFIG.aiBoxes,
+          aiBoxes: updatedAiBoxes.length > 0 ? updatedAiBoxes : DEFAULT_FB_WORKFLOW_CONFIG.aiBoxes,
+          connections,
         };
       }
     }
@@ -232,6 +271,189 @@ const OpenAIIcon: React.FC<{ size?: number; color?: string }> = ({ size = 26, co
   </svg>
 );
 
+export interface MergedNodeShapeProps {
+  sockets: 'left' | 'right' | 'both';
+  strokeColor: string;
+  fillColor?: string;
+  strokeWidth?: number;
+  strokeDasharray?: string;
+  socketDotColor?: string;
+  highlightInput?: boolean;
+  highlightOutput?: boolean;
+  isConnectedInput?: boolean;
+  isConnectedOutput?: boolean;
+  onSocketMouseDown?: (type: 'input' | 'output', e: React.MouseEvent) => void;
+  onSocketMouseUp?: (type: 'input' | 'output', e: React.MouseEvent) => void;
+}
+
+export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
+  sockets,
+  strokeColor,
+  fillColor,
+  strokeWidth = 2,
+  strokeDasharray = 'none',
+  highlightInput = false,
+  highlightOutput = false,
+  isConnectedInput = false,
+  isConnectedOutput = false,
+  onSocketMouseDown,
+  onSocketMouseUp,
+}) => {
+  const { actualTheme } = useTheme();
+  const isDark = actualTheme === 'dark';
+  const resolvedFillColor = fillColor || (isDark ? '#161B22' : '#FFFFFF');
+  const [hoveredSocket, setHoveredSocket] = useState<'input' | 'output' | null>(null);
+
+  const isReceptiveInput = highlightInput && !isConnectedInput;
+  const isReceptiveOutput = highlightOutput && !isConnectedOutput;
+  const isReceptive = isReceptiveInput || isReceptiveOutput;
+
+  // Deep yellow representing receptive connect state (no glow)
+  const DEEP_YELLOW = '#D29922';
+  const effectiveStrokeColor = isReceptive ? DEEP_YELLOW : strokeColor;
+
+  // Center is (36, 36), radius R = 35
+  // Outer socket lobes have radius r = 11 (22px diameter), seamlessly merged with the 72px main circle
+  let pathD = '';
+  if (sockets === 'right') {
+    pathD = 'M 69.27 25.14 A 11 11 0 1 1 69.27 46.86 A 35 35 0 1 1 69.27 25.14 Z';
+  } else if (sockets === 'left') {
+    pathD = 'M 2.73 46.86 A 11 11 0 1 1 2.73 25.14 A 35 35 0 1 1 2.73 46.86 Z';
+  } else {
+    // both left and right
+    pathD = 'M 69.27 25.14 A 11 11 0 1 1 69.27 46.86 A 35 35 0 0 1 2.73 46.86 A 11 11 0 1 1 2.73 25.14 A 35 35 0 0 1 69.27 25.14 Z';
+  }
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        width: '72px',
+        height: '72px',
+        pointerEvents: 'none',
+      }}
+    >
+      <svg
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '72px',
+          height: '72px',
+          overflow: 'visible',
+          filter: isDark ? 'drop-shadow(0 4px 12px rgba(0, 0, 0, 0.45))' : 'drop-shadow(0 2px 8px rgba(0, 0, 0, 0.1))',
+        }}
+        viewBox="0 0 72 72"
+      >
+        <path
+          d={pathD}
+          fill={resolvedFillColor}
+          stroke={effectiveStrokeColor}
+          strokeWidth={isReceptive ? 2.5 : strokeWidth}
+          strokeDasharray={strokeDasharray}
+          strokeLinejoin="round"
+          strokeLinecap="round"
+          style={{
+            transition: 'stroke 0.2s ease, stroke-width 0.2s ease',
+          }}
+        />
+
+        {/* ======================================================== */}
+        {/* RIGHT OUTPUT SOCKET: NEXT ICON (→), MERGES WITH CYCLE    */}
+        {/* ======================================================== */}
+        {(sockets === 'right' || sockets === 'both') && (
+          <path
+            d="M 71 36 L 79.5 36 M 76 32.5 L 79.5 36 L 76 39.5"
+            fill="none"
+            stroke={isReceptiveOutput ? DEEP_YELLOW : (hoveredSocket === 'output' && !isConnectedOutput ? '#FFFFFF' : strokeColor)}
+            strokeWidth={isReceptiveOutput ? 2.5 : 2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={{
+              transition: 'stroke 0.15s ease, stroke-width 0.15s ease',
+            }}
+          />
+        )}
+
+        {/* ======================================================== */}
+        {/* LEFT INPUT SOCKET: BACK ICON (←), MERGES WITH CYCLE      */}
+        {/* ======================================================== */}
+        {(sockets === 'left' || sockets === 'both') && (
+          <path
+            d="M 1 36 L -7.5 36 M -4 32.5 L -7.5 36 L -4 39.5"
+            fill="none"
+            stroke={isReceptiveInput ? DEEP_YELLOW : (hoveredSocket === 'input' && !isConnectedInput ? '#FFFFFF' : strokeColor)}
+            strokeWidth={isReceptiveInput ? 2.5 : 2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={{
+              transition: 'stroke 0.15s ease, stroke-width 0.15s ease',
+            }}
+          />
+        )}
+      </svg>
+
+      {/* Right Output Socket Hitbox for drag-to-connect */}
+      {(sockets === 'right' || sockets === 'both') && (
+        <div
+          className="socket-handle socket-handle-output"
+          onMouseEnter={() => setHoveredSocket('output')}
+          onMouseLeave={() => setHoveredSocket(null)}
+          onMouseDown={(e) => {
+            if (isConnectedOutput) {
+              e.stopPropagation();
+              return;
+            }
+            onSocketMouseDown?.('output', e);
+          }}
+          onMouseUp={(e) => onSocketMouseUp?.('output', e)}
+          style={{
+            position: 'absolute',
+            right: '-16px',
+            top: '20px',
+            width: '28px',
+            height: '32px',
+            cursor: isConnectedOutput ? 'default' : 'grab',
+            pointerEvents: 'auto',
+            zIndex: 30,
+            borderRadius: '0 16px 16px 0',
+          }}
+        />
+      )}
+
+      {/* Left Input Socket Hitbox for drag-to-connect */}
+      {(sockets === 'left' || sockets === 'both') && (
+        <div
+          className="socket-handle socket-handle-input"
+          onMouseEnter={() => setHoveredSocket('input')}
+          onMouseLeave={() => setHoveredSocket(null)}
+          onMouseDown={(e) => {
+            if (isConnectedInput) {
+              e.stopPropagation();
+              return;
+            }
+            onSocketMouseDown?.('input', e);
+          }}
+          onMouseUp={(e) => onSocketMouseUp?.('input', e)}
+          style={{
+            position: 'absolute',
+            left: '-16px',
+            top: '20px',
+            width: '28px',
+            height: '32px',
+            cursor: isConnectedInput ? 'default' : 'crosshair',
+            pointerEvents: 'auto',
+            zIndex: 30,
+            borderRadius: '16px 0 0 16px',
+          }}
+        />
+      )}
+    </div>
+  );
+};
+
 export type ActiveModalNode =
   | { type: 'trigger' }
   | { type: 'get-content' }
@@ -240,19 +462,27 @@ export type ActiveModalNode =
   | { type: 'destination' }
   | null;
 
-interface FacebookWorkflowCanvasProps {
+export interface FacebookWorkflowCanvasRef {
+  addAIBox: (templateOverride?: CanvasPromptOption) => void;
+  resetLayout: () => void;
+}
+
+export interface FacebookWorkflowCanvasProps {
   initialConfig?: FacebookWorkflowConfig;
   onSwitchToLiveImport?: () => void;
   onConfigChange?: (config: FacebookWorkflowConfig) => void;
   allowEditPrompt?: boolean;
 }
 
-export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
-  initialConfig,
-  onSwitchToLiveImport,
-  onConfigChange,
-  allowEditPrompt = false,
-}) => {
+export const FacebookWorkflowCanvas = forwardRef<
+  FacebookWorkflowCanvasRef,
+  FacebookWorkflowCanvasProps
+>(function FacebookWorkflowCanvas(
+  { initialConfig, onConfigChange, allowEditPrompt = false },
+  ref
+) {
+  const { actualTheme } = useTheme();
+  const isDark = actualTheme === 'dark';
   const [config, setConfig] = useState<FacebookWorkflowConfig>(() => initialConfig || loadSavedFacebookWorkflowConfig());
 
   useEffect(() => {
@@ -272,10 +502,28 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
   const [simulationMessage, setSimulationMessage] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
+  // Drag-to-connect String State
+  interface DragWireState {
+    fromNodeId: string;
+    fromType: 'output' | 'input';
+    startX: number;
+    startY: number;
+    currentX: number;
+    currentY: number;
+  }
+  const [dragWire, setDragWire] = useState<DragWireState | null>(null);
+  const [hoveredWireId, setHoveredWireId] = useState<string | null>(null);
+
   // Node Modal State
   const [activeModalNode, setActiveModalNode] = useState<ActiveModalNode>(null);
+  const [isAISettingsDrawerOpen, setIsAISettingsDrawerOpen] = useState(false);
   const dragStartCoord = useRef({ x: 0, y: 0 });
   const hasMoved = useRef(false);
+
+  const handleCloseModal = () => {
+    setActiveModalNode(null);
+    setIsAISettingsDrawerOpen(false);
+  };
 
   // Available prompt templates from library (synced with PromptTemplatesView)
   const [availablePrompts, setAvailablePrompts] = useState<CanvasPromptOption[]>(() => loadAvailablePromptTemplates());
@@ -321,11 +569,277 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
     }
   };
 
-  // Add Dynamic AI Box
+  // Socket positions helper for connecting wires
+  const getNodeSocketPos = (nodeId: string, socketType: 'input' | 'output') => {
+    if (nodeId === 'trigger') {
+      return { x: config.trigger.x + 75, y: config.trigger.y + HALF_CIRCLE };
+    }
+    if (nodeId === 'get-content') {
+      return socketType === 'output'
+        ? { x: config.getContent.x + 75, y: config.getContent.y + HALF_CIRCLE }
+        : { x: config.getContent.x - 3, y: config.getContent.y + HALF_CIRCLE };
+    }
+    if (nodeId === 'get-images') {
+      return socketType === 'output'
+        ? { x: config.getImages.x + 75, y: config.getImages.y + HALF_CIRCLE }
+        : { x: config.getImages.x - 3, y: config.getImages.y + HALF_CIRCLE };
+    }
+    if (nodeId === 'destination') {
+      return { x: config.destination.x - 3, y: config.destination.y + HALF_CIRCLE };
+    }
+    const box = config.aiBoxes.find((b) => b.id === nodeId);
+    if (box) {
+      return socketType === 'output'
+        ? { x: box.x + 75, y: box.y + HALF_CIRCLE }
+        : { x: box.x - 3, y: box.y + HALF_CIRCLE };
+    }
+    return { x: 0, y: 0 };
+  };
+
+  const dragWireStartTime = useRef(0);
+
+  // Check if two nodes already have a connection (either dynamically or statically)
+  // "and if that already connect don't can't be connect again next to back or back to next"
+  const isAlreadyConnected = (nodeA: string, nodeB: string): boolean => {
+    const conns = config.connections || [];
+    if (
+      conns.some(
+        (c) =>
+          (c.fromNodeId === nodeA && c.toNodeId === nodeB) ||
+          (c.fromNodeId === nodeB && c.toNodeId === nodeA)
+      )
+    ) {
+      return true;
+    }
+    // Hardcoded static wires
+    if ((nodeA === 'trigger' && nodeB === 'get-content') || (nodeA === 'get-content' && nodeB === 'trigger')) return true;
+    if ((nodeA === 'trigger' && nodeB === 'get-images') || (nodeA === 'get-images' && nodeB === 'trigger')) return true;
+    if ((nodeA === 'get-images' && nodeB === 'destination') || (nodeA === 'destination' && nodeB === 'get-images')) return true;
+    return false;
+  };
+
+  // Directional forward-only connection validation with strict duplicate rejection:
+  // "and that can't connect back with other and that only can connect next other step"
+  const isValidConnection = (fromId: string, toId: string): boolean => {
+    if (!fromId || !toId || fromId === toId) return false;
+
+    // Reject if already connected in either direction
+    if (isAlreadyConnected(fromId, toId)) {
+      return false;
+    }
+
+    const conns = config.connections || [];
+
+    // Step 1: trigger -> get-content or get-images (already statically connected)
+    if (fromId === 'trigger') {
+      return false;
+    }
+
+    // Step 2: get-content -> dynamic AI nodes only
+    if (fromId === 'get-content') {
+      if (!toId.startsWith('ai-box-')) return false;
+      // Target AI box must NOT already have an incoming connection
+      const aiAlreadyHasInput = conns.some((c) => c.toNodeId === toId);
+      return !aiAlreadyHasInput;
+    }
+
+    // Step 2: get-images -> destination (already statically connected)
+    if (fromId === 'get-images') {
+      return false;
+    }
+
+    // Step 3: dynamic AI nodes -> destination only
+    if (fromId.startsWith('ai-box-')) {
+      if (toId !== 'destination') return false;
+      // This AI box must NOT already have an outgoing connection to destination
+      const alreadyConnectedToDest = conns.some(
+        (c) => c.fromNodeId === fromId && c.toNodeId === 'destination'
+      );
+      return !alreadyConnectedToDest;
+    }
+
+    return false;
+  };
+
+  // Socket Drag-to-Connect Handlers ("Drag that string")
+  const handleSocketMouseDown = (
+    nodeId: string,
+    socketType: 'input' | 'output',
+    e: React.MouseEvent
+  ) => {
+    e.stopPropagation();
+    e.preventDefault();
+
+    // If a wire is already being dragged, clicking a socket completes or cancels the connection
+    if (dragWire) {
+      if (dragWire.fromType !== socketType && dragWire.fromNodeId !== nodeId) {
+        const sourceId = dragWire.fromType === 'output' ? dragWire.fromNodeId : nodeId;
+        const destId = dragWire.fromType === 'input' ? dragWire.fromNodeId : nodeId;
+        if (isValidConnection(sourceId, destId)) {
+          const currentConnections = config.connections || [];
+          const exists = currentConnections.some(
+            (c) => (c.fromNodeId === sourceId && c.toNodeId === destId) || (c.fromNodeId === destId && c.toNodeId === sourceId)
+          );
+          if (!exists) {
+            const newConn: WorkflowWireConnection = {
+              id: `conn-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+              fromNodeId: sourceId,
+              toNodeId: destId,
+            };
+            updateConfig({
+              ...config,
+              connections: [...currentConnections, newConn],
+            });
+          }
+        }
+      }
+      setDragWire(null);
+      return;
+    }
+
+    // Prevent starting drag from an already connected socket
+    const conns = config.connections || [];
+    if (socketType === 'output') {
+      if (nodeId === 'trigger' || nodeId === 'get-images') return;
+      if (nodeId.startsWith('ai-box-') && conns.some((c) => c.fromNodeId === nodeId)) return;
+    }
+    if (socketType === 'input') {
+      if (nodeId === 'get-content' || nodeId === 'get-images') return;
+      if (nodeId.startsWith('ai-box-') && conns.some((c) => c.toNodeId === nodeId)) return;
+    }
+
+    // Start dragging a new wire from this socket
+    dragWireStartTime.current = Date.now();
+    const pos = getNodeSocketPos(nodeId, socketType);
+    setDragWire({
+      fromNodeId: nodeId,
+      fromType: socketType,
+      startX: pos.x,
+      startY: pos.y,
+      currentX: pos.x,
+      currentY: pos.y,
+    });
+  };
+
+  const handleSocketMouseUp = (
+    targetNodeId: string,
+    targetSocketType: 'input' | 'output',
+    e: React.MouseEvent
+  ) => {
+    e.stopPropagation();
+    if (!dragWire) return;
+
+    // Released on the exact same socket it originated from
+    if (dragWire.fromNodeId === targetNodeId && dragWire.fromType === targetSocketType) {
+      // If mouseup happened almost immediately (<250ms), user did a single click:
+      // keep dragWire alive so they can move the cursor and click the destination socket!
+      if (Date.now() - dragWireStartTime.current < 250) {
+        return;
+      }
+      setDragWire(null);
+      return;
+    }
+
+    // Sockets must be complementary: one output, one input
+    if (dragWire.fromType === targetSocketType) {
+      setDragWire(null);
+      return;
+    }
+    // Cannot connect a node to itself
+    if (dragWire.fromNodeId === targetNodeId) {
+      setDragWire(null);
+      return;
+    }
+
+    const sourceId = dragWire.fromType === 'output' ? dragWire.fromNodeId : targetNodeId;
+    const destId = dragWire.fromType === 'input' ? dragWire.fromNodeId : targetNodeId;
+
+    // Validate forward-only directional rule: can only connect to the next valid step!
+    if (!isValidConnection(sourceId, destId)) {
+      setDragWire(null);
+      return;
+    }
+
+    // Check if connection already exists
+    const currentConnections = config.connections || [];
+    const exists = currentConnections.some(
+      (c) => c.fromNodeId === sourceId && c.toNodeId === destId
+    );
+
+    if (!exists) {
+      const newConn: WorkflowWireConnection = {
+        id: `conn-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        fromNodeId: sourceId,
+        toNodeId: destId,
+      };
+      updateConfig({
+        ...config,
+        connections: [...currentConnections, newConn],
+      });
+    }
+    setDragWire(null);
+  };
+
+  const handleRemoveConnection = (connId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const newConnections = (config.connections || []).filter((c) => c.id !== connId);
+    updateConfig({
+      ...config,
+      connections: newConnections,
+    });
+  };
+
+  // Add Dynamic AI Box directly connected from Get Content ("for text modified and that connect with that")
+  const handleAddAIBoxConnectedFromContent = (templateOverride?: CanvasPromptOption) => {
+    const prompts = loadAvailablePromptTemplates();
+    const boxCount = config.aiBoxes.length;
+    const maxY = config.aiBoxes.reduce((max, b) => Math.max(max, b.y), 0);
+    const newY = boxCount === 0 ? 120 : Math.max(maxY + 150, 80 + boxCount * 150);
+
+    // Pick next prompt template from library
+    const chosenTemplate =
+      templateOverride ||
+      (prompts.length > 0 ? prompts[boxCount % prompts.length] : undefined);
+
+    const newId = `ai-box-${Date.now()}`;
+    const newBox: DynamicAIBoxConfig = {
+      id: newId,
+      title: chosenTemplate ? chosenTemplate.name : `AI Text Modifier #${boxCount + 1}`,
+      provider: boxCount % 2 === 0 ? 'google_ai' : 'openai',
+      model: boxCount % 2 === 0 ? 'gemini-flash-latest' : 'gpt-4o',
+      templateId: chosenTemplate ? String(chosenTemplate.id) : 'custom',
+      templateText: chosenTemplate
+        ? chosenTemplate.templateText
+        : 'Generate optimized marketing copy for this property listing.\nHighlight rent/sale price, transit access, and clear call-to-action.',
+      customPrompt: '',
+      enabled: true,
+      x: 640,
+      y: newY,
+    };
+
+    // Automatically connect Get Content -> this new AI node
+    const newConn: WorkflowWireConnection = {
+      id: `conn-content-${newId}`,
+      fromNodeId: 'get-content',
+      toNodeId: newId,
+    };
+
+    const newConfig: FacebookWorkflowConfig = {
+      ...config,
+      aiBoxes: [...config.aiBoxes, newBox],
+      connections: [...(config.connections || []), newConn],
+    };
+
+    updateConfig(newConfig);
+    setSelectedBoxId(newId);
+  };
+
+  // Add Dynamic AI Box (appears on canvas first, not connected to another until user creates what it is used for and drags string)
   const handleAddAIBox = (templateOverride?: CanvasPromptOption) => {
     const prompts = loadAvailablePromptTemplates();
     const boxCount = config.aiBoxes.length;
-    const newY = 80 + boxCount * 140;
+    const maxY = config.aiBoxes.reduce((max, b) => Math.max(max, b.y), 0);
+    const newY = boxCount === 0 ? 120 : Math.max(maxY + 140, 80 + boxCount * 140);
 
     // Pick next prompt template from library
     const chosenTemplate =
@@ -351,10 +865,11 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
     const newConfig = {
       ...config,
       aiBoxes: [...config.aiBoxes, newBox],
+      // Starts completely unconnected on canvas
     };
     updateConfig(newConfig);
     setSelectedBoxId(newId);
-    setActiveModalNode({ type: 'ai-box', boxId: newId });
+    // User requested: "show that cycle at canvas first don't need to connected in another until I create what that use for and after that I can connect it with drap that string"
   };
 
   // Delete Dynamic AI Box
@@ -370,9 +885,13 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
       return;
     }
     const newBoxes = config.aiBoxes.filter((b) => b.id !== id);
+    const newConnections = (config.connections || []).filter(
+      (c) => c.fromNodeId !== id && c.toNodeId !== id
+    );
     const newConfig = {
       ...config,
       aiBoxes: newBoxes,
+      connections: newConnections,
     };
     updateConfig(newConfig);
     if (selectedBoxId === id) setSelectedBoxId(null);
@@ -413,24 +932,35 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
     updateConfig({ ...config, aiBoxes: newBoxes });
   };
 
-  // Reset Layout to pristine aligned grid
+  // Reset Layout to pristine aligned grid with clean base and gaps
   const handleResetLayout = () => {
     const defaultBoxes = config.aiBoxes.map((box, idx) => ({
       ...box,
       x: 640,
-      y: 80 + idx * 150,
+      y: idx === 0 ? 80 : 80 + idx * 150,
     }));
 
     const resetConfig: FacebookWorkflowConfig = {
       ...config,
+      zoom: 0.95,
+      panOffset: { x: 30, y: 30 },
       trigger: { x: 80, y: 220, autoImport: config.trigger.autoImport },
-      getContent: { ...config.getContent, x: 340, y: 120 },
-      getImages: { ...config.getImages, x: 340, y: 320 },
+      getContent: { ...config.getContent, x: 340, y: 110 },
+      getImages: { ...config.getImages, x: 340, y: 390 },
       destination: { x: 960, y: 220 },
       aiBoxes: defaultBoxes,
     };
     updateConfig(resetConfig);
   };
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      addAIBox: (templateOverride) => handleAddAIBox(templateOverride),
+      resetLayout: () => handleResetLayout(),
+    }),
+    [config]
+  );
 
   // Run Test Simulation
   const handleRunSimulation = () => {
@@ -473,11 +1003,23 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
     if ((e.target as HTMLElement).closest('.canvas-node') || (e.target as HTMLElement).closest('.canvas-control')) {
       return;
     }
+    if (dragWire) {
+      setDragWire(null);
+      return;
+    }
     setIsPanning(true);
     setPanStart({ x: e.clientX - config.panOffset.x, y: e.clientY - config.panOffset.y });
   };
 
   const handleCanvasMouseMove = (e: React.MouseEvent) => {
+    if (dragWire && canvasRef.current) {
+      const rect = canvasRef.current.getBoundingClientRect();
+      const cx = (e.clientX - rect.left - config.panOffset.x) / config.zoom;
+      const cy = (e.clientY - rect.top - config.panOffset.y) / config.zoom;
+      setDragWire((prev) => (prev ? { ...prev, currentX: cx, currentY: cy } : null));
+      return;
+    }
+
     if (isPanning) {
       const newOffset = {
         x: e.clientX - panStart.x,
@@ -528,6 +1070,9 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
   };
 
   const handleCanvasMouseUp = () => {
+    if (dragWire) {
+      setDragWire(null);
+    }
     if (isPanning) setIsPanning(false);
     if (draggedNodeId) {
       setDraggedNodeId(null);
@@ -570,22 +1115,33 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
     return `M ${start.x} ${start.y} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${end.x} ${end.y}`;
   };
 
+  // Base channel bezier path for wires originating from lower base nodes (like Get Images -> Destination)
+  // Ensures the wire stays along the bottom base corridor and never cuts under or through middle cycles!
+  const createBaseChannelPath = (start: { x: number; y: number }, end: { x: number; y: number }) => {
+    const dx = Math.abs(end.x - start.x);
+    // Keep control point 1 extended forward along the base line so it travels horizontally below middle nodes
+    const c1x = start.x + dx * 0.68;
+    const c1y = start.y;
+    // Control point 2 curves up towards destination near the end
+    const c2x = end.x - Math.min(dx * 0.22, 120);
+    const c2y = start.y + (end.y - start.y) * 0.12;
+    return `M ${start.x} ${start.y} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${end.x} ${end.y}`;
+  };
+
   // Circular Node Dimensions (all canvas nodes are uniform 72px circles)
   const CIRCLE_SIZE = 72;
   const HALF_CIRCLE = CIRCLE_SIZE / 2; // 36
 
-  // Sockets for wires
-  const trigOutContent = { x: config.trigger.x + CIRCLE_SIZE, y: config.trigger.y + HALF_CIRCLE - 10 };
-  const trigOutImages = { x: config.trigger.x + CIRCLE_SIZE, y: config.trigger.y + HALF_CIRCLE + 10 };
+  // Unified Single Sockets for wires (anchoring at the center of the protruding socket tabs)
+  const triggerOut = { x: config.trigger.x + 75, y: config.trigger.y + HALF_CIRCLE };
 
-  const contentIn = { x: config.getContent.x, y: config.getContent.y + HALF_CIRCLE };
-  const contentOut = { x: config.getContent.x + CIRCLE_SIZE, y: config.getContent.y + HALF_CIRCLE };
+  const contentIn = { x: config.getContent.x - 3, y: config.getContent.y + HALF_CIRCLE };
+  const contentOut = { x: config.getContent.x + 75, y: config.getContent.y + HALF_CIRCLE };
 
-  const imagesIn = { x: config.getImages.x, y: config.getImages.y + HALF_CIRCLE };
-  const imagesOut = { x: config.getImages.x + CIRCLE_SIZE, y: config.getImages.y + HALF_CIRCLE };
+  const imagesIn = { x: config.getImages.x - 3, y: config.getImages.y + HALF_CIRCLE };
+  const imagesOut = { x: config.getImages.x + 75, y: config.getImages.y + HALF_CIRCLE };
 
-  const destInTop = { x: config.destination.x, y: config.destination.y + HALF_CIRCLE - 10 };
-  const destInBottom = { x: config.destination.x, y: config.destination.y + HALF_CIRCLE + 10 };
+  const destIn = { x: config.destination.x - 3, y: config.destination.y + HALF_CIRCLE };
 
   // Currently active AI Box in modal (if applicable)
   const currentModalAIBox = activeModalNode?.type === 'ai-box'
@@ -593,184 +1149,45 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
     : null;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', width: '100%', boxSizing: 'border-box' }}>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        width: '100%',
+        height: '100%',
+        flex: 1,
+        minHeight: 0,
+        boxSizing: 'border-box',
+        overflow: 'hidden',
+        position: 'relative',
+        ...(isFullscreen
+          ? {
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              width: '100vw',
+              height: '100vh',
+              zIndex: 999999,
+            }
+          : {}),
+      }}
+    >
       <style>{`
         @keyframes n8nFlow {
-          from { stroke-dashoffset: 28; }
+          from { stroke-dashoffset: 32; }
           to { stroke-dashoffset: 0; }
         }
-        @keyframes pulseGlow {
-          0%, 100% { opacity: 0.85; filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.7)); }
-          50% { opacity: 1; filter: drop-shadow(0 0 18px rgba(59, 130, 246, 1)); }
+        @keyframes socketPulse {
+          0%, 100% {
+            r: 7.5;
+            opacity: 0.55;
+          }
+          50% {
+            r: 10;
+            opacity: 1;
+          }
         }
       `}</style>
-
-      {/* Top Workflow Control Bar */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: '0.75rem',
-          backgroundColor: 'var(--bg-surface)',
-          padding: '0.625rem 1rem',
-          borderRadius: '0.75rem',
-          border: '1px solid var(--border-color)',
-          boxShadow: 'var(--shadow-sm)',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-            <Badge variant="info" size="sm">Visual Graph</Badge>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              Click any circle node to configure details
-            </span>
-          </div>
-
-          {/* Quick Stats Chips */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-            <span
-              style={{
-                fontSize: '0.6875rem',
-                padding: '2px 7px',
-                borderRadius: '4px',
-                backgroundColor: config.getContent.enabled ? 'rgba(59, 130, 246, 0.12)' : 'rgba(255, 255, 255, 0.05)',
-                color: config.getContent.enabled ? '#60A5FA' : 'var(--text-muted)',
-                border: '1px solid',
-                borderColor: config.getContent.enabled ? 'rgba(59, 130, 246, 0.3)' : 'transparent',
-              }}
-            >
-              Content: {config.getContent.enabled ? '100% Full' : 'OFF'}
-            </span>
-            <span
-              style={{
-                fontSize: '0.6875rem',
-                padding: '2px 7px',
-                borderRadius: '4px',
-                backgroundColor: config.getImages.enabled ? 'rgba(16, 185, 129, 0.12)' : 'rgba(255, 255, 255, 0.05)',
-                color: config.getImages.enabled ? '#34D399' : 'var(--text-muted)',
-                border: '1px solid',
-                borderColor: config.getImages.enabled ? 'rgba(16, 185, 129, 0.3)' : 'transparent',
-              }}
-            >
-              Images: {config.getImages.enabled ? 'All Media' : 'OFF'}
-            </span>
-            <span
-              style={{
-                fontSize: '0.6875rem',
-                padding: '2px 7px',
-                borderRadius: '4px',
-                backgroundColor: 'rgba(139, 92, 246, 0.12)',
-                color: '#C4B5FD',
-                border: '1px solid rgba(139, 92, 246, 0.3)',
-              }}
-            >
-              {config.aiBoxes.length} AI Nodes
-            </span>
-          </div>
-        </div>
-
-        {/* Action Controls */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => handleAddAIBox()}
-            leftIcon={<FiPlus style={{ color: '#10B981' }} />}
-            style={{ height: '32px', fontSize: '0.75rem', borderColor: 'rgba(16, 185, 129, 0.4)', color: '#10B981' }}
-          >
-            + Add Dynamic AI Node
-          </Button>
-
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleRunSimulation}
-            disabled={isSimulating}
-            leftIcon={
-              isSimulating ? (
-                <FiRefreshCw className="spin" style={{ animation: 'spin 1s linear infinite' }} />
-              ) : (
-                <FiPlay />
-              )
-            }
-            style={{
-              height: '32px',
-              fontSize: '0.75rem',
-              backgroundColor: isSimulating ? 'rgba(24, 119, 242, 0.1)' : undefined,
-            }}
-          >
-            {isSimulating ? 'Simulating...' : 'Test Flow'}
-          </Button>
-
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleResetLayout}
-            leftIcon={<FiCrosshair />}
-            style={{ height: '32px', fontSize: '0.75rem' }}
-          >
-            Reset Layout
-          </Button>
-
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={handleSaveConfig}
-            leftIcon={saveSuccess ? <FiCheck /> : <FiCheckCircle />}
-            style={{
-              height: '32px',
-              fontSize: '0.75rem',
-              backgroundColor: saveSuccess ? 'var(--status-success)' : undefined,
-            }}
-          >
-            {saveSuccess ? 'Saved!' : 'Save Workflow'}
-          </Button>
-
-          {onSwitchToLiveImport && (
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={onSwitchToLiveImport}
-              leftIcon={<FiArrowRight />}
-              style={{
-                height: '32px',
-                fontSize: '0.75rem',
-                background: 'linear-gradient(135deg, #1877F2 0%, #3B82F6 100%)',
-              }}
-            >
-              Use in Live Import
-            </Button>
-          )}
-        </div>
-      </div>
-
-      {/* Simulation Banner Notification */}
-      {simulationMessage && (
-        <div
-          style={{
-            backgroundColor: isSimulating ? 'rgba(24, 119, 242, 0.15)' : 'rgba(16, 185, 129, 0.15)',
-            border: `1px solid ${isSimulating ? '#1877F2' : '#10B981'}`,
-            borderRadius: '0.5rem',
-            padding: '0.625rem 1rem',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.625rem',
-            fontSize: '0.8125rem',
-            color: '#FFFFFF',
-            boxShadow: 'var(--shadow-sm)',
-            animation: 'fadeIn 0.2s ease',
-          }}
-        >
-          {isSimulating ? (
-            <FiRefreshCw className="spin" style={{ animation: 'spin 1s linear infinite', color: '#60A5FA' }} />
-          ) : (
-            <FiCheckCircle style={{ color: '#10B981' }} />
-          )}
-          <span style={{ fontWeight: 500 }}>{simulationMessage}</span>
-        </div>
-      )}
 
       {/* Interactive Infinite Canvas */}
       <div
@@ -782,18 +1199,20 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
         style={{
           position: 'relative',
           width: '100%',
-          height: isFullscreen ? '94vh' : '640px',
-          backgroundColor: '#0D1117',
-          backgroundImage: `
-            radial-gradient(circle, rgba(255, 255, 255, 0.08) 1.2px, transparent 1.2px)
-          `,
+          height: '100%',
+          flex: 1,
+          minHeight: 0,
+          backgroundColor: isDark ? '#0D1117' : '#F8FAFC',
+          backgroundImage: isDark
+            ? 'radial-gradient(circle, rgba(255, 255, 255, 0.08) 1.2px, transparent 1.2px)'
+            : 'radial-gradient(circle, rgba(0, 0, 0, 0.12) 1.2px, transparent 1.2px)',
           backgroundSize: '24px 24px',
-          borderRadius: '0.75rem',
-          border: '1px solid var(--border-color)',
+          border: 'none',
+          borderRadius: 0,
           overflow: 'hidden',
           cursor: isPanning ? 'grabbing' : 'default',
           userSelect: 'none',
-          boxShadow: 'inset 0 0 40px rgba(0, 0, 0, 0.8)',
+          boxShadow: isDark ? 'inset 0 0 40px rgba(0, 0, 0, 0.8)' : 'inset 0 0 20px rgba(0, 0, 0, 0.03)',
         }}
       >
         {/* Floating Zoom Controls Bar */}
@@ -807,12 +1226,12 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
             display: 'flex',
             alignItems: 'center',
             gap: '0.375rem',
-            backgroundColor: 'rgba(22, 27, 34, 0.85)',
+            backgroundColor: isDark ? 'rgba(22, 27, 34, 0.85)' : 'rgba(255, 255, 255, 0.92)',
             backdropFilter: 'blur(8px)',
             padding: '4px 6px',
             borderRadius: '0.5rem',
             border: '1px solid var(--border-color)',
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.4)',
+            boxShadow: isDark ? '0 4px 12px rgba(0, 0, 0, 0.4)' : '0 4px 12px rgba(0, 0, 0, 0.08)',
           }}
         >
           <button
@@ -912,166 +1331,181 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
               overflow: 'visible',
             }}
           >
-            <defs>
-              <linearGradient id="flow-content-active" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stopColor="#1877F2" />
-                <stop offset="100%" stopColor="#3B82F6" />
-              </linearGradient>
-
-              <linearGradient id="flow-images-active" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stopColor="#1877F2" />
-                <stop offset="100%" stopColor="#10B981" />
-              </linearGradient>
-
-              <linearGradient id="flow-ai-active" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stopColor="#3B82F6" />
-                <stop offset="100%" stopColor="#8B5CF6" />
-              </linearGradient>
-            </defs>
-
             {/* 1. Trigger -> Get Content Line */}
             {(() => {
-              const path = createBezierPath(trigOutContent, contentIn);
+              const path = createBezierPath(triggerOut, contentIn);
               const isFlowing = config.getContent.enabled;
               return (
-                <g key="wire-trigger-content">
-                  <path
-                    d={path}
-                    fill="none"
-                    stroke={isFlowing ? 'rgba(59, 130, 246, 0.25)' : 'rgba(255, 255, 255, 0.08)'}
-                    strokeWidth="4"
-                    strokeLinecap="round"
-                  />
-                  <path
-                    d={path}
-                    fill="none"
-                    stroke={isFlowing ? 'url(#flow-content-active)' : 'rgba(255, 255, 255, 0.2)'}
-                    strokeWidth="2.5"
-                    strokeDasharray={isFlowing ? '6, 6' : '4, 4'}
-                    strokeLinecap="round"
-                    style={{
-                      animation: isFlowing ? 'n8nFlow 1.2s linear infinite' : 'none',
-                    }}
-                  />
-                </g>
+                <path
+                  key="wire-trigger-content"
+                  d={path}
+                  fill="none"
+                  stroke={isFlowing ? '#388BFD' : (isDark ? '#30363D' : '#CBD5E1')}
+                  strokeWidth="2"
+                  strokeDasharray={isFlowing ? '8, 8' : 'none'}
+                  strokeLinecap="round"
+                  style={{
+                    animation: isFlowing ? 'n8nFlow 1.2s linear infinite' : 'none',
+                  }}
+                />
               );
             })()}
 
             {/* 2. Trigger -> Get Images Line */}
             {(() => {
-              const path = createBezierPath(trigOutImages, imagesIn);
+              const path = createBezierPath(triggerOut, imagesIn);
               const isFlowing = config.getImages.enabled;
               return (
-                <g key="wire-trigger-images">
-                  <path
-                    d={path}
-                    fill="none"
-                    stroke={isFlowing ? 'rgba(16, 185, 129, 0.25)' : 'rgba(255, 255, 255, 0.08)'}
-                    strokeWidth="4"
-                    strokeLinecap="round"
-                  />
-                  <path
-                    d={path}
-                    fill="none"
-                    stroke={isFlowing ? 'url(#flow-images-active)' : 'rgba(255, 255, 255, 0.2)'}
-                    strokeWidth="2.5"
-                    strokeDasharray={isFlowing ? '6, 6' : '4, 4'}
-                    strokeLinecap="round"
-                    style={{
-                      animation: isFlowing ? 'n8nFlow 1.2s linear infinite' : 'none',
-                    }}
-                  />
-                </g>
+                <path
+                  key="wire-trigger-images"
+                  d={path}
+                  fill="none"
+                  stroke={isFlowing ? '#2EA043' : (isDark ? '#30363D' : '#CBD5E1')}
+                  strokeWidth="2"
+                  strokeDasharray={isFlowing ? '8, 8' : 'none'}
+                  strokeLinecap="round"
+                  style={{
+                    animation: isFlowing ? 'n8nFlow 1.2s linear infinite' : 'none',
+                  }}
+                />
               );
             })()}
 
             {/* 3. Get Images -> Destination Line */}
             {(() => {
-              const path = createBezierPath(imagesOut, destInBottom);
+              const path = createBaseChannelPath(imagesOut, destIn);
               const isFlowing = config.getImages.enabled;
               return (
-                <g key="wire-images-dest">
+                <path
+                  key="wire-images-dest"
+                  d={path}
+                  fill="none"
+                  stroke={isFlowing ? '#2EA043' : (isDark ? '#30363D' : '#CBD5E1')}
+                  strokeWidth="2"
+                  strokeDasharray={isFlowing ? '8, 8' : 'none'}
+                  strokeLinecap="round"
+                  style={{
+                    animation: isFlowing ? 'n8nFlow 1.2s linear infinite' : 'none',
+                  }}
+                />
+              );
+            })()}
+
+            {/* Dynamic AI / Workflow Connections from config.connections */}
+            {(config.connections || []).map((conn) => {
+              const fromPos = getNodeSocketPos(conn.fromNodeId, 'output');
+              const toPos = getNodeSocketPos(conn.toNodeId, 'input');
+              const path =
+                conn.fromNodeId === 'get-images' && conn.toNodeId === 'destination'
+                  ? createBaseChannelPath(fromPos, toPos)
+                  : createBezierPath(fromPos, toPos);
+
+              const fromEnabled =
+                conn.fromNodeId === 'get-content'
+                  ? config.getContent.enabled
+                  : config.aiBoxes.find((b) => b.id === conn.fromNodeId)?.enabled ?? true;
+              const toEnabled =
+                conn.toNodeId === 'destination'
+                  ? true
+                  : config.aiBoxes.find((b) => b.id === conn.toNodeId)?.enabled ?? true;
+              const isFlowing = fromEnabled && toEnabled;
+              const isHovered = hoveredWireId === conn.id;
+
+              const midX = (fromPos.x + toPos.x) / 2;
+              const midY = (fromPos.y + toPos.y) / 2;
+
+              return (
+                <g
+                  key={conn.id}
+                  className="workflow-wire-group"
+                  onMouseEnter={() => setHoveredWireId(conn.id)}
+                  onMouseLeave={() => setHoveredWireId(null)}
+                  style={{ pointerEvents: 'auto', cursor: 'pointer' }}
+                >
+                  {/* Invisible thicker hit-path for hovering / clicking to disconnect */}
                   <path
                     d={path}
                     fill="none"
-                    stroke={isFlowing ? 'rgba(16, 185, 129, 0.25)' : 'rgba(255, 255, 255, 0.08)'}
-                    strokeWidth="4"
-                    strokeLinecap="round"
+                    stroke="transparent"
+                    strokeWidth="16"
+                    onClick={(e) => handleRemoveConnection(conn.id, e)}
                   />
+                  {/* Visual dashed flowing wire */}
                   <path
                     d={path}
                     fill="none"
-                    stroke={isFlowing ? '#10B981' : 'rgba(255, 255, 255, 0.2)'}
-                    strokeWidth="2.5"
-                    strokeDasharray={isFlowing ? '6, 6' : '4, 4'}
+                    stroke={isHovered ? '#F85149' : isFlowing ? '#A371F7' : (isDark ? '#30363D' : '#CBD5E1')}
+                    strokeWidth={isHovered ? '2.5' : '2'}
+                    strokeDasharray={isFlowing ? '8, 8' : 'none'}
                     strokeLinecap="round"
                     style={{
                       animation: isFlowing ? 'n8nFlow 1.2s linear infinite' : 'none',
+                      transition: 'stroke 0.15s ease',
                     }}
+                  />
+                  {/* Disconnect indicator on hover */}
+                  {isHovered && (
+                    <g
+                      transform={`translate(${midX}, ${midY})`}
+                      onClick={(e) => handleRemoveConnection(conn.id, e)}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <circle r="10" fill="#F85149" stroke={isDark ? "#161B22" : "#FFFFFF"} strokeWidth="2" />
+                      <line x1="-3.5" y1="-3.5" x2="3.5" y2="3.5" stroke="#FFFFFF" strokeWidth="1.8" strokeLinecap="round" />
+                      <line x1="3.5" y1="-3.5" x2="-3.5" y2="3.5" stroke="#FFFFFF" strokeWidth="1.8" strokeLinecap="round" />
+                    </g>
+                  )}
+                </g>
+              );
+            })}
+
+            {/* Active Live Wire when user is dragging a string */}
+            {dragWire && (() => {
+              const isFromOutput = dragWire.fromType === 'output';
+              const start = isFromOutput
+                ? { x: dragWire.startX, y: dragWire.startY }
+                : { x: dragWire.currentX, y: dragWire.currentY };
+              const end = isFromOutput
+                ? { x: dragWire.currentX, y: dragWire.currentY }
+                : { x: dragWire.startX, y: dragWire.startY };
+              const path =
+                dragWire.fromNodeId === 'get-images'
+                  ? createBaseChannelPath(start, end)
+                  : createBezierPath(start, end);
+
+              let wireColor = '#A371F7';
+              if (dragWire.fromNodeId === 'get-content') wireColor = '#388BFD';
+              else if (dragWire.fromNodeId === 'get-images') wireColor = '#2EA043';
+              else if (dragWire.fromNodeId.startsWith('ai-box-')) {
+                const box = config.aiBoxes.find((b) => b.id === dragWire.fromNodeId);
+                wireColor = box?.provider === 'google_ai' ? '#388BFD' : '#2EA043';
+              }
+
+              return (
+                <g style={{ pointerEvents: 'none' }}>
+                  <path
+                    d={path}
+                    fill="none"
+                    stroke={wireColor}
+                    strokeWidth="2.5"
+                    strokeDasharray="8, 8"
+                    strokeLinecap="round"
+                    style={{
+                      animation: 'n8nFlow 1.2s linear infinite',
+                      filter: `drop-shadow(0 0 6px ${wireColor}99)`,
+                    }}
+                  />
+                  <circle
+                    cx={dragWire.currentX}
+                    cy={dragWire.currentY}
+                    r="6"
+                    fill={wireColor}
+                    stroke="#FFFFFF"
+                    strokeWidth="2"
                   />
                 </g>
               );
             })()}
-
-            {/* 4. Get Content -> Each AI Box Lines */}
-            {config.aiBoxes.map((aiBox) => {
-              const aiIn = { x: aiBox.x, y: aiBox.y + HALF_CIRCLE };
-              const path = createBezierPath(contentOut, aiIn);
-              const isFlowing = config.getContent.enabled && aiBox.enabled;
-
-              return (
-                <g key={`wire-content-ai-${aiBox.id}`}>
-                  <path
-                    d={path}
-                    fill="none"
-                    stroke={isFlowing ? 'rgba(139, 92, 246, 0.25)' : 'rgba(255, 255, 255, 0.08)'}
-                    strokeWidth="4"
-                    strokeLinecap="round"
-                  />
-                  <path
-                    d={path}
-                    fill="none"
-                    stroke={isFlowing ? 'url(#flow-ai-active)' : 'rgba(255, 255, 255, 0.2)'}
-                    strokeWidth="2.5"
-                    strokeDasharray={isFlowing ? '6, 6' : '4, 4'}
-                    strokeLinecap="round"
-                    style={{
-                      animation: isFlowing ? 'n8nFlow 1.2s linear infinite' : 'none',
-                    }}
-                  />
-                </g>
-              );
-            })}
-
-            {/* 5. Each AI Box -> Destination Lines */}
-            {config.aiBoxes.map((aiBox) => {
-              const aiOut = { x: aiBox.x + CIRCLE_SIZE, y: aiBox.y + HALF_CIRCLE };
-              const path = createBezierPath(aiOut, destInTop);
-              const isFlowing = aiBox.enabled;
-
-              return (
-                <g key={`wire-ai-dest-${aiBox.id}`}>
-                  <path
-                    d={path}
-                    fill="none"
-                    stroke={isFlowing ? 'rgba(139, 92, 246, 0.25)' : 'rgba(255, 255, 255, 0.08)'}
-                    strokeWidth="4"
-                    strokeLinecap="round"
-                  />
-                  <path
-                    d={path}
-                    fill="none"
-                    stroke={isFlowing ? '#A78BFA' : 'rgba(255, 255, 255, 0.2)'}
-                    strokeWidth="2.5"
-                    strokeDasharray={isFlowing ? '6, 6' : '4, 4'}
-                    strokeLinecap="round"
-                    style={{
-                      animation: isFlowing ? 'n8nFlow 1.2s linear infinite' : 'none',
-                    }}
-                  />
-                </g>
-              );
-            })}
           </svg>
 
           {/* ======================================================== */}
@@ -1081,60 +1515,32 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
             className="canvas-node"
             onMouseDown={(e) => startDragNode('trigger', e)}
             onClick={(e) => handleNodeClick({ type: 'trigger' }, e)}
-            title="Click to configure Facebook Importer Trigger"
             style={{
               position: 'absolute',
               left: `${config.trigger.x}px`,
               top: `${config.trigger.y}px`,
               width: `${CIRCLE_SIZE}px`,
               height: `${CIRCLE_SIZE}px`,
-              borderRadius: '50%',
-              backgroundColor: '#161B22',
-              backgroundImage: 'radial-gradient(circle at 35% 35%, rgba(24, 119, 242, 0.4) 0%, #161B22 100%)',
-              border: simulationStep === 0 ? '2.5px solid #1877F2' : '2px solid rgba(24, 119, 242, 0.7)',
-              boxShadow: simulationStep === 0
-                ? '0 0 25px rgba(24, 119, 242, 0.85)'
-                : '0 0 16px rgba(24, 119, 242, 0.35), 0 8px 24px rgba(0, 0, 0, 0.6)',
               zIndex: 15,
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+              transition: 'filter 0.18s ease',
             }}
-            onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.08)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
+            onMouseEnter={(e) => { e.currentTarget.style.filter = 'drop-shadow(0 0 10px rgba(56, 139, 253, 0.5))'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.filter = 'none'; }}
           >
-            <FaFacebook style={{ fontSize: '30px', color: '#1877F2', filter: 'drop-shadow(0 2px 6px rgba(24, 119, 242, 0.5))' }} />
-
-            {/* Output Socket: Content */}
-            <div
-              style={{
-                position: 'absolute',
-                right: '-6px',
-                top: `${HALF_CIRCLE - 14}px`,
-                width: '12px',
-                height: '12px',
-                borderRadius: '50%',
-                backgroundColor: '#3B82F6',
-                border: '2px solid #161B22',
-                boxShadow: '0 0 8px #3B82F6',
-              }}
+            <MergedNodeShape
+              sockets="right"
+              strokeColor="#388BFD"
+              socketDotColor="#388BFD"
+              isConnectedOutput={true}
+              highlightOutput={false}
+              onSocketMouseDown={(type, e) => handleSocketMouseDown('trigger', type, e)}
+              onSocketMouseUp={(type, e) => handleSocketMouseUp('trigger', type, e)}
             />
-            {/* Output Socket: Images */}
-            <div
-              style={{
-                position: 'absolute',
-                right: '-6px',
-                top: `${HALF_CIRCLE + 2}px`,
-                width: '12px',
-                height: '12px',
-                borderRadius: '50%',
-                backgroundColor: '#10B981',
-                border: '2px solid #161B22',
-                boxShadow: '0 0 8px #10B981',
-              }}
-            />
+            <FaFacebook style={{ fontSize: '30px', color: '#1877F2', position: 'relative', zIndex: 2 }} />
 
             {/* Label below circle */}
             <div
@@ -1151,11 +1557,11 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
                 pointerEvents: 'none',
               }}
             >
-              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#fff', textShadow: '0 1px 4px rgba(0,0,0,0.9)' }}>
+              <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                 Facebook Post
               </span>
-              <span style={{ fontSize: '0.625rem', color: '#60A5FA', fontWeight: 500, backgroundColor: 'rgba(0,0,0,0.7)', padding: '1px 6px', borderRadius: '4px', border: '1px solid rgba(59, 130, 246, 0.3)' }}>
-                Trigger • Auto
+              <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', fontWeight: 400 }}>
+                Trigger · Auto
               </span>
             </div>
           </div>
@@ -1167,69 +1573,86 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
             className="canvas-node"
             onMouseDown={(e) => startDragNode('get-content', e)}
             onClick={(e) => handleNodeClick({ type: 'get-content' }, e)}
-            title="Click to configure Get Content"
             style={{
               position: 'absolute',
               left: `${config.getContent.x}px`,
               top: `${config.getContent.y}px`,
               width: `${CIRCLE_SIZE}px`,
               height: `${CIRCLE_SIZE}px`,
-              borderRadius: '50%',
-              backgroundColor: '#161B22',
-              backgroundImage: config.getContent.enabled
-                ? 'radial-gradient(circle at 35% 35%, rgba(59, 130, 246, 0.4) 0%, #161B22 100%)'
-                : 'none',
-              border: simulationStep === 1
-                ? '2.5px solid #3B82F6'
-                : config.getContent.enabled
-                ? '2px solid rgba(59, 130, 246, 0.7)'
-                : '2px dashed rgba(255, 255, 255, 0.2)',
-              opacity: config.getContent.enabled ? 1 : 0.5,
-              boxShadow: simulationStep === 1
-                ? '0 0 25px rgba(59, 130, 246, 0.85)'
-                : config.getContent.enabled
-                ? '0 0 16px rgba(59, 130, 246, 0.35), 0 8px 24px rgba(0, 0, 0, 0.6)'
-                : 'none',
+              opacity: config.getContent.enabled ? 1 : 0.6,
               zIndex: 15,
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+              transition: 'filter 0.18s ease',
             }}
-            onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.08)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
+            onMouseEnter={(e) => { e.currentTarget.style.filter = 'drop-shadow(0 0 10px rgba(56, 139, 253, 0.5))'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.filter = 'none'; }}
           >
-            <FiFileText style={{ fontSize: '28px', color: config.getContent.enabled ? '#3B82F6' : '#9CA3AF' }} />
+            <MergedNodeShape
+              sockets="both"
+              strokeColor={config.getContent.enabled ? '#388BFD' : '#30363D'}
+              socketDotColor={config.getContent.enabled ? '#388BFD' : '#484F58'}
+              isConnectedInput={true}
+              isConnectedOutput={false}
+              highlightInput={false}
+              highlightOutput={dragWire?.fromType === 'input' && isValidConnection('get-content', dragWire.fromNodeId)}
+              onSocketMouseDown={(type, e) => handleSocketMouseDown('get-content', type, e)}
+              onSocketMouseUp={(type, e) => handleSocketMouseUp('get-content', type, e)}
+            />
+            <FiFileText
+              style={{
+                fontSize: '28px',
+                color: config.getContent.enabled ? '#58A6FF' : '#8B949E',
+                position: 'relative',
+                zIndex: 2,
+              }}
+            />
 
-            {/* Input Socket (Left) */}
-            <div
+            {/* Plus Icon Button to add AI node & connect immediately before next step */}
+            <button
+              type="button"
+              className="canvas-control add-ai-branch-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleAddAIBoxConnectedFromContent();
+              }}
               style={{
                 position: 'absolute',
-                left: '-6px',
-                top: `${HALF_CIRCLE - 6}px`,
-                width: '12px',
-                height: '12px',
+                right: '-36px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                width: '24px',
+                height: '24px',
                 borderRadius: '50%',
-                backgroundColor: config.getContent.enabled ? '#3B82F6' : '#6B7280',
-                border: '2px solid #161B22',
-                boxShadow: config.getContent.enabled ? '0 0 8px #3B82F6' : 'none',
+                backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                border: '1.5px solid #388BFD',
+                color: '#388BFD',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                zIndex: 35,
+                padding: 0,
+                boxShadow: isDark ? '0 2px 8px rgba(0, 0, 0, 0.45)' : '0 2px 8px rgba(0, 0, 0, 0.1)',
+                transition: 'background-color 0.18s ease, color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease',
               }}
-            />
-            {/* Output Socket (Right) */}
-            <div
-              style={{
-                position: 'absolute',
-                right: '-6px',
-                top: `${HALF_CIRCLE - 6}px`,
-                width: '12px',
-                height: '12px',
-                borderRadius: '50%',
-                backgroundColor: config.getContent.enabled ? '#3B82F6' : '#6B7280',
-                border: '2px solid #161B22',
-                boxShadow: config.getContent.enabled ? '0 0 8px #3B82F6' : 'none',
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = '#1F6FEB';
+                e.currentTarget.style.color = '#FFFFFF';
+                e.currentTarget.style.borderColor = '#79C0FF';
+                e.currentTarget.style.boxShadow = '0 0 12px rgba(56, 139, 253, 0.65)';
               }}
-            />
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = isDark ? '#161B22' : '#FFFFFF';
+                e.currentTarget.style.color = '#388BFD';
+                e.currentTarget.style.borderColor = '#388BFD';
+                e.currentTarget.style.boxShadow = isDark ? '0 2px 8px rgba(0, 0, 0, 0.45)' : '0 2px 8px rgba(0, 0, 0, 0.1)';
+              }}
+            >
+              <FiPlus style={{ fontSize: '13px', strokeWidth: '2.5' }} />
+            </button>
 
             {/* Label below circle */}
             <div
@@ -1246,21 +1669,11 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
                 pointerEvents: 'none',
               }}
             >
-              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#fff', textShadow: '0 1px 4px rgba(0,0,0,0.9)' }}>
+              <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                 Get Content
               </span>
-              <span
-                style={{
-                  fontSize: '0.625rem',
-                  color: config.getContent.enabled ? '#60A5FA' : '#9CA3AF',
-                  fontWeight: 500,
-                  backgroundColor: 'rgba(0,0,0,0.7)',
-                  padding: '1px 6px',
-                  borderRadius: '4px',
-                  border: `1px solid ${config.getContent.enabled ? 'rgba(59, 130, 246, 0.3)' : 'rgba(255,255,255,0.1)'}`,
-                }}
-              >
-                {config.getContent.enabled ? 'Full Content' : 'OFF'}
+              <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', fontWeight: 400 }}>
+                {config.getContent.enabled ? 'Full Content' : 'Disabled'}
               </span>
             </div>
           </div>
@@ -1272,67 +1685,40 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
             className="canvas-node"
             onMouseDown={(e) => startDragNode('get-images', e)}
             onClick={(e) => handleNodeClick({ type: 'get-images' }, e)}
-            title="Click to configure Get Images"
             style={{
               position: 'absolute',
               left: `${config.getImages.x}px`,
               top: `${config.getImages.y}px`,
               width: `${CIRCLE_SIZE}px`,
               height: `${CIRCLE_SIZE}px`,
-              borderRadius: '50%',
-              backgroundColor: '#161B22',
-              backgroundImage: config.getImages.enabled
-                ? 'radial-gradient(circle at 35% 35%, rgba(16, 185, 129, 0.4) 0%, #161B22 100%)'
-                : 'none',
-              border: simulationStep === 1
-                ? '2.5px solid #10B981'
-                : config.getImages.enabled
-                ? '2px solid rgba(16, 185, 129, 0.7)'
-                : '2px dashed rgba(255, 255, 255, 0.2)',
-              opacity: config.getImages.enabled ? 1 : 0.5,
-              boxShadow: simulationStep === 1
-                ? '0 0 25px rgba(16, 185, 129, 0.85)'
-                : config.getImages.enabled
-                ? '0 0 16px rgba(16, 185, 129, 0.35), 0 8px 24px rgba(0, 0, 0, 0.6)'
-                : 'none',
+              opacity: config.getImages.enabled ? 1 : 0.6,
               zIndex: 15,
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+              transition: 'filter 0.18s ease',
             }}
-            onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.08)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
+            onMouseEnter={(e) => { e.currentTarget.style.filter = 'drop-shadow(0 0 10px rgba(46, 160, 67, 0.5))'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.filter = 'none'; }}
           >
-            <FiImage style={{ fontSize: '28px', color: config.getImages.enabled ? '#10B981' : '#9CA3AF' }} />
-
-            {/* Input Socket (Left) */}
-            <div
-              style={{
-                position: 'absolute',
-                left: '-6px',
-                top: `${HALF_CIRCLE - 6}px`,
-                width: '12px',
-                height: '12px',
-                borderRadius: '50%',
-                backgroundColor: config.getImages.enabled ? '#10B981' : '#6B7280',
-                border: '2px solid #161B22',
-                boxShadow: config.getImages.enabled ? '0 0 8px #10B981' : 'none',
-              }}
+            <MergedNodeShape
+              sockets="both"
+              strokeColor={config.getImages.enabled ? '#2EA043' : '#30363D'}
+              socketDotColor={config.getImages.enabled ? '#2EA043' : '#484F58'}
+              isConnectedInput={true}
+              isConnectedOutput={true}
+              highlightInput={false}
+              highlightOutput={false}
+              onSocketMouseDown={(type, e) => handleSocketMouseDown('get-images', type, e)}
+              onSocketMouseUp={(type, e) => handleSocketMouseUp('get-images', type, e)}
             />
-            {/* Output Socket (Right) */}
-            <div
+            <FiImage
               style={{
-                position: 'absolute',
-                right: '-6px',
-                top: `${HALF_CIRCLE - 6}px`,
-                width: '12px',
-                height: '12px',
-                borderRadius: '50%',
-                backgroundColor: config.getImages.enabled ? '#10B981' : '#6B7280',
-                border: '2px solid #161B22',
-                boxShadow: config.getImages.enabled ? '0 0 8px #10B981' : 'none',
+                fontSize: '28px',
+                color: config.getImages.enabled ? '#3FB950' : '#8B949E',
+                position: 'relative',
+                zIndex: 2,
               }}
             />
 
@@ -1351,21 +1737,11 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
                 pointerEvents: 'none',
               }}
             >
-              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#fff', textShadow: '0 1px 4px rgba(0,0,0,0.9)' }}>
+              <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                 Get Images
               </span>
-              <span
-                style={{
-                  fontSize: '0.625rem',
-                  color: config.getImages.enabled ? '#34D399' : '#9CA3AF',
-                  fontWeight: 500,
-                  backgroundColor: 'rgba(0,0,0,0.7)',
-                  padding: '1px 6px',
-                  borderRadius: '4px',
-                  border: `1px solid ${config.getImages.enabled ? 'rgba(16, 185, 129, 0.3)' : 'rgba(255,255,255,0.1)'}`,
-                }}
-              >
-                {config.getImages.enabled ? 'All Media' : 'OFF'}
+              <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', fontWeight: 400 }}>
+                {config.getImages.enabled ? 'All Media' : 'Disabled'}
               </span>
             </div>
           </div>
@@ -1375,9 +1751,12 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
           {/* ======================================================== */}
           {config.aiBoxes.map((box) => {
             const isSelected = selectedBoxId === box.id;
-            const isCurrentSimulating = simulationStep === 2 && box.enabled;
             const isGoogle = box.provider === 'google_ai';
-            const themeColor = isGoogle ? '#60A5FA' : '#10B981';
+            const themeColor = isGoogle ? '#388BFD' : '#2EA043';
+            const strokeColor = isSelected ? '#A371F7' : box.enabled ? themeColor : '#30363D';
+            const strokeDasharray = !isSelected && !box.enabled ? '4, 4' : 'none';
+            const isBoxInputConnected = (config.connections || []).some((c) => c.toNodeId === box.id);
+            const isBoxOutputConnected = (config.connections || []).some((c) => c.fromNodeId === box.id);
 
             return (
               <div
@@ -1385,77 +1764,56 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
                 className="canvas-node"
                 onMouseDown={(e) => startDragNode(box.id, e)}
                 onClick={(e) => handleNodeClick({ type: 'ai-box', boxId: box.id }, e)}
-                title={`Click to ${allowEditPrompt ? 'edit' : 'view'} ${box.title}`}
                 style={{
                   position: 'absolute',
                   left: `${box.x}px`,
                   top: `${box.y}px`,
                   width: `${CIRCLE_SIZE}px`,
                   height: `${CIRCLE_SIZE}px`,
-                  borderRadius: '50%',
-                  backgroundColor: '#161B22',
-                  backgroundImage: box.enabled
-                    ? `radial-gradient(circle at 35% 35%, ${isGoogle ? 'rgba(59, 130, 246, 0.4)' : 'rgba(16, 185, 129, 0.4)'} 0%, #161B22 100%)`
-                    : 'none',
-                  border: isCurrentSimulating
-                    ? '2.5px solid #8B5CF6'
-                    : isSelected
-                    ? '2.5px solid #A78BFA'
-                    : box.enabled
-                    ? `2px solid ${themeColor}`
-                    : '2px dashed rgba(255, 255, 255, 0.2)',
-                  opacity: box.enabled ? 1 : 0.5,
-                  boxShadow: isCurrentSimulating
-                    ? '0 0 25px rgba(139, 92, 246, 0.85)'
-                    : box.enabled
-                    ? `0 0 16px ${isGoogle ? 'rgba(59, 130, 246, 0.35)' : 'rgba(16, 185, 129, 0.35)'}, 0 8px 24px rgba(0, 0, 0, 0.6)`
-                    : 'none',
+                  opacity: box.enabled ? 1 : 0.6,
                   zIndex: isSelected ? 20 : 15,
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+                  transition: 'filter 0.18s ease',
                 }}
-                onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.08)'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.filter = isGoogle
+                    ? 'drop-shadow(0 0 10px rgba(56, 139, 253, 0.55))'
+                    : 'drop-shadow(0 0 10px rgba(46, 160, 67, 0.55))';
+                }}
+                onMouseLeave={(e) => { e.currentTarget.style.filter = 'none'; }}
               >
+                <MergedNodeShape
+                  sockets="both"
+                  strokeColor={strokeColor}
+                  strokeDasharray={strokeDasharray}
+                  socketDotColor={strokeColor}
+                  isConnectedInput={isBoxInputConnected}
+                  isConnectedOutput={isBoxOutputConnected}
+                  highlightInput={dragWire?.fromType === 'output' && isValidConnection(dragWire.fromNodeId, box.id)}
+                  highlightOutput={dragWire?.fromType === 'input' && isValidConnection(box.id, dragWire.fromNodeId)}
+                  onSocketMouseDown={(type, e) => handleSocketMouseDown(box.id, type, e)}
+                  onSocketMouseUp={(type, e) => handleSocketMouseUp(box.id, type, e)}
+                />
+
                 {/* Center Icon */}
-                {isGoogle ? (
-                  <SiGooglegemini style={{ fontSize: '28px', color: box.enabled ? '#60A5FA' : '#9CA3AF' }} />
-                ) : (
-                  <OpenAIIcon size={28} color={box.enabled ? '#10B981' : '#9CA3AF'} />
-                )}
-
-                {/* Input Socket (Left) */}
                 <div
                   style={{
-                    position: 'absolute',
-                    left: '-6px',
-                    top: `${HALF_CIRCLE - 6}px`,
-                    width: '12px',
-                    height: '12px',
-                    borderRadius: '50%',
-                    backgroundColor: box.enabled ? '#8B5CF6' : '#6B7280',
-                    border: '2px solid #161B22',
-                    boxShadow: box.enabled ? '0 0 8px #8B5CF6' : 'none',
+                    position: 'relative',
+                    zIndex: 2,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
                   }}
-                />
-
-                {/* Output Socket (Right) */}
-                <div
-                  style={{
-                    position: 'absolute',
-                    right: '-6px',
-                    top: `${HALF_CIRCLE - 6}px`,
-                    width: '12px',
-                    height: '12px',
-                    borderRadius: '50%',
-                    backgroundColor: box.enabled ? '#8B5CF6' : '#6B7280',
-                    border: '2px solid #161B22',
-                    boxShadow: box.enabled ? '0 0 8px #8B5CF6' : 'none',
-                  }}
-                />
+                >
+                  {isGoogle ? (
+                    <SiGooglegemini style={{ fontSize: '28px', color: box.enabled ? '#58A6FF' : '#8B949E' }} />
+                  ) : (
+                    <OpenAIIcon size={28} color={box.enabled ? '#3FB950' : '#8B949E'} />
+                  )}
+                </div>
 
                 {/* Label below circle */}
                 <div
@@ -1472,20 +1830,10 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
                     pointerEvents: 'none',
                   }}
                 >
-                  <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#fff', textShadow: '0 1px 4px rgba(0,0,0,0.9)' }}>
+                  <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                     {box.title}
                   </span>
-                  <span
-                    style={{
-                      fontSize: '0.625rem',
-                      color: isGoogle ? '#60A5FA' : '#34D399',
-                      fontWeight: 500,
-                      backgroundColor: 'rgba(0,0,0,0.7)',
-                      padding: '1px 6px',
-                      borderRadius: '4px',
-                      border: `1px solid ${isGoogle ? 'rgba(59, 130, 246, 0.3)' : 'rgba(16, 185, 129, 0.3)'}`,
-                    }}
-                  >
+                  <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', fontWeight: 400 }}>
                     {isGoogle ? 'Gemini' : 'GPT-4o'} · {box.enabled ? 'Active' : 'Off'}
                   </span>
                 </div>
@@ -1500,60 +1848,31 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
             className="canvas-node"
             onMouseDown={(e) => startDragNode('destination', e)}
             onClick={(e) => handleNodeClick({ type: 'destination' }, e)}
-            title="Click to view Property Inbox Destination details"
             style={{
               position: 'absolute',
               left: `${config.destination.x}px`,
               top: `${config.destination.y}px`,
               width: `${CIRCLE_SIZE}px`,
               height: `${CIRCLE_SIZE}px`,
-              borderRadius: '50%',
-              backgroundColor: '#161B22',
-              backgroundImage: 'radial-gradient(circle at 35% 35%, rgba(16, 185, 129, 0.4) 0%, #161B22 100%)',
-              border: simulationStep === 3 ? '2.5px solid #10B981' : '2px solid rgba(16, 185, 129, 0.7)',
-              boxShadow: simulationStep === 3
-                ? '0 0 25px rgba(16, 185, 129, 0.85)'
-                : '0 0 16px rgba(16, 185, 129, 0.35), 0 8px 24px rgba(0, 0, 0, 0.6)',
               zIndex: 15,
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+              transition: 'filter 0.18s ease',
             }}
-            onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.08)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
+            onMouseEnter={(e) => { e.currentTarget.style.filter = 'drop-shadow(0 0 10px rgba(46, 160, 67, 0.5))'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.filter = 'none'; }}
           >
-            <FiCheckCircle style={{ fontSize: '30px', color: '#10B981', filter: 'drop-shadow(0 2px 6px rgba(16, 185, 129, 0.5))' }} />
-
-            {/* Input Socket: AI inputs (Top) */}
-            <div
-              style={{
-                position: 'absolute',
-                left: '-6px',
-                top: `${HALF_CIRCLE - 14}px`,
-                width: '12px',
-                height: '12px',
-                borderRadius: '50%',
-                backgroundColor: '#8B5CF6',
-                border: '2px solid #161B22',
-                boxShadow: '0 0 8px #8B5CF6',
-              }}
+            <MergedNodeShape
+              sockets="left"
+              strokeColor="#2EA043"
+              socketDotColor="#2EA043"
+              highlightInput={dragWire?.fromType === 'output' && isValidConnection(dragWire.fromNodeId, 'destination')}
+              onSocketMouseDown={(type, e) => handleSocketMouseDown('destination', type, e)}
+              onSocketMouseUp={(type, e) => handleSocketMouseUp('destination', type, e)}
             />
-            {/* Input Socket: Images (Bottom) */}
-            <div
-              style={{
-                position: 'absolute',
-                left: '-6px',
-                top: `${HALF_CIRCLE + 2}px`,
-                width: '12px',
-                height: '12px',
-                borderRadius: '50%',
-                backgroundColor: '#10B981',
-                border: '2px solid #161B22',
-                boxShadow: '0 0 8px #10B981',
-              }}
-            />
+            <FiCheckCircle style={{ fontSize: '30px', color: '#2EA043', position: 'relative', zIndex: 2 }} />
 
             {/* Label below circle */}
             <div
@@ -1570,11 +1889,11 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
                 pointerEvents: 'none',
               }}
             >
-              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#fff', textShadow: '0 1px 4px rgba(0,0,0,0.9)' }}>
+              <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                 Property Inbox
               </span>
-              <span style={{ fontSize: '0.625rem', color: '#34D399', fontWeight: 500, backgroundColor: 'rgba(0,0,0,0.7)', padding: '1px 6px', borderRadius: '4px', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
-                Destination • Ready
+              <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', fontWeight: 400 }}>
+                Destination · Ready
               </span>
             </div>
           </div>
@@ -1587,8 +1906,36 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
       {activeModalNode && (
         <Modal
           isOpen={Boolean(activeModalNode)}
-          onClose={() => setActiveModalNode(null)}
-          maxWidth="560px"
+          onClose={handleCloseModal}
+          maxWidth={activeModalNode.type === 'ai-box' ? '1120px' : '560px'}
+          height={activeModalNode.type === 'ai-box' ? '88vh' : undefined}
+          bodyPadding={activeModalNode.type === 'ai-box' ? '0' : undefined}
+          headerExtra={
+            activeModalNode.type === 'ai-box' && currentModalAIBox ? (
+              <button
+                type="button"
+                onClick={() => setIsAISettingsDrawerOpen((prev) => !prev)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.375rem',
+                  padding: '5px 11px',
+                  borderRadius: '6px',
+                  border: `1px solid ${isAISettingsDrawerOpen ? (currentModalAIBox.provider === 'google_ai' ? '#3B82F6' : '#10B981') : 'var(--border-color)'}`,
+                  backgroundColor: isAISettingsDrawerOpen ? (isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)') : 'transparent',
+                  color: isAISettingsDrawerOpen ? 'var(--text-primary)' : 'var(--text-secondary)',
+                  fontSize: '0.75rem',
+                  fontWeight: 400,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+                title="Toggle Prompt & Settings Drawer"
+              >
+                <FiSliders style={{ fontSize: '13px', color: isAISettingsDrawerOpen ? (currentModalAIBox.provider === 'google_ai' ? '#3B82F6' : '#10B981') : 'inherit' }} />
+                <span>Prompt & Settings</span>
+              </button>
+            ) : undefined
+          }
           title={
             activeModalNode.type === 'trigger' ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
@@ -1611,13 +1958,26 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
                 <span>Property Inbox Destination</span>
               </div>
             ) : currentModalAIBox ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
-                {currentModalAIBox.provider === 'openai' ? (
-                  <OpenAIIcon size={20} />
-                ) : (
-                  <SiGooglegemini style={{ fontSize: '20px', color: '#60A5FA' }} />
-                )}
-                <span>Configure AI Process: {currentModalAIBox.title}</span>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', position: 'relative', minHeight: '32px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', minWidth: 0, zIndex: 1 }}>
+                  {currentModalAIBox.provider === 'openai' ? (
+                    <OpenAIIcon size={18} />
+                  ) : (
+                    <SiGooglegemini style={{ fontSize: '18px', color: '#60A5FA' }} />
+                  )}
+                  <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '240px' }}>
+                    {currentModalAIBox.title}
+                  </span>
+                </div>
+
+                {/* Center AI Model Selector */}
+                <div style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', zIndex: 10 }}>
+                  <ModelSelectorMenu
+                    provider={currentModalAIBox.provider}
+                    model={currentModalAIBox.model}
+                    onSelectModel={(provider, model) => handleUpdateAIBox(currentModalAIBox.id, { provider, model })}
+                  />
+                </div>
               </div>
             ) : null
           }
@@ -1826,470 +2186,20 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
             </div>
           )}
 
-          {/* DYNAMIC AI BOX MODAL CONTENT */}
+          {/* DYNAMIC AI BOX MODAL CONTENT (Interactive AI Training & Testing Studio) */}
           {activeModalNode.type === 'ai-box' && currentModalAIBox && (
-            allowEditPrompt ? (
-              /* FULL EDIT MODE — Enabled in Create Workflow */
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                {/* Node Title & Enable Toggle */}
-                <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ display: 'block', fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
-                      Node Title
-                    </label>
-                    <input
-                      type="text"
-                      value={currentModalAIBox.title}
-                      onChange={(e) => handleUpdateAIBox(currentModalAIBox.id, { title: e.target.value })}
-                      style={{
-                        width: '100%',
-                        height: '36px',
-                        backgroundColor: 'var(--bg-main)',
-                        border: '1px solid var(--border-color)',
-                        borderRadius: '0.375rem',
-                        padding: '0 0.625rem',
-                        color: 'var(--text-primary)',
-                        fontSize: '0.8125rem',
-                        outline: 'none',
-                        boxSizing: 'border-box',
-                      }}
-                    />
-                  </div>
-
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
-                      Status
-                    </label>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={currentModalAIBox.enabled}
-                      onClick={() => handleToggleAIBox(currentModalAIBox.id)}
-                      style={{
-                        height: '36px',
-                        padding: '0 0.625rem',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '0.5rem',
-                        borderRadius: '0.375rem',
-                        border: '1px solid var(--border-color)',
-                        backgroundColor: 'var(--bg-main)',
-                        cursor: 'pointer',
-                        transition: 'border-color 0.2s, background-color 0.2s',
-                        userSelect: 'none',
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.borderColor = currentModalAIBox.enabled ? 'rgba(16, 185, 129, 0.6)' : 'rgba(255, 255, 255, 0.3)';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.borderColor = 'var(--border-color)';
-                      }}
-                      title={currentModalAIBox.enabled ? 'Click to disable' : 'Click to enable'}
-                    >
-                      {/* Switch Track */}
-                      <div
-                        style={{
-                          width: '38px',
-                          height: '22px',
-                          borderRadius: '11px',
-                          backgroundColor: currentModalAIBox.enabled ? '#10B981' : 'rgba(255, 255, 255, 0.15)',
-                          border: `1px solid ${currentModalAIBox.enabled ? '#059669' : 'rgba(255, 255, 255, 0.25)'}`,
-                          position: 'relative',
-                          transition: 'background-color 0.2s ease, border-color 0.2s ease',
-                          flexShrink: 0,
-                          boxShadow: currentModalAIBox.enabled ? '0 0 8px rgba(16, 185, 129, 0.4)' : 'none',
-                        }}
-                      >
-                        {/* Switch Knob */}
-                        <div
-                          style={{
-                            position: 'absolute',
-                            top: '2px',
-                            left: currentModalAIBox.enabled ? '18px' : '2px',
-                            width: '16px',
-                            height: '16px',
-                            borderRadius: '50%',
-                            backgroundColor: '#FFFFFF',
-                            transition: 'left 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                            boxShadow: '0 1px 4px rgba(0, 0, 0, 0.35)',
-                          }}
-                        />
-                      </div>
-                      <span
-                        style={{
-                          fontSize: '0.75rem',
-                          fontWeight: 600,
-                          color: currentModalAIBox.enabled ? '#34D399' : 'var(--text-muted)',
-                          minWidth: '52px',
-                          textAlign: 'left',
-                        }}
-                      >
-                        {currentModalAIBox.enabled ? 'Enabled' : 'Disabled'}
-                      </span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Select Prompt Template */}
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
-                      <FiFileText style={{ fontSize: '12px', color: 'var(--accent-primary, #3B82F6)' }} />
-                      Select Prompt Template
-                    </label>
-                    {currentModalAIBox.templateId && currentModalAIBox.templateId !== 'custom' && (
-                      <span style={{ fontSize: '0.625rem', color: '#10B981', fontWeight: 500 }}>
-                        ● Linked to Template
-                      </span>
-                    )}
-                  </div>
-                  <Select
-                    options={[
-                      ...availablePrompts.map((p) => ({
-                        value: String(p.id),
-                        label: p.name,
-                      })),
-                      { value: 'custom', label: '✨ Custom Prompt (Manual Input)' },
-                    ]}
-                    value={
-                      availablePrompts.some((p) => String(p.id) === String(currentModalAIBox.templateId))
-                        ? String(currentModalAIBox.templateId)
-                        : availablePrompts.some((p) => p.name === currentModalAIBox.title)
-                        ? String(availablePrompts.find((p) => p.name === currentModalAIBox.title)!.id)
-                        : currentModalAIBox.templateId === 'custom'
-                        ? 'custom'
-                        : availablePrompts[0]?.id ? String(availablePrompts[0].id) : 'custom'
-                    }
-                    onChange={(val) => {
-                      if (val === 'custom') {
-                        handleUpdateAIBox(currentModalAIBox.id, {
-                          templateId: 'custom',
-                        });
-                        return;
-                      }
-                      const matched = availablePrompts.find((p) => String(p.id) === String(val));
-                      if (matched) {
-                        const isGenericTitle =
-                          !currentModalAIBox.title ||
-                          /^AI Process #\d+/i.test(currentModalAIBox.title) ||
-                          availablePrompts.some(
-                            (p) =>
-                              currentModalAIBox.title === p.name ||
-                              currentModalAIBox.title === `${p.name} - Prompt` ||
-                              currentModalAIBox.title === `${p.name} - Content - Prompt`
-                          );
-
-                        handleUpdateAIBox(currentModalAIBox.id, {
-                          templateId: String(matched.id),
-                          templateText: matched.templateText,
-                          title: isGenericTitle ? matched.name : currentModalAIBox.title,
-                        });
-                      }
-                    }}
-                    height="36px"
-                    placeholder="Select prompt template..."
-                  />
-                </div>
-
-                {/* AI Engine & Provider */}
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
-                    AI Engine & Model
-                  </label>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleUpdateAIBox(currentModalAIBox.id, {
-                          provider: 'google_ai',
-                          model: 'gemini-flash-latest',
-                        })
-                      }
-                      style={{
-                        height: '36px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '0.5rem',
-                        borderRadius: '0.375rem',
-                        border: `1.5px solid ${currentModalAIBox.provider === 'google_ai' ? '#3B82F6' : 'var(--border-color)'}`,
-                        backgroundColor: currentModalAIBox.provider === 'google_ai' ? 'rgba(59, 130, 246, 0.12)' : 'var(--bg-main)',
-                        color: currentModalAIBox.provider === 'google_ai' ? '#60A5FA' : 'var(--text-secondary)',
-                        fontSize: '0.75rem',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      <SiGooglegemini style={{ fontSize: '15px' }} />
-                      <span>Google Gemini</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleUpdateAIBox(currentModalAIBox.id, {
-                          provider: 'openai',
-                          model: 'gpt-4o',
-                        })
-                      }
-                      style={{
-                        height: '36px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '0.5rem',
-                        borderRadius: '0.375rem',
-                        border: `1.5px solid ${currentModalAIBox.provider === 'openai' ? '#10B981' : 'var(--border-color)'}`,
-                        backgroundColor: currentModalAIBox.provider === 'openai' ? 'rgba(16, 185, 129, 0.12)' : 'var(--bg-main)',
-                        color: currentModalAIBox.provider === 'openai' ? '#34D399' : 'var(--text-secondary)',
-                        fontSize: '0.75rem',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      <OpenAIIcon size={15} />
-                      <span>OpenAI ChatGPT</span>
-                    </button>
-                  </div>
-
-                  <Select
-                    options={
-                      currentModalAIBox.provider === 'google_ai'
-                        ? [
-                            { value: 'gemini-flash-latest', label: 'Gemini Flash (Ultra Fast & Responsive)' },
-                            { value: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro (Deep Multimodal Reasoning)' },
-                          ]
-                        : [
-                            { value: 'gpt-4o', label: 'GPT-4o (Omni High Precision)' },
-                            { value: 'gpt-4o-mini', label: 'GPT-4o-mini (Lightweight & Economical)' },
-                          ]
-                    }
-                    value={currentModalAIBox.model}
-                    onChange={(val) => handleUpdateAIBox(currentModalAIBox.id, { model: val })}
-                    height="36px"
-                  />
-                </div>
-
-                {/* Prompt Template Instructions (Editable!) */}
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
-                    Prompt Template Instructions
-                  </label>
-                  <textarea
-                    value={currentModalAIBox.templateText}
-                    onChange={(e) => handleUpdateAIBox(currentModalAIBox.id, { templateText: e.target.value })}
-                    rows={4}
-                    placeholder="Enter prompt instructions for this AI process..."
-                    style={{
-                      width: '100%',
-                      backgroundColor: 'var(--bg-main)',
-                      border: '1px solid var(--border-color)',
-                      borderRadius: '0.375rem',
-                      padding: '0.625rem',
-                      color: 'var(--text-primary)',
-                      fontSize: '0.8125rem',
-                      lineHeight: 1.6,
-                      outline: 'none',
-                      fontFamily: `'SF Mono', 'Fira Code', monospace`,
-                      resize: 'vertical',
-                      boxSizing: 'border-box',
-                    }}
-                  />
-                </div>
-
-                {/* Footer Actions */}
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    paddingTop: '0.75rem',
-                    borderTop: '1px solid var(--border-color)',
-                  }}
-                >
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={(e) => handleDuplicateAIBox(currentModalAIBox, e)}
-                      leftIcon={<FiCopy />}
-                      style={{ height: '32px', fontSize: '0.75rem' }}
-                    >
-                      Duplicate
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={(e) => handleDeleteAIBox(currentModalAIBox.id, e)}
-                      leftIcon={<FiTrash2 style={{ color: '#EF4444' }} />}
-                      style={{ height: '32px', fontSize: '0.75rem', borderColor: 'rgba(239, 68, 68, 0.3)', color: '#EF4444' }}
-                    >
-                      Delete
-                    </Button>
-                  </div>
-
-                  <Button variant="primary" size="sm" onClick={() => setActiveModalNode(null)}>
-                    Done
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              /* READ-ONLY / PROMPT PREVIEW MODE — In Facebook Import */
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                {/* Node info header */}
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.75rem',
-                    padding: '0.75rem',
-                    backgroundColor: 'var(--bg-main)',
-                    borderRadius: '0.5rem',
-                    border: '1px solid var(--border-color)',
-                  }}
-                >
-                  <div
-                    style={{
-                      width: '36px',
-                      height: '36px',
-                      borderRadius: '8px',
-                      backgroundColor: currentModalAIBox.provider === 'google_ai' ? 'rgba(59,130,246,0.15)' : 'rgba(16,185,129,0.15)',
-                      border: `1px solid ${currentModalAIBox.provider === 'google_ai' ? 'rgba(59,130,246,0.35)' : 'rgba(16,185,129,0.35)'}`,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
-                    }}
-                  >
-                    {currentModalAIBox.provider === 'google_ai' ? (
-                      <SiGooglegemini style={{ fontSize: '18px', color: '#60A5FA' }} />
-                    ) : (
-                      <OpenAIIcon size={18} />
-                    )}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '2px' }}>
-                      {currentModalAIBox.title}
-                    </div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                      {currentModalAIBox.provider === 'google_ai' ? 'Google Gemini' : 'OpenAI'} · {currentModalAIBox.model}
-                    </div>
-                  </div>
-                  <span
-                    style={{
-                      fontSize: '0.6875rem',
-                      padding: '3px 10px',
-                      borderRadius: '20px',
-                      fontWeight: 600,
-                      backgroundColor: currentModalAIBox.enabled ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255,255,255,0.06)',
-                      color: currentModalAIBox.enabled ? '#34D399' : '#6B7280',
-                      border: `1px solid ${currentModalAIBox.enabled ? 'rgba(16,185,129,0.35)' : 'rgba(255,255,255,0.1)'}`,
-                    }}
-                  >
-                    {currentModalAIBox.enabled ? '● Active' : '○ Off'}
-                  </span>
-                </div>
-
-                {/* Prompt used — read only */}
-                <div>
-                  <label
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.375rem',
-                      fontSize: '0.6875rem',
-                      fontWeight: 600,
-                      color: 'var(--text-muted)',
-                      marginBottom: '0.5rem',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.06em',
-                    }}
-                  >
-                    <FiSliders style={{ fontSize: '11px' }} />
-                    Prompt Used
-                  </label>
-                  <div
-                    style={{
-                      backgroundColor: 'var(--bg-main)',
-                      border: '1px solid var(--border-color)',
-                      borderRadius: '0.5rem',
-                      padding: '0.875rem',
-                      fontSize: '0.8125rem',
-                      color: 'var(--text-secondary)',
-                      lineHeight: 1.65,
-                      whiteSpace: 'pre-wrap',
-                      minHeight: '80px',
-                      fontFamily: `'SF Mono', 'Fira Code', monospace`,
-                      letterSpacing: '0.01em',
-                    }}
-                  >
-                    {currentModalAIBox.templateText || '(No prompt configured)'}
-                  </div>
-                </div>
-
-                {/* Generate button */}
-                <button
-                  type="button"
-                  style={{
-                    width: '100%',
-                    height: '44px',
-                    background: currentModalAIBox.enabled
-                      ? currentModalAIBox.provider === 'google_ai'
-                        ? 'linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%)'
-                        : 'linear-gradient(135deg, #065f46 0%, #059669 100%)'
-                      : 'rgba(255,255,255,0.06)',
-                    border: '1px solid',
-                    borderColor: currentModalAIBox.enabled
-                      ? currentModalAIBox.provider === 'google_ai' ? '#3B82F680' : '#10B98180'
-                      : 'rgba(255,255,255,0.1)',
-                    borderRadius: '0.5rem',
-                    color: currentModalAIBox.enabled ? '#fff' : '#6B7280',
-                    fontSize: '0.875rem',
-                    fontWeight: 700,
-                    cursor: currentModalAIBox.enabled ? 'pointer' : 'not-allowed',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '0.5rem',
-                    letterSpacing: '0.03em',
-                    transition: 'opacity 0.15s',
-                    boxShadow: currentModalAIBox.enabled
-                      ? `0 4px 14px ${currentModalAIBox.provider === 'google_ai' ? 'rgba(59,130,246,0.35)' : 'rgba(16,185,129,0.35)'}`
-                      : 'none',
-                  }}
-                  onMouseEnter={(e) => { if (currentModalAIBox.enabled) (e.currentTarget as HTMLButtonElement).style.opacity = '0.85'; }}
-                  onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = '1'; }}
-                >
-                  <FiCpu style={{ fontSize: '16px' }} />
-                  Generate AI Copy
-                </button>
-
-                {/* Footer: delete only */}
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    paddingTop: '0.75rem',
-                    borderTop: '1px solid var(--border-color)',
-                  }}
-                >
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={(e) => handleDeleteAIBox(currentModalAIBox.id, e)}
-                    leftIcon={<FiTrash2 style={{ color: '#EF4444' }} />}
-                    style={{ height: '32px', fontSize: '0.75rem', borderColor: 'rgba(239, 68, 68, 0.3)', color: '#EF4444' }}
-                  >
-                    Remove Node
-                  </Button>
-
-                  <Button variant="primary" size="sm" onClick={() => setActiveModalNode(null)}>
-                    Close
-                  </Button>
-                </div>
-              </div>
-            )
+            <AITrainingChatbot
+              box={currentModalAIBox}
+              availablePrompts={availablePrompts}
+              allowEditPrompt={allowEditPrompt}
+              isSettingsOpen={isAISettingsDrawerOpen}
+              onCloseSettings={() => setIsAISettingsDrawerOpen(false)}
+              onUpdateBox={(id, updates) => handleUpdateAIBox(id, updates)}
+              onToggleBox={(id) => handleToggleAIBox(id)}
+              onDuplicateBox={(boxToDup) => handleDuplicateAIBox(boxToDup)}
+              onDeleteBox={(id) => handleDeleteAIBox(id)}
+              onClose={handleCloseModal}
+            />
           )}
 
           {/* DESTINATION MODAL CONTENT */}
@@ -2337,4 +2247,6 @@ export const FacebookWorkflowCanvas: React.FC<FacebookWorkflowCanvasProps> = ({
       )}
     </div>
   );
-};
+});
+
+FacebookWorkflowCanvas.displayName = 'FacebookWorkflowCanvas';

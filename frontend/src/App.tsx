@@ -7,11 +7,7 @@ import { LoginPage } from './features/auth/LoginPage';
 import { DashboardView } from './features/dashboard/DashboardView';
 import { AddUrlView } from './features/addurl/AddUrlView';
 import { PropertyInboxView } from './features/inbox/PropertyInboxView';
-import { ReviewCenterView } from './features/review/ReviewCenterView';
-import { ProjectsView } from './features/projects/ProjectsView';
 import { PromptTemplatesView } from './features/prompts/PromptTemplatesView';
-import { WorkflowMapView } from './features/workflow/WorkflowMapView';
-import { AutomationSettingsView } from './features/automation/AutomationSettingsView';
 import { TestingView } from './features/testing/TestingView';
 import { SettingsView } from './features/settings/SettingsView';
 import { FacebookLoginView } from './features/auth/FacebookLoginView';
@@ -176,28 +172,6 @@ const MainApp: React.FC = () => {
     );
   };
 
-  const handleApproveProperty = (id: number) => {
-    setProperties((prev) =>
-      prev.map((p) =>
-        p.id === id
-          ? {
-              ...p,
-              status: 'PUBLISHED',
-              originalImages: [],
-              enhancedImages: [],
-              finalImages: [],
-            }
-          : p
-      )
-    );
-  };
-
-  const handleRejectProperty = (id: number) => {
-    setProperties((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, status: 'REJECTED' } : p))
-    );
-  };
-
   return (
     <AppLayout>
       <Routes>
@@ -207,11 +181,7 @@ const MainApp: React.FC = () => {
         <Route path="/facebook-import" element={<FacebookImportView onSaveToInbox={(prop) => handleAddProperty(prop.sourceUrl || '', prop)} onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
         <Route path="/create-workflow" element={<CreateWorkflowView />} />
         <Route path="/inbox" element={<PropertyInboxView properties={properties} onProcessProperty={(id) => handleProcessBatch([id])} onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
-        <Route path="/review" element={<ReviewCenterView properties={properties} onApproveProperty={handleApproveProperty} onRejectProperty={handleRejectProperty} />} />
-        <Route path="/projects" element={<ProjectsView />} />
         <Route path="/prompts" element={<PromptTemplatesView />} />
-        <Route path="/workflow" element={<WorkflowMapView onNavigateToFacebookLogin={() => navigate('/settings/facebook-login')} />} />
-        <Route path="/automation" element={<AutomationSettingsView />} />
         <Route path="/testing" element={<TestingView />} />
         <Route path="/settings" element={<SettingsView onNavigateToFacebookLogin={() => navigate('/settings/facebook-login')} />} />
         <Route path="/settings/facebook-login" element={<FacebookLoginView onBack={() => navigate('/settings')} onSuccess={() => navigate('/dashboard')} />} />
