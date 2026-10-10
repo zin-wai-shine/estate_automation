@@ -21,6 +21,9 @@ import {
   FiCheck,
   FiSliders,
   FiArrowRight,
+  FiRotateCcw,
+  FiX,
+  FiAlertTriangle,
 } from 'react-icons/fi';
 import { FaFacebook } from 'react-icons/fa';
 import { SiGooglegemini } from 'react-icons/si';
@@ -560,9 +563,30 @@ export type ActiveModalNode =
   | { type: 'destination' }
   | null;
 
+export interface DeletedAIBoxRecord {
+  box: DynamicAIBoxConfig;
+  connections: WorkflowWireConnection[];
+  deletedAt: number;
+}
+
+export const LOCAL_STORAGE_DELETED_KEY = 'ea_workflow_deleted_boxes';
+
+export const loadSavedDeletedBoxes = (): DeletedAIBoxRecord[] => {
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_DELETED_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {}
+  return [];
+};
+
 export interface FacebookWorkflowCanvasRef {
   addAIBox: (templateOverride?: CanvasPromptOption) => void;
   resetLayout: () => void;
+  openRecoverModal: () => void;
+  getDeletedBoxesCount: () => number;
 }
 
 export interface FacebookWorkflowCanvasProps {
@@ -570,13 +594,14 @@ export interface FacebookWorkflowCanvasProps {
   onSwitchToLiveImport?: () => void;
   onConfigChange?: (config: FacebookWorkflowConfig) => void;
   allowEditPrompt?: boolean;
+  onDeletedCountChange?: (count: number) => void;
 }
 
 export const FacebookWorkflowCanvas = forwardRef<
   FacebookWorkflowCanvasRef,
   FacebookWorkflowCanvasProps
 >(function FacebookWorkflowCanvas(
-  { initialConfig, onConfigChange, allowEditPrompt = false },
+  { initialConfig, onConfigChange, allowEditPrompt = false, onDeletedCountChange },
   ref
 ) {
   const { actualTheme } = useTheme();
@@ -599,6 +624,23 @@ export const FacebookWorkflowCanvas = forwardRef<
   const [simulationStep, setSimulationStep] = useState<number>(-1);
   const [simulationMessage, setSimulationMessage] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
+
+  // Recovery and Deletion Confirmation State
+  const [deletedBoxes, setDeletedBoxes] = useState<DeletedAIBoxRecord[]>(() => loadSavedDeletedBoxes());
+  const [isRecoverModalOpen, setIsRecoverModalOpen] = useState(false);
+  const [selectRecoverIds, setSelectRecoverIds] = useState<Set<string>>(new Set());
+  const [pendingDeleteBox, setPendingDeleteBox] = useState<DynamicAIBoxConfig | null>(null);
+  const [dontAskDeleteAgain, setDontAskDeleteAgain] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('ea_workflow_skip_delete_confirm') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    onDeletedCountChange?.(deletedBoxes.length);
+  }, [deletedBoxes.length, onDeletedCountChange]);
 
   // Drag-to-connect String State
   interface DragWireState {
@@ -1132,18 +1174,53 @@ export const FacebookWorkflowCanvas = forwardRef<
     // User requested: "show that cycle at canvas first don't need to connected in another until I create what that use for and after that I can connect it with drap that string"
   };
 
-  // Delete Dynamic AI Box
-  const handleDeleteAIBox = (id: string, e?: React.MouseEvent) => {
-    if (e) e.stopPropagation();
-    if (config.aiBoxes.length <= 1) {
-      alert('You must have at least one AI process box in the workflow.');
-      return;
-    }
+  // Helper for rendering AI Box icon in recover & delete modals
+  const renderAIBoxIcon = (b: DynamicAIBoxConfig, size = 22) => {
+    const isImageNode = isImageAIBox(b, config.connections);
+    const isGoogle = !isImageNode && (b.provider === 'google_ai' || isImageModel(b.model, b.provider) || (!b.provider && !b.model?.startsWith('runware:')));
+    const isLaoZhang = !isImageNode && b.provider === 'laozhang_ai';
+    const isRunware = isImageNode;
+
+    if (isRunware) return <RunwareIcon size={size} color="#10B981" />;
+    if (isLaoZhang) return <LaoZhangIcon size={size} />;
+    if (isGoogle) return <SiGooglegemini style={{ fontSize: `${size}px`, color: '#58A6FF' }} />;
+    return <OpenAIIcon size={size} color="#3FB950" />;
+  };
+
+  const timeAgo = (timestamp: number): string => {
+    const diffSec = Math.floor((Date.now() - timestamp) / 1000);
+    if (diffSec < 60) return 'Just now';
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffHr = Math.floor(diffMin / 60);
+    if (diffHr < 24) return `${diffHr}h ago`;
+    const diffDay = Math.floor(diffHr / 24);
+    return `${diffDay}d ago`;
+  };
+
+  const confirmDeleteAIBox = (id: string) => {
     const box = config.aiBoxes.find((b) => b.id === id);
-    const boxName = box ? box.title : 'this AI node';
-    if (!window.confirm(`Are you sure you want to delete "${boxName}"?`)) {
+    if (!box) {
+      setPendingDeleteBox(null);
       return;
     }
+
+    const associatedConnections = (config.connections || []).filter(
+      (c) => c.fromNodeId === id || c.toNodeId === id
+    );
+
+    const newRecord: DeletedAIBoxRecord = {
+      box,
+      connections: associatedConnections,
+      deletedAt: Date.now(),
+    };
+
+    const nextDeleted = [newRecord, ...deletedBoxes.filter((d) => d.box.id !== id)];
+    setDeletedBoxes(nextDeleted);
+    try {
+      localStorage.setItem(LOCAL_STORAGE_DELETED_KEY, JSON.stringify(nextDeleted));
+    } catch {}
+
     const newBoxes = config.aiBoxes.filter((b) => b.id !== id);
     const newConnections = (config.connections || []).filter(
       (c) => c.fromNodeId !== id && c.toNodeId !== id
@@ -1154,10 +1231,99 @@ export const FacebookWorkflowCanvas = forwardRef<
       connections: newConnections,
     };
     updateConfig(newConfig);
+
     if (selectedBoxId === id) setSelectedBoxId(null);
     if (activeModalNode?.type === 'ai-box' && activeModalNode.boxId === id) {
       setActiveModalNode(null);
     }
+    setPendingDeleteBox(null);
+  };
+
+  // Delete Dynamic AI Box - asks confirmation dialog with checkbox unless remembered
+  const handleDeleteAIBox = (id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (config.aiBoxes.length <= 1) {
+      alert('You must have at least one AI process box in the workflow.');
+      return;
+    }
+    const box = config.aiBoxes.find((b) => b.id === id);
+    if (!box) return;
+
+    if (dontAskDeleteAgain) {
+      confirmDeleteAIBox(id);
+    } else {
+      setPendingDeleteBox(box);
+    }
+  };
+
+  // Recover selected deleted boxes back onto canvas
+  const handleRecoverSelected = () => {
+    if (selectRecoverIds.size === 0) return;
+
+    const recordsToRestore = deletedBoxes.filter((r) => selectRecoverIds.has(r.box.id));
+    if (recordsToRestore.length === 0) return;
+
+    let maxY = config.aiBoxes.reduce((max, b) => Math.max(max, b.y), 60);
+    const restoredBoxes: DynamicAIBoxConfig[] = [];
+    const restoredConns: WorkflowWireConnection[] = [];
+    const existingIds = new Set(config.aiBoxes.map((b) => b.id));
+
+    recordsToRestore.forEach((record) => {
+      let b = { ...record.box };
+      if (existingIds.has(b.id)) {
+        b.id = `ai-box-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`;
+      }
+      existingIds.add(b.id);
+
+      const hasOverlap = config.aiBoxes.some((ex) => Math.hypot(ex.x - b.x, ex.y - b.y) < 50);
+      if (hasOverlap) {
+        maxY += 130;
+        b = { ...b, y: maxY };
+      }
+      restoredBoxes.push(b);
+
+      record.connections.forEach((conn) => {
+        const fromExists =
+          conn.fromNodeId === 'get-content' ||
+          conn.fromNodeId === 'get-images' ||
+          config.aiBoxes.some((x) => x.id === conn.fromNodeId) ||
+          restoredBoxes.some((x) => x.id === conn.fromNodeId);
+
+        const toExists =
+          conn.toNodeId === 'destination' ||
+          config.aiBoxes.some((x) => x.id === conn.toNodeId) ||
+          restoredBoxes.some((x) => x.id === conn.toNodeId);
+
+        if (fromExists && toExists) {
+          const fromId = conn.fromNodeId === record.box.id ? b.id : conn.fromNodeId;
+          const toId = conn.toNodeId === record.box.id ? b.id : conn.toNodeId;
+          const alreadyExists =
+            (config.connections || []).some((c) => c.fromNodeId === fromId && c.toNodeId === toId) ||
+            restoredConns.some((c) => c.fromNodeId === fromId && c.toNodeId === toId);
+
+          if (!alreadyExists) {
+            restoredConns.push({
+              id: `conn-restored-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+              fromNodeId: fromId,
+              toNodeId: toId,
+            });
+          }
+        }
+      });
+    });
+
+    const nextBoxes = [...config.aiBoxes, ...restoredBoxes];
+    const nextConns = [...(config.connections || []), ...restoredConns];
+    updateConfig(buildAlignedLayout(nextBoxes, nextConns, { ...config, aiBoxes: nextBoxes, connections: nextConns }));
+
+    const remaining = deletedBoxes.filter((r) => !selectRecoverIds.has(r.box.id));
+    setDeletedBoxes(remaining);
+    try {
+      localStorage.setItem(LOCAL_STORAGE_DELETED_KEY, JSON.stringify(remaining));
+    } catch {}
+
+    setSelectRecoverIds(new Set());
+    setIsRecoverModalOpen(false);
   };
 
   // Duplicate Dynamic AI Box
@@ -1246,8 +1412,13 @@ export const FacebookWorkflowCanvas = forwardRef<
     () => ({
       addAIBox: (templateOverride) => handleAddAIBox(templateOverride),
       resetLayout: () => handleResetLayout(),
+      openRecoverModal: () => {
+        setSelectRecoverIds(new Set(deletedBoxes.map((d) => d.box.id)));
+        setIsRecoverModalOpen(true);
+      },
+      getDeletedBoxesCount: () => deletedBoxes.length,
     }),
-    [config]
+    [config, deletedBoxes]
   );
 
   // Run Test Simulation
@@ -2711,6 +2882,506 @@ export const FacebookWorkflowCanvas = forwardRef<
               </div>
             </div>
           )}
+        </Modal>
+      )}
+
+      {/* Floating Recover Button on Canvas */}
+      {deletedBoxes.length > 0 && (
+        <button
+          type="button"
+          onClick={() => {
+            setSelectRecoverIds(new Set(deletedBoxes.map((d) => d.box.id)));
+            setIsRecoverModalOpen(true);
+          }}
+          style={{
+            position: 'absolute',
+            top: '16px',
+            right: '24px',
+            zIndex: 80,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '7px',
+            padding: '7px 14px',
+            borderRadius: '9999px',
+            backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
+            color: isDark ? '#F1F5F9' : '#0F172A',
+            border: isDark ? '1px solid #334155' : '1px solid #CBD5E1',
+            boxShadow: '0 4px 14px rgba(0, 0, 0, 0.25)',
+            fontSize: '0.8125rem',
+            fontWeight: 600,
+            cursor: 'pointer',
+            transition: 'all 0.15s ease',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = 'translateY(-1px)';
+            e.currentTarget.style.borderColor = '#38BDF8';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.borderColor = isDark ? '#334155' : '#CBD5E1';
+          }}
+          title="Recover deleted AI nodes"
+        >
+          <FiRotateCcw size={14} style={{ color: '#0284C7' }} />
+          <span>Recover ({deletedBoxes.length})</span>
+        </button>
+      )}
+
+      {/* ======================================================== */}
+      {/* DELETE CONFIRMATION MODAL                                */}
+      {/* ======================================================== */}
+      {pendingDeleteBox && (
+        <Modal
+          isOpen={Boolean(pendingDeleteBox)}
+          onClose={() => setPendingDeleteBox(null)}
+          maxWidth="460px"
+          zIndex={100200}
+          title={
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', color: '#EF4444' }}>
+              <div
+                style={{
+                  width: '28px',
+                  height: '28px',
+                  borderRadius: '50%',
+                  backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <FiAlertTriangle size={16} />
+              </div>
+              <span style={{ fontWeight: 600, fontSize: '0.9375rem', color: 'var(--text-primary)' }}>
+                Delete AI Node
+              </span>
+            </div>
+          }
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <p style={{ margin: 0, fontSize: '0.875rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+              Are you sure you want to delete this AI node? It will be removed from your workflow pipeline.
+            </p>
+
+            {/* Target Node Preview */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.75rem',
+                padding: '0.875rem',
+                backgroundColor: 'var(--bg-main)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '0.5rem',
+              }}
+            >
+              <div
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '50%',
+                  backgroundColor: isDark ? '#1F2937' : '#F1F5F9',
+                  border: '1px solid var(--border-color)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                {renderAIBoxIcon(pendingDeleteBox, 20)}
+              </div>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div
+                  style={{
+                    fontWeight: 600,
+                    fontSize: '0.875rem',
+                    color: 'var(--text-primary)',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
+                  {pendingDeleteBox.title || 'Dynamic AI Box'}
+                </div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  {pendingDeleteBox.model || 'Gemini Flash'} · {pendingDeleteBox.processType || 'AI Copywriter'}
+                </div>
+              </div>
+            </div>
+
+            <div
+              style={{
+                fontSize: '0.75rem',
+                color: isDark ? '#60A5FA' : '#2563EB',
+                backgroundColor: isDark ? 'rgba(59, 130, 246, 0.1)' : 'rgba(59, 130, 246, 0.08)',
+                padding: '0.5rem 0.75rem',
+                borderRadius: '0.375rem',
+                border: '1px solid rgba(59, 130, 246, 0.2)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}
+            >
+              <FiRotateCcw size={13} />
+              <span>You can restore this node anytime using the <strong>Recover</strong> button.</span>
+            </div>
+
+            {/* Checkbox: Don't ask confirmation again */}
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                cursor: 'pointer',
+                fontSize: '0.8125rem',
+                color: 'var(--text-secondary)',
+                userSelect: 'none',
+                marginTop: '0.25rem',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={dontAskDeleteAgain}
+                onChange={(e) => {
+                  const val = e.target.checked;
+                  setDontAskDeleteAgain(val);
+                  try {
+                    localStorage.setItem('ea_workflow_skip_delete_confirm', String(val));
+                  } catch {}
+                }}
+                style={{
+                  width: '15px',
+                  height: '15px',
+                  accentColor: '#1877F2',
+                  cursor: 'pointer',
+                }}
+              />
+              <span>Don't ask confirmation again</span>
+            </label>
+
+            {/* Modal Actions */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '0.5rem' }}>
+              <Button variant="outline" size="sm" onClick={() => setPendingDeleteBox(null)}>
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={() => confirmDeleteAIBox(pendingDeleteBox.id)}
+                style={{
+                  backgroundColor: '#EF4444',
+                  borderColor: '#EF4444',
+                  color: '#FFFFFF',
+                }}
+              >
+                Delete Node
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* ======================================================== */}
+      {/* RECOVER DELETED NODES CONTAINER MODAL                     */}
+      {/* ======================================================== */}
+      {isRecoverModalOpen && (
+        <Modal
+          isOpen={isRecoverModalOpen}
+          onClose={() => setIsRecoverModalOpen(false)}
+          maxWidth="580px"
+          zIndex={100200}
+          title={
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+              <div
+                style={{
+                  width: '28px',
+                  height: '28px',
+                  borderRadius: '50%',
+                  backgroundColor: 'rgba(56, 189, 248, 0.12)',
+                  color: '#38BDF8',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <FiRotateCcw size={15} />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ fontWeight: 600, fontSize: '0.9375rem', color: 'var(--text-primary)' }}>
+                  Recover Deleted Nodes
+                </span>
+                <span
+                  style={{
+                    fontSize: '0.6875rem',
+                    fontWeight: 700,
+                    padding: '2px 7px',
+                    borderRadius: '9999px',
+                    backgroundColor: isDark ? 'rgba(56, 189, 248, 0.2)' : 'rgba(56, 189, 248, 0.15)',
+                    color: isDark ? '#38BDF8' : '#0284C7',
+                  }}
+                >
+                  {deletedBoxes.length} available
+                </span>
+              </div>
+            </div>
+          }
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {deletedBoxes.length === 0 ? (
+              <div
+                style={{
+                  textAlign: 'center',
+                  padding: '2.5rem 1rem',
+                  color: 'var(--text-muted)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '0.75rem',
+                }}
+              >
+                <div
+                  style={{
+                    width: '48px',
+                    height: '48px',
+                    borderRadius: '50%',
+                    backgroundColor: isDark ? '#1F2937' : '#F1F5F9',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'var(--text-muted)',
+                  }}
+                >
+                  <FiRotateCcw size={22} />
+                </div>
+                <div style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--text-primary)' }}>
+                  No deleted nodes to recover
+                </div>
+                <div style={{ fontSize: '0.75rem', maxWidth: '300px', lineHeight: 1.4 }}>
+                  When you delete any AI node from your workflow, it will appear here so you can easily restore it.
+                </div>
+              </div>
+            ) : (
+              <>
+                {/* Select All Bar */}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '0.5rem 0.75rem',
+                    backgroundColor: isDark ? '#111827' : '#F8FAFC',
+                    borderRadius: '0.375rem',
+                    border: '1px solid var(--border-color)',
+                    fontSize: '0.75rem',
+                  }}
+                >
+                  <label
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                      cursor: 'pointer',
+                      fontWeight: 600,
+                      color: 'var(--text-primary)',
+                      userSelect: 'none',
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectRecoverIds.size === deletedBoxes.length && deletedBoxes.length > 0}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectRecoverIds(new Set(deletedBoxes.map((d) => d.box.id)));
+                        } else {
+                          setSelectRecoverIds(new Set());
+                        }
+                      }}
+                      style={{ width: '15px', height: '15px', accentColor: '#10B981', cursor: 'pointer' }}
+                    />
+                    <span>Select All ({selectRecoverIds.size} / {deletedBoxes.length} selected)</span>
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.confirm('Clear all deleted node history? This cannot be undone.')) {
+                        setDeletedBoxes([]);
+                        setSelectRecoverIds(new Set());
+                        try {
+                          localStorage.removeItem(LOCAL_STORAGE_DELETED_KEY);
+                        } catch {}
+                      }
+                    }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--text-muted)',
+                      fontSize: '0.75rem',
+                      cursor: 'pointer',
+                      textDecoration: 'underline',
+                      padding: 0,
+                    }}
+                  >
+                    Clear history
+                  </button>
+                </div>
+
+                {/* List of Deleted Nodes */}
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.5rem',
+                    maxHeight: '340px',
+                    overflowY: 'auto',
+                    paddingRight: '2px',
+                  }}
+                >
+                  {deletedBoxes.map((record) => {
+                    const isSelected = selectRecoverIds.has(record.box.id);
+                    return (
+                      <div
+                        key={record.box.id}
+                        onClick={() => {
+                          const next = new Set(selectRecoverIds);
+                          if (isSelected) {
+                            next.delete(record.box.id);
+                          } else {
+                            next.add(record.box.id);
+                          }
+                          setSelectRecoverIds(next);
+                        }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.75rem',
+                          padding: '0.75rem 0.875rem',
+                          backgroundColor: isSelected
+                            ? (isDark ? 'rgba(16, 185, 129, 0.08)' : 'rgba(16, 185, 129, 0.05)')
+                            : 'var(--bg-main)',
+                          border: isSelected
+                            ? '1px solid rgba(16, 185, 129, 0.4)'
+                            : '1px solid var(--border-color)',
+                          borderRadius: '0.5rem',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease',
+                        }}
+                      >
+                        {/* Select Recover Checkbox */}
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            const next = new Set(selectRecoverIds);
+                            if (e.target.checked) {
+                              next.add(record.box.id);
+                            } else {
+                              next.delete(record.box.id);
+                            }
+                            setSelectRecoverIds(next);
+                          }}
+                          style={{
+                            width: '16px',
+                            height: '16px',
+                            accentColor: '#10B981',
+                            cursor: 'pointer',
+                            flexShrink: 0,
+                          }}
+                        />
+
+                        {/* Node Icon */}
+                        <div
+                          style={{
+                            width: '36px',
+                            height: '36px',
+                            borderRadius: '50%',
+                            backgroundColor: isDark ? '#1F2937' : '#F1F5F9',
+                            border: '1px solid var(--border-color)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flexShrink: 0,
+                          }}
+                        >
+                          {renderAIBoxIcon(record.box, 20)}
+                        </div>
+
+                        {/* Title and details */}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div
+                            style={{
+                              fontSize: '0.875rem',
+                              fontWeight: 600,
+                              color: 'var(--text-primary)',
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                            }}
+                          >
+                            {record.box.title || 'Dynamic AI Box'}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: '0.75rem',
+                              color: 'var(--text-muted)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              marginTop: '2px',
+                            }}
+                          >
+                            <span>{record.box.model || 'Gemini Flash'}</span>
+                            <span>•</span>
+                            <span>Deleted {timeAgo(record.deletedAt)}</span>
+                            {record.connections && record.connections.length > 0 && (
+                              <>
+                                <span>•</span>
+                                <span>{record.connections.length} wires saved</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Under of that: Recover Button */}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    paddingTop: '0.75rem',
+                    borderTop: '1px solid var(--border-color)',
+                    marginTop: '0.25rem',
+                  }}
+                >
+                  <Button variant="outline" size="sm" onClick={() => setIsRecoverModalOpen(false)}>
+                    Close
+                  </Button>
+
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={handleRecoverSelected}
+                    disabled={selectRecoverIds.size === 0}
+                    leftIcon={<FiRotateCcw style={{ fontSize: '13px' }} />}
+                    style={{
+                      height: '34px',
+                      padding: '0 16px',
+                      backgroundColor: selectRecoverIds.size > 0 ? '#10B981' : undefined,
+                      borderColor: selectRecoverIds.size > 0 ? '#10B981' : undefined,
+                      color: '#FFFFFF',
+                      fontWeight: 600,
+                    }}
+                  >
+                    Recover ({selectRecoverIds.size})
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
         </Modal>
       )}
     </div>

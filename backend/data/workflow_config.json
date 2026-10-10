@@ -1,5 +1,5 @@
 {
-  "timestamp": 1791668832590,
+  "timestamp": 1791672952170,
   "workflow_formats": [
     {
       "config": {
@@ -33,7 +33,7 @@
             "customPrompt": "Real estate interior luxury enhancement, warm lighting, high detail, remove noise",
             "enabled": true,
             "id": "ai-box-1791648839670",
-            "model": "runware:101@1",
+            "model": "runware:100@1",
             "processType": "image_enhance",
             "provider": "runware_ai",
             "strength": 0.5,
@@ -82,11 +82,11 @@
           "extractPrice": true,
           "extractSpecs": true,
           "x": 340,
-          "y": 155
+          "y": 110
         },
         "getImages": {
           "downloadHD": true,
-          "enabled": false,
+          "enabled": true,
           "preserveOrder": true,
           "watermark": false,
           "x": 340,
@@ -107,7 +107,7 @@
       "description": "Customized Facebook import extraction and dynamic AI generation pipeline",
       "id": "format-1790885461679",
       "name": "General Engine",
-      "updatedAt": 1791668832590
+      "updatedAt": 1791672952170
     }
   ]
 }
