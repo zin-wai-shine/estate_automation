@@ -2614,6 +2614,7 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                           >
                             {listToDisplay.map((enhItem, i) => {
                               const isHovered = hoveredMsgImageId === `${msg.id}-${i}`;
+                              const isSingle = listToDisplay.length === 1;
                               const isItemApplied = enhItem.photoIndex !== undefined && Boolean(appliedPhotoMap[`${msg.id}-${enhItem.photoIndex}`]);
 
                               return (
@@ -2633,8 +2634,10 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                                   title="Click to view full generated edit size"
                                   style={{
                                     position: 'relative',
-                                    width: '108px',
-                                    height: '108px',
+                                    width: isSingle ? 'fit-content' : '108px',
+                                    height: isSingle ? 'auto' : '108px',
+                                    maxWidth: '100%',
+                                    lineHeight: 0,
                                     borderRadius: '12px',
                                     overflow: 'hidden',
                                     border: isDark ? '1px solid rgba(255, 255, 255, 0.14)' : '1px solid var(--border-color)',
@@ -2643,18 +2646,17 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                                     boxShadow: isDark ? '0 2px 8px rgba(0, 0, 0, 0.4)' : '0 2px 8px rgba(0, 0, 0, 0.08)',
                                     flexShrink: 0,
                                     transition: 'transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.18s ease',
-                                    transform: isHovered ? 'scale(1.04)' : 'scale(1)',
+                                    transform: isHovered && !isSingle ? 'scale(1.04)' : 'scale(1)',
                                   }}
                                 >
                                   <img
-                                    src={enhItem.enhancedUrl}
+                                    src={isSingle && showOriginal && enhItem.originalUrl ? enhItem.originalUrl : enhItem.enhancedUrl}
                                     alt={`Enhanced photo ${i + 1}`}
-                                    style={{
-                                      width: '100%',
-                                      height: '100%',
-                                      objectFit: 'cover',
-                                      display: 'block',
-                                    }}
+                                    style={
+                                      isSingle
+                                        ? { width: 'auto', height: 'auto', maxWidth: '100%', maxHeight: '480px', display: 'block' }
+                                        : { width: '100%', height: '100%', objectFit: 'cover', display: 'block' }
+                                    }
                                   />
 
                                   {/* Photo Index Badge in top-left */}
@@ -2663,7 +2665,8 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                                       position: 'absolute',
                                       top: '4px',
                                       left: '4px',
-                                      padding: '1px 5px',
+                                      padding: '2px 6px',
+                                      lineHeight: 1.3,
                                       borderRadius: '4px',
                                       backgroundColor: 'rgba(0, 0, 0, 0.72)',
                                       backdropFilter: 'blur(4px)',
@@ -2674,29 +2677,6 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                                     }}
                                   >
                                     {enhItem.photoIndex !== undefined ? `Photo #${enhItem.photoIndex}` : `#${i + 1}`}
-                                  </span>
-
-                                  {/* Enhanced status pill in bottom-left */}
-                                  <span
-                                    style={{
-                                      position: 'absolute',
-                                      bottom: '4px',
-                                      left: '4px',
-                                      padding: '1px 5px',
-                                      borderRadius: '4px',
-                                      backgroundColor: 'rgba(0, 0, 0, 0.72)',
-                                      backdropFilter: 'blur(4px)',
-                                      color: '#FFFFFF',
-                                      fontSize: '0.5625rem',
-                                      fontWeight: 600,
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: '3px',
-                                      zIndex: 2,
-                                    }}
-                                  >
-                                    <HiSparkles style={{ fontSize: '9px', color: '#10B981' }} />
-                                    <span>AI</span>
                                   </span>
 
                                   {/* Hover Overlay with Expand / Edit icon */}
@@ -2735,57 +2715,64 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                             })}
                           </div>
 
-                          {/* Assistant Action Bar below the small squares */}
-                          <div
-                            style={{
+                          {/* Caption + icon actions (single image only) */}
+                          {(() => {
+                            const first = listToDisplay[0];
+                            const isSingle = listToDisplay.length === 1;
+                            const canCompare = isSingle && Boolean(first?.originalUrl);
+                            const photoIdx = first?.photoIndex ?? msg.photoIndex;
+                            const applied = photoIdx !== undefined && Boolean(appliedPhotoMap[`photo-${photoIdx}`]);
+                            const activeUrl = canCompare && showOriginal ? first.originalUrl : first?.enhancedUrl;
+                            const iconBtn = (active = false): React.CSSProperties => ({
+                              width: '30px',
+                              height: '30px',
+                              borderRadius: '8px',
+                              border: isDark ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid var(--border-color)',
+                              backgroundColor: active ? (isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(0, 0, 0, 0.08)') : 'transparent',
+                              color: 'var(--text-primary)',
                               display: 'flex',
                               alignItems: 'center',
-                              justifyContent: 'space-between',
-                              flexWrap: 'wrap',
-                              gap: '0.5rem',
-                              marginTop: '2px',
-                            }}
-                          >
-                            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                              {msg.content}
-                            </span>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const first = listToDisplay[0];
-                                  if (first) {
-                                    setLightboxModal({
-                                      isOpen: true,
-                                      enhancedUrl: first.enhancedUrl,
-                                      originalUrl: first.originalUrl || msg.originalImageUrl,
-                                      photoIndex: first.photoIndex ?? msg.photoIndex,
-                                      name: first.name,
-                                      promptInstructions: msg.promptInstructions,
-                                      isOriginalActive: false,
-                                    });
-                                  }
-                                }}
-                                style={{
-                                  height: '26px',
-                                  padding: '0 0.5rem',
-                                  borderRadius: '6px',
-                                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'var(--bg-main)',
-                                  border: '1px solid var(--border-color)',
-                                  color: 'var(--text-primary)',
-                                  fontSize: '0.6875rem',
-                                  fontWeight: 500,
-                                  cursor: 'pointer',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '4px',
-                                }}
-                              >
-                                <FiMaximize2 style={{ fontSize: '11px' }} />
-                                <span>Inspect full size</span>
-                              </button>
-                            </div>
-                          </div>
+                              justifyContent: 'center',
+                              cursor: 'pointer',
+                              fontSize: '14px',
+                            });
+                            return (
+                              <>
+                                {isSingle && (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    {canCompare && (
+                                      <button
+                                        type="button"
+                                        title={showOriginal ? 'Show enhanced' : 'Show original'}
+                                        style={iconBtn(!showOriginal)}
+                                        onClick={() => setShowOriginalMap((prev) => ({ ...prev, [msg.id]: !prev[msg.id] }))}
+                                      >
+                                        <HiSparkles />
+                                      </button>
+                                    )}
+                                    {photoIdx !== undefined && onPhotoEnhanced && (
+                                      <button
+                                        type="button"
+                                        title={applied ? `Applied to Photo #${photoIdx}` : `Apply to Photo #${photoIdx}`}
+                                        style={{ ...iconBtn(applied), color: applied ? '#10B981' : 'var(--text-primary)' }}
+                                        onClick={() => {
+                                          onPhotoEnhanced(photoIdx, first.enhancedUrl);
+                                          setAppliedPhotoMap((prev) => ({ ...prev, [`photo-${photoIdx}`]: true }));
+                                          showToast(`Applied to Photo #${photoIdx}`);
+                                        }}
+                                      >
+                                        <FiCheck />
+                                      </button>
+                                    )}
+                                    <button type="button" title="Download" style={iconBtn()} onClick={() => handleDownloadImage(activeUrl)}>
+                                      <FiDownload />
+                                    </button>
+                                  </div>
+                                )}
+                                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{msg.content}</span>
+                              </>
+                            );
+                          })()}
                         </div>
                       );
                     })() : null}

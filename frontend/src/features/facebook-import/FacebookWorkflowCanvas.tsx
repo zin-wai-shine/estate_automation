@@ -295,6 +295,45 @@ export interface MergedNodeShapeProps {
   onSocketMouseUp?: (type: 'input' | 'output', e: React.MouseEvent) => void;
 }
 
+const CANVAS_NODE_ACTION_CSS = `
+.canvas-node::before{content:'';position:absolute;inset:-7px;border-radius:50%;border:1.5px dashed var(--ring,#388BFD);opacity:0;transform:scale(.88);transition:opacity .2s ease,transform .35s cubic-bezier(.34,1.56,.64,1);pointer-events:none}
+.canvas-node:hover::before{opacity:.7;transform:scale(1);animation:nodeRingSpin 10s linear infinite}
+@keyframes nodeRingSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+.node-hit{position:absolute;display:flex;align-items:center;justify-content:center;gap:8px;pointer-events:none;z-index:35}
+.canvas-node:hover .node-hit{pointer-events:auto}
+.node-action{width:26px;height:26px;border-radius:50%;background:var(--na-bg);border:1.5px solid var(--na-color);color:var(--na-color);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;opacity:0;transform:scale(.3) translateY(6px);box-shadow:0 2px 8px rgba(0,0,0,.15);transition:opacity .2s ease,transform .35s cubic-bezier(.34,1.56,.64,1),background-color .15s ease,color .15s ease,box-shadow .15s ease}
+.canvas-node:hover .node-action{opacity:1;transform:scale(1) translateY(0)}
+.canvas-node .node-action:hover{background:var(--na-color);color:#fff;box-shadow:0 0 12px var(--na-color);transform:scale(1.14)}
+`;
+
+const NodeActionButton: React.FC<{
+  title: string;
+  color: string;
+  isDark: boolean;
+  delay?: number;
+  onClick: (e: React.MouseEvent) => void;
+  children: React.ReactNode;
+}> = ({ title, color, isDark, delay = 0, onClick, children }) => (
+  <button
+    type="button"
+    className="node-action"
+    title={title}
+    aria-label={title}
+    onMouseDown={(e) => e.stopPropagation()}
+    onClick={(e) => {
+      e.stopPropagation();
+      onClick(e);
+    }}
+    style={{
+      ['--na-color' as any]: color,
+      ['--na-bg' as any]: isDark ? '#161B22' : '#FFFFFF',
+      transitionDelay: `${delay}ms`,
+    }}
+  >
+    {children}
+  </button>
+);
+
 export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
   sockets,
   strokeColor,
@@ -522,6 +561,7 @@ export const FacebookWorkflowCanvas = forwardRef<
   }
   const [dragWire, setDragWire] = useState<DragWireState | null>(null);
   const [hoveredWireId, setHoveredWireId] = useState<string | null>(null);
+  const [hoveredXId, setHoveredXId] = useState<string | null>(null);
 
   // Node Modal State
   const [activeModalNode, setActiveModalNode] = useState<ActiveModalNode>(null);
@@ -892,13 +932,9 @@ export const FacebookWorkflowCanvas = forwardRef<
       toNodeId: newId,
     };
 
-    const newConfig: FacebookWorkflowConfig = {
-      ...config,
-      aiBoxes: [...config.aiBoxes, newBox],
-      connections: [...(config.connections || []), newConn],
-    };
-
-    updateConfig(newConfig);
+    const nextBoxes = [...config.aiBoxes, newBox];
+    const nextConns = [...(config.connections || []), newConn];
+    updateConfig(buildAlignedLayout(nextBoxes, nextConns, { ...config, aiBoxes: nextBoxes, connections: nextConns }));
     setSelectedBoxId(newId);
   };
 
@@ -931,13 +967,9 @@ export const FacebookWorkflowCanvas = forwardRef<
       toNodeId: newId,
     };
 
-    const newConfig: FacebookWorkflowConfig = {
-      ...config,
-      aiBoxes: [...config.aiBoxes, newBox],
-      connections: [...(config.connections || []), newConn],
-    };
-
-    updateConfig(newConfig);
+    const nextBoxes = [...config.aiBoxes, newBox];
+    const nextConns = [...(config.connections || []), newConn];
+    updateConfig(buildAlignedLayout(nextBoxes, nextConns, { ...config, aiBoxes: nextBoxes, connections: nextConns }));
     setSelectedBoxId(newId);
   };
 
@@ -946,7 +978,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     const prompts = loadAvailablePromptTemplates();
     const boxCount = config.aiBoxes.length;
     const maxY = config.aiBoxes.reduce((max, b) => Math.max(max, b.y), 0);
-    const newY = boxCount === 0 ? 120 : Math.max(maxY + 140, 80 + boxCount * 140);
+    const newY = boxCount === 0 ? 80 : maxY + 150;
 
     // Pick next prompt template from library
     const chosenTemplate =
@@ -1039,25 +1071,53 @@ export const FacebookWorkflowCanvas = forwardRef<
     updateConfig({ ...config, aiBoxes: newBoxes });
   };
 
+  // Auto-layout: stacks AI nodes in one clean column grouped by their source
+  // (Get Content first, then Get Images, then unconnected) and vertically centers
+  // the source / trigger / destination nodes on their groups.
+  const buildAlignedLayout = (
+    boxes: DynamicAIBoxConfig[],
+    connections: WorkflowWireConnection[] | undefined,
+    base: FacebookWorkflowConfig
+  ): FacebookWorkflowConfig => {
+    const conns = connections || [];
+    const fromContent = (id: string) => conns.some((c) => c.fromNodeId === 'get-content' && c.toNodeId === id);
+    const fromImages = (id: string) => conns.some((c) => c.fromNodeId === 'get-images' && c.toNodeId === id);
+
+    const contentBoxes = boxes.filter((b) => fromContent(b.id));
+    const imageBoxes = boxes.filter((b) => !fromContent(b.id) && fromImages(b.id));
+    const otherBoxes = boxes.filter((b) => !fromContent(b.id) && !fromImages(b.id));
+
+    const ROW_GAP = 150;
+    const TOP = 80;
+    const yById: Record<string, number> = {};
+    let row = 0;
+    [contentBoxes, imageBoxes, otherBoxes].forEach((group) =>
+      group.forEach((b) => {
+        yById[b.id] = TOP + row * ROW_GAP;
+        row += 1;
+      })
+    );
+
+    const mean = (list: DynamicAIBoxConfig[], fallback: number) =>
+      list.length ? list.reduce((sum, b) => sum + yById[b.id], 0) / list.length : fallback;
+    const contentMid = mean(contentBoxes, TOP);
+    const imageMid = mean(imageBoxes, TOP + Math.max(contentBoxes.length, 1) * ROW_GAP);
+    const centerMid = (contentMid + imageMid) / 2;
+
+    return {
+      ...base,
+      aiBoxes: boxes.map((b) => ({ ...b, x: 640, y: yById[b.id] })),
+      trigger: { ...base.trigger, x: 80, y: Math.round(centerMid) },
+      getContent: { ...base.getContent, x: 340, y: Math.round(contentMid) },
+      getImages: { ...base.getImages, x: 340, y: Math.round(imageMid) },
+      destination: { x: 960, y: Math.round(centerMid) },
+    };
+  };
+
   // Reset Layout to pristine aligned grid with clean base and gaps
   const handleResetLayout = () => {
-    const defaultBoxes = config.aiBoxes.map((box, idx) => ({
-      ...box,
-      x: 640,
-      y: idx === 0 ? 80 : 80 + idx * 150,
-    }));
-
-    const resetConfig: FacebookWorkflowConfig = {
-      ...config,
-      zoom: 0.95,
-      panOffset: { x: 30, y: 30 },
-      trigger: { x: 80, y: 220, autoImport: config.trigger.autoImport },
-      getContent: { ...config.getContent, x: 340, y: 110 },
-      getImages: { ...config.getImages, x: 340, y: 390 },
-      destination: { x: 960, y: 220 },
-      aiBoxes: defaultBoxes,
-    };
-    updateConfig(resetConfig);
+    const resetConfig = buildAlignedLayout(config.aiBoxes, config.connections, config);
+    updateConfig({ ...resetConfig, zoom: 0.95, panOffset: { x: 30, y: 30 } });
   };
 
   useImperativeHandle(
@@ -1520,12 +1580,17 @@ export const FacebookWorkflowCanvas = forwardRef<
                   ? true
                   : config.aiBoxes.find((b) => b.id === conn.toNodeId)?.enabled ?? true;
               const isFlowing = fromEnabled && toEnabled;
-              const isHovered = hoveredWireId === conn.id;
+              const isWireHovered = hoveredWireId === conn.id;
+              const isXHovered = hoveredXId === conn.id;
 
               const isFromImages = conn.fromNodeId === 'get-images' || (
                 (config.connections || []).some((c) => c.fromNodeId === 'get-images' && c.toNodeId === conn.fromNodeId)
               );
-              const wireStrokeColor = isHovered ? '#F85149' : isFlowing ? (isFromImages ? '#10B981' : '#A371F7') : (isDark ? '#30363D' : '#CBD5E1');
+              const wireStrokeColor = isXHovered
+                ? '#F85149'
+                : isFlowing
+                ? (isFromImages ? '#10B981' : '#A371F7')
+                : (isDark ? '#30363D' : '#CBD5E1');
 
               const midX = (fromPos.x + toPos.x) / 2;
               const midY = (fromPos.y + toPos.y) / 2;
@@ -1535,40 +1600,80 @@ export const FacebookWorkflowCanvas = forwardRef<
                   key={conn.id}
                   className="workflow-wire-group"
                   onMouseEnter={() => setHoveredWireId(conn.id)}
-                  onMouseLeave={() => setHoveredWireId(null)}
-                  style={{ pointerEvents: 'auto', cursor: 'pointer' }}
+                  onMouseLeave={() => {
+                    setHoveredWireId(null);
+                    setHoveredXId(null);
+                  }}
+                  style={{ pointerEvents: 'auto', cursor: 'default' }}
                 >
-                  {/* Invisible thicker hit-path for hovering / clicking to disconnect */}
+                  {/* Invisible thicker hit-path for hovering to reveal the disconnect (x) button */}
                   <path
                     d={path}
                     fill="none"
                     stroke="transparent"
                     strokeWidth="16"
-                    onClick={(e) => handleRemoveConnection(conn.id, e)}
+                    style={{ cursor: 'default' }}
                   />
                   {/* Visual dashed flowing wire */}
                   <path
                     d={path}
                     fill="none"
                     stroke={wireStrokeColor}
-                    strokeWidth={isHovered ? '2.5' : '2'}
+                    strokeWidth={isXHovered ? '2.5' : isWireHovered ? '2.25' : '2'}
                     strokeDasharray={isFlowing ? '8, 8' : 'none'}
                     strokeLinecap="round"
                     style={{
                       animation: isFlowing ? 'n8nFlow 1.2s linear infinite' : 'none',
-                      transition: 'stroke 0.15s ease',
+                      transition: 'stroke 0.18s ease, stroke-width 0.18s ease',
+                      filter: isXHovered ? 'drop-shadow(0 0 6px rgba(248, 81, 73, 0.65))' : 'none',
                     }}
                   />
-                  {/* Disconnect indicator on hover */}
-                  {isHovered && (
+                  {/* Disconnect indicator on hover - only clicking on this (X) button removes the wire */}
+                  {isWireHovered && (
                     <g
                       transform={`translate(${midX}, ${midY})`}
-                      onClick={(e) => handleRemoveConnection(conn.id, e)}
                       style={{ cursor: 'pointer' }}
+                      onMouseEnter={() => setHoveredXId(conn.id)}
+                      onMouseLeave={() => setHoveredXId(null)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRemoveConnection(conn.id, e);
+                      }}
                     >
-                      <circle r="10" fill="#F85149" stroke={isDark ? "#161B22" : "#FFFFFF"} strokeWidth="2" />
-                      <line x1="-3.5" y1="-3.5" x2="3.5" y2="3.5" stroke="#FFFFFF" strokeWidth="1.8" strokeLinecap="round" />
-                      <line x1="3.5" y1="-3.5" x2="-3.5" y2="3.5" stroke="#FFFFFF" strokeWidth="1.8" strokeLinecap="round" />
+                      {/* Generous hit area circle for easy, accurate clicking */}
+                      <circle r="16" fill="transparent" />
+                      <circle
+                        r={isXHovered ? 12 : 10}
+                        fill="#F85149"
+                        stroke={isDark ? "#161B22" : "#FFFFFF"}
+                        strokeWidth="2"
+                        style={{
+                          transition: 'all 0.15s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                          filter: isXHovered
+                            ? 'drop-shadow(0 0 8px rgba(248, 81, 73, 0.85))'
+                            : 'drop-shadow(0 2px 4px rgba(0, 0, 0, 0.25))',
+                        }}
+                      />
+                      <line
+                        x1={isXHovered ? -4 : -3.5}
+                        y1={isXHovered ? -4 : -3.5}
+                        x2={isXHovered ? 4 : 3.5}
+                        y2={isXHovered ? 4 : 3.5}
+                        stroke="#FFFFFF"
+                        strokeWidth={isXHovered ? 2.2 : 1.8}
+                        strokeLinecap="round"
+                        style={{ transition: 'all 0.15s ease' }}
+                      />
+                      <line
+                        x1={isXHovered ? 4 : 3.5}
+                        y1={isXHovered ? -4 : -3.5}
+                        x2={isXHovered ? -4 : -3.5}
+                        y2={isXHovered ? 4 : 3.5}
+                        stroke="#FFFFFF"
+                        strokeWidth={isXHovered ? 2.2 : 1.8}
+                        strokeLinecap="round"
+                        style={{ transition: 'all 0.15s ease' }}
+                      />
                     </g>
                   )}
                 </g>
@@ -1623,6 +1728,8 @@ export const FacebookWorkflowCanvas = forwardRef<
               );
             })()}
           </svg>
+
+          <style>{CANVAS_NODE_ACTION_CSS}</style>
 
           {/* ======================================================== */}
           {/* NODE 1: FACEBOOK URL IMPORTER (TRIGGER CIRCLE)           */}
@@ -1726,49 +1833,12 @@ export const FacebookWorkflowCanvas = forwardRef<
               }}
             />
 
-            {/* Plus Icon Button to add AI node & connect immediately before next step */}
-            <button
-              type="button"
-              className="canvas-control add-ai-branch-btn"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleAddAIBoxConnectedFromContent();
-              }}
-              style={{
-                position: 'absolute',
-                right: '-36px',
-                top: '50%',
-                transform: 'translateY(-50%)',
-                width: '24px',
-                height: '24px',
-                borderRadius: '50%',
-                backgroundColor: isDark ? '#161B22' : '#FFFFFF',
-                border: '1.5px solid #388BFD',
-                color: '#388BFD',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                zIndex: 35,
-                padding: 0,
-                boxShadow: isDark ? '0 2px 8px rgba(0, 0, 0, 0.45)' : '0 2px 8px rgba(0, 0, 0, 0.1)',
-                transition: 'background-color 0.18s ease, color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = '#1F6FEB';
-                e.currentTarget.style.color = '#FFFFFF';
-                e.currentTarget.style.borderColor = '#79C0FF';
-                e.currentTarget.style.boxShadow = '0 0 12px rgba(56, 139, 253, 0.65)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = isDark ? '#161B22' : '#FFFFFF';
-                e.currentTarget.style.color = '#388BFD';
-                e.currentTarget.style.borderColor = '#388BFD';
-                e.currentTarget.style.boxShadow = isDark ? '0 2px 8px rgba(0, 0, 0, 0.45)' : '0 2px 8px rgba(0, 0, 0, 0.1)';
-              }}
-            >
-              <FiPlus style={{ fontSize: '13px', strokeWidth: '2.5' }} />
-            </button>
+            {/* Hover: animated plus to add + connect a node */}
+            <div className="node-hit" style={{ left: '100%', top: 0, height: '100%', display: 'flex', alignItems: 'center', paddingLeft: '12px', boxSizing: 'border-box' }}>
+              <NodeActionButton title="Add AI node" color="#388BFD" isDark={isDark} onClick={() => handleAddAIBoxConnectedFromContent()}>
+                <FiPlus style={{ fontSize: '14px' }} />
+              </NodeActionButton>
+            </div>
 
             {/* Label below circle */}
             <div
@@ -1807,6 +1877,7 @@ export const FacebookWorkflowCanvas = forwardRef<
               top: `${config.getImages.y}px`,
               width: `${CIRCLE_SIZE}px`,
               height: `${CIRCLE_SIZE}px`,
+              ['--ring' as any]: '#2EA043',
               opacity: config.getImages.enabled ? 1 : 0.6,
               zIndex: 15,
               cursor: 'pointer',
@@ -1838,50 +1909,12 @@ export const FacebookWorkflowCanvas = forwardRef<
               }}
             />
 
-            {/* Plus Icon Button to add AI image branch node & connect immediately */}
-            <button
-              type="button"
-              className="canvas-control add-ai-branch-btn"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleAddAIBoxConnectedFromImages();
-              }}
-              style={{
-                position: 'absolute',
-                right: '-36px',
-                top: '50%',
-                transform: 'translateY(-50%)',
-                width: '24px',
-                height: '24px',
-                borderRadius: '50%',
-                backgroundColor: isDark ? '#161B22' : '#FFFFFF',
-                border: '1.5px solid #2EA043',
-                color: '#2EA043',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                zIndex: 35,
-                padding: 0,
-                boxShadow: isDark ? '0 2px 8px rgba(0, 0, 0, 0.45)' : '0 2px 8px rgba(0, 0, 0, 0.1)',
-                transition: 'all 0.18s ease',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = '#2EA043';
-                e.currentTarget.style.color = '#FFFFFF';
-                e.currentTarget.style.borderColor = '#3FB950';
-                e.currentTarget.style.boxShadow = '0 0 12px rgba(46, 160, 67, 0.65)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = isDark ? '#161B22' : '#FFFFFF';
-                e.currentTarget.style.color = '#2EA043';
-                e.currentTarget.style.borderColor = '#2EA043';
-                e.currentTarget.style.boxShadow = isDark ? '0 2px 8px rgba(0, 0, 0, 0.45)' : '0 2px 8px rgba(0, 0, 0, 0.1)';
-              }}
-              title="Add Image Enhancement Node"
-            >
-              <FiPlus style={{ fontSize: '13px', strokeWidth: '2.5' }} />
-            </button>
+            {/* Hover: animated plus to add + connect a node */}
+            <div className="node-hit" style={{ left: '100%', top: 0, height: '100%', display: 'flex', alignItems: 'center', paddingLeft: '12px', boxSizing: 'border-box' }}>
+              <NodeActionButton title="Add Image Enhancement node" color="#2EA043" isDark={isDark} onClick={() => handleAddAIBoxConnectedFromImages()}>
+                <FiPlus style={{ fontSize: '14px' }} />
+              </NodeActionButton>
+            </div>
 
             {/* Label below circle */}
             <div
@@ -1934,6 +1967,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   top: `${box.y}px`,
                   width: `${CIRCLE_SIZE}px`,
                   height: `${CIRCLE_SIZE}px`,
+                  ['--ring' as any]: themeColor,
                   opacity: box.enabled ? 1 : 0.6,
                   zIndex: isSelected ? 20 : 15,
                   cursor: 'pointer',
@@ -1985,6 +2019,29 @@ export const FacebookWorkflowCanvas = forwardRef<
                   ) : (
                     <OpenAIIcon size={28} color={box.enabled ? '#3FB950' : '#8B949E'} />
                   )}
+                </div>
+
+                {/* Hover: animated duplicate + delete actions at the right of the node */}
+                <div
+                  className="node-hit"
+                  style={{
+                    left: '100%',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    display: 'flex',
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: '6px',
+                    paddingLeft: '12px',
+                    boxSizing: 'border-box',
+                  }}
+                >
+                  <NodeActionButton title="Duplicate node" color={themeColor} isDark={isDark} delay={0} onClick={(e) => handleDuplicateAIBox(box, e)}>
+                    <FiPlus style={{ fontSize: '14px' }} />
+                  </NodeActionButton>
+                  <NodeActionButton title="Delete node" color="#EF4444" isDark={isDark} delay={40} onClick={(e) => handleDeleteAIBox(box.id, e)}>
+                    <FiTrash2 style={{ fontSize: '13px' }} />
+                  </NodeActionButton>
                 </div>
 
                 {/* Label below circle */}

@@ -2566,25 +2566,24 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
               height: 'fit-content',
             }}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.625rem', flexWrap: 'wrap' }}>
-              <h3 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0, whiteSpace: 'nowrap' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'nowrap' }}>
+              <h3 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
                 Imported Photos ({images.length})
               </h3>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'nowrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'nowrap', flexShrink: 0 }}>
                 {imageAIBoxes.length > 0 && (
                   <Button
                     variant="secondary"
                     size="sm"
                     onClick={() => handleOpenImageStudio(imageAIBoxes[0])}
                     leftIcon={<RunwareIcon size={12} color="var(--text-secondary)" />}
-                    rightIcon={<FiSliders style={{ fontSize: '11px', opacity: 0.7 }} />}
                     title="Open Image Studio"
                     style={{
-                      height: '28px',
-                      padding: '0 0.625rem',
-                      fontSize: '0.75rem',
+                      height: '34px',
+                      padding: '0 0.875rem',
+                      fontSize: '0.8125rem',
                       fontWeight: 500,
-                      borderRadius: '6px',
+                      borderRadius: '8px',
                       backgroundColor: 'var(--bg-main)',
                       border: '1px solid var(--border-color)',
                       color: 'var(--text-primary)',
@@ -2596,7 +2595,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                       cursor: 'pointer',
                     }}
                   >
-                    {imageAIBoxes[0].title ? imageAIBoxes[0].title.replace(/\bAI\s+/gi, '') : getAIModelDisplayName(imageAIBoxes[0].provider, imageAIBoxes[0].model)}
+                    Studio
                   </Button>
                 )}
                 {imageAIBoxes.length > 0 && images.length > 0 && (
@@ -2613,11 +2612,11 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                       )
                     }
                     style={{
-                      height: '28px',
-                      padding: '0 0.625rem',
-                      fontSize: '0.75rem',
+                      height: '34px',
+                      padding: '0 0.875rem',
+                      fontSize: '0.8125rem',
                       fontWeight: 500,
-                      borderRadius: '6px',
+                      borderRadius: '8px',
                       backgroundColor: 'var(--bg-main)',
                       border: '1px solid var(--border-color)',
                       color: 'var(--text-primary)',
@@ -2631,8 +2630,8 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                     title="Enhance all photos using AI model"
                   >
                     {isEnhancingAllPhotos
-                      ? `Enhancing (${Object.keys(enhancedPhotos).length}/${images.length})...`
-                      : 'Enhance All Photos'}
+                      ? `Enhancing ${Object.keys(enhancedPhotos).length}/${images.length}`
+                      : 'Enhance All'}
                   </Button>
                 )}
                 {images.length > 0 && (
@@ -2649,11 +2648,11 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                       )
                     }
                     style={{
-                      height: '28px',
-                      padding: '0 0.625rem',
-                      fontSize: '0.75rem',
+                      height: '34px',
+                      padding: '0 0.875rem',
+                      fontSize: '0.8125rem',
                       fontWeight: 500,
-                      borderRadius: '6px',
+                      borderRadius: '8px',
                       backgroundColor: 'var(--bg-main)',
                       border: '1px solid var(--border-color)',
                       color: 'var(--text-primary)',
@@ -2666,7 +2665,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                     }}
                     title="Download all photos as a ZIP package"
                   >
-                    {isDownloadingAll ? `Downloading (${downloadProgress}/${images.length})...` : 'Download All'}
+                    {isDownloadingAll ? `Downloading ${downloadProgress}/${images.length}` : 'Download'}
                   </Button>
                 )}
               </div>
