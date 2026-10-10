@@ -300,16 +300,13 @@ const CANVAS_NODE_ACTION_CSS = `
 .canvas-node:hover::before,
 .canvas-node.is-hovered::before{opacity:.7;transform:scale(1);animation:nodeRingSpin 10s linear infinite}
 @keyframes nodeRingSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
-.node-hit{position:absolute;display:flex;align-items:center;pointer-events:none;z-index:35}
-.canvas-node:hover .node-hit,
-.canvas-node.is-hovered .node-hit,
-.node-hit:hover{pointer-events:auto}
+.node-hit{position:absolute;display:flex;align-items:center;pointer-events:none !important;z-index:35}
 .node-action{width:26px;height:26px;border-radius:50%;background:var(--na-bg);border:1.5px solid var(--na-color);color:var(--na-color);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;opacity:0;transform:scale(.3) translateX(-4px);box-shadow:0 2px 6px rgba(0,0,0,.15);transition:opacity .18s ease,transform .25s cubic-bezier(.34,1.56,.64,1),background-color .15s ease,color .15s ease;pointer-events:none}
 .canvas-node:hover .node-action,
 .canvas-node.is-hovered .node-action,
-.node-hit:hover .node-action{opacity:1;transform:scale(1) translateX(0);pointer-events:auto}
+.node-action:hover{opacity:1;transform:scale(1) translateX(0);pointer-events:auto !important}
 .canvas-node .node-action:hover,
-.node-hit .node-action:hover{background:var(--na-color);color:#fff;box-shadow:0 2px 8px rgba(0,0,0,.25);transform:scale(1.14)}
+.node-action:hover{background:var(--na-color);color:#fff;box-shadow:0 2px 8px rgba(0,0,0,.25);transform:scale(1.14)}
 `;
 
 const NodeActionButton: React.FC<{
@@ -456,22 +453,22 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
           onMouseEnter={() => setHoveredSocket('output')}
           onMouseLeave={() => setHoveredSocket(null)}
           onMouseDown={(e) => {
-            if (isConnectedOutput) {
-              e.stopPropagation();
-              return;
-            }
+            e.stopPropagation();
             onSocketMouseDown?.('output', e);
           }}
-          onMouseUp={(e) => onSocketMouseUp?.('output', e)}
+          onMouseUp={(e) => {
+            e.stopPropagation();
+            onSocketMouseUp?.('output', e);
+          }}
           style={{
             position: 'absolute',
             right: '-16px',
-            top: '20px',
-            width: '28px',
-            height: '32px',
-            cursor: isConnectedOutput ? 'default' : 'grab',
+            top: '18px',
+            width: '32px',
+            height: '36px',
+            cursor: 'grab',
             pointerEvents: 'auto',
-            zIndex: 30,
+            zIndex: 50,
             borderRadius: '0 16px 16px 0',
           }}
         />
@@ -484,22 +481,22 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
           onMouseEnter={() => setHoveredSocket('input')}
           onMouseLeave={() => setHoveredSocket(null)}
           onMouseDown={(e) => {
-            if (isConnectedInput) {
-              e.stopPropagation();
-              return;
-            }
+            e.stopPropagation();
             onSocketMouseDown?.('input', e);
           }}
-          onMouseUp={(e) => onSocketMouseUp?.('input', e)}
+          onMouseUp={(e) => {
+            e.stopPropagation();
+            onSocketMouseUp?.('input', e);
+          }}
           style={{
             position: 'absolute',
             left: '-16px',
-            top: '20px',
-            width: '28px',
-            height: '32px',
-            cursor: isConnectedInput ? 'default' : 'crosshair',
+            top: '18px',
+            width: '32px',
+            height: '36px',
+            cursor: 'crosshair',
             pointerEvents: 'auto',
-            zIndex: 30,
+            zIndex: 50,
             borderRadius: '16px 0 0 16px',
           }}
         />
@@ -700,6 +697,21 @@ export const FacebookWorkflowCanvas = forwardRef<
     return false;
   };
 
+  const isReachable = (startId: string, targetId: string, conns: WorkflowWireConnection[]): boolean => {
+    const visited = new Set<string>();
+    const queue = [startId];
+    while (queue.length > 0) {
+      const curr = queue.shift()!;
+      if (curr === targetId) return true;
+      if (!visited.has(curr)) {
+        visited.add(curr);
+        const nextNodes = conns.filter((c) => c.fromNodeId === curr).map((c) => c.toNodeId);
+        queue.push(...nextNodes);
+      }
+    }
+    return false;
+  };
+
   // Directional forward-only connection validation with strict duplicate rejection:
   // "and that can't connect back with other and that only can connect next other step"
   const isValidConnection = (fromId: string, toId: string): boolean => {
@@ -717,30 +729,28 @@ export const FacebookWorkflowCanvas = forwardRef<
       return false;
     }
 
-    // Step 2: get-content -> dynamic AI nodes only
+    // Step 2: get-content -> dynamic AI nodes
     if (fromId === 'get-content') {
-      if (!toId.startsWith('ai-box-')) return false;
-      // Target AI box must NOT already have an incoming connection
-      const aiAlreadyHasInput = conns.some((c) => c.toNodeId === toId);
-      return !aiAlreadyHasInput;
+      return toId.startsWith('ai-box-');
     }
 
     // Step 2b: get-images -> dynamic AI nodes (Image Edit & Enhance)
     if (fromId === 'get-images') {
-      if (!toId.startsWith('ai-box-')) return false;
-      // Target AI box must NOT already have an incoming connection
-      const aiAlreadyHasInput = conns.some((c) => c.toNodeId === toId);
-      return !aiAlreadyHasInput;
+      return toId.startsWith('ai-box-');
     }
 
-    // Step 3: dynamic AI nodes -> destination only
+    // Step 3: dynamic AI nodes -> destination or another AI node (chaining)
     if (fromId.startsWith('ai-box-')) {
-      if (toId !== 'destination') return false;
-      // This AI box must NOT already have an outgoing connection to destination
-      const alreadyConnectedToDest = conns.some(
-        (c) => c.fromNodeId === fromId && c.toNodeId === 'destination'
-      );
-      return !alreadyConnectedToDest;
+      if (toId === 'destination') {
+        const alreadyConnectedToDest = conns.some(
+          (c) => c.fromNodeId === fromId && c.toNodeId === 'destination'
+        );
+        return !alreadyConnectedToDest;
+      }
+      if (toId.startsWith('ai-box-')) {
+        return !isReachable(toId, fromId, conns);
+      }
+      return false;
     }
 
     return false;
@@ -810,16 +820,8 @@ export const FacebookWorkflowCanvas = forwardRef<
       return;
     }
 
-    // Prevent starting drag from an already connected socket
-    const conns = config.connections || [];
-    if (socketType === 'output') {
-      if (nodeId === 'trigger' || nodeId === 'get-images') return;
-      if (nodeId.startsWith('ai-box-') && conns.some((c) => c.fromNodeId === nodeId)) return;
-    }
-    if (socketType === 'input') {
-      if (nodeId === 'get-content' || nodeId === 'get-images') return;
-      if (nodeId.startsWith('ai-box-') && conns.some((c) => c.toNodeId === nodeId)) return;
-    }
+    // Trigger is permanently wired, do not start drag from trigger
+    if (nodeId === 'trigger') return;
 
     // Start dragging a new wire from this socket
     dragWireStartTime.current = Date.now();
