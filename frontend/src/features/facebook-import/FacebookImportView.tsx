@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import JSZip from 'jszip';
 import type { Property } from '../../types';
 import { Button } from '../../components/ui/Button';
 import { Select } from '../../components/ui/Select';
@@ -969,6 +970,66 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
+    }
+  };
+
+  const [isDownloadingAll, setIsDownloadingAll] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
+
+  const handleDownloadAllImages = async () => {
+    if (!images || images.length === 0 || isDownloadingAll) return;
+    setIsDownloadingAll(true);
+    setDownloadProgress(0);
+    addLog(`Preparing to download all ${images.length} photos...`, 'info');
+
+    try {
+      const zip = new JSZip();
+
+      for (let i = 0; i < images.length; i++) {
+        const img = images[i];
+        const rawUrl = img.stored_url
+          ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
+          : img.source_url;
+
+        try {
+          const resp = await fetch(rawUrl, { mode: 'cors' });
+          const blob = await resp.blob();
+          const ext = blob.type.includes('png') ? 'png' : 'jpg';
+          const padIndex = String(img.index !== undefined ? img.index : i + 1).padStart(2, '0');
+          zip.file(`photo-${padIndex}.${ext}`, blob);
+        } catch (fetchErr) {
+          console.warn(`Failed to package photo #${img.index || i + 1}:`, fetchErr);
+        }
+        setDownloadProgress(i + 1);
+      }
+
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const blobUrl = URL.createObjectURL(zipBlob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = `property-photos-${images.length}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(blobUrl);
+
+      addLog(`All ${images.length} photos packaged & downloaded successfully as ZIP archive`, 'success');
+    } catch (err: any) {
+      console.error('ZIP packaging failed, falling back to sequential download:', err);
+      addLog('ZIP creation failed, downloading photos individually...', 'warn');
+      for (let i = 0; i < images.length; i++) {
+        const img = images[i];
+        const fullUrl = img.stored_url
+          ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
+          : img.source_url;
+        await handleDownloadImage(fullUrl, img.index);
+        setDownloadProgress(i + 1);
+        await new Promise((res) => setTimeout(res, 250));
+      }
+      addLog(`All ${images.length} photos downloaded individually`, 'success');
+    } finally {
+      setIsDownloadingAll(false);
+      setDownloadProgress(0);
     }
   };
 
@@ -2270,13 +2331,48 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
               height: 'fit-content',
             }}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
               <h3 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
                 Imported Photos ({images.length})
               </h3>
-              <Badge variant={images.length > 0 ? 'success' : 'default'} size="sm">
-                Preserved Order
-              </Badge>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Badge variant={images.length > 0 ? 'success' : 'default'} size="sm">
+                  Preserved Order
+                </Badge>
+                {images.length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleDownloadAllImages}
+                    disabled={isDownloadingAll}
+                    leftIcon={
+                      isDownloadingAll ? (
+                        <FiRefreshCw className="animate-spin" style={{ fontSize: '12px' }} />
+                      ) : (
+                        <FiDownload style={{ fontSize: '12px' }} />
+                      )
+                    }
+                    style={{
+                      height: '24px',
+                      padding: '0 0.625rem',
+                      fontSize: '0.75rem',
+                      fontWeight: 500,
+                      borderRadius: '9999px',
+                      borderColor: 'var(--border-color)',
+                      backgroundColor: 'var(--bg-main)',
+                      color: 'var(--text-primary)',
+                      boxShadow: 'var(--shadow-sm)',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.25rem',
+                      cursor: isDownloadingAll ? 'not-allowed' : 'pointer',
+                    }}
+                    title="Download all photos as a ZIP package"
+                  >
+                    {isDownloadingAll ? `Downloading (${downloadProgress}/${images.length})...` : 'Download All'}
+                  </Button>
+                )}
+              </div>
             </div>
 
             {images.length === 0 ? (
