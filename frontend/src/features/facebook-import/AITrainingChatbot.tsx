@@ -1200,14 +1200,28 @@ export const AITrainingChatbot: React.FC<AITrainingChatbotProps> = ({
             minWidth: 0,
             backgroundColor: isDark ? '#0D1117' : 'var(--bg-main)',
             height: '100%',
+            position: 'relative',
           }}
         >
+          {/* Top-Left AI Model Selector: Compact, always visible at top-left, takes zero full-width bar space */}
+          <div style={{ position: 'absolute', top: '12px', left: '16px', zIndex: 30 }}>
+            <ModelSelectorMenu
+              provider={box.provider}
+              model={box.model}
+              filterType="text"
+              align="left"
+              onSelectModel={(provider, model) => {
+                onUpdateBox(box.id, { provider, model });
+              }}
+            />
+          </div>
+
           {/* MESSAGES FLOW */}
           <div
             style={{
               flex: 1,
               overflowY: 'auto',
-              padding: '0.75rem 1.25rem',
+              padding: '2.8rem 1.25rem 0.75rem 1.25rem',
               display: 'flex',
               flexDirection: 'column',
             }}

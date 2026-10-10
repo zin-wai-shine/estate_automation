@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import type { DynamicAIBoxConfig, CanvasPromptOption } from './FacebookWorkflowCanvas';
-import { RunwareIcon, LaoZhangIcon, OpenAIIcon } from './AITrainingChatbot';
+import { RunwareIcon, LaoZhangIcon, OpenAIIcon, ModelSelectorMenu } from './AITrainingChatbot';
 import { Select } from '../../components/ui/Select';
 import { useTheme } from '../../context/ThemeContext';
 import { getAIModelDisplayName, isImagePrompt } from './aiModelUtils';
@@ -2222,12 +2222,25 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
         {/* CENTER COLUMN: ChatGPT-style Conversation & Input Area    */}
         {/* ========================================================= */}
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, height: '100%', position: 'relative' }}>
+          {/* Top-Left AI Model Selector: Compact, always visible at top-left, takes zero full-width bar space */}
+          <div style={{ position: 'absolute', top: '12px', left: '16px', zIndex: 30 }}>
+            <ModelSelectorMenu
+              provider={(box.provider as any) || 'runware_ai'}
+              model={box.model || 'runware:101@1'}
+              filterType="image"
+              align="left"
+              onSelectModel={(provider, model) => {
+                onUpdateBox(box.id, { provider, model });
+              }}
+            />
+          </div>
+
           {/* Scrollable Conversation Stream */}
           <div
             style={{
               flex: 1,
               overflowY: 'auto',
-              padding: '0.75rem 1.25rem',
+              padding: '2.8rem 1.25rem 0.75rem 1.25rem',
               display: 'flex',
               flexDirection: 'column',
               boxSizing: 'border-box',

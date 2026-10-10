@@ -2797,15 +2797,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                         />
                       </div>
                     </div>
-
-                    {/* AI Model Selector at left top */}
-                    <ModelSelectorMenu
-                      provider={currentModalAIBox.provider}
-                      model={currentModalAIBox.model}
-                      filterType={isModalImageBox ? 'image' : 'text'}
-                      align="left"
-                      onSelectModel={(provider, model) => handleUpdateAIBox(currentModalAIBox.id, { provider, model })}
-                    />
                   </div>
                 );
               })()
