@@ -1310,7 +1310,6 @@ export const AITrainingChatbot: React.FC<AITrainingChatbotProps> = ({
                       if (e.key === 'Enter') e.currentTarget.blur();
                     }}
                   />
-                  <FiEdit3 style={{ fontSize: '12px', color: 'var(--text-muted)', opacity: 0.5, pointerEvents: 'none' }} />
                 </div>
                 <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', margin: '0 0 1.5rem 0', lineHeight: 1.5, fontWeight: 400 }}>
                   Test your prompt with sample property listings or chat to refine it.

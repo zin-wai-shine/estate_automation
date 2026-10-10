@@ -2570,20 +2570,12 @@ export const FacebookWorkflowCanvas = forwardRef<
                       }}
                     />
                   ) : (
-                    <div
+                    <span
                       style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                        cursor: 'pointer',
-                        padding: '1px 4px',
-                        borderRadius: '4px',
-                      }}
-                      title="Click or double-click to rename"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditingCanvasBoxId(box.id);
-                        setEditingCanvasBoxTitle(box.title);
+                        fontSize: '0.8125rem',
+                        fontWeight: 600,
+                        color: 'var(--text-primary)',
+                        transition: 'color 0.2s ease',
                       }}
                       onDoubleClick={(e) => {
                         e.stopPropagation();
@@ -2591,18 +2583,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                         setEditingCanvasBoxTitle(box.title);
                       }}
                     >
-                      <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)', transition: 'color 0.2s ease' }}>
-                        {box.title}
-                      </span>
-                      <FiEdit2
-                        style={{
-                          fontSize: '11px',
-                          color: 'var(--text-muted)',
-                          opacity: hoveredNodeId === box.id ? 0.8 : 0.35,
-                          transition: 'opacity 0.15s ease',
-                        }}
-                      />
-                    </div>
+                      {box.title}
+                    </span>
                   )}
                   <span style={{ fontSize: '0.6875rem', color: isBoxReceptive ? RECEPTIVE_COLOR : 'var(--text-muted)', fontWeight: isBoxReceptive ? 600 : 400, transition: 'color 0.2s ease' }}>
                     {isBoxReceptive
@@ -2811,14 +2793,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                           }}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') e.currentTarget.blur();
-                          }}
-                        />
-                        <FiEdit2
-                          style={{
-                            fontSize: '11px',
-                            color: 'var(--text-muted)',
-                            opacity: 0.6,
-                            flexShrink: 0,
                           }}
                         />
                       </div>

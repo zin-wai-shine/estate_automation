@@ -2297,7 +2297,6 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                         if (e.key === 'Enter') e.currentTarget.blur();
                       }}
                     />
-                    <FiEdit2 style={{ fontSize: '12px', color: 'var(--text-muted)', opacity: 0.5, pointerEvents: 'none' }} />
                   </div>
 
                   <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', maxWidth: '440px', lineHeight: 1.5, margin: 0 }}>
