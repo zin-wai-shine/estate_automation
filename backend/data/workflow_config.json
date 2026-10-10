@@ -1,5 +1,5 @@
 {
-  "timestamp": 1791668656035,
+  "timestamp": 1791668682945,
   "workflow_formats": [
     {
       "config": {
@@ -69,11 +69,6 @@
             "fromNodeId": "ai-box-1790885461679",
             "id": "conn-1791668610183-dyha",
             "toNodeId": "destination"
-          },
-          {
-            "fromNodeId": "ai-box-1790942968916",
-            "id": "conn-1791668656034-3bg1",
-            "toNodeId": "destination"
           }
         ],
         "destination": {
@@ -112,7 +107,7 @@
       "description": "Customized Facebook import extraction and dynamic AI generation pipeline",
       "id": "format-1790885461679",
       "name": "General Engine",
-      "updatedAt": 1791668656035
+      "updatedAt": 1791668682945
     }
   ]
 }

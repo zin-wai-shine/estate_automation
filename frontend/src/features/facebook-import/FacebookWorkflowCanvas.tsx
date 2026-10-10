@@ -424,7 +424,7 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
         {(sockets === 'right' || sockets === 'both') && (
           showArrow ? (
             <path
-              d="M 71 36 L 79.5 36 M 76 32.5 L 79.5 36 L 76 39.5"
+              d="M 70 36 L 78 36 M 74.5 32.5 L 78 36 L 74.5 39.5"
               fill="none"
               stroke={isReceptiveOutput ? DEEP_YELLOW : (hoveredSocket === 'output' ? '#FFFFFF' : strokeColor)}
               strokeWidth={isReceptiveOutput ? 2.5 : 2}
@@ -436,9 +436,9 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
             />
           ) : (
             <circle
-              cx="79.3"
+              cx="75"
               cy="36"
-              r={hoveredSocket === 'output' ? 6.5 : 6}
+              r={hoveredSocket === 'output' ? 5.5 : 4.5}
               fill={socketDotColor || strokeColor}
               style={{
                 transition: 'r 0.15s ease, fill 0.15s ease',
@@ -452,9 +452,9 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
         {/* ======================================================== */}
         {(sockets === 'left' || sockets === 'both') && (
           <circle
-            cx="-7.3"
+            cx="-3"
             cy="36"
-            r={isReceptiveInput ? 7.5 : (hoveredSocket === 'input' ? 6.5 : 6)}
+            r={isReceptiveInput ? 6 : (hoveredSocket === 'input' ? 5.5 : 4.5)}
             fill={isReceptiveInput ? DEEP_YELLOW : (socketDotColor || strokeColor)}
             style={{
               transition: 'r 0.15s ease, fill 0.15s ease',
