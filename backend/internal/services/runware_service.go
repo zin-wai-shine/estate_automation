@@ -3,8 +3,12 @@ package services
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"image"
+	_ "image/jpeg"
+	_ "image/png"
 	"io"
 	"net/http"
 	"os"
@@ -32,12 +36,20 @@ type RunwareTaskInference struct {
 	Model          string   `json:"model"`
 	PositivePrompt string   `json:"positivePrompt"`
 	NegativePrompt string   `json:"negativePrompt,omitempty"`
+	SeedImage      string   `json:"seedImage,omitempty"`
 	InputImage     string   `json:"inputImage,omitempty"`
 	Strength       *float64 `json:"strength,omitempty"`
 	Width          int      `json:"width,omitempty"`
 	Height         int      `json:"height,omitempty"`
 	NumberResults  int      `json:"numberResults,omitempty"`
 	Steps          int      `json:"steps,omitempty"`
+}
+
+type RunwareTaskUpscale struct {
+	TaskType      string `json:"taskType"`
+	TaskUUID      string `json:"taskUUID"`
+	InputImage    string `json:"inputImage"`
+	UpscaleFactor int    `json:"upscaleFactor"`
 }
 
 // sanitizeRunwarePrompt separates positive and negative instructions, strips out excessive text,
@@ -101,6 +113,125 @@ func sanitizeRunwarePrompt(rawPrompt string) (positive string, negative string) 
 	return posPart, negPart
 }
 
+// loadImageAsDataURI loads an image from a Data URI, local disk path, or HTTP/HTTPS URL
+// and converts it into a base64 Data URI while extracting its original pixel dimensions.
+func loadImageAsDataURI(imageURLOrPath string) (dataURI string, width int, height int, err error) {
+	var rawBytes []byte
+
+	// 1. If already a Data URI
+	if strings.HasPrefix(imageURLOrPath, "data:image/") {
+		parts := strings.SplitN(imageURLOrPath, ",", 2)
+		if len(parts) == 2 {
+			rawBytes, err = base64.StdEncoding.DecodeString(parts[1])
+			if err == nil && len(rawBytes) > 0 {
+				cfg, _, decErr := image.DecodeConfig(bytes.NewReader(rawBytes))
+				if decErr == nil {
+					width = cfg.Width
+					height = cfg.Height
+				}
+				return imageURLOrPath, width, height, nil
+			}
+		}
+	}
+
+	// 2. Resolve local file on disk
+	tryPaths := []string{imageURLOrPath}
+
+	if strings.Contains(imageURLOrPath, "/storage/") {
+		idx := strings.Index(imageURLOrPath, "/storage/")
+		subPath := imageURLOrPath[idx+len("/storage/"):]
+		if qIdx := strings.Index(subPath, "?"); qIdx != -1 {
+			subPath = subPath[:qIdx]
+		}
+		tryPaths = append(tryPaths,
+			filepath.Join("storage", subPath),
+			filepath.Join(".", "storage", subPath),
+			filepath.Join("backend", "storage", subPath),
+			filepath.Join("..", "backend", "storage", subPath),
+		)
+	}
+
+	for _, p := range tryPaths {
+		if b, err := os.ReadFile(p); err == nil && len(b) > 0 {
+			rawBytes = b
+			break
+		}
+	}
+
+	// 3. Fallback to HTTP GET if not found locally
+	if len(rawBytes) == 0 && (strings.HasPrefix(imageURLOrPath, "http://") || strings.HasPrefix(imageURLOrPath, "https://")) {
+		client := &http.Client{Timeout: 30 * time.Second}
+		resp, err := client.Get(imageURLOrPath)
+		if err == nil && resp.StatusCode == http.StatusOK {
+			defer resp.Body.Close()
+			b, err := io.ReadAll(resp.Body)
+			if err == nil && len(b) > 0 {
+				rawBytes = b
+			}
+		}
+	}
+
+	if len(rawBytes) == 0 {
+		return "", 0, 0, fmt.Errorf("could not load source image from path or URL: %s", imageURLOrPath)
+	}
+
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(rawBytes))
+	if err == nil {
+		width = cfg.Width
+		height = cfg.Height
+	}
+
+	mimeType := http.DetectContentType(rawBytes)
+	if mimeType == "application/octet-stream" || !strings.HasPrefix(mimeType, "image/") {
+		if bytes.HasPrefix(rawBytes, []byte("\x89PNG")) {
+			mimeType = "image/png"
+		} else {
+			mimeType = "image/jpeg"
+		}
+	}
+
+	dataURI = fmt.Sprintf("data:%s;base64,%s", mimeType, base64.StdEncoding.EncodeToString(rawBytes))
+	return dataURI, width, height, nil
+}
+
+// calculateRunwareDimensions computes width and height that respect the original aspect ratio,
+// conform to Runware's strict multiple-of-64 requirement, and stay within optimal resolution.
+func calculateRunwareDimensions(w, h int) (int, int) {
+	if w <= 0 || h <= 0 {
+		return 1024, 1024
+	}
+	const targetMax = 1024.0
+	aspect := float64(w) / float64(h)
+
+	var targetW, targetH float64
+	if aspect >= 1.0 {
+		targetW = targetMax
+		targetH = targetMax / aspect
+	} else {
+		targetH = targetMax
+		targetW = targetMax * aspect
+	}
+
+	// Round to nearest multiple of 64
+	finalW := int((targetW + 32) / 64) * 64
+	finalH := int((targetH + 32) / 64) * 64
+
+	if finalW < 512 {
+		finalW = 512
+	}
+	if finalW > 1536 {
+		finalW = 1536
+	}
+	if finalH < 512 {
+		finalH = 512
+	}
+	if finalH > 1536 {
+		finalH = 1536
+	}
+
+	return finalW, finalH
+}
+
 type RunwareResponseItem struct {
 	TaskType       string `json:"taskType"`
 	TaskUUID       string `json:"taskUUID"`
@@ -152,11 +283,11 @@ func NewRunwareService() *RunwareService {
 	return &RunwareService{
 		APIKey: apiKey,
 		Model:  model,
-		Client: &http.Client{Timeout: 60 * time.Second},
+		Client: &http.Client{Timeout: 90 * time.Second},
 	}
 }
 
-// EnhanceImageWithRunware performs image-to-image photo enhancement via Runware REST API
+// EnhanceImageWithRunware performs image-to-image photo enhancement or upscaling via Runware REST API
 func (s *RunwareService) EnhanceImageWithRunware(ctx context.Context, inputImageURL string, customPrompt string, strength float64, modelOverride string, outFilePath string) (string, error) {
 	if s.APIKey == "" {
 		return "", fmt.Errorf("RUNWARE_API_KEY is not configured on the server")
@@ -167,28 +298,58 @@ func (s *RunwareService) EnhanceImageWithRunware(ctx context.Context, inputImage
 		model = modelOverride
 	}
 
-	if strength <= 0 {
-		strength = 0.35 // Preserves geometry, enhances clarity and texture
+	// 1. Prepare Base64 Data URI from local storage or URL so Runware cloud servers can access it directly
+	dataURI, origW, origH, err := loadImageAsDataURI(inputImageURL)
+	if err != nil {
+		return "", fmt.Errorf("failed to load input image: %w", err)
 	}
 
-	positivePrompt, negativePrompt := sanitizeRunwarePrompt(customPrompt)
+	var taskPayload interface{}
 
-	task := RunwareTaskInference{
-		TaskType:       "imageInference",
-		TaskUUID:       uuid.New().String(),
-		Model:          model,
-		PositivePrompt: positivePrompt,
-		NegativePrompt: negativePrompt,
-		InputImage:     inputImageURL,
-		Strength:       &strength,
-		Width:          1024,
-		Height:         1024,
-		NumberResults:  1,
-	}
+	// 2. Determine if user selected Upscaling or Image-to-Image Inference
+	isUpscale := model == "runware:upscale" || model == "upscale" || strings.Contains(strings.ToLower(model), "upscale")
+	if isUpscale {
+		taskPayload = RunwareTaskUpscale{
+			TaskType:      "upscale",
+			TaskUUID:      uuid.New().String(),
+			InputImage:    dataURI,
+			UpscaleFactor: 2,
+		}
+	} else {
+		// For photo enhancement, strength must preserve the original room layout, walls, furniture, and structure.
+		// Higher strength (>0.40) causes diffusion to hallucinate completely new rooms.
+		if strength <= 0 {
+			strength = 0.25 // Optimal baseline preserving 100% room geometry
+		} else if strength > 0.40 {
+			strength = 0.35 // Upper safety clamp to prevent replacing the room entirely
+		}
 
-	// FLUX.1 Schnell is optimized for exactly 4 steps (fastest inference & minimal token/credit consumption)
-	if model == "runware:101@1" {
-		task.Steps = 4
+		calcW, calcH := calculateRunwareDimensions(origW, origH)
+		positivePrompt, negativePrompt := sanitizeRunwarePrompt(customPrompt)
+		if negativePrompt == "" {
+			negativePrompt = "blurry, noise, low quality, artifacts, distorted architecture, different room, altered furniture, changed layout, cartoon, painting, 3d render, oversaturated, deformed"
+		}
+
+		inferenceTask := RunwareTaskInference{
+			TaskType:       "imageInference",
+			TaskUUID:       uuid.New().String(),
+			Model:          model,
+			PositivePrompt: positivePrompt,
+			NegativePrompt: negativePrompt,
+			SeedImage:      dataURI,
+			InputImage:     dataURI,
+			Strength:       &strength,
+			Width:          calcW,
+			Height:         calcH,
+			NumberResults:  1,
+		}
+
+		// FLUX.1 Schnell is optimized for exactly 4 steps
+		if model == "runware:101@1" {
+			inferenceTask.Steps = 4
+		}
+
+		taskPayload = inferenceTask
 	}
 
 	payload := []interface{}{
@@ -196,7 +357,7 @@ func (s *RunwareService) EnhanceImageWithRunware(ctx context.Context, inputImage
 			TaskType: "authentication",
 			APIKey:   s.APIKey,
 		},
-		task,
+		taskPayload,
 	}
 
 	bodyBytes, err := json.Marshal(payload)
@@ -251,3 +412,4 @@ func (s *RunwareService) EnhanceImageWithRunware(ctx context.Context, inputImage
 
 	return imageURL, nil
 }
+

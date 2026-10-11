@@ -821,7 +821,7 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
       box.templateText ||
       box.customPrompt ||
       'Ultra high dynamic range real estate photography, balanced window light exposure, warm natural interior illumination, crisp 8k architectural details.';
-    const strength = customStrength ?? (box.strength ?? 0.65);
+    const strength = customStrength ?? (box.strength ?? 0.25);
     const provider = customProvider || box.provider || 'runware_ai';
     const model = customModel || box.model || 'runware:101@1';
 
@@ -1034,7 +1034,7 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
       box.templateText ||
       box.customPrompt ||
       'Ultra high dynamic range real estate photography, balanced window light exposure, warm natural interior illumination, crisp 8k architectural details.';
-    const strength = customStrength ?? (box.strength ?? 0.65);
+    const strength = customStrength ?? (box.strength ?? 0.25);
     const provider = customProvider || box.provider || 'runware_ai';
     const model = customModel || box.model || 'runware:101@1';
 
@@ -1206,7 +1206,7 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
         box.templateText ||
         box.customPrompt ||
         'Ultra high dynamic range real estate photography, balanced window light exposure, warm natural interior illumination, crisp 8k architectural details.';
-      const strength = box.strength ?? 0.65;
+      const strength = box.strength ?? 0.25;
 
       const pendingAssistantMsg: ImageChatMessage = {
         id: pendingMsgId,
@@ -2195,22 +2195,26 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                       fontWeight: 600,
                       padding: '1px 6px',
                       borderRadius: '4px',
-                      backgroundColor: 'rgba(16, 185, 129, 0.15)',
-                      color: '#10B981',
+                      backgroundColor: (box.strength ?? 0.25) <= 0.35 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(234, 179, 8, 0.15)',
+                      color: (box.strength ?? 0.25) <= 0.35 ? '#10B981' : '#EAB308',
                     }}
                   >
-                    {Math.round((box.strength ?? 0.65) * 100)}%
+                    {Math.round((box.strength ?? 0.25) * 100)}% {(box.strength ?? 0.25) <= 0.35 ? '· Preserves Room' : '· Reimagines Scene'}
                   </span>
                 </div>
                 <input
                   type="range"
                   min="0.1"
-                  max="1.0"
+                  max="0.8"
                   step="0.05"
-                  value={box.strength ?? 0.65}
+                  value={box.strength ?? 0.25}
                   onChange={(e) => onUpdateBox(box.id, { strength: parseFloat(e.target.value) })}
-                  style={{ width: '100%', accentColor: '#10B981', cursor: 'pointer' }}
+                  style={{ width: '100%', accentColor: (box.strength ?? 0.25) <= 0.35 ? '#10B981' : '#EAB308', cursor: 'pointer' }}
                 />
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.625rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                  <span>15–30%: Exact Photo Retouch</span>
+                  <span>40%+: Scene Modification</span>
+                </div>
               </div>
             </div>
           )}

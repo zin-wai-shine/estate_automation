@@ -3,9 +3,10 @@
  */
 export const getAIModelDisplayName = (provider?: string, model?: string): string => {
   if (provider === 'runware_ai' || model?.startsWith('runware:') || model?.startsWith('civitai:')) {
+    if (model === 'runware:upscale') return 'Runware Upscale & Restore (2x Ultra-Sharp)';
     if (model === 'runware:101@1') return 'FLUX.1 Schnell (Fastest · 4 Steps)';
-    if (model === 'runware:100@1') return 'SDXL Realism (Budget)';
-    if (model === 'civitai:133005@782002') return 'Juggernaut XL (High Detail)';
+    if (model === 'runware:100@1') return 'SDXL Realism (Photorealistic)';
+    if (model === 'civitai:133005@782002') return 'Juggernaut XL (Ultra Detail)';
     if (model === 'runware:102@1') return 'FLUX.1 Dev';
     return model ? model.replace('runware:', '').replace('civitai:', '') : 'Runware AI';
   }

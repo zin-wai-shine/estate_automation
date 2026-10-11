@@ -586,7 +586,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
       chosenBox?.customPrompt ||
       chosenBox?.templateText ||
       'Ultra-high clarity architectural photography, 8k resolution, perfectly balanced HDR interior lighting, luxury real estate editorial staging';
-    const strength = chosenBox?.strength ?? 0.65;
+    const strength = chosenBox?.strength ?? 0.25;
 
     const rawUrl = img.stored_url
       ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
@@ -3910,7 +3910,7 @@ style={{
           }
           headerExtra={
             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 500, marginRight: '0.25rem' }}>
-              Strength: {Math.round((selectedImageAIBoxModal.strength ?? 0.65) * 100)}%
+              Strength: {Math.round((selectedImageAIBoxModal.strength ?? 0.25) * 100)}%
             </span>
           }
           maxWidth="1160px"

@@ -545,6 +545,46 @@ export const ModelSelectorMenu: React.FC<{
                 <span>Runware Image & AI Models</span>
               </div>
 
+              {/* Upscale & Restore 2x/4x */}
+              <button
+                type="button"
+                onClick={() => {
+                  onSelectModel('runware_ai', 'runware:upscale');
+                  setIsOpen(false);
+                }}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '6px 8px',
+                  borderRadius: '4px',
+                  border: 'none',
+                  backgroundColor: isRunware && model === 'runware:upscale' ? (isDark ? 'rgba(16, 185, 129, 0.18)' : 'rgba(16, 185, 129, 0.12)') : 'transparent',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.75rem',
+                  fontWeight: 400,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+                onMouseEnter={(e) => {
+                  if (!(isRunware && model === 'runware:upscale')) {
+                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!(isRunware && model === 'runware:upscale')) {
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                  }
+                }}
+              >
+                <RunwareIcon size={13} color="#10B981" />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                  <span style={{ fontWeight: 500 }}>Upscale & Restore <span style={{ fontSize: '0.6875rem', color: '#10B981', fontWeight: 600 }}>💎 2x Ultra-Sharp</span></span>
+                  <span style={{ fontSize: '0.6875rem', color: 'var(--text-secondary)' }}>runware:upscale · 100% Exact scene & room preserved</span>
+                </div>
+              </button>
+
               {/* FLUX.1 Schnell - Least tokens / compute */}
               <button
                 type="button"

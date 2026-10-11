@@ -2720,7 +2720,7 @@ export const FacebookWorkflowCanvas = forwardRef<
           headerExtra={
             currentModalAIBox && isImageAIBox(currentModalAIBox, config.connections) ? (
               <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 500, marginRight: '0.25rem' }}>
-                Strength: {Math.round((currentModalAIBox.strength ?? 0.65) * 100)}%
+                Strength: {Math.round((currentModalAIBox.strength ?? 0.25) * 100)}%
               </span>
             ) : undefined
           }
