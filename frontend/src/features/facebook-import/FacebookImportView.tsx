@@ -3900,21 +3900,8 @@ style={{
             setStudioStartWithNewChat(false);
             setStudioInitialImages([]);
           }}
-          title={
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <HiSparkles style={{ fontSize: '1.25rem', color: '#10B981' }} />
-              <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                Image Studio · {selectedImageAIBoxModal.title ? selectedImageAIBoxModal.title.replace(/\bAI\s+/gi, '') : 'Image Enhancer'}
-              </span>
-            </div>
-          }
-          headerExtra={
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 500, marginRight: '0.25rem' }}>
-              Strength: {Math.round((selectedImageAIBoxModal.strength ?? 0.25) * 100)}%
-            </span>
-          }
-          maxWidth="1160px"
-          height="88vh"
+          hideHeader={true}
+          fullHeight={true}
           bodyPadding="0"
         >
           <AIImageStudio

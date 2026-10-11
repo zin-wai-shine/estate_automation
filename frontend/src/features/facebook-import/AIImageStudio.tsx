@@ -215,7 +215,7 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
   onToggleBox: _onToggleBox,
   onDuplicateBox: _onDuplicateBox,
   onDeleteBox: _onDeleteBox,
-  onClose: _onClose,
+  onClose,
   startWithNewChat = false,
   initialAttachedImages = [],
 }) => {
@@ -321,15 +321,20 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
     setLightboxZoom(1);
   }, [lightboxModal?.enhancedUrl, lightboxModal?.isOpen]);
 
-  // Close lightbox on Escape key
+  // Close lightbox or studio on Escape key
   useEffect(() => {
-    if (!lightboxModal?.isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setLightboxModal(null);
+      if (e.key === 'Escape') {
+        if (lightboxModal?.isOpen) {
+          setLightboxModal(null);
+        } else if (onClose) {
+          onClose();
+        }
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [lightboxModal?.isOpen]);
+  }, [lightboxModal?.isOpen, onClose]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -1381,7 +1386,7 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
       />
 
       {/* MAIN CONTAINER: Drawer (Left) + Chat Canvas (Center) + Post Photos (Right) */}
-      <div style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden', position: 'relative' }}>
+      <div style={{ display: 'flex', flex: 1, height: '100%', minHeight: 0, overflow: 'hidden', position: 'relative' }}>
         {/* ========================================================= */}
         {/* LEFT SIDEBAR: ChatGPT-style Recents & Settings (Images 3 & 4) */}
         {/* ========================================================= */}
@@ -2238,6 +2243,41 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
               }}
             />
           </div>
+
+          {/* Top-Right Close Button when right sidebar is not present */}
+          {(!importedPhotos || importedPhotos.length === 0) && onClose && (
+            <div style={{ position: 'absolute', top: '12px', right: '16px', zIndex: 30 }}>
+              <button
+                type="button"
+                onClick={onClose}
+                title="Close Studio (Esc)"
+                style={{
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '8px',
+                  border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid var(--border-color)',
+                  backgroundColor: isDark ? '#212121' : 'var(--bg-surface)',
+                  color: isDark ? '#CCCCCC' : 'var(--text-secondary)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  boxShadow: 'var(--shadow-sm)',
+                  transition: 'all 0.15s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.15)' : 'var(--bg-surface-hover)';
+                  e.currentTarget.style.color = isDark ? '#FFFFFF' : 'var(--text-primary)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = isDark ? '#212121' : 'var(--bg-surface)';
+                  e.currentTarget.style.color = isDark ? '#CCCCCC' : 'var(--text-secondary)';
+                }}
+              >
+                <FiX size={16} />
+              </button>
+            </div>
+          )}
 
           {/* Scrollable Conversation Stream */}
           <div
@@ -3300,11 +3340,11 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                 gap: '4px',
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
                 <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: isDark ? '#FFFFFF' : 'var(--text-primary)' }}>
                   Post Photos ({importedPhotos.length})
                 </span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <button
                     type="button"
                     onClick={handleSelectAllPostPhotos}
@@ -3338,6 +3378,36 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                       title="Clear selection"
                     >
                       Clear
+                    </button>
+                  )}
+                  {onClose && (
+                    <button
+                      type="button"
+                      onClick={onClose}
+                      title="Close Studio (Esc)"
+                      style={{
+                        width: '24px',
+                        height: '24px',
+                        borderRadius: '6px',
+                        border: 'none',
+                        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)',
+                        color: isDark ? '#CCCCCC' : 'var(--text-secondary)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.18)' : 'rgba(0, 0, 0, 0.1)';
+                        e.currentTarget.style.color = isDark ? '#FFFFFF' : 'var(--text-primary)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)';
+                        e.currentTarget.style.color = isDark ? '#CCCCCC' : 'var(--text-secondary)';
+                      }}
+                    >
+                      <FiX size={14} />
                     </button>
                   )}
                 </div>

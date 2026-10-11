@@ -2710,20 +2710,28 @@ export const FacebookWorkflowCanvas = forwardRef<
       {/* ======================================================== */}
       {/* NODE CONFIGURATION MODAL BOX                             */}
       {/* ======================================================== */}
-      {activeModalNode && (
-        <Modal
-          isOpen={Boolean(activeModalNode)}
-          onClose={handleCloseModal}
-          maxWidth={activeModalNode.type === 'ai-box' ? '1120px' : '560px'}
-          height={activeModalNode.type === 'ai-box' ? '88vh' : undefined}
-          bodyPadding={activeModalNode.type === 'ai-box' ? '0' : undefined}
-          headerExtra={
-            currentModalAIBox && isImageAIBox(currentModalAIBox, config.connections) ? (
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 500, marginRight: '0.25rem' }}>
-                Strength: {Math.round((currentModalAIBox.strength ?? 0.25) * 100)}%
-              </span>
-            ) : undefined
-          }
+      {activeModalNode && (() => {
+        const isModalImageBox = Boolean(
+          activeModalNode.type === 'ai-box' &&
+          currentModalAIBox &&
+          isImageAIBox(currentModalAIBox, config.connections)
+        );
+        return (
+          <Modal
+            isOpen={Boolean(activeModalNode)}
+            onClose={handleCloseModal}
+            hideHeader={isModalImageBox}
+            fullHeight={isModalImageBox}
+            maxWidth={isModalImageBox ? '100vw' : (activeModalNode.type === 'ai-box' ? '1120px' : '560px')}
+            height={isModalImageBox ? '100vh' : (activeModalNode.type === 'ai-box' ? '88vh' : undefined)}
+            bodyPadding={activeModalNode.type === 'ai-box' ? '0' : undefined}
+            headerExtra={
+              currentModalAIBox && isImageAIBox(currentModalAIBox, config.connections) ? (
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 500, marginRight: '0.25rem' }}>
+                  Strength: {Math.round((currentModalAIBox.strength ?? 0.25) * 100)}%
+                </span>
+              ) : undefined
+            }
 
           title={
             activeModalNode.type === 'trigger' ? (
@@ -3084,7 +3092,8 @@ export const FacebookWorkflowCanvas = forwardRef<
             </div>
           )}
         </Modal>
-      )}
+        );
+      })()}
 
       {/* Floating Recover Button on Canvas */}
       {deletedBoxes.length > 0 && (

@@ -15,6 +15,8 @@ export interface ModalProps {
   closeOnOverlayClick?: boolean;
   zIndex?: number;
   headerExtra?: React.ReactNode;
+  hideHeader?: boolean;
+  fullHeight?: boolean;
 }
 
 export const Modal: React.FC<ModalProps> = ({
@@ -28,6 +30,8 @@ export const Modal: React.FC<ModalProps> = ({
   closeOnOverlayClick = false,
   zIndex = 100000,
   headerExtra,
+  hideHeader = false,
+  fullHeight = false,
 }) => {
   const overlayRef = useRef<HTMLDivElement>(null);
 
@@ -60,13 +64,13 @@ export const Modal: React.FC<ModalProps> = ({
         left: 0,
         right: 0,
         bottom: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.65)',
-        backdropFilter: 'blur(2px)',
+        backgroundColor: fullHeight ? '#0D1117' : 'rgba(0, 0, 0, 0.65)',
+        backdropFilter: fullHeight ? undefined : 'blur(2px)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         zIndex,
-        padding: '1rem',
+        padding: fullHeight ? 0 : '1rem',
         overscrollBehavior: 'contain',
         touchAction: 'none',
       }}
@@ -77,14 +81,14 @@ export const Modal: React.FC<ModalProps> = ({
     >
       <div
         style={{
-          width: '95%',
-          maxWidth,
-          height: height || undefined,
-          maxHeight: height || '90vh',
+          width: fullHeight ? '100vw' : '95%',
+          maxWidth: fullHeight ? '100vw' : maxWidth,
+          height: fullHeight ? '100vh' : (height || undefined),
+          maxHeight: fullHeight ? '100vh' : (height || '90vh'),
           backgroundColor: 'var(--bg-surface)',
-          border: '1px solid var(--border-color)',
-          borderRadius: '0.75rem',
-          boxShadow: 'var(--shadow-md)',
+          border: fullHeight ? 'none' : '1px solid var(--border-color)',
+          borderRadius: fullHeight ? '0' : '0.75rem',
+          boxShadow: fullHeight ? 'none' : 'var(--shadow-md)',
           overflow: 'hidden',
           display: 'flex',
           flexDirection: 'column',
@@ -94,54 +98,57 @@ export const Modal: React.FC<ModalProps> = ({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div
-          style={{
-            padding: '0.875rem 1.25rem',
-            borderBottom: '1px solid var(--border-color)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '1rem',
-            position: 'relative',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: 1, minWidth: 0 }}>
-            {typeof title === 'string' ? (
-              <h3 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
-                {title}
-              </h3>
-            ) : (
-              title
-            )}
+        {!hideHeader && (
+          <div
+            style={{
+              padding: '0.875rem 1.25rem',
+              borderBottom: '1px solid var(--border-color)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '1rem',
+              position: 'relative',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: 1, minWidth: 0 }}>
+              {typeof title === 'string' ? (
+                <h3 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
+                  {title}
+                </h3>
+              ) : (
+                title
+              )}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+              {headerExtra}
+              <button
+                onClick={onClose}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  fontSize: '1.125rem',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  padding: '0.25rem',
+                  borderRadius: '0.25rem',
+                }}
+              >
+                <FiX />
+              </button>
+            </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
-            {headerExtra}
-            <button
-              onClick={onClose}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--text-muted)',
-                fontSize: '1.125rem',
-                cursor: 'pointer',
-                display: 'inline-flex',
-                padding: '0.25rem',
-                borderRadius: '0.25rem',
-              }}
-            >
-              <FiX />
-            </button>
-          </div>
-        </div>
+        )}
 
         {/* Body */}
         <div
           className="modal-scrollable-body"
           style={{
-            padding: bodyPadding !== undefined ? bodyPadding : '1.25rem',
-            overflowY: 'auto',
+            padding: bodyPadding !== undefined ? bodyPadding : (fullHeight ? '0' : '1.25rem'),
+            overflowY: fullHeight ? 'hidden' : 'auto',
             overscrollBehavior: 'contain',
             flex: 1,
+            height: '100%',
             display: 'flex',
             flexDirection: 'column',
           }}
