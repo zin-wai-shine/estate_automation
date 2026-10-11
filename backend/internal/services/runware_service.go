@@ -30,19 +30,25 @@ type RunwareTaskAuth struct {
 	APIKey   string `json:"apiKey"`
 }
 
+type RunwareInputs struct {
+	ReferenceImages []string `json:"referenceImages,omitempty"`
+}
+
 type RunwareTaskInference struct {
-	TaskType       string   `json:"taskType"`
-	TaskUUID       string   `json:"taskUUID"`
-	Model          string   `json:"model"`
-	PositivePrompt string   `json:"positivePrompt"`
-	NegativePrompt string   `json:"negativePrompt,omitempty"`
-	SeedImage      string   `json:"seedImage,omitempty"`
-	InputImage     string   `json:"inputImage,omitempty"`
-	Strength       *float64 `json:"strength,omitempty"`
-	Width          int      `json:"width,omitempty"`
-	Height         int      `json:"height,omitempty"`
-	NumberResults  int      `json:"numberResults,omitempty"`
-	Steps          int      `json:"steps,omitempty"`
+	TaskType        string         `json:"taskType"`
+	TaskUUID        string         `json:"taskUUID"`
+	Model           string         `json:"model"`
+	PositivePrompt  string         `json:"positivePrompt"`
+	NegativePrompt  string         `json:"negativePrompt,omitempty"`
+	SeedImage       string         `json:"seedImage,omitempty"`
+	InputImage      string         `json:"inputImage,omitempty"`
+	ReferenceImages []string       `json:"referenceImages,omitempty"`
+	Inputs          *RunwareInputs `json:"inputs,omitempty"`
+	Strength        *float64       `json:"strength,omitempty"`
+	Width           int            `json:"width,omitempty"`
+	Height          int            `json:"height,omitempty"`
+	NumberResults   int            `json:"numberResults,omitempty"`
+	Steps           int            `json:"steps,omitempty"`
 }
 
 type RunwareTaskUpscale struct {
@@ -298,6 +304,16 @@ func (s *RunwareService) EnhanceImageWithRunware(ctx context.Context, inputImage
 		model = modelOverride
 	}
 
+	// Normalize Nano Banana model names if shorthand is provided
+	loweredModel := strings.ToLower(model)
+	if strings.Contains(loweredModel, "nano-banana") || strings.Contains(loweredModel, "nanobanana") || strings.Contains(loweredModel, "nano_banana") {
+		if strings.Contains(loweredModel, "lite") {
+			model = "google:nano-banana@2-lite"
+		} else {
+			model = "google:nano-banana@2.1"
+		}
+	}
+
 	// 1. Prepare Base64 Data URI from local storage or URL so Runware cloud servers can access it directly
 	dataURI, origW, origH, err := loadImageAsDataURI(inputImageURL)
 	if err != nil {
@@ -342,6 +358,14 @@ func (s *RunwareService) EnhanceImageWithRunware(ctx context.Context, inputImage
 			Width:          calcW,
 			Height:         calcH,
 			NumberResults:  1,
+		}
+
+		// Google Nano Banana supports referenceImages
+		if strings.HasPrefix(model, "google:nano-banana") {
+			inferenceTask.ReferenceImages = []string{dataURI}
+			inferenceTask.Inputs = &RunwareInputs{
+				ReferenceImages: []string{dataURI},
+			}
 		}
 
 		// FLUX.1 Schnell is optimized for exactly 4 steps

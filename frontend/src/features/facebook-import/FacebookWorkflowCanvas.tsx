@@ -164,6 +164,8 @@ export const MODEL_OPTIONS = [
   { value: 'runware:101@1', label: 'Runware FLUX.1 Schnell' },
   { value: 'runware:100@1', label: 'Runware SDXL Realism' },
   { value: 'civitai:133005@782002', label: 'Runware Juggernaut XL' },
+  { value: 'google:nano-banana@2.1', label: 'Runware Nano Banana 2.1 (Google)' },
+  { value: 'google:nano-banana@2-lite', label: 'Runware Nano Banana 2 Lite (Google)' },
 ];
 
 export const DEFAULT_FB_WORKFLOW_CONFIG: FacebookWorkflowConfig = {
@@ -1027,7 +1029,12 @@ export const FacebookWorkflowCanvas = forwardRef<
                     ...b,
                     processType: 'image_enhance',
                     provider: 'runware_ai',
-                    model: b.model?.startsWith('runware:') ? b.model : 'runware:101@1',
+                    model:
+                      b.model?.startsWith('runware:') ||
+                      b.model?.startsWith('google:nano-banana') ||
+                      b.model?.startsWith('civitai:')
+                        ? b.model
+                        : 'google:nano-banana@2.1',
                   };
                 }
                 return b;
@@ -1138,7 +1145,12 @@ export const FacebookWorkflowCanvas = forwardRef<
               ...b,
               processType: 'image_enhance',
               provider: 'runware_ai',
-              model: b.model?.startsWith('runware:') ? b.model : 'runware:101@1',
+              model:
+                b.model?.startsWith('runware:') ||
+                b.model?.startsWith('google:nano-banana') ||
+                b.model?.startsWith('civitai:')
+                  ? b.model
+                  : 'google:nano-banana@2.1',
             };
           }
           return b;

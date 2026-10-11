@@ -486,7 +486,7 @@ func GenerateAICopy(c *fiber.Ctx) error {
 		generatedText, err = googleAIService.GenerateContentWithLaoZhangAI(prompt, req.RawContent, req.APIKey, req.Model)
 	} else if provider == "openai" {
 		generatedText, err = googleAIService.GenerateContentWithOpenAI(prompt, req.RawContent, req.APIKey, req.Model)
-	} else if provider == "runware_ai" || provider == "runware" || strings.HasPrefix(req.Model, "runware:") {
+	} else if provider == "runware_ai" || provider == "runware" || strings.HasPrefix(req.Model, "runware:") || strings.HasPrefix(req.Model, "google:nano-banana") || strings.Contains(strings.ToLower(req.Model), "nano-banana") || strings.Contains(strings.ToLower(req.Model), "nanobanana") {
 		provider = "runware_ai"
 		generatedText, err = googleAIService.GenerateContent(prompt, req.RawContent, req.APIKey, "gemini-flash-latest")
 	} else {

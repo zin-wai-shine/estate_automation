@@ -704,6 +704,92 @@ export const ModelSelectorMenu: React.FC<{
                   <span style={{ fontSize: '0.6875rem', color: 'var(--text-secondary)' }}>High detail photo finish</span>
                 </div>
               </button>
+
+              {/* Nano Banana 2.1 */}
+              <button
+                type="button"
+                onClick={() => {
+                  onSelectModel('runware_ai', 'google:nano-banana@2.1');
+                  setIsOpen(false);
+                }}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '6px 8px',
+                  borderRadius: '4px',
+                  border: 'none',
+                  backgroundColor:
+                    isRunware && (model === 'google:nano-banana@2.1' || model === 'runware:nano-banana' || model === 'nano-banana')
+                      ? (isDark ? 'rgba(16, 185, 129, 0.18)' : 'rgba(16, 185, 129, 0.12)')
+                      : 'transparent',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.75rem',
+                  fontWeight: 400,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+                onMouseEnter={(e) => {
+                  if (!(isRunware && (model === 'google:nano-banana@2.1' || model === 'runware:nano-banana' || model === 'nano-banana'))) {
+                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!(isRunware && (model === 'google:nano-banana@2.1' || model === 'runware:nano-banana' || model === 'nano-banana'))) {
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                  }
+                }}
+              >
+                <RunwareIcon size={13} color="#10B981" />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                  <span style={{ fontWeight: 500 }}>Nano Banana 2.1</span>
+                  <span style={{ fontSize: '0.6875rem', color: 'var(--text-secondary)' }}>Google image-to-image reasoning</span>
+                </div>
+              </button>
+
+              {/* Nano Banana 2 Lite */}
+              <button
+                type="button"
+                onClick={() => {
+                  onSelectModel('runware_ai', 'google:nano-banana@2-lite');
+                  setIsOpen(false);
+                }}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '6px 8px',
+                  borderRadius: '4px',
+                  border: 'none',
+                  backgroundColor:
+                    isRunware && model === 'google:nano-banana@2-lite'
+                      ? (isDark ? 'rgba(16, 185, 129, 0.18)' : 'rgba(16, 185, 129, 0.12)')
+                      : 'transparent',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.75rem',
+                  fontWeight: 400,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+                onMouseEnter={(e) => {
+                  if (!(isRunware && model === 'google:nano-banana@2-lite')) {
+                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!(isRunware && model === 'google:nano-banana@2-lite')) {
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                  }
+                }}
+              >
+                <RunwareIcon size={13} color="#10B981" />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                  <span style={{ fontWeight: 500 }}>Nano Banana 2 Lite</span>
+                  <span style={{ fontSize: '0.6875rem', color: 'var(--text-secondary)' }}>Google fast image editing</span>
+                </div>
+              </button>
             </>
           )}
         </div>
