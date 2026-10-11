@@ -1,5 +1,5 @@
 import type { FacebookWorkflowConfig, DynamicAIBoxConfig } from '../facebook-import/FacebookWorkflowCanvas';
-import { DEFAULT_FB_WORKFLOW_CONFIG } from '../facebook-import/FacebookWorkflowCanvas';
+import { DEFAULT_FB_WORKFLOW_CONFIG, sanitizeAndResolveCollisions } from '../facebook-import/FacebookWorkflowCanvas';
 
 export interface WorkflowFormat {
   id: string;
@@ -241,28 +241,9 @@ export const getSavedWorkflowFormats = (): WorkflowFormat[] => {
       if (Array.isArray(parsed) && parsed.length > 0) {
         return parsed.map((format: WorkflowFormat) => {
           if (!format.config) return format;
-          const conf = format.config;
-          const updatedGetImages =
-            !conf.getImages?.y || conf.getImages.y <= 350
-              ? { ...conf.getImages, y: 390 }
-              : conf.getImages;
-          const updatedGetContent =
-            !conf.getContent?.y || conf.getContent.y >= 120
-              ? { ...conf.getContent, y: 110 }
-              : conf.getContent;
-          const updatedAiBoxes = (conf.aiBoxes || []).map((b, idx) => {
-            if (idx === 0 && (!b.y || b.y >= 95)) return { ...b, y: 80 };
-            if (idx === 1 && (!b.y || b.y >= 260)) return { ...b, y: 230 };
-            return b;
-          });
           return {
             ...format,
-            config: {
-              ...conf,
-              getContent: updatedGetContent,
-              getImages: updatedGetImages,
-              aiBoxes: updatedAiBoxes,
-            },
+            config: sanitizeAndResolveCollisions(format.config),
           };
         });
       }
@@ -270,7 +251,10 @@ export const getSavedWorkflowFormats = (): WorkflowFormat[] => {
   } catch (e) {
     console.error('Failed to load saved workflow formats', e);
   }
-  return INITIAL_DEFAULT_FORMATS;
+  return INITIAL_DEFAULT_FORMATS.map((f) => ({
+    ...f,
+    config: sanitizeAndResolveCollisions(f.config),
+  }));
 };
 
 export const saveWorkflowFormatsList = (formats: WorkflowFormat[]) => {

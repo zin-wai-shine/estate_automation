@@ -233,6 +233,70 @@ export const DEFAULT_FB_WORKFLOW_CONFIG: FacebookWorkflowConfig = {
   panOffset: { x: 30, y: 30 },
 };
 
+/**
+ * Resolves node collisions and ensures clean non-overlapping coordinates for all workflow nodes.
+ */
+export const sanitizeAndResolveCollisions = (
+  conf: FacebookWorkflowConfig
+): FacebookWorkflowConfig => {
+  if (!conf) return DEFAULT_FB_WORKFLOW_CONFIG;
+
+  const rawAiBoxes = Array.isArray(conf.aiBoxes) && conf.aiBoxes.length > 0
+    ? conf.aiBoxes
+    : DEFAULT_FB_WORKFLOW_CONFIG.aiBoxes;
+
+  const placed: Array<{ x: number; y: number }> = [];
+
+  const updatedAiBoxes = rawAiBoxes.map((b: any, idx: number) => {
+    let x = typeof b.x === 'number' && !isNaN(b.x) && b.x > 0 ? b.x : 640;
+    let y = typeof b.y === 'number' && !isNaN(b.y) && b.y > 0 ? b.y : (80 + idx * 150);
+
+    // Check collision against all already placed AI nodes.
+    // Circle size is 72px diameter and labels extend ~45px downwards.
+    // Consider colliding if horizontal overlap < 100px and vertical overlap < 110px.
+    const hasCollision = (currX: number, currY: number) =>
+      placed.some(
+        (p) => Math.abs(currX - p.x) < 100 && Math.abs(currY - p.y) < 110
+      );
+
+    while (hasCollision(x, y)) {
+      y += 150;
+    }
+
+    placed.push({ x, y });
+    return { ...b, x, y };
+  });
+
+  const updatedGetImages =
+    !conf.getImages?.y || conf.getImages.y <= 350
+      ? { ...conf.getImages, y: 390 }
+      : conf.getImages;
+  const updatedGetContent =
+    !conf.getContent?.y || conf.getContent.y >= 120
+      ? { ...conf.getContent, y: 110 }
+      : conf.getContent;
+
+  let connections = Array.isArray(conf.connections) ? conf.connections : undefined;
+  if (!connections || connections.length === 0) {
+    connections = [];
+    updatedAiBoxes.forEach((b: any) => {
+      connections!.push({ id: `conn-content-${b.id}`, fromNodeId: 'get-content', toNodeId: b.id });
+      connections!.push({ id: `conn-${b.id}-dest`, fromNodeId: b.id, toNodeId: 'destination' });
+    });
+  }
+
+  return {
+    ...DEFAULT_FB_WORKFLOW_CONFIG,
+    ...conf,
+    getContent: { ...DEFAULT_FB_WORKFLOW_CONFIG.getContent, ...updatedGetContent },
+    getImages: { ...DEFAULT_FB_WORKFLOW_CONFIG.getImages, ...updatedGetImages },
+    trigger: { ...DEFAULT_FB_WORKFLOW_CONFIG.trigger, ...conf.trigger },
+    destination: { ...DEFAULT_FB_WORKFLOW_CONFIG.destination, ...conf.destination },
+    aiBoxes: updatedAiBoxes,
+    connections,
+  };
+};
+
 export const loadSavedFacebookWorkflowConfig = (): FacebookWorkflowConfig => {
   try {
     const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
@@ -247,31 +311,11 @@ export const loadSavedFacebookWorkflowConfig = (): FacebookWorkflowConfig => {
             connections.push({ id: `conn-${b.id}-dest`, fromNodeId: b.id, toNodeId: 'destination' });
           });
         }
-        // Auto-migrate old cramped layout to ensure clean base lane and gap:
-        const updatedGetImages =
-          !parsed.getImages.y || parsed.getImages.y <= 350
-            ? { ...parsed.getImages, y: 390 }
-            : parsed.getImages;
-        const updatedGetContent =
-          !parsed.getContent.y || parsed.getContent.y >= 120
-            ? { ...parsed.getContent, y: 110 }
-            : parsed.getContent;
-        const updatedAiBoxes = parsed.aiBoxes.map((b: any, idx: number) => {
-          if (idx === 0 && (!b.y || b.y >= 95)) return { ...b, y: 80 };
-          if (idx === 1 && (!b.y || b.y >= 260)) return { ...b, y: 230 };
-          return b;
-        });
-
-        return {
+        return sanitizeAndResolveCollisions({
           ...DEFAULT_FB_WORKFLOW_CONFIG,
           ...parsed,
-          getContent: { ...DEFAULT_FB_WORKFLOW_CONFIG.getContent, ...updatedGetContent },
-          getImages: { ...DEFAULT_FB_WORKFLOW_CONFIG.getImages, ...updatedGetImages },
-          trigger: { ...DEFAULT_FB_WORKFLOW_CONFIG.trigger, ...parsed.trigger },
-          destination: { ...DEFAULT_FB_WORKFLOW_CONFIG.destination, ...parsed.destination },
-          aiBoxes: updatedAiBoxes.length > 0 ? updatedAiBoxes : DEFAULT_FB_WORKFLOW_CONFIG.aiBoxes,
           connections,
-        };
+        });
       }
     }
   } catch (e) {
@@ -642,11 +686,13 @@ export const FacebookWorkflowCanvas = forwardRef<
   const RECEPTIVE_GLOW = isDark
     ? 'drop-shadow(0 0 5px rgba(234, 179, 8, 0.35))'
     : 'drop-shadow(0 0 4px rgba(217, 119, 6, 0.22))';
-  const [config, setConfig] = useState<FacebookWorkflowConfig>(() => initialConfig || loadSavedFacebookWorkflowConfig());
+  const [config, setConfig] = useState<FacebookWorkflowConfig>(() =>
+    sanitizeAndResolveCollisions(initialConfig || loadSavedFacebookWorkflowConfig())
+  );
 
   useEffect(() => {
     if (initialConfig) {
-      setConfig(initialConfig);
+      setConfig(sanitizeAndResolveCollisions(initialConfig));
     }
   }, [initialConfig]);
 
