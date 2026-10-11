@@ -160,9 +160,10 @@ export const MODEL_OPTIONS = [
   { value: 'gpt-4o-mini', label: 'OpenAI GPT-4o-mini (Lightweight)' },
   { value: 'gpt-image-2.5-sunburst', label: 'OpenAI GPT Image 2.5 Sunburst' },
   { value: 'gpt-image-2.5-flare', label: 'OpenAI GPT Image 2.5 Flare' },
-  { value: 'runware:101@1', label: 'Runware FLUX.1 Schnell ⚡ Least Tokens (4 Steps · Fastest)' },
-  { value: 'runware:100@1', label: 'Runware SDXL Realism 🏛️ Photorealistic (Budget)' },
-  { value: 'civitai:133005@782002', label: 'Runware Juggernaut XL ✨ Ultra Detail Architecture' },
+  { value: 'runware:upscale', label: 'Runware Upscale & Restore' },
+  { value: 'runware:101@1', label: 'Runware FLUX.1 Schnell' },
+  { value: 'runware:100@1', label: 'Runware SDXL Realism' },
+  { value: 'civitai:133005@782002', label: 'Runware Juggernaut XL' },
 ];
 
 export const DEFAULT_FB_WORKFLOW_CONFIG: FacebookWorkflowConfig = {

@@ -542,10 +542,10 @@ export const ModelSelectorMenu: React.FC<{
             <>
               <div style={{ fontSize: '0.6875rem', color: '#10B981', padding: '4px 8px', fontWeight: 600, letterSpacing: '0.3px', display: 'flex', alignItems: 'center', gap: '5px' }}>
                 <RunwareIcon size={12} />
-                <span>Runware Image & AI Models</span>
+                <span>Runware Models</span>
               </div>
 
-              {/* Upscale & Restore 2x/4x */}
+              {/* Upscale & Restore */}
               <button
                 type="button"
                 onClick={() => {
@@ -580,12 +580,12 @@ export const ModelSelectorMenu: React.FC<{
               >
                 <RunwareIcon size={13} color="#10B981" />
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
-                  <span style={{ fontWeight: 500 }}>Upscale & Restore <span style={{ fontSize: '0.6875rem', color: '#10B981', fontWeight: 600 }}>💎 2x Ultra-Sharp</span></span>
-                  <span style={{ fontSize: '0.6875rem', color: 'var(--text-secondary)' }}>runware:upscale · 100% Exact scene & room preserved</span>
+                  <span style={{ fontWeight: 500 }}>Upscale & Restore</span>
+                  <span style={{ fontSize: '0.6875rem', color: 'var(--text-secondary)' }}>2x resolution enhancement</span>
                 </div>
               </button>
 
-              {/* FLUX.1 Schnell - Least tokens / compute */}
+              {/* FLUX.1 Schnell */}
               <button
                 type="button"
                 onClick={() => {
@@ -620,8 +620,8 @@ export const ModelSelectorMenu: React.FC<{
               >
                 <RunwareIcon size={13} color="#10B981" />
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
-                  <span style={{ fontWeight: 500 }}>FLUX.1 Schnell <span style={{ fontSize: '0.6875rem', color: '#10B981', fontWeight: 600 }}>⚡ Least Tokens (4 Steps)</span></span>
-                  <span style={{ fontSize: '0.6875rem', color: 'var(--text-secondary)' }}>runware:101@1 · Fastest & lowest compute cost</span>
+                  <span style={{ fontWeight: 500 }}>FLUX.1 Schnell</span>
+                  <span style={{ fontSize: '0.6875rem', color: 'var(--text-secondary)' }}>Fast inference</span>
                 </div>
               </button>
 
@@ -660,8 +660,8 @@ export const ModelSelectorMenu: React.FC<{
               >
                 <RunwareIcon size={13} color="#10B981" />
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
-                  <span style={{ fontWeight: 500 }}>SDXL Realism <span style={{ fontSize: '0.6875rem', color: '#3B82F6', fontWeight: 600 }}>🏛️ Photorealistic</span></span>
-                  <span style={{ fontSize: '0.6875rem', color: 'var(--text-secondary)' }}>runware:100@1 · Real estate architecture</span>
+                  <span style={{ fontWeight: 500 }}>SDXL Realism</span>
+                  <span style={{ fontSize: '0.6875rem', color: 'var(--text-secondary)' }}>Architecture and realism</span>
                 </div>
               </button>
 
@@ -700,8 +700,8 @@ export const ModelSelectorMenu: React.FC<{
               >
                 <RunwareIcon size={13} color="#10B981" />
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
-                  <span style={{ fontWeight: 500 }}>Juggernaut XL <span style={{ fontSize: '0.6875rem', color: '#8B5CF6', fontWeight: 600 }}>✨ Ultra Detail</span></span>
-                  <span style={{ fontSize: '0.6875rem', color: 'var(--text-secondary)' }}>civitai:133005@782002 · High-end interior styling</span>
+                  <span style={{ fontWeight: 500 }}>Juggernaut XL</span>
+                  <span style={{ fontSize: '0.6875rem', color: 'var(--text-secondary)' }}>High detail photo finish</span>
                 </div>
               </button>
             </>
