@@ -44,6 +44,11 @@ import {
   FiChevronRight,
   FiZoomIn,
   FiZoomOut,
+  FiLink,
+  FiSearch,
+  FiTarget,
+  FiShield,
+  FiCheckCircle,
 } from 'react-icons/fi';
 import { FaFacebook } from 'react-icons/fa';
 import { SiGooglegemini } from 'react-icons/si';
@@ -73,6 +78,8 @@ import {
   setActiveWorkflowFormatId,
   type WorkflowFormat,
 } from '../workflow/workflowFormats';
+import { ToggleSwitch } from '../../components/ui/ToggleSwitch';
+import { saveRemainingPost } from '../remaining-posts/remainingPostsStorage';
 
 const DEFAULT_PROMPT_TEMPLATES: PromptTemplate[] = [
   {
@@ -200,17 +207,24 @@ const loadSavedImportSession = (): FacebookImportSessionState | null => {
   return null;
 };
 
-const PIPELINE_STEPS = [
-  { id: 'url_received', label: 'URL Received' },
-  { id: 'resolving', label: 'Resolving' },
-  { id: 'opening_browser', label: 'Opening Facebook' },
-  { id: 'target_found', label: 'Target Post Found' },
-  { id: 'caption_extracted', label: 'Caption Extracted' },
-  { id: 'photos_detected', label: 'Photos Detected' },
-  { id: 'verifying_photos', label: 'Verifying Photos' },
-  { id: 'downloading_media', label: 'Downloading Media' },
-  { id: 'ai_analysis', label: 'AI Analysis' },
-  { id: 'complete', label: 'Complete' },
+export interface PipelineStepDef {
+  id: string;
+  label: string;
+  sublabel: string;
+  icon: React.ComponentType<{ style?: React.CSSProperties; className?: string }>;
+}
+
+const PIPELINE_STEPS: PipelineStepDef[] = [
+  { id: 'url_received', label: 'URL Received', sublabel: 'Valid Facebook link accepted', icon: FiLink },
+  { id: 'resolving', label: 'Resolving URL', sublabel: 'Extracting canonical permalink & post ID', icon: FiSearch },
+  { id: 'opening_browser', label: 'Opening Facebook', sublabel: 'Initializing headless browser worker', icon: FaFacebook as any },
+  { id: 'target_found', label: 'Target Post Found', sublabel: 'Target post container isolated in DOM', icon: FiTarget },
+  { id: 'caption_extracted', label: 'Caption Extracted', sublabel: 'Clean post text & tags parsed', icon: FiFileText },
+  { id: 'photos_detected', label: 'Photos Detected', sublabel: 'High-res gallery detected in post', icon: FiImage },
+  { id: 'verifying_photos', label: 'Verifying Photos', sublabel: 'Filtering duplicates & validating media', icon: FiShield },
+  { id: 'downloading_media', label: 'Downloading Media', sublabel: 'Caching media files locally', icon: FiDownload },
+  { id: 'ai_analysis', label: 'AI Analysis', sublabel: 'Extracting price, beds, baths & specs', icon: HiSparkles as any },
+  { id: 'complete', label: 'Complete', sublabel: 'Ready for AI Studio copy generation', icon: FiCheckCircle },
 ];
 
 export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
@@ -229,6 +243,52 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
   const [preferredMethod, setPreferredMethod] = useState<'auto' | 'meta_graph_api' | 'openclaw_browser'>(
     () => savedSession?.preferredMethod || 'auto'
   );
+
+  // Auto-generate toggle per copy format card (Default: OFF / false for each card)
+  const [autoFormatBoxes, setAutoFormatBoxes] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem('estate_fb_auto_format_boxes');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const handleToggleBoxAutoFormat = (boxId: string, checked: boolean) => {
+    setAutoFormatBoxes((prev) => {
+      const next = { ...prev, [boxId]: checked };
+      try {
+        localStorage.setItem('estate_fb_auto_format_boxes', JSON.stringify(next));
+        window.dispatchEvent(new CustomEvent('estate_fb_auto_settings_sync'));
+      } catch {}
+      return next;
+    });
+  };
+
+  // Auto Enhance for photos (Default: OFF / false)
+  const [autoEnhance, setAutoEnhance] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('estate_fb_auto_enhance');
+      return saved !== null ? saved === 'true' : false;
+    } catch {
+      return false;
+    }
+  });
+
+  const handleToggleAutoEnhance = (val: boolean) => {
+    setAutoEnhance(val);
+    try {
+      localStorage.setItem('estate_fb_auto_enhance', String(val));
+      window.dispatchEvent(new CustomEvent('estate_fb_auto_settings_sync'));
+    } catch {}
+  };
+
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3500);
+  };
+
   const [showInfo, setShowInfo] = useState(false);
   const [showRawJsonModal, setShowRawJsonModal] = useState(false);
   const [showLiveBrowserModal, setShowLiveBrowserModal] = useState(false);
@@ -245,6 +305,34 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
   useEffect(() => {
     setHeaderActionEl(document.getElementById('header-action-portal'));
     setHeaderCenterEl(document.getElementById('header-center-portal'));
+  }, []);
+
+  // Listen for post load events from Remaining Posts view
+  useEffect(() => {
+    const handleLoadPostEvent = (e: any) => {
+      const detail = e.detail;
+      if (!detail) return;
+      setUrl(detail.url || '');
+      setSource(detail.source || null);
+      setCaption(detail.caption || '');
+      setLanguages(detail.languages || []);
+      setImages(detail.images || []);
+      if (detail.propertyData) {
+        setPropertyData(detail.propertyData);
+      }
+      setCurrentStepIndex(detail.currentStepIndex ?? 9);
+      setAiGeneratedOutputs(detail.aiGeneratedOutputs || {});
+      setAiGeneratedCopy(detail.aiGeneratedCopy || '');
+      setEnhancedPhotos(detail.enhancedPhotos || {});
+      setLogs(detail.logs || []);
+      setPipelineError(null);
+      setPipelineErrorCode(null);
+      setBrowserState('Browser Ready');
+      showToast(`Restored "${detail.propertyData?.project_name || 'Post'}" into import form`);
+    };
+
+    window.addEventListener('estate_fb_import_load_post', handleLoadPostEvent);
+    return () => window.removeEventListener('estate_fb_import_load_post', handleLoadPostEvent);
   }, []);
 
   // Status & Pipeline
@@ -318,6 +406,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
   const [aiBoxGenerating, setAiBoxGenerating] = useState<Record<string, boolean>>({});
   const [showWorkflowCanvasModal, setShowWorkflowCanvasModal] = useState(false);
   const [viewingResultBox, setViewingResultBox] = useState<DynamicAIBoxConfig | null>(null);
+  const [viewingPromptBox, setViewingPromptBox] = useState<DynamicAIBoxConfig | null>(null);
   const [copiedBoxId, setCopiedBoxId] = useState<string | null>(null);
 
   // Reload formats when window/tab gains focus
@@ -572,6 +661,24 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
     try {
       await Promise.all(activeContentBoxes.map((b) => handleGenerateDynamicBoxCopy(b.id)));
       addLog(`🎉 All ${activeContentBoxes.length} dynamic AI copy processes completed!`, 'success');
+
+      // Auto-save generated copies to Remaining Posts
+      const projectName = propertyData.project_name || 'Facebook Property Post';
+      saveRemainingPost({
+        facebook_url: url.trim(),
+        projectName,
+        source,
+        caption,
+        languages,
+        propertyData,
+        originalImages: images,
+        enhancedPhotos,
+        aiGeneratedOutputs,
+        aiGeneratedCopy,
+        workflowFormatName: activeFormat.name,
+        autoProcessed: true,
+      });
+      addLog(`💾 All generated copies automatically saved to Remaining Posts.`, 'success');
     } finally {
       setIsGeneratingAI(false);
     }
@@ -801,8 +908,11 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
       contact_phone: '',
       contact_line: '',
     });
+    const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
     setCurrentStepIndex(0);
     addLog(`URL received: ${url.trim()}`);
+    await delay(180);
 
     try {
       // Step 1: URL Normalization & Resolution
@@ -822,20 +932,54 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
       const resData = await resResp.json();
       addLog(`Facebook URL resolved to: ${resData.canonical_url}`, 'success');
       addLog(`Source detected: ${resData.source_name || resData.source_type}`);
+      await delay(250);
 
-      // Step 2 & 3: Opening Facebook Browser / Calling Meta Graph API
+      // Step 2: Opening Facebook Browser / Calling Meta Graph API
       setCurrentStepIndex(2);
-      addLog('Connecting extraction pipeline...');
+      addLog('Initializing headless browser session & connecting pipeline...');
 
-      const extractResp = await fetch('http://localhost:8085/api/facebook-import/extract', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          url: url.trim(),
-          preferred_method: preferredMethod,
-          max_images: 50,
-        }),
-      });
+      // Dynamic milestone timers during extraction so UI actively reflects real-time stages
+      let activePhase = 2;
+      const timerPhase3 = setTimeout(() => {
+        if (activePhase === 2) {
+          activePhase = 3;
+          setCurrentStepIndex(3);
+          addLog('Target post container isolated in browser DOM', 'info');
+        }
+      }, 1600);
+
+      const timerPhase4 = setTimeout(() => {
+        if (activePhase === 3) {
+          activePhase = 4;
+          setCurrentStepIndex(4);
+          addLog('Extracting post description, hashtags & copy...', 'info');
+        }
+      }, 3400);
+
+      const timerPhase5 = setTimeout(() => {
+        if (activePhase === 4) {
+          activePhase = 5;
+          setCurrentStepIndex(5);
+          addLog('Scanning DOM for high-resolution photo gallery...', 'info');
+        }
+      }, 5200);
+
+      let extractResp: Response;
+      try {
+        extractResp = await fetch('http://localhost:8085/api/facebook-import/extract', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            url: url.trim(),
+            preferred_method: preferredMethod,
+            max_images: 50,
+          }),
+        });
+      } finally {
+        clearTimeout(timerPhase3);
+        clearTimeout(timerPhase4);
+        clearTimeout(timerPhase5);
+      }
 
       const extractData = await extractResp.json();
 
@@ -858,14 +1002,15 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
         return;
       }
 
-      // Step 4: Post Found
-      setCurrentStepIndex(3);
-      addLog('Target post container isolated & confirmed', 'success');
-
       const result = extractData.result;
       setSource(result.source);
 
-      // Step 5: Caption Extracted
+      // Smoothly advance through confirmed stages with micro-delays so user clearly sees each stage complete
+      // Step 3: Target Post Found
+      setCurrentStepIndex(3);
+      await delay(180);
+
+      // Step 4: Caption Extracted
       setCurrentStepIndex(4);
       if (workflowConfig.getContent.enabled) {
         setCaption(result.caption.original || '');
@@ -876,31 +1021,34 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
         setLanguages([]);
         addLog('Post caption extraction bypassed (disabled in Workflow Setup)', 'info');
       }
+      await delay(240);
 
-      // Step 6: Photos Detected
+      // Step 5: Photos Detected
       if (workflowConfig.getImages.enabled) {
         setCurrentStepIndex(5);
         const photoList: ExtractedImage[] = result.images || [];
-        addLog(`${photoList.length} photos detected in post container`);
+        addLog(`${photoList.length} photos detected in post container`, 'success');
+        await delay(240);
 
-        // Step 7: Verifying Photos
+        // Step 6: Verifying Photos
         setCurrentStepIndex(6);
         const verifiedCount = photoList.filter((img) => img.status !== 'rejected').length;
-        addLog(`Verifying ${photoList.length} photos against target post context...`);
+        addLog(`Verified ${verifiedCount} photos against post context...`, 'info');
+        await delay(260);
 
-        // Step 8: Downloading Media
+        // Step 7: Downloading Media
         setCurrentStepIndex(7);
         setImages(photoList);
-        const downloadedCount = photoList.filter((img) => img.status === 'downloaded').length;
         addLog(`${verifiedCount} target-verified photos downloaded & stored locally`, 'success');
+        await delay(260);
       } else {
         setImages([]);
         addLog('Image downloading bypassed (disabled in Workflow Setup)', 'info');
       }
 
-      // Step 9: AI Analysis
+      // Step 8: AI Analysis
       setCurrentStepIndex(8);
-      addLog('AI analyzing property attributes & Thai/Myanmar/English context...');
+      addLog('AI analyzing property attributes & Thai/Myanmar/English context...', 'info');
 
       if (result.property) {
         setPropertyData({
@@ -923,11 +1071,206 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
           contact_line: result.contact?.line || '',
         });
       }
+      await delay(320);
 
-      // Step 10: Complete
+      // Step 9: Complete
       setCurrentStepIndex(9);
       addLog('AI analysis complete. Import ready for review!', 'success');
       setBrowserState('Complete');
+
+      // Check which copy format boxes have auto-generate turned ON (reading latest from state & localStorage)
+      let currentAutoFormatBoxes = autoFormatBoxes;
+      try {
+        const saved = localStorage.getItem('estate_fb_auto_format_boxes');
+        if (saved) currentAutoFormatBoxes = JSON.parse(saved);
+      } catch {}
+
+      let currentAutoEnhance = autoEnhance;
+      try {
+        const saved = localStorage.getItem('estate_fb_auto_enhance');
+        if (saved !== null) currentAutoEnhance = saved === 'true';
+      } catch {}
+
+      const autoEnabledContentBoxes = workflowConfig.aiBoxes.filter(
+        (b) => isContentConnectedAIBox(b, workflowConfig.connections) && b.enabled && Boolean(currentAutoFormatBoxes[b.id])
+      );
+
+      const hasAutoWork = autoEnabledContentBoxes.length > 0 || currentAutoEnhance;
+
+      if (hasAutoWork) {
+        addLog('⚡ Running automated post workflow...', 'info');
+
+        const generatedCopiesMap: Record<string, string> = {};
+        let generatedPrimaryCopy = '';
+
+        // 1. Auto Format: Generate copy for each box with its Auto toggle turned on
+        if (autoEnabledContentBoxes.length > 0 && result.caption?.original) {
+          addLog(`⚡ Auto generating ${autoEnabledContentBoxes.length} selected format copies...`, 'info');
+          for (const box of autoEnabledContentBoxes) {
+              const providerName = `${box.provider === 'runware_ai' ? 'Runware AI' : box.provider === 'laozhang_ai' ? 'LaoZhang AI' : box.provider === 'openai' ? 'OpenAI' : 'Google AI'} (${getAIModelDisplayName(box.provider, box.model)})`;
+              addLog(`Generating copy for [${box.title}] with ${providerName}...`, 'info');
+              try {
+                const resp = await fetch('http://localhost:8085/api/facebook-import/generate-ai', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    provider: box.provider,
+                    model: box.model,
+                    template_id: box.templateId || '',
+                    template_name: box.title,
+                    template_text: box.templateText || '',
+                    raw_content: result.caption.original,
+                    custom_prompt: box.customPrompt || '',
+                  }),
+                });
+                const data = await resp.json();
+                if (resp.ok && data.success && data.generated_content) {
+                  generatedCopiesMap[box.id] = data.generated_content;
+                  if (!generatedPrimaryCopy) generatedPrimaryCopy = data.generated_content;
+                  setAiGeneratedOutputs((prev) => ({ ...prev, [box.id]: data.generated_content }));
+                  setAiGeneratedCopy(data.generated_content);
+                  addLog(`✨ [${box.title}] copy generated successfully!`, 'success');
+                }
+              } catch (copyErr: any) {
+                console.error(`Auto format error for [${box.title}]:`, copyErr);
+                addLog(`[${box.title}] copy generation error: ${copyErr.message}`, 'error');
+              }
+            }
+        }
+
+        // 2. Auto Enhance: Enhance all extracted photos
+        const enhancedPhotosResult: Record<number, string> = {};
+        const photoList: ExtractedImage[] = result.images || [];
+
+        if (currentAutoEnhance && photoList.length > 0) {
+          addLog(`⚡ Auto Enhance active: Enhancing ${photoList.length} photos...`, 'info');
+          const chosenBox = imageAIBoxes.find((b) => b.enabled) || imageAIBoxes[0];
+          const provider = chosenBox?.provider || 'runware_ai';
+          const model = chosenBox?.model || 'runware:101@1';
+          const prompt =
+            chosenBox?.customPrompt ||
+            chosenBox?.templateText ||
+            'Ultra-high clarity architectural photography, 8k resolution, perfectly balanced HDR interior lighting, luxury real estate editorial staging';
+          const strength = chosenBox?.strength ?? 0.25;
+
+          for (const img of photoList) {
+            const rawUrl = img.stored_url
+              ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
+              : img.source_url;
+
+            addLog(`🎨 Auto Enhancing Photo #${img.index}...`, 'info');
+            try {
+              const res = await fetch('http://localhost:8085/api/facebook-import/enhance-image', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  image_url: rawUrl,
+                  provider,
+                  model,
+                  prompt_name: chosenBox?.title || 'AI Image Enhancement',
+                  prompt_instructions: prompt,
+                  strength,
+                }),
+              });
+              const data = await res.json();
+              if (res.ok && data.status === 'success' && data.enhanced_url) {
+                enhancedPhotosResult[img.index] = data.enhanced_url;
+                setEnhancedPhotos((prev) => ({ ...prev, [img.index]: data.enhanced_url }));
+                addLog(`✨ Photo #${img.index} auto enhanced!`, 'success');
+              }
+            } catch (enhErr: any) {
+              console.error(`Auto enhance error for #${img.index}:`, enhErr);
+            }
+          }
+        }
+
+        // 3. Store data automatically into Remaining Posts
+        const projectName =
+          result.property?.project_name ||
+          (result.source?.post_id ? `Facebook Post #${result.source.post_id}` : 'Facebook Property Post');
+
+        saveRemainingPost({
+          facebook_url: url.trim(),
+          projectName,
+          source: result.source,
+          caption: result.caption?.original || '',
+          languages: result.caption?.language_detected || [],
+          propertyData: {
+            project_name: result.property?.project_name || '',
+            listing_type: result.property?.listing_type || 'RENT',
+            price: result.property?.price ? String(result.property.price) : '',
+            currency: result.property?.currency || 'THB',
+            bedrooms: result.property?.bedrooms !== null && result.property?.bedrooms !== undefined ? String(result.property.bedrooms) : '',
+            bathrooms: result.property?.bathrooms !== null && result.property?.bathrooms !== undefined ? String(result.property.bathrooms) : '',
+            size_sqm: result.property?.size_sqm ? String(result.property.size_sqm) : '',
+            floor: result.property?.floor || '',
+            building: result.property?.building || '',
+            unit_number: result.property?.unit_number || '',
+            furnished: result.property?.furnished || '',
+            nearest_transit: result.property?.nearest_transit || '',
+            location: result.property?.location || '',
+            move_in_status: result.property?.move_in_status || '',
+            contact_name: result.contact?.name || '',
+            contact_phone: result.contact?.phone || '',
+            contact_line: result.contact?.line || '',
+          },
+          originalImages: photoList,
+          enhancedPhotos: enhancedPhotosResult,
+          aiGeneratedOutputs: generatedCopiesMap,
+          aiGeneratedCopy: generatedPrimaryCopy,
+          workflowFormatName: activeFormat.name,
+          autoProcessed: true,
+        });
+
+        addLog(`🎉 All processes complete! Automatically stored in Remaining Posts.`, 'success');
+
+        // 4. Automatically clean data in Facebook Import form!
+        await delay(1200);
+        handleDeleteImport();
+        setShowPipelineModal(false);
+        showToast(`🎉 "${projectName}" automatically stored in Remaining Posts & import form cleared!`);
+      } else {
+        // Even when no auto actions are toggled, automatically store the imported post in Remaining Posts!
+        const projectName =
+          result.property?.project_name ||
+          (result.source?.post_id ? `Facebook Post #${result.source.post_id}` : 'Facebook Property Post');
+        const photoList: ExtractedImage[] = result.images || [];
+
+        saveRemainingPost({
+          facebook_url: url.trim(),
+          projectName,
+          source: result.source,
+          caption: result.caption?.original || '',
+          languages: result.caption?.language_detected || [],
+          propertyData: {
+            project_name: result.property?.project_name || '',
+            listing_type: result.property?.listing_type || 'RENT',
+            price: result.property?.price ? String(result.property.price) : '',
+            currency: result.property?.currency || 'THB',
+            bedrooms: result.property?.bedrooms !== null && result.property?.bedrooms !== undefined ? String(result.property.bedrooms) : '',
+            bathrooms: result.property?.bathrooms !== null && result.property?.bathrooms !== undefined ? String(result.property.bathrooms) : '',
+            size_sqm: result.property?.size_sqm ? String(result.property.size_sqm) : '',
+            floor: result.property?.floor || '',
+            building: result.property?.building || '',
+            unit_number: result.property?.unit_number || '',
+            furnished: result.property?.furnished || '',
+            nearest_transit: result.property?.nearest_transit || '',
+            location: result.property?.location || '',
+            move_in_status: result.property?.move_in_status || '',
+            contact_name: result.contact?.name || '',
+            contact_phone: result.contact?.phone || '',
+            contact_line: result.contact?.line || '',
+          },
+          originalImages: photoList,
+          enhancedPhotos: {},
+          aiGeneratedOutputs: {},
+          aiGeneratedCopy: '',
+          workflowFormatName: activeFormat.name,
+          autoProcessed: false,
+        });
+
+        addLog(`💾 "${projectName}" automatically stored in Remaining Posts.`, 'success');
+      }
     } catch (err: any) {
       setPipelineError(err.message || 'An error occurred during extraction');
       addLog(`Failed: ${err.message}`, 'error');
@@ -1376,8 +1719,33 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
     } catch {}
   };
 
+  const handleSaveToRemainingPosts = (customMsg?: string) => {
+    if (!url.trim() && !caption.trim() && images.length === 0) {
+      addLog('Cannot save: No imported post data present', 'warn');
+      return;
+    }
+
+    const saved = saveRemainingPost({
+      facebook_url: url.trim(),
+      projectName: propertyData.project_name || 'Facebook Property Post',
+      source,
+      caption,
+      languages,
+      propertyData,
+      originalImages: images,
+      enhancedPhotos,
+      aiGeneratedOutputs,
+      aiGeneratedCopy,
+      workflowFormatName: activeFormat.name,
+      autoProcessed: Object.values(autoFormatBoxes).some(Boolean) || autoEnhance,
+    });
+
+    handleDeleteImport();
+    showToast(customMsg || `✨ "${saved.projectName}" stored in Remaining Posts & import form cleared!`);
+  };
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', paddingBottom: '3rem' }}>
+    <div className="fb-import-view-container">
       {/* Top Nav Bar Center Portal: Select Workflow Format */}
       {headerCenterEl &&
         createPortal(
@@ -1692,37 +2060,42 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
             alignItems: 'stretch',
           }}
         >
-          {/* LEFT COLUMN: VERTICAL PIPELINE STATUS (COLUMN DESIGN, NO GLOW, NOT BOLD) */}
+          {/* LEFT COLUMN: LIVE PIPELINE STEPPER (COOL, HIGH-TECH MODERN DESIGN) */}
           <div
             style={{
-              backgroundColor: 'var(--bg-secondary)',
-              border: '1px solid var(--border-color)',
-              borderRadius: '0.75rem',
+              backgroundColor: isDark ? 'rgba(26, 26, 26, 0.85)' : 'var(--bg-secondary)',
+              border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid var(--border-color)',
+              borderRadius: '0.875rem',
               padding: '1.25rem',
               display: 'flex',
               flexDirection: 'column',
-              gap: '1rem',
+              gap: '1.125rem',
+              boxShadow: isDark ? '0 8px 32px rgba(0, 0, 0, 0.35)' : 'var(--shadow-md)',
+              backdropFilter: 'blur(12px)',
             }}
           >
+            {/* Header + Browser Badge */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <span style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--text-primary)' }}>
-                  Pipeline Status
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+                <div
+                  style={{
+                    width: '8px',
+                    height: '8px',
+                    borderRadius: '50%',
+                    backgroundColor: isProcessing ? '#3B82F6' : currentStepIndex >= 9 ? '#22C55E' : 'var(--text-muted)',
+                    boxShadow: isProcessing
+                      ? '0 0 10px #3B82F6'
+                      : currentStepIndex >= 9
+                      ? '0 0 10px #22C55E'
+                      : 'none',
+                    animation: isProcessing ? 'pulse 1.5s infinite' : 'none',
+                  }}
+                />
+                <span style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
+                  Pipeline Execution
                 </span>
-                {currentStepIndex >= 0 && (
-                  <span
-                    style={{
-                      fontSize: '0.75rem',
-                      fontWeight: 400,
-                      color: isProcessing ? 'var(--accent-primary)' : 'var(--status-success)',
-                    }}
-                  >
-                    ({currentStepIndex + 1}/{PIPELINE_STEPS.length}: {PIPELINE_STEPS[currentStepIndex]?.label})
-                  </span>
-                )}
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>Browser:</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <Badge
                   variant={
                     browserState === 'Logged In' || browserState === 'Complete'
@@ -1738,13 +2111,49 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
               </div>
             </div>
 
-            {/* Vertical Stepper Column */}
+            {/* Glowing Gradient Progress Bar */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                <span>
+                  {currentStepIndex >= 0
+                    ? `Step ${Math.min(currentStepIndex + 1, PIPELINE_STEPS.length)} of ${PIPELINE_STEPS.length}`
+                    : 'Standby'}
+                </span>
+                <span style={{ fontWeight: 600, color: currentStepIndex >= 9 ? '#22C55E' : 'var(--accent-primary)' }}>
+                  {currentStepIndex < 0 ? '0%' : `${Math.min(Math.round(((currentStepIndex + 1) / PIPELINE_STEPS.length) * 100), 100)}%`}
+                </span>
+              </div>
+              <div
+                style={{
+                  height: '4px',
+                  width: '100%',
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)',
+                  borderRadius: '2px',
+                  overflow: 'hidden',
+                  position: 'relative',
+                }}
+              >
+                <div
+                  style={{
+                    height: '100%',
+                    width: currentStepIndex < 0 ? '0%' : `${Math.min(((currentStepIndex + 1) / PIPELINE_STEPS.length) * 100, 100)}%`,
+                    background: currentStepIndex >= 9
+                      ? 'linear-gradient(90deg, #10B981, #22C55E)'
+                      : 'linear-gradient(90deg, #3B82F6, #60A5FA, #10B981)',
+                    borderRadius: '2px',
+                    transition: 'width 0.35s cubic-bezier(0.4, 0, 0.2, 1)',
+                    boxShadow: isProcessing ? '0 0 8px rgba(59, 130, 246, 0.6)' : 'none',
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Vertical Stepper List (Clean Left Rail: Circle + Connecting Line Segment) */}
             <div
               style={{
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '0.75rem',
-                paddingLeft: '0.25rem',
+                position: 'relative',
                 paddingTop: '0.25rem',
               }}
             >
@@ -1752,91 +2161,178 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                 const isCompleted = currentStepIndex > idx;
                 const isCurrent = currentStepIndex === idx && isProcessing;
                 const isFailed = currentStepIndex === idx && pipelineError !== null;
+                const StepIcon = step.icon;
 
                 return (
                   <div
                     key={step.id}
                     style={{
                       display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.75rem',
-                      position: 'relative',
+                      gap: '0.875rem',
+                      alignItems: 'stretch',
+                      padding: '0.25rem 0.375rem',
+                      borderRadius: '0.5rem',
+                      backgroundColor: isCurrent
+                        ? isDark ? 'rgba(59, 130, 246, 0.08)' : 'rgba(59, 130, 246, 0.05)'
+                        : 'transparent',
+                      transition: 'all 0.25s ease',
                     }}
                   >
-                    {/* Vertical connecting line */}
-                    {idx < PIPELINE_STEPS.length - 1 && (
-                      <div
-                        style={{
-                          position: 'absolute',
-                          left: '11px',
-                          top: '22px',
-                          bottom: '-12px',
-                          width: '2px',
-                          backgroundColor: isCompleted ? '#22C55E' : 'var(--border-color)',
-                          zIndex: 0,
-                        }}
-                      />
-                    )}
-
-                    {/* Step Node Circle (no glow, flat clean) */}
+                    {/* Left Rail: Circle Node + Connecting Line Segment Below It */}
                     <div
                       style={{
-                        width: '24px',
-                        height: '24px',
-                        borderRadius: '50%',
                         display: 'flex',
+                        flexDirection: 'column',
                         alignItems: 'center',
-                        justifyContent: 'center',
-                        backgroundColor: isCompleted
-                          ? '#22C55E'
-                          : isCurrent
-                          ? '#3B82F6'
-                          : isFailed
-                          ? '#EF4444'
-                          : 'var(--bg-main)',
-                        border: `1px solid ${
-                          isCompleted
+                        width: '30px',
+                        flexShrink: 0,
+                      }}
+                    >
+                      {/* Circle Node (Solid Opaque Background, No Line Behind or Inside) */}
+                      <div
+                        style={{
+                          width: '30px',
+                          height: '30px',
+                          borderRadius: '50%',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          backgroundColor: isCompleted
+                            ? (isDark ? '#064E3B' : '#DCFCE7')
+                            : isCurrent
+                            ? (isDark ? '#1E3A8A' : '#DBEAFE')
+                            : isFailed
+                            ? (isDark ? '#7F1D1D' : '#FEE2E2')
+                            : (isDark ? '#1E232A' : '#F3F4F6'),
+                          border: isCompleted
+                            ? '2px solid #22C55E'
+                            : isCurrent
+                            ? '2px solid #3B82F6'
+                            : isFailed
+                            ? '2px solid #EF4444'
+                            : isDark ? '1.5px solid rgba(255, 255, 255, 0.14)' : '1.5px solid #D1D5DB',
+                          color: isCompleted
                             ? '#22C55E'
                             : isCurrent
                             ? '#3B82F6'
                             : isFailed
                             ? '#EF4444'
-                            : 'var(--border-color)'
-                        }`,
-                        color: isCompleted || isCurrent || isFailed ? '#FFFFFF' : 'var(--text-muted)',
-                        fontSize: '0.6875rem',
-                        fontWeight: 400,
-                        zIndex: 1,
-                        flexShrink: 0,
-                      }}
-                    >
-                      {isCompleted ? (
-                        <FiCheck style={{ fontSize: '12px', strokeWidth: 2.5 }} />
-                      ) : isCurrent ? (
-                        <FiRefreshCw className="spin" style={{ fontSize: '11px', display: 'inline-block' }} />
-                      ) : isFailed ? (
-                        <FiAlertCircle style={{ fontSize: '11px' }} />
-                      ) : (
-                        <span>{idx + 1}</span>
+                            : 'var(--text-muted)',
+                          boxShadow: isCurrent
+                            ? '0 0 12px rgba(59, 130, 246, 0.45)'
+                            : isCompleted
+                            ? '0 0 8px rgba(34, 197, 94, 0.25)'
+                            : 'none',
+                          flexShrink: 0,
+                          transition: 'all 0.25s ease',
+                        }}
+                      >
+                        {isCompleted ? (
+                          <FiCheck style={{ fontSize: '14px', strokeWidth: 3 }} />
+                        ) : isCurrent ? (
+                          <FiRefreshCw className="spin" style={{ fontSize: '13px' }} />
+                        ) : isFailed ? (
+                          <FiAlertCircle style={{ fontSize: '14px' }} />
+                        ) : (
+                          <StepIcon style={{ fontSize: '13px', opacity: 0.7 }} />
+                        )}
+                      </div>
+
+                      {/* Connecting Line Segment (Starts exactly below circle, ends at row boundary) */}
+                      {idx < PIPELINE_STEPS.length - 1 && (
+                        <div
+                          style={{
+                            width: '2px',
+                            flex: 1,
+                            minHeight: '16px',
+                            backgroundColor: isCompleted
+                              ? '#22C55E'
+                              : isDark ? 'rgba(255, 255, 255, 0.1)' : '#E5E7EB',
+                            margin: '3px 0',
+                            borderRadius: '1px',
+                            transition: 'background-color 0.3s ease',
+                          }}
+                        />
                       )}
                     </div>
 
-                    {/* Step Label (regular weight, no bold) */}
-                    <span
+                    {/* Right Rail: Step Label & Sublabel */}
+                    <div
                       style={{
-                        fontSize: '0.8125rem',
-                        fontWeight: 400,
-                        color: isCompleted
-                          ? 'var(--text-primary)'
-                          : isCurrent
-                          ? '#60A5FA'
-                          : isFailed
-                          ? '#F87171'
-                          : 'var(--text-muted)',
+                        flex: 1,
+                        minWidth: 0,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'center',
+                        paddingBottom: idx < PIPELINE_STEPS.length - 1 ? '0.75rem' : '0.2rem',
                       }}
                     >
-                      {step.label}
-                    </span>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+                        <span
+                          style={{
+                            fontSize: '0.8125rem',
+                            fontWeight: isCurrent ? 600 : isCompleted ? 500 : 400,
+                            color: isCompleted
+                              ? 'var(--text-primary)'
+                              : isCurrent
+                              ? '#3B82F6'
+                              : isFailed
+                              ? '#EF4444'
+                              : 'var(--text-muted)',
+                            lineHeight: 1.3,
+                          }}
+                        >
+                          {step.label}
+                        </span>
+
+                        {/* Step State Badge */}
+                        {isCurrent && (
+                          <span
+                            style={{
+                              fontSize: '0.625rem',
+                              fontWeight: 600,
+                              color: '#3B82F6',
+                              backgroundColor: isDark ? 'rgba(59, 130, 246, 0.18)' : 'rgba(59, 130, 246, 0.1)',
+                              border: '1px solid rgba(59, 130, 246, 0.3)',
+                              padding: '1px 6px',
+                              borderRadius: '10px',
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.04em',
+                              animation: 'pulse 1.5s infinite',
+                            }}
+                          >
+                            Active
+                          </span>
+                        )}
+                        {isCompleted && (
+                          <span
+                            style={{
+                              fontSize: '0.625rem',
+                              fontWeight: 500,
+                              color: '#22C55E',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '2px',
+                            }}
+                          >
+                            Done
+                          </span>
+                        )}
+                      </div>
+                      <span
+                        style={{
+                          fontSize: '0.6875rem',
+                          color: isCurrent ? 'var(--text-secondary)' : 'var(--text-muted)',
+                          lineHeight: 1.3,
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          marginTop: '2px',
+                        }}
+                      >
+                        {step.sublabel}
+                      </span>
+                    </div>
                   </div>
                 );
               })}
@@ -1991,16 +2487,9 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
       )}
 
       {/* 2-COLUMN WORKSPACE: LEFT (URL INPUT + CONTENT + AI) / RIGHT (PHOTOS) */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))',
-          gap: '1.25rem',
-          alignItems: 'start',
-        }}
-      >
+      <div className="fb-import-workspace-grid">
         {/* ==================== LEFT COLUMN ==================== */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', height: '100%', minHeight: 0, overflow: 'hidden' }}>
           {/* URL INPUT & ACTION BUTTONS ROW (NO OUTER CONTAINER) */}
           <div
             style={{
@@ -2008,6 +2497,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
               alignItems: 'center',
               gap: '0.5rem',
               width: '100%',
+              flexShrink: 0,
             }}
           >
             {/* Integrated Input Container */}
@@ -2179,6 +2669,8 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
           {/* MOTHER BOX 2: AI COPY GENERATOR PANEL */}
           <div
             style={{
+              flex: 1,
+              minHeight: 0,
               backgroundColor: 'var(--bg-secondary)',
               border: '1px solid var(--border-color)',
               borderRadius: '0.75rem',
@@ -2187,10 +2679,12 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
               flexDirection: 'column',
               gap: '1rem',
               boxShadow: 'var(--shadow-sm)',
+              overflowY: 'auto',
+              overscrollBehavior: 'contain',
             }}
           >
             {/* Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
               <h3 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
                 AI Copy Generator
               </h3>
@@ -2242,7 +2736,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, 272px)',
+                gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
                 gap: '0.875rem',
               }}
             >
@@ -2276,7 +2770,8 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                         if (aiGeneratedOutputs[box.id]) setAiGeneratedCopy(aiGeneratedOutputs[box.id]);
                       }}
                       style={{
-                        width: '272px',
+                        width: '100%',
+                        boxSizing: 'border-box',
                         backgroundColor: isDark ? '#161B22' : 'var(--bg-main)',
                         border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid var(--border-color)',
                         borderRadius: '12px',
@@ -2289,61 +2784,43 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                         transition: 'all 0.18s cubic-bezier(0.16, 1, 0.3, 1)',
                       }}
                     >
-                      {/* Card Header: Icon + Title + Status */}
+                      {/* Card Header: Title + Auto Switch & Status */}
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', overflow: 'hidden' }}>
-                          {box.provider === 'runware_ai'
-                            ? <RunwareIcon size={16} color="#10B981" />
-                            : box.provider === 'laozhang_ai'
-                            ? <LaoZhangIcon size={16} />
-                            : isGoogle
-                            ? <SiGooglegemini style={{ fontSize: '16px', color: '#3B82F6', flexShrink: 0 }} />
-                            : <OpenAIIcon size={16} color="#10B981" />
-                          }
-                          <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {box.title}
-                          </span>
-                        </div>
-
-                        {hasGenerated && !isBoxLoading && (
-                          <span style={{
-                            fontSize: '0.6875rem',
-                            fontWeight: 500,
-                            color: '#10B981',
-                            backgroundColor: isDark ? 'rgba(16, 185, 129, 0.12)' : 'rgba(16, 185, 129, 0.08)',
-                            padding: '2px 7px',
-                            borderRadius: '10px',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '3px',
-                            flexShrink: 0,
-                          }}>
-                            <FiCheck style={{ fontSize: '11px' }} /> Ready
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Model badge line */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <span style={{
-                          fontSize: '0.6875rem',
-                          fontWeight: 500,
-                          color: isDark ? '#A1A1AA' : '#52525B',
-                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
-                          border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid rgba(0, 0, 0, 0.06)',
-                          borderRadius: '6px',
-                          padding: '2px 7px',
-                        }}>
-                          {getAIModelDisplayName(box.provider, box.model)}
+                        <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {box.title}
                         </span>
-                        {hasGenerated && (
-                          <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-                            · {aiGeneratedOutputs[box.id]?.length || 0} chars
-                          </span>
-                        )}
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                          {hasGenerated && !isBoxLoading && (
+                            <span style={{
+                              fontSize: '0.6875rem',
+                              fontWeight: 500,
+                              color: '#10B981',
+                              backgroundColor: isDark ? 'rgba(16, 185, 129, 0.12)' : 'rgba(16, 185, 129, 0.08)',
+                              padding: '2px 7px',
+                              borderRadius: '10px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '3px',
+                            }}>
+                              <FiCheck style={{ fontSize: '11px' }} /> Ready
+                            </span>
+                          )}
+
+                          <div onClick={(e) => e.stopPropagation()}>
+                            <ToggleSwitch
+                              checked={Boolean(autoFormatBoxes[box.id])}
+                              onChange={(checked) => handleToggleBoxAutoFormat(box.id, checked)}
+                              size="sm"
+                              label="Auto"
+                              tooltip={`Automatically generate ${box.title} when post is imported`}
+                              activeColor="#2563EB"
+                            />
+                          </div>
+                        </div>
                       </div>
 
-                      {/* Generate / Regenerate & Actions */}
+                      {/* Actions: View Prompt & Generate / Regenerate */}
                       {hasGenerated ? (
                         <div style={{ display: 'flex', gap: '0.375rem', alignItems: 'center', width: '100%', marginTop: 'auto' }}>
                           {/* Regenerate button */}
@@ -2372,6 +2849,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                               gap: '6px',
                               transition: 'all 0.15s ease',
                               boxShadow: 'none',
+                              whiteSpace: 'nowrap',
                             }}
                             onMouseEnter={(e) => {
                               if (!isBoxLoading && caption.trim()) {
@@ -2384,11 +2862,46 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                               e.currentTarget.style.borderColor = 'var(--accent-primary)';
                             }}
                           >
-                            <FiRefreshCw
-                              className={isBoxLoading ? 'spin' : ''}
-                              style={{ animation: isBoxLoading ? 'spin 1s linear infinite' : 'none', fontSize: '12px' }}
-                            />
+                            {isBoxLoading && (
+                              <FiRefreshCw
+                                className="spin"
+                                style={{ animation: 'spin 1s linear infinite', fontSize: '12px' }}
+                              />
+                            )}
                             <span>{isBoxLoading ? 'Regenerating...' : 'Regenerate'}</span>
+                          </button>
+
+                          {/* View Prompt button */}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setViewingPromptBox(box);
+                            }}
+                            title="View Prompt"
+                            style={{
+                              width: '36px',
+                              height: '36px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              borderRadius: '8px',
+                              border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
+                              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.03)',
+                              color: 'var(--text-secondary)',
+                              cursor: 'pointer',
+                              flexShrink: 0,
+                              transition: 'all 0.15s ease',
+                              boxShadow: 'none',
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.03)';
+                            }}
+                          >
+                            <FiEye style={{ fontSize: '13px' }} />
                           </button>
 
                           {/* Copy button: Icon only */}
@@ -2472,51 +2985,86 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                           </button>
                         </div>
                       ) : (
-                        /* Generate button: Theme accent color */
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setActiveAIBoxId(box.id);
-                            handleGenerateDynamicBoxCopy(box.id);
-                          }}
-                          disabled={isBoxLoading || !caption.trim()}
-                          style={{
-                            height: '36px',
-                            width: '100%',
-                            backgroundColor: 'var(--accent-primary)',
-                            border: '1px solid var(--accent-primary)',
-                            borderRadius: '8px',
-                            color: '#FFFFFF',
-                            fontSize: '0.8125rem',
-                            fontWeight: 500,
-                            cursor: isBoxLoading || !caption.trim() ? 'not-allowed' : 'pointer',
-                            opacity: isBoxLoading || !caption.trim() ? 0.6 : 1,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '6px',
-                            marginTop: 'auto',
-                            transition: 'all 0.15s ease',
-                            boxShadow: 'none',
-                          }}
-                          onMouseEnter={(e) => {
-                            if (!isBoxLoading && caption.trim()) {
-                              e.currentTarget.style.backgroundColor = 'var(--accent-hover)';
-                              e.currentTarget.style.borderColor = 'var(--accent-hover)';
-                            }
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.backgroundColor = 'var(--accent-primary)';
-                            e.currentTarget.style.borderColor = 'var(--accent-primary)';
-                          }}
-                        >
-                          {isBoxLoading
-                            ? <FiRefreshCw className="spin" style={{ animation: 'spin 1s linear infinite', fontSize: '13px' }} />
-                            : <FiZap style={{ fontSize: '13px' }} />
-                          }
-                          <span>{isBoxLoading ? 'Generating...' : 'Generate'}</span>
-                        </button>
+                        /* Two buttons: View Prompt & Generate */
+                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', width: '100%', marginTop: 'auto' }}>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setViewingPromptBox(box);
+                            }}
+                            style={{
+                              flex: 1,
+                              height: '36px',
+                              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+                              border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
+                              borderRadius: '8px',
+                              color: 'var(--text-primary)',
+                              fontSize: '0.8125rem',
+                              fontWeight: 500,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '5px',
+                              transition: 'all 0.15s ease',
+                              boxShadow: 'none',
+                              whiteSpace: 'nowrap',
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.09)' : 'rgba(0, 0, 0, 0.07)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)';
+                            }}
+                          >
+                            <span>View Prompt</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveAIBoxId(box.id);
+                              handleGenerateDynamicBoxCopy(box.id);
+                            }}
+                            disabled={isBoxLoading || !caption.trim()}
+                            style={{
+                              flex: 1,
+                              height: '36px',
+                              backgroundColor: 'var(--accent-primary)',
+                              border: '1px solid var(--accent-primary)',
+                              borderRadius: '8px',
+                              color: '#FFFFFF',
+                              fontSize: '0.8125rem',
+                              fontWeight: 500,
+                              cursor: isBoxLoading || !caption.trim() ? 'not-allowed' : 'pointer',
+                              opacity: isBoxLoading || !caption.trim() ? 0.6 : 1,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '6px',
+                              transition: 'all 0.15s ease',
+                              boxShadow: 'none',
+                              whiteSpace: 'nowrap',
+                            }}
+                            onMouseEnter={(e) => {
+                              if (!isBoxLoading && caption.trim()) {
+                                e.currentTarget.style.backgroundColor = 'var(--accent-hover)';
+                                e.currentTarget.style.borderColor = 'var(--accent-hover)';
+                              }
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = 'var(--accent-primary)';
+                              e.currentTarget.style.borderColor = 'var(--accent-primary)';
+                            }}
+                          >
+                            {isBoxLoading && (
+                              <FiRefreshCw className="spin" style={{ animation: 'spin 1s linear infinite', fontSize: '13px' }} />
+                            )}
+                            <span>{isBoxLoading ? 'Generating...' : 'Generate'}</span>
+                          </button>
+                        </div>
                       )}
                     </div>
                   );
@@ -2551,10 +3099,13 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
         </div>
 
         {/* ==================== RIGHT COLUMN ==================== */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', height: 'fit-content' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, overflow: 'hidden' }}>
           {/* MOTHER BOX 3: IMPORTED PHOTOS PANEL */}
           <div
             style={{
+              flex: 1,
+              minHeight: 0,
+              height: '100%',
               backgroundColor: 'var(--bg-secondary)',
               border: '1px solid var(--border-color)',
               borderRadius: '0.75rem',
@@ -2563,14 +3114,37 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
               flexDirection: 'column',
               gap: '1rem',
               boxShadow: 'var(--shadow-sm)',
-              height: 'fit-content',
+              overflow: 'hidden',
             }}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'nowrap' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'nowrap', flexShrink: 0 }}>
               <h3 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
                 Imported Photos ({images.length})
               </h3>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'nowrap', flexShrink: 0 }}>
+                {/* Auto Enhance Switch */}
+                <div
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    height: '34px',
+                    padding: '0 0.625rem',
+                    borderRadius: '8px',
+                    backgroundColor: 'var(--bg-main)',
+                    border: '1px solid var(--border-color)',
+                    boxShadow: 'var(--shadow-sm)',
+                    flexShrink: 0,
+                  }}
+                >
+                  <ToggleSwitch
+                    checked={autoEnhance}
+                    onChange={handleToggleAutoEnhance}
+                    label="Auto Enhance"
+                    tooltip="When turned on, automatically enhances all photos with AI upon post import"
+                    activeColor="#10B981"
+                  />
+                </div>
+
                 {imageAIBoxes.length > 0 && (
                   <Button
                     variant="secondary"
@@ -2675,6 +3249,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
               <div
                 style={{
                   flex: 1,
+                  minHeight: 0,
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
@@ -2683,7 +3258,6 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                   color: 'var(--text-muted)',
                   border: '1px dashed var(--border-color)',
                   borderRadius: '0.5rem',
-                  minHeight: '260px',
                 }}
               >
                 <FiImage style={{ fontSize: '2rem', marginBottom: '0.5rem', opacity: 0.5 }} />
@@ -2692,6 +3266,8 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
             ) : (
               <div
                 style={{
+                  flex: 1,
+                  minHeight: 0,
                   display: 'grid',
                   gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
                   gap: '0.625rem',
@@ -2699,8 +3275,8 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                   alignItems: 'start',
                   gridAutoRows: 'max-content',
                   overflowY: 'auto',
-                  paddingRight: '0.25rem',
-                  maxHeight: 'calc(100vh - 140px)',
+                  overscrollBehavior: 'contain',
+                  paddingRight: '0.35rem',
                 }}
               >
                 {images.map((img, idx) => {
@@ -3364,6 +3940,11 @@ style={{
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
           <FacebookWorkflowCanvas
             initialConfig={workflowConfig}
+            rawContent={caption}
+            autoFormatBoxes={autoFormatBoxes}
+            onToggleBoxAutoFormat={handleToggleBoxAutoFormat}
+            autoEnhance={autoEnhance}
+            onToggleAutoEnhance={handleToggleAutoEnhance}
             onConfigChange={(newCfg) => {
               setWorkflowConfig(newCfg);
               const updatedFmt: WorkflowFormat = { ...activeFormat, config: newCfg, updatedAt: Date.now() };
@@ -3900,9 +4481,61 @@ style={{
             setStudioStartWithNewChat(false);
             setStudioInitialImages([]);
           }}
-          hideHeader={true}
-          fullHeight={true}
+          maxWidth="96vw"
+          height="92vh"
           bodyPadding="0"
+          headerExtra={
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 500, marginRight: '0.25rem' }}>
+              Strength: {Math.round((selectedImageAIBoxModal.strength ?? 0.25) * 100)}%
+            </span>
+          }
+          title={
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0, minHeight: '32px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+                <RunwareIcon size={18} color="#10B981" />
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
+                    borderRadius: '6px',
+                    padding: '2px 6px',
+                    border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  <input
+                    type="text"
+                    value={selectedImageAIBoxModal.title}
+                    onChange={(e) => {
+                      const newTitle = e.target.value;
+                      setWorkflowConfig((prev) => ({
+                        ...prev,
+                        aiBoxes: prev.aiBoxes.map((b) => (b.id === selectedImageAIBoxModal.id ? { ...b, title: newTitle } : b)),
+                      }));
+                      setSelectedImageAIBoxModal((prev) => (prev ? { ...prev, title: newTitle } : null));
+                    }}
+                    placeholder="Node Name"
+                    title="Click to rename node"
+                    style={{
+                      fontSize: '0.875rem',
+                      fontWeight: 600,
+                      color: 'var(--text-primary)',
+                      backgroundColor: 'transparent',
+                      border: 'none',
+                      outline: 'none',
+                      width: `${Math.max(120, Math.min(260, (selectedImageAIBoxModal.title?.length || 8) * 9 + 16))}px`,
+                      cursor: 'text',
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') e.currentTarget.blur();
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+          }
         >
           <AIImageStudio
             box={selectedImageAIBoxModal}
@@ -3940,6 +4573,111 @@ style={{
               setStudioInitialImages([]);
             }}
           />
+        </Modal>
+      )}
+
+      {/* VIEW PROMPT MODAL */}
+      {viewingPromptBox && (
+        <Modal
+          isOpen={Boolean(viewingPromptBox)}
+          onClose={() => setViewingPromptBox(null)}
+          title={
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+              <FiFileText style={{ color: 'var(--accent-primary)', fontSize: '1.125rem' }} />
+              <span style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                Prompt Instructions: {viewingPromptBox.title}
+              </span>
+            </div>
+          }
+          maxWidth="680px"
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '0.625rem 0.75rem',
+                backgroundColor: 'var(--bg-main)',
+                borderRadius: '0.5rem',
+                border: '1px solid var(--border-color)',
+              }}
+            >
+              <div>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Target Engine & Model:</span>
+                <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)', marginTop: '2px' }}>
+                  {getAIModelDisplayName(viewingPromptBox.provider, viewingPromptBox.model)}
+                </div>
+              </div>
+              <Badge variant="info">
+                {viewingPromptBox.processType || 'Copywriter'}
+              </Badge>
+            </div>
+
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.375rem' }}>
+                <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  System Prompt & Instructions Used
+                </label>
+                <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                  {(() => {
+                    const tpl = promptTemplates.find((p) => String(p.id) === String(viewingPromptBox.templateId));
+                    const text = viewingPromptBox.customPrompt || viewingPromptBox.templateText || tpl?.templateText || '';
+                    return `${text.length} characters`;
+                  })()}
+                </span>
+              </div>
+              <textarea
+                readOnly
+                value={(() => {
+                  const tpl = promptTemplates.find((p) => String(p.id) === String(viewingPromptBox.templateId));
+                  return viewingPromptBox.customPrompt || viewingPromptBox.templateText || tpl?.templateText || 'No prompt instructions configured.';
+                })()}
+                style={{
+                  width: '100%',
+                  minHeight: '240px',
+                  maxHeight: '400px',
+                  backgroundColor: 'var(--bg-main)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '0.5rem',
+                  padding: '0.875rem',
+                  fontSize: '0.8125rem',
+                  color: 'var(--text-primary)',
+                  lineHeight: 1.6,
+                  resize: 'vertical',
+                  fontFamily: 'inherit',
+                  outline: 'none',
+                  boxSizing: 'border-box',
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '0.5rem', borderTop: '1px solid var(--border-color)' }}>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  const tpl = promptTemplates.find((p) => String(p.id) === String(viewingPromptBox.templateId));
+                  const text = viewingPromptBox.customPrompt || viewingPromptBox.templateText || tpl?.templateText || '';
+                  if (text) {
+                    navigator.clipboard.writeText(text);
+                    addLog(`Prompt for [${viewingPromptBox.title}] copied to clipboard`, 'success');
+                  }
+                }}
+                leftIcon={<FiCopy />}
+              >
+                Copy Prompt
+              </Button>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setViewingPromptBox(null)}
+              >
+                Close
+              </Button>
+            </div>
+          </div>
         </Modal>
       )}
 
@@ -4126,6 +4864,32 @@ style={{
           </div>
         </div>
       </Modal>
+
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: '24px',
+            right: '24px',
+            backgroundColor: '#10B981',
+            color: '#FFFFFF',
+            padding: '10px 18px',
+            borderRadius: '8px',
+            fontSize: '0.8125rem',
+            fontWeight: 600,
+            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.25)',
+            zIndex: 99999,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            animation: 'fadeIn 0.2s ease',
+          }}
+        >
+          <FiCheck />
+          {toastMessage}
+        </div>
+      )}
     </div>
   );
 };

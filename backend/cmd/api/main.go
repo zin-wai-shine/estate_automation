@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
@@ -11,6 +13,7 @@ import (
 	"github.com/zinwaishine/estate-automate/backend/internal/database"
 	"github.com/zinwaishine/estate-automate/backend/internal/handlers"
 	"github.com/zinwaishine/estate-automate/backend/internal/middleware"
+	"github.com/zinwaishine/estate-automate/backend/internal/services"
 )
 
 func main() {
@@ -68,6 +71,61 @@ func main() {
 	fb.Get("/auth/start", handlers.StartFacebookAuth)
 	fb.Get("/auth/callback", handlers.HandleFacebookCallback)
 	fb.Post("/disconnect", handlers.DisconnectFacebook)
+
+	// Seed default Facebook Pages (Page 1: 61568058604134, Page 2: 61593000699921)
+	services.GetFacebookPageManager().SeedDefaultPages()
+
+	// Official Meta Graph API v26.0 Facebook Page Auto-Posting Routes (Legacy single page compatibility)
+	fbPage := app.Group("/api/facebook/page")
+	fbPage.Get("/status", handlers.GetFacebookPageStatus)
+	fbPage.Post("/test", handlers.TestFacebookPageConnection)
+	fbPage.Post("/token", handlers.UpdateFacebookPageToken)
+
+	// Multi-Page Management & Token Storage (Unified Page Tokens Menu)
+	fbPages := app.Group("/api/facebook/pages")
+	fbPages.Get("/", handlers.ListManagedFacebookPages)
+	fbPages.Post("/refresh-all", handlers.RefreshAllManagedFacebookPages)
+	fbPages.Get("/authorized", handlers.GetAuthorizedFacebookAccounts)
+	fbPages.Post("/import-user-token", handlers.ImportFacebookUserToken)
+	fbPages.Post("/test-all", handlers.TestAllManagedFacebookPages)
+	fbPages.Get("/discover", handlers.GetDiscoveredPagesHandler)
+	fbPages.Post("/connect-selected", handlers.ConnectSelectedPagesHandler)
+	fbPages.Get("/:pageId", handlers.GetManagedFacebookPage)
+	fbPages.Get("/:pageId/token", handlers.GetManagedPageToken)
+	fbPages.Post("/:pageId/refresh", handlers.RefreshManagedFacebookPage)
+	fbPages.Post("/:pageId/token", handlers.SetManagedPageToken)
+	fbPages.Post("/:pageId/test", handlers.TestManagedFacebookPage)
+	fbPages.Post("/:pageId/disconnect", handlers.DisconnectManagedFacebookPage)
+	fbPages.Post("/:pageId/auto-publish", handlers.TogglePageAutoPublish)
+	fbPages.Post("/:pageId/label", handlers.UpdatePageLabel)
+	fbPages.Delete("/:pageId/token", handlers.RemovePageToken)
+
+	// Facebook Publishing & Scheduling
+	fbPublish := app.Group("/api/facebook")
+	fbPublish.Post("/publish", handlers.PublishFacebookPost)
+	fbPublish.Post("/publish-batch", handlers.PublishFacebookBatch)
+	fbPublish.Post("/schedule", handlers.ScheduleFacebookPost)
+	fbPublish.Get("/posts", handlers.GetFacebookPosts)
+	fbPublish.Post("/posts/:id/retry", handlers.RetryFacebookPost)
+	fbPublish.Delete("/posts/:id", handlers.DeleteFacebookPost)
+
+	// Start scheduled Facebook posts processor background worker & health checker
+	go func() {
+		ticker := time.NewTicker(60 * time.Second)
+		healthTicker := time.NewTicker(30 * time.Minute)
+		defer ticker.Stop()
+		defer healthTicker.Stop()
+		pubSvc := services.GetFacebookPublishService()
+		pageMgr := services.GetFacebookPageManager()
+		for {
+			select {
+			case <-ticker.C:
+				pubSvc.ProcessScheduledPosts(context.Background())
+			case <-healthTicker.C:
+				pageMgr.RunHealthCheck(context.Background())
+			}
+		}
+	}()
 
 	// Standalone Facebook Post Importer Routes
 	fbImport := app.Group("/api/facebook-import")

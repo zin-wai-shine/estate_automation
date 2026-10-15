@@ -12,8 +12,18 @@ import {
   FiX,
   FiPlus,
   FiEdit3,
+  FiEdit2,
   FiMaximize2,
+  FiFileText,
+  FiChevronDown,
+  FiChevronRight,
+  FiTrash2,
+  FiSliders,
+  FiSidebar,
+  FiMessageSquare,
+  FiMoreHorizontal,
 } from 'react-icons/fi';
+import { BsPinAngleFill, BsPinAngle } from 'react-icons/bs';
 import { SiGooglegemini } from 'react-icons/si';
 
 export const SparklesIcon: React.FC<{ size?: number; color?: string; style?: React.CSSProperties }> = ({
@@ -83,36 +93,55 @@ export const ModelSelectorMenu: React.FC<{
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: '0.5rem',
-          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
-          border: isDark ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid var(--border-color)',
-          color: 'var(--text-primary)',
+          gap: '0.625rem',
+          height: '36px',
+          padding: '0 12px 0 10px',
+          backgroundColor: isDark ? '#1C2128' : '#FFFFFF',
+          border: isDark ? '1px solid rgba(255, 255, 255, 0.15)' : '1px solid rgba(0, 0, 0, 0.12)',
+          color: isDark ? '#FFFFFF' : 'var(--text-primary)',
           fontSize: '0.8125rem',
-          fontWeight: 400,
+          fontWeight: 500,
           cursor: 'pointer',
-          padding: '4px 12px',
-          borderRadius: '20px',
+          borderRadius: '8px',
+          boxShadow: isDark ? '0 2px 10px rgba(0, 0, 0, 0.5)' : '0 2px 8px rgba(0, 0, 0, 0.08)',
           transition: 'all 0.15s ease',
+          userSelect: 'none',
         }}
         onMouseEnter={(e) => {
-          e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.07)';
+          e.currentTarget.style.backgroundColor = isDark ? '#232934' : '#F8FAFC';
+          e.currentTarget.style.borderColor = isDark ? 'rgba(255, 255, 255, 0.25)' : 'rgba(0, 0, 0, 0.2)';
         }}
         onMouseLeave={(e) => {
-          e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)';
+          e.currentTarget.style.backgroundColor = isDark ? '#1C2128' : '#FFFFFF';
+          e.currentTarget.style.borderColor = isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.12)';
         }}
       >
-        {isRunware ? (
-          <RunwareIcon size={15} />
-        ) : isLaoZhang ? (
-          <LaoZhangIcon size={15} />
-        ) : isGoogle ? (
-          <SiGooglegemini style={{ fontSize: '15px', color: '#60A5FA' }} />
-        ) : (
-          <OpenAIIcon size={15} color="#34D399" />
-        )}
-        <span style={{ fontWeight: 500 }}>{isRunware ? 'Runware AI' : isLaoZhang ? 'LaoZhang AI' : isGoogle ? 'Gemini' : 'ChatGPT'}</span>
-        <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', fontWeight: 400 }}>· {getAIModelDisplayName(provider, model)}</span>
-        <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)', marginLeft: '2px' }}>▾</span>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          {isRunware ? (
+            <RunwareIcon size={16} />
+          ) : isLaoZhang ? (
+            <LaoZhangIcon size={16} />
+          ) : isGoogle ? (
+            <SiGooglegemini style={{ fontSize: '16px', color: '#60A5FA' }} />
+          ) : (
+            <OpenAIIcon size={16} color="#34D399" />
+          )}
+        </div>
+        <span style={{ fontWeight: 600, color: isDark ? '#FFFFFF' : 'var(--text-primary)' }}>
+          {isRunware ? 'Runware AI' : isLaoZhang ? 'LaoZhang AI' : isGoogle ? 'Gemini' : 'ChatGPT'}
+        </span>
+        <span style={{ color: isDark ? '#9CA3AF' : 'var(--text-muted)', fontSize: '0.75rem', fontWeight: 400 }}>
+          · {getAIModelDisplayName(provider, model)}
+        </span>
+        <FiChevronDown
+          style={{
+            fontSize: '13px',
+            color: 'var(--text-muted)',
+            marginLeft: '2px',
+            transition: 'transform 0.15s ease',
+            transform: isOpen ? 'rotate(180deg)' : 'none',
+          }}
+        />
       </button>
 
       {isOpen && (
@@ -806,6 +835,11 @@ export interface ChatMessage {
   durationMs?: number;
   model?: string;
   isPromptProposal?: boolean;
+  attachedRawData?: string;
+  templateId?: string;
+  templateName?: string;
+  wordCount?: number;
+  charCount?: number;
 }
 
 const SAMPLE_POST_TEXT = `[For Rent] Elio Del Nest Udomsuk
@@ -819,10 +853,78 @@ const SAMPLE_POST_TEXT = `[For Rent] Elio Del Nest Udomsuk
 ค่าเช่า 13,500 บาท/เดือน (สัญญา 1 ปี มัดจำ 2 เดือน)
 ติดต่อ คุณแพร โทร 081-234-5678 Line: @pear_prop`;
 
-interface AITrainingChatbotProps {
+export interface TextChatSession {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  messages: ChatMessage[];
+  inputValue?: string;
+  attachedRawData?: string;
+  selectedPromptId?: string;
+  isPinned?: boolean;
+}
+
+const loadChatSessionsFromStorage = (boxId: string, initialRaw: string, promptId: string): TextChatSession[] => {
+  const sessionsKey = `ea_text_studio_sessions_${boxId || 'default'}`;
+  try {
+    const raw = localStorage.getItem(sessionsKey);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+    // Migration from legacy single chat storage
+    const legacyRaw = localStorage.getItem(`ea_content_chat_${boxId}`);
+    if (legacyRaw) {
+      const parsedLegacy = JSON.parse(legacyRaw);
+      if (Array.isArray(parsedLegacy) && parsedLegacy.length > 0) {
+        const migrated: TextChatSession = {
+          id: `session_${Date.now()}`,
+          title: 'Recent Conversation',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          messages: parsedLegacy,
+          inputValue: '',
+          attachedRawData: initialRaw,
+          selectedPromptId: promptId,
+        };
+        localStorage.setItem(sessionsKey, JSON.stringify([migrated]));
+        return [migrated];
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to load text chat sessions', err);
+  }
+  return [
+    {
+      id: `session_${Date.now()}`,
+      title: 'New chat',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      messages: [],
+      inputValue: '',
+      attachedRawData: initialRaw,
+      selectedPromptId: promptId,
+    },
+  ];
+};
+
+const saveChatSessionsToStorage = (boxId: string, sessions: TextChatSession[]) => {
+  const sessionsKey = `ea_text_studio_sessions_${boxId || 'default'}`;
+  try {
+    localStorage.setItem(sessionsKey, JSON.stringify(sessions));
+  } catch (e) {
+    console.warn('Failed to save text chat sessions', e);
+  }
+};
+
+export interface AITrainingChatbotProps {
   box: DynamicAIBoxConfig;
   availablePrompts: CanvasPromptOption[];
   allowEditPrompt?: boolean;
+  initialRawData?: string;
   isSettingsOpen: boolean;
   onCloseSettings: () => void;
   onUpdateBox: (id: string, updates: Partial<DynamicAIBoxConfig>) => void;
@@ -836,6 +938,7 @@ export const AITrainingChatbot: React.FC<AITrainingChatbotProps> = ({
   box,
   availablePrompts,
   allowEditPrompt = true,
+  initialRawData,
   isSettingsOpen,
   onCloseSettings,
   onUpdateBox,
@@ -847,12 +950,45 @@ export const AITrainingChatbot: React.FC<AITrainingChatbotProps> = ({
   const { actualTheme } = useTheme();
   const isDark = actualTheme === 'dark';
 
-  // Chatbot State
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [inputValue, setInputValue] = useState('');
+  // Multi-Session Chat State (Matching AI Image Studio / Image 3)
+  const initialDefaultRaw = (initialRawData && initialRawData.trim()) ? initialRawData.trim() : (box.customPrompt && box.customPrompt.trim()) ? box.customPrompt.trim() : SAMPLE_POST_TEXT;
+  const initialDefaultPromptId = box.templateId || availablePrompts[0]?.id || '1';
+
+  const [sessions, setSessions] = useState<TextChatSession[]>(() =>
+    loadChatSessionsFromStorage(box.id, initialDefaultRaw, initialDefaultPromptId)
+  );
+  const [activeSessionId, setActiveSessionId] = useState<string>(() => sessions[0]?.id || `session_${Date.now()}`);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
+  const [activeSidebarTab, setActiveSidebarTab] = useState<'chats' | 'settings'>('chats');
+  const [isRecentsExpanded, setIsRecentsExpanded] = useState<boolean>(true);
+  const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState<string>('');
+  const [openMenuSessionId, setOpenMenuSessionId] = useState<string | null>(null);
+
+  // Active Session state
+  const currentSession = sessions.find((s) => s.id === activeSessionId) || sessions[0];
+  const [messages, setMessages] = useState<ChatMessage[]>(() => currentSession?.messages || []);
+  const [inputValue, setInputValue] = useState<string>(() => currentSession?.inputValue || '');
   const [isGenerating, setIsGenerating] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Attached Raw Data State (file-like representation for raw property listing)
+  const [attachedRawData, setAttachedRawData] = useState<string>(() => currentSession?.attachedRawData || initialDefaultRaw);
+  const [showRawDataModal, setShowRawDataModal] = useState<boolean>(false);
+  const [tempRawData, setTempRawData] = useState<string>('');
+  const [copiedRawData, setCopiedRawData] = useState<boolean>(false);
+
+  // Selected Prompt Template State (Prompt chosen cleanly without dumping text into input)
+  const [selectedPromptId, setSelectedPromptId] = useState<string>(() => currentSession?.selectedPromptId || initialDefaultPromptId);
+  const [showPromptDropdown, setShowPromptDropdown] = useState<boolean>(false);
+  const promptDropdownRef = useRef<HTMLDivElement>(null);
+
+  const activePrompt = availablePrompts.find((p) => p.id === selectedPromptId) || {
+    id: box.templateId || '1',
+    name: box.title || 'Facebook Rental Listing Copy',
+    templateText: box.templateText || '',
+  };
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -862,6 +998,207 @@ export const AITrainingChatbot: React.FC<AITrainingChatbotProps> = ({
   const isLaoZhang = box.provider === 'laozhang_ai';
   const isRunware = box.provider === 'runware_ai';
   const brandColor = isRunware ? '#10B981' : isLaoZhang ? '#2563EB' : isGoogle ? '#3B82F6' : '#10A37F';
+
+  // Sync isSettingsOpen prop from canvas to activeSidebarTab
+  useEffect(() => {
+    if (isSettingsOpen) {
+      setActiveSidebarTab('settings');
+      setIsSidebarCollapsed(false);
+    }
+  }, [isSettingsOpen]);
+
+  // Persist current session to storage
+  useEffect(() => {
+    setSessions((prev) => {
+      const next = prev.map((s) => {
+        if (s.id === activeSessionId) {
+          return {
+            ...s,
+            messages,
+            inputValue,
+            attachedRawData,
+            selectedPromptId,
+            updatedAt: Date.now(),
+          };
+        }
+        return s;
+      });
+      saveChatSessionsToStorage(box.id, next);
+      return next;
+    });
+  }, [messages, attachedRawData, selectedPromptId, activeSessionId, inputValue]);
+
+  // Global keyboard shortcut ⌘N / Ctrl+N to start New Chat
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'n') {
+        e.preventDefault();
+        handleNewChat();
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [messages, inputValue, attachedRawData, selectedPromptId]);
+
+  const handleSelectSession = (sessionId: string) => {
+    if (sessionId === activeSessionId) return;
+
+    setSessions((prev) => {
+      const next = prev.map((s) => {
+        if (s.id === activeSessionId) {
+          return {
+            ...s,
+            messages,
+            inputValue,
+            attachedRawData,
+            selectedPromptId,
+            updatedAt: Date.now(),
+          };
+        }
+        return s;
+      });
+      saveChatSessionsToStorage(box.id, next);
+      return next;
+    });
+
+    const target = sessions.find((s) => s.id === sessionId);
+    if (target) {
+      setActiveSessionId(sessionId);
+      setMessages(target.messages || []);
+      setInputValue(target.inputValue || '');
+      setAttachedRawData(target.attachedRawData || initialDefaultRaw);
+      if (target.selectedPromptId) {
+        setSelectedPromptId(target.selectedPromptId);
+      }
+    }
+    setOpenMenuSessionId(null);
+    setRenamingSessionId(null);
+  };
+
+  const handleNewChat = () => {
+    const newSession: TextChatSession = {
+      id: `session_${Date.now()}`,
+      title: 'New chat',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      messages: [],
+      inputValue: '',
+      attachedRawData: initialDefaultRaw,
+      selectedPromptId,
+    };
+
+    setSessions((prev) => {
+      const updatedPrev = prev.map((s) => {
+        if (s.id === activeSessionId) {
+          return {
+            ...s,
+            messages,
+            inputValue,
+            attachedRawData,
+            selectedPromptId,
+            updatedAt: Date.now(),
+          };
+        }
+        return s;
+      });
+      const next = [newSession, ...updatedPrev];
+      saveChatSessionsToStorage(box.id, next);
+      return next;
+    });
+
+    setActiveSessionId(newSession.id);
+    setMessages([]);
+    setInputValue('');
+    setAttachedRawData(initialDefaultRaw);
+    setOpenMenuSessionId(null);
+    setRenamingSessionId(null);
+    showToast('Started new chat');
+  };
+
+  const handleTogglePinSession = (sessionId: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setSessions((prev) => {
+      const next = prev.map((s) => (s.id === sessionId ? { ...s, isPinned: !s.isPinned } : s));
+      saveChatSessionsToStorage(box.id, next);
+      return next;
+    });
+    setOpenMenuSessionId(null);
+  };
+
+  const handleDeleteSession = (sessionId: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setSessions((prev) => {
+      const filtered = prev.filter((s) => s.id !== sessionId);
+      const next = filtered.length > 0 ? filtered : [
+        {
+          id: `session_${Date.now()}`,
+          title: 'New chat',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          messages: [],
+          inputValue: '',
+          attachedRawData: initialDefaultRaw,
+          selectedPromptId,
+        },
+      ];
+      saveChatSessionsToStorage(box.id, next);
+
+      if (sessionId === activeSessionId) {
+        const fallback = next[0];
+        setActiveSessionId(fallback.id);
+        setMessages(fallback.messages || []);
+        setInputValue(fallback.inputValue || '');
+        setAttachedRawData(fallback.attachedRawData || initialDefaultRaw);
+        if (fallback.selectedPromptId) setSelectedPromptId(fallback.selectedPromptId);
+      }
+      return next;
+    });
+    setOpenMenuSessionId(null);
+  };
+
+  const handleStartRename = (session: TextChatSession, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setRenamingSessionId(session.id);
+    setRenameValue(session.title);
+    setOpenMenuSessionId(null);
+  };
+
+  const handleSaveRename = (sessionId: string) => {
+    if (!renameValue.trim()) {
+      setRenamingSessionId(null);
+      return;
+    }
+    setSessions((prev) => {
+      const next = prev.map((s) => (s.id === sessionId ? { ...s, title: renameValue.trim() } : s));
+      saveChatSessionsToStorage(box.id, next);
+      return next;
+    });
+    setRenamingSessionId(null);
+  };
+
+  // Handle outside click for prompt dropdown
+  useEffect(() => {
+    const handleOutside = (e: MouseEvent) => {
+      if (promptDropdownRef.current && !promptDropdownRef.current.contains(e.target as Node)) {
+        setShowPromptDropdown(false);
+      }
+    };
+    if (showPromptDropdown) {
+      document.addEventListener('mousedown', handleOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [showPromptDropdown]);
+
+  // Handle outside click for session options menu
+  useEffect(() => {
+    const handleCloseMenu = () => {
+      setOpenMenuSessionId(null);
+    };
+    if (openMenuSessionId) {
+      window.addEventListener('click', handleCloseMenu);
+    }
+    return () => window.removeEventListener('click', handleCloseMenu);
+  }, [openMenuSessionId]);
 
   // Auto-scroll messages
   useEffect(() => {
@@ -935,8 +1272,38 @@ export const AITrainingChatbot: React.FC<AITrainingChatbotProps> = ({
     setIsGenerating(false);
   };
 
-  const executeAIGeneration = async (promptToSend: string, currentHistory: ChatMessage[]) => {
-    if (!promptToSend || isGenerating) return;
+  const handleClearChat = () => {
+    setMessages([]);
+    try {
+      localStorage.removeItem(`ea_content_chat_${box.id}`);
+    } catch {}
+    showToast('Cleared conversation history');
+  };
+
+  const handleSelectPrompt = (prompt: CanvasPromptOption) => {
+    setSelectedPromptId(prompt.id);
+    setShowPromptDropdown(false);
+    // CRITICAL: DO NOT dump prompt template text into input textarea!
+    // Keep textarea clean for user custom adjustments
+    onUpdateBox(box.id, {
+      templateId: prompt.id,
+      templateText: prompt.templateText,
+    });
+    showToast(`✨ Selected template: ${prompt.name}`);
+  };
+
+  const executeAIGeneration = async (
+    customInstruction: string,
+    currentHistory: ChatMessage[],
+    overrideRawData?: string
+  ) => {
+    if (isGenerating) return;
+    const rawToSend = (overrideRawData !== undefined ? overrideRawData : attachedRawData).trim();
+    if (!rawToSend && !customInstruction.trim()) {
+      showToast('⚠️ Please attach raw property data or enter instructions');
+      return;
+    }
+
     setIsGenerating(true);
     abortControllerRef.current = new AbortController();
     const startTime = Date.now();
@@ -949,11 +1316,11 @@ export const AITrainingChatbot: React.FC<AITrainingChatbotProps> = ({
         body: JSON.stringify({
           provider: box.provider,
           model: box.model,
-          template_id: box.templateId || '',
-          template_name: box.title,
-          template_text: box.templateText || '',
-          raw_content: promptToSend,
-          custom_prompt: box.customPrompt || '',
+          template_id: activePrompt.id || box.templateId || '',
+          template_name: activePrompt.name || box.title,
+          template_text: activePrompt.templateText || box.templateText || '',
+          raw_content: rawToSend || customInstruction,
+          custom_prompt: customInstruction.trim() || box.customPrompt || '',
         }),
       });
 
@@ -965,10 +1332,11 @@ export const AITrainingChatbot: React.FC<AITrainingChatbotProps> = ({
       }
 
       const generatedContent = data.generated_content || '';
+      const words = generatedContent.trim() ? generatedContent.trim().split(/\s+/).length : 0;
       const isPromptProposal =
-        promptToSend.toLowerCase().includes('prompt') ||
-        promptToSend.toLowerCase().includes('instruction') ||
-        promptToSend.toLowerCase().includes('template') ||
+        customInstruction.toLowerCase().includes('prompt') ||
+        customInstruction.toLowerCase().includes('instruction') ||
+        customInstruction.toLowerCase().includes('template') ||
         generatedContent.includes('RULES:') ||
         generatedContent.includes('=== INSTRUCTIONS ===');
 
@@ -980,9 +1348,34 @@ export const AITrainingChatbot: React.FC<AITrainingChatbotProps> = ({
         durationMs,
         model: box.model,
         isPromptProposal,
+        wordCount: words,
+        charCount: generatedContent.length,
       };
 
-      setMessages([...currentHistory, assistantMsg]);
+      const finalHistory = [...currentHistory, assistantMsg];
+      setMessages(finalHistory);
+
+      setSessions((prev) => {
+        const next = prev.map((s) => {
+          if (s.id === activeSessionId) {
+            const isDefault = s.title === 'New chat' || s.title === 'Recent Conversation';
+            const newTitle = isDefault
+              ? (activePrompt.name || customInstruction.slice(0, 24).trim() || 'Facebook Listing')
+              : s.title;
+            return {
+              ...s,
+              title: newTitle,
+              messages: finalHistory,
+              attachedRawData: rawToSend,
+              selectedPromptId,
+              updatedAt: Date.now(),
+            };
+          }
+          return s;
+        });
+        saveChatSessionsToStorage(box.id, next);
+        return next;
+      });
     } catch (err: any) {
       if (err.name === 'AbortError') {
         return;
@@ -1018,7 +1411,6 @@ export const AITrainingChatbot: React.FC<AITrainingChatbotProps> = ({
     );
 
     setMessages(truncatedHistory);
-    // Directly generate new assistant response under this edited conversation point
     executeAIGeneration(trimmed, truncatedHistory);
   };
 
@@ -1043,21 +1435,28 @@ export const AITrainingChatbot: React.FC<AITrainingChatbotProps> = ({
   };
 
   // Send message from bottom chat input bar
-  const handleSendMessage = (textToSend?: string) => {
-    const promptToSend = (textToSend !== undefined ? textToSend : inputValue).trim();
-    if (!promptToSend || isGenerating) return;
+  const handleSendMessage = (customInstructionText?: string) => {
+    const instruction = (customInstructionText !== undefined ? customInstructionText : inputValue).trim();
+    const rawToSend = attachedRawData.trim();
+
+    if (!instruction && !rawToSend) return;
+    if (isGenerating) return;
 
     const userMsg: ChatMessage = {
       id: `msg-${Date.now()}-user`,
       role: 'user',
-      content: promptToSend,
+      content: instruction || `Format listing with template: ${activePrompt.name}`,
       timestamp: Date.now(),
+      attachedRawData: rawToSend || undefined,
+      templateId: activePrompt.id,
+      templateName: activePrompt.name,
+      charCount: rawToSend.length,
     };
 
     const newHistory = [...messages, userMsg];
     setMessages(newHistory);
     setInputValue('');
-    executeAIGeneration(promptToSend, newHistory);
+    executeAIGeneration(instruction, newHistory, rawToSend);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -1112,109 +1511,660 @@ export const AITrainingChatbot: React.FC<AITrainingChatbotProps> = ({
         {/* ========================================================= */}
         {/* SLIDE-OVER DRAWER: Prompt Instructions & Node Settings    */}
         {/* ========================================================= */}
-        {isSettingsOpen && (
+        {/* ========================================================= */}
+        {/* CHATGPT STYLE SIDEBAR: Recents / Sessions & Settings      */}
+        {/* ========================================================= */}
+        {isSidebarCollapsed ? (
+          /* Mini Collapsed Rail (44px wide) */
           <div
             style={{
-              width: '360px',
+              width: '44px',
+              minWidth: '44px',
               borderRight: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid var(--border-color)',
               backgroundColor: isDark ? '#161B22' : 'var(--bg-secondary)',
               display: 'flex',
               flexDirection: 'column',
+              alignItems: 'center',
+              padding: '10px 0',
+              gap: '6px',
               zIndex: 50,
               flexShrink: 0,
-              animation: 'fadeIn 0.15s ease',
             }}
           >
-            {/* Drawer Header */}
-            <div
+            {/* Expand sidebar button */}
+            <button
+              type="button"
+              onClick={() => setIsSidebarCollapsed(false)}
               style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '6px',
+                border: 'none',
+                backgroundColor: 'transparent',
+                color: 'var(--text-muted)',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '0.75rem 1rem',
-                borderBottom: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid var(--border-color)',
+                justifyContent: 'center',
+                cursor: 'pointer',
+              }}
+              title="Expand sidebar"
+            >
+              <FiSidebar style={{ fontSize: '15px' }} />
+            </button>
+
+            {/* New chat icon */}
+            <button
+              type="button"
+              onClick={handleNewChat}
+              style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '6px',
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.04)',
+                border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid var(--border-color)',
+                color: isDark ? '#FFFFFF' : 'var(--text-primary)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+              }}
+              title="New chat (⌘N)"
+            >
+              <FiPlus style={{ fontSize: '15px' }} />
+            </button>
+
+            <div style={{ width: '24px', height: '1px', backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'var(--border-color)', margin: '4px 0' }} />
+
+            {/* Recents icon */}
+            <button
+              type="button"
+              onClick={() => {
+                setActiveSidebarTab('chats');
+                setIsSidebarCollapsed(false);
+              }}
+              style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '6px',
+                border: 'none',
+                backgroundColor: activeSidebarTab === 'chats' ? (isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.08)') : 'transparent',
+                color: activeSidebarTab === 'chats' ? (isDark ? '#FFFFFF' : 'var(--text-primary)') : 'var(--text-muted)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+              }}
+              title="Recents"
+            >
+              <FiMessageSquare style={{ fontSize: '14px' }} />
+            </button>
+
+            {/* Settings icon */}
+            <button
+              type="button"
+              onClick={() => {
+                setActiveSidebarTab('settings');
+                setIsSidebarCollapsed(false);
+              }}
+              style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '6px',
+                border: 'none',
+                backgroundColor: activeSidebarTab === 'settings' ? (isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.08)') : 'transparent',
+                color: activeSidebarTab === 'settings' ? (isDark ? '#FFFFFF' : 'var(--text-primary)') : 'var(--text-muted)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+              }}
+              title="Settings"
+            >
+              <FiSliders style={{ fontSize: '14px' }} />
+            </button>
+          </div>
+        ) : (
+          /* Full Expanded Sidebar (260px wide - Matching Image 3) */
+          <div
+            style={{
+              width: '260px',
+              minWidth: '260px',
+              borderRight: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid var(--border-color)',
+              backgroundColor: isDark ? '#161B22' : 'var(--bg-secondary)',
+              display: 'flex',
+              flexDirection: 'column',
+              height: '100%',
+              zIndex: 50,
+              flexShrink: 0,
+            }}
+          >
+            {/* Top Header: New Chat & Navigation */}
+            <div
+              style={{
+                padding: '0.75rem 0.75rem 0.5rem 0.75rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.625rem',
+                borderBottom: isDark ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid var(--border-color)',
               }}
             >
-              <div style={{ fontSize: '0.8125rem', fontWeight: 500, color: isDark ? '#FFFFFF' : 'var(--text-primary)' }}>
-                Prompt Instructions & Settings
-              </div>
-              <button
-                type="button"
-                onClick={onCloseSettings}
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: 'var(--text-muted)',
-                  fontSize: '14px',
-                  cursor: 'pointer',
-                  padding: '2px',
-                }}
-              >
-                <FiX />
-              </button>
-            </div>
-
-            {/* Drawer Body */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
-              {/* Title & Status */}
-              <div>
-                <label style={{ display: 'block', fontSize: '0.6875rem', fontWeight: 400, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
-                  Node Title
-                </label>
-                <input
-                  type="text"
-                  value={box.title}
-                  onChange={(e) => onUpdateBox(box.id, { title: e.target.value })}
-                  style={{
-                    width: '100%',
-                    height: '32px',
-                    backgroundColor: isDark ? '#0D1117' : 'var(--bg-surface)',
-                    border: isDark ? '1px solid rgba(255, 255, 255, 0.15)' : '1px solid var(--border-color)',
-                    borderRadius: '4px',
-                    padding: '0 0.5rem',
-                    color: isDark ? '#FFFFFF' : 'var(--text-primary)',
-                    fontSize: '0.75rem',
-                    fontWeight: 400,
-                    outline: 'none',
-                    boxSizing: 'border-box',
-                  }}
-                />
-              </div>
-
-              {/* Status Switch */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 400 }}>Workflow Active</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
                 <button
                   type="button"
-                  onClick={() => onToggleBox(box.id)}
+                  onClick={handleNewChat}
+                  style={{
+                    flex: 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '8px 12px',
+                    borderRadius: '8px',
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#FFFFFF',
+                    border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid var(--border-color)',
+                    color: isDark ? '#FFFFFF' : 'var(--text-primary)',
+                    fontSize: '0.8125rem',
+                    fontWeight: 500,
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                  title="Start a new chat (keeps previous chats saved)"
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <FiPlus style={{ fontSize: '15px' }} />
+                    <span>New chat</span>
+                  </div>
+                  <span style={{ fontSize: '10px', color: 'var(--text-muted)', opacity: 0.8 }}>⌘N</span>
+                </button>
+
+                {/* Collapse button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsSidebarCollapsed(true);
+                    onCloseSettings?.();
+                  }}
                   style={{
                     width: '32px',
-                    height: '18px',
-                    borderRadius: '9px',
-                    backgroundColor: box.enabled ? '#10B981' : isDark ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.15)',
+                    height: '32px',
+                    borderRadius: '6px',
                     border: 'none',
-                    position: 'relative',
+                    backgroundColor: 'transparent',
+                    color: 'var(--text-muted)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
                     cursor: 'pointer',
-                    padding: 0,
                   }}
+                  title="Collapse sidebar"
                 >
-                  <div
-                    style={{
-                      position: 'absolute',
-                      top: '2px',
-                      left: box.enabled ? '16px' : '2px',
-                      width: '14px',
-                      height: '14px',
-                      borderRadius: '50%',
-                      backgroundColor: '#FFFFFF',
-                      boxShadow: '0 1px 3px rgba(0, 0, 0, 0.2)',
-                      transition: 'left 0.15s ease',
-                    }}
-                  />
+                  <FiSidebar style={{ fontSize: '15px' }} />
                 </button>
               </div>
 
-                {/* Template Picker - Non-bold select text (Content prompts only) */}
+              {/* Segmented Tab Switcher: Recents vs Settings */}
+              <div
+                style={{
+                  display: 'flex',
+                  borderRadius: '8px',
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.04)',
+                  border: isDark ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid rgba(0, 0, 0, 0.06)',
+                  padding: '3px',
+                  gap: '3px',
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setActiveSidebarTab('chats')}
+                  style={{
+                    flex: 1,
+                    height: '32px',
+                    padding: '0 8px',
+                    borderRadius: '6px',
+                    border: activeSidebarTab === 'chats'
+                      ? (isDark ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid rgba(0, 0, 0, 0.08)')
+                      : '1px solid transparent',
+                    backgroundColor: activeSidebarTab === 'chats' ? (isDark ? '#21262D' : '#FFFFFF') : 'transparent',
+                    color: activeSidebarTab === 'chats' ? (isDark ? '#FFFFFF' : 'var(--text-primary)') : 'var(--text-muted)',
+                    fontSize: '0.8125rem',
+                    fontWeight: 500,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  <FiMessageSquare style={{ fontSize: '13px' }} />
+                  <span>Recents</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveSidebarTab('settings')}
+                  style={{
+                    flex: 1,
+                    height: '32px',
+                    padding: '0 8px',
+                    borderRadius: '6px',
+                    border: activeSidebarTab === 'settings'
+                      ? (isDark ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid rgba(0, 0, 0, 0.08)')
+                      : '1px solid transparent',
+                    backgroundColor: activeSidebarTab === 'settings' ? (isDark ? '#21262D' : '#FFFFFF') : 'transparent',
+                    color: activeSidebarTab === 'settings' ? (isDark ? '#FFFFFF' : 'var(--text-primary)') : 'var(--text-muted)',
+                    fontSize: '0.8125rem',
+                    fontWeight: 500,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  <FiSliders style={{ fontSize: '13px' }} />
+                  <span>Settings</span>
+                </button>
+              </div>
+            </div>
+
+            {/* TAB 1: CHATS (Recents list matching Image 3) */}
+            {activeSidebarTab === 'chats' ? (
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                {/* Recents collapsible header */}
+                <div
+                  onClick={() => setIsRecentsExpanded((prev) => !prev)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '8px 12px 4px 12px',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    color: isDark ? '#9B9B9B' : 'var(--text-muted)',
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                  }}
+                >
+                  <span>Recents</span>
+                  {isRecentsExpanded ? <FiChevronDown style={{ fontSize: '12px' }} /> : <FiChevronRight style={{ fontSize: '12px' }} />}
+                </div>
+
+                {isRecentsExpanded && (
+                  <div
+                    style={{
+                      flex: 1,
+                      overflowY: 'auto',
+                      padding: '2px 8px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '2px',
+                    }}
+                  >
+                    {[...sessions]
+                      .sort((a, b) => {
+                        if (a.isPinned && !b.isPinned) return -1;
+                        if (!a.isPinned && b.isPinned) return 1;
+                        return (b.updatedAt || b.createdAt) - (a.updatedAt || a.createdAt);
+                      })
+                      .map((session) => {
+                        const isActive = session.id === activeSessionId;
+                        const isRenaming = renamingSessionId === session.id;
+                        const isMenuOpen = openMenuSessionId === session.id;
+
+                        return (
+                          <div
+                            key={session.id}
+                            onClick={() => handleSelectSession(session.id)}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              height: '36px',
+                              padding: '0 8px 0 10px',
+                              borderRadius: '8px',
+                              backgroundColor: isActive
+                                ? (isDark ? '#21262D' : 'rgba(0, 0, 0, 0.08)')
+                                : 'transparent',
+                              color: isActive
+                                ? (isDark ? '#ECECEC' : 'var(--text-primary)')
+                                : (isDark ? '#B4B4B4' : 'var(--text-secondary)'),
+                              cursor: 'pointer',
+                              position: 'relative',
+                              transition: 'background-color 0.15s ease',
+                            }}
+                            onMouseEnter={(e) => {
+                              if (!isActive) {
+                                e.currentTarget.style.backgroundColor = isDark ? '#1F242C' : 'rgba(0, 0, 0, 0.04)';
+                              }
+                              const actions = e.currentTarget.querySelector('.session-actions') as HTMLElement;
+                              if (actions) actions.style.opacity = '1';
+                            }}
+                            onMouseLeave={(e) => {
+                              if (!isActive) {
+                                e.currentTarget.style.backgroundColor = 'transparent';
+                              }
+                              const actions = e.currentTarget.querySelector('.session-actions') as HTMLElement;
+                              if (actions && !isMenuOpen) actions.style.opacity = isActive ? '1' : '0';
+                            }}
+                          >
+                            {/* Title / Inline Rename Input */}
+                            {isRenaming ? (
+                              <div
+                                style={{ display: 'flex', alignItems: 'center', gap: '4px', width: '100%' }}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <input
+                                  autoFocus
+                                  value={renameValue}
+                                  onChange={(e) => setRenameValue(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') handleSaveRename(session.id);
+                                    if (e.key === 'Escape') setRenamingSessionId(null);
+                                  }}
+                                  onBlur={() => handleSaveRename(session.id)}
+                                  style={{
+                                    flex: 1,
+                                    height: '24px',
+                                    backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
+                                    border: '1px solid #3B82F6',
+                                    borderRadius: '4px',
+                                    color: isDark ? '#FFFFFF' : 'var(--text-primary)',
+                                    fontSize: '0.8125rem',
+                                    padding: '0 6px',
+                                    outline: 'none',
+                                  }}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleSaveRename(session.id)}
+                                  title="Save"
+                                  style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    color: '#10B981',
+                                    cursor: 'pointer',
+                                    padding: '2px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                  }}
+                                >
+                                  <FiCheck style={{ fontSize: '13px' }} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setRenamingSessionId(null)}
+                                  title="Cancel"
+                                  style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    color: 'var(--text-muted)',
+                                    cursor: 'pointer',
+                                    padding: '2px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                  }}
+                                >
+                                  <FiX style={{ fontSize: '13px' }} />
+                                </button>
+                              </div>
+                            ) : (
+                              <>
+                                <span
+                                  style={{
+                                    fontSize: '0.8125rem',
+                                    fontWeight: isActive ? 500 : 400,
+                                    whiteSpace: 'nowrap',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    flex: 1,
+                                    marginRight: '6px',
+                                  }}
+                                  onDoubleClick={(e) => handleStartRename(session, e)}
+                                  title={session.title}
+                                >
+                                  {session.title}
+                                </span>
+
+                                {/* Action Buttons: Pin & 3-dots Menu (Matches Image 3) */}
+                                <div
+                                  className="session-actions"
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '2px',
+                                    opacity: isActive || isMenuOpen || session.isPinned ? 1 : 0,
+                                    transition: 'opacity 0.15s ease',
+                                    flexShrink: 0,
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  {/* Pin Toggle Button */}
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handleTogglePinSession(session.id, e)}
+                                    title={session.isPinned ? 'Unpin chat' : 'Pin chat'}
+                                    style={{
+                                      background: 'none',
+                                      border: 'none',
+                                      color: session.isPinned ? (isDark ? '#60A5FA' : '#2563EB') : 'var(--text-muted)',
+                                      cursor: 'pointer',
+                                      padding: '3px',
+                                      borderRadius: '4px',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      transition: 'color 0.15s ease',
+                                    }}
+                                    onMouseEnter={(e) => { e.currentTarget.style.color = isDark ? '#FFFFFF' : '#000000'; }}
+                                    onMouseLeave={(e) => {
+                                      e.currentTarget.style.color = session.isPinned
+                                        ? (isDark ? '#60A5FA' : '#2563EB')
+                                        : 'var(--text-muted)';
+                                    }}
+                                  >
+                                    {session.isPinned ? (
+                                      <BsPinAngleFill style={{ fontSize: '12px' }} />
+                                    ) : (
+                                      <BsPinAngle style={{ fontSize: '12px' }} />
+                                    )}
+                                  </button>
+
+                                  {/* 3-dots Menu Button */}
+                                  <div style={{ position: 'relative' }}>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setOpenMenuSessionId(isMenuOpen ? null : session.id);
+                                      }}
+                                      title="Options"
+                                      style={{
+                                        background: 'none',
+                                        border: 'none',
+                                        color: isMenuOpen ? (isDark ? '#FFFFFF' : 'var(--text-primary)') : 'var(--text-muted)',
+                                        cursor: 'pointer',
+                                        padding: '3px',
+                                        borderRadius: '4px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                      }}
+                                    >
+                                      <FiMoreHorizontal style={{ fontSize: '13px' }} />
+                                    </button>
+
+                                    {/* Floating Options Dropdown Popup */}
+                                    {isMenuOpen && (
+                                      <div
+                                        style={{
+                                          position: 'absolute',
+                                          right: 0,
+                                          top: '24px',
+                                          zIndex: 100,
+                                          width: '130px',
+                                          backgroundColor: isDark ? '#21262D' : '#FFFFFF',
+                                          border: isDark ? '1px solid rgba(255, 255, 255, 0.15)' : '1px solid var(--border-color)',
+                                          borderRadius: '8px',
+                                          padding: '4px',
+                                          boxShadow: isDark ? '0 4px 16px rgba(0, 0, 0, 0.5)' : '0 4px 14px rgba(0, 0, 0, 0.12)',
+                                          display: 'flex',
+                                          flexDirection: 'column',
+                                          gap: '2px',
+                                        }}
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            handleTogglePinSession(session.id, e);
+                                            setOpenMenuSessionId(null);
+                                          }}
+                                          style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '8px',
+                                            padding: '6px 8px',
+                                            borderRadius: '5px',
+                                            border: 'none',
+                                            backgroundColor: 'transparent',
+                                            color: isDark ? '#ECECEC' : 'var(--text-primary)',
+                                            fontSize: '0.75rem',
+                                            cursor: 'pointer',
+                                            textAlign: 'left',
+                                          }}
+                                          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)'; }}
+                                          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                                        >
+                                          {session.isPinned ? <BsPinAngleFill style={{ fontSize: '12px' }} /> : <BsPinAngle style={{ fontSize: '12px' }} />}
+                                          <span>{session.isPinned ? 'Unpin' : 'Pin'}</span>
+                                        </button>
+
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            handleStartRename(session, e);
+                                            setOpenMenuSessionId(null);
+                                          }}
+                                          style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '8px',
+                                            padding: '6px 8px',
+                                            borderRadius: '5px',
+                                            border: 'none',
+                                            backgroundColor: 'transparent',
+                                            color: isDark ? '#ECECEC' : 'var(--text-primary)',
+                                            fontSize: '0.75rem',
+                                            cursor: 'pointer',
+                                            textAlign: 'left',
+                                          }}
+                                          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)'; }}
+                                          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                                        >
+                                          <FiEdit2 style={{ fontSize: '12px' }} />
+                                          <span>Rename</span>
+                                        </button>
+
+                                        {sessions.length > 1 && (
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              handleDeleteSession(session.id, e);
+                                              setOpenMenuSessionId(null);
+                                            }}
+                                            style={{
+                                              display: 'flex',
+                                              alignItems: 'center',
+                                              gap: '8px',
+                                              padding: '6px 8px',
+                                              borderRadius: '5px',
+                                              border: 'none',
+                                              backgroundColor: 'transparent',
+                                              color: '#EF4444',
+                                              fontSize: '0.75rem',
+                                              cursor: 'pointer',
+                                              textAlign: 'left',
+                                            }}
+                                            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = isDark ? 'rgba(239,68,68,0.15)' : 'rgba(239,68,68,0.1)'; }}
+                                            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                                          >
+                                            <FiTrash2 style={{ fontSize: '12px' }} />
+                                            <span>Delete</span>
+                                          </button>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        );
+                      })}
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* TAB 2: SETTINGS (Prompt Instructions & AI Node Settings) */
+              <div style={{ flex: 1, overflowY: 'auto', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
+                {/* Node Title & Status */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.6875rem', fontWeight: 400, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                    Node Title
+                  </label>
+                  <input
+                    type="text"
+                    value={box.title}
+                    onChange={(e) => onUpdateBox(box.id, { title: e.target.value })}
+                    style={{
+                      width: '100%',
+                      height: '32px',
+                      backgroundColor: isDark ? '#0D1117' : 'var(--bg-surface)',
+                      border: isDark ? '1px solid rgba(255, 255, 255, 0.15)' : '1px solid var(--border-color)',
+                      borderRadius: '4px',
+                      padding: '0 0.5rem',
+                      color: isDark ? '#FFFFFF' : 'var(--text-primary)',
+                      fontSize: '0.75rem',
+                      fontWeight: 400,
+                      outline: 'none',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </div>
+
+                {/* Status Switch */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 400 }}>Workflow Active</span>
+                  <button
+                    type="button"
+                    onClick={() => onToggleBox(box.id)}
+                    style={{
+                      width: '32px',
+                      height: '18px',
+                      borderRadius: '9px',
+                      backgroundColor: box.enabled ? '#10B981' : isDark ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.15)',
+                      border: 'none',
+                      position: 'relative',
+                      cursor: 'pointer',
+                      padding: 0,
+                    }}
+                  >
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: '2px',
+                        left: box.enabled ? '16px' : '2px',
+                        width: '14px',
+                        height: '14px',
+                        borderRadius: '50%',
+                        backgroundColor: '#FFFFFF',
+                        boxShadow: '0 1px 3px rgba(0, 0, 0, 0.2)',
+                        transition: 'left 0.15s ease',
+                      }}
+                    />
+                  </button>
+                </div>
+
+                {/* Template Picker */}
                 <div>
                   <label style={{ display: 'block', fontSize: '0.6875rem', fontWeight: 400, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
                     Load from Template
@@ -1258,60 +2208,61 @@ export const AITrainingChatbot: React.FC<AITrainingChatbotProps> = ({
                   })()}
                 </div>
 
-              {/* Prompt Textarea */}
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: '200px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
-                  <label style={{ fontSize: '0.6875rem', fontWeight: 400, color: 'var(--text-muted)' }}>
-                    Prompt Template Instructions
-                  </label>
-                  <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
-                    {box.templateText?.length || 0} chars
-                  </span>
+                {/* Prompt Textarea */}
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: '180px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
+                    <label style={{ fontSize: '0.6875rem', fontWeight: 400, color: 'var(--text-muted)' }}>
+                      Prompt Template Instructions
+                    </label>
+                    <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
+                      {box.templateText?.length || 0} chars
+                    </span>
+                  </div>
+                  <textarea
+                    value={box.templateText}
+                    readOnly={!allowEditPrompt}
+                    onChange={(e) => onUpdateBox(box.id, { templateText: e.target.value })}
+                    placeholder="Enter prompt instructions for this AI process..."
+                    style={{
+                      width: '100%',
+                      flex: 1,
+                      minHeight: '150px',
+                      backgroundColor: isDark ? '#0D1117' : 'var(--bg-surface)',
+                      border: isDark ? '1px solid rgba(255, 255, 255, 0.15)' : '1px solid var(--border-color)',
+                      borderRadius: '4px',
+                      padding: '0.5rem',
+                      color: isDark ? '#FFFFFF' : 'var(--text-primary)',
+                      fontSize: '0.75rem',
+                      fontWeight: 400,
+                      lineHeight: 1.5,
+                      fontFamily: `'SF Mono', 'Fira Code', monospace`,
+                      outline: 'none',
+                      resize: 'none',
+                      boxSizing: 'border-box',
+                    }}
+                  />
                 </div>
-                <textarea
-                  value={box.templateText}
-                  readOnly={!allowEditPrompt}
-                  onChange={(e) => onUpdateBox(box.id, { templateText: e.target.value })}
-                  placeholder="Enter prompt instructions for this AI process..."
-                  style={{
-                    width: '100%',
-                    flex: 1,
-                    minHeight: '160px',
-                    backgroundColor: isDark ? '#0D1117' : 'var(--bg-surface)',
-                    border: isDark ? '1px solid rgba(255, 255, 255, 0.15)' : '1px solid var(--border-color)',
-                    borderRadius: '4px',
-                    padding: '0.5rem',
-                    color: isDark ? '#FFFFFF' : 'var(--text-primary)',
-                    fontSize: '0.75rem',
-                    fontWeight: 400,
-                    lineHeight: 1.5,
-                    fontFamily: `'SF Mono', 'Fira Code', monospace`,
-                    outline: 'none',
-                    resize: 'none',
-                    boxSizing: 'border-box',
-                  }}
-                />
-              </div>
 
-              {/* Drawer Delete Action */}
-              <div style={{ paddingTop: '0.5rem', borderTop: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid var(--border-color)' }}>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => onDeleteBox(box.id)}
-                  style={{
-                    width: '100%',
-                    height: '28px',
-                    fontSize: '0.6875rem',
-                    fontWeight: 400,
-                    color: '#EF4444',
-                    borderColor: 'rgba(239, 68, 68, 0.3)',
-                  }}
-                >
-                  Delete AI Node
-                </Button>
+                {/* Drawer Delete Action */}
+                <div style={{ paddingTop: '0.5rem', borderTop: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid var(--border-color)' }}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => onDeleteBox(box.id)}
+                    style={{
+                      width: '100%',
+                      height: '28px',
+                      fontSize: '0.6875rem',
+                      fontWeight: 400,
+                      color: '#EF4444',
+                      borderColor: 'rgba(239, 68, 68, 0.3)',
+                    }}
+                  >
+                    Delete AI Node
+                  </Button>
+                </div>
               </div>
-            </div>
+            )}
           </div>
         )}
 
@@ -1347,14 +2298,14 @@ export const AITrainingChatbot: React.FC<AITrainingChatbotProps> = ({
             style={{
               flex: 1,
               overflowY: 'auto',
-              padding: '2.8rem 1.25rem 0.75rem 1.25rem',
+              padding: '3.75rem 1.25rem 0.75rem 1.25rem',
               display: 'flex',
               flexDirection: 'column',
             }}
           >
             <div
               style={{
-                width: isSettingsOpen ? '90%' : '70%',
+                width: (isSettingsOpen || showRawDataModal) ? '96%' : '75%',
                 minWidth: '320px',
                 margin: '0 auto',
                 display: 'flex',
@@ -1640,7 +2591,7 @@ export const AITrainingChatbot: React.FC<AITrainingChatbotProps> = ({
                         </div>
                       </div>
                     ) : (
-                      /* USER MESSAGE BUBBLE (Image 1) */
+                      /* USER MESSAGE BUBBLE */
                       <div
                         style={{
                           display: 'flex',
@@ -1648,19 +2599,110 @@ export const AITrainingChatbot: React.FC<AITrainingChatbotProps> = ({
                           alignItems: 'flex-end',
                           maxWidth: '78%',
                           minWidth: '240px',
+                          gap: '4px',
                         }}
                       >
+                        {/* Attachment Chips Row (Raw Data & Format Template) */}
+                        {(msg.attachedRawData || msg.templateName) && (
+                          <div
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              flexWrap: 'wrap',
+                              justifyContent: 'flex-end',
+                              marginBottom: '2px',
+                            }}
+                          >
+                            {/* Attached Raw Data Chip */}
+                            {msg.attachedRawData && (
+                              <div
+                                onClick={() => {
+                                  setTempRawData(msg.attachedRawData!);
+                                  setShowRawDataModal(true);
+                                }}
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '6px',
+                                  padding: '3px 8px 3px 5px',
+                                  borderRadius: '6px',
+                                  backgroundColor: isDark ? 'rgba(59, 130, 246, 0.12)' : 'rgba(59, 130, 246, 0.08)',
+                                  border: isDark ? '1px solid rgba(59, 130, 246, 0.28)' : '1px solid rgba(59, 130, 246, 0.2)',
+                                  color: '#3B82F6',
+                                  fontSize: '0.75rem',
+                                  cursor: 'pointer',
+                                  transition: 'all 0.15s ease',
+                                }}
+                                title="Click to view raw property data used for this generation"
+                              >
+                                <div
+                                  style={{
+                                    width: '18px',
+                                    height: '18px',
+                                    borderRadius: '4px',
+                                    backgroundColor: '#3B82F6',
+                                    color: '#FFFFFF',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  <FiFileText style={{ fontSize: '10px' }} />
+                                </div>
+                                <span style={{ fontWeight: 600 }}>Raw Listing ({msg.attachedRawData.length.toLocaleString()} chars)</span>
+                                <span style={{ fontSize: '0.6875rem', opacity: 0.8 }}>· 👁️ Preview</span>
+                              </div>
+                            )}
+
+                            {/* Format Template Badge with Squircle Icon Container */}
+                            {msg.templateName && (
+                              <div
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '6px',
+                                  padding: '3px 8px 3px 5px',
+                                  borderRadius: '6px',
+                                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+                                  border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
+                                  color: isDark ? '#D1D5DB' : 'var(--text-secondary)',
+                                  fontSize: '0.71875rem',
+                                  fontWeight: 500,
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    width: '18px',
+                                    height: '18px',
+                                    borderRadius: '4px',
+                                    backgroundColor: isDark ? 'rgba(59, 130, 246, 0.2)' : 'rgba(59, 130, 246, 0.12)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  <SparklesIcon size={10} color="#3B82F6" />
+                                </div>
+                                <span>Format: <strong style={{ fontWeight: 600 }}>{msg.templateName}</strong></span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
                         <div
                           style={{
-                            backgroundColor: isDark ? '#163F79' : '#2563EB',
-                            borderRadius: '1.25rem',
-                            padding: '1rem 1.25rem',
+                            backgroundColor: isDark ? '#1E40AF' : '#2563EB',
+                            borderRadius: '12px 12px 3px 12px',
+                            padding: '0.75rem 1.125rem',
                             color: '#FFFFFF',
-                            fontSize: '0.875rem',
-                            lineHeight: 1.55,
+                            fontSize: '0.84375rem',
+                            lineHeight: 1.5,
                             wordBreak: 'break-word',
                             whiteSpace: 'pre-wrap',
-                            boxShadow: isDark ? '0 2px 10px rgba(0, 0, 0, 0.25)' : '0 2px 10px rgba(37, 99, 235, 0.25)',
+                            boxShadow: isDark ? '0 2px 8px rgba(0, 0, 0, 0.3)' : '0 2px 8px rgba(37, 99, 235, 0.2)',
                             position: 'relative',
                             width: '100%',
                             boxSizing: 'border-box',
@@ -2038,7 +3080,7 @@ export const AITrainingChatbot: React.FC<AITrainingChatbotProps> = ({
             </div>
           </div>
 
-          {/* CHAT INPUT BAR (Signature ChatGPT / Gemini style) */}
+          {/* CHAT INPUT BAR (Professional Studio Style with Attached Raw Data & Prompt Selector) */}
           <div
             style={{
               padding: '0.75rem 1.25rem 1.25rem 1.25rem',
@@ -2047,29 +3089,148 @@ export const AITrainingChatbot: React.FC<AITrainingChatbotProps> = ({
           >
             <div
               style={{
-                width: isSettingsOpen ? '90%' : '70%',
+                width: (isSettingsOpen || showRawDataModal) ? '98%' : '75%',
                 minWidth: '320px',
                 margin: '0 auto',
                 backgroundColor: isDark ? '#161B22' : 'var(--bg-surface)',
                 border: isDark ? '1px solid rgba(255, 255, 255, 0.15)' : '1px solid var(--border-color)',
-                borderRadius: '1rem',
-                padding: '0.625rem 0.75rem',
+                borderRadius: '1.125rem',
+                padding: '0.625rem 0.875rem',
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '0.375rem',
-                boxShadow: isDark ? '0 4px 12px rgba(0, 0, 0, 0.3)' : '0 2px 10px rgba(0, 0, 0, 0.05)',
+                boxShadow: isDark ? '0 4px 16px rgba(0, 0, 0, 0.35)' : '0 2px 12px rgba(0, 0, 0, 0.06)',
                 transition: 'width 0.2s ease',
               }}
             >
+              {/* ATTACHED RAW DATA FILE CHIP (30% width compact chip representation) */}
+              {attachedRawData ? (
+                <div
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    width: '32%',
+                    minWidth: '280px',
+                    maxWidth: '460px',
+                    padding: '6px 10px',
+                    backgroundColor: isDark ? 'rgba(59, 130, 246, 0.08)' : 'rgba(59, 130, 246, 0.05)',
+                    border: isDark ? '1px solid rgba(59, 130, 246, 0.25)' : '1px solid rgba(59, 130, 246, 0.2)',
+                    borderRadius: '8px',
+                    marginBottom: '4px',
+                    gap: '8px',
+                    boxSizing: 'border-box',
+                  }}
+                >
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      cursor: 'pointer',
+                      flex: 1,
+                      minWidth: 0,
+                    }}
+                    onClick={() => {
+                      setTempRawData(attachedRawData);
+                      setShowRawDataModal(true);
+                    }}
+                    title="Click to view or edit raw listing data"
+                  >
+                    <div
+                      style={{
+                        width: '28px',
+                        height: '28px',
+                        borderRadius: '6px',
+                        backgroundColor: '#3B82F6',
+                        color: '#FFFFFF',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <FiFileText style={{ fontSize: '14px' }} />
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <span
+                          style={{
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            color: isDark ? '#FFFFFF' : 'var(--text-primary)',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                          }}
+                        >
+                          Raw Listing Data
+                        </span>
+                        <span
+                          style={{
+                            fontSize: '0.5625rem',
+                            padding: '1px 4px',
+                            borderRadius: '3px',
+                            backgroundColor: isDark ? 'rgba(59, 130, 246, 0.25)' : 'rgba(59, 130, 246, 0.12)',
+                            color: '#3B82F6',
+                            fontWeight: 700,
+                            letterSpacing: '0.3px',
+                          }}
+                        >
+                          ATTACHED
+                        </span>
+                      </div>
+                      <span
+                        style={{
+                          fontSize: '0.6875rem',
+                          color: 'var(--text-muted)',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                      >
+                        {attachedRawData.length.toLocaleString()} chars · Click preview
+                      </span>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setAttachedRawData('');
+                    }}
+                    style={{
+                      width: '26px',
+                      height: '26px',
+                      borderRadius: '50%',
+                      backgroundColor: 'transparent',
+                      border: 'none',
+                      color: 'var(--text-muted)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      fontSize: '13px',
+                      flexShrink: 0,
+                    }}
+                    title="Remove attached raw data"
+                  >
+                    <FiX />
+                  </button>
+                </div>
+              ) : null}
+
+              {/* CLEAN INPUT TEXTAREA (Prompt template text is NOT dumped here!) */}
               <textarea
                 ref={textareaRef}
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder={
-                  isGoogle
-                    ? 'Message Gemini... (Paste raw post or instruct changes)'
-                    : 'Message ChatGPT... (Paste raw post or instruct changes)'
+                  attachedRawData
+                    ? `Add instructions (e.g. 'Highlight BTS & 2 mo. deposit') or press Enter to format...`
+                    : `Paste raw post text or type prompt instructions...`
                 }
                 rows={1}
                 disabled={isGenerating}
@@ -2078,78 +3239,442 @@ export const AITrainingChatbot: React.FC<AITrainingChatbotProps> = ({
                   backgroundColor: 'transparent',
                   border: 'none',
                   color: isDark ? '#FFFFFF' : 'var(--text-primary)',
-                  fontSize: '0.8125rem',
+                  fontSize: '0.84375rem',
                   fontWeight: 400,
                   lineHeight: 1.5,
                   outline: 'none',
                   resize: 'none',
                   boxSizing: 'border-box',
-                  minHeight: '24px',
+                  minHeight: '26px',
                   maxHeight: '200px',
                   overflowY: 'hidden',
+                  padding: '2px 0',
                 }}
               />
 
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-                {isGenerating ? (
-                  /* STOP BUTTON (Screenshot 5) */
-                  <button
-                    type="button"
-                    onClick={handleStopGeneration}
-                    style={{
-                      width: '32px',
-                      height: '32px',
-                      borderRadius: '50%',
-                      backgroundColor: brandColor,
-                      border: 'none',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease',
-                      boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
-                    }}
-                    title="Stop generation"
-                  >
-                    <div
-                      style={{
-                        width: '10px',
-                        height: '10px',
-                        backgroundColor: '#FFFFFF',
-                        borderRadius: '2px',
+              {/* BOTTOM ACTION TOOLBAR */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  paddingTop: '6px',
+                  position: 'relative',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  {/* Re-attach Raw Data Button (if currently cleared) */}
+                  {!attachedRawData && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTempRawData(initialRawData || SAMPLE_POST_TEXT);
+                        setShowRawDataModal(true);
                       }}
-                    />
-                  </button>
-                ) : (
-                  /* SEND BUTTON (Screenshot 4) */
-                  <button
-                    type="button"
-                    onClick={() => handleSendMessage()}
-                    disabled={!inputValue.trim()}
-                    style={{
-                      width: '32px',
-                      height: '32px',
-                      borderRadius: '50%',
-                      backgroundColor: inputValue.trim()
-                        ? brandColor
-                        : (isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.06)'),
-                      border: 'none',
-                      color: inputValue.trim() ? '#FFFFFF' : (isDark ? 'rgba(255, 255, 255, 0.4)' : 'var(--text-muted)'),
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      cursor: inputValue.trim() ? 'pointer' : 'not-allowed',
-                      transition: 'all 0.15s ease',
-                    }}
-                    title="Send message (Enter)"
-                  >
-                    <FiArrowUp style={{ fontSize: '16px' }} />
-                  </button>
-                )}
+                      style={{
+                        height: '34px',
+                        padding: '0 10px 0 6px',
+                        borderRadius: '8px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        backgroundColor: isDark ? 'rgba(59, 130, 246, 0.12)' : 'rgba(59, 130, 246, 0.08)',
+                        border: isDark ? '1px solid rgba(59, 130, 246, 0.35)' : '1px solid rgba(59, 130, 246, 0.25)',
+                        color: '#3B82F6',
+                        fontSize: '0.8125rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        transition: 'all 0.18s ease',
+                      }}
+                      title="Attach raw property post data"
+                    >
+                      <div
+                        style={{
+                          width: '22px',
+                          height: '22px',
+                          borderRadius: '6px',
+                          backgroundColor: '#3B82F6',
+                          color: '#FFFFFF',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                        }}
+                      >
+                        <FiPlus style={{ fontSize: '13px' }} />
+                      </div>
+                      <span>Attach Raw Data</span>
+                    </button>
+                  )}
+
+                  {/* PROMPT SELECTOR (Dropdown selector with sleek Icon Container) */}
+                  <div ref={promptDropdownRef} style={{ position: 'relative' }}>
+                    <button
+                      type="button"
+                      onClick={() => setShowPromptDropdown((v) => !v)}
+                      style={{
+                        height: '34px',
+                        padding: '0 10px 0 6px',
+                        borderRadius: '8px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#FFFFFF',
+                        border: isDark ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid rgba(0, 0, 0, 0.1)',
+                        color: isDark ? '#E6EDF3' : 'var(--text-primary)',
+                        cursor: 'pointer',
+                        transition: 'all 0.18s ease',
+                        boxShadow: isDark ? '0 1px 4px rgba(0,0,0,0.2)' : '0 1px 4px rgba(0,0,0,0.04)',
+                        maxWidth: '300px',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.09)' : 'rgba(0, 0, 0, 0.04)';
+                        e.currentTarget.style.borderColor = isDark ? 'rgba(59, 130, 246, 0.5)' : '#3B82F6';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.05)' : '#FFFFFF';
+                        e.currentTarget.style.borderColor = isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.1)';
+                      }}
+                      title="Select format prompt template"
+                    >
+                      {/* Icon Container */}
+                      <div
+                        style={{
+                          width: '22px',
+                          height: '22px',
+                          borderRadius: '6px',
+                          backgroundColor: isDark ? 'rgba(59, 130, 246, 0.22)' : 'rgba(59, 130, 246, 0.12)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                        }}
+                      >
+                        <SparklesIcon size={12} color="#3B82F6" />
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px', overflow: 'hidden' }}>
+                        <span style={{ color: isDark ? '#9CA3AF' : 'var(--text-muted)', fontSize: '0.71875rem', fontWeight: 500 }}>
+                          Format:
+                        </span>
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600, fontSize: '0.8125rem' }}>
+                          {activePrompt.name}
+                        </span>
+                      </div>
+
+                      <FiChevronDown style={{ fontSize: '13px', color: 'var(--text-muted)', flexShrink: 0, marginLeft: '2px' }} />
+                    </button>
+
+                    {showPromptDropdown && (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          bottom: 'calc(100% + 8px)',
+                          left: 0,
+                          width: '320px',
+                          maxHeight: '280px',
+                          overflowY: 'auto',
+                          backgroundColor: isDark ? '#1C2128' : 'var(--bg-surface)',
+                          border: isDark ? '1px solid rgba(255, 255, 255, 0.15)' : '1px solid var(--border-color)',
+                          borderRadius: '10px',
+                          boxShadow: isDark ? '0 8px 30px rgba(0, 0, 0, 0.6)' : '0 8px 24px rgba(0, 0, 0, 0.12)',
+                          padding: '6px',
+                          zIndex: 9999,
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: '0.6875rem',
+                            fontWeight: 600,
+                            color: 'var(--text-muted)',
+                            padding: '4px 8px 6px 8px',
+                            borderBottom: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid var(--border-color)',
+                            marginBottom: '4px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                          }}
+                        >
+                          <span>SELECT FORMAT TEMPLATE</span>
+                          <span style={{ fontSize: '0.625rem', color: brandColor }}>{availablePrompts.length} available</span>
+                        </div>
+
+                        {availablePrompts.map((p) => {
+                          const isSelected = p.id === activePrompt.id;
+                          return (
+                            <button
+                              key={p.id}
+                              type="button"
+                              onClick={() => handleSelectPrompt(p)}
+                              style={{
+                                width: '100%',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'flex-start',
+                                gap: '2px',
+                                padding: '8px 10px',
+                                borderRadius: '6px',
+                                border: 'none',
+                                backgroundColor: isSelected
+                                  ? (isDark ? 'rgba(59, 130, 246, 0.18)' : 'rgba(59, 130, 246, 0.1)')
+                                  : 'transparent',
+                                color: 'var(--text-primary)',
+                                cursor: 'pointer',
+                                textAlign: 'left',
+                                transition: 'background-color 0.15s ease',
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                                <span style={{ fontSize: '0.75rem', fontWeight: isSelected ? 600 : 500, color: isSelected ? '#3B82F6' : 'var(--text-primary)' }}>
+                                  {p.name}
+                                </span>
+                                {isSelected && <FiCheck style={{ fontSize: '12px', color: '#3B82F6' }} />}
+                              </div>
+                              {p.category && (
+                                <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
+                                  Category: {p.category}
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Clear Chat button if conversation exists */}
+                  {messages.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleClearChat}
+                      style={{
+                        height: '34px',
+                        padding: '0 12px',
+                        borderRadius: '17px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        background: 'transparent',
+                        border: 'none',
+                        color: 'var(--text-muted)',
+                        fontSize: '0.75rem',
+                        cursor: 'pointer',
+                      }}
+                      title="Clear conversation"
+                    >
+                      <FiTrash2 style={{ fontSize: '13px' }} />
+                      <span>Clear</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Send or Stop button */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  {isGenerating ? (
+                    <button
+                      type="button"
+                      onClick={handleStopGeneration}
+                      style={{
+                        width: '34px',
+                        height: '34px',
+                        borderRadius: '50%',
+                        backgroundColor: brandColor,
+                        border: 'none',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
+                      }}
+                      title="Stop generation"
+                    >
+                      <div
+                        style={{
+                          width: '10px',
+                          height: '10px',
+                          backgroundColor: '#FFFFFF',
+                          borderRadius: '2px',
+                        }}
+                      />
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleSendMessage()}
+                      disabled={!attachedRawData && !inputValue.trim()}
+                      style={{
+                        width: '34px',
+                        height: '34px',
+                        borderRadius: '50%',
+                        backgroundColor: (attachedRawData || inputValue.trim())
+                          ? brandColor
+                          : (isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.06)'),
+                        border: 'none',
+                        color: (attachedRawData || inputValue.trim())
+                          ? '#FFFFFF'
+                          : (isDark ? 'rgba(255, 255, 255, 0.4)' : 'var(--text-muted)'),
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: (attachedRawData || inputValue.trim()) ? 'pointer' : 'not-allowed',
+                        transition: 'all 0.15s ease',
+                      }}
+                      title="Format property listing (Enter)"
+                    >
+                      <FiArrowUp style={{ fontSize: '17px' }} />
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </div>
         </div>
+
+        {/* RIGHT SIDE PANEL: 40% Space for Raw Property Listing Content (No modal!) */}
+        {showRawDataModal && (
+          <div
+            style={{
+              width: '40%',
+              minWidth: '340px',
+              maxWidth: '520px',
+              borderLeft: isDark ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid var(--border-color)',
+              backgroundColor: isDark ? '#161B22' : 'var(--bg-secondary)',
+              display: 'flex',
+              flexDirection: 'column',
+              height: '100%',
+              zIndex: 40,
+              flexShrink: 0,
+              animation: 'fadeIn 0.15s ease',
+              boxShadow: isDark ? '-4px 0 20px rgba(0, 0, 0, 0.3)' : '-4px 0 16px rgba(0, 0, 0, 0.06)',
+            }}
+          >
+            {/* Panel Header */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '0.875rem 1.25rem',
+                borderBottom: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid var(--border-color)',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div
+                  style={{
+                    width: '28px',
+                    height: '28px',
+                    borderRadius: '6px',
+                    backgroundColor: '#3B82F6',
+                    color: '#FFFFFF',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  <FiFileText style={{ fontSize: '15px' }} />
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.875rem', fontWeight: 600, color: isDark ? '#FFFFFF' : 'var(--text-primary)' }}>
+                    Raw Property Listing Content
+                  </div>
+                  <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                    {tempRawData.length.toLocaleString()} characters · {tempRawData.split('\n').length} lines
+                  </div>
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (tempRawData) {
+                      navigator.clipboard.writeText(tempRawData);
+                      setCopiedRawData(true);
+                      setTimeout(() => setCopiedRawData(false), 2000);
+                      showToast('Copied raw listing content');
+                    }
+                  }}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: copiedRawData ? '#10B981' : 'var(--text-muted)',
+                    fontSize: '15px',
+                    cursor: 'pointer',
+                    padding: '6px',
+                    borderRadius: '4px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    transition: 'all 0.15s ease',
+                  }}
+                  title={copiedRawData ? 'Copied to clipboard!' : 'Copy raw content'}
+                >
+                  {copiedRawData ? <FiCheck /> : <FiCopy />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowRawDataModal(false)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--text-muted)',
+                    fontSize: '18px',
+                    cursor: 'pointer',
+                    padding: '6px',
+                    borderRadius: '4px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    transition: 'color 0.15s ease',
+                  }}
+                  title="Close panel"
+                >
+                  <FiX />
+                </button>
+              </div>
+            </div>
+
+            {/* Panel Body: Pure Clean Text (Zero complex borders, auto-saved) */}
+            <div
+              style={{
+                padding: '1.25rem 1.5rem',
+                flex: 1,
+                overflowY: 'auto',
+                display: 'flex',
+                flexDirection: 'column',
+                minHeight: 0,
+              }}
+            >
+              <textarea
+                value={tempRawData}
+                onChange={(e) => {
+                  setTempRawData(e.target.value);
+                  setAttachedRawData(e.target.value);
+                }}
+                placeholder="No raw property listing content..."
+                style={{
+                  width: '100%',
+                  flex: 1,
+                  height: '100%',
+                  backgroundColor: 'transparent',
+                  border: 'none',
+                  outline: 'none',
+                  padding: 0,
+                  margin: 0,
+                  color: isDark ? '#E6EDF3' : 'var(--text-primary)',
+                  fontSize: '0.84375rem',
+                  lineHeight: 1.7,
+                  fontFamily: `'SF Mono', 'Fira Code', Menlo, Consolas, monospace`,
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                  resize: 'none',
+                  boxSizing: 'border-box',
+                }}
+              />
+            </div>
+          </div>
+        )}
         {/* Fullscreen Modal View for Assistant Output */}
         {fullscreenMsgId && (() => {
           const fullMsg = messages.find((m) => m.id === fullscreenMsgId);

@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import type { DynamicAIBoxConfig, CanvasPromptOption } from './FacebookWorkflowCanvas';
 import { RunwareIcon, LaoZhangIcon, OpenAIIcon, ModelSelectorMenu } from './AITrainingChatbot';
 import { Select } from '../../components/ui/Select';
+import { GlobalTooltip } from '../../components/ui/Tooltip';
 import { useTheme } from '../../context/ThemeContext';
 import { getAIModelDisplayName, isImagePrompt } from './aiModelUtils';
 import { HiSparkles } from 'react-icons/hi2';
@@ -22,6 +23,7 @@ import {
   FiFileText,
   FiPlus,
   FiChevronDown,
+  FiChevronLeft,
   FiChevronRight,
   FiMoreHorizontal,
   FiEdit2,
@@ -62,6 +64,8 @@ export interface LightboxModalState {
   name?: string;
   promptInstructions?: string;
   isOriginalActive?: boolean;
+  imageList?: EnhancedPhotoItem[];
+  currentIndex?: number;
 }
 
 export interface AIImageStudioProps {
@@ -321,7 +325,45 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
     setLightboxZoom(1);
   }, [lightboxModal?.enhancedUrl, lightboxModal?.isOpen]);
 
-  // Close lightbox or studio on Escape key
+  const handleNextImage = useCallback(() => {
+    setLightboxModal((prev) => {
+      if (!prev || !prev.imageList || prev.imageList.length <= 1) return prev;
+      const curIdx = prev.currentIndex ?? 0;
+      const nextIdx = (curIdx + 1) % prev.imageList.length;
+      const nextItem = prev.imageList[nextIdx];
+      return {
+        ...prev,
+        currentIndex: nextIdx,
+        enhancedUrl: nextItem.enhancedUrl,
+        originalUrl: nextItem.originalUrl,
+        photoIndex: nextItem.photoIndex,
+        name: nextItem.name,
+        isOriginalActive: false,
+      };
+    });
+    setLightboxZoom(1);
+  }, []);
+
+  const handlePrevImage = useCallback(() => {
+    setLightboxModal((prev) => {
+      if (!prev || !prev.imageList || prev.imageList.length <= 1) return prev;
+      const curIdx = prev.currentIndex ?? 0;
+      const prevIdx = (curIdx - 1 + prev.imageList.length) % prev.imageList.length;
+      const prevItem = prev.imageList[prevIdx];
+      return {
+        ...prev,
+        currentIndex: prevIdx,
+        enhancedUrl: prevItem.enhancedUrl,
+        originalUrl: prevItem.originalUrl,
+        photoIndex: prevItem.photoIndex,
+        name: prevItem.name,
+        isOriginalActive: false,
+      };
+    });
+    setLightboxZoom(1);
+  }, []);
+
+  // Close lightbox or studio on Escape key, and navigate images with left/right arrow keys
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -330,11 +372,19 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
         } else if (onClose) {
           onClose();
         }
+      } else if (lightboxModal?.isOpen && lightboxModal.imageList && lightboxModal.imageList.length > 1) {
+        if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+          e.preventDefault();
+          handleNextImage();
+        } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+          e.preventDefault();
+          handlePrevImage();
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [lightboxModal?.isOpen, onClose]);
+  }, [lightboxModal?.isOpen, lightboxModal?.imageList, handleNextImage, handlePrevImage, onClose]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -466,6 +516,12 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
       let hasChanges = false;
       const next = prev.map((s) => {
         if (s.id === activeSessionId) {
+          const isMsgEqual = s.messages === messages;
+          const isInputEqual = s.inputValue === inputValue;
+          const isAttachEqual = s.attachedImages === attachedImages;
+          if (isMsgEqual && isInputEqual && isAttachEqual) {
+            return s;
+          }
           hasChanges = true;
           return {
             ...s,
@@ -475,7 +531,7 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
             attachedImage: attachedImages[0]?.url || null,
             attachedImageIndex: attachedImages[0]?.photoIndex ?? null,
             attachedImageName: attachedImages[0]?.name || '',
-            updatedAt: Date.now(),
+            updatedAt: s.updatedAt || s.createdAt || Date.now(),
           };
         }
         return s;
@@ -503,6 +559,11 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
       (s) => s.id !== activeSessionId && (!s.messages || s.messages.length === 0) && (!s.attachedImages || s.attachedImages.length === 0) && !s.attachedImage
     );
     if (existingEmptySession) {
+      setSessions((prev) => {
+        const next = prev.map((s) => (s.id === existingEmptySession.id ? { ...s, updatedAt: Date.now() } : s));
+        saveSessionsToStorage(box.id, next);
+        return next;
+      });
       handleSelectSession(existingEmptySession.id);
       setActiveSidebarTab('chats');
       setTimeout(() => textareaRef.current?.focus(), 50);
@@ -538,8 +599,8 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
 
   const handleSelectSession = (sessionId: string) => {
     if (sessionId === activeSessionId) return;
-    setSessions((prev) =>
-      prev.map((s) =>
+    setSessions((prev) => {
+      const next = prev.map((s) =>
         s.id === activeSessionId
           ? {
               ...s,
@@ -549,11 +610,13 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
               attachedImage: attachedImages[0]?.url || null,
               attachedImageIndex: attachedImages[0]?.photoIndex ?? null,
               attachedImageName: attachedImages[0]?.name || '',
-              updatedAt: Date.now(),
+              updatedAt: s.updatedAt || s.createdAt || Date.now(),
             }
           : s
-      )
-    );
+      );
+      saveSessionsToStorage(box.id, next);
+      return next;
+    });
     const target = sessions.find((s) => s.id === sessionId);
     if (target) {
       setActiveSessionId(target.id);
@@ -1339,6 +1402,7 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
         position: 'relative',
       }}
     >
+      <GlobalTooltip />
       <style>{`
         @keyframes studioFadeIn {
           from { opacity: 0; transform: translateY(2px); }
@@ -1422,7 +1486,7 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
               <button
                 type="button"
                 onClick={() => setIsSidebarCollapsed(false)}
-                title="Expand sidebar"
+                data-tooltip="Expand sidebar"
                 style={{
                   width: '36px',
                   height: '36px',
@@ -1452,7 +1516,7 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
               <button
                 type="button"
                 onClick={handleNewChat}
-                title="New chat"
+                data-tooltip="New chat"
                 style={{
                   width: '36px',
                   height: '36px',
@@ -1494,7 +1558,7 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                   setActiveSidebarTab('chats');
                   setIsSidebarCollapsed(false);
                 }}
-                title="Recents"
+                data-tooltip="Recents"
                 style={{
                   width: '36px',
                   height: '36px',
@@ -1538,7 +1602,7 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                   setActiveSidebarTab('settings');
                   setIsSidebarCollapsed(false);
                 }}
-                title="Prompt & Settings"
+                data-tooltip="Prompt & Settings"
                 style={{
                   width: '36px',
                   height: '36px',
@@ -1623,7 +1687,7 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                 onMouseLeave={(e) => {
                   e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : '#FFFFFF';
                 }}
-                title="Start a new chat (keeps previous chats saved)"
+                data-tooltip="Start a new chat (keeps previous chats saved)"
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <FiPlus style={{ fontSize: '15px' }} />
@@ -1639,7 +1703,7 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                   setIsSidebarCollapsed(true);
                   onCloseSettings?.();
                 }}
-                title="Close sidebar"
+                data-tooltip="Close sidebar"
                 style={{
                   width: '32px',
                   height: '32px',
@@ -1871,7 +1935,7 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                               <button
                                 type="button"
                                 onClick={() => handleSaveRename(session.id)}
-                                title="Save"
+                                data-tooltip="Save"
                                 style={{
                                   background: 'none',
                                   border: 'none',
@@ -1887,7 +1951,7 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                               <button
                                 type="button"
                                 onClick={() => setRenamingSessionId(null)}
-                                title="Cancel"
+                                data-tooltip="Cancel"
                                 style={{
                                   background: 'none',
                                   border: 'none',
@@ -1913,7 +1977,7 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                                   flex: 1,
                                   marginRight: '6px',
                                 }}
-                                title={session.title}
+                                data-tooltip={session.title}
                               >
                                 {session.title}
                               </span>
@@ -1934,7 +1998,7 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                                 <button
                                   type="button"
                                   onClick={(e) => handleTogglePinSession(session.id, e)}
-                                  title={session.isPinned ? 'Unpin chat' : 'Pin chat'}
+                                  data-tooltip={session.isPinned ? 'Unpin chat' : 'Pin chat'}
                                   style={{
                                     background: 'none',
                                     border: 'none',
@@ -1969,7 +2033,7 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                                       e.stopPropagation();
                                       setOpenMenuSessionId(isMenuOpen ? null : session.id);
                                     }}
-                                    title="Options"
+                                    data-tooltip="Options"
                                     style={{
                                       background: 'none',
                                       border: 'none',
@@ -2244,47 +2308,14 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
             />
           </div>
 
-          {/* Top-Right Close Button when right sidebar is not present */}
-          {(!importedPhotos || importedPhotos.length === 0) && onClose && (
-            <div style={{ position: 'absolute', top: '12px', right: '16px', zIndex: 30 }}>
-              <button
-                type="button"
-                onClick={onClose}
-                title="Close Studio (Esc)"
-                style={{
-                  width: '32px',
-                  height: '32px',
-                  borderRadius: '8px',
-                  border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid var(--border-color)',
-                  backgroundColor: isDark ? '#212121' : 'var(--bg-surface)',
-                  color: isDark ? '#CCCCCC' : 'var(--text-secondary)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer',
-                  boxShadow: 'var(--shadow-sm)',
-                  transition: 'all 0.15s ease',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.15)' : 'var(--bg-surface-hover)';
-                  e.currentTarget.style.color = isDark ? '#FFFFFF' : 'var(--text-primary)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = isDark ? '#212121' : 'var(--bg-surface)';
-                  e.currentTarget.style.color = isDark ? '#CCCCCC' : 'var(--text-secondary)';
-                }}
-              >
-                <FiX size={16} />
-              </button>
-            </div>
-          )}
+          {/* Center Column Content */}
 
           {/* Scrollable Conversation Stream */}
           <div
             style={{
               flex: 1,
               overflowY: 'auto',
-              padding: '2.8rem 1.25rem 0.75rem 1.25rem',
+              padding: '3.75rem 1.25rem 0.75rem 1.25rem',
               display: 'flex',
               flexDirection: 'column',
               boxSizing: 'border-box',
@@ -2327,7 +2358,7 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                       value={box.title || ''}
                       onChange={(e) => onUpdateBox(box.id, { title: e.target.value })}
                       placeholder="Image Enhancement"
-                      title="Click to rename"
+                      data-tooltip="Click to rename"
                       style={{
                         fontSize: '1.25rem',
                         fontWeight: 600,
@@ -2395,12 +2426,19 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                                 enhancedUrl: orig.url,
                                 photoIndex: orig.photoIndex,
                                 isOriginalActive: true,
+                                imageList: msg.originalImages?.map((o) => ({
+                                  enhancedUrl: o.url,
+                                  originalUrl: o.url,
+                                  photoIndex: o.photoIndex,
+                                  name: o.name,
+                                })),
+                                currentIndex: i,
                               })}
-                              title={orig.photoIndex !== undefined ? `Photo #${orig.photoIndex} (Click to expand)` : 'Click to expand'}
+                              data-tooltip={orig.photoIndex !== undefined ? `Photo #${orig.photoIndex} (Click to expand)` : 'Click to expand'}
                               style={{
                                 position: 'relative',
-                                width: '64px',
-                                height: '64px',
+                                width: msg.originalImages && msg.originalImages.length === 2 ? '80px' : '64px',
+                                height: msg.originalImages && msg.originalImages.length === 2 ? '80px' : '64px',
                                 borderRadius: '10px',
                                 overflow: 'hidden',
                                 border: isDark ? '1px solid rgba(255, 255, 255, 0.15)' : '1px solid var(--border-color)',
@@ -2443,7 +2481,7 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                             photoIndex: msg.photoIndex,
                             isOriginalActive: true,
                           })}
-                          title="Click to view full image"
+                          data-tooltip="Click to view full image"
                           style={{
                             width: '64px',
                             height: '64px',
@@ -2521,7 +2559,7 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                         <button
                           type="button"
                           onClick={() => handleCopyText(msg.content, msg.id)}
-                          title="Copy prompt"
+                          data-tooltip="Copy prompt"
                           style={{
                             background: 'none',
                             border: 'none',
@@ -2569,12 +2607,14 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                                 name: enh.name,
                                 promptInstructions: msg.promptInstructions,
                                 isOriginalActive: false,
+                                imageList: msg.enhancedImages,
+                                currentIndex: i,
                               })}
-                              title="Click to view full generated edit size"
+                              data-tooltip="Click to view full generated edit size"
                               style={{
                                 position: 'relative',
-                                width: '108px',
-                                height: '108px',
+                                width: msg.enhancedImages && msg.enhancedImages.length === 2 ? '175px' : '108px',
+                                height: msg.enhancedImages && msg.enhancedImages.length === 2 ? '175px' : '108px',
                                 borderRadius: '12px',
                                 overflow: 'hidden',
                                 border: '1px solid #10B981',
@@ -2703,6 +2743,7 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                             {listToDisplay.map((enhItem, i) => {
                               const isHovered = hoveredMsgImageId === `${msg.id}-${i}`;
                               const isSingle = listToDisplay.length === 1;
+                              const isDouble = listToDisplay.length === 2;
                               const isItemApplied = enhItem.photoIndex !== undefined && Boolean(appliedPhotoMap[`${msg.id}-${enhItem.photoIndex}`]);
 
                               return (
@@ -2718,12 +2759,14 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                                     name: enhItem.name,
                                     promptInstructions: msg.promptInstructions,
                                     isOriginalActive: false,
+                                    imageList: listToDisplay,
+                                    currentIndex: i,
                                   })}
-                                  title="Click to view full generated edit size"
+                                  data-tooltip="Click to view full generated edit size"
                                   style={{
                                     position: 'relative',
-                                    width: isSingle ? 'fit-content' : '108px',
-                                    height: isSingle ? 'auto' : '108px',
+                                    width: isSingle ? 'fit-content' : isDouble ? '175px' : '108px',
+                                    height: isSingle ? 'auto' : isDouble ? '175px' : '108px',
                                     maxWidth: '100%',
                                     lineHeight: 0,
                                     borderRadius: '12px',
@@ -2734,7 +2777,7 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                                     boxShadow: isDark ? '0 2px 8px rgba(0, 0, 0, 0.4)' : '0 2px 8px rgba(0, 0, 0, 0.08)',
                                     flexShrink: 0,
                                     transition: 'transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.18s ease',
-                                    transform: isHovered && !isSingle ? 'scale(1.04)' : 'scale(1)',
+                                    transform: isHovered && !isSingle ? 'scale(1.02)' : 'scale(1)',
                                   }}
                                 >
                                   <img
@@ -2751,15 +2794,15 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                                   <span
                                     style={{
                                       position: 'absolute',
-                                      top: '4px',
-                                      left: '4px',
-                                      padding: '2px 6px',
+                                      top: isDouble ? '6px' : '4px',
+                                      left: isDouble ? '6px' : '4px',
+                                      padding: isDouble ? '3px 8px' : '2px 6px',
                                       lineHeight: 1.3,
-                                      borderRadius: '4px',
+                                      borderRadius: '5px',
                                       backgroundColor: 'rgba(0, 0, 0, 0.72)',
                                       backdropFilter: 'blur(4px)',
                                       color: '#FFFFFF',
-                                      fontSize: '0.625rem',
+                                      fontSize: isDouble ? '0.6875rem' : '0.625rem',
                                       fontWeight: 600,
                                       zIndex: 2,
                                     }}
@@ -2767,13 +2810,13 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                                     {enhItem.photoIndex !== undefined ? `Photo #${enhItem.photoIndex}` : `#${i + 1}`}
                                   </span>
 
-                                  {/* Hover Overlay with Expand / Edit icon */}
+                                  {/* Soft Hover Overlay with Expand / Edit icon */}
                                   <div
                                     style={{
                                       position: 'absolute',
                                       inset: 0,
-                                      backgroundColor: 'rgba(0, 0, 0, 0.45)',
-                                      backdropFilter: 'blur(2px)',
+                                      backgroundColor: 'rgba(0, 0, 0, 0.2)',
+                                      backdropFilter: 'blur(1px)',
                                       display: 'flex',
                                       alignItems: 'center',
                                       justifyContent: 'center',
@@ -2784,15 +2827,18 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                                   >
                                     <div
                                       style={{
-                                        width: '28px',
-                                        height: '28px',
+                                        width: isDouble ? '34px' : '28px',
+                                        height: isDouble ? '34px' : '28px',
                                         borderRadius: '50%',
-                                        backgroundColor: 'rgba(255, 255, 255, 0.25)',
+                                        backgroundColor: 'rgba(0, 0, 0, 0.55)',
+                                        backdropFilter: 'blur(4px)',
+                                        border: '1px solid rgba(255, 255, 255, 0.35)',
                                         display: 'flex',
                                         alignItems: 'center',
                                         justifyContent: 'center',
                                         color: '#FFFFFF',
-                                        fontSize: '12px',
+                                        fontSize: isDouble ? '14px' : '12px',
+                                        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.35)',
                                       }}
                                     >
                                       <FiMaximize2 />
@@ -2831,7 +2877,7 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                                     {canCompare && (
                                       <button
                                         type="button"
-                                        title={showOriginal ? 'Show enhanced' : 'Show original'}
+                                        data-tooltip={showOriginal ? 'Show enhanced' : 'Show original'}
                                         style={iconBtn(!showOriginal)}
                                         onClick={() => setShowOriginalMap((prev) => ({ ...prev, [msg.id]: !prev[msg.id] }))}
                                       >
@@ -2841,7 +2887,7 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                                     {photoIdx !== undefined && onPhotoEnhanced && (
                                       <button
                                         type="button"
-                                        title={applied ? `Applied to Photo #${photoIdx}` : `Apply to Photo #${photoIdx}`}
+                                        data-tooltip={applied ? `Applied to Photo #${photoIdx}` : `Apply to Photo #${photoIdx}`}
                                         style={{ ...iconBtn(applied), color: applied ? '#10B981' : 'var(--text-primary)' }}
                                         onClick={() => {
                                           onPhotoEnhanced(photoIdx, first.enhancedUrl);
@@ -2852,7 +2898,7 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                                         <FiCheck />
                                       </button>
                                     )}
-                                    <button type="button" title="Download" style={iconBtn()} onClick={() => handleDownloadImage(activeUrl)}>
+                                    <button type="button" data-tooltip="Download" style={iconBtn()} onClick={() => handleDownloadImage(activeUrl)}>
                                       <FiDownload />
                                     </button>
                                   </div>
@@ -3017,8 +3063,15 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                           enhancedUrl: imgItem.url,
                           photoIndex: imgItem.photoIndex,
                           isOriginalActive: true,
+                          imageList: attachedImages.map((img) => ({
+                            enhancedUrl: img.url,
+                            originalUrl: img.url,
+                            photoIndex: img.photoIndex,
+                            name: img.name,
+                          })),
+                          currentIndex: idx,
                         })}
-                        title="Click to view full photo"
+                        data-tooltip="Click to view full photo"
                         style={{ width: '100%', height: '100%', objectFit: 'cover', cursor: 'zoom-in', display: 'block' }}
                       />
 
@@ -3029,7 +3082,7 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                           e.stopPropagation();
                           setAttachedImages((prev) => prev.filter((_, i) => i !== idx));
                         }}
-                        title="Remove photo"
+                        data-tooltip="Remove photo"
                         style={{
                           position: 'absolute',
                           top: '3px',
@@ -3088,7 +3141,7 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                         gap: '4px',
                         height: '28px',
                       }}
-                      title="Clear all attached photos"
+                      data-tooltip="Clear all attached photos"
                     >
                       <FiX style={{ fontSize: '11px' }} />
                       <span>Clear all ({attachedImages.length})</span>
@@ -3146,7 +3199,7 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    title="Upload image from computer"
+                    data-tooltip="Upload image from computer"
                     style={{
                       width: '32px',
                       height: '32px',
@@ -3175,7 +3228,7 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                     <button
                       type="button"
                       onClick={() => setShowPromptSelector((v) => !v)}
-                      title="Select an image prompt template"
+                      data-tooltip="Select an image prompt template"
                       style={{
                         height: '28px',
                         padding: '0 0.625rem',
@@ -3306,7 +3359,7 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                     cursor: (inputValue.trim() || attachedImages.length > 0) && !isGenerating ? 'pointer' : 'default',
                     transition: 'all 0.15s ease',
                   }}
-                  title="Send message or enhance images"
+                  data-tooltip="Send message or enhance images"
                 >
                   <FiArrowUp style={{ fontSize: '16px' }} />
                 </button>
@@ -3358,7 +3411,7 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                       borderRadius: '6px',
                       cursor: 'pointer',
                     }}
-                    title="Select all photos to enhance in chat"
+                    data-tooltip="Select all photos to enhance in chat"
                   >
                     Select All
                   </button>
@@ -3375,39 +3428,9 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                         padding: '2px 4px',
                         cursor: 'pointer',
                       }}
-                      title="Clear selection"
+                      data-tooltip="Clear selection"
                     >
                       Clear
-                    </button>
-                  )}
-                  {onClose && (
-                    <button
-                      type="button"
-                      onClick={onClose}
-                      title="Close Studio (Esc)"
-                      style={{
-                        width: '24px',
-                        height: '24px',
-                        borderRadius: '6px',
-                        border: 'none',
-                        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)',
-                        color: isDark ? '#CCCCCC' : 'var(--text-secondary)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        cursor: 'pointer',
-                        transition: 'all 0.15s ease',
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.18)' : 'rgba(0, 0, 0, 0.1)';
-                        e.currentTarget.style.color = isDark ? '#FFFFFF' : 'var(--text-primary)';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)';
-                        e.currentTarget.style.color = isDark ? '#CCCCCC' : 'var(--text-secondary)';
-                      }}
-                    >
-                      <FiX size={14} />
                     </button>
                   )}
                 </div>
@@ -3445,7 +3468,7 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                       e.dataTransfer.setData('application/json', JSON.stringify({ index: img.index, url }));
                     }}
                     onClick={() => handleAttachPostPhoto(img)}
-                    title={`Click or drag Photo #${img.index} to chatbox`}
+                    data-tooltip={`Click or drag Photo #${img.index} to chatbox`}
                     style={{
                       position: 'relative',
                       aspectRatio: '1 / 1',
@@ -3561,15 +3584,29 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
+                        const allItems: EnhancedPhotoItem[] = importedPhotos.map((p) => {
+                          const orig = p.stored_url
+                            ? (p.stored_url.startsWith('http') ? p.stored_url : `http://localhost:8085${p.stored_url}`)
+                            : p.source_url;
+                          const enh = enhancedPhotosMap[p.index] || orig;
+                          return {
+                            originalUrl: orig,
+                            enhancedUrl: enh,
+                            photoIndex: p.index,
+                            name: `Photo #${p.index}`,
+                          };
+                        });
                         setLightboxModal({
                           isOpen: true,
                           enhancedUrl: displayUrl,
                           originalUrl: isEnhanced ? url : undefined,
                           photoIndex: img.index,
                           isOriginalActive: false,
+                          imageList: allItems,
+                          currentIndex: importedPhotos.findIndex((p) => p.index === img.index),
                         });
                       }}
-                      title={`Preview Photo #${img.index} in full size`}
+                      data-tooltip={`Preview Photo #${img.index} in full size`}
                       style={{
                         position: 'absolute',
                         bottom: '4px',
@@ -3643,6 +3680,9 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
               fontSize: '15px',
             });
             const clampZoom = (z: number) => Math.min(4, Math.max(0.5, Math.round(z * 100) / 100));
+            const hasMultipleImages = Boolean(lightboxModal.imageList && lightboxModal.imageList.length > 1);
+            const currentDisplayIndex = (lightboxModal.currentIndex ?? 0) + 1;
+            const totalDisplayCount = lightboxModal.imageList?.length ?? 1;
 
             return (
               <div
@@ -3674,9 +3714,16 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                     color: '#FFFFFF',
                     fontSize: '0.75rem',
                     fontWeight: 600,
+                    backdropFilter: 'blur(4px)',
+                    zIndex: 10,
                   }}
                 >
                   {lightboxModal.photoIndex !== undefined ? `Photo #${lightboxModal.photoIndex}` : 'Photo'}
+                  {hasMultipleImages && (
+                    <span style={{ opacity: 0.75, fontWeight: 500, marginLeft: '6px' }}>
+                      ({currentDisplayIndex} / {totalDisplayCount})
+                    </span>
+                  )}
                   {hasCompare ? (isViewingOriginal ? ' · Original' : ' · Enhanced') : ''}
                 </span>
 
@@ -3687,12 +3734,104 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                     e.stopPropagation();
                     setLightboxModal(null);
                   }}
-                  title="Close (Esc)"
+                  data-tooltip="Close (Esc)"
                   aria-label="Close image viewer"
-                  style={{ ...roundBtn, position: 'absolute', top: '14px', right: '16px' }}
+                  style={{ ...roundBtn, position: 'absolute', top: '14px', right: '16px', zIndex: 10 }}
                 >
                   <FiX />
                 </button>
+
+                {/* Previous Floating Button (Left) */}
+                {hasMultipleImages && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handlePrevImage();
+                    }}
+                    data-tooltip="Previous photo (←)"
+                    aria-label="Previous photo"
+                    style={{
+                      position: 'absolute',
+                      left: '20px',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      width: '46px',
+                      height: '46px',
+                      borderRadius: '50%',
+                      backgroundColor: 'rgba(20, 20, 20, 0.75)',
+                      backdropFilter: 'blur(8px)',
+                      border: '1px solid rgba(255, 255, 255, 0.22)',
+                      color: '#FFFFFF',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      fontSize: '22px',
+                      zIndex: 20,
+                      transition: 'all 0.18s cubic-bezier(0.16, 1, 0.3, 1)',
+                      boxShadow: '0 4px 16px rgba(0, 0, 0, 0.5)',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)';
+                      e.currentTarget.style.transform = 'translateY(-50%) scale(1.1)';
+                      e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.4)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = 'rgba(20, 20, 20, 0.75)';
+                      e.currentTarget.style.transform = 'translateY(-50%) scale(1)';
+                      e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.22)';
+                    }}
+                  >
+                    <FiChevronLeft />
+                  </button>
+                )}
+
+                {/* Next Floating Button (Right) */}
+                {hasMultipleImages && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleNextImage();
+                    }}
+                    data-tooltip="Next photo (→)"
+                    aria-label="Next photo"
+                    style={{
+                      position: 'absolute',
+                      right: '20px',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      width: '46px',
+                      height: '46px',
+                      borderRadius: '50%',
+                      backgroundColor: 'rgba(20, 20, 20, 0.75)',
+                      backdropFilter: 'blur(8px)',
+                      border: '1px solid rgba(255, 255, 255, 0.22)',
+                      color: '#FFFFFF',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      fontSize: '22px',
+                      zIndex: 20,
+                      transition: 'all 0.18s cubic-bezier(0.16, 1, 0.3, 1)',
+                      boxShadow: '0 4px 16px rgba(0, 0, 0, 0.5)',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)';
+                      e.currentTarget.style.transform = 'translateY(-50%) scale(1.1)';
+                      e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.4)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = 'rgba(20, 20, 20, 0.75)';
+                      e.currentTarget.style.transform = 'translateY(-50%) scale(1)';
+                      e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.22)';
+                    }}
+                  >
+                    <FiChevronRight />
+                  </button>
+                )}
 
                 {/* Image */}
                 <img
@@ -3701,7 +3840,7 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                   onClick={(e) => e.stopPropagation()}
                   draggable={false}
                   style={{
-                    maxWidth: '92vw',
+                    maxWidth: hasMultipleImages ? '86vw' : '92vw',
                     maxHeight: '100%',
                     width: 'auto',
                     height: 'auto',
@@ -3725,10 +3864,13 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                     flexDirection: 'column',
                     alignItems: 'center',
                     gap: '8px',
+                    zIndex: 10,
                   }}
                 >
                   <span style={{ fontSize: '0.6875rem', color: 'rgba(255, 255, 255, 0.55)' }}>
-                    Scroll to zoom · Esc to close
+                    {hasMultipleImages
+                      ? 'Scroll to zoom · ← / → to navigate · Esc to close'
+                      : 'Scroll to zoom · Esc to close'}
                   </span>
                   <div
                     style={{
@@ -3739,20 +3881,33 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                       borderRadius: '999px',
                       backgroundColor: 'rgba(30, 30, 30, 0.85)',
                       border: '1px solid rgba(255, 255, 255, 0.12)',
+                      boxShadow: '0 4px 16px rgba(0, 0, 0, 0.4)',
                     }}
                   >
-                    <button type="button" title="Zoom out" style={toolBtn()} onClick={() => setLightboxZoom((z) => clampZoom(z - 0.25))}>
+                    {hasMultipleImages && (
+                      <>
+                        <button type="button" data-tooltip="Previous photo (←)" style={toolBtn()} onClick={handlePrevImage}>
+                          <FiChevronLeft />
+                        </button>
+                        <button type="button" data-tooltip="Next photo (→)" style={toolBtn()} onClick={handleNextImage}>
+                          <FiChevronRight />
+                        </button>
+                        <span style={{ width: '1px', height: '16px', backgroundColor: 'rgba(255, 255, 255, 0.18)', margin: '0 4px' }} />
+                      </>
+                    )}
+
+                    <button type="button" data-tooltip="Zoom out" style={toolBtn()} onClick={() => setLightboxZoom((z) => clampZoom(z - 0.25))}>
                       <FiZoomOut />
                     </button>
                     <button
                       type="button"
-                      title="Reset zoom"
+                      data-tooltip="Reset zoom"
                       onClick={() => setLightboxZoom(1)}
                       style={{ ...toolBtn(), width: 'auto', padding: '0 6px', fontSize: '0.6875rem', fontWeight: 600 }}
                     >
                       {Math.round(lightboxZoom * 100)}%
                     </button>
-                    <button type="button" title="Zoom in" style={toolBtn()} onClick={() => setLightboxZoom((z) => clampZoom(z + 0.25))}>
+                    <button type="button" data-tooltip="Zoom in" style={toolBtn()} onClick={() => setLightboxZoom((z) => clampZoom(z + 0.25))}>
                       <FiZoomIn />
                     </button>
 
@@ -3763,7 +3918,7 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                     {hasCompare && (
                       <button
                         type="button"
-                        title={isViewingOriginal ? 'Show enhanced' : 'Show original'}
+                        data-tooltip={isViewingOriginal ? 'Show enhanced' : 'Show original'}
                         style={toolBtn(!isViewingOriginal)}
                         onClick={() =>
                           setLightboxModal((prev) => (prev ? { ...prev, isOriginalActive: !isViewingOriginal } : null))
@@ -3776,7 +3931,7 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                     {canApply && (
                       <button
                         type="button"
-                        title={isAlreadyApplied ? `Applied to Photo #${lightboxModal.photoIndex}` : `Apply to Photo #${lightboxModal.photoIndex}`}
+                        data-tooltip={isAlreadyApplied ? `Applied to Photo #${lightboxModal.photoIndex}` : `Apply to Photo #${lightboxModal.photoIndex}`}
                         style={{ ...toolBtn(isAlreadyApplied), color: isAlreadyApplied ? '#34D399' : '#FFFFFF' }}
                         onClick={() => {
                           if (lightboxModal.photoIndex === undefined || !onPhotoEnhanced) return;
@@ -3790,7 +3945,7 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
                       </button>
                     )}
 
-                    <button type="button" title="Download" style={toolBtn()} onClick={() => handleDownloadImage(activeViewUrl)}>
+                    <button type="button" data-tooltip="Download" style={toolBtn()} onClick={() => handleDownloadImage(activeViewUrl)}>
                       <FiDownload />
                     </button>
                   </div>

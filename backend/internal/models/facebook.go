@@ -173,3 +173,78 @@ type PropertyImage struct {
 	Status           ImageStatus `gorm:"type:varchar(20);default:'ORIGINAL'" json:"status"`
 	CreatedAt        time.Time   `json:"created_at"`
 }
+
+// FacebookPostPublishStatus defines the lifecycle of a post published via Meta Graph API
+type FacebookPostPublishStatus string
+
+const (
+	FBPostStatusDraft     FacebookPostPublishStatus = "DRAFT"
+	FBPostStatusQueued    FacebookPostPublishStatus = "QUEUED"
+	FBPostStatusUploading FacebookPostPublishStatus = "UPLOADING"
+	FBPostStatusPublished FacebookPostPublishStatus = "PUBLISHED"
+	FBPostStatusScheduled FacebookPostPublishStatus = "SCHEDULED"
+	FBPostStatusFailed    FacebookPostPublishStatus = "FAILED"
+)
+
+// FacebookTokenStatus describes the health of a stored Page Access Token
+type FacebookTokenStatus string
+
+const (
+	FBTokenMissing           FacebookTokenStatus = "MISSING"
+	FBTokenUntested          FacebookTokenStatus = "UNTESTED"
+	FBTokenValid             FacebookTokenStatus = "VALID"
+	FBTokenExpired           FacebookTokenStatus = "EXPIRED"
+	FBTokenInvalid           FacebookTokenStatus = "INVALID"
+	FBTokenReconnectRequired FacebookTokenStatus = "RECONNECT_REQUIRED"
+)
+
+// FacebookManagedPage stores one auto-posting Facebook Page under the shared Meta Developer App.
+// Each page keeps its OWN encrypted Page Access Token — tokens are never shared between pages.
+type FacebookManagedPage struct {
+	ID                 uint                `gorm:"primaryKey" json:"id"`
+	Slot               int                 `gorm:"not null;uniqueIndex" json:"slot"` // 1 = Page 1, 2 = Page 2
+	PageID             string              `gorm:"type:varchar(100);not null;uniqueIndex" json:"page_id"`
+	Name               string              `gorm:"type:varchar(255)" json:"name"`
+	Label              string              `gorm:"type:varchar(100)" json:"label"`
+	PageURL            string              `gorm:"type:text" json:"page_url"`
+	PictureURL         string              `gorm:"type:text" json:"picture_url"`
+	PictureFetchedAt   *time.Time          `json:"picture_fetched_at,omitempty"`
+	Category           string              `gorm:"type:varchar(100)" json:"category"`
+	EncryptedToken     string              `gorm:"type:text" json:"-"` // AES-GCM encrypted, never serialized
+	TokenHint          string              `gorm:"type:varchar(20)" json:"token_hint"`
+	TokenStatus        FacebookTokenStatus `gorm:"type:varchar(25);default:'MISSING'" json:"token_status"`
+	TokenExpiresAt     *time.Time          `json:"token_expires_at,omitempty"`
+	TokenUpdatedAt     *time.Time          `json:"token_updated_at,omitempty"`
+	Permissions        string              `gorm:"type:text" json:"permissions"` // JSON array
+	CanCreateContent   bool                `gorm:"default:false" json:"can_create_content"`
+	TestPassed         bool                `gorm:"default:false" json:"test_passed"`
+	IsConnected        bool                `gorm:"default:false" json:"is_connected"`
+	LastTestedAt       *time.Time          `json:"last_tested_at,omitempty"`
+	LastError          string              `gorm:"type:text" json:"last_error,omitempty"`
+	AutoPublishEnabled bool                `gorm:"default:false" json:"auto_publish_enabled"`
+	CreatedAt          time.Time           `json:"created_at"`
+	UpdatedAt          time.Time           `json:"updated_at"`
+}
+
+// FacebookPublishPost tracks Facebook Page posts created through official Meta Graph API v26.0
+type FacebookPublishPost struct {
+	ID               uint                      `gorm:"primaryKey" json:"id"`
+	PageID           string                    `gorm:"type:varchar(100);not null;index" json:"page_id"`
+	PageSlot         int                       `gorm:"default:0;index" json:"page_slot"`
+	PageName         string                    `gorm:"type:varchar(255)" json:"page_name"`
+	Headline         string                    `gorm:"type:varchar(500)" json:"headline"`
+	Caption          string                    `gorm:"type:text;not null" json:"caption"`
+	Hashtags         string                    `gorm:"type:text" json:"hashtags"`
+	ImageURLs        string                    `gorm:"type:text" json:"image_urls"`          // JSON string array of image URLs
+	AttachedMediaIDs string                    `gorm:"type:text" json:"attached_media_ids"`  // JSON string array of Meta photo IDs
+	FacebookPostID   string                    `gorm:"type:varchar(100);index" json:"facebook_post_id"`
+	PermalinkURL     string                    `gorm:"type:text" json:"permalink_url"`
+	Status           FacebookPostPublishStatus `gorm:"type:varchar(30);default:'QUEUED';index" json:"status"`
+	ScheduledAt      *time.Time                `json:"scheduled_at,omitempty"`
+	PublishedAt      *time.Time                `json:"published_at,omitempty"`
+	ErrorMessage     string                    `gorm:"type:text" json:"error_message,omitempty"`
+	RetryCount       int                       `gorm:"default:0" json:"retry_count"`
+	IdempotencyKey   string                    `gorm:"type:varchar(100);index" json:"idempotency_key"`
+	CreatedAt        time.Time                 `json:"created_at"`
+	UpdatedAt        time.Time                 `json:"updated_at"`
+}

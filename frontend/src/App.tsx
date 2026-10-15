@@ -12,7 +12,11 @@ import { TestingView } from './features/testing/TestingView';
 import { SettingsView } from './features/settings/SettingsView';
 import { FacebookLoginView } from './features/auth/FacebookLoginView';
 import { FacebookImportView } from './features/facebook-import/FacebookImportView';
+import { RemainingPostsView } from './features/remaining-posts/RemainingPostsView';
 import { CreateWorkflowView } from './features/workflow/CreateWorkflowView';
+import { AutoPostView } from './features/autopost/AutoPostView';
+import { PostHistoryView } from './features/autopost/PostHistoryView';
+import { FacebookPageTokenManagerView } from './features/autopost/FacebookPageTokenManagerView';
 import type { Property } from './types';
 
 const initialProperties: Property[] = [
@@ -179,6 +183,10 @@ const MainApp: React.FC = () => {
         <Route path="/dashboard" element={<DashboardView properties={properties} onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
         <Route path="/add-url" element={<AddUrlView properties={properties} onAddProperty={handleAddProperty} onProcessBatch={handleProcessBatch} />} />
         <Route path="/facebook-import" element={<FacebookImportView onSaveToInbox={(prop) => handleAddProperty(prop.sourceUrl || '', prop)} onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
+        <Route path="/remaining-posts" element={<RemainingPostsView onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
+        <Route path="/auto-post" element={<AutoPostView onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
+        <Route path="/post-history" element={<PostHistoryView onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
+        <Route path="/facebook-tokens" element={<FacebookPageTokenManagerView onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
         <Route path="/create-workflow" element={<CreateWorkflowView />} />
         <Route path="/inbox" element={<PropertyInboxView properties={properties} onProcessProperty={(id) => handleProcessBatch([id])} onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
         <Route path="/prompts" element={<PromptTemplatesView />} />
@@ -190,12 +198,15 @@ const MainApp: React.FC = () => {
   );
 };
 
+import { GlobalTooltip } from './components/ui/Tooltip';
+
 export function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
         <BrowserRouter>
           <MainApp />
+          <GlobalTooltip />
         </BrowserRouter>
       </AuthProvider>
     </ThemeProvider>

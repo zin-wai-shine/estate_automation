@@ -25,6 +25,7 @@ import {
   FiX,
   FiAlertTriangle,
   FiEdit2,
+  FiZap,
 } from 'react-icons/fi';
 import { FaFacebook } from 'react-icons/fa';
 import { SiGooglegemini } from 'react-icons/si';
@@ -32,6 +33,7 @@ import { AITrainingChatbot, ModelSelectorMenu, LaoZhangIcon, RunwareIcon } from 
 import { useTheme } from '../../context/ThemeContext';
 import { getAIModelDisplayName, isImageAIBox, isImageModel } from './aiModelUtils';
 import { AIImageStudio } from './AIImageStudio';
+import { ToggleSwitch } from '../../components/ui/ToggleSwitch';
 
 export { getAIModelDisplayName };
 
@@ -357,13 +359,13 @@ const CANVAS_NODE_ACTION_CSS = `
 .canvas-node.is-hovered::before{opacity:.7;transform:scale(1);animation:nodeRingSpin 10s linear infinite}
 .canvas-node.is-receptive::before{opacity:.5;border-color:var(--receptive-color,#D97706);transform:scale(1.02);animation:nodeRingSpin 8s linear infinite}
 @keyframes nodeRingSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
-.node-hit{position:absolute;display:flex;align-items:center;pointer-events:none !important;z-index:35}
-.node-action{width:26px;height:26px;border-radius:50%;background:var(--na-bg);border:1.5px solid var(--na-color);color:var(--na-color);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;opacity:0;transform:scale(.3) translateX(-4px);box-shadow:0 2px 6px rgba(0,0,0,.15);transition:opacity .18s ease,transform .25s cubic-bezier(.34,1.56,.64,1),background-color .15s ease,color .15s ease;pointer-events:none}
+.node-hit{position:absolute;display:flex;align-items:center;pointer-events:none !important;z-index:45}
+.node-action{width:28px;height:28px;border-radius:50%;background:var(--na-bg);border:1.5px solid var(--na-color);color:var(--na-color);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;opacity:0;transform:scale(.3) translateX(-6px);box-shadow:0 2px 8px rgba(0,0,0,.18);transition:opacity .18s ease,transform .25s cubic-bezier(.34,1.56,.64,1),background-color .15s ease,color .15s ease;pointer-events:none}
 .canvas-node:hover .node-action,
 .canvas-node.is-hovered .node-action,
 .node-action:hover{opacity:1;transform:scale(1) translateX(0);pointer-events:auto !important}
 .canvas-node .node-action:hover,
-.node-action:hover{background:var(--na-color);color:#fff;box-shadow:0 2px 8px rgba(0,0,0,.25);transform:scale(1.14)}
+.node-action:hover{background:var(--na-color);color:#fff;box-shadow:0 4px 12px rgba(0,0,0,.28);transform:scale(1.15)}
 `;
 
 const NodeActionButton: React.FC<{
@@ -673,13 +675,28 @@ export interface FacebookWorkflowCanvasProps {
   onConfigChange?: (config: FacebookWorkflowConfig) => void;
   allowEditPrompt?: boolean;
   onDeletedCountChange?: (count: number) => void;
+  rawContent?: string;
+  autoFormatBoxes?: Record<string, boolean>;
+  onToggleBoxAutoFormat?: (boxId: string, checked: boolean) => void;
+  autoEnhance?: boolean;
+  onToggleAutoEnhance?: (checked: boolean) => void;
 }
 
 export const FacebookWorkflowCanvas = forwardRef<
   FacebookWorkflowCanvasRef,
   FacebookWorkflowCanvasProps
 >(function FacebookWorkflowCanvas(
-  { initialConfig, onConfigChange, allowEditPrompt = false, onDeletedCountChange },
+  {
+    initialConfig,
+    onConfigChange,
+    allowEditPrompt = false,
+    onDeletedCountChange,
+    rawContent,
+    autoFormatBoxes: propsAutoFormatBoxes,
+    onToggleBoxAutoFormat: propsOnToggleBoxAutoFormat,
+    autoEnhance: propsAutoEnhance,
+    onToggleAutoEnhance: propsOnToggleAutoEnhance,
+  },
   ref
 ) {
   const { actualTheme } = useTheme();
@@ -691,6 +708,86 @@ export const FacebookWorkflowCanvas = forwardRef<
   const [config, setConfig] = useState<FacebookWorkflowConfig>(() =>
     sanitizeAndResolveCollisions(initialConfig || loadSavedFacebookWorkflowConfig())
   );
+
+  // Auto format state per box (synced with localStorage & parent)
+  const [internalAutoFormat, setInternalAutoFormat] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem('estate_fb_auto_format_boxes');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  // Auto enhance state for photos (synced with localStorage & parent)
+  const [internalAutoEnhance, setInternalAutoEnhance] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('estate_fb_auto_enhance');
+      return saved !== null ? saved === 'true' : false;
+    } catch {
+      return false;
+    }
+  });
+
+  // Cross-component synchronizer
+  useEffect(() => {
+    const handleSync = () => {
+      try {
+        const savedFmt = localStorage.getItem('estate_fb_auto_format_boxes');
+        if (savedFmt) setInternalAutoFormat(JSON.parse(savedFmt));
+      } catch {}
+      try {
+        const savedEnh = localStorage.getItem('estate_fb_auto_enhance');
+        if (savedEnh !== null) setInternalAutoEnhance(savedEnh === 'true');
+      } catch {}
+    };
+
+    window.addEventListener('storage', handleSync);
+    window.addEventListener('estate_fb_auto_settings_sync', handleSync);
+    return () => {
+      window.removeEventListener('storage', handleSync);
+      window.removeEventListener('estate_fb_auto_settings_sync', handleSync);
+    };
+  }, []);
+
+  const autoFormatState = propsAutoFormatBoxes ?? internalAutoFormat;
+  const autoEnhanceState = propsAutoEnhance ?? internalAutoEnhance;
+
+  const handleToggleBoxAutoFormat = (boxId: string, checked: boolean) => {
+    const next = { ...autoFormatState, [boxId]: checked };
+    setInternalAutoFormat(next);
+    try {
+      localStorage.setItem('estate_fb_auto_format_boxes', JSON.stringify(next));
+      window.dispatchEvent(new CustomEvent('estate_fb_auto_settings_sync'));
+    } catch {}
+    propsOnToggleBoxAutoFormat?.(boxId, checked);
+  };
+
+  const handleToggleAutoEnhance = (checked: boolean) => {
+    setInternalAutoEnhance(checked);
+    try {
+      localStorage.setItem('estate_fb_auto_enhance', String(checked));
+      window.dispatchEvent(new CustomEvent('estate_fb_auto_settings_sync'));
+    } catch {}
+    propsOnToggleAutoEnhance?.(checked);
+  };
+
+  const hasAnyAutoFormatActive = Object.values(autoFormatState).some(Boolean);
+
+  const handleToggleAllAutoFormat = (checked: boolean) => {
+    const next: Record<string, boolean> = { ...autoFormatState };
+    config.aiBoxes.forEach((b) => {
+      if (!isImageAIBox(b, config.connections)) {
+        next[b.id] = checked;
+        propsOnToggleBoxAutoFormat?.(b.id, checked);
+      }
+    });
+    setInternalAutoFormat(next);
+    try {
+      localStorage.setItem('estate_fb_auto_format_boxes', JSON.stringify(next));
+      window.dispatchEvent(new CustomEvent('estate_fb_auto_settings_sync'));
+    } catch {}
+  };
 
   useEffect(() => {
     if (initialConfig) {
@@ -761,7 +858,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     }
     hoverLeaveTimeoutRef.current = setTimeout(() => {
       setHoveredNodeId((curr) => (curr === nodeId ? null : curr));
-    }, 240);
+    }, 350);
   };
 
   useEffect(() => {
@@ -1800,6 +1897,95 @@ export const FacebookWorkflowCanvas = forwardRef<
           boxShadow: isDark ? 'inset 0 0 40px rgba(0, 0, 0, 0.8)' : 'inset 0 0 20px rgba(0, 0, 0, 0.03)',
         }}
       >
+        {/* Floating Automations Control Bar (Auto Format & Auto Enhance) */}
+        <div
+          className="canvas-control"
+          style={{
+            position: 'absolute',
+            top: '16px',
+            left: '16px',
+            zIndex: 30,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.75rem',
+            backgroundColor: isDark ? 'rgba(22, 27, 34, 0.9)' : 'rgba(255, 255, 255, 0.95)',
+            backdropFilter: 'blur(10px)',
+            padding: '5px 12px',
+            borderRadius: '0.5rem',
+            border: '1px solid var(--border-color)',
+            boxShadow: isDark ? '0 4px 16px rgba(0, 0, 0, 0.45)' : '0 4px 16px rgba(0, 0, 0, 0.08)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <FiZap style={{ color: '#F59E0B', fontSize: '13px' }} />
+            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+              Auto Actions:
+            </span>
+          </div>
+
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '2px 8px',
+              borderRadius: '6px',
+              backgroundColor: hasAnyAutoFormatActive
+                ? (isDark ? 'rgba(56, 139, 253, 0.15)' : 'rgba(56, 139, 253, 0.08)')
+                : 'transparent',
+              transition: 'background-color 0.2s ease',
+            }}
+          >
+            <span
+              style={{
+                fontSize: '0.75rem',
+                fontWeight: 500,
+                color: hasAnyAutoFormatActive ? '#388BFD' : 'var(--text-muted)',
+              }}
+            >
+              Auto Format
+            </span>
+            <ToggleSwitch
+              checked={hasAnyAutoFormatActive}
+              onChange={handleToggleAllAutoFormat}
+              size="sm"
+              activeColor="#388BFD"
+            />
+          </div>
+
+          <div style={{ width: '1px', height: '16px', backgroundColor: 'var(--border-color)' }} />
+
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '2px 8px',
+              borderRadius: '6px',
+              backgroundColor: autoEnhanceState
+                ? (isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.08)')
+                : 'transparent',
+              transition: 'background-color 0.2s ease',
+            }}
+          >
+            <span
+              style={{
+                fontSize: '0.75rem',
+                fontWeight: 500,
+                color: autoEnhanceState ? '#10B981' : 'var(--text-muted)',
+              }}
+            >
+              Auto Enhance
+            </span>
+            <ToggleSwitch
+              checked={autoEnhanceState}
+              onChange={handleToggleAutoEnhance}
+              size="sm"
+              activeColor="#10B981"
+            />
+          </div>
+        </div>
+
         {/* Floating Zoom Controls Bar */}
         <div
           className="canvas-control"
@@ -2279,7 +2465,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                       left: '36px',
                       top: '-12px',
                       bottom: '-12px',
-                      paddingLeft: '50px',
+                      paddingLeft: '58px',
                       paddingRight: '16px',
                       display: 'flex',
                       alignItems: 'center',
@@ -2304,8 +2490,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                     flexDirection: 'column',
                     alignItems: 'center',
                     gap: '2px',
-                    pointerEvents: 'none',
+                    pointerEvents: 'auto',
+                    zIndex: 2,
                   }}
+                  onClick={(e) => e.stopPropagation()}
                 >
                   <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                     Get Content
@@ -2313,6 +2501,46 @@ export const FacebookWorkflowCanvas = forwardRef<
                   <span style={{ fontSize: '0.6875rem', color: isContentReceptive ? RECEPTIVE_COLOR : 'var(--text-muted)', fontWeight: isContentReceptive ? 600 : 400 }}>
                     {isContentReceptive ? 'Connect Back Here' : config.getContent.enabled ? 'Full Content' : 'Disabled'}
                   </span>
+                  {config.getContent.enabled && (
+                    <div
+                      style={{
+                        marginTop: '3px',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        padding: '2px 7px',
+                        borderRadius: '10px',
+                        backgroundColor: isDark ? 'rgba(22, 27, 34, 0.85)' : 'rgba(255, 255, 255, 0.95)',
+                        border: `1px solid ${hasAnyAutoFormatActive ? '#388BFD' : (isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.12)')}`,
+                        boxShadow: hasAnyAutoFormatActive
+                          ? (isDark ? '0 0 8px rgba(56, 139, 253, 0.3)' : '0 1px 4px rgba(56, 139, 253, 0.2)')
+                          : '0 1px 3px rgba(0,0,0,0.06)',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease',
+                      }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleToggleAllAutoFormat(!hasAnyAutoFormatActive);
+                      }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                    >
+                      <span
+                        style={{
+                          fontSize: '0.6875rem',
+                          fontWeight: 600,
+                          color: hasAnyAutoFormatActive ? '#388BFD' : 'var(--text-muted)',
+                        }}
+                      >
+                        Auto Format
+                      </span>
+                      <ToggleSwitch
+                        checked={hasAnyAutoFormatActive}
+                        onChange={handleToggleAllAutoFormat}
+                        size="sm"
+                        activeColor="#388BFD"
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -2398,7 +2626,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   left: '36px',
                   top: '-12px',
                   bottom: '-12px',
-                  paddingLeft: '50px',
+                  paddingLeft: '58px',
                   paddingRight: '16px',
                   display: 'flex',
                   alignItems: 'center',
@@ -2423,8 +2651,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                 flexDirection: 'column',
                 alignItems: 'center',
                 gap: '2px',
-                pointerEvents: 'none',
+                pointerEvents: 'auto',
+                zIndex: 2,
               }}
+              onClick={(e) => e.stopPropagation()}
             >
               <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                 Get Images
@@ -2432,6 +2662,46 @@ export const FacebookWorkflowCanvas = forwardRef<
               <span style={{ fontSize: '0.6875rem', color: isImagesReceptive ? RECEPTIVE_COLOR : 'var(--text-muted)', fontWeight: isImagesReceptive ? 600 : 400 }}>
                 {isImagesReceptive ? 'Connect Back Here' : config.getImages.enabled ? 'All Media' : 'Disabled'}
               </span>
+              {config.getImages.enabled && (
+                <div
+                  style={{
+                    marginTop: '3px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    padding: '2px 7px',
+                    borderRadius: '10px',
+                    backgroundColor: isDark ? 'rgba(22, 27, 34, 0.85)' : 'rgba(255, 255, 255, 0.95)',
+                    border: `1px solid ${autoEnhanceState ? '#10B981' : (isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.12)')}`,
+                    boxShadow: autoEnhanceState
+                      ? (isDark ? '0 0 8px rgba(16, 185, 129, 0.3)' : '0 1px 4px rgba(16, 185, 129, 0.2)')
+                      : '0 1px 3px rgba(0,0,0,0.06)',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleToggleAutoEnhance(!autoEnhanceState);
+                  }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                >
+                  <span
+                    style={{
+                      fontSize: '0.6875rem',
+                      fontWeight: 600,
+                      color: autoEnhanceState ? '#10B981' : 'var(--text-muted)',
+                    }}
+                  >
+                    Auto Enhance
+                  </span>
+                  <ToggleSwitch
+                    checked={autoEnhanceState}
+                    onChange={handleToggleAutoEnhance}
+                    size="sm"
+                    activeColor="#10B981"
+                  />
+                </div>
+              )}
             </div>
           </div>
         );
@@ -2552,10 +2822,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                     onMouseLeave={() => handleNodeMouseLeave(box.id)}
                     style={{
                       left: '36px',
-                      top: '-8px',
-                      bottom: '-8px',
-                      paddingLeft: '26px',
-                      paddingRight: '12px',
+                      top: '-12px',
+                      bottom: '-12px',
+                      paddingLeft: '58px',
+                      paddingRight: '16px',
                       display: 'flex',
                       flexDirection: 'column',
                       justifyContent: 'space-between',
@@ -2650,6 +2920,66 @@ export const FacebookWorkflowCanvas = forwardRef<
                       ? 'Ready to Connect'
                       : `${!isImageNode && isImageModel(box.model, box.provider) ? 'Gemini Flash' : getAIModelDisplayName(box.provider, box.model)} · ${isEffectiveEnabled ? 'Active' : 'Disabled'}`}
                   </span>
+
+                  {/* Switch button for Auto Format or Auto Enhance on this AI node */}
+                  {isEffectiveEnabled && (
+                    <div
+                      style={{
+                        marginTop: '3px',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        padding: '2px 7px',
+                        borderRadius: '10px',
+                        backgroundColor: isDark ? 'rgba(22, 27, 34, 0.85)' : 'rgba(255, 255, 255, 0.95)',
+                        border: `1px solid ${
+                          (isImageNode ? autoEnhanceState : Boolean(autoFormatState[box.id]))
+                            ? (isImageNode ? '#10B981' : '#388BFD')
+                            : (isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.12)')
+                        }`,
+                        boxShadow: (isImageNode ? autoEnhanceState : Boolean(autoFormatState[box.id]))
+                          ? (isDark
+                            ? `0 0 8px ${isImageNode ? 'rgba(16, 185, 129, 0.3)' : 'rgba(56, 139, 253, 0.3)'}`
+                            : `0 1px 4px ${isImageNode ? 'rgba(16, 185, 129, 0.2)' : 'rgba(56, 139, 253, 0.2)'}`)
+                          : '0 1px 3px rgba(0,0,0,0.06)',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease',
+                      }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (isImageNode) {
+                          handleToggleAutoEnhance(!autoEnhanceState);
+                        } else {
+                          handleToggleBoxAutoFormat(box.id, !Boolean(autoFormatState[box.id]));
+                        }
+                      }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                    >
+                      <span
+                        style={{
+                          fontSize: '0.6875rem',
+                          fontWeight: 600,
+                          color: (isImageNode ? autoEnhanceState : Boolean(autoFormatState[box.id]))
+                            ? (isImageNode ? '#10B981' : '#388BFD')
+                            : 'var(--text-muted)',
+                        }}
+                      >
+                        {isImageNode ? 'Auto Enhance' : 'Auto Format'}
+                      </span>
+                      <ToggleSwitch
+                        checked={isImageNode ? autoEnhanceState : Boolean(autoFormatState[box.id])}
+                        onChange={(checked) => {
+                          if (isImageNode) {
+                            handleToggleAutoEnhance(checked);
+                          } else {
+                            handleToggleBoxAutoFormat(box.id, checked);
+                          }
+                        }}
+                        size="sm"
+                        activeColor={isImageNode ? '#10B981' : '#388BFD'}
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -2779,10 +3109,8 @@ export const FacebookWorkflowCanvas = forwardRef<
           <Modal
             isOpen={Boolean(activeModalNode)}
             onClose={handleCloseModal}
-            hideHeader={isModalImageBox}
-            fullHeight={isModalImageBox}
-            maxWidth={isModalImageBox ? '100vw' : (activeModalNode.type === 'ai-box' ? '1120px' : '560px')}
-            height={isModalImageBox ? '100vh' : (activeModalNode.type === 'ai-box' ? '88vh' : undefined)}
+            maxWidth={activeModalNode.type === 'ai-box' ? '96vw' : '560px'}
+            height={activeModalNode.type === 'ai-box' ? '92vh' : undefined}
             bodyPadding={activeModalNode.type === 'ai-box' ? '0' : undefined}
             headerExtra={
               currentModalAIBox && isImageAIBox(currentModalAIBox, config.connections) ? (
@@ -3098,6 +3426,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 box={currentModalAIBox}
                 availablePrompts={availablePrompts}
                 allowEditPrompt={allowEditPrompt}
+                initialRawData={rawContent}
                 isSettingsOpen={isAISettingsDrawerOpen}
                 onCloseSettings={() => setIsAISettingsDrawerOpen(false)}
                 onUpdateBox={(id, updates) => handleUpdateAIBox(id, updates)}

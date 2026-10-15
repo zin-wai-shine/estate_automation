@@ -66,6 +66,8 @@ func ConnectDB() *gorm.DB {
 		&models.PropertyImage{},
 		&models.TestImportRun{},
 		&models.TestImportImage{},
+		&models.FacebookPublishPost{},
+		&models.FacebookManagedPage{},
 	)
 	if err != nil {
 		log.Fatalf("Failed to auto-migrate models: %v", err)

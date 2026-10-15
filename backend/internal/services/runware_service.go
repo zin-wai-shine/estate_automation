@@ -10,6 +10,7 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -238,6 +239,49 @@ func calculateRunwareDimensions(w, h int) (int, int) {
 	return finalW, finalH
 }
 
+// nanoBananaDimensions defines the strict discrete resolution pairs allowed by Runware for Google Nano Banana models.
+var nanoBananaDimensions = []struct {
+	W int
+	H int
+}{
+	{1024, 1024}, // 1:1 square
+	{1200, 896},  // ~4:3 landscape
+	{896, 1200},  // ~3:4 portrait
+	{1264, 848},  // ~3:2 landscape
+	{848, 1264},  // ~2:3 portrait
+	{1152, 928},  // ~5:4 landscape
+	{928, 1152},  // ~4:5 portrait
+	{1376, 768},  // ~16:9 landscape
+	{768, 1376},  // ~9:16 portrait
+	{1584, 672},  // ~21:9 ultrawide landscape
+	{2048, 512},  // 4:1 panorama
+	{512, 2048},  // 1:4 tall panorama
+	{3072, 384},  // banner landscape
+	{384, 3072},  // banner portrait
+}
+
+// calculateNanoBananaDimensions selects the closest supported discrete resolution pair matching
+// the original image aspect ratio, preventing Runware unsupportedDimensions errors.
+func calculateNanoBananaDimensions(origW, origH int) (int, int) {
+	if origW <= 0 || origH <= 0 {
+		return 1024, 1024
+	}
+	targetAspect := float64(origW) / float64(origH)
+	bestDiff := 999999.0
+	bestW, bestH := 1024, 1024
+
+	for _, p := range nanoBananaDimensions {
+		pairAspect := float64(p.W) / float64(p.H)
+		diff := math.Abs(pairAspect - targetAspect)
+		if diff < bestDiff {
+			bestDiff = diff
+			bestW = p.W
+			bestH = p.H
+		}
+	}
+	return bestW, bestH
+}
+
 type RunwareResponseItem struct {
 	TaskType       string `json:"taskType"`
 	TaskUUID       string `json:"taskUUID"`
@@ -332,45 +376,74 @@ func (s *RunwareService) EnhanceImageWithRunware(ctx context.Context, inputImage
 			UpscaleFactor: 2,
 		}
 	} else {
-		// For photo enhancement, strength must preserve the original room layout, walls, furniture, and structure.
-		// Higher strength (>0.40) causes diffusion to hallucinate completely new rooms.
-		if strength <= 0 {
-			strength = 0.25 // Optimal baseline preserving 100% room geometry
-		} else if strength > 0.40 {
-			strength = 0.35 // Upper safety clamp to prevent replacing the room entirely
-		}
+		isNanoBanana := strings.HasPrefix(model, "google:nano-banana") ||
+			strings.Contains(strings.ToLower(model), "nano-banana") ||
+			strings.Contains(strings.ToLower(model), "nanobanana")
 
-		calcW, calcH := calculateRunwareDimensions(origW, origH)
-		positivePrompt, negativePrompt := sanitizeRunwarePrompt(customPrompt)
-		if negativePrompt == "" {
-			negativePrompt = "blurry, noise, low quality, artifacts, distorted architecture, different room, altered furniture, changed layout, cartoon, painting, 3d render, oversaturated, deformed"
+		var calcW, calcH int
+		if isNanoBanana {
+			calcW, calcH = calculateNanoBananaDimensions(origW, origH)
+		} else {
+			calcW, calcH = calculateRunwareDimensions(origW, origH)
 		}
+		positivePrompt, negativePrompt := sanitizeRunwarePrompt(customPrompt)
 
 		inferenceTask := RunwareTaskInference{
-			TaskType:       "imageInference",
-			TaskUUID:       uuid.New().String(),
-			Model:          model,
-			PositivePrompt: positivePrompt,
-			NegativePrompt: negativePrompt,
-			SeedImage:      dataURI,
-			InputImage:     dataURI,
-			Strength:       &strength,
-			Width:          calcW,
-			Height:         calcH,
-			NumberResults:  1,
+			TaskType:      "imageInference",
+			TaskUUID:      uuid.New().String(),
+			Model:         model,
+			Width:         calcW,
+			Height:        calcH,
+			NumberResults: 1,
 		}
 
-		// Google Nano Banana supports referenceImages
-		if strings.HasPrefix(model, "google:nano-banana") {
-			inferenceTask.ReferenceImages = []string{dataURI}
+		if isNanoBanana {
+			// Google Nano Banana (e.g. google:nano-banana@2.1) does NOT support the 'strength', 'seedImage', or 'inputImage' parameters.
+			// Passing 'strength' causes Runware error (unsupportedParameter): Unsupported use of 'strength' parameter.
+			// Instead, input images must be provided in inputs.referenceImages, and negative constraints must be provided
+			// inline at the end of positivePrompt rather than via a dedicated negativePrompt field.
+			if negativePrompt != "" && !strings.Contains(strings.ToLower(positivePrompt), "negative prompt") {
+				combined := positivePrompt + "\n\nNegative prompt: " + negativePrompt
+				if len(combined) > 2800 {
+					cutoff := 2800
+					lastSpace := strings.LastIndex(combined[:cutoff], " ")
+					if lastSpace > 2000 {
+						combined = strings.TrimSpace(combined[:lastSpace])
+					} else {
+						combined = strings.TrimSpace(combined[:cutoff])
+					}
+				}
+				positivePrompt = combined
+			}
+
+			inferenceTask.PositivePrompt = positivePrompt
 			inferenceTask.Inputs = &RunwareInputs{
 				ReferenceImages: []string{dataURI},
 			}
-		}
+			inferenceTask.ReferenceImages = []string{dataURI}
+			// Note: Strength remains nil, SeedImage and InputImage remain empty, NegativePrompt remains empty
+		} else {
+			// Standard diffusion photo enhancement (SD, SDXL, FLUX img2img)
+			if strength <= 0 {
+				strength = 0.25 // Optimal baseline preserving 100% room geometry
+			} else if strength > 0.40 {
+				strength = 0.35 // Upper safety clamp to prevent replacing the room entirely
+			}
 
-		// FLUX.1 Schnell is optimized for exactly 4 steps
-		if model == "runware:101@1" {
-			inferenceTask.Steps = 4
+			if negativePrompt == "" {
+				negativePrompt = "blurry, noise, low quality, artifacts, distorted architecture, different room, altered furniture, changed layout, cartoon, painting, 3d render, oversaturated, deformed"
+			}
+
+			inferenceTask.PositivePrompt = positivePrompt
+			inferenceTask.NegativePrompt = negativePrompt
+			inferenceTask.SeedImage = dataURI
+			inferenceTask.InputImage = dataURI
+			inferenceTask.Strength = &strength
+
+			// FLUX.1 Schnell is optimized for exactly 4 steps
+			if model == "runware:101@1" {
+				inferenceTask.Steps = 4
+			}
 		}
 
 		taskPayload = inferenceTask
@@ -410,6 +483,46 @@ func (s *RunwareService) EnhanceImageWithRunware(ctx context.Context, inputImage
 	var runwareResp RunwareResponse
 	if err := json.Unmarshal(respBytes, &runwareResp); err != nil {
 		return "", fmt.Errorf("failed to decode Runware response: %w", err)
+	}
+
+	if len(runwareResp.Errors) > 0 {
+		firstErr := runwareResp.Errors[0]
+		// If Runware rejects dimensions, automatically retry with the best discrete supported dimensions or 1024x1024
+		if firstErr.Code == "unsupportedDimensions" {
+			retryW, retryH := calculateNanoBananaDimensions(origW, origH)
+			if it, ok := taskPayload.(RunwareTaskInference); ok {
+				if it.Width == retryW && it.Height == retryH {
+					retryW, retryH = 1024, 1024
+				}
+				it.Width = retryW
+				it.Height = retryH
+				it.TaskUUID = uuid.New().String()
+				taskPayload = it
+
+				retryPayload := []interface{}{
+					RunwareTaskAuth{
+						TaskType: "authentication",
+						APIKey:   s.APIKey,
+					},
+					taskPayload,
+				}
+				if rBytes, mErr := json.Marshal(retryPayload); mErr == nil {
+					if rReq, rErr := http.NewRequestWithContext(ctx, "POST", "https://api.runware.ai/v1", bytes.NewBuffer(rBytes)); rErr == nil {
+						rReq.Header.Set("Content-Type", "application/json")
+						rReq.Header.Set("Authorization", "Bearer "+s.APIKey)
+						if rResp, doErr := s.Client.Do(rReq); doErr == nil {
+							defer rResp.Body.Close()
+							if rb, readErr := io.ReadAll(rResp.Body); readErr == nil {
+								var retryRunwareResp RunwareResponse
+								if decErr := json.Unmarshal(rb, &retryRunwareResp); decErr == nil && len(retryRunwareResp.Data) > 0 && retryRunwareResp.Data[0].ImageURL != "" {
+									runwareResp = retryRunwareResp
+								}
+							}
+						}
+					}
+				}
+			}
+		}
 	}
 
 	if len(runwareResp.Errors) > 0 {

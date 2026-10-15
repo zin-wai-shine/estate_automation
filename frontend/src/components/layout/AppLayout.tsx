@@ -14,13 +14,19 @@ import {
   FiGitBranch, 
   FiInbox, 
   FiSidebar, 
+  FiLayers,
+  FiShare2,
+  FiClock,
+  FiKey,
 } from 'react-icons/fi';
 import { FaFacebook } from 'react-icons/fa';
+import { getRemainingPostsCount, subscribeRemainingPosts } from '../../features/remaining-posts/remainingPostsStorage';
 
 interface NavItem {
   id: string;
   label: string;
   icon: React.ReactNode;
+  badge?: number | string;
 }
 
 interface NavSection {
@@ -74,6 +80,15 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     });
   };
 
+  const [remainingPostsCount, setRemainingPostsCount] = useState<number>(() => getRemainingPostsCount());
+
+  useEffect(() => {
+    const unsubscribe = subscribeRemainingPosts(() => {
+      setRemainingPostsCount(getRemainingPostsCount());
+    });
+    return unsubscribe;
+  }, []);
+
   // Structured sidebar navigation matching modern clean UI
   const navSections: NavSection[] = [
     {
@@ -87,9 +102,23 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
       title: 'Automation & AI',
       items: [
         { id: 'facebook-import', label: 'Facebook Import', icon: <FaFacebook /> },
+        {
+          id: 'remaining-posts',
+          label: 'Remaining Posts',
+          icon: <FiLayers />,
+          badge: remainingPostsCount > 0 ? remainingPostsCount : undefined,
+        },
         { id: 'create-workflow', label: 'Create Workflow', icon: <FiGitBranch /> },
         { id: 'add-url', label: 'Add URL', icon: <FiPlusSquare /> },
         { id: 'prompts', label: 'Prompt Templates', icon: <FiFileText /> },
+      ],
+    },
+    {
+      title: 'Auto Post',
+      items: [
+        { id: 'auto-post', label: 'Auto Post', icon: <FiShare2 /> },
+        { id: 'post-history', label: 'Post History', icon: <FiClock /> },
+        { id: 'facebook-tokens', label: 'Page Token Manager', icon: <FiKey /> },
       ],
     },
     {
@@ -308,11 +337,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                   <span
                     style={{
                       fontSize: '0.6875rem',
-                      fontWeight: 700,
+                      fontWeight: 600,
                       color: 'var(--text-muted)',
                       padding: '0.5rem 0.625rem 0.25rem',
-                      letterSpacing: '0.06em',
-                      textTransform: 'uppercase',
                     }}
                   >
                     {section.title}
@@ -410,15 +437,35 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                         )}
                       </div>
 
-                      {/* Right Elements (Chevron) */}
-                      {!isCollapsed && isActive && (
-                        <div style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
-                          <FiChevronRight
-                            style={{
-                              fontSize: '0.75rem',
-                              color: isDark ? '#60A5FA' : '#2563EB',
-                            }}
-                          />
+                      {/* Right Elements (Badge & Chevron) */}
+                      {!isCollapsed && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                          {item.badge !== undefined && (
+                            <span
+                              style={{
+                                padding: '1px 6px',
+                                borderRadius: '999px',
+                                fontSize: '0.6875rem',
+                                fontWeight: 700,
+                                backgroundColor: isActive
+                                  ? (isDark ? 'rgba(59, 130, 246, 0.3)' : 'rgba(37, 99, 235, 0.15)')
+                                  : (isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.08)'),
+                                color: isActive
+                                  ? (isDark ? '#93C5FD' : '#1D4ED8')
+                                  : 'var(--text-secondary)',
+                              }}
+                            >
+                              {item.badge}
+                            </span>
+                          )}
+                          {isActive && (
+                            <FiChevronRight
+                              style={{
+                                fontSize: '0.75rem',
+                                color: isDark ? '#60A5FA' : '#2563EB',
+                              }}
+                            />
+                          )}
                         </div>
                       )}
                     </a>
