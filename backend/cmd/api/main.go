@@ -48,6 +48,20 @@ func main() {
 	auth.Post("/login", handlers.Login)
 	auth.Post("/register", handlers.Register)
 	auth.Post("/logout", handlers.Logout)
+	auth.Get("/tiktok/start", handlers.StartTikTokAuth)
+	auth.Get("/tiktok/callback", handlers.HandleTikTokCallback)
+
+	// TikTok Account Management & Content Posting API Routes
+	tiktok := app.Group("/api/tiktok")
+	tiktok.Get("/accounts", handlers.ListTikTokAccounts)
+	tiktok.Get("/accounts/:id", handlers.GetTikTokAccount)
+	tiktok.Post("/accounts/:id/test", handlers.TestTikTokAccount)
+	tiktok.Post("/accounts/:id/refresh", handlers.RefreshTikTokAccount)
+	tiktok.Post("/accounts/:id/disconnect", handlers.DisconnectTikTokAccount)
+	tiktok.Post("/accounts/:id/auto-publish", handlers.ToggleTikTokAutoPublish)
+	tiktok.Post("/publish", handlers.PublishTikTokPhoto)
+	tiktok.Get("/publish/:publishId/status", handlers.GetTikTokPublishStatus)
+	tiktok.Get("/posts", handlers.GetTikTokPosts)
 
 	// Social Facebook Persistent Browser Session Routes
 	socialFB := app.Group("/api/social/facebook/browser")

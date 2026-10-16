@@ -46,7 +46,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const activeTab = location.pathname.split('/')[1] || 'add-url';
+  const rawTab = location.pathname.split('/')[1] || 'add-url';
+  const activeTab = rawTab === 'facebook-tokens' ? 'auth-manager' : rawTab;
 
   // Desktop sidebar collapse state
   const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
@@ -118,7 +119,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
       items: [
         { id: 'auto-post', label: 'Auto Post', icon: <FiShare2 /> },
         { id: 'post-history', label: 'Post History', icon: <FiClock /> },
-        { id: 'facebook-tokens', label: 'Page Token Manager', icon: <FiKey /> },
+        { id: 'auth-manager', label: 'Auth Manager', icon: <FiKey /> },
       ],
     },
     {
@@ -264,6 +265,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
               <div id="header-center-portal" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1 }} />
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexShrink: 0 }}>
+                <div id="header-action-portal" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }} />
+
                 {/* Status Indicator Pill */}
                 <div
                   style={{
@@ -283,8 +286,6 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                   <div style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#22C55E' }} />
                   <span>API Online</span>
                 </div>
-
-                <div id="header-action-portal" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }} />
               </div>
             </div>
           </>

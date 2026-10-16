@@ -5,6 +5,7 @@ export interface AutoPostImage {
   url: string;
   name: string;
   isCover: boolean;
+  section?: 'header' | 'body' | 'footer';
 }
 
 export interface FacebookPagePostConfig {
@@ -128,6 +129,119 @@ export interface ManagedPageMeta {
   ready_to_publish: boolean;
 }
 
+export const DEFAULT_MANAGED_FB_PAGES: ManagedPageMeta[] = [
+  {
+    id: 1,
+    slot: 1,
+    page_id: '1287202894475973',
+    name: 'Dot BKK Living',
+    label: 'Primary Page (Slot 1)',
+    page_url: 'https://www.facebook.com/profile.php?id=1287202894475973',
+    picture_url: 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=160&h=160&q=80',
+    category: 'Real Estate',
+    has_token: true,
+    token_hint: '••••ma5B',
+    token_status: 'VALID',
+    permissions: ['CREATE_CONTENT', 'pages_manage_posts', 'pages_read_engagement'],
+    can_create_content: true,
+    test_passed: true,
+    auto_publish_enabled: true,
+    ready_to_publish: true,
+  },
+  {
+    id: 2,
+    slot: 2,
+    page_id: '494870343703559',
+    name: 'Bolt Haven Realty',
+    label: 'Secondary Page (Slot 2)',
+    page_url: 'https://www.facebook.com/profile.php?id=494870343703559',
+    picture_url: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=160&h=160&q=80',
+    category: 'Real Estate Agency',
+    has_token: true,
+    token_hint: '••••aFn0',
+    token_status: 'VALID',
+    permissions: ['CREATE_CONTENT', 'pages_manage_posts', 'pages_read_engagement'],
+    can_create_content: true,
+    test_passed: true,
+    auto_publish_enabled: true,
+    ready_to_publish: true,
+  },
+];
+
+const MANAGED_FB_PAGES_STORAGE_KEY = 'autopost_managed_facebook_pages_v2';
+const FB_PAGES_UPDATE_EVENT = 'autopost_managed_fb_pages_updated';
+
+export function getStoredManagedPages(): ManagedPageMeta[] {
+  try {
+    const raw = localStorage.getItem(MANAGED_FB_PAGES_STORAGE_KEY);
+    if (!raw) return DEFAULT_MANAGED_FB_PAGES;
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      const hasSlot1 = parsed.some(p => p.slot === 1 || p.page_id === '1287202894475973');
+      const hasSlot2 = parsed.some(p => p.slot === 2 || p.page_id === '494870343703559');
+      const merged = [...parsed];
+      if (!hasSlot1) merged.unshift(DEFAULT_MANAGED_FB_PAGES[0]);
+      if (!hasSlot2) merged.splice(1, 0, DEFAULT_MANAGED_FB_PAGES[1]);
+      return merged;
+    }
+    return DEFAULT_MANAGED_FB_PAGES;
+  } catch (e) {
+    return DEFAULT_MANAGED_FB_PAGES;
+  }
+}
+
+export function saveStoredManagedPage(page: ManagedPageMeta): ManagedPageMeta[] {
+  const current = getStoredManagedPages();
+  const index = current.findIndex(p => p.page_id === page.page_id || (page.slot && p.slot === page.slot));
+  let updated: ManagedPageMeta[];
+  if (index >= 0) {
+    updated = [...current];
+    updated[index] = { ...updated[index], ...page };
+  } else {
+    const maxSlot = current.reduce((max, p) => Math.max(max, p.slot || 0), 0);
+    const newSlot = page.slot || (maxSlot + 1);
+    updated = [...current, { ...page, slot: newSlot }];
+  }
+  try {
+    localStorage.setItem(MANAGED_FB_PAGES_STORAGE_KEY, JSON.stringify(updated));
+    window.dispatchEvent(new CustomEvent(FB_PAGES_UPDATE_EVENT, { detail: updated }));
+  } catch (e) {}
+
+  // Sync with ConnectedAccount list
+  saveStoredFbPage({
+    id: page.page_id,
+    name: page.name,
+    handle: `@${page.name.toLowerCase().replace(/[^a-z0-9_]/g, '_')}`,
+    platform: 'facebook',
+    followers: page.category || `Page Slot ${page.slot}`,
+    avatarUrl: page.picture_url,
+    isMetaConnected: Boolean(page.has_token && page.test_passed),
+    pageIdNumber: page.page_id,
+    pageSlot: page.slot,
+  });
+
+  return updated;
+}
+
+export function deleteStoredManagedPage(pageId: string): ManagedPageMeta[] {
+  const current = getStoredManagedPages();
+  const updated = current.filter(p => p.page_id !== pageId);
+  try {
+    localStorage.setItem(MANAGED_FB_PAGES_STORAGE_KEY, JSON.stringify(updated));
+    window.dispatchEvent(new CustomEvent(FB_PAGES_UPDATE_EVENT, { detail: updated }));
+  } catch (e) {}
+  return updated;
+}
+
+export function subscribeManagedPages(callback: (pages: ManagedPageMeta[]) => void) {
+  const handler = (e: Event) => {
+    const custom = e as CustomEvent;
+    if (custom.detail) callback(custom.detail);
+  };
+  window.addEventListener(FB_PAGES_UPDATE_EVENT, handler);
+  return () => window.removeEventListener(FB_PAGES_UPDATE_EVENT, handler);
+}
+
 const FB_PAGES_STORAGE_KEY = 'autopost_connected_fb_pages';
 
 export const CONNECTED_FB_PAGES: ConnectedAccount[] = [
@@ -137,7 +251,8 @@ export const CONNECTED_FB_PAGES: ConnectedAccount[] = [
     handle: '@dot_bkk_living',
     platform: 'facebook',
     followers: 'Meta Graph API v26.0 (Page 1)',
-    isMetaConnected: false,
+    avatarUrl: 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=160&h=160&q=80',
+    isMetaConnected: true,
     pageIdNumber: '1287202894475973',
     pageSlot: 1,
   },
@@ -147,7 +262,8 @@ export const CONNECTED_FB_PAGES: ConnectedAccount[] = [
     handle: '@bolt_haven_realty',
     platform: 'facebook',
     followers: 'Meta Graph API v26.0 (Page 2)',
-    isMetaConnected: false,
+    avatarUrl: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=160&h=160&q=80',
+    isMetaConnected: true,
     pageIdNumber: '494870343703559',
     pageSlot: 2,
   },
@@ -234,6 +350,86 @@ export const CONNECTED_IG_ACCOUNTS: ConnectedAccount[] = [
     followers: '8.4K Followers',
   },
 ];
+
+export interface ManagedTikTokAccount {
+  id: string;
+  name: string;
+  handle: string;
+  followers: string;
+  avatarUrl?: string;
+  has_token: boolean;
+  token_hint: string;
+  token?: string;
+  refresh_token?: string;
+  token_status: 'VALID' | 'EXPIRED' | 'MISSING' | 'UNTESTED';
+  token_expires_in_days?: number;
+  token_updated_at?: string;
+  permissions: string[];
+  can_publish_photo_mode: boolean;
+  can_upload_video: boolean;
+  test_passed: boolean;
+  auto_publish_enabled: boolean;
+  last_tested_at?: string;
+  environment?: 'production' | 'sandbox';
+}
+
+export const DEFAULT_TIKTOK_ACCOUNTS: ManagedTikTokAccount[] = [];
+
+export const TIKTOK_STORAGE_KEY = 'autopost_connected_tiktok_accounts_v1';
+export const TIKTOK_UPDATE_EVENT = 'autopost_tiktok_accounts_updated';
+
+export function getStoredTikTokAccounts(): ManagedTikTokAccount[] {
+  try {
+    const raw = localStorage.getItem(TIKTOK_STORAGE_KEY);
+    if (!raw) return DEFAULT_TIKTOK_ACCOUNTS;
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return parsed;
+    }
+    return DEFAULT_TIKTOK_ACCOUNTS;
+  } catch (e) {
+    return DEFAULT_TIKTOK_ACCOUNTS;
+  }
+}
+
+export function saveStoredTikTokAccount(account: ManagedTikTokAccount): ManagedTikTokAccount[] {
+  const current = getStoredTikTokAccounts();
+  const index = current.findIndex(a => a.id === account.id || a.handle === account.handle);
+  let updated: ManagedTikTokAccount[];
+  if (index >= 0) {
+    updated = [...current];
+    updated[index] = { ...updated[index], ...account };
+  } else {
+    updated = [account, ...current];
+  }
+  try {
+    localStorage.setItem(TIKTOK_STORAGE_KEY, JSON.stringify(updated));
+    window.dispatchEvent(new CustomEvent(TIKTOK_UPDATE_EVENT, { detail: updated }));
+  } catch (e) {}
+  return updated;
+}
+
+export function deleteStoredTikTokAccount(id: string): ManagedTikTokAccount[] {
+  const current = getStoredTikTokAccounts();
+  const updated = current.filter(a => a.id !== id);
+  try {
+    localStorage.setItem(TIKTOK_STORAGE_KEY, JSON.stringify(updated));
+    window.dispatchEvent(new CustomEvent(TIKTOK_UPDATE_EVENT, { detail: updated }));
+  } catch (e) {}
+  return updated;
+}
+
+export function subscribeTikTokAccounts(callback: (accounts: ManagedTikTokAccount[]) => void): () => void {
+  const handler = () => {
+    callback(getStoredTikTokAccounts());
+  };
+  window.addEventListener(TIKTOK_UPDATE_EVENT, handler);
+  window.addEventListener('storage', handler);
+  return () => {
+    window.removeEventListener(TIKTOK_UPDATE_EVENT, handler);
+    window.removeEventListener('storage', handler);
+  };
+}
 
 export const CONNECTED_TIKTOK_ACCOUNTS: ConnectedAccount[] = [
   {

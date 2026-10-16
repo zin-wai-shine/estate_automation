@@ -6,7 +6,7 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
       POSTGRES_DB: ${DB_NAME:-estate_automate}
     ports:
-      - "${HOST_DB_PORT:-5433}:5432"
+      - "127.0.0.1:${HOST_DB_PORT:-5433}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -18,7 +18,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redisdata:/data
     healthcheck:
@@ -60,6 +60,11 @@ services:
       - FACEBOOK_PAGE_ID=${FACEBOOK_PAGE_ID:-1287202894475973}
       - FACEBOOK_PAGE_ACCESS_TOKEN=${FACEBOOK_PAGE_ACCESS_TOKEN}
       - META_GRAPH_API_VERSION=${META_GRAPH_API_VERSION:-v26.0}
+      - TIKTOK_CLIENT_KEY=${TIKTOK_CLIENT_KEY}
+      - TIKTOK_CLIENT_SECRET=${TIKTOK_CLIENT_SECRET}
+      - TIKTOK_REDIRECT_URI=${TIKTOK_REDIRECT_URI}
+      - PUBLIC_APP_URL=${PUBLIC_APP_URL:-https://app.bolthavenproperty.com}
+      - TIKTOK_ENVIRONMENT=${TIKTOK_ENVIRONMENT:-sandbox}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -95,6 +100,9 @@ services:
       - FACEBOOK_PAGE_ID=${FACEBOOK_PAGE_ID:-1287202894475973}
       - FACEBOOK_PAGE_ACCESS_TOKEN=${FACEBOOK_PAGE_ACCESS_TOKEN}
       - META_GRAPH_API_VERSION=${META_GRAPH_API_VERSION:-v26.0}
+      - TIKTOK_CLIENT_KEY=${TIKTOK_CLIENT_KEY}
+      - TIKTOK_CLIENT_SECRET=${TIKTOK_CLIENT_SECRET}
+      - PUBLIC_APP_URL=${PUBLIC_APP_URL:-https://app.bolthavenproperty.com}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -108,8 +116,8 @@ services:
       context: ./backend
       dockerfile: Dockerfile.browser.dev
     ports:
-      - "6080:6080"
-      - "9223:9223"
+      - "127.0.0.1:6080:6080"
+      - "127.0.0.1:9223:9223"
     volumes:
       - browser_profiles:/data/browser-profiles
       - ./backend:/app
@@ -133,6 +141,30 @@ services:
       - /app/node_modules
     environment:
       - VITE_API_URL=http://localhost:8085
+
+  proxy:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "${HOST_PROXY_PORT:-80}:80"
+    volumes:
+      - ./proxy/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - api
+      - frontend
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+    command:
+      - tunnel
+      - --no-autoupdate
+      - run
+    depends_on:
+      - proxy
+
 
 volumes:
   pgdata:

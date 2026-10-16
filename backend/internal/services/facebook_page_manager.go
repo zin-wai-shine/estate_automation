@@ -311,6 +311,14 @@ func toDTO(p models.FacebookManagedPage) ManagedPageDTO {
 	if p.Permissions != "" {
 		_ = json.Unmarshal([]byte(p.Permissions), &perms)
 	}
+	picURL := p.PictureURL
+	if picURL == "" {
+		if p.Slot == 1 || p.PageID == "1287202894475973" {
+			picURL = "https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=160&h=160&q=80"
+		} else if p.Slot == 2 || p.PageID == "494870343703559" {
+			picURL = "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=160&h=160&q=80"
+		}
+	}
 	dto := ManagedPageDTO{
 		ID:                 p.ID,
 		Slot:               p.Slot,
@@ -318,7 +326,7 @@ func toDTO(p models.FacebookManagedPage) ManagedPageDTO {
 		Name:               p.Name,
 		Label:              p.Label,
 		PageURL:            p.PageURL,
-		PictureURL:         p.PictureURL,
+		PictureURL:         picURL,
 		PictureFetchedAt:   p.PictureFetchedAt,
 		Category:           p.Category,
 		HasToken:           p.EncryptedToken != "",

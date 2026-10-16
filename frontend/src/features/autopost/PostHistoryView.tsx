@@ -30,6 +30,8 @@ import {
 } from './autoPostStorage';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
+import { apiUrl } from '../../services/apiClient';
+import { fetchTikTokPosts, type TikTokPublishPost } from '../../services/tiktokService';
 
 interface PostHistoryViewProps {
   onNavigateTab?: (tab: string) => void;
@@ -53,14 +55,15 @@ export const PostHistoryView: React.FC<PostHistoryViewProps> = ({ onNavigateTab 
       setHistory(items);
     });
 
-    // Also fetch DB posts from backend
+    // Also fetch DB posts from backend (Facebook + TikTok)
     const fetchDbPosts = async () => {
       try {
-        const res = await fetch('http://localhost:8085/api/facebook/posts?limit=50');
+        const res = await fetch(apiUrl('/api/facebook/posts?limit=50'));
+        let mappedFbItems: AutoPostItem[] = [];
         if (res.ok) {
           const data = await res.json();
           if (Array.isArray(data.posts) && data.posts.length > 0) {
-            const mappedDbItems: AutoPostItem[] = data.posts.map((p: any) => {
+            mappedFbItems = data.posts.map((p: any) => {
               let parsedImgs: string[] = [];
               try {
                 parsedImgs = JSON.parse(p.image_urls || '[]');
@@ -112,19 +115,91 @@ export const PostHistoryView: React.FC<PostHistoryViewProps> = ({ onNavigateTab 
                 },
               };
             });
-
-            // Merge with local storage without duplicates
-            setHistory((prev) => {
-              const combined = [...prev];
-              for (const dbItem of mappedDbItems) {
-                if (!combined.some((c) => c.id === dbItem.id || (dbItem.platformResults.facebook.postId && c.platformResults.facebook.postId === dbItem.platformResults.facebook.postId))) {
-                  combined.unshift(dbItem);
-                }
-              }
-              return combined.sort((a, b) => b.createdAt - a.createdAt);
-            });
           }
         }
+
+        // Fetch real TikTok posts
+        let mappedTikTokItems: AutoPostItem[] = [];
+        try {
+          const ttPosts = await fetchTikTokPosts();
+          if (Array.isArray(ttPosts) && ttPosts.length > 0) {
+            mappedTikTokItems = ttPosts.map((tp) => {
+              let photoList: string[] = [];
+              try {
+                photoList = JSON.parse(tp.photo_images || '[]');
+              } catch (e) {}
+
+              const autoPostImgs: AutoPostImage[] = photoList.map((url, i) => ({
+                id: `tt-img-${tp.id}-${i}`,
+                url,
+                name: `tiktok_photo_${i + 1}.jpg`,
+                isCover: i === 0,
+              }));
+
+              const isSuccess = tp.status === 'SUCCESS';
+              const isFailed = tp.status === 'FAILED';
+
+              return {
+                id: `TT-DB-${tp.id}`,
+                projectName: tp.title ? tp.title.slice(0, 40) + '...' : `TikTok Photo Mode (${tp.username})`,
+                listingType: 'RENT',
+                price: '',
+                specs: '',
+                images: autoPostImgs,
+                facebook: {
+                  enabled: false,
+                  pageId: '',
+                  pageName: '',
+                  headline: '',
+                  caption: '',
+                  cta: '',
+                  hashtags: '',
+                },
+                instagram: { enabled: false, accountId: '', accountName: '', caption: '', firstCommentHashtags: '', locationTag: '' },
+                tiktok: {
+                  enabled: true,
+                  accountId: String(tp.tiktok_account_id),
+                  accountName: `@${tp.username}`,
+                  hook: '',
+                  caption: tp.title,
+                  sound: tp.auto_add_music ? 'Auto Recommended Sound' : 'None',
+                  privacy: tp.privacy_level as any,
+                  allowComments: !tp.disable_comment,
+                  allowDuet: true,
+                },
+                scheduleType: 'NOW',
+                status: isSuccess ? 'PUBLISHED' : isFailed ? 'FAILED' : 'PARTIAL',
+                createdAt: tp.created_at ? new Date(tp.created_at).getTime() : Date.now(),
+                platformResults: {
+                  facebook: { status: 'skipped' },
+                  instagram: { status: 'skipped' },
+                  tiktok: {
+                    status: isSuccess ? 'success' : isFailed ? 'failed' : 'scheduled',
+                    postId: tp.tiktok_post_id || tp.publish_id,
+                    postUrl: tp.share_url || (tp.publish_id ? `https://tiktok.com/publish/${tp.publish_id}` : undefined),
+                    error: tp.error_message,
+                    timestamp: tp.published_at ? new Date(tp.published_at).getTime() : Date.now(),
+                  },
+                },
+              };
+            });
+          }
+        } catch (e) {
+          console.error('Failed to fetch TikTok posts:', e);
+        }
+
+        const allBackendItems = [...mappedFbItems, ...mappedTikTokItems];
+
+        // Merge with local storage without duplicates
+        setHistory((prev) => {
+          const combined = [...prev];
+          for (const item of allBackendItems) {
+            if (!combined.some((c) => c.id === item.id)) {
+              combined.unshift(item);
+            }
+          }
+          return combined.sort((a, b) => b.createdAt - a.createdAt);
+        });
       } catch (e) {
         console.error('Failed to fetch DB posts:', e);
       }

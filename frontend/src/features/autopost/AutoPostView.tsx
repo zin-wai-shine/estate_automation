@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useTheme } from '../../context/ThemeContext';
 import {
   FiShare2,
@@ -24,6 +25,16 @@ import {
   FiMaximize2,
   FiSend,
   FiEdit3,
+  FiArrowRight,
+  FiGrid,
+  FiLayout,
+  FiPhoneCall,
+  FiMove,
+  FiZoomIn,
+  FiZoomOut,
+  FiDownload,
+  FiChevronLeft,
+  FiChevronRight,
 } from 'react-icons/fi';
 import { motion } from 'framer-motion';
 import {
@@ -48,10 +59,15 @@ import {
   subscribeAutoPostHistory,
   getStoredFbPages,
   saveStoredFbPage,
+  getStoredManagedPages,
+  subscribeManagedPages,
   type ConnectedAccount,
   CONNECTED_FB_PAGES,
   CONNECTED_IG_ACCOUNTS,
   CONNECTED_TIKTOK_ACCOUNTS,
+  getStoredTikTokAccounts,
+  subscribeTikTokAccounts,
+  type ManagedTikTokAccount,
   type AutoPostItem,
   type AutoPostImage,
   type SocialPlatform,
@@ -68,6 +84,13 @@ import {
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
 import Select from 'react-select';
+import { RichPostEditor } from './RichPostEditor';
+import {
+  publishTikTokPhotoPost,
+  pollTikTokPublishStatus,
+  fetchTikTokAccounts,
+} from '../../services/tiktokService';
+import { apiUrl } from '../../services/apiClient';
 
 interface SwitchToggleProps {
   checked: boolean;
@@ -169,26 +192,99 @@ export const AutoPostView: React.FC<AutoPostViewProps> = ({ onNavigateTab }) => 
       url: 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=800&q=80',
       name: 'Living Room & Bedroom.jpg',
       isCover: true,
+      section: 'header',
     },
     {
       id: 'img-2',
       url: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=800&q=80',
       name: 'Kitchen & Dining Area.jpg',
       isCover: false,
+      section: 'body',
     },
     {
       id: 'img-3',
       url: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=800&q=80',
       name: 'Modern Bathroom.jpg',
       isCover: false,
+      section: 'body',
     },
     {
       id: 'img-4',
       url: 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=800&q=80',
       name: 'Balcony City View.jpg',
       isCover: false,
+      section: 'footer',
     },
   ]);
+
+  // Three Image Sessions: Header, Body, Footer
+  const [uploadTargetSection, setUploadTargetSection] = useState<'header' | 'body' | 'footer'>('body');
+  const [draggedImageId, setDraggedImageId] = useState<string | null>(null);
+  const draggedImageIdRef = useRef<string | null>(null);
+  const lastSwapTargetIdRef = useRef<string | null>(null);
+  const [dragOverSection, setDragOverSection] = useState<'header' | 'body' | 'footer' | null>(null);
+
+  const headerImages = useMemo(
+    () => images.filter((img) => (img.section || 'body') === 'header'),
+    [images]
+  );
+  const bodyImages = useMemo(
+    () => images.filter((img) => (!img.section || img.section === 'body')),
+    [images]
+  );
+  const footerImages = useMemo(
+    () => images.filter((img) => img.section === 'footer'),
+    [images]
+  );
+
+  const moveImageToSection = (imageId: string, targetSection: 'header' | 'body' | 'footer') => {
+    setImages((prev) => {
+      const target = prev.find((img) => img.id === imageId);
+      if (!target || target.section === targetSection) return prev;
+      const withoutTarget = prev.filter((img) => img.id !== imageId);
+      const updatedTarget = { ...target, section: targetSection };
+
+      const headers = withoutTarget.filter((img) => (img.section || 'body') === 'header');
+      const bodies = withoutTarget.filter((img) => (!img.section || img.section === 'body'));
+      const footers = withoutTarget.filter((img) => img.section === 'footer');
+
+      if (targetSection === 'header') headers.push(updatedTarget);
+      else if (targetSection === 'body') bodies.push(updatedTarget);
+      else footers.push(updatedTarget);
+
+      const all = [...headers, ...bodies, ...footers];
+      return all.map((img, idx) => ({ ...img, isCover: idx === 0 }));
+    });
+    showToast(`Moved image to ${targetSection.toUpperCase()}`);
+  };
+
+  const handleTriggerUpload = (section: 'header' | 'body' | 'footer') => {
+    setUploadTargetSection(section);
+    fileInputRef.current?.click();
+  };
+
+  const handleDeleteImageById = (id: string) => {
+    setImages((prev) => {
+      const filtered = prev.filter((img) => img.id !== id);
+      return filtered.map((img, i) => ({ ...img, isCover: i === 0 }));
+    });
+  };
+
+  const handleMakeCoverById = (id: string) => {
+    setImages((prev) => {
+      const target = prev.find((img) => img.id === id);
+      if (!target) return prev;
+      const rest = prev.filter((img) => img.id !== id);
+      const headers = rest.filter((img) => (img.section || 'body') === 'header');
+      const bodies = rest.filter((img) => (!img.section || img.section === 'body'));
+      const footers = rest.filter((img) => img.section === 'footer');
+
+      headers.unshift({ ...target, section: 'header', isCover: true });
+      const all = [...headers, ...bodies, ...footers];
+      return all.map((img, i) => ({ ...img, isCover: i === 0 }));
+    });
+    showToast(`⭐ Assigned as #1 Cover Photo!`);
+  };
 
   // Drag and drop state for images
   const [draggedImageIndex, setDraggedImageIndex] = useState<number | null>(null);
@@ -210,7 +306,7 @@ export const AutoPostView: React.FC<AutoPostViewProps> = ({ onNavigateTab }) => 
     fbPage1Enabled && fbPage2Enabled ? 'both' : fbPage2Enabled ? 'page2' : 'page1';
   const [fbPagesList, setFbPagesList] = useState<ConnectedAccount[]>(getStoredFbPages());
   const [fbPageId, setFbPageId] = useState('1287202894475973');
-  const [managedPages, setManagedPages] = useState<ManagedPageMeta[]>([]);
+  const [managedPages, setManagedPages] = useState<ManagedPageMeta[]>(() => getStoredManagedPages());
   const [isTokenManagerModalOpen, setIsTokenManagerModalOpen] = useState(false);
   const [isPageSelectionModalOpen, setIsPageSelectionModalOpen] = useState(false);
   const [refreshingPageId, setRefreshingPageId] = useState<string | null>(null);
@@ -303,6 +399,107 @@ Line: @estatebangkok | โทร: 081-234-5678
   const [fbPage2Images, setFbPage2Images] = useState<AutoPostImage[]>([]);
   const [fbPage2ScheduleType, setFbPage2ScheduleType] = useState<'NOW' | 'SCHEDULED'>('NOW');
   const [fbPage2ScheduledAt, setFbPage2ScheduledAt] = useState('');
+  const [fbPage1Html, setFbPage1Html] = useState(
+    () =>
+      `<b>✨ High-Floor Modern Studio at Ideo Sukhumvit 93 for Rent!</b><br><br>🏙️ ให้เช่าคอนโด Ideo Sukhumvit 93 ขนาด 28 ตร.ม. ชั้น 28 แต่งครบพร้อมอยู่!<br>ราคาเพียง 18,000 บาท/เดือน (สัญญา 1 ปี)<br>ติด BTS บางจาก เพียง 15 เมตร เดินทางสะดวกมาก วิวเมืองโล่งสวย<br>เฟอร์นิเจอร์และเครื่องใช้ไฟฟ้าครบครัน: แอร์, ทีวี, ตู้เย็น, ไมโครเวฟ, เครื่องซักผ้า, ดิจิตอลดอร์ล็อก หิ้วกระเป๋าเข้าอยู่ได้ทันที<br><br>📲 สอบถาม/นัดชมห้องจริง Line ID: @estatebangkok | โทร 081-234-5678<br><br>#IdeoSukhumvit93 #CondoForRent #BTSBangChak #BangkokCondo #RealEstateBangkok`
+  );
+  const [fbPage2Html, setFbPage2Html] = useState(
+    () =>
+      `<b>🏙️ Premium High-Floor City Living | Ideo Sukhumvit 93 Studio For Rent</b><br><br>✨ คอนโดคุณภาพเยี่ยมติดบันได BTS บางจาก (15 เมตร)<br>ให้เช่า Ideo Sukhumvit 93 สตูดิโอขนาด 28 ตร.ม. ชั้น 28 แต่งสวยพร้อมเข้าอยู่ทันที<br>เพียง 18,000 บาท/เดือน (สัญญา 1 ปี / ประกัน 2 เดือน ล่วงหน้า 1 เดือน)<br><br>จุดเด่นห้อง:<br>• ชั้นสูง วิวพาโนรามา ไม่มีตึกบัง ลมพัดเย็นสบาย<br>• เครื่องใช้ไฟฟ้าและเฟอร์นิเจอร์ครบ (Smart TV, เครื่องซักผ้า, ตู้เย็น, ไมโครเวฟ)<br>• ส่วนกลางระดับโรงแรม สระว่ายน้ำ 2 สระ ฟิตเนส Co-working space<br><br>💬 ติดต่อนัดชมห้องล่วงหน้า:<br>Line: @estatebangkok | โทร: 081-234-5678<br><br>#IdeoSukhumvit #BangkokCondoRental #BTSBangChak #BangkokProperty #CondoLiving`
+  );
+
+  // Two Main Workspace Sessions: 'content' | 'images'
+  const [activeWorkspaceSession, setActiveWorkspaceSession] = useState<'content' | 'images'>('content');
+  // Navbar Portals for clean header integration
+  const [headerCenterEl, setHeaderCenterEl] = useState<HTMLElement | null>(null);
+  const [headerActionEl, setHeaderActionEl] = useState<HTMLElement | null>(null);
+
+  useEffect(() => {
+    setHeaderCenterEl(document.getElementById('header-center-portal'));
+    setHeaderActionEl(document.getElementById('header-action-portal'));
+  }, []);
+
+  const [fbActiveSession, setFbActiveSession] = useState<'content' | 'images'>('content');
+  const [fbPage1Session, setFbPage1Session] = useState<'content' | 'images'>('content');
+  const [fbPage2Session, setFbPage2Session] = useState<'content' | 'images'>('content');
+  const page1FileInputRef = useRef<HTMLInputElement>(null);
+  const page2FileInputRef = useRef<HTMLInputElement>(null);
+
+  const page1ImagesList = fbImages.length > 0 ? fbImages : images;
+  const page2ImagesList = fbPage2Images.length > 0 ? fbPage2Images : images;
+
+  const handleMakeCoverPage1 = (index: number) => {
+    if (index === 0) return;
+    const current = [...page1ImagesList];
+    const [selected] = current.splice(index, 1);
+    current.unshift(selected);
+    setFbImages(current.map((img, i) => ({ ...img, isCover: i === 0 })));
+  };
+
+  const handleDeleteImagePage1 = (index: number) => {
+    const current = [...page1ImagesList];
+    const filtered = current.filter((_, i) => i !== index);
+    setFbImages(filtered.map((img, i) => ({ ...img, isCover: i === 0 })));
+  };
+
+  const handleUploadPage1 = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const newImgs: AutoPostImage[] = Array.from(files).map((file, idx) => ({
+      id: `fb1-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
+      url: URL.createObjectURL(file),
+      name: file.name,
+      isCover: false,
+    }));
+    const merged = [...page1ImagesList, ...newImgs].map((img, i) => ({ ...img, isCover: i === 0 }));
+    setFbImages(merged);
+    if (page1FileInputRef.current) page1FileInputRef.current.value = '';
+    showToast(`Added ${newImgs.length} photo${newImgs.length > 1 ? 's' : ''} to ${page1Name}`);
+  };
+
+  const handleResetImagesPage1 = () => {
+    setFbImages([]);
+    showToast(`Reset ${page1Name} photos to master property photos`);
+  };
+
+  const handleMakeCoverPage2 = (index: number) => {
+    if (index === 0) return;
+    const current = [...page2ImagesList];
+    const [selected] = current.splice(index, 1);
+    current.unshift(selected);
+    setFbPage2Images(current.map((img, i) => ({ ...img, isCover: i === 0 })));
+  };
+
+  const handleDeleteImagePage2 = (index: number) => {
+    const current = [...page2ImagesList];
+    const filtered = current.filter((_, i) => i !== index);
+    setFbPage2Images(filtered.map((img, i) => ({ ...img, isCover: i === 0 })));
+  };
+
+  const handleUploadPage2 = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const newImgs: AutoPostImage[] = Array.from(files).map((file, idx) => ({
+      id: `fb2-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
+      url: URL.createObjectURL(file),
+      name: file.name,
+      isCover: false,
+    }));
+    const merged = [...page2ImagesList, ...newImgs].map((img, i) => ({ ...img, isCover: i === 0 }));
+    setFbPage2Images(merged);
+    if (page2FileInputRef.current) page2FileInputRef.current.value = '';
+    showToast(`Added ${newImgs.length} photo${newImgs.length > 1 ? 's' : ''} to ${page2Name}`);
+  };
+
+  const handleCopyImagesToPage2 = () => {
+    setFbPage2Images([...page1ImagesList]);
+    showToast(`Copied photos from ${page1Name} to ${page2Name}`);
+  };
+
+  const handleResetImagesPage2 = () => {
+    setFbPage2Images([]);
+    showToast(`Reset ${page2Name} photos to master property photos`);
+  };
 
   const [isMetaModalOpen, setIsMetaModalOpen] = useState(false);
   const [metaPageName, setMetaPageName] = useState('');
@@ -362,7 +559,7 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
 
   // TikTok Box
   const [ttEnabled, setTtEnabled] = useState(true);
-  const [ttAccountId, setTtAccountId] = useState(CONNECTED_TIKTOK_ACCOUNTS[0].id);
+  const [ttAccountId, setTtAccountId] = useState(CONNECTED_TIKTOK_ACCOUNTS[0]?.id || '');
   const [ttHook, setTtHook] = useState('Is this the best condo value under 20k in Sukhumvit? 😱✨');
   const [ttCaption, setTtCaption] = useState(
     `Only 15 meters from BTS Bang Chak! High floor 28 sqm studio with insane city skyline views for 18,000 THB/month. Would you live here? 👇 Comment below! #BangkokCondo #CondoTour #BKKLiving #IdeoSukhumvit93`
@@ -379,6 +576,7 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
   // ----------------------------------------------------
   // react-select custom styles & options
   // ----------------------------------------------------
+
   const selectStyles = useMemo(() => ({
     control: (base: any, state: any) => ({
       ...base,
@@ -465,6 +663,42 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
     }),
   }), [isDark]);
 
+  // Compact Select styles specifically for top navbar
+  const navSelectStyles = useMemo(
+    () => ({
+      ...selectStyles,
+      control: (base: any) => ({
+        ...base,
+        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#FFFFFF',
+        borderColor: 'var(--border-color)',
+        borderRadius: '7px',
+        boxShadow: 'none',
+        minHeight: '30px',
+        height: '30px',
+        fontSize: '0.75rem',
+        cursor: 'pointer',
+        padding: '0 2px',
+        '&:hover': {
+          borderColor: 'var(--accent-primary)',
+        },
+      }),
+      valueContainer: (base: any) => ({
+        ...base,
+        height: '30px',
+        padding: '0 6px',
+      }),
+      indicatorsContainer: (base: any) => ({
+        ...base,
+        height: '30px',
+      }),
+      dropdownIndicator: (base: any) => ({
+        ...base,
+        padding: '2px 6px',
+      }),
+    }),
+    [selectStyles, isDark]
+  );
+
   const igAccountOptions = useMemo(() => CONNECTED_IG_ACCOUNTS.map((acc) => ({
     value: acc.id,
     label: `${acc.handle} (${acc.followers})`,
@@ -472,12 +706,48 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
     followers: acc.followers,
   })), []);
 
-  const ttAccountOptions = useMemo(() => CONNECTED_TIKTOK_ACCOUNTS.map((acc) => ({
+  const [storedTikTokAccounts, setStoredTikTokAccounts] = useState<ManagedTikTokAccount[]>(() => getStoredTikTokAccounts());
+  useEffect(() => {
+    fetchTikTokAccounts().then((dbAccounts) => {
+      if (dbAccounts && Array.isArray(dbAccounts) && dbAccounts.length > 0) {
+        const mapped: ManagedTikTokAccount[] = dbAccounts.map((a) => ({
+          id: String(a.id),
+          name: a.display_name || a.username,
+          handle: a.username.startsWith('@') ? a.username : `@${a.username}`,
+          followers: a.follower_count ? `${a.follower_count.toLocaleString()} Followers` : 'Verified Creator',
+          avatarUrl: a.avatar_url,
+          has_token: a.token_status === 'VALID' || Boolean(a.token_hint),
+          token_hint: a.token_hint || '••••',
+          token_status: a.token_status === 'VALID' ? 'VALID' : 'UNTESTED',
+          permissions: a.permissions ? JSON.parse(a.permissions) : ['user.info.basic', 'video.publish', 'video.upload'],
+          can_publish_photo_mode: a.can_publish_photo_mode,
+          can_upload_video: a.can_upload_video,
+          test_passed: a.test_passed,
+          auto_publish_enabled: a.auto_publish_enabled,
+          last_tested_at: a.last_tested_at ? new Date(a.last_tested_at).toLocaleTimeString() : undefined,
+          environment: (a.environment as any) || 'sandbox',
+        }));
+        setStoredTikTokAccounts(mapped);
+        if (!ttAccountId && mapped.length > 0) {
+          setTtAccountId(mapped[0].id);
+        }
+      }
+    }).catch(() => {});
+
+    return subscribeTikTokAccounts((accounts) => {
+      setStoredTikTokAccounts(accounts);
+      if (!ttAccountId && accounts.length > 0) {
+        setTtAccountId(accounts[0].id);
+      }
+    });
+  }, [ttAccountId]);
+
+  const ttAccountOptions = useMemo(() => storedTikTokAccounts.map((acc) => ({
     value: acc.id,
     label: `${acc.handle} (${acc.followers})`,
     handle: acc.handle,
     followers: acc.followers,
-  })), []);
+  })), [storedTikTokAccounts]);
 
   const ttSoundOptions = useMemo(() => [
     { value: 'Trending Luxury Real Estate Beat (Original Sound)', label: 'Trending Luxury Real Estate Beat (Original Sound)' },
@@ -498,6 +768,104 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
   const [activePlatformTab, setActivePlatformTab] = useState<'all' | 'facebook' | 'instagram' | 'tiktok'>('all');
   const [previewPlatform, setPreviewPlatform] = useState<SocialPlatform | null>(null);
   const [previewFbTab, setPreviewFbTab] = useState<'page1' | 'page2'>('page1');
+  const [selectedFbPageTab, setSelectedFbPageTab] = useState<'page1' | 'page2'>('page1');
+
+  const activeFbHeadline =
+    fbTargetMode === 'page2' || (fbTargetMode === 'both' && selectedFbPageTab === 'page2')
+      ? fbPage2Headline
+      : fbHeadline;
+
+  const setActiveFbHeadline = (val: string) => {
+    if (fbTargetMode === 'page2' || (fbTargetMode === 'both' && selectedFbPageTab === 'page2')) {
+      setFbPage2Headline(val);
+    } else {
+      setFbHeadline(val);
+    }
+  };
+
+  const activeFbCaption =
+    fbTargetMode === 'page2' || (fbTargetMode === 'both' && selectedFbPageTab === 'page2')
+      ? fbPage2Caption
+      : fbCaption;
+
+  const setActiveFbCaption = (val: string) => {
+    if (fbTargetMode === 'page2' || (fbTargetMode === 'both' && selectedFbPageTab === 'page2')) {
+      setFbPage2Caption(val);
+    } else {
+      setFbCaption(val);
+    }
+  };
+
+  const activeFbHashtags =
+    fbTargetMode === 'page2' || (fbTargetMode === 'both' && selectedFbPageTab === 'page2')
+      ? fbPage2Hashtags
+      : fbHashtags;
+
+  const setActiveFbHashtags = (val: string) => {
+    if (fbTargetMode === 'page2' || (fbTargetMode === 'both' && selectedFbPageTab === 'page2')) {
+      setFbPage2Hashtags(val);
+    } else {
+      setFbHashtags(val);
+    }
+  };
+
+  const activeFbName =
+    fbTargetMode === 'page2' || (fbTargetMode === 'both' && selectedFbPageTab === 'page2')
+      ? page2Name
+      : page1Name;
+
+  const activeFbPicture =
+    fbTargetMode === 'page2' || (fbTargetMode === 'both' && selectedFbPageTab === 'page2')
+      ? (page2Picture || CONNECTED_FB_PAGES[1]?.avatarUrl)
+      : (page1Picture || CONNECTED_FB_PAGES[0]?.avatarUrl);
+
+  const fbPageSelectOptions = useMemo(() => [
+    {
+      value: 'both',
+      label: 'Both Pages (Simultaneous)',
+      detail: 'Slot 1 & Slot 2',
+      picture: page1Picture || CONNECTED_FB_PAGES[0]?.avatarUrl,
+    },
+    {
+      value: 'page1',
+      label: page1Name || 'Dot BKK Living',
+      detail: `Slot 1 • ${page1PageId}`,
+      picture: page1Picture || CONNECTED_FB_PAGES[0]?.avatarUrl,
+    },
+    {
+      value: 'page2',
+      label: page2Name || 'Bolt Haven Realty',
+      detail: `Slot 2 • ${page2PageId}`,
+      picture: page2Picture || CONNECTED_FB_PAGES[1]?.avatarUrl,
+    },
+  ], [page1Name, page2Name, page1PageId, page2PageId, page1Picture, page2Picture]);
+
+  const channelOptions = useMemo(() => [
+    {
+      value: 'all',
+      label: 'All Channels',
+      icon: <FiSliders style={{ fontSize: '0.8125rem' }} />,
+      enabled: true,
+    },
+    {
+      value: 'facebook',
+      label: 'Facebook',
+      icon: <FaFacebook style={{ color: '#1877F2', fontSize: '0.875rem' }} />,
+      enabled: fbEnabled,
+    },
+    {
+      value: 'instagram',
+      label: 'Instagram',
+      icon: <FaInstagram style={{ color: '#E4405F', fontSize: '0.875rem' }} />,
+      enabled: igEnabled,
+    },
+    {
+      value: 'tiktok',
+      label: 'TikTok',
+      icon: <FaTiktok style={{ color: isDark ? '#00F2FE' : '#000000', fontSize: '0.8125rem' }} />,
+      enabled: ttEnabled,
+    },
+  ], [fbEnabled, igEnabled, ttEnabled, isDark]);
   const [isPublishingModalOpen, setIsPublishingModalOpen] = useState(false);
   const [publishProgress, setPublishProgress] = useState<{
     step: number;
@@ -516,6 +884,8 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
 
   // Lightbox for photos
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [lightboxZoom, setLightboxZoom] = useState<number>(1);
 
   // Remaining Posts Import Drawer / Modal
   const [isRemainingPostsModalOpen, setIsRemainingPostsModalOpen] = useState(false);
@@ -633,7 +1003,61 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
     });
   };
 
-  // Professional smooth drag & drop reordering where other photos slide fluidly into place
+  // Instant, butter-smooth drag & drop reordering where photos slide immediately without delay
+  const handleDragStartItem = (e: React.DragEvent, imgId: string) => {
+    isDraggingRef.current = true;
+    draggedImageIdRef.current = imgId;
+    lastSwapTargetIdRef.current = null;
+    lastSwapTimeRef.current = Date.now();
+    setDraggedImageId(imgId);
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', imgId);
+    }
+  };
+
+  const handleSwapToCard = (targetImgId: string, targetSection: 'header' | 'body' | 'footer') => {
+    const currentDraggedId = draggedImageIdRef.current;
+    if (!currentDraggedId || currentDraggedId === targetImgId) return;
+    if (lastSwapTargetIdRef.current === targetImgId) return;
+
+    const now = Date.now();
+    // Ultra-low 40ms safety guard: instant responsiveness, prevents jitter loop on exact same spot
+    if (now - lastSwapTimeRef.current < 40) return;
+    lastSwapTimeRef.current = now;
+    lastSwapTargetIdRef.current = targetImgId;
+
+    setImages((prev) => {
+      const fromIndex = prev.findIndex((img) => img.id === currentDraggedId);
+      const toIndex = prev.findIndex((img) => img.id === targetImgId);
+      if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return prev;
+
+      const copy = [...prev];
+      const [dragged] = copy.splice(fromIndex, 1);
+      dragged.section = targetSection;
+      copy.splice(toIndex, 0, dragged);
+
+      const hasHeader = copy.some((img) => (img.section || 'body') === 'header');
+      return copy.map((img, idx) => ({
+        ...img,
+        isCover: hasHeader
+          ? (img.section === 'header' && copy.filter((x) => (x.section || 'body') === 'header')[0]?.id === img.id)
+          : idx === 0,
+      }));
+    });
+  };
+
+  const handleDragEndItem = () => {
+    draggedImageIdRef.current = null;
+    lastSwapTargetIdRef.current = null;
+    setDraggedImageId(null);
+    setDragOverSection(null);
+    setTimeout(() => {
+      isDraggingRef.current = false;
+    }, 120);
+  };
+
+  // Professional smooth drag & drop reordering where other photos slide fluidly into place (legacy index-based)
   const handleDragStart = (e: any, index: number) => {
     isDraggingRef.current = true;
     lastSwapTimeRef.current = Date.now();
@@ -641,13 +1065,11 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
       e.dataTransfer.effectAllowed = 'move';
       e.dataTransfer.setData('text/plain', String(index));
       if (e.currentTarget) {
-        // Drag the whole card container rather than just the inner img
         const target = e.currentTarget;
         const rect = target.getBoundingClientRect();
         e.dataTransfer.setDragImage(target, rect.width / 2, rect.height / 2);
       }
     }
-    // Delay setting dragged index so the browser captures the whole card in full opacity for the drag ghost image
     requestAnimationFrame(() => {
       setDraggedImageIndex(index);
     });
@@ -656,7 +1078,6 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
   const handleDragEnter = (targetIndex: number) => {
     if (draggedImageIndex === null || draggedImageIndex === targetIndex) return;
     const now = Date.now();
-    // Throttle swaps slightly (150ms) to let spring animations settle smoothly without flip-flop jitter
     if (now - lastSwapTimeRef.current < 150) return;
     lastSwapTimeRef.current = now;
 
@@ -679,8 +1100,64 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
 
   const handlePhotoClick = (url: string) => {
     if (isDraggingRef.current) return;
+    const idx = images.findIndex((img) => img.url === url);
+    setLightboxIndex(idx !== -1 ? idx : 0);
+    setLightboxZoom(1);
     setLightboxUrl(url);
   };
+
+  const handleNextLightbox = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (lightboxIndex === null || images.length === 0) return;
+    const nextIdx = (lightboxIndex + 1) % images.length;
+    setLightboxIndex(nextIdx);
+    setLightboxUrl(images[nextIdx].url);
+    setLightboxZoom(1);
+  };
+
+  const handlePrevLightbox = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (lightboxIndex === null || images.length === 0) return;
+    const prevIdx = (lightboxIndex - 1 + images.length) % images.length;
+    setLightboxIndex(prevIdx);
+    setLightboxUrl(images[prevIdx].url);
+    setLightboxZoom(1);
+  };
+
+  const handleCloseLightbox = () => {
+    setLightboxUrl(null);
+    setLightboxIndex(null);
+    setLightboxZoom(1);
+  };
+
+  const handleDownloadLightboxImage = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const currentImg = lightboxIndex !== null ? images[lightboxIndex] : null;
+    const url = currentImg?.url || lightboxUrl;
+    if (!url) return;
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = currentImg?.name || `photo-${(lightboxIndex ?? 0) + 1}.jpg`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
+  // Keyboard navigation for image lightbox (Escape, ArrowLeft, ArrowRight)
+  useEffect(() => {
+    if (lightboxIndex === null) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        handleCloseLightbox();
+      } else if (e.key === 'ArrowRight') {
+        handleNextLightbox();
+      } else if (e.key === 'ArrowLeft') {
+        handlePrevLightbox();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [lightboxIndex, images]);
 
   // ----------------------------------------------------
   // Remaining Posts Import Modal
@@ -778,6 +1255,14 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
       setIsCheckingMetaStatus(false);
     }
   };
+
+  useEffect(() => {
+    const unsub = subscribeManagedPages((pages) => {
+      setManagedPages(pages);
+      setFbPagesList(getStoredFbPages());
+    });
+    return unsub;
+  }, []);
 
   const fetchManagedPages = async () => {
     try {
@@ -1521,18 +2006,61 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
       });
       await new Promise((r) => setTimeout(r, 500));
 
-      // Step 4: TikTok
-      setPublishProgress({
-        step: 4,
-        total: 4,
-        text: ttEnabled
-          ? 'Pushing TikTok Photo Mode Carousel with background sound...'
-          : 'Skipping TikTok...',
-        completed: false,
-      });
-      await new Promise((r) => setTimeout(r, 500));
+      // Step 4: TikTok Content Posting API
+      let ttResult: PlatformPublishResult = {
+        status: 'skipped',
+        timestamp: Date.now(),
+      };
 
-      const isOverallSuccess = !fbEnabled || fbResult.status === 'success';
+      if (ttEnabled) {
+        setPublishProgress({
+          step: 4,
+          total: 4,
+          text: 'Submitting Photo Mode Carousel to TikTok Content Posting API...',
+          completed: false,
+        });
+
+        try {
+          const numAccId = parseInt(ttAccountId, 10) || 1;
+          const photoUrls = (fbImages.length > 0 ? fbImages : images).map((img) => img.url);
+
+          const published = await publishTikTokPhotoPost({
+            account_id: numAccId,
+            title: `${ttHook ? ttHook + '\n\n' : ''}${ttCaption}`,
+            photo_images: photoUrls,
+            photo_cover_index: 1,
+            privacy_level: ttPrivacy === 'private' ? 'SELF_ONLY' : (ttPrivacy === 'friends' ? 'MUTUAL_FOLLOW_FRIENDS' : 'PUBLIC_TO_EVERYONE'),
+            disable_comment: !ttAllowComments,
+            auto_add_music: true,
+          });
+
+          setPublishProgress({
+            step: 4,
+            total: 4,
+            text: `TikTok initialized [ID: ${published.publish_id.slice(0, 16)}...]. Fetching TikTok server status...`,
+            completed: false,
+          });
+
+          await new Promise((r) => setTimeout(r, 1200));
+          const checked = await pollTikTokPublishStatus(published.publish_id);
+
+          ttResult = {
+            status: checked.status === 'SUCCESS' ? 'success' : (checked.status === 'FAILED' ? 'failed' : 'processing') as any,
+            postId: checked.tiktok_post_id || checked.publish_id,
+            postUrl: checked.share_url || (checked.publish_id ? `https://tiktok.com/publish/${checked.publish_id}` : undefined),
+            timestamp: Date.now(),
+          };
+        } catch (err: any) {
+          console.error('TikTok publish error:', err);
+          ttResult = {
+            status: 'failed',
+            error: err.message || 'TikTok API error',
+            timestamp: Date.now(),
+          };
+        }
+      }
+
+      const isOverallSuccess = (!fbEnabled || fbResult.status === 'success') && (!ttEnabled || ttResult.status !== 'failed');
 
       const newItem: AutoPostItem = {
         id: postId,
@@ -1591,7 +2119,7 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
         tiktok: {
           enabled: ttEnabled,
           accountId: ttAccountId,
-          accountName: CONNECTED_TIKTOK_ACCOUNTS.find((a) => a.id === ttAccountId)?.handle || '@tiktok',
+          accountName: storedTikTokAccounts.find((a) => a.id === ttAccountId)?.handle || '@tiktok',
           hook: ttHook,
           caption: ttCaption,
           sound: ttSound,
@@ -1612,12 +2140,7 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
             postUrl: igEnabled ? `https://instagram.com/p/${randomSeed}` : undefined,
             timestamp: Date.now(),
           },
-          tiktok: {
-            status: ttEnabled ? 'success' : 'skipped',
-            postId: ttEnabled ? `tt_${randomSeed}` : undefined,
-            postUrl: ttEnabled ? `https://tiktok.com/@video/${randomSeed}` : undefined,
-            timestamp: Date.now(),
-          },
+          tiktok: ttResult,
         },
       };
 
@@ -1704,58 +2227,172 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
         </div>
       )}
 
-      {/* Responsive & Sticky Style for 2-column Layout */}
-      <style>{`
-        @media (max-width: 860px) {
-          .auto-post-two-col-layout {
-            grid-template-columns: 1fr !important;
-          }
-          .auto-post-sticky-left {
-            position: relative !important;
-            top: auto !important;
-            max-height: none !important;
-            overflow-y: visible !important;
-          }
-        }
-        .auto-post-sticky-left {
-          position: sticky;
-          top: 72px;
-          align-self: start;
-          max-height: calc(100vh - 88px);
-          overflow-y: auto;
-          z-index: 10;
-        }
-        .auto-post-sticky-left::-webkit-scrollbar {
-          width: 5px;
-        }
-        .auto-post-sticky-left::-webkit-scrollbar-track {
-          background: transparent;
-        }
-        .auto-post-sticky-left::-webkit-scrollbar-thumb {
-          background: rgba(156, 163, 175, 0.3);
-          border-radius: 4px;
-        }
-        .auto-post-sticky-left::-webkit-scrollbar-thumb:hover {
-          background: rgba(156, 163, 175, 0.5);
-        }
-      `}</style>
 
-      {/* 2-Column Main Workspace */}
-      <div
-        className="auto-post-two-col-layout"
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'minmax(330px, 450px) 1fr',
-          gap: '1.5rem',
-          alignItems: 'start',
-          marginBottom: '2rem',
-        }}
-      >
-        {/* ======================================================== */}
-        {/* LEFT COLUMN: Photos & Media (Sticky, stays in place)      */}
-        {/* ======================================================== */}
+      {/* Hidden File Input for Master Property Photos */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileUpload}
+        multiple
+        accept="image/*"
+        style={{ display: 'none' }}
+      />
+
+      {/* Top Navbar Portals: Session Switcher & Platform Channel */}
+      {headerCenterEl &&
+        createPortal(
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              padding: '3px',
+              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.05)',
+              borderRadius: '24px',
+              border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid rgba(0, 0, 0, 0.06)',
+              position: 'relative',
+              userSelect: 'none',
+              boxShadow: 'none',
+            }}
+          >
+            {/* Content Button */}
+            <button
+              type="button"
+              onClick={() => setActiveWorkspaceSession('content')}
+              style={{
+                position: 'relative',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '5px 14px',
+                fontSize: '0.8125rem',
+                fontWeight: activeWorkspaceSession === 'content' ? 600 : 500,
+                color: activeWorkspaceSession === 'content' ? 'var(--text-primary)' : 'var(--text-secondary)',
+                backgroundColor: 'transparent',
+                border: 'none',
+                borderRadius: '20px',
+                cursor: 'pointer',
+                zIndex: 1,
+                transition: 'color 0.15s ease',
+                outline: 'none',
+                height: '28px',
+              }}
+            >
+              {activeWorkspaceSession === 'content' && (
+                <motion.div
+                  layoutId="navbarSessionPill"
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    backgroundColor: isDark ? '#1F2937' : '#FFFFFF',
+                    borderRadius: '20px',
+                    boxShadow: isDark
+                      ? '0 1px 4px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.08)'
+                      : '0 1px 4px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.04)',
+                    zIndex: -1,
+                  }}
+                  transition={{ type: 'spring', stiffness: 500, damping: 35 }}
+                />
+              )}
+              <FiEdit3 style={{ fontSize: '0.8125rem' }} />
+              <span>Content</span>
+            </button>
+
+            {/* Images Button */}
+            <button
+              type="button"
+              onClick={() => setActiveWorkspaceSession('images')}
+              style={{
+                position: 'relative',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '5px 12px 5px 14px',
+                fontSize: '0.8125rem',
+                fontWeight: activeWorkspaceSession === 'images' ? 600 : 500,
+                color: activeWorkspaceSession === 'images' ? 'var(--text-primary)' : 'var(--text-secondary)',
+                backgroundColor: 'transparent',
+                border: 'none',
+                borderRadius: '20px',
+                cursor: 'pointer',
+                zIndex: 1,
+                transition: 'color 0.15s ease',
+                outline: 'none',
+                height: '28px',
+              }}
+            >
+              {activeWorkspaceSession === 'images' && (
+                <motion.div
+                  layoutId="navbarSessionPill"
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    backgroundColor: isDark ? '#1F2937' : '#FFFFFF',
+                    borderRadius: '20px',
+                    boxShadow: isDark
+                      ? '0 1px 4px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.08)'
+                      : '0 1px 4px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.04)',
+                    zIndex: -1,
+                  }}
+                  transition={{ type: 'spring', stiffness: 500, damping: 35 }}
+                />
+              )}
+              <FiImage style={{ fontSize: '0.8125rem' }} />
+              <span>Images</span>
+              <span
+                style={{
+                  fontSize: '0.6875rem',
+                  fontWeight: 600,
+                  padding: '1px 7px',
+                  borderRadius: '10px',
+                  backgroundColor: activeWorkspaceSession === 'images'
+                    ? 'var(--accent-primary)'
+                    : (isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.07)'),
+                  color: activeWorkspaceSession === 'images' ? '#FFFFFF' : 'var(--text-secondary)',
+                  transition: 'all 0.15s ease',
+                  marginLeft: '2px',
+                }}
+              >
+                {images.length}
+              </span>
+            </button>
+          </div>,
+          headerCenterEl
+        )}
+
+      {headerActionEl &&
+        createPortal(
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ width: '155px' }}>
+              <Select
+                value={channelOptions.find((opt) => opt.value === activePlatformTab) || channelOptions[0]}
+                onChange={(option: any) => {
+                  if (option) setActivePlatformTab(option.value);
+                }}
+                options={channelOptions}
+                styles={navSelectStyles}
+                isSearchable={false}
+                formatOptionLabel={(option: any) => (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+                      {option.icon}
+                      <span style={{ fontWeight: 600, fontSize: '0.75rem' }}>{option.label}</span>
+                    </div>
+                    {option.enabled && option.value !== 'all' && (
+                      <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#22C55E' }} />
+                    )}
+                  </div>
+                )}
+              />
+            </div>
+          </div>,
+          headerActionEl
+        )}
+
+      {/* ======================================================== */}
+      {/* SESSION 1: IMAGES (Compact Multi-Section Studio)         */}
+      {/* ======================================================== */}
+      {activeWorkspaceSession === 'images' ? (
         <div
-          className="auto-post-sticky-left"
           style={{
             backgroundColor: 'var(--bg-secondary)',
             border: '1px solid var(--border-color)',
@@ -1763,1549 +2400,918 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
             padding: '1.25rem',
             display: 'flex',
             flexDirection: 'column',
-            position: 'sticky',
-            top: '72px',
-            alignSelf: 'start',
-            maxHeight: 'calc(100vh - 88px)',
-            overflowY: 'auto',
-            zIndex: 10,
+            gap: '1.25rem',
+            boxShadow: 'none',
+            marginBottom: '2rem',
           }}
         >
-          {/* Photo Header */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.875rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <div
-                style={{
-                  width: '28px',
-                  height: '28px',
-                  borderRadius: '8px',
-                  backgroundColor: 'rgba(59, 130, 246, 0.12)',
-                  color: 'var(--accent-primary)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <FiImage />
-              </div>
-              <div>
-                <h2 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
-                  Property Photos
+          <style>{`
+            .photo-card-item .photo-card-hover-only {
+              opacity: 0;
+              pointer-events: none;
+              transform: translateY(2px);
+              transition: opacity 0.15s ease, transform 0.15s ease;
+            }
+            .photo-card-item:hover .photo-card-hover-only,
+            .photo-card-item:focus-within .photo-card-hover-only {
+              opacity: 1 !important;
+              pointer-events: auto !important;
+              transform: translateY(0) !important;
+            }
+          `}</style>
+
+          {/* Top Bar Studio Control */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '0.75rem',
+              paddingBottom: '1rem',
+              borderBottom: '1px solid var(--border-color)',
+            }}
+          >
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <h2 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+                  Photo Architecture Studio
                 </h2>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                  First photo is your <strong>Cover Thumbnail</strong>
+                <span
+                  style={{
+                    fontSize: '0.6875rem',
+                    fontWeight: 700,
+                    padding: '2px 8px',
+                    borderRadius: '20px',
+                    backgroundColor: images.length > 0 ? 'rgba(34, 197, 94, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+                    color: images.length > 0 ? '#22C55E' : '#EF4444',
+                    border: `1px solid ${images.length > 0 ? 'rgba(34, 197, 94, 0.25)' : 'rgba(239, 68, 68, 0.25)'}`,
+                  }}
+                >
+                  {images.length} Photos Total
                 </span>
               </div>
             </div>
 
-            <span
-              style={{
-                fontSize: '0.75rem',
-                fontWeight: 600,
-                padding: '3px 8px',
-                borderRadius: '20px',
-                backgroundColor: images.length > 0 ? 'rgba(34, 197, 94, 0.12)' : 'rgba(239, 68, 68, 0.12)',
-                color: images.length > 0 ? '#22C55E' : '#EF4444',
-                border: `1px solid ${images.length > 0 ? 'rgba(34, 197, 94, 0.25)' : 'rgba(239, 68, 68, 0.25)'}`,
-              }}
-            >
-              {images.length} Photos
-            </span>
-          </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <Button
+                variant="secondary"
+                onClick={handleOpenRemainingPostsModal}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.375rem',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  height: '30px',
+                  padding: '0 10px',
+                  borderRadius: '6px',
+                  boxShadow: 'none',
+                }}
+                title="Import photos and details from Remaining Posts"
+              >
+                <FiLayers style={{ color: 'var(--accent-primary)', fontSize: '0.8125rem' }} />
+                <span>From Remaining</span>
+              </Button>
 
-          {/* Action buttons row */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileUpload}
-              multiple
-              accept="image/*"
-              style={{ display: 'none' }}
-            />
-            <Button
-              variant="primary"
-              onClick={() => fileInputRef.current?.click()}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.375rem',
-                fontSize: '0.8125rem',
-                fontWeight: 500,
-                flex: 1,
-                justifyContent: 'center',
-                height: '36px',
-                padding: '0 14px',
-                borderRadius: '6px',
-              }}
-            >
-              <FiUploadCloud />
-              <span>Upload Photos</span>
-            </Button>
+              <button
+                type="button"
+                onClick={() => handleTriggerUpload('body')}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  height: '30px',
+                  padding: '0 12px',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-color)',
+                  backgroundColor: 'var(--bg-main)',
+                  color: 'var(--text-primary)',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <FiUploadCloud style={{ fontSize: '0.8125rem' }} />
+                <span>Upload Photos</span>
+              </button>
 
-            <Button
-              variant="secondary"
-              onClick={handleOpenRemainingPostsModal}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.375rem',
-                fontSize: '0.8125rem',
-                fontWeight: 500,
-                height: '36px',
-                padding: '0 14px',
-                borderRadius: '6px',
-              }}
-              title="Import photos and details from Remaining Posts"
-            >
-              <FiLayers style={{ color: 'var(--accent-primary)' }} />
-              <span>From Remaining</span>
-            </Button>
-          </div>
-
-        {/* Upload Dropzone */}
-        {images.length === 0 ? (
-          <div
-            onDragOver={(e) => {
-              e.preventDefault();
-              setIsDropzoneActive(true);
-            }}
-            onDragLeave={() => setIsDropzoneActive(false)}
-            onDrop={handleDropFiles}
-            onClick={() => fileInputRef.current?.click()}
-            style={{
-              border: `2px dashed ${isDropzoneActive ? 'var(--accent-primary)' : 'var(--border-color)'}`,
-              borderRadius: '12px',
-              padding: '2.5rem 1rem',
-              textAlign: 'center',
-              backgroundColor: isDropzoneActive
-                ? (isDark ? 'rgba(59, 130, 246, 0.1)' : 'rgba(59, 130, 246, 0.05)')
-                : 'transparent',
-              cursor: 'pointer',
-              transition: 'all 0.2s ease',
-            }}
-          >
-            <div
-              style={{
-                width: '52px',
-                height: '52px',
-                borderRadius: '50%',
-                backgroundColor: 'rgba(59, 130, 246, 0.12)',
-                color: 'var(--accent-primary)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '1.5rem',
-                margin: '0 auto 0.75rem',
-              }}
-            >
-              <FiUploadCloud />
+              <Button
+                variant="primary"
+                onClick={() => setActiveWorkspaceSession('content')}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  height: '30px',
+                  padding: '0 14px',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  borderRadius: '6px',
+                  boxShadow: 'none',
+                }}
+              >
+                <span>Continue to Content</span>
+                <FiArrowRight style={{ fontSize: '0.75rem' }} />
+              </Button>
             </div>
-            <h3 style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-primary)', margin: '0 0 0.25rem' }}>
-              Click or drag property photos here
-            </h3>
-            <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', margin: 0 }}>
-              Supports JPG, PNG, WebP up to 30 images. First image will automatically be your cover thumbnail.
-            </p>
           </div>
-        ) : (
-          <div>
-            {/* Compact Reordering Grid with smooth layout animation */}
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(112px, 1fr))',
-                gap: '0.625rem',
-              }}
-            >
-              {images.map((img, index) => {
-                const isFirst = index === 0;
-                const isDragged = draggedImageIndex === index;
 
-                return (
-                  <motion.div
-                    layout
-                    key={img.id}
-                    draggable
-                    onDragStart={(e) => handleDragStart(e, index)}
-                    onDragEnter={() => handleDragEnter(index)}
-                    onDragEnd={handleDragEnd}
+          {/* Render 3 Compact Horizontal Lanes: Header, Body, Footer */}
+          {[
+            {
+              key: 'header' as const,
+              title: 'Header Images',
+              subtitle: 'Cover hero & banner · Shown 1st in album and social feeds',
+              icon: <FiStar style={{ color: '#F59E0B', fontSize: '0.9rem' }} />,
+              badgeColor: '#F59E0B',
+              badgeBg: 'rgba(245, 158, 11, 0.12)',
+              badgeBorder: 'rgba(245, 158, 11, 0.25)',
+              list: headerImages,
+              emptyPrompt: 'No hero photo yet. Drop photo here or click to add cover.',
+            },
+            {
+              key: 'body' as const,
+              title: 'Body Images',
+              subtitle: 'Property gallery · Interior rooms, bedroom, living area, kitchen & amenities',
+              icon: <FiGrid style={{ color: '#3B82F6', fontSize: '0.9rem' }} />,
+              badgeColor: '#3B82F6',
+              badgeBg: 'rgba(59, 130, 246, 0.12)',
+              badgeBorder: 'rgba(59, 130, 246, 0.25)',
+              list: bodyImages,
+              emptyPrompt: 'No gallery photos yet. Drop showcase photos here or click upload.',
+            },
+            {
+              key: 'footer' as const,
+              title: 'Footer Images',
+              subtitle: 'Contact & branding cards · LINE QR code, agent card & ending slide',
+              icon: <FiPhoneCall style={{ color: '#10B981', fontSize: '0.9rem' }} />,
+              badgeColor: '#10B981',
+              badgeBg: 'rgba(16, 185, 129, 0.12)',
+              badgeBorder: 'rgba(16, 185, 129, 0.25)',
+              list: footerImages,
+              emptyPrompt: 'No contact card yet. Drop QR code or closing card here.',
+            },
+          ].map((sec) => {
+            const isTargetHovered = dragOverSection === sec.key;
+
+            return (
+              <div
+                key={sec.key}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  if (dragOverSection !== sec.key) setDragOverSection(sec.key);
+                }}
+                onDragLeave={() => {
+                  if (dragOverSection === sec.key) setDragOverSection(null);
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setDragOverSection(null);
+                  if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                    const files = Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith('image/'));
+                    if (files.length > 0) {
+                      const newImgs: AutoPostImage[] = files.map((file, idx) => ({
+                        id: `upload-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
+                        url: URL.createObjectURL(file),
+                        name: file.name,
+                        isCover: false,
+                        section: sec.key,
+                      }));
+                      setImages((prev) => {
+                        const merged = [...prev, ...newImgs];
+                        return merged.map((img, i) => ({ ...img, isCover: i === 0 }));
+                      });
+                      showToast(`Added ${newImgs.length} photo(s) to ${sec.title}`);
+                    }
+                    return;
+                  }
+                  const draggedId = e.dataTransfer.getData('text/plain') || draggedImageId;
+                  if (draggedId) {
+                    moveImageToSection(draggedId, sec.key);
+                    setDraggedImageId(null);
+                  }
+                }}
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.625rem',
+                  padding: '0.75rem',
+                  borderRadius: '10px',
+                  backgroundColor: isTargetHovered ? 'var(--bg-main)' : 'rgba(0, 0, 0, 0.02)',
+                  border: isTargetHovered
+                    ? `1.5px dashed ${sec.badgeColor}`
+                    : '1px solid rgba(156, 163, 175, 0.15)',
+                  transition: 'border 0.15s ease, background-color 0.15s ease',
+                }}
+              >
+                {/* Lane Header */}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: '0.5rem',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <div
+                      style={{
+                        width: '26px',
+                        height: '26px',
+                        borderRadius: '6px',
+                        backgroundColor: sec.badgeBg,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                      }}
+                    >
+                      {sec.icon}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                        {sec.title}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: '0.625rem',
+                          fontWeight: 700,
+                          padding: '1px 6px',
+                          borderRadius: '10px',
+                          backgroundColor: sec.badgeBg,
+                          color: sec.badgeColor,
+                          border: `1px solid ${sec.badgeBorder}`,
+                        }}
+                      >
+                        {sec.list.length} Photo{sec.list.length !== 1 ? 's' : ''}
+                      </span>
+                      <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', display: 'inline-block' }}>
+                        · {sec.subtitle}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Photos Row / Grid */}
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(135px, 1fr))',
+                    gap: '10px',
+                    alignItems: 'start',
+                  }}
+                >
+                  {sec.list.map((img) => {
+                    const globalIdx = images.findIndex((x) => x.id === img.id);
+                    const isCover = img.isCover || (sec.key === 'header' && sec.list[0]?.id === img.id);
+                    const isDragged = draggedImageId === img.id;
+
+                    return (
+                      <motion.div
+                        layout
+                        key={img.id}
+                        className="photo-card-item"
+                        draggable
+                        onDragStart={(e) => handleDragStartItem(e as any, img.id)}
+                        onDragEnter={() => handleSwapToCard(img.id, sec.key)}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = 'move';
+                          handleSwapToCard(img.id, sec.key);
+                        }}
+                        onDragEnd={handleDragEndItem}
+                        transition={{
+                          type: 'spring',
+                          stiffness: 500,
+                          damping: 32,
+                          mass: 0.5,
+                        }}
+                        onClick={() => handlePhotoClick(img.url)}
+                        style={{
+                          position: 'relative',
+                          height: '110px',
+                          borderRadius: '9px',
+                          overflow: 'hidden',
+                          backgroundColor: '#000000',
+                          border: isDragged
+                            ? '2px dashed var(--accent-primary)'
+                            : isCover
+                            ? '2px solid #F59E0B'
+                            : '1px solid var(--border-color)',
+                          boxShadow: isCover ? '0 2px 8px rgba(245, 158, 11, 0.25)' : 'none',
+                          opacity: isDragged ? 0.35 : 1,
+                          transform: isDragged ? 'scale(0.96)' : 'scale(1)',
+                          cursor: 'grab',
+                          userSelect: 'none',
+                        }}
+                      >
+                        <img
+                          src={img.url}
+                          alt={img.name}
+                          draggable={false}
+                          style={{
+                            width: '100%',
+                            height: '100%',
+                            objectFit: 'cover',
+                            display: 'block',
+                            pointerEvents: 'none',
+                            userSelect: 'none',
+                          }}
+                        />
+
+                        {/* Top-Left Star/Order Badge (Only number, no #) */}
+                        {isCover ? (
+                          <div
+                            style={{
+                              position: 'absolute',
+                              top: '5px',
+                              left: '5px',
+                              zIndex: 10,
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              backgroundColor: '#F59E0B',
+                              color: '#000000',
+                              fontSize: '0.625rem',
+                              fontWeight: 800,
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '3px',
+                              boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+                            }}
+                          >
+                            <FiStar style={{ fill: '#000000', fontSize: '0.625rem' }} />
+                            <span>1 Cover</span>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleMakeCoverById(img.id);
+                            }}
+                            title="Click to make 1 Cover Photo"
+                            style={{
+                              position: 'absolute',
+                              top: '5px',
+                              left: '5px',
+                              zIndex: 10,
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              backgroundColor: 'rgba(0, 0, 0, 0.65)',
+                              border: '1px solid rgba(255, 255, 255, 0.2)',
+                              color: '#FFFFFF',
+                              fontSize: '0.625rem',
+                              fontWeight: 700,
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '2px',
+                              backdropFilter: 'blur(4px)',
+                              cursor: 'pointer',
+                              transition: 'all 0.15s ease',
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = '#F59E0B';
+                              e.currentTarget.style.borderColor = '#F59E0B';
+                              e.currentTarget.style.color = '#000000';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.65)';
+                              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+                              e.currentTarget.style.color = '#FFFFFF';
+                            }}
+                          >
+                            <span>{globalIdx + 1}</span>
+                          </button>
+                        )}
+
+                        {/* Top-Right Delete Button (Only shows on hover) */}
+                        <button
+                          type="button"
+                          className="photo-card-hover-only"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteImageById(img.id);
+                          }}
+                          title="Delete photo"
+                          style={{
+                            position: 'absolute',
+                            top: '5px',
+                            right: '5px',
+                            zIndex: 10,
+                            width: '22px',
+                            height: '22px',
+                            borderRadius: '50%',
+                            backgroundColor: 'rgba(0, 0, 0, 0.65)',
+                            border: '1px solid rgba(255, 255, 255, 0.2)',
+                            color: '#FFFFFF',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '0.6875rem',
+                            backdropFilter: 'blur(4px)',
+                            transition: 'all 0.15s ease',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = '#EF4444';
+                            e.currentTarget.style.borderColor = '#EF4444';
+                            e.currentTarget.style.transform = 'scale(1.08)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.65)';
+                            e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+                            e.currentTarget.style.transform = 'scale(1)';
+                          }}
+                        >
+                          <FiTrash2 />
+                        </button>
+
+                        {/* Ultra-Clean Segmented Micro-Capsule Switcher (Only shows on hover) */}
+                        <div
+                          className="photo-card-hover-only"
+                          onClick={(e) => e.stopPropagation()}
+                          style={{
+                            position: 'absolute',
+                            bottom: '5px',
+                            left: '5px',
+                            right: '5px',
+                            zIndex: 10,
+                            height: '22px',
+                            backgroundColor: 'rgba(15, 23, 42, 0.76)',
+                            backdropFilter: 'blur(8px)',
+                            border: '1px solid rgba(255, 255, 255, 0.14)',
+                            borderRadius: '9999px',
+                            padding: '2px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: '2px',
+                          }}
+                        >
+                          {(['header', 'body', 'footer'] as const).map((targetSec) => {
+                            const isCurrent = (img.section || 'body') === targetSec;
+                            const label = targetSec === 'header' ? 'Header' : targetSec === 'body' ? 'Body' : 'Footer';
+                            const activeBg = targetSec === 'header' ? '#F59E0B' : targetSec === 'body' ? '#3B82F6' : '#10B981';
+                            const activeText = targetSec === 'header' ? '#000000' : '#FFFFFF';
+
+                            return (
+                              <button
+                                key={targetSec}
+                                type="button"
+                                onClick={() => moveImageToSection(img.id, targetSec)}
+                                title={`Move to ${label}`}
+                                style={{
+                                  flex: 1,
+                                  height: '100%',
+                                  padding: 0,
+                                  borderRadius: '9999px',
+                                  border: 'none',
+                                  fontSize: '0.5625rem',
+                                  fontWeight: isCurrent ? 700 : 500,
+                                  letterSpacing: '0.2px',
+                                  backgroundColor: isCurrent ? activeBg : 'transparent',
+                                  color: isCurrent ? activeText : 'rgba(255, 255, 255, 0.65)',
+                                  cursor: 'pointer',
+                                  transition: 'all 0.15s ease',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                }}
+                                onMouseEnter={(e) => {
+                                  if (!isCurrent) {
+                                    e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)';
+                                    e.currentTarget.style.color = '#FFFFFF';
+                                  }
+                                }}
+                                onMouseLeave={(e) => {
+                                  if (!isCurrent) {
+                                    e.currentTarget.style.backgroundColor = 'transparent';
+                                    e.currentTarget.style.color = 'rgba(255, 255, 255, 0.65)';
+                                  }
+                                }}
+                              >
+                                {label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+
+                  {/* Compact Add Slot */}
+                  <div
+                    onClick={() => handleTriggerUpload(sec.key)}
                     onDragOver={(e) => {
                       e.preventDefault();
                       e.dataTransfer.dropEffect = 'move';
                     }}
-                    transition={{
-                      type: 'spring',
-                      damping: 28,
-                      stiffness: 400,
-                      mass: 0.8,
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const id = e.dataTransfer.getData('text/plain') || draggedImageId;
+                      if (id) {
+                        moveImageToSection(id, sec.key);
+                        setDraggedImageId(null);
+                      }
                     }}
-                    onClick={() => handlePhotoClick(img.url)}
-                    title="Click to view full size · Drag to reorder"
                     style={{
-                      borderRadius: '10px',
-                      overflow: 'hidden',
-                      backgroundColor: '#000000',
-                      height: '115px',
-                      border: isDragged
-                        ? '2px dashed var(--accent-primary)'
-                        : isFirst
-                        ? '2px solid #F59E0B'
-                        : '1px solid var(--border-color)',
-                      boxShadow: isDragged
-                        ? '0 8px 20px rgba(0,0,0,0.2)'
-                        : isFirst
-                        ? '0 2px 10px rgba(245, 158, 11, 0.3)'
-                        : 'var(--shadow-sm)',
-                      opacity: isDragged ? 0.35 : 1,
-                      transform: isDragged ? 'scale(0.96)' : 'scale(1)',
-                      position: 'relative',
+                      border: '1.5px dashed var(--border-color)',
+                      borderRadius: '9px',
+                      height: '110px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
                       cursor: 'pointer',
-                      userSelect: 'none',
+                      backgroundColor: 'transparent',
+                      color: 'var(--text-muted)',
+                      gap: '4px',
+                      transition: 'all 0.15s ease',
                     }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = sec.badgeColor;
+                      e.currentTarget.style.color = sec.badgeColor;
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = 'var(--border-color)';
+                      e.currentTarget.style.color = 'var(--text-muted)';
+                    }}
+                    title={`Click or drop here to add to ${sec.title}`}
                   >
-                    {/* Full Size Image Thumbnail - native browser drag disabled so the whole card container is dragged */}
-                    <img
-                      src={img.url}
-                      alt={img.name}
-                      draggable={false}
-                      style={{
-                        width: '100%',
-                        height: '100%',
-                        objectFit: 'cover',
-                        display: 'block',
-                        pointerEvents: 'none',
-                        userSelect: 'none',
-                        ...({ WebkitUserDrag: 'none' } as any),
-                        transition: 'transform 0.2s ease',
-                      }}
-                    />
-
-                    {/* Top-Left: Cover Star Badge (#1) or Quick "Set 1st" Button (#2, #3, ...) */}
-                    {isFirst ? (
+                    <FiPlus style={{ fontSize: '1.15rem' }} />
+                    <span style={{ fontSize: '0.6875rem', fontWeight: 600 }}>+ Add Photo</span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        /* ======================================================== */
+        /* SESSION 2: CONTENT (Full Page Social Media Content)      */
+        /* ======================================================== */
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', marginBottom: '2rem' }}>
+          <style>{`
+            @media (min-width: 820px) {
+              .facebook-pages-row,
+              .social-cards-row {
+                grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+              }
+            }
+          `}</style>
+          {/* Social Media Boxes Stack (Facebook cards 2-in-1-row, Instagram & TikTok 2-in-1-row) */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', width: '100%' }}>
+            {/* FACEBOOK PAGES (Page 1 & Page 2 Individual Cards - 2 in one row) */}
+            {(activePlatformTab === 'all' || activePlatformTab === 'facebook') && (
+              <div
+                className="facebook-pages-row"
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))',
+                  gap: '1.25rem',
+                  width: '100%',
+                  alignItems: 'stretch',
+                }}
+              >
+                {/* --- Facebook Card 1: Page 1 (Dot BKK Living) --- */}
+                <div
+                  style={{
+                    backgroundColor: 'var(--bg-secondary)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '12px',
+                    padding: '1.25rem',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    boxShadow: 'none',
+                  }}
+                >
+                  {/* Header: Page Logo, Name, Auth Manager, Active Toggle */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', paddingBottom: '0.75rem', borderBottom: '1px solid var(--border-color)', flexWrap: 'wrap', gap: '0.75rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                       <div
-                        title="👑 #1 Cover Photo (Displayed 1st on feeds and carousels)"
                         style={{
-                          position: 'absolute',
-                          top: '6px',
-                          left: '6px',
-                          zIndex: 15,
-                          width: '24px',
-                          height: '24px',
-                          borderRadius: '6px',
-                          backgroundColor: '#F59E0B',
-                          color: '#000000',
+                          width: '36px',
+                          height: '36px',
+                          borderRadius: '8px',
+                          backgroundColor: '#1877F2',
+                          color: '#FFFFFF',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          boxShadow: '0 2px 6px rgba(0,0,0,0.4)',
-                          cursor: 'default',
+                          fontSize: '1.2rem',
+                          flexShrink: 0,
+                          overflow: 'hidden',
+                          border: '1px solid var(--border-color)',
+                          boxShadow: 'none',
                         }}
                       >
-                        <FiStar style={{ fill: '#000000', fontSize: '0.75rem' }} />
+                        {page1Picture ? (
+                          <img
+                            src={page1Picture}
+                            alt={page1Name}
+                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                            onError={(e) => {
+                              (e.currentTarget as HTMLImageElement).style.display = 'none';
+                            }}
+                          />
+                        ) : (
+                          <FaFacebook />
+                        )}
                       </div>
-                    ) : (
+                      <div>
+                        <h3 style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
+                          {page1Name}
+                        </h3>
+                        <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                          Connected Facebook Page
+                        </span>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                       <button
                         type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleMakeCover(index);
-                        }}
-                        title="Click to set as #1 Cover Photo"
+                        onClick={() => (onNavigateTab ? onNavigateTab('auth-manager') : setIsTokenManagerModalOpen(true))}
                         style={{
-                          position: 'absolute',
-                          top: '6px',
-                          left: '6px',
-                          zIndex: 15,
-                          height: '24px',
-                          padding: '0 6px',
-                          borderRadius: '6px',
-                          border: '1px solid rgba(255, 255, 255, 0.25)',
-                          backgroundColor: 'rgba(0, 0, 0, 0.65)',
-                          color: '#FFFFFF',
-                          fontSize: '0.6875rem',
-                          fontWeight: 600,
-                          backdropFilter: 'blur(4px)',
-                          boxShadow: '0 2px 6px rgba(0,0,0,0.4)',
+                          background: 'var(--bg-main)',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '7px',
+                          padding: '5px 11px',
+                          color: 'var(--text-secondary)',
+                          fontSize: '0.75rem',
+                          fontWeight: 500,
                           cursor: 'pointer',
-                          display: 'flex',
+                          display: 'inline-flex',
                           alignItems: 'center',
-                          gap: '3px',
+                          gap: '6px',
+                          boxShadow: 'none',
                           transition: 'all 0.15s ease',
                         }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.backgroundColor = '#F59E0B';
-                          e.currentTarget.style.borderColor = '#F59E0B';
-                          e.currentTarget.style.color = '#000000';
-                          e.currentTarget.style.transform = 'scale(1.05)';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.65)';
-                          e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.25)';
-                          e.currentTarget.style.color = '#FFFFFF';
-                          e.currentTarget.style.transform = 'scale(1)';
-                        }}
                       >
-                        <FiStar style={{ fontSize: '0.6875rem' }} />
-                        <span>#{index + 1}</span>
+                        <FiSliders style={{ fontSize: '0.75rem' }} />
+                        <span>Auth Manager</span>
                       </button>
-                    )}
 
-                    {/* Top-Right: Delete Button (Overlaid on image, comfortable 30x30px clickable size) */}
+                      <SwitchToggle
+                        checked={fbPage1Enabled}
+                        onChange={(val) => setFbPage1Enabled(val)}
+                        activeColor="#1877F2"
+                        label={fbPage1Enabled ? 'Active' : 'Off'}
+                        isDark={isDark}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Single Content Box with Bold / Normal formatting */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', flex: 1 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                        Post Content
+                      </label>
+                      <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                        Title, description & hashtags combined
+                      </span>
+                    </div>
+
+                    <RichPostEditor
+                      initialHtml={fbPage1Html}
+                      disabled={!fbPage1Enabled}
+                      height="420px"
+                      onChange={(socialText, rawHtml) => {
+                        setFbCaption(socialText);
+                        setFbPage1Html(rawHtml);
+                        setFbHeadline('');
+                        setFbHashtags('');
+                      }}
+                      placeholder={`Write complete post for ${page1Name}...`}
+                    />
+                  </div>
+
+                  {/* Preview Post Button (Normal size, centered) */}
+                  <div style={{ display: 'flex', justifyContent: 'center', marginTop: '1rem' }}>
                     <button
                       type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteImage(index);
+                      onClick={() => {
+                        setPreviewFbTab('page1');
+                        setPreviewPlatform('facebook');
                       }}
-                      title="Delete photo"
+                      disabled={!fbPage1Enabled}
                       style={{
-                        position: 'absolute',
-                        top: '6px',
-                        right: '6px',
-                        zIndex: 15,
-                        width: '24px',
-                        height: '24px',
-                        borderRadius: '6px',
-                        border: '1px solid rgba(255, 255, 255, 0.25)',
-                        backgroundColor: 'rgba(0, 0, 0, 0.65)',
-                        color: '#FFFFFF',
-                        cursor: 'pointer',
-                        display: 'flex',
+                        display: 'inline-flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        fontSize: '0.75rem',
-                        backdropFilter: 'blur(4px)',
-                        boxShadow: '0 2px 6px rgba(0,0,0,0.4)',
+                        gap: '6px',
+                        height: '32px',
+                        padding: '0 14px',
+                        fontSize: '0.78125rem',
+                        fontWeight: 500,
+                        borderRadius: '6px',
+                        border: '1px solid var(--border-color)',
+                        color: fbPage1Enabled ? 'var(--text-primary)' : 'var(--text-muted)',
+                        backgroundColor: 'var(--bg-main)',
+                        cursor: fbPage1Enabled ? 'pointer' : 'not-allowed',
+                        boxShadow: 'none',
                         transition: 'all 0.15s ease',
                       }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.backgroundColor = '#EF4444';
-                        e.currentTarget.style.borderColor = '#EF4444';
-                        e.currentTarget.style.transform = 'scale(1.08)';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.65)';
-                        e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.25)';
-                        e.currentTarget.style.transform = 'scale(1)';
-                      }}
                     >
-                      <FiTrash2 />
+                      <FiEye style={{ fontSize: '0.8125rem' }} />
+                      <span>Preview {page1Name} Post</span>
                     </button>
-                  </motion.div>
-                );
-              })}
+                  </div>
+                </div>
 
-              {/* Add More Photos Slot */}
-              <div
-                onClick={() => fileInputRef.current?.click()}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setIsDropzoneActive(true);
-                }}
-                onDragLeave={() => setIsDropzoneActive(false)}
-                onDrop={handleDropFiles}
-                style={{
-                  border: '2px dashed var(--border-color)',
-                  borderRadius: '10px',
-                  minHeight: '115px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer',
-                  backgroundColor: 'transparent',
-                  color: 'var(--text-muted)',
-                  gap: '4px',
-                  transition: 'border-color 0.2s ease, color 0.2s ease',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = 'var(--accent-primary)';
-                  e.currentTarget.style.color = 'var(--accent-primary)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = 'var(--border-color)';
-                  e.currentTarget.style.color = 'var(--text-muted)';
-                }}
-              >
-                <FiPlus style={{ fontSize: '1.25rem' }} />
-                <span style={{ fontSize: '0.6875rem', fontWeight: 600 }}>Add Photos</span>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* ======================================================== */}
-      {/* SECOND (RIGHT) COLUMN: Social Media Boxes & Publishing   */}
-      {/* ======================================================== */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', minWidth: 0 }}>
-        {/* Right Column Header with Platform Switcher */}
-        <div
-          style={{
-            backgroundColor: 'var(--bg-secondary)',
-            border: '1px solid var(--border-color)',
-            borderRadius: '14px',
-            padding: '1rem 1.25rem',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexWrap: 'wrap',
-            gap: '0.75rem',
-          }}
-        >
-          <div>
-            <h2 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-              Social Media Content
-            </h2>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              Dedicated caption, hashtags, and settings for each channel
-            </span>
-          </div>
-
-          {/* Platform Tabs */}
-          <div style={{ display: 'flex', gap: '4px', backgroundColor: 'var(--bg-main)', padding: '3px', borderRadius: '8px', border: '1px solid var(--border-color)', flexWrap: 'wrap' }}>
-            <button
-              type="button"
-              onClick={() => setActivePlatformTab('all')}
-              style={{
-                padding: '5px 10px',
-                borderRadius: '6px',
-                border: 'none',
-                backgroundColor: activePlatformTab === 'all' ? 'var(--accent-primary)' : 'transparent',
-                color: activePlatformTab === 'all' ? '#FFFFFF' : 'var(--text-secondary)',
-                fontSize: '0.75rem',
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
-            >
-              All Channels
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActivePlatformTab('facebook')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '5px',
-                padding: '5px 10px',
-                borderRadius: '6px',
-                border: 'none',
-                backgroundColor: activePlatformTab === 'facebook' ? '#1877F2' : 'transparent',
-                color: activePlatformTab === 'facebook' ? '#FFFFFF' : 'var(--text-secondary)',
-                fontSize: '0.75rem',
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
-            >
-              <FaFacebook />
-              <span>Facebook</span>
-              {fbEnabled && <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#22C55E' }} />}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActivePlatformTab('instagram')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '5px',
-                padding: '5px 10px',
-                borderRadius: '6px',
-                border: 'none',
-                backgroundColor: activePlatformTab === 'instagram' ? '#E4405F' : 'transparent',
-                color: activePlatformTab === 'instagram' ? '#FFFFFF' : 'var(--text-secondary)',
-                fontSize: '0.75rem',
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
-            >
-              <FaInstagram />
-              <span>Instagram</span>
-              {igEnabled && <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#22C55E' }} />}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActivePlatformTab('tiktok')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '5px',
-                padding: '5px 10px',
-                borderRadius: '6px',
-                border: 'none',
-                backgroundColor: activePlatformTab === 'tiktok' ? (isDark ? '#00F2FE' : '#0891B2') : 'transparent',
-                color: activePlatformTab === 'tiktok' ? '#000000' : 'var(--text-secondary)',
-                fontSize: '0.75rem',
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
-            >
-              <FaTiktok />
-              <span>TikTok</span>
-              {ttEnabled && <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#22C55E' }} />}
-            </button>
-          </div>
-        </div>
-
-        {/* Social Media Boxes Stack (One card per row, full width) */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', width: '100%' }}>
-          {/* ==================================================== */}
-          {/* Top Facebook Multi-Page Connection & Discovery Bar   */}
-          {/* ==================================================== */}
-          {(activePlatformTab === 'all' || activePlatformTab === 'facebook') && (
-            <div
-              style={{
-                padding: '12px 16px',
-                borderRadius: '12px',
-                backgroundColor: 'var(--bg-secondary)',
-                border: '1px solid var(--border-color)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                flexWrap: 'wrap',
-                gap: '12px',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.03)',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                {/* --- Facebook Card 2: Page 2 (Bolt Haven Realty) --- */}
                 <div
                   style={{
-                    width: '34px',
-                    height: '34px',
-                    borderRadius: '8px',
-                    backgroundColor: '#1877F2',
-                    color: '#FFFFFF',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '1.125rem',
-                    boxShadow: '0 2px 6px rgba(24, 119, 242, 0.25)',
-                  }}
-                >
-                  <SiMeta />
-                </div>
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                      Facebook Multi-Page Management
-                    </span>
-                    <span style={{ fontSize: '0.625rem', fontWeight: 600, color: '#1877F2', backgroundColor: 'rgba(24, 119, 242, 0.1)', padding: '2px 7px', borderRadius: '4px' }}>
-                      Meta Graph API v26.0
-                    </span>
-                  </div>
-                  <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-                    Official OAuth authorization, automatic Page discovery, and independent posting channels
-                  </span>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                {/* Connect / Reconnect Facebook Account button */}
-                <button
-                  type="button"
-                  onClick={handleConnectFacebookOAuth}
-                  disabled={isConnectingMeta}
-                  style={{
-                    backgroundColor: '#1877F2',
-                    border: 'none',
-                    borderRadius: '8px',
-                    padding: '7px 14px',
-                    color: '#FFFFFF',
-                    fontSize: '0.75rem',
-                    fontWeight: 600,
-                    cursor: isConnectingMeta ? 'wait' : 'pointer',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    boxShadow: '0 2px 6px rgba(24, 119, 242, 0.3)',
-                    transition: 'all 0.15s ease',
-                  }}
-                  title="Authorize your Facebook Account using official Meta OAuth flow"
-                >
-                  <SiMeta />
-                  <span>
-                    {isConnectingMeta
-                      ? 'Connecting...'
-                      : page1TokenStatus === 'EXPIRED' || page1TokenStatus === 'RECONNECT_REQUIRED'
-                      ? 'Reconnect Facebook'
-                      : 'Connect Facebook Account'}
-                  </span>
-                </button>
-
-                {/* Select Facebook Pages button */}
-                <button
-                  type="button"
-                  onClick={() => setIsPageSelectionModalOpen(true)}
-                  style={{
-                    backgroundColor: 'transparent',
-                    border: '1px solid #1877F2',
-                    borderRadius: '8px',
-                    padding: '6px 12px',
-                    color: '#1877F2',
-                    fontSize: '0.75rem',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '5px',
-                    transition: 'all 0.15s ease',
-                  }}
-                  title="Discover and select Facebook Pages to connect"
-                >
-                  <FiSliders />
-                  <span>Select Pages to Connect</span>
-                </button>
-
-                {/* Sync All Pages button */}
-                <button
-                  type="button"
-                  onClick={async () => {
-                    showToast('Syncing all Facebook Pages from Meta...');
-                    await fetch('http://localhost:8085/api/facebook/pages/refresh-all', { method: 'POST' });
-                    fetchManagedPages();
-                  }}
-                  style={{
-                    backgroundColor: 'transparent',
+                    backgroundColor: 'var(--bg-secondary)',
                     border: '1px solid var(--border-color)',
-                    borderRadius: '8px',
-                    padding: '6px 10px',
-                    color: 'var(--text-secondary)',
-                    fontSize: '0.75rem',
-                    fontWeight: 500,
-                    cursor: 'pointer',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '5px',
+                    borderRadius: '12px',
+                    padding: '1.25rem',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    boxShadow: 'none',
                   }}
-                  title="Sync all connected Facebook Pages from Meta Graph API"
                 >
-                  <FiRefreshCw />
-                  <span>Sync All</span>
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* ==================================================== */}
-          {/* BOX 1A: Facebook Page 1 (61568058604134)             */}
-          {/* ==================================================== */}
-          {(activePlatformTab === 'all' || activePlatformTab === 'facebook') && (
-            <div
-              style={{
-                backgroundColor: 'var(--bg-secondary)',
-                border: fbPage1Enabled ? '2px solid rgba(24, 119, 242, 0.45)' : '1px solid var(--border-color)',
-                borderRadius: '14px',
-                padding: '1.25rem',
-                display: 'flex',
-                flexDirection: 'column',
-                boxShadow: fbPage1Enabled ? '0 4px 20px rgba(24, 119, 242, 0.08)' : 'none',
-                transition: 'all 0.2s ease',
-              }}
-            >
-              {/* Box Header */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', paddingBottom: '0.75rem', borderBottom: '1px solid var(--border-color)', flexWrap: 'wrap', gap: '0.75rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                  <div
-                    style={{
-                      width: '38px',
-                      height: '38px',
-                      borderRadius: '10px',
-                      backgroundColor: '#1877F2',
-                      color: '#FFFFFF',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '1.25rem',
-                      flexShrink: 0,
-                      boxShadow: '0 2px 6px rgba(24, 119, 242, 0.3)',
-                      overflow: 'hidden',
-                      position: 'relative',
-                      border: '1px solid rgba(24, 119, 242, 0.25)',
-                    }}
-                  >
-                    {page1Picture ? (
-                      <img
-                        src={page1Picture}
-                        alt={page1Name}
-                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                        onError={(e) => {
-                          (e.currentTarget as HTMLImageElement).style.display = 'none';
+                  {/* Header: Page Logo, Name, Auth Manager, Active Toggle */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', paddingBottom: '0.75rem', borderBottom: '1px solid var(--border-color)', flexWrap: 'wrap', gap: '0.75rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                      <div
+                        style={{
+                          width: '36px',
+                          height: '36px',
+                          borderRadius: '8px',
+                          backgroundColor: '#10B981',
+                          color: '#FFFFFF',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '1.2rem',
+                          flexShrink: 0,
+                          overflow: 'hidden',
+                          border: '1px solid var(--border-color)',
+                          boxShadow: 'none',
                         }}
+                      >
+                        {page2Picture ? (
+                          <img
+                            src={page2Picture}
+                            alt={page2Name}
+                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                            onError={(e) => {
+                              (e.currentTarget as HTMLImageElement).style.display = 'none';
+                            }}
+                          />
+                        ) : (
+                          <FaFacebook />
+                        )}
+                      </div>
+                      <div>
+                        <h3 style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
+                          {page2Name}
+                        </h3>
+                        <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                          Connected Facebook Page
+                        </span>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <button
+                        type="button"
+                        onClick={() => (onNavigateTab ? onNavigateTab('auth-manager') : setIsTokenManagerModalOpen(true))}
+                        style={{
+                          background: 'var(--bg-main)',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '7px',
+                          padding: '5px 11px',
+                          color: 'var(--text-secondary)',
+                          fontSize: '0.75rem',
+                          fontWeight: 500,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          boxShadow: 'none',
+                          transition: 'all 0.15s ease',
+                        }}
+                      >
+                        <FiSliders style={{ fontSize: '0.75rem' }} />
+                        <span>Auth Manager</span>
+                      </button>
+
+                      <SwitchToggle
+                        checked={fbPage2Enabled}
+                        onChange={(val) => setFbPage2Enabled(val)}
+                        activeColor="#1877F2"
+                        label={fbPage2Enabled ? 'Active' : 'Off'}
+                        isDark={isDark}
                       />
-                    ) : (
-                      <FaFacebook />
-                    )}
+                    </div>
                   </div>
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                      <h3 style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-                        {page1Name}
-                      </h3>
-                      <span style={{ fontSize: '0.625rem', fontWeight: 600, color: '#1877F2', backgroundColor: 'rgba(24, 119, 242, 0.1)', padding: '2px 7px', borderRadius: '4px' }}>
-                        Slot 1
-                      </span>
-                      <span style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-muted)', backgroundColor: 'var(--bg-main)', padding: '2px 7px', borderRadius: '4px', border: '1px solid var(--border-color)' }}>
-                        Meta Graph API v26.0
+
+                  {/* Single Content Box with Bold / Normal formatting */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', flex: 1 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                        Post Content
+                      </label>
+                      <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                        Title, description & hashtags combined
                       </span>
                     </div>
-                    <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
-                      Page ID: {page1PageId}
-                    </span>
-                  </div>
-                </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <button
-                    type="button"
-                    onClick={() => (onNavigateTab ? onNavigateTab('facebook-tokens') : setIsTokenManagerModalOpen(true))}
-                    style={{
-                      background: 'none',
-                      border: '1px solid rgba(24, 119, 242, 0.3)',
-                      borderRadius: '7px',
-                      padding: '4px 10px',
-                      color: '#1877F2',
-                      fontSize: '0.6875rem',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '5px',
-                      backgroundColor: 'rgba(24, 119, 242, 0.05)',
-                      transition: 'all 0.15s ease',
-                    }}
-                    title="Open Page Token Manager menu"
-                  >
-                    <FiSliders />
-                    <span>Page Tokens</span>
-                  </button>
-
-                  {/* Enable Switch Toggle */}
-                  <SwitchToggle
-                    checked={fbPage1Enabled}
-                    onChange={(val) => {
-                      if (val && (!page1Connected || !page1Meta?.can_create_content)) {
-                        showToast('⚠️ Auto-publishing requires a valid token with verified CREATE_CONTENT permission. Run "Test Connection" first.');
-                        return;
-                      }
-                      setFbPage1Enabled(val);
-                    }}
-                    activeColor="#1877F2"
-                    label={fbPage1Enabled ? 'Active' : 'Off'}
-                    isDark={isDark}
-                  />
-                </div>
-              </div>
-
-              {/* Status Row */}
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '8px',
-                  padding: '8px 12px',
-                  borderRadius: '8px',
-                  backgroundColor: 'var(--bg-main)',
-                  border: '1px solid var(--border-color)',
-                  marginBottom: '0.875rem',
-                  fontSize: '0.6875rem',
-                  flexWrap: 'wrap',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                  {/* Verified API Connection Status */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span
-                      style={{
-                        width: '8px',
-                        height: '8px',
-                        borderRadius: '50%',
-                        backgroundColor: page1Connected ? '#22C55E' : '#EF4444',
-                        boxShadow: page1Connected ? '0 0 6px rgba(34, 197, 94, 0.6)' : '0 0 6px rgba(239, 68, 68, 0.6)',
+                    <RichPostEditor
+                      initialHtml={fbPage2Html}
+                      disabled={!fbPage2Enabled}
+                      height="420px"
+                      onCopyFromOther={() => {
+                        setFbPage2Html(fbPage1Html);
+                        setFbPage2Caption(fbCaption);
+                        setFbPage2Headline('');
+                        setFbPage2Hashtags('');
+                        showToast(`Copied content from ${page1Name} to ${page2Name}`);
                       }}
+                      copyFromOtherLabel={`Copy from ${page1Name}`}
+                      onChange={(socialText, rawHtml) => {
+                        setFbPage2Caption(socialText);
+                        setFbPage2Html(rawHtml);
+                        setFbPage2Headline('');
+                        setFbPage2Hashtags('');
+                      }}
+                      placeholder={`Write complete post for ${page2Name}...`}
                     />
-                    <span>
-                      Connection:{' '}
-                      <strong style={{ color: page1Connected ? '#22C55E' : '#EF4444' }}>
-                        {page1Connected ? 'Connected' : 'Disconnected'}
-                      </strong>
-                    </span>
                   </div>
 
-                  <span style={{ color: 'var(--border-color)', opacity: 0.6 }}>|</span>
-
-                  {/* Token Validity */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>Token:</span>
-                    <span
-                      style={{
-                        padding: '1px 6px',
-                        borderRadius: '4px',
-                        fontSize: '0.6875rem',
-                        fontWeight: 600,
-                        backgroundColor:
-                          page1TokenStatus === 'VALID'
-                            ? 'rgba(34, 197, 94, 0.12)'
-                            : page1TokenStatus === 'MISSING'
-                            ? 'rgba(239, 68, 68, 0.1)'
-                            : 'rgba(245, 158, 11, 0.12)',
-                        color:
-                          page1TokenStatus === 'VALID'
-                            ? '#22C55E'
-                            : page1TokenStatus === 'MISSING'
-                            ? '#EF4444'
-                            : '#F59E0B',
-                        border: `1px solid ${
-                          page1TokenStatus === 'VALID'
-                            ? 'rgba(34, 197, 94, 0.25)'
-                            : page1TokenStatus === 'MISSING'
-                            ? 'rgba(239, 68, 68, 0.25)'
-                            : 'rgba(245, 158, 11, 0.25)'
-                        }`,
-                      }}
-                    >
-                      {formatTokenValidity(page1TokenStatus, page1Meta?.has_token)}
-                    </span>
-                  </div>
-
-                  <span style={{ color: 'var(--border-color)', opacity: 0.6 }}>|</span>
-
-                  {/* Publishing Permission Status */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>Publishing:</span>
-                    <span
-                      style={{
-                        padding: '1px 6px',
-                        borderRadius: '4px',
-                        fontSize: '0.6875rem',
-                        fontWeight: 600,
-                        backgroundColor: page1Meta?.can_create_content ? 'rgba(34, 197, 94, 0.12)' : 'rgba(239, 68, 68, 0.1)',
-                        color: page1Meta?.can_create_content ? '#22C55E' : '#EF4444',
-                        border: `1px solid ${page1Meta?.can_create_content ? 'rgba(34, 197, 94, 0.25)' : 'rgba(239, 68, 68, 0.25)'}`,
-                      }}
-                    >
-                      {page1Meta?.can_create_content ? 'CREATE_CONTENT' : 'Limited Rights'}
-                    </span>
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                  {/* Reconnect button if expired or reconnect required */}
-                  {(page1TokenStatus === 'EXPIRED' || page1TokenStatus === 'RECONNECT_REQUIRED' || page1TokenStatus === 'INVALID') && (
+                  {/* Preview Post Button (Normal size, centered) */}
+                  <div style={{ display: 'flex', justifyContent: 'center', marginTop: '1rem' }}>
                     <button
                       type="button"
-                      onClick={handleConnectFacebookOAuth}
+                      onClick={() => {
+                        setPreviewFbTab('page2');
+                        setPreviewPlatform('facebook');
+                      }}
+                      disabled={!fbPage2Enabled}
                       style={{
-                        background: '#1877F2',
-                        border: 'none',
-                        borderRadius: '5px',
-                        padding: '3px 9px',
-                        color: '#FFFFFF',
-                        fontSize: '0.6875rem',
-                        fontWeight: 600,
-                        cursor: 'pointer',
                         display: 'inline-flex',
                         alignItems: 'center',
-                        gap: '4px',
-                        boxShadow: '0 1px 4px rgba(24, 119, 242, 0.3)',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        height: '32px',
+                        padding: '0 14px',
+                        fontSize: '0.78125rem',
+                        fontWeight: 500,
+                        borderRadius: '6px',
+                        border: '1px solid var(--border-color)',
+                        color: fbPage2Enabled ? 'var(--text-primary)' : 'var(--text-muted)',
+                        backgroundColor: 'var(--bg-main)',
+                        cursor: fbPage2Enabled ? 'pointer' : 'not-allowed',
+                        boxShadow: 'none',
+                        transition: 'all 0.15s ease',
                       }}
                     >
-                      <SiMeta />
-                      <span>Reconnect</span>
+                      <FiEye style={{ fontSize: '0.8125rem' }} />
+                      <span>Preview {page2Name} Post</span>
                     </button>
-                  )}
-
-                  {/* Test Connection button */}
-                  <button
-                    type="button"
-                    onClick={() => handleTestPageConnection(page1PageId)}
-                    disabled={testingPageId === page1PageId}
-                    style={{
-                      background: 'none',
-                      border: '1px solid rgba(24, 119, 242, 0.3)',
-                      borderRadius: '5px',
-                      padding: '3px 8px',
-                      color: '#1877F2',
-                      fontSize: '0.6875rem',
-                      fontWeight: 600,
-                      cursor: testingPageId === page1PageId ? 'wait' : 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      backgroundColor: 'rgba(24, 119, 242, 0.05)',
-                    }}
-                    title="Validate Page Access Token and CREATE_CONTENT permission"
-                  >
-                    <FiCheckCircle style={{ animation: testingPageId === page1PageId ? 'spin 1s linear infinite' : 'none' }} />
-                    <span>{testingPageId === page1PageId ? 'Testing...' : 'Test Connection'}</span>
-                  </button>
-
-                  {/* Refresh Page Info button */}
-                  <button
-                    type="button"
-                    onClick={() => handleRefreshPageInfo(page1PageId)}
-                    disabled={refreshingPageId === page1PageId}
-                    style={{
-                      background: 'none',
-                      border: '1px solid rgba(24, 119, 242, 0.3)',
-                      borderRadius: '5px',
-                      padding: '3px 8px',
-                      color: '#1877F2',
-                      fontSize: '0.6875rem',
-                      fontWeight: 600,
-                      cursor: refreshingPageId === page1PageId ? 'wait' : 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      backgroundColor: 'rgba(24, 119, 242, 0.05)',
-                      transition: 'all 0.15s ease',
-                    }}
-                    title="Retrieve real Facebook Page name and profile picture from Meta Graph API"
-                  >
-                    <FiRefreshCw
-                      style={{
-                        fontSize: '0.625rem',
-                        animation: refreshingPageId === page1PageId ? 'spin 1s linear infinite' : 'none',
-                      }}
-                    />
-                    <span>{refreshingPageId === page1PageId ? 'Refreshing...' : 'Refresh Info'}</span>
-                  </button>
-
-                  {/* Manage Token button */}
-                  <button
-                    type="button"
-                    onClick={() => (onNavigateTab ? onNavigateTab('facebook-tokens') : setIsTokenManagerModalOpen(true))}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      color: '#1877F2',
-                      cursor: 'pointer',
-                      padding: '3px 4px',
-                      fontWeight: 600,
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '3px',
-                      fontSize: '0.6875rem',
-                    }}
-                  >
-                    <span>Manage Token</span>
-                    <FiExternalLink style={{ fontSize: '0.625rem' }} />
-                  </button>
-                </div>
-              </div>
-
-              {/* Zero Mixing Callout */}
-              <div
-                style={{
-                  padding: '6px 10px',
-                  borderRadius: '6px',
-                  backgroundColor: 'rgba(24, 119, 242, 0.05)',
-                  border: '1px solid rgba(24, 119, 242, 0.15)',
-                  fontSize: '0.6875rem',
-                  color: 'var(--text-secondary)',
-                  marginBottom: '1rem',
-                  lineHeight: 1.35,
-                }}
-              >
-                🔒 <strong>Isolated Publishing:</strong> Content in this box will only be published to {page1Name} ({page1PageId}).
-              </div>
-
-              {/* Form Fields */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem', flex: 1 }}>
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                    <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                      Page 1 Title
-                    </label>
                   </div>
-                  <input
-                    type="text"
-                    value={fbHeadline}
-                    onChange={(e) => setFbHeadline(e.target.value)}
-                    disabled={!fbPage1Enabled}
-                    placeholder="Page 1 headline (e.g. ✨ Modern Studio at Ideo Sukhumvit 93 for Rent)"
-                    style={{
-                      width: '100%',
-                      height: '38px',
-                      padding: '8px 12px',
-                      borderRadius: '8px',
-                      border: '1px solid var(--border-color)',
-                      backgroundColor: 'var(--bg-main)',
-                      color: 'var(--text-primary)',
-                      fontSize: '0.8125rem',
-                      outline: 'none',
-                      boxSizing: 'border-box',
-                    }}
-                  />
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                    <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                      Page 1 Description & Details
-                    </label>
-                    <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-                      {fbCaption.length} characters
-                    </span>
-                  </div>
-                  <textarea
-                    value={fbCaption}
-                    onChange={(e) => setFbCaption(e.target.value)}
-                    disabled={!fbPage1Enabled}
-                    rows={7}
-                    placeholder="Write detailed property description, pricing, amenities, and contact info for Page 1..."
-                    style={{
-                      width: '100%',
-                      padding: '10px 12px',
-                      borderRadius: '8px',
-                      border: '1px solid var(--border-color)',
-                      backgroundColor: 'var(--bg-main)',
-                      color: 'var(--text-primary)',
-                      fontSize: '0.8125rem',
-                      outline: 'none',
-                      resize: 'vertical',
-                      fontFamily: 'inherit',
-                      lineHeight: 1.5,
-                      boxSizing: 'border-box',
-                    }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                    Page 1 Hashtags
-                  </label>
-                  <input
-                    type="text"
-                    value={fbHashtags}
-                    onChange={(e) => setFbHashtags(e.target.value)}
-                    disabled={!fbPage1Enabled}
-                    placeholder="#IdeoSukhumvit93 #BangkokCondo #CondoForRent"
-                    style={{
-                      width: '100%',
-                      height: '36px',
-                      padding: '8px 12px',
-                      borderRadius: '8px',
-                      border: '1px solid var(--border-color)',
-                      backgroundColor: 'var(--bg-main)',
-                      color: 'var(--text-primary)',
-                      fontSize: '0.8125rem',
-                      outline: 'none',
-                      boxSizing: 'border-box',
-                    }}
-                  />
                 </div>
               </div>
+            )}
 
-              {/* Preview Button */}
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  setPreviewFbTab('page1');
-                  setPreviewPlatform('facebook');
-                }}
-                disabled={!fbPage1Enabled}
-                style={{
-                  width: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '6px',
-                  height: '36px',
-                  fontSize: '0.8125rem',
-                  fontWeight: 500,
-                  borderRadius: '6px',
-                  borderColor: 'rgba(24, 119, 242, 0.3)',
-                  color: '#1877F2',
-                  backgroundColor: 'rgba(24, 119, 242, 0.05)',
-                  marginTop: '1rem',
-                }}
-              >
-                <FiEye />
-                <span>Preview Page 1 Post</span>
-              </Button>
-            </div>
-          )}
-
-          {/* ==================================================== */}
-          {/* BOX 1B: Facebook Page 2 (61593000699921)             */}
-          {/* ==================================================== */}
-          {(activePlatformTab === 'all' || activePlatformTab === 'facebook') && (
+          {/* OTHER PLATFORMS: Instagram & TikTok (2 in one row when both shown, or full width if single) */}
+          {(activePlatformTab === 'all' || activePlatformTab === 'instagram' || activePlatformTab === 'tiktok') && (
             <div
+              className="social-cards-row"
               style={{
-                backgroundColor: 'var(--bg-secondary)',
-                border: fbPage2Enabled ? '2px solid rgba(16, 185, 129, 0.4)' : '1px solid var(--border-color)',
-                borderRadius: '14px',
-                padding: '1.25rem',
-                display: 'flex',
-                flexDirection: 'column',
-                boxShadow: fbPage2Enabled ? '0 4px 20px rgba(16, 185, 129, 0.08)' : 'none',
-                transition: 'all 0.2s ease',
+                display: 'grid',
+                gridTemplateColumns:
+                  activePlatformTab === 'all'
+                    ? 'repeat(auto-fit, minmax(360px, 1fr))'
+                    : '1fr',
+                gap: '1.25rem',
+                width: '100%',
+                alignItems: 'stretch',
               }}
             >
-              {/* Box Header */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', paddingBottom: '0.75rem', borderBottom: '1px solid var(--border-color)', flexWrap: 'wrap', gap: '0.75rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                  <div
-                    style={{
-                      width: '38px',
-                      height: '38px',
-                      borderRadius: '10px',
-                      backgroundColor: '#10B981',
-                      color: '#FFFFFF',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '1.25rem',
-                      flexShrink: 0,
-                      boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)',
-                      overflow: 'hidden',
-                      position: 'relative',
-                      border: '1px solid rgba(16, 185, 129, 0.25)',
-                    }}
-                  >
-                    {page2Picture ? (
-                      <img
-                        src={page2Picture}
-                        alt={page2Name}
-                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                        onError={(e) => {
-                          (e.currentTarget as HTMLImageElement).style.display = 'none';
-                        }}
-                      />
-                    ) : (
-                      <FaFacebook />
-                    )}
-                  </div>
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                      <h3 style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-                        {page2Name}
-                      </h3>
-                      <span style={{ fontSize: '0.625rem', fontWeight: 600, color: '#10B981', backgroundColor: 'rgba(16, 185, 129, 0.1)', padding: '2px 7px', borderRadius: '4px' }}>
-                        Slot 2
-                      </span>
-                      <span style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-muted)', backgroundColor: 'var(--bg-main)', padding: '2px 7px', borderRadius: '4px', border: '1px solid var(--border-color)' }}>
-                        Meta Graph API v26.0
-                      </span>
-                    </div>
-                    <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
-                      Page ID: {page2PageId}
-                    </span>
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <button
-                    type="button"
-                    onClick={() => (onNavigateTab ? onNavigateTab('facebook-tokens') : setIsTokenManagerModalOpen(true))}
-                    style={{
-                      background: 'none',
-                      border: '1px solid rgba(16, 185, 129, 0.3)',
-                      borderRadius: '7px',
-                      padding: '4px 10px',
-                      color: '#10B981',
-                      fontSize: '0.6875rem',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '5px',
-                      backgroundColor: 'rgba(16, 185, 129, 0.05)',
-                      transition: 'all 0.15s ease',
-                    }}
-                    title="Open Page Token Manager menu"
-                  >
-                    <FiSliders />
-                    <span>Page Tokens</span>
-                  </button>
-
-                  {/* Enable Switch Toggle */}
-                  <SwitchToggle
-                    checked={fbPage2Enabled}
-                    onChange={(val) => {
-                      if (val && (!page2Connected || !page2Meta?.can_create_content)) {
-                        showToast('⚠️ Auto-publishing requires a valid token with verified CREATE_CONTENT permission. Run "Test Connection" first.');
-                        return;
-                      }
-                      setFbPage2Enabled(val);
-                    }}
-                    activeColor="#10B981"
-                    label={fbPage2Enabled ? 'Active' : 'Off'}
-                    isDark={isDark}
-                  />
-                </div>
-              </div>
-
-              {/* Status Row with Copy Button */}
+              {/* ==================================================== */}
+              {/* BOX 2: Instagram                                     */}
+              {/* ==================================================== */}
+              {(activePlatformTab === 'all' || activePlatformTab === 'instagram') && (
               <div
                 style={{
+                  backgroundColor: 'var(--bg-secondary)',
+                  border: igEnabled ? '2px solid rgba(228, 64, 95, 0.4)' : '1px solid var(--border-color)',
+                  borderRadius: '14px',
+                  padding: '1.25rem',
                   display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '8px',
-                  padding: '8px 12px',
-                  borderRadius: '8px',
-                  backgroundColor: 'var(--bg-main)',
-                  border: '1px solid var(--border-color)',
-                  marginBottom: '0.875rem',
-                  fontSize: '0.6875rem',
-                  flexWrap: 'wrap',
+                  flexDirection: 'column',
+                  boxShadow: igEnabled ? '0 4px 20px rgba(228, 64, 95, 0.08)' : 'none',
+                  transition: 'all 0.2s ease',
+                  height: '100%',
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                  {/* Verified API Connection Status */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span
-                      style={{
-                        width: '8px',
-                        height: '8px',
-                        borderRadius: '50%',
-                        backgroundColor: page2Connected ? '#22C55E' : '#EF4444',
-                        boxShadow: page2Connected ? '0 0 6px rgba(34, 197, 94, 0.6)' : '0 0 6px rgba(239, 68, 68, 0.6)',
-                      }}
-                    />
-                    <span>
-                      Connection:{' '}
-                      <strong style={{ color: page2Connected ? '#22C55E' : '#EF4444' }}>
-                        {page2Connected ? 'Connected' : 'Disconnected'}
-                      </strong>
-                    </span>
-                  </div>
-
-                  <span style={{ color: 'var(--border-color)', opacity: 0.6 }}>|</span>
-
-                  {/* Token Validity */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>Token:</span>
-                    <span
-                      style={{
-                        padding: '1px 6px',
-                        borderRadius: '4px',
-                        fontSize: '0.6875rem',
-                        fontWeight: 600,
-                        backgroundColor:
-                          page2TokenStatus === 'VALID'
-                            ? 'rgba(34, 197, 94, 0.12)'
-                            : page2TokenStatus === 'MISSING'
-                            ? 'rgba(239, 68, 68, 0.1)'
-                            : 'rgba(245, 158, 11, 0.12)',
-                        color:
-                          page2TokenStatus === 'VALID'
-                            ? '#22C55E'
-                            : page2TokenStatus === 'MISSING'
-                            ? '#EF4444'
-                            : '#F59E0B',
-                        border: `1px solid ${
-                          page2TokenStatus === 'VALID'
-                            ? 'rgba(34, 197, 94, 0.25)'
-                            : page2TokenStatus === 'MISSING'
-                            ? 'rgba(239, 68, 68, 0.25)'
-                            : 'rgba(245, 158, 11, 0.25)'
-                        }`,
-                      }}
-                    >
-                      {formatTokenValidity(page2TokenStatus, page2Meta?.has_token)}
-                    </span>
-                  </div>
-
-                  <span style={{ color: 'var(--border-color)', opacity: 0.6 }}>|</span>
-
-                  {/* Publishing Permission Status */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>Publishing:</span>
-                    <span
-                      style={{
-                        padding: '1px 6px',
-                        borderRadius: '4px',
-                        fontSize: '0.6875rem',
-                        fontWeight: 600,
-                        backgroundColor: page2Meta?.can_create_content ? 'rgba(34, 197, 94, 0.12)' : 'rgba(239, 68, 68, 0.1)',
-                        color: page2Meta?.can_create_content ? '#22C55E' : '#EF4444',
-                        border: `1px solid ${page2Meta?.can_create_content ? 'rgba(34, 197, 94, 0.25)' : 'rgba(239, 68, 68, 0.25)'}`,
-                      }}
-                    >
-                      {page2Meta?.can_create_content ? 'CREATE_CONTENT' : 'Limited Rights'}
-                    </span>
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                  {/* Reconnect button if expired or reconnect required */}
-                  {(page2TokenStatus === 'EXPIRED' || page2TokenStatus === 'RECONNECT_REQUIRED' || page2TokenStatus === 'INVALID') && (
-                    <button
-                      type="button"
-                      onClick={handleConnectFacebookOAuth}
-                      style={{
-                        background: '#10B981',
-                        border: 'none',
-                        borderRadius: '5px',
-                        padding: '3px 9px',
-                        color: '#FFFFFF',
-                        fontSize: '0.6875rem',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                        boxShadow: '0 1px 4px rgba(16, 185, 129, 0.3)',
-                      }}
-                    >
-                      <SiMeta />
-                      <span>Reconnect</span>
-                    </button>
-                  )}
-
-                  {/* Test Connection button */}
-                  <button
-                    type="button"
-                    onClick={() => handleTestPageConnection(page2PageId)}
-                    disabled={testingPageId === page2PageId}
-                    style={{
-                      background: 'none',
-                      border: '1px solid rgba(16, 185, 129, 0.3)',
-                      borderRadius: '5px',
-                      padding: '3px 8px',
-                      color: '#10B981',
-                      fontSize: '0.6875rem',
-                      fontWeight: 600,
-                      cursor: testingPageId === page2PageId ? 'wait' : 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      backgroundColor: 'rgba(16, 185, 129, 0.05)',
-                    }}
-                    title="Validate Page Access Token and CREATE_CONTENT permission"
-                  >
-                    <FiCheckCircle style={{ animation: testingPageId === page2PageId ? 'spin 1s linear infinite' : 'none' }} />
-                    <span>{testingPageId === page2PageId ? 'Testing...' : 'Test Connection'}</span>
-                  </button>
-
-                  {/* Refresh Page Info button */}
-                  <button
-                    type="button"
-                    onClick={() => handleRefreshPageInfo(page2PageId)}
-                    disabled={refreshingPageId === page2PageId}
-                    style={{
-                      background: 'none',
-                      border: '1px solid rgba(16, 185, 129, 0.3)',
-                      borderRadius: '5px',
-                      padding: '3px 8px',
-                      color: '#10B981',
-                      fontSize: '0.6875rem',
-                      fontWeight: 600,
-                      cursor: refreshingPageId === page2PageId ? 'wait' : 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      backgroundColor: 'rgba(16, 185, 129, 0.05)',
-                      transition: 'all 0.15s ease',
-                    }}
-                    title="Retrieve real Facebook Page name and profile picture from Meta Graph API"
-                  >
-                    <FiRefreshCw
-                      style={{
-                        fontSize: '0.625rem',
-                        animation: refreshingPageId === page2PageId ? 'spin 1s linear infinite' : 'none',
-                      }}
-                    />
-                    <span>{refreshingPageId === page2PageId ? 'Refreshing...' : 'Refresh Info'}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleCopyPage1ToPage2}
-                    disabled={!fbPage2Enabled}
-                    style={{
-                      background: 'none',
-                      border: '1px solid var(--border-color)',
-                      borderRadius: '5px',
-                      padding: '3px 8px',
-                      color: 'var(--text-secondary)',
-                      fontSize: '0.6875rem',
-                      fontWeight: 500,
-                      cursor: fbPage2Enabled ? 'pointer' : 'not-allowed',
-                      opacity: fbPage2Enabled ? 1 : 0.6,
-                    }}
-                    title="Copy Page 1 Title, Caption and Hashtags into Page 2"
-                  >
-                    Copy from Page 1
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => (onNavigateTab ? onNavigateTab('facebook-tokens') : setIsTokenManagerModalOpen(true))}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      color: '#10B981',
-                      cursor: 'pointer',
-                      padding: '3px 4px',
-                      fontWeight: 600,
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '3px',
-                      fontSize: '0.6875rem',
-                    }}
-                  >
-                    <span>Manage Token</span>
-                    <FiExternalLink style={{ fontSize: '0.625rem' }} />
-                  </button>
-                </div>
-              </div>
-
-              {/* Zero Mixing Callout */}
-              <div
-                style={{
-                  padding: '6px 10px',
-                  borderRadius: '6px',
-                  backgroundColor: 'rgba(16, 185, 129, 0.05)',
-                  border: '1px solid rgba(16, 185, 129, 0.15)',
-                  fontSize: '0.6875rem',
-                  color: 'var(--text-secondary)',
-                  marginBottom: '1rem',
-                  lineHeight: 1.35,
-                }}
-              >
-                🔒 <strong>Isolated Publishing:</strong> Content in this box will only be published to {page2Name} ({page2PageId}).
-              </div>
-
-              {/* Form Fields */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem', flex: 1 }}>
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                    <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                      Page 2 Title (Independent)
-                    </label>
-                  </div>
-                  <input
-                    type="text"
-                    value={fbPage2Headline}
-                    onChange={(e) => setFbPage2Headline(e.target.value)}
-                    disabled={!fbPage2Enabled}
-                    placeholder="Page 2 headline (e.g. 🏙️ Exclusive High-Floor Studio | BTS Bang Chak)"
-                    style={{
-                      width: '100%',
-                      height: '38px',
-                      padding: '8px 12px',
-                      borderRadius: '8px',
-                      border: '1px solid var(--border-color)',
-                      backgroundColor: 'var(--bg-main)',
-                      color: 'var(--text-primary)',
-                      fontSize: '0.8125rem',
-                      outline: 'none',
-                      boxSizing: 'border-box',
-                    }}
-                  />
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                    <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                      Page 2 Description & Details
-                    </label>
-                    <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-                      {fbPage2Caption.length} characters
-                    </span>
-                  </div>
-                  <textarea
-                    value={fbPage2Caption}
-                    onChange={(e) => setFbPage2Caption(e.target.value)}
-                    disabled={!fbPage2Enabled}
-                    rows={7}
-                    placeholder="Write custom tailored property description for Page 2 audience..."
-                    style={{
-                      width: '100%',
-                      padding: '10px 12px',
-                      borderRadius: '8px',
-                      border: '1px solid var(--border-color)',
-                      backgroundColor: 'var(--bg-main)',
-                      color: 'var(--text-primary)',
-                      fontSize: '0.8125rem',
-                      outline: 'none',
-                      resize: 'vertical',
-                      fontFamily: 'inherit',
-                      lineHeight: 1.5,
-                      boxSizing: 'border-box',
-                    }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                    Page 2 Hashtags
-                  </label>
-                  <input
-                    type="text"
-                    value={fbPage2Hashtags}
-                    onChange={(e) => setFbPage2Hashtags(e.target.value)}
-                    disabled={!fbPage2Enabled}
-                    placeholder="#BangkokLiving #IdeoSukhumvit #CondoNearBTS"
-                    style={{
-                      width: '100%',
-                      height: '36px',
-                      padding: '8px 12px',
-                      borderRadius: '8px',
-                      border: '1px solid var(--border-color)',
-                      backgroundColor: 'var(--bg-main)',
-                      color: 'var(--text-primary)',
-                      fontSize: '0.8125rem',
-                      outline: 'none',
-                      boxSizing: 'border-box',
-                    }}
-                  />
-                </div>
-              </div>
-
-              {/* Preview Button */}
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  setPreviewFbTab('page2');
-                  setPreviewPlatform('facebook');
-                }}
-                disabled={!fbPage2Enabled}
-                style={{
-                  width: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '6px',
-                  height: '36px',
-                  fontSize: '0.8125rem',
-                  fontWeight: 500,
-                  borderRadius: '6px',
-                  borderColor: 'rgba(16, 185, 129, 0.3)',
-                  color: '#10B981',
-                  backgroundColor: 'rgba(16, 185, 129, 0.05)',
-                  marginTop: '1rem',
-                }}
-              >
-                <FiEye />
-                <span>Preview Page 2 Post</span>
-              </Button>
-            </div>
-          )}
-
-          {/* ==================================================== */}
-          {/* BOX 2: Instagram                                     */}
-          {/* ==================================================== */}
-          {(activePlatformTab === 'all' || activePlatformTab === 'instagram') && (
-          <div
-            style={{
-              backgroundColor: 'var(--bg-secondary)',
-              border: igEnabled ? '2px solid rgba(228, 64, 95, 0.4)' : '1px solid var(--border-color)',
-              borderRadius: '14px',
-              padding: '1.25rem',
-              display: 'flex',
-              flexDirection: 'column',
-              boxShadow: igEnabled ? '0 4px 20px rgba(228, 64, 95, 0.08)' : 'none',
-              transition: 'all 0.2s ease',
-            }}
-          >
             {/* Box Header */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', paddingBottom: '0.75rem', borderBottom: '1px solid var(--border-color)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
@@ -3500,6 +3506,7 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
               flexDirection: 'column',
               boxShadow: ttEnabled ? '0 4px 20px rgba(0, 242, 254, 0.08)' : 'none',
               transition: 'all 0.2s ease',
+              height: '100%',
             }}
           >
             {/* Box Header */}
@@ -3531,14 +3538,41 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
                 </div>
               </div>
 
-              {/* Enable Switch Toggle */}
-              <SwitchToggle
-                checked={ttEnabled}
-                onChange={(val) => setTtEnabled(val)}
-                activeColor={isDark ? '#00F2FE' : '#0891B2'}
-                label={ttEnabled ? 'Active' : 'Off'}
-                isDark={isDark}
-              />
+              {/* Header Right Actions */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => (onNavigateTab ? onNavigateTab('auth-manager') : setIsTokenManagerModalOpen(true))}
+                  style={{
+                    background: 'none',
+                    border: '1px solid rgba(254, 44, 85, 0.3)',
+                    borderRadius: '7px',
+                    padding: '4px 10px',
+                    color: isDark ? '#00F2FE' : '#0891B2',
+                    fontSize: '0.6875rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    backgroundColor: 'rgba(254, 44, 85, 0.05)',
+                    transition: 'all 0.15s ease',
+                  }}
+                  title="Open Auth Manager for TikTok & Meta credentials"
+                >
+                  <FiSliders />
+                  <span>Auth Manager</span>
+                </button>
+
+                {/* Enable Switch Toggle */}
+                <SwitchToggle
+                  checked={ttEnabled}
+                  onChange={(val) => setTtEnabled(val)}
+                  activeColor={isDark ? '#00F2FE' : '#0891B2'}
+                  label={ttEnabled ? 'Active' : 'Off'}
+                  isDark={isDark}
+                />
+              </div>
             </div>
 
             {/* Target Account Selector */}
@@ -3627,49 +3661,35 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
               />
             </div>
 
-            {/* Sound Selector */}
-            <div style={{ marginBottom: '0.875rem' }}>
-              <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                🎵 Background Music / Audio
-              </label>
-              <Select
-                value={ttSoundOptions.find((opt) => opt.value === ttSound) || ttSoundOptions[0]}
-                onChange={(option: any) => {
-                  if (option) setTtSound(option.value);
-                }}
-                options={ttSoundOptions}
-                isDisabled={!ttEnabled}
-                styles={selectStyles}
-                isSearchable={false}
-              />
-            </div>
-
-            {/* TikTok Options & Settings */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '1rem', fontSize: '0.75rem', color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
-                  <input
-                    type="checkbox"
-                    checked={ttAllowComments}
-                    onChange={(e) => setTtAllowComments(e.target.checked)}
-                    disabled={!ttEnabled}
-                    style={{ width: '15px', height: '15px', cursor: 'pointer' }}
-                  />
-                  <span>Comments</span>
+            {/* Audio & Privacy Settings (Two in one row) */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'minmax(0, 1fr) 140px',
+                gap: '0.625rem',
+                marginBottom: '1rem',
+              }}
+            >
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                  🎵 Background Music / Audio
                 </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
-                  <input
-                    type="checkbox"
-                    checked={ttAllowDuet}
-                    onChange={(e) => setTtAllowDuet(e.target.checked)}
-                    disabled={!ttEnabled}
-                    style={{ width: '15px', height: '15px', cursor: 'pointer' }}
-                  />
-                  <span>Duet & Stitch</span>
-                </label>
+                <Select
+                  value={ttSoundOptions.find((opt) => opt.value === ttSound) || ttSoundOptions[0]}
+                  onChange={(option: any) => {
+                    if (option) setTtSound(option.value);
+                  }}
+                  options={ttSoundOptions}
+                  isDisabled={!ttEnabled}
+                  styles={selectStyles}
+                  isSearchable={false}
+                />
               </div>
 
-              <div style={{ minWidth: '150px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                  Privacy
+                </label>
                 <Select
                   value={ttPrivacyOptions.find((opt) => opt.value === ttPrivacy) || ttPrivacyOptions[0]}
                   onChange={(option: any) => {
@@ -3707,178 +3727,184 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
             </Button>
           </div>
           )}
+            </div>
+          )}
         </div>
 
-        {/* SECTION 4: Social Publishing Manager */}
+        {/* SECTION 4: Social Publishing Manager (Cool, streamlined footer) */}
         <div
           style={{
             backgroundColor: 'var(--bg-secondary)',
             border: '1px solid var(--border-color)',
-            borderRadius: '14px',
-            padding: '1.25rem',
+            borderRadius: '12px',
+            padding: '0.875rem 1.125rem',
+            boxShadow: 'none',
           }}
         >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '1rem' }}>
-          <div>
-            <h2 style={{ fontSize: '1.0625rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-              Social Publishing Manager
-            </h2>
-            <span style={{ fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
-              Account selection · Scheduling · Multi-channel Queue & Distribution
-            </span>
-          </div>
-
-          {/* Active Channels Chips */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                padding: '6px 12px',
-                borderRadius: '8px',
-                backgroundColor: fbEnabled ? 'rgba(24, 119, 242, 0.12)' : 'rgba(255, 255, 255, 0.04)',
-                border: `1px solid ${fbEnabled ? 'rgba(24, 119, 242, 0.3)' : 'var(--border-color)'}`,
-                color: fbEnabled ? '#1877F2' : 'var(--text-muted)',
-                fontSize: '0.8125rem',
-                fontWeight: 600,
-              }}
-            >
-              <FaFacebook />
-              <span>Facebook Page</span>
-              {fbEnabled && <FiCheckCircle style={{ color: '#22C55E' }} />}
+          {/* Header Row: Title & Active Channel Chips */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <h2 style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+                  Social Publishing Manager
+                </h2>
+                <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                  • Account selection · Scheduling · Multi-channel Queue & Distribution
+                </span>
+              </div>
             </div>
 
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                padding: '6px 12px',
-                borderRadius: '8px',
-                backgroundColor: igEnabled ? 'rgba(228, 64, 95, 0.12)' : 'rgba(255, 255, 255, 0.04)',
-                border: `1px solid ${igEnabled ? 'rgba(228, 64, 95, 0.3)' : 'var(--border-color)'}`,
-                color: igEnabled ? '#E4405F' : 'var(--text-muted)',
-                fontSize: '0.8125rem',
-                fontWeight: 600,
-              }}
-            >
-              <FaInstagram />
-              <span>Instagram</span>
-              {igEnabled && <FiCheckCircle style={{ color: '#22C55E' }} />}
-            </div>
-
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                padding: '6px 12px',
-                borderRadius: '8px',
-                backgroundColor: ttEnabled ? 'rgba(0, 242, 254, 0.12)' : 'rgba(255, 255, 255, 0.04)',
-                border: `1px solid ${ttEnabled ? 'rgba(0, 242, 254, 0.3)' : 'var(--border-color)'}`,
-                color: ttEnabled ? (isDark ? '#00F2FE' : '#0891B2') : 'var(--text-muted)',
-                fontSize: '0.8125rem',
-                fontWeight: 600,
-              }}
-            >
-              <FaTiktok />
-              <span>TikTok</span>
-              {ttEnabled && <FiCheckCircle style={{ color: '#22C55E' }} />}
-            </div>
-          </div>
-        </div>
-
-        {/* Schedule & Execute Bar */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexWrap: 'wrap',
-            gap: '1rem',
-            padding: '1rem',
-            borderRadius: '10px',
-            backgroundColor: 'var(--bg-main)',
-            border: '1px solid var(--border-color)',
-          }}
-        >
-          {/* Timing Choice */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', flexWrap: 'wrap' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-              <input
-                type="radio"
-                name="scheduleType"
-                checked={scheduleType === 'NOW'}
-                onChange={() => setScheduleType('NOW')}
-                style={{ accentColor: 'var(--accent-primary)', cursor: 'pointer' }}
-              />
-              <span>⚡ Publish Immediately</span>
-            </label>
-
-            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-              <input
-                type="radio"
-                name="scheduleType"
-                checked={scheduleType === 'SCHEDULED'}
-                onChange={() => setScheduleType('SCHEDULED')}
-                style={{ accentColor: 'var(--accent-primary)', cursor: 'pointer' }}
-              />
-              <span>🕒 Schedule for Later</span>
-            </label>
-
-            {scheduleType === 'SCHEDULED' && (
-              <input
-                type="datetime-local"
-                value={scheduledDateTime}
-                onChange={(e) => setScheduledDateTime(e.target.value)}
+            {/* Active Channels Chips */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', flexWrap: 'wrap' }}>
+              <div
                 style={{
-                  padding: '6px 10px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  padding: '4px 9px',
                   borderRadius: '6px',
-                  border: '1px solid var(--border-color)',
-                  backgroundColor: 'var(--bg-secondary)',
-                  color: 'var(--text-primary)',
-                  fontSize: '0.8125rem',
-                  outline: 'none',
+                  backgroundColor: fbEnabled ? 'rgba(24, 119, 242, 0.1)' : 'rgba(255, 255, 255, 0.03)',
+                  border: `1px solid ${fbEnabled ? 'rgba(24, 119, 242, 0.25)' : 'var(--border-color)'}`,
+                  color: fbEnabled ? '#1877F2' : 'var(--text-muted)',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
                 }}
-              />
-            )}
+              >
+                <FaFacebook style={{ fontSize: '0.75rem' }} />
+                <span>Facebook Page</span>
+                {fbEnabled && <FiCheckCircle style={{ color: '#22C55E', fontSize: '0.75rem' }} />}
+              </div>
+
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  padding: '4px 9px',
+                  borderRadius: '6px',
+                  backgroundColor: igEnabled ? 'rgba(228, 64, 95, 0.1)' : 'rgba(255, 255, 255, 0.03)',
+                  border: `1px solid ${igEnabled ? 'rgba(228, 64, 95, 0.25)' : 'var(--border-color)'}`,
+                  color: igEnabled ? '#E4405F' : 'var(--text-muted)',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                }}
+              >
+                <FaInstagram style={{ fontSize: '0.75rem' }} />
+                <span>Instagram</span>
+                {igEnabled && <FiCheckCircle style={{ color: '#22C55E', fontSize: '0.75rem' }} />}
+              </div>
+
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  padding: '4px 9px',
+                  borderRadius: '6px',
+                  backgroundColor: ttEnabled ? 'rgba(0, 242, 254, 0.1)' : 'rgba(255, 255, 255, 0.03)',
+                  border: `1px solid ${ttEnabled ? 'rgba(0, 242, 254, 0.25)' : 'var(--border-color)'}`,
+                  color: ttEnabled ? (isDark ? '#00F2FE' : '#0891B2') : 'var(--text-muted)',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                }}
+              >
+                <FaTiktok style={{ fontSize: '0.75rem' }} />
+                <span>TikTok</span>
+                {ttEnabled && <FiCheckCircle style={{ color: '#22C55E', fontSize: '0.75rem' }} />}
+              </div>
+            </div>
           </div>
 
-          {/* Big Action Button */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <Button
-              variant="primary"
-              onClick={handleStartPublish}
-              disabled={selectedChannelsCount === 0 || images.length === 0}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem',
-                height: '38px',
-                padding: '0 20px',
-                fontSize: '0.875rem',
-                fontWeight: 600,
-                borderRadius: '6px',
-                boxShadow: '0 4px 14px rgba(59, 130, 246, 0.3)',
-              }}
-            >
-              <FiSend />
-              <span>
-                {scheduleType === 'SCHEDULED'
-                  ? `Schedule Post to ${selectedChannelsCount} Channel${selectedChannelsCount > 1 ? 's' : ''}`
-                  : `Publish to ${selectedChannelsCount} Channel${selectedChannelsCount > 1 ? 's' : ''} Now`}
-              </span>
-            </Button>
+          {/* Clean Thin Divider */}
+          <div style={{ height: '1px', backgroundColor: 'var(--border-color)', margin: '0.75rem 0' }} />
+
+          {/* Schedule & Action Row (Clean, streamlined, normal button size) */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '0.75rem',
+            }}
+          >
+            {/* Timing Choice */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                <input
+                  type="radio"
+                  name="scheduleType"
+                  checked={scheduleType === 'NOW'}
+                  onChange={() => setScheduleType('NOW')}
+                  style={{ accentColor: 'var(--accent-primary)', cursor: 'pointer', width: '13px', height: '13px' }}
+                />
+                <span>⚡ Publish Immediately</span>
+              </label>
+
+              <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                <input
+                  type="radio"
+                  name="scheduleType"
+                  checked={scheduleType === 'SCHEDULED'}
+                  onChange={() => setScheduleType('SCHEDULED')}
+                  style={{ accentColor: 'var(--accent-primary)', cursor: 'pointer', width: '13px', height: '13px' }}
+                />
+                <span>🕒 Schedule for Later</span>
+              </label>
+
+              {scheduleType === 'SCHEDULED' && (
+                <input
+                  type="datetime-local"
+                  value={scheduledDateTime}
+                  onChange={(e) => setScheduledDateTime(e.target.value)}
+                  style={{
+                    padding: '4px 8px',
+                    borderRadius: '6px',
+                    border: '1px solid var(--border-color)',
+                    backgroundColor: 'var(--bg-main)',
+                    color: 'var(--text-primary)',
+                    fontSize: '0.75rem',
+                    outline: 'none',
+                  }}
+                />
+              )}
+            </div>
+
+            {/* Normal Size Action Button */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <button
+                type="button"
+                onClick={handleStartPublish}
+                disabled={selectedChannelsCount === 0 || images.length === 0}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  height: '32px',
+                  padding: '0 14px',
+                  fontSize: '0.78125rem',
+                  fontWeight: 600,
+                  borderRadius: '6px',
+                  backgroundColor: (selectedChannelsCount === 0 || images.length === 0) ? 'var(--bg-main)' : '#1877F2',
+                  color: (selectedChannelsCount === 0 || images.length === 0) ? 'var(--text-muted)' : '#FFFFFF',
+                  border: (selectedChannelsCount === 0 || images.length === 0) ? '1px solid var(--border-color)' : 'none',
+                  cursor: (selectedChannelsCount === 0 || images.length === 0) ? 'not-allowed' : 'pointer',
+                  boxShadow: 'none',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <FiSend style={{ fontSize: '0.75rem' }} />
+                <span>
+                  {scheduleType === 'SCHEDULED'
+                    ? `Schedule Post to ${selectedChannelsCount} Channel${selectedChannelsCount > 1 ? 's' : ''}`
+                    : `Publish to ${selectedChannelsCount} Channel${selectedChannelsCount > 1 ? 's' : ''} Now`}
+                </span>
+              </button>
+            </div>
           </div>
         </div>
-      </div>
-      </div>
-      </div>
-
-
-
-      {/* ======================================================== */}
+    </div>
+  )}
       {/* MODAL 1: Publishing Simulation Progress Modal            */}
       {/* ======================================================== */}
       {isPublishingModalOpen && (
@@ -4839,28 +4865,357 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
       )}
 
       {/* ======================================================== */}
-      {/* MODAL 4: Image Lightbox Zoom                            */}
+      {/* MODAL 4: Full-Screen Image Lightbox Viewer               */}
       {/* ======================================================== */}
       {lightboxUrl && (
         <div
-          onClick={() => setLightboxUrl(null)}
+          onClick={handleCloseLightbox}
           style={{
             position: 'fixed',
             inset: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.85)',
-            backdropFilter: 'blur(4px)',
+            backgroundColor: 'rgba(0, 0, 0, 0.92)',
+            backdropFilter: 'blur(10px)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             zIndex: 99999,
-            cursor: 'zoom-out',
+            cursor: 'default',
+            userSelect: 'none',
           }}
         >
-          <img
-            src={lightboxUrl}
-            alt="Preview"
-            style={{ maxWidth: '90vw', maxHeight: '90vh', borderRadius: '10px', boxShadow: '0 10px 40px rgba(0,0,0,0.8)' }}
-          />
+          {/* Top-Left Counter Badge */}
+          <div
+            style={{
+              position: 'absolute',
+              top: '24px',
+              left: '24px',
+              padding: '6px 14px',
+              borderRadius: '20px',
+              backgroundColor: 'rgba(255, 255, 255, 0.12)',
+              backdropFilter: 'blur(8px)',
+              border: '1px solid rgba(255, 255, 255, 0.15)',
+              color: '#FFFFFF',
+              fontSize: '0.8125rem',
+              fontWeight: 700,
+              letterSpacing: '0.5px',
+              zIndex: 10,
+            }}
+          >
+            {(lightboxIndex ?? 0) + 1} / {Math.max(images.length, 1)}
+          </div>
+
+          {/* Top-Right Close Button */}
+          <button
+            type="button"
+            onClick={handleCloseLightbox}
+            title="Close (ESC)"
+            aria-label="Close"
+            style={{
+              position: 'absolute',
+              top: '20px',
+              right: '24px',
+              width: '40px',
+              height: '40px',
+              borderRadius: '50%',
+              backgroundColor: 'rgba(255, 255, 255, 0.12)',
+              border: '1px solid rgba(255, 255, 255, 0.18)',
+              color: '#FFFFFF',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              fontSize: '1.25rem',
+              zIndex: 10,
+              backdropFilter: 'blur(8px)',
+              transition: 'all 0.15s ease',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.22)';
+              e.currentTarget.style.transform = 'scale(1.06)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.12)';
+              e.currentTarget.style.transform = 'scale(1)';
+            }}
+          >
+            <FiX />
+          </button>
+
+          {/* Left Arrow Button */}
+          {images.length > 1 && (
+            <button
+              type="button"
+              onClick={handlePrevLightbox}
+              title="Previous photo (←)"
+              aria-label="Previous photo"
+              style={{
+                position: 'absolute',
+                left: '24px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                width: '44px',
+                height: '44px',
+                borderRadius: '50%',
+                backgroundColor: 'rgba(0, 0, 0, 0.55)',
+                border: '1px solid rgba(255, 255, 255, 0.15)',
+                color: '#FFFFFF',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                zIndex: 10,
+                backdropFilter: 'blur(4px)',
+                transition: 'all 0.15s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)';
+                e.currentTarget.style.transform = 'translateY(-50%) scale(1.05)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.55)';
+                e.currentTarget.style.transform = 'translateY(-50%) scale(1)';
+              }}
+            >
+              <FiChevronLeft style={{ fontSize: '24px' }} />
+            </button>
+          )}
+
+          {/* Right Arrow Button */}
+          {images.length > 1 && (
+            <button
+              type="button"
+              onClick={handleNextLightbox}
+              title="Next photo (→)"
+              aria-label="Next photo"
+              style={{
+                position: 'absolute',
+                right: '24px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                width: '44px',
+                height: '44px',
+                borderRadius: '50%',
+                backgroundColor: 'rgba(0, 0, 0, 0.55)',
+                border: '1px solid rgba(255, 255, 255, 0.15)',
+                color: '#FFFFFF',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                zIndex: 10,
+                backdropFilter: 'blur(4px)',
+                transition: 'all 0.15s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)';
+                e.currentTarget.style.transform = 'translateY(-50%) scale(1.05)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.55)';
+                e.currentTarget.style.transform = 'translateY(-50%) scale(1)';
+              }}
+            >
+              <FiChevronRight style={{ fontSize: '24px' }} />
+            </button>
+          )}
+
+          {/* Center Main Image Canvas */}
+          <div
+            style={{
+              position: 'relative',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              maxWidth: '85vw',
+              maxHeight: '78vh',
+              overflow: 'visible',
+            }}
+            onClick={(e) => e.stopPropagation()}
+            onWheel={(e) => {
+              e.stopPropagation();
+              if (e.deltaY < 0) {
+                setLightboxZoom((s) => Math.min(s + 0.25, 3));
+              } else {
+                setLightboxZoom((s) => Math.max(s - 0.25, 0.5));
+              }
+            }}
+          >
+            <img
+              src={(lightboxIndex !== null && images[lightboxIndex]?.url) || lightboxUrl}
+              alt="Preview"
+              style={{
+                maxWidth: '85vw',
+                maxHeight: '78vh',
+                objectFit: 'contain',
+                borderRadius: '16px',
+                boxShadow: '0 20px 60px rgba(0, 0, 0, 0.85)',
+                transform: `scale(${lightboxZoom})`,
+                transition: 'transform 0.12s ease-out',
+                display: 'block',
+              }}
+              draggable={false}
+            />
+          </div>
+
+          {/* Bottom Controls Area (Floating Pill + Hint text) */}
+          <div
+            style={{
+              position: 'absolute',
+              bottom: '24px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '8px',
+              zIndex: 10,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Hint Text */}
+            <span
+              style={{
+                fontSize: '0.6875rem',
+                color: 'rgba(255, 255, 255, 0.5)',
+                fontWeight: 400,
+                letterSpacing: '0.3px',
+              }}
+            >
+              Scroll to zoom · Arrow keys · ESC to close
+            </span>
+
+            {/* Floating Toolbar Pill with ONLY necessary buttons */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.375rem',
+                backgroundColor: 'rgba(24, 25, 28, 0.88)',
+                border: '1px solid rgba(255, 255, 255, 0.12)',
+                borderRadius: '24px',
+                padding: '5px 12px',
+                backdropFilter: 'blur(12px)',
+                boxShadow: '0 8px 32px rgba(0, 0, 0, 0.6)',
+              }}
+            >
+              {/* Zoom Out */}
+              <button
+                type="button"
+                onClick={() => setLightboxZoom((s) => Math.max(s - 0.25, 0.5))}
+                title="Zoom Out (-)"
+                aria-label="Zoom Out"
+                style={{
+                  width: '30px',
+                  height: '30px',
+                  borderRadius: '50%',
+                  backgroundColor: 'transparent',
+                  border: 'none',
+                  color: '#FFFFFF',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  transition: 'background-color 0.15s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.12)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                }}
+              >
+                <FiZoomOut style={{ fontSize: '15px' }} />
+              </button>
+
+              {/* Percentage / Reset Button */}
+              <button
+                type="button"
+                onClick={() => setLightboxZoom(1)}
+                title="Reset Zoom (0)"
+                style={{
+                  backgroundColor: 'transparent',
+                  border: 'none',
+                  color: '#FFFFFF',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  padding: '2px 6px',
+                  borderRadius: '4px',
+                  minWidth: '46px',
+                  textAlign: 'center',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.12)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                }}
+              >
+                {Math.round(lightboxZoom * 100)}%
+              </button>
+
+              {/* Zoom In */}
+              <button
+                type="button"
+                onClick={() => setLightboxZoom((s) => Math.min(s + 0.25, 3))}
+                title="Zoom In (+)"
+                aria-label="Zoom In"
+                style={{
+                  width: '30px',
+                  height: '30px',
+                  borderRadius: '50%',
+                  backgroundColor: 'transparent',
+                  border: 'none',
+                  color: '#FFFFFF',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  transition: 'background-color 0.15s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.12)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                }}
+              >
+                <FiZoomIn style={{ fontSize: '15px' }} />
+              </button>
+
+              {/* Divider */}
+              <div style={{ width: '1px', height: '18px', backgroundColor: 'rgba(255, 255, 255, 0.15)', margin: '0 4px' }} />
+
+              {/* Download Image Button */}
+              <button
+                type="button"
+                onClick={handleDownloadLightboxImage}
+                title="Download photo"
+                aria-label="Download photo"
+                style={{
+                  width: '30px',
+                  height: '30px',
+                  borderRadius: '50%',
+                  backgroundColor: 'transparent',
+                  border: 'none',
+                  color: '#FFFFFF',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  transition: 'background-color 0.15s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.12)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                }}
+              >
+                <FiDownload style={{ fontSize: '15px' }} />
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

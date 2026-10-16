@@ -68,6 +68,8 @@ func ConnectDB() *gorm.DB {
 		&models.TestImportImage{},
 		&models.FacebookPublishPost{},
 		&models.FacebookManagedPage{},
+		&models.TikTokAccount{},
+		&models.TikTokPublishPost{},
 	)
 	if err != nil {
 		log.Fatalf("Failed to auto-migrate models: %v", err)

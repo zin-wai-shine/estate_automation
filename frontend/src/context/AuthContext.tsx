@@ -40,18 +40,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.removeItem('estate_token');
       }
     } else {
-      // Default initial mock admin user for immediate seamless dev testing
-      const defaultAdmin: User = {
-        id: 1,
-        email: 'admin@estate.com',
-        name: 'Platform Admin',
-        role: 'ADMIN',
-        status: 'ACTIVE',
-      };
-      setUser(defaultAdmin);
-      setToken('mock_admin_jwt_token_2026');
-      localStorage.setItem('estate_user', JSON.stringify(defaultAdmin));
-      localStorage.setItem('estate_token', 'mock_admin_jwt_token_2026');
+      setUser(null);
+      setToken(null);
     }
     setIsLoading(false);
   }, []);

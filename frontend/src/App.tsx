@@ -16,7 +16,7 @@ import { RemainingPostsView } from './features/remaining-posts/RemainingPostsVie
 import { CreateWorkflowView } from './features/workflow/CreateWorkflowView';
 import { AutoPostView } from './features/autopost/AutoPostView';
 import { PostHistoryView } from './features/autopost/PostHistoryView';
-import { FacebookPageTokenManagerView } from './features/autopost/FacebookPageTokenManagerView';
+import { AuthManagerView } from './features/autopost/AuthManagerView';
 import type { Property } from './types';
 
 const initialProperties: Property[] = [
@@ -186,7 +186,8 @@ const MainApp: React.FC = () => {
         <Route path="/remaining-posts" element={<RemainingPostsView onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
         <Route path="/auto-post" element={<AutoPostView onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
         <Route path="/post-history" element={<PostHistoryView onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
-        <Route path="/facebook-tokens" element={<FacebookPageTokenManagerView onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
+        <Route path="/auth-manager" element={<AuthManagerView onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
+        <Route path="/facebook-tokens" element={<AuthManagerView onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
         <Route path="/create-workflow" element={<CreateWorkflowView />} />
         <Route path="/inbox" element={<PropertyInboxView properties={properties} onProcessProperty={(id) => handleProcessBatch([id])} onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
         <Route path="/prompts" element={<PromptTemplatesView />} />
