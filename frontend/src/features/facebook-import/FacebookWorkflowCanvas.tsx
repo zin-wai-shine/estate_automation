@@ -3507,7 +3507,7 @@ export const FacebookWorkflowCanvas = forwardRef<
         );
       })()}
 
-      {/* Vertical Edge Sidebar Toggle Tab (Long-Y along right edge) */}
+      {/* Vertical Edge Sidebar Toggle Tab (Sleek rail along right edge) */}
       {(deletedBoxes.length > 0 || isRecoverModalOpen) && (
         <button
           type="button"
@@ -3524,61 +3524,56 @@ export const FacebookWorkflowCanvas = forwardRef<
             position: 'absolute',
             top: '50%',
             transform: 'translateY(-50%)',
-            right: isRecoverModalOpen ? '400px' : '0px',
+            right: isRecoverModalOpen ? '310px' : '0px',
             zIndex: 160,
-            width: '36px',
-            minHeight: '130px',
-            padding: '12px 4px',
+            width: '28px',
+            minHeight: '100px',
+            padding: '8px 2px',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'space-between',
-            gap: '8px',
-            backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
-            color: isDark ? '#F1F5F9' : '#0F172A',
-            border: isDark ? '1px solid #334155' : '1px solid #CBD5E1',
+            gap: '6px',
+            backgroundColor: 'var(--bg-surface)',
+            color: 'var(--text-primary)',
+            border: '1px solid var(--border-color)',
             borderRight: 'none',
-            borderTopLeftRadius: '10px',
-            borderBottomLeftRadius: '10px',
+            borderTopLeftRadius: '8px',
+            borderBottomLeftRadius: '8px',
             borderTopRightRadius: '0px',
             borderBottomRightRadius: '0px',
             boxShadow: isDark
-              ? '-6px 0 20px rgba(0, 0, 0, 0.45)'
-              : '-4px 0 16px rgba(0, 0, 0, 0.08)',
+              ? '-4px 0 16px rgba(0, 0, 0, 0.45)'
+              : '-2px 0 10px rgba(0, 0, 0, 0.06)',
             cursor: 'pointer',
             transition:
               'right 0.28s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease',
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.borderColor = '#38BDF8';
-            e.currentTarget.style.boxShadow = isDark
-              ? '-8px 0 24px rgba(56, 189, 248, 0.3)'
-              : '-6px 0 20px rgba(2, 132, 199, 0.2)';
+            e.currentTarget.style.borderColor = 'var(--accent-primary)';
+            e.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)';
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.borderColor = isDark ? '#334155' : '#CBD5E1';
-            e.currentTarget.style.boxShadow = isDark
-              ? '-6px 0 20px rgba(0, 0, 0, 0.45)'
-              : '-4px 0 16px rgba(0, 0, 0, 0.08)';
+            e.currentTarget.style.borderColor = 'var(--border-color)';
+            e.currentTarget.style.backgroundColor = 'var(--bg-surface)';
           }}
-          title={isRecoverModalOpen ? 'Close recover panel' : `Recover deleted nodes (${deletedBoxes.length})`}
         >
           {/* Top Recover Icon */}
           <div
             style={{
-              width: '26px',
-              height: '26px',
-              borderRadius: '6px',
-              backgroundColor: isDark ? 'rgba(56, 189, 248, 0.15)' : 'rgba(2, 132, 199, 0.1)',
+              width: '20px',
+              height: '20px',
+              borderRadius: '4px',
+              backgroundColor: 'var(--accent-primary-alpha)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              color: isDark ? '#38BDF8' : '#0284C7',
+              color: 'var(--accent-primary)',
               flexShrink: 0,
             }}
           >
             <FiRotateCcw
-              size={14}
+              size={12}
               style={{
                 transform: isRecoverModalOpen ? 'rotate(-90deg)' : 'none',
                 transition: 'transform 0.28s ease',
@@ -3591,10 +3586,10 @@ export const FacebookWorkflowCanvas = forwardRef<
             style={{
               writingMode: 'vertical-rl',
               transform: 'rotate(180deg)',
-              fontSize: '0.625rem',
+              fontSize: '0.5625rem',
               fontWeight: 700,
-              letterSpacing: '0.12em',
-              color: isDark ? '#94A3B8' : '#64748B',
+              letterSpacing: '0.14em',
+              color: 'var(--text-secondary)',
               textTransform: 'uppercase',
               userSelect: 'none',
               margin: '2px 0',
@@ -3606,17 +3601,17 @@ export const FacebookWorkflowCanvas = forwardRef<
           {/* Count Badge */}
           <span
             style={{
-              fontSize: '0.6875rem',
+              fontSize: '0.625rem',
               fontWeight: 700,
-              minWidth: '20px',
-              height: '20px',
+              minWidth: '17px',
+              height: '17px',
               borderRadius: '9999px',
-              backgroundColor: isDark ? 'rgba(56, 189, 248, 0.2)' : 'rgba(2, 132, 199, 0.12)',
-              color: isDark ? '#38BDF8' : '#0284C7',
+              backgroundColor: 'var(--accent-primary-alpha)',
+              color: 'var(--accent-primary)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              padding: '0 4px',
+              padding: '0 3px',
               lineHeight: 1,
               flexShrink: 0,
             }}
@@ -3626,7 +3621,7 @@ export const FacebookWorkflowCanvas = forwardRef<
 
           {/* Toggle Chevron Arrow */}
           <div style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            {isRecoverModalOpen ? <FiChevronRight size={13} /> : <FiChevronLeft size={13} />}
+            {isRecoverModalOpen ? <FiChevronRight size={11} /> : <FiChevronLeft size={11} />}
           </div>
         </button>
       )}
@@ -3793,13 +3788,13 @@ export const FacebookWorkflowCanvas = forwardRef<
           top: 0,
           right: 0,
           bottom: 0,
-          width: '400px',
+          width: '310px',
           maxWidth: '100%',
-          backgroundColor: isDark ? '#0F172A' : '#FFFFFF',
-          borderLeft: isDark ? '1px solid #334155' : '1px solid #E2E8F0',
+          backgroundColor: 'var(--bg-surface)',
+          borderLeft: '1px solid var(--border-color)',
           boxShadow: isDark
-            ? '-8px 0 30px rgba(0, 0, 0, 0.75)'
-            : '-4px 0 24px rgba(0, 0, 0, 0.1)',
+            ? '-8px 0 30px rgba(0, 0, 0, 0.7)'
+            : '-4px 0 20px rgba(0, 0, 0, 0.08)',
           zIndex: 150,
           display: 'flex',
           flexDirection: 'column',
@@ -3809,64 +3804,44 @@ export const FacebookWorkflowCanvas = forwardRef<
           pointerEvents: isRecoverModalOpen ? 'auto' : 'none',
         }}
       >
-        {/* Drawer Header */}
+        {/* Drawer Header (Clean, minimal 1-line top bar) */}
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            padding: '1.125rem 1.25rem',
-            borderBottom: isDark ? '1px solid #334155' : '1px solid #E2E8F0',
-            backgroundColor: isDark ? '#1E293B' : '#F8FAFC',
+            padding: '0.75rem 0.875rem',
+            borderBottom: '1px solid var(--border-color)',
+            backgroundColor: 'var(--bg-surface)',
             flexShrink: 0,
+            height: '46px',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
-            <div
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <FiRotateCcw size={14} style={{ color: 'var(--accent-primary)' }} />
+            <span style={{ fontWeight: 600, fontSize: '0.8125rem', color: 'var(--text-primary)' }}>
+              Recover Nodes
+            </span>
+            <span
               style={{
-                width: '32px',
-                height: '32px',
-                borderRadius: '50%',
-                backgroundColor: 'rgba(56, 189, 248, 0.15)',
-                color: '#38BDF8',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
+                fontSize: '0.6875rem',
+                fontWeight: 600,
+                padding: '1px 6px',
+                borderRadius: '9999px',
+                backgroundColor: 'var(--accent-primary-alpha)',
+                color: 'var(--accent-primary)',
               }}
             >
-              <FiRotateCcw size={16} />
-            </div>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <span style={{ fontWeight: 700, fontSize: '0.9375rem', color: 'var(--text-primary)' }}>
-                  Recover Deleted Nodes
-                </span>
-                <span
-                  style={{
-                    fontSize: '0.6875rem',
-                    fontWeight: 700,
-                    padding: '2px 8px',
-                    borderRadius: '9999px',
-                    backgroundColor: isDark ? 'rgba(56, 189, 248, 0.2)' : 'rgba(56, 189, 248, 0.15)',
-                    color: isDark ? '#38BDF8' : '#0284C7',
-                  }}
-                >
-                  {deletedBoxes.length} available
-                </span>
-              </div>
-              <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                Restore deleted AI nodes directly to canvas
-              </div>
-            </div>
+              {deletedBoxes.length}
+            </span>
           </div>
 
           <button
             type="button"
             onClick={() => setIsRecoverModalOpen(false)}
             style={{
-              width: '32px',
-              height: '32px',
+              width: '26px',
+              height: '26px',
               borderRadius: '0.375rem',
               border: 'none',
               backgroundColor: 'transparent',
@@ -3875,267 +3850,266 @@ export const FacebookWorkflowCanvas = forwardRef<
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              transition: 'background-color 0.15s ease, color 0.15s ease',
+              transition: 'all 0.15s ease',
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)';
+              e.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)';
               e.currentTarget.style.color = 'var(--text-primary)';
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.backgroundColor = 'transparent';
               e.currentTarget.style.color = 'var(--text-muted)';
             }}
-            title="Close recover sidebar"
           >
-            <FiX size={18} />
+            <FiX size={15} />
           </button>
         </div>
+
+        {/* Select All & Clear History Bar */}
+        {deletedBoxes.length > 0 && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '0.45rem 0.875rem',
+              borderBottom: '1px solid var(--border-color)',
+              backgroundColor: 'var(--bg-secondary)',
+              fontSize: '0.75rem',
+              flexShrink: 0,
+            }}
+          >
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                cursor: 'pointer',
+                fontWeight: 500,
+                color: 'var(--text-secondary)',
+                userSelect: 'none',
+                fontSize: '0.6875rem',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={selectRecoverIds.size === deletedBoxes.length && deletedBoxes.length > 0}
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    setSelectRecoverIds(new Set(deletedBoxes.map((d) => d.box.id)));
+                  } else {
+                    setSelectRecoverIds(new Set());
+                  }
+                }}
+                style={{
+                  width: '13px',
+                  height: '13px',
+                  accentColor: 'var(--accent-primary)',
+                  cursor: 'pointer',
+                }}
+              />
+              <span>Select All ({selectRecoverIds.size}/{deletedBoxes.length})</span>
+            </label>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (window.confirm('Clear all deleted node history?')) {
+                  setDeletedBoxes([]);
+                  setSelectRecoverIds(new Set());
+                  try {
+                    localStorage.removeItem(LOCAL_STORAGE_DELETED_KEY);
+                  } catch {}
+                }
+              }}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--text-muted)',
+                fontSize: '0.6875rem',
+                cursor: 'pointer',
+                padding: '2px 4px',
+                borderRadius: '3px',
+                transition: 'color 0.15s ease',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--status-danger)')}
+              onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
+            >
+              Clear history
+            </button>
+          </div>
+        )}
 
         {/* Drawer Body */}
         <div
           style={{
             flex: 1,
             overflowY: 'auto',
-            padding: '1.25rem',
+            padding: '0.625rem',
             display: 'flex',
             flexDirection: 'column',
-            gap: '1rem',
+            gap: '0.5rem',
           }}
         >
           {deletedBoxes.length === 0 ? (
             <div
               style={{
                 textAlign: 'center',
-                padding: '3rem 1rem',
+                padding: '2.5rem 1rem',
                 color: 'var(--text-muted)',
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
-                gap: '0.875rem',
+                gap: '0.75rem',
                 margin: 'auto 0',
               }}
             >
               <div
                 style={{
-                  width: '52px',
-                  height: '52px',
+                  width: '42px',
+                  height: '42px',
                   borderRadius: '50%',
-                  backgroundColor: isDark ? '#1E293B' : '#F1F5F9',
-                  border: isDark ? '1px solid #334155' : '1px solid #E2E8F0',
+                  backgroundColor: 'var(--bg-secondary)',
+                  border: '1px solid var(--border-color)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   color: 'var(--text-muted)',
                 }}
               >
-                <FiRotateCcw size={24} />
+                <FiRotateCcw size={18} />
               </div>
-              <div style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                No deleted nodes to recover
+              <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                No deleted nodes
               </div>
-              <div style={{ fontSize: '0.75rem', maxWidth: '280px', lineHeight: 1.5 }}>
-                When you delete any AI node from your workflow, it will appear here so you can easily restore it anytime.
+              <div style={{ fontSize: '0.6875rem', maxWidth: '220px', lineHeight: 1.4 }}>
+                Deleted nodes will appear here to restore anytime.
               </div>
             </div>
           ) : (
-            <>
-              {/* Select All Bar */}
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '0.5rem 0.75rem',
-                  backgroundColor: isDark ? '#1E293B' : '#F8FAFC',
-                  borderRadius: '0.5rem',
-                  border: isDark ? '1px solid #334155' : '1px solid #E2E8F0',
-                  fontSize: '0.75rem',
-                  flexShrink: 0,
-                }}
-              >
-                <label
+            deletedBoxes.map((record) => {
+              const isSelected = selectRecoverIds.has(record.box.id);
+              return (
+                <div
+                  key={record.box.id}
+                  onClick={() => {
+                    const next = new Set(selectRecoverIds);
+                    if (isSelected) {
+                      next.delete(record.box.id);
+                    } else {
+                      next.add(record.box.id);
+                    }
+                    setSelectRecoverIds(next);
+                  }}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '0.5rem',
+                    gap: '0.625rem',
+                    padding: '0.625rem',
+                    backgroundColor: isSelected
+                      ? 'var(--accent-primary-alpha)'
+                      : 'var(--bg-surface)',
+                    border: isSelected
+                      ? '1px solid var(--accent-primary)'
+                      : '1px solid var(--border-color)',
+                    borderRadius: '0.5rem',
                     cursor: 'pointer',
-                    fontWeight: 600,
-                    color: 'var(--text-primary)',
-                    userSelect: 'none',
+                    transition: 'all 0.15s ease',
                   }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectRecoverIds.size === deletedBoxes.length && deletedBoxes.length > 0}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setSelectRecoverIds(new Set(deletedBoxes.map((d) => d.box.id)));
-                      } else {
-                        setSelectRecoverIds(new Set());
-                      }
-                    }}
-                    style={{ width: '15px', height: '15px', accentColor: '#10B981', cursor: 'pointer' }}
-                  />
-                  <span>Select All ({selectRecoverIds.size} / {deletedBoxes.length})</span>
-                </label>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (window.confirm('Clear all deleted node history? This cannot be undone.')) {
-                      setDeletedBoxes([]);
-                      setSelectRecoverIds(new Set());
-                      try {
-                        localStorage.removeItem(LOCAL_STORAGE_DELETED_KEY);
-                      } catch {}
+                  onMouseEnter={(e) => {
+                    if (!isSelected) {
+                      e.currentTarget.style.borderColor = 'var(--border-color-hover)';
+                      e.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)';
                     }
                   }}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: 'var(--text-muted)',
-                    fontSize: '0.75rem',
-                    cursor: 'pointer',
-                    textDecoration: 'underline',
-                    padding: 0,
+                  onMouseLeave={(e) => {
+                    if (!isSelected) {
+                      e.currentTarget.style.borderColor = 'var(--border-color)';
+                      e.currentTarget.style.backgroundColor = 'var(--bg-surface)';
+                    }
                   }}
                 >
-                  Clear history
-                </button>
-              </div>
+                  {/* Checkbox */}
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      const next = new Set(selectRecoverIds);
+                      if (e.target.checked) {
+                        next.add(record.box.id);
+                      } else {
+                        next.delete(record.box.id);
+                      }
+                      setSelectRecoverIds(next);
+                    }}
+                    style={{
+                      width: '14px',
+                      height: '14px',
+                      accentColor: 'var(--accent-primary)',
+                      cursor: 'pointer',
+                      flexShrink: 0,
+                    }}
+                  />
 
-              {/* List of Deleted Nodes */}
-              <div
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '0.625rem',
-                  flex: 1,
-                  overflowY: 'auto',
-                  paddingRight: '2px',
-                }}
-              >
-                {deletedBoxes.map((record) => {
-                  const isSelected = selectRecoverIds.has(record.box.id);
-                  return (
+                  {/* Node Provider Icon */}
+                  <div
+                    style={{
+                      width: '28px',
+                      height: '28px',
+                      borderRadius: '6px',
+                      backgroundColor: 'var(--bg-secondary)',
+                      border: '1px solid var(--border-color)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    {renderAIBoxIcon(record.box, 15)}
+                  </div>
+
+                  {/* Title & Metadata */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
                     <div
-                      key={record.box.id}
-                      onClick={() => {
-                        const next = new Set(selectRecoverIds);
-                        if (isSelected) {
-                          next.delete(record.box.id);
-                        } else {
-                          next.add(record.box.id);
-                        }
-                        setSelectRecoverIds(next);
-                      }}
                       style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.75rem',
-                        padding: '0.75rem 0.875rem',
-                        backgroundColor: isSelected
-                          ? (isDark ? 'rgba(16, 185, 129, 0.1)' : 'rgba(16, 185, 129, 0.05)')
-                          : (isDark ? '#1E293B' : '#F8FAFC'),
-                        border: isSelected
-                          ? '1px solid rgba(16, 185, 129, 0.45)'
-                          : (isDark ? '1px solid #334155' : '1px solid #E2E8F0'),
-                        borderRadius: '0.5rem',
-                        cursor: 'pointer',
-                        transition: 'all 0.15s ease',
-                      }}
-                      onMouseEnter={(e) => {
-                        if (!isSelected) {
-                          e.currentTarget.style.borderColor = isDark ? '#475569' : '#CBD5E1';
-                        }
-                      }}
-                      onMouseLeave={(e) => {
-                        if (!isSelected) {
-                          e.currentTarget.style.borderColor = isDark ? '#334155' : '#E2E8F0';
-                        }
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        color: 'var(--text-primary)',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
                       }}
                     >
-                      {/* Checkbox */}
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={(e) => {
-                          e.stopPropagation();
-                          const next = new Set(selectRecoverIds);
-                          if (e.target.checked) {
-                            next.add(record.box.id);
-                          } else {
-                            next.delete(record.box.id);
-                          }
-                          setSelectRecoverIds(next);
-                        }}
-                        style={{
-                          width: '16px',
-                          height: '16px',
-                          accentColor: '#10B981',
-                          cursor: 'pointer',
-                          flexShrink: 0,
-                        }}
-                      />
-
-                      {/* Node Icon */}
-                      <div
-                        style={{
-                          width: '36px',
-                          height: '36px',
-                          borderRadius: '50%',
-                          backgroundColor: isDark ? '#0F172A' : '#FFFFFF',
-                          border: isDark ? '1px solid #334155' : '1px solid #E2E8F0',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          flexShrink: 0,
-                        }}
-                      >
-                        {renderAIBoxIcon(record.box, 18)}
-                      </div>
-
-                      {/* Title and details */}
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div
-                          style={{
-                            fontSize: '0.8125rem',
-                            fontWeight: 600,
-                            color: 'var(--text-primary)',
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                          }}
-                        >
-                          {record.box.title || 'Dynamic AI Box'}
-                        </div>
-                        <div
-                          style={{
-                            fontSize: '0.6875rem',
-                            color: 'var(--text-muted)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                            marginTop: '2px',
-                            flexWrap: 'wrap',
-                          }}
-                        >
-                          <span>{record.box.model || 'Gemini Flash'}</span>
-                          <span>•</span>
-                          <span>Deleted {timeAgo(record.deletedAt)}</span>
-                          {record.connections && record.connections.length > 0 && (
-                            <>
-                              <span>•</span>
-                              <span>{record.connections.length} wires saved</span>
-                            </>
-                          )}
-                        </div>
-                      </div>
+                      {record.box.title || 'Dynamic AI Box'}
                     </div>
-                  );
-                })}
-              </div>
-            </>
+                    <div
+                      style={{
+                        fontSize: '0.625rem',
+                        color: 'var(--text-muted)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        marginTop: '2px',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
+                      <span>{record.box.model || 'Gemini'}</span>
+                      <span>•</span>
+                      <span>{timeAgo(record.deletedAt)}</span>
+                      {record.connections && record.connections.length > 0 && (
+                        <>
+                          <span>•</span>
+                          <span>{record.connections.length}w</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })
           )}
         </div>
 
@@ -4145,14 +4119,19 @@ export const FacebookWorkflowCanvas = forwardRef<
             style={{
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '0.875rem 1.25rem',
-              borderTop: isDark ? '1px solid #334155' : '1px solid #E2E8F0',
-              backgroundColor: isDark ? '#1E293B' : '#F8FAFC',
+              gap: '0.5rem',
+              padding: '0.75rem 0.875rem',
+              borderTop: '1px solid var(--border-color)',
+              backgroundColor: 'var(--bg-surface)',
               flexShrink: 0,
             }}
           >
-            <Button variant="outline" size="sm" onClick={() => setIsRecoverModalOpen(false)}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsRecoverModalOpen(false)}
+              style={{ flex: 1, height: '32px', fontSize: '0.75rem' }}
+            >
               Close
             </Button>
 
@@ -4161,15 +4140,12 @@ export const FacebookWorkflowCanvas = forwardRef<
               size="sm"
               onClick={handleRecoverSelected}
               disabled={selectRecoverIds.size === 0}
-              leftIcon={<FiRotateCcw style={{ fontSize: '13px' }} />}
+              leftIcon={<FiRotateCcw style={{ fontSize: '12px' }} />}
               style={{
-                height: '34px',
-                padding: '0 16px',
-                backgroundColor: selectRecoverIds.size > 0 ? '#10B981' : undefined,
-                borderColor: selectRecoverIds.size > 0 ? '#10B981' : undefined,
-                color: '#FFFFFF',
+                flex: 2,
+                height: '32px',
+                fontSize: '0.75rem',
                 fontWeight: 600,
-                boxShadow: 'none',
               }}
             >
               Recover ({selectRecoverIds.size})
