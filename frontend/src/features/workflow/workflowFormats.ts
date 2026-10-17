@@ -236,9 +236,9 @@ export const INITIAL_DEFAULT_FORMATS: WorkflowFormat[] = [
 export const getSavedWorkflowFormats = (): WorkflowFormat[] => {
   try {
     const raw = localStorage.getItem(STORAGE_FORMATS_KEY);
-    if (raw) {
+    if (raw !== null) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
+      if (Array.isArray(parsed)) {
         return parsed.map((format: WorkflowFormat) => {
           if (!format.config) return format;
           return {
@@ -255,6 +255,18 @@ export const getSavedWorkflowFormats = (): WorkflowFormat[] => {
     ...f,
     config: sanitizeAndResolveCollisions(f.config),
   }));
+};
+
+export const restoreDefaultWorkflowFormats = (): WorkflowFormat[] => {
+  const defaults = INITIAL_DEFAULT_FORMATS.map((f) => ({
+    ...f,
+    config: sanitizeAndResolveCollisions(f.config),
+  }));
+  saveWorkflowFormatsList(defaults);
+  if (defaults[0]) {
+    setActiveWorkflowFormatId(defaults[0].id);
+  }
+  return defaults;
 };
 
 export const saveWorkflowFormatsList = (formats: WorkflowFormat[]) => {

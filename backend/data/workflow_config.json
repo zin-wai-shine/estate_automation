@@ -1,5 +1,5 @@
 {
-  "timestamp": 1792244317633,
+  "timestamp": 1792254096891,
   "workflow_formats": [
     {
       "config": {
@@ -328,6 +328,83 @@
       "isDefault": false,
       "name": "Text \u0026 English Translation Only",
       "updatedAt": 1792162469729
+    },
+    {
+      "config": {
+        "aiBoxes": [
+          {
+            "customPrompt": "",
+            "enabled": true,
+            "id": "ai-box-1792254096888",
+            "model": "gemini-flash-latest",
+            "processType": "rental",
+            "provider": "google_ai",
+            "templateId": "1",
+            "templateText": "Generate an attractive Facebook real estate listing post from the extracted caption.",
+            "title": "Dynamic Real Estate Copywriter",
+            "x": 680,
+            "y": 120
+          }
+        ],
+        "connections": [
+          {
+            "fromNodeId": "get-content",
+            "id": "conn-content-rental",
+            "toNodeId": "ai-box-rental"
+          },
+          {
+            "fromNodeId": "ai-box-rental",
+            "id": "conn-rental-dest",
+            "toNodeId": "destination"
+          },
+          {
+            "fromNodeId": "get-content",
+            "id": "conn-content-tiktok",
+            "toNodeId": "ai-box-tiktok"
+          },
+          {
+            "fromNodeId": "ai-box-tiktok",
+            "id": "conn-tiktok-dest",
+            "toNodeId": "destination"
+          }
+        ],
+        "destination": {
+          "x": 960,
+          "y": 220
+        },
+        "getContent": {
+          "cleanThai": true,
+          "enabled": true,
+          "extractContacts": true,
+          "extractPrice": true,
+          "extractSpecs": true,
+          "x": 340,
+          "y": 110
+        },
+        "getImages": {
+          "downloadHD": true,
+          "enabled": true,
+          "preserveOrder": true,
+          "watermark": false,
+          "x": 340,
+          "y": 390
+        },
+        "panOffset": {
+          "x": 30,
+          "y": 30
+        },
+        "trigger": {
+          "autoImport": true,
+          "x": 80,
+          "y": 220
+        },
+        "zoom": 0.95
+      },
+      "createdAt": 1792254096888,
+      "description": "Custom Facebook import extraction with dynamic AI prompt generator",
+      "id": "format-1792254096888",
+      "name": "Custom Workflow #5",
+      "updatedAt": 1792254096888
     }
   ]
 }

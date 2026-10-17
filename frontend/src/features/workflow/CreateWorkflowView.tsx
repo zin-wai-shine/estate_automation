@@ -14,6 +14,7 @@ import {
   saveWorkflowFormatsList,
   getActiveWorkflowFormatId,
   setActiveWorkflowFormatId,
+  restoreDefaultWorkflowFormats,
   type WorkflowFormat,
 } from './workflowFormats';
 import {
@@ -42,10 +43,10 @@ export const CreateWorkflowView: React.FC = () => {
   // Editing state for modal
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [deletedCount, setDeletedCount] = useState<number>(0);
-  const [editingFormat, setEditingFormat] = useState<WorkflowFormat>(() => {
+  const [editingFormat, setEditingFormat] = useState<WorkflowFormat | null>(() => {
     const list = getSavedWorkflowFormats();
     const id = getActiveWorkflowFormatId();
-    return list.find((f) => f.id === id) || list[0];
+    return list.find((f) => f.id === id) || list[0] || null;
   });
   const [modalFormatName, setModalFormatName] = useState<string>('');
   const [modalFormatDesc, setModalFormatDesc] = useState<string>('');
@@ -116,10 +117,6 @@ export const CreateWorkflowView: React.FC = () => {
   // Delete Format
   const handleDeleteFormat = (formatId: string, formatName: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    if (formats.length <= 1) {
-      alert('You must keep at least one workflow format.');
-      return;
-    }
     if (!window.confirm(`Delete workflow format "${formatName}"?`)) {
       return;
     }
@@ -129,13 +126,41 @@ export const CreateWorkflowView: React.FC = () => {
     saveWorkflowFormatsList(updatedList);
 
     if (activeFormatId === formatId) {
-      const nextId = updatedList[0].id;
+      const nextId = updatedList[0]?.id || '';
       setActiveId(nextId);
       setActiveWorkflowFormatId(nextId);
     }
 
-    if (editingFormat.id === formatId && isModalOpen) {
+    if (editingFormat?.id === formatId && isModalOpen) {
       setIsModalOpen(false);
+      setEditingFormat(updatedList[0] || null);
+    }
+  };
+
+  // Delete All Formats
+  const handleDeleteAllFormats = () => {
+    if (formats.length === 0) return;
+    if (!window.confirm(`Are you sure you want to remove all ${formats.length} workflow format(s)? This will delete all sample and custom workflows.`)) {
+      return;
+    }
+
+    setFormats([]);
+    saveWorkflowFormatsList([]);
+    setActiveId('');
+    setActiveWorkflowFormatId('');
+    setEditingFormat(null);
+    if (isModalOpen) {
+      setIsModalOpen(false);
+    }
+  };
+
+  // Restore Default Sample Formats
+  const handleRestoreDefaults = () => {
+    const defaults = restoreDefaultWorkflowFormats();
+    setFormats(defaults);
+    setActiveId(defaults[0]?.id || '');
+    if (editingFormat && !defaults.some((d) => d.id === editingFormat.id)) {
+      setEditingFormat(defaults[0] || null);
     }
   };
 
@@ -156,6 +181,7 @@ export const CreateWorkflowView: React.FC = () => {
 
   // Update canvas config inside modal
   const handleCanvasConfigChange = (newConfig: FacebookWorkflowConfig) => {
+    if (!editingFormat) return;
     const updated: WorkflowFormat = {
       ...editingFormat,
       config: newConfig,
@@ -169,6 +195,7 @@ export const CreateWorkflowView: React.FC = () => {
 
   // Save Format inside Modal
   const handleSaveModalFormat = () => {
+    if (!editingFormat) return;
     const updated: WorkflowFormat = {
       ...editingFormat,
       name: modalFormatName.trim() || 'Untitled Workflow Format',
@@ -232,8 +259,46 @@ export const CreateWorkflowView: React.FC = () => {
           </div>
         </div>
 
-        {/* Primary Action Button */}
+        {/* Action Buttons */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+          {formats.length > 0 && (
+            <Button
+              variant="outline"
+              size="md"
+              onClick={handleDeleteAllFormats}
+              leftIcon={<FiTrash2 style={{ fontSize: '14px' }} />}
+              style={{
+                height: '38px',
+                fontSize: '0.8125rem',
+                fontWeight: 600,
+                borderColor: 'rgba(239, 68, 68, 0.35)',
+                color: '#EF4444',
+                borderRadius: '0.375rem',
+              }}
+              title="Remove all workflow formats and samples"
+            >
+              Remove All
+            </Button>
+          )}
+
+          {formats.length === 0 && (
+            <Button
+              variant="outline"
+              size="md"
+              onClick={handleRestoreDefaults}
+              leftIcon={<FiRotateCcw style={{ fontSize: '14px' }} />}
+              style={{
+                height: '38px',
+                fontSize: '0.8125rem',
+                fontWeight: 600,
+                borderRadius: '0.375rem',
+              }}
+              title="Restore sample workflow templates"
+            >
+              Restore Samples
+            </Button>
+          )}
+
           <Button
             variant="primary"
             size="md"
@@ -254,201 +319,277 @@ export const CreateWorkflowView: React.FC = () => {
         </div>
       </div>
 
-      {/* WORKFLOW FORMAT CARDS GRID (NOT IN A TABLE) */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',
-          gap: '1.25rem',
-        }}
-      >
-        {formats.map((format) => {
-          const isActive = format.id === activeFormatId;
-
-          return (
-            <div
-              key={format.id}
-              onClick={() => handleOpenCanvasModal(format)}
+      {/* EMPTY STATE WHEN ALL WORKFLOWS ARE REMOVED */}
+      {formats.length === 0 ? (
+        <div
+          style={{
+            backgroundColor: 'var(--bg-secondary)',
+            border: '1.5px dashed var(--border-color)',
+            borderRadius: '0.75rem',
+            padding: '4rem 1.5rem',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            textAlign: 'center',
+            gap: '1rem',
+          }}
+        >
+          <div
+            style={{
+              width: '56px',
+              height: '56px',
+              borderRadius: '50%',
+              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+              color: 'var(--text-muted)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '1.75rem',
+            }}
+          >
+            <FiGitBranch />
+          </div>
+          <div>
+            <h3 style={{ fontSize: '1.125rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
+              No Workflow Formats
+            </h3>
+            <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', maxWidth: '480px', margin: '0.375rem auto 0 auto', lineHeight: '1.5' }}>
+              All sample workflows have been removed. You can create a new custom workflow from scratch or restore the default samples anytime.
+            </p>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginTop: '0.5rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+            <Button
+              variant="primary"
+              size="md"
+              onClick={handleCreateNewFormat}
+              leftIcon={<FiPlus style={{ fontSize: '15px' }} />}
               style={{
-                backgroundColor: 'var(--bg-secondary)',
-                border: '1px solid var(--border-color)',
-                borderRadius: '0.75rem',
-                padding: '1.25rem',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '1rem',
-                cursor: 'pointer',
-                transition: 'box-shadow 0.2s ease, border-color 0.2s ease',
-                position: 'relative',
-                boxShadow: 'var(--shadow-sm)',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.borderColor = 'var(--border-color-hover)';
-                e.currentTarget.style.boxShadow = isDark
-                  ? '0 10px 25px -3px rgba(0, 0, 0, 0.6)'
-                  : '0 10px 25px -3px rgba(0, 0, 0, 0.08)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = 'var(--border-color)';
-                e.currentTarget.style.boxShadow = 'var(--shadow-sm)';
+                height: '38px',
+                fontSize: '0.8125rem',
+                fontWeight: 600,
+                backgroundColor: '#10B981',
+                borderColor: '#10B981',
+                borderRadius: '0.375rem',
+                boxShadow: '0 2px 8px rgba(16, 185, 129, 0.25)',
               }}
             >
-              {/* Card Top: Title & Active Badge */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.75rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', flex: 1, minWidth: 0 }}>
-                  <div
-                    style={{
-                      width: '34px',
-                      height: '34px',
-                      borderRadius: '0.5rem',
-                      backgroundColor: isActive ? 'rgba(59, 130, 246, 0.15)' : (isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)'),
-                      color: isActive ? (isDark ? '#60A5FA' : '#2563EB') : 'var(--text-secondary)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '1.1rem',
-                      flexShrink: 0,
-                    }}
-                  >
-                    <FiGitBranch />
-                  </div>
-                  <div style={{ minWidth: 0 }}>
-                    <h3
+              + Create New Workflow
+            </Button>
+            <Button
+              variant="outline"
+              size="md"
+              onClick={handleRestoreDefaults}
+              leftIcon={<FiRotateCcw style={{ fontSize: '14px' }} />}
+              style={{
+                height: '38px',
+                fontSize: '0.8125rem',
+                fontWeight: 600,
+                borderRadius: '0.375rem',
+              }}
+            >
+              Restore Sample Workflows
+            </Button>
+          </div>
+        </div>
+      ) : (
+        /* WORKFLOW FORMAT CARDS GRID */
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',
+            gap: '1.25rem',
+          }}
+        >
+          {formats.map((format) => {
+            const isActive = format.id === activeFormatId;
+
+            return (
+              <div
+                key={format.id}
+                onClick={() => handleOpenCanvasModal(format)}
+                style={{
+                  backgroundColor: 'var(--bg-secondary)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '0.75rem',
+                  padding: '1.25rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '1rem',
+                  cursor: 'pointer',
+                  transition: 'box-shadow 0.2s ease, border-color 0.2s ease',
+                  position: 'relative',
+                  boxShadow: 'var(--shadow-sm)',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = 'var(--border-color-hover)';
+                  e.currentTarget.style.boxShadow = isDark
+                    ? '0 10px 25px -3px rgba(0, 0, 0, 0.6)'
+                    : '0 10px 25px -3px rgba(0, 0, 0, 0.08)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = 'var(--border-color)';
+                  e.currentTarget.style.boxShadow = 'var(--shadow-sm)';
+                }}
+              >
+                {/* Card Top: Title & Active Badge */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.75rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', flex: 1, minWidth: 0 }}>
+                    <div
                       style={{
-                        fontSize: '0.9375rem',
-                        fontWeight: 600,
-                        color: 'var(--text-primary)',
-                        margin: 0,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
+                        width: '34px',
+                        height: '34px',
+                        borderRadius: '0.5rem',
+                        backgroundColor: isActive ? 'rgba(59, 130, 246, 0.15)' : (isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)'),
+                        color: isActive ? (isDark ? '#60A5FA' : '#2563EB') : 'var(--text-secondary)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '1.1rem',
+                        flexShrink: 0,
                       }}
                     >
-                      {format.name}
-                    </h3>
-                    <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                      Updated {new Date(format.updatedAt).toLocaleDateString()}
+                      <FiGitBranch />
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                      <h3
+                        style={{
+                          fontSize: '0.9375rem',
+                          fontWeight: 600,
+                          color: 'var(--text-primary)',
+                          margin: 0,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {format.name}
+                      </h3>
+                      <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                        Updated {new Date(format.updatedAt).toLocaleDateString()}
+                      </div>
                     </div>
                   </div>
+
+                  {isActive && (
+                    <Badge variant="info" size="sm">
+                      <FiCheckCircle style={{ marginRight: '3px' }} /> Active in FB Import
+                    </Badge>
+                  )}
                 </div>
 
-                {isActive && (
-                  <Badge variant="info" size="sm">
-                    <FiCheckCircle style={{ marginRight: '3px' }} /> Active in FB Import
-                  </Badge>
-                )}
-              </div>
-
-              {/* Description */}
-              <p
-                style={{
-                  fontSize: '0.8125rem',
-                  color: 'var(--text-secondary)',
-                  margin: 0,
-                  lineHeight: '1.4',
-                  height: '38px',
-                  overflow: 'hidden',
-                  display: '-webkit-box',
-                  WebkitLineClamp: 2,
-                  WebkitBoxOrient: 'vertical',
-                }}
-              >
-                {format.description || 'Configured Facebook import extraction and multi-box dynamic AI prompts.'}
-              </p>
-
-              {/* Action Buttons */}
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '0.5rem',
-                  marginTop: 'auto',
-                  paddingTop: '0.75rem',
-                  borderTop: '1px solid var(--border-color)',
-                }}
-              >
-                {/* Main Modal Trigger Button */}
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => handleOpenCanvasModal(format)}
-                  leftIcon={<FiMaximize2 style={{ fontSize: '13px' }} />}
+                {/* Description */}
+                <p
                   style={{
-                    height: '34px',
-                    fontSize: '0.75rem',
-                    fontWeight: 600,
-                    borderRadius: '0.375rem',
-                    flex: 1,
+                    fontSize: '0.8125rem',
+                    color: 'var(--text-secondary)',
+                    margin: 0,
+                    lineHeight: '1.4',
+                    height: '38px',
+                    overflow: 'hidden',
+                    display: '-webkit-box',
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: 'vertical',
                   }}
                 >
-                  Open Canvas (Modal)
-                </Button>
+                  {format.description || 'Configured Facebook import extraction and multi-box dynamic AI prompts.'}
+                </p>
 
-                {!isActive && (
+                {/* Action Buttons */}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '0.5rem',
+                    marginTop: 'auto',
+                    paddingTop: '0.75rem',
+                    borderTop: '1px solid var(--border-color)',
+                  }}
+                >
+                  {/* Main Modal Trigger Button */}
                   <Button
-                    variant="outline"
+                    variant="primary"
                     size="sm"
-                    onClick={(e) => handleSetActiveFormat(format.id, e)}
+                    onClick={() => handleOpenCanvasModal(format)}
+                    leftIcon={<FiMaximize2 style={{ fontSize: '13px' }} />}
                     style={{
                       height: '34px',
                       fontSize: '0.75rem',
+                      fontWeight: 600,
                       borderRadius: '0.375rem',
-                      whiteSpace: 'nowrap',
+                      flex: 1,
                     }}
-                    title="Set as active format for Facebook Import"
                   >
-                    Set Active
+                    Open Canvas (Modal)
                   </Button>
-                )}
 
-                <button
-                  type="button"
-                  onClick={(e) => handleDuplicateFormat(format, e)}
-                  title="Duplicate format"
-                  style={{
-                    height: '34px',
-                    width: '34px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    borderRadius: '0.375rem',
-                    backgroundColor: 'transparent',
-                    border: '1px solid var(--border-color)',
-                    color: 'var(--text-secondary)',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <FiCopy style={{ fontSize: '13px' }} />
-                </button>
+                  {!isActive && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={(e) => handleSetActiveFormat(format.id, e)}
+                      style={{
+                        height: '34px',
+                        fontSize: '0.75rem',
+                        borderRadius: '0.375rem',
+                        whiteSpace: 'nowrap',
+                      }}
+                      title="Set as active format for Facebook Import"
+                    >
+                      Set Active
+                    </Button>
+                  )}
 
-                <button
-                  type="button"
-                  onClick={(e) => handleDeleteFormat(format.id, format.name, e)}
-                  title="Delete format"
-                  style={{
-                    height: '34px',
-                    width: '34px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    borderRadius: '0.375rem',
-                    backgroundColor: 'transparent',
-                    border: '1px solid rgba(239, 68, 68, 0.3)',
-                    color: '#EF4444',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <FiTrash2 style={{ fontSize: '13px' }} />
-                </button>
+                  <button
+                    type="button"
+                    onClick={(e) => handleDuplicateFormat(format, e)}
+                    title="Duplicate format"
+                    style={{
+                      height: '34px',
+                      width: '34px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      borderRadius: '0.375rem',
+                      backgroundColor: 'transparent',
+                      border: '1px solid var(--border-color)',
+                      color: 'var(--text-secondary)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <FiCopy style={{ fontSize: '13px' }} />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={(e) => handleDeleteFormat(format.id, format.name, e)}
+                    title="Delete format"
+                    style={{
+                      height: '34px',
+                      width: '34px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      borderRadius: '0.375rem',
+                      backgroundColor: 'transparent',
+                      border: '1px solid rgba(239, 68, 68, 0.3)',
+                      color: '#EF4444',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <FiTrash2 style={{ fontSize: '13px' }} />
+                  </button>
+                </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* MODAL BOX: WORKFLOW CANVAS */}
-      <Modal
+      {editingFormat && (
+        <Modal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         maxWidth="1480px"
@@ -589,6 +730,7 @@ export const CreateWorkflowView: React.FC = () => {
           />
         </div>
       </Modal>
+      )}
     </div>
   );
 };
