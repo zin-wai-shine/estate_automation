@@ -228,54 +228,59 @@ export const CreateWorkflowView: React.FC = () => {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', paddingBottom: '3rem' }}>
-      {/* Top Header Card */}
-      <div
-        style={{
-          backgroundColor: 'var(--bg-secondary)',
-          border: '1px solid var(--border-color)',
-          borderRadius: '0.75rem',
-          padding: '1.25rem 1.5rem',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: '1rem',
-          boxShadow: 'var(--shadow-sm)',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.875rem' }}>
-          <div
-            style={{
-              width: '42px',
-              height: '42px',
-              borderRadius: '0.625rem',
-              backgroundColor: 'rgba(139, 92, 246, 0.15)',
-              color: '#A78BFA',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '1.35rem',
-              flexShrink: 0,
-            }}
-          >
-            <FiGitBranch />
-          </div>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
-                Create & Setup Workflow
-              </h2>
-              <Badge variant="info">Format Builder</Badge>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: formats.length === 0 ? 'calc(100vh - 6rem)' : 'auto',
+        minHeight: formats.length === 0 ? '620px' : 'auto',
+        width: '100%',
+        boxSizing: 'border-box',
+        gap: formats.length > 0 ? '1.25rem' : 0,
+        paddingBottom: formats.length > 0 ? '3rem' : 0,
+      }}
+    >
+      {/* Sleek Minimal Header: Only shown when workflows exist */}
+      {formats.length > 0 && (
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '1rem',
+            paddingBottom: '0.25rem',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <div
+              style={{
+                width: '38px',
+                height: '38px',
+                borderRadius: '0.625rem',
+                backgroundColor: 'rgba(99, 102, 241, 0.12)',
+                color: '#818CF8',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '1.25rem',
+                flexShrink: 0,
+              }}
+            >
+              <FiGitBranch />
             </div>
-            <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', margin: '0.25rem 0 0 0' }}>
-              Design reusable workflow formats with customizable extraction branches and dynamic AI prompt generation. Click any format to open the canvas in a modal box.
-            </p>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <h2 style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
+                  Workflow Formats
+                </h2>
+                <Badge variant="default">
+                  {formats.length} {formats.length === 1 ? 'Format' : 'Formats'}
+                </Badge>
+              </div>
+            </div>
           </div>
-        </div>
 
-        {/* Action Buttons: Only show in top bar when formats exist */}
-        {formats.length > 0 && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
             <Button
               variant="outline"
@@ -288,7 +293,7 @@ export const CreateWorkflowView: React.FC = () => {
                 fontWeight: 600,
                 borderColor: 'rgba(239, 68, 68, 0.35)',
                 color: '#EF4444',
-                borderRadius: '0.375rem',
+                borderRadius: '0.5rem',
               }}
               title="Remove all workflow formats and samples"
             >
@@ -299,33 +304,64 @@ export const CreateWorkflowView: React.FC = () => {
               variant="primary"
               size="md"
               onClick={handleCreateNewFormat}
-              leftIcon={<FiPlus style={{ fontSize: '15px' }} />}
+              leftIcon={<HiSparkles style={{ fontSize: '15px' }} />}
               style={{
                 height: '38px',
                 fontSize: '0.8125rem',
                 fontWeight: 600,
-                backgroundColor: '#10B981',
-                borderColor: '#10B981',
-                borderRadius: '0.375rem',
-                boxShadow: '0 2px 8px rgba(16, 185, 129, 0.25)',
+                background: 'linear-gradient(135deg, #4F46E5 0%, #6366F1 100%)',
+                borderColor: '#4F46E5',
+                borderRadius: '0.5rem',
+                boxShadow: '0 2px 10px rgba(79, 70, 229, 0.3)',
               }}
             >
-              + Create New Workflow
+              Create New Workflow
             </Button>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* HERO EMPTY STATE: SINGLE CENTER BUTTON & SPREAD GLOWING WORKFLOW CANVAS */}
+      {/* FULL-HEIGHT EMPTY STATE STUDIO CANVAS */}
       {formats.length === 0 ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem', width: '100%' }}>
-          {/* Top Hero Section: Title, Subtitle, and SINGLE CENTER BUTTON */}
+        <div
+          style={{
+            position: 'relative',
+            width: '100%',
+            height: '100%',
+            flex: 1,
+            borderRadius: '1rem',
+            border: '1px solid var(--border-color)',
+            backgroundColor: 'var(--bg-secondary)',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'space-between',
+            padding: '2.5rem 2rem 2rem 2rem',
+            overflow: 'hidden',
+            boxSizing: 'border-box',
+            boxShadow: 'var(--shadow-sm)',
+          }}
+        >
+          {/* Subtle Ambient Background Lighting */}
           <div
             style={{
+              position: 'absolute',
+              inset: 0,
+              background: isDark
+                ? 'radial-gradient(ellipse 60% 40% at 50% 15%, rgba(99, 102, 241, 0.12), transparent 70%), radial-gradient(ellipse 50% 30% at 85% 85%, rgba(139, 92, 246, 0.08), transparent 70%)'
+                : 'radial-gradient(ellipse 60% 40% at 50% 15%, rgba(99, 102, 241, 0.06), transparent 70%), radial-gradient(ellipse 50% 30% at 85% 85%, rgba(139, 92, 246, 0.04), transparent 70%)',
+              pointerEvents: 'none',
+            }}
+          />
+
+          {/* Top Hero Section: Title, Subtitle, and REDESIGNED CENTER BUTTON */}
+          <div
+            style={{
+              position: 'relative',
+              zIndex: 2,
               textAlign: 'center',
               maxWidth: '680px',
               margin: '0 auto',
-              padding: '1rem 1rem 0 1rem',
+              padding: '0.5rem 1rem 0 1rem',
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
@@ -344,14 +380,14 @@ export const CreateWorkflowView: React.FC = () => {
                 fontWeight: 600,
                 letterSpacing: '0.02em',
                 background: isDark
-                  ? 'linear-gradient(90deg, rgba(139, 92, 246, 0.18), rgba(16, 185, 129, 0.18))'
-                  : 'linear-gradient(90deg, rgba(139, 92, 246, 0.1), rgba(16, 185, 129, 0.1))',
-                border: isDark ? '1px solid rgba(139, 92, 246, 0.35)' : '1px solid rgba(139, 92, 246, 0.25)',
-                color: isDark ? '#C4B5FD' : '#7C3AED',
-                boxShadow: '0 2px 12px rgba(139, 92, 246, 0.15)',
+                  ? 'linear-gradient(90deg, rgba(99, 102, 241, 0.18), rgba(139, 92, 246, 0.18))'
+                  : 'linear-gradient(90deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.1))',
+                border: isDark ? '1px solid rgba(129, 140, 248, 0.35)' : '1px solid rgba(99, 102, 241, 0.25)',
+                color: isDark ? '#C7D2FE' : '#4338CA',
+                boxShadow: '0 2px 10px rgba(99, 102, 241, 0.12)',
               }}
             >
-              <HiSparkles style={{ fontSize: '14px', color: '#10B981' }} />
+              <HiSparkles style={{ fontSize: '14px', color: isDark ? '#A5B4FC' : '#6366F1' }} />
               <span>Visual AI Real Estate Pipeline</span>
             </div>
 
@@ -364,8 +400,8 @@ export const CreateWorkflowView: React.FC = () => {
                 lineHeight: 1.25,
                 letterSpacing: '-0.03em',
                 background: isDark
-                  ? 'linear-gradient(180deg, #FFFFFF 15%, #94A3B8 100%)'
-                  : 'linear-gradient(180deg, #0F172A 20%, #475569 100%)',
+                  ? 'linear-gradient(180deg, #FFFFFF 20%, #94A3B8 100%)'
+                  : 'linear-gradient(180deg, #0F172A 20%, #334155 100%)',
                 WebkitBackgroundClip: 'text',
                 WebkitTextFillColor: 'transparent',
               }}
@@ -380,14 +416,14 @@ export const CreateWorkflowView: React.FC = () => {
                 color: 'var(--text-muted)',
                 margin: 0,
                 lineHeight: 1.55,
-                maxWidth: '540px',
+                maxWidth: '560px',
               }}
             >
               Connect live property listings to dual-language AI copywriting, high-res photo preservation, and instant multi-platform broadcasting.
             </p>
 
-            {/* THE ONLY CENTER CREATE BUTTON */}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem', marginTop: '0.5rem' }}>
+            {/* REDESIGNED CENTER CREATE BUTTON */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.625rem', marginTop: '0.35rem' }}>
               <button
                 type="button"
                 onClick={handleCreateNewFormat}
@@ -396,34 +432,36 @@ export const CreateWorkflowView: React.FC = () => {
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: '10px',
-                  padding: '13px 34px',
-                  borderRadius: '0.625rem',
+                  padding: '13px 32px',
+                  borderRadius: '0.75rem',
                   fontSize: '0.9375rem',
-                  fontWeight: 700,
+                  fontWeight: 650,
+                  letterSpacing: '0.01em',
                   color: '#FFFFFF',
-                  background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
-                  border: '1px solid rgba(255, 255, 255, 0.25)',
+                  background: 'linear-gradient(135deg, #4F46E5 0%, #6366F1 50%, #7C3AED 100%)',
+                  border: '1px solid rgba(255, 255, 255, 0.22)',
                   boxShadow: isDark
-                    ? '0 12px 32px -4px rgba(16, 185, 129, 0.55), 0 0 0 1px rgba(16, 185, 129, 0.3)'
-                    : '0 12px 28px -4px rgba(16, 185, 129, 0.45), 0 2px 6px rgba(16, 185, 129, 0.2)',
+                    ? '0 12px 28px -4px rgba(79, 70, 229, 0.55), 0 4px 12px rgba(99, 102, 241, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.25)'
+                    : '0 12px 24px -4px rgba(79, 70, 229, 0.45), 0 4px 10px rgba(99, 102, 241, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.35)',
                   cursor: 'pointer',
                   transition: 'all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)',
                 }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.transform = 'translateY(-2px) scale(1.02)';
                   e.currentTarget.style.boxShadow = isDark
-                    ? '0 18px 42px -4px rgba(16, 185, 129, 0.7), 0 0 0 1.5px rgba(16, 185, 129, 0.5)'
-                    : '0 18px 36px -4px rgba(16, 185, 129, 0.55), 0 2px 8px rgba(16, 185, 129, 0.3)';
+                    ? '0 18px 36px -4px rgba(99, 102, 241, 0.7), 0 6px 16px rgba(124, 58, 237, 0.45)'
+                    : '0 18px 32px -4px rgba(79, 70, 229, 0.55), 0 6px 14px rgba(99, 102, 241, 0.35)';
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.transform = 'translateY(0) scale(1)';
                   e.currentTarget.style.boxShadow = isDark
-                    ? '0 12px 32px -4px rgba(16, 185, 129, 0.55), 0 0 0 1px rgba(16, 185, 129, 0.3)'
-                    : '0 12px 28px -4px rgba(16, 185, 129, 0.45), 0 2px 6px rgba(16, 185, 129, 0.2)';
+                    ? '0 12px 28px -4px rgba(79, 70, 229, 0.55), 0 4px 12px rgba(99, 102, 241, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.25)'
+                    : '0 12px 24px -4px rgba(79, 70, 229, 0.45), 0 4px 10px rgba(99, 102, 241, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.35)';
                 }}
               >
-                <FiPlus style={{ fontSize: '18px', strokeWidth: 2.5 }} />
-                <span>+ Create Workflow</span>
+                <HiSparkles style={{ fontSize: '18px', color: '#E0E7FF' }} />
+                <span>Create Workflow</span>
+                <FiArrowRight style={{ fontSize: '15px', opacity: 0.85, marginLeft: '2px' }} />
               </button>
 
               {/* Subtle Restore Samples Link */}
@@ -462,31 +500,33 @@ export const CreateWorkflowView: React.FC = () => {
             onClick={handleCreateNewFormat}
             style={{
               position: 'relative',
+              zIndex: 2,
               width: '100%',
-              borderRadius: '1.25rem',
+              borderRadius: '1rem',
               overflow: 'hidden',
-              border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
+              border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid rgba(0, 0, 0, 0.06)',
               background: isDark
-                ? 'radial-gradient(circle at 15% 30%, rgba(59, 130, 246, 0.14), transparent 45%), radial-gradient(circle at 50% 15%, rgba(168, 85, 247, 0.16), transparent 50%), radial-gradient(circle at 85% 65%, rgba(16, 185, 129, 0.14), transparent 45%), #0A0F1D'
-                : 'radial-gradient(circle at 15% 30%, rgba(59, 130, 246, 0.08), transparent 45%), radial-gradient(circle at 50% 15%, rgba(168, 85, 247, 0.1), transparent 50%), radial-gradient(circle at 85% 65%, rgba(16, 185, 129, 0.08), transparent 45%), #FFFFFF',
-              padding: '2.5rem 2rem 2.75rem 2rem',
+                ? 'radial-gradient(circle at 15% 30%, rgba(59, 130, 246, 0.12), transparent 45%), radial-gradient(circle at 50% 15%, rgba(139, 92, 246, 0.14), transparent 50%), radial-gradient(circle at 85% 65%, rgba(16, 185, 129, 0.12), transparent 45%), rgba(10, 15, 29, 0.65)'
+                : 'radial-gradient(circle at 15% 30%, rgba(59, 130, 246, 0.06), transparent 45%), radial-gradient(circle at 50% 15%, rgba(139, 92, 246, 0.08), transparent 50%), radial-gradient(circle at 85% 65%, rgba(16, 185, 129, 0.06), transparent 45%), rgba(255, 255, 255, 0.75)',
+              padding: '2rem 1.75rem 2.25rem 1.75rem',
               boxShadow: isDark
-                ? '0 25px 60px -15px rgba(0, 0, 0, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.08)'
-                : '0 20px 50px -12px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.8)',
+                ? '0 15px 35px -10px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.06)'
+                : '0 10px 25px -8px rgba(0, 0, 0, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.8)',
               cursor: 'pointer',
               transition: 'all 0.25s ease',
+              marginTop: '1.25rem',
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.borderColor = isDark ? 'rgba(16, 185, 129, 0.4)' : 'rgba(16, 185, 129, 0.35)';
+              e.currentTarget.style.borderColor = isDark ? 'rgba(99, 102, 241, 0.4)' : 'rgba(99, 102, 241, 0.35)';
               e.currentTarget.style.boxShadow = isDark
-                ? '0 30px 70px -15px rgba(16, 185, 129, 0.2), 0 0 0 1px rgba(16, 185, 129, 0.2)'
-                : '0 25px 60px -12px rgba(16, 185, 129, 0.15), 0 0 0 1px rgba(16, 185, 129, 0.2)';
+                ? '0 20px 45px -10px rgba(99, 102, 241, 0.2), 0 0 0 1px rgba(99, 102, 241, 0.25)'
+                : '0 16px 35px -8px rgba(99, 102, 241, 0.15), 0 0 0 1px rgba(99, 102, 241, 0.25)';
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.borderColor = isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.08)';
+              e.currentTarget.style.borderColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)';
               e.currentTarget.style.boxShadow = isDark
-                ? '0 25px 60px -15px rgba(0, 0, 0, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.08)'
-                : '0 20px 50px -12px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.8)';
+                ? '0 15px 35px -10px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.06)'
+                : '0 10px 25px -8px rgba(0, 0, 0, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.8)';
             }}
             title="Click to launch Workflow Format Studio"
           >
@@ -505,7 +545,7 @@ export const CreateWorkflowView: React.FC = () => {
             <div
               style={{
                 position: 'absolute',
-                top: '1rem',
+                top: '0.875rem',
                 right: '1.25rem',
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -514,9 +554,9 @@ export const CreateWorkflowView: React.FC = () => {
                 borderRadius: '9999px',
                 fontSize: '0.6875rem',
                 fontWeight: 600,
-                backgroundColor: isDark ? 'rgba(16, 185, 129, 0.12)' : 'rgba(16, 185, 129, 0.1)',
-                color: '#10B981',
-                border: '1px solid rgba(16, 185, 129, 0.25)',
+                backgroundColor: isDark ? 'rgba(99, 102, 241, 0.15)' : 'rgba(99, 102, 241, 0.1)',
+                color: isDark ? '#A5B4FC' : '#4F46E5',
+                border: isDark ? '1px solid rgba(129, 140, 248, 0.3)' : '1px solid rgba(99, 102, 241, 0.25)',
                 backdropFilter: 'blur(8px)',
               }}
             >
@@ -525,8 +565,8 @@ export const CreateWorkflowView: React.FC = () => {
                   width: '6px',
                   height: '6px',
                   borderRadius: '50%',
-                  backgroundColor: '#10B981',
-                  boxShadow: '0 0 8px #10B981',
+                  backgroundColor: '#6366F1',
+                  boxShadow: '0 0 8px #6366F1',
                 }}
               />
               <span>Interactive Pipeline Preview • Click to Open</span>
@@ -538,7 +578,7 @@ export const CreateWorkflowView: React.FC = () => {
                 position: 'relative',
                 zIndex: 2,
                 display: 'grid',
-                gridTemplateColumns: 'minmax(200px, 1fr) 40px minmax(220px, 1.1fr) 40px minmax(310px, 1.5fr) 40px minmax(200px, 1fr)',
+                gridTemplateColumns: 'minmax(190px, 1fr) 36px minmax(210px, 1.1fr) 36px minmax(300px, 1.5fr) 36px minmax(190px, 1fr)',
                 alignItems: 'center',
                 gap: '0',
                 width: '100%',
@@ -551,28 +591,28 @@ export const CreateWorkflowView: React.FC = () => {
                   backgroundColor: isDark ? 'rgba(15, 23, 42, 0.75)' : 'rgba(255, 255, 255, 0.85)',
                   border: isDark ? '1px solid rgba(59, 130, 246, 0.35)' : '1px solid rgba(59, 130, 246, 0.25)',
                   borderRadius: '0.875rem',
-                  padding: '1.25rem',
+                  padding: '1.15rem',
                   backdropFilter: 'blur(12px)',
                   boxShadow: isDark
                     ? '0 10px 25px -4px rgba(59, 130, 246, 0.25), 0 0 0 1px rgba(59, 130, 246, 0.2)'
                     : '0 10px 25px -4px rgba(59, 130, 246, 0.15)',
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: '0.75rem',
+                  gap: '0.65rem',
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
                   <div
                     style={{
-                      width: '38px',
-                      height: '38px',
+                      width: '36px',
+                      height: '36px',
                       borderRadius: '50%',
                       backgroundColor: '#1877F2',
                       color: '#FFFFFF',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      fontSize: '1.15rem',
+                      fontSize: '1.1rem',
                       boxShadow: '0 4px 12px rgba(24, 119, 242, 0.45)',
                       flexShrink: 0,
                     }}
@@ -593,7 +633,7 @@ export const CreateWorkflowView: React.FC = () => {
                   style={{
                     backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.03)',
                     borderRadius: '0.5rem',
-                    padding: '8px 10px',
+                    padding: '7px 9px',
                     fontSize: '0.6875rem',
                     color: 'var(--text-secondary)',
                     lineHeight: '1.4',
@@ -603,56 +643,63 @@ export const CreateWorkflowView: React.FC = () => {
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Badge variant="info" size="sm">
-                    ● Live Stream
-                  </Badge>
-                  <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>0.2s latency</span>
+                  <span
+                    style={{
+                      width: '6px',
+                      height: '6px',
+                      borderRadius: '50%',
+                      backgroundColor: '#3B82F6',
+                    }}
+                  />
+                  <span style={{ fontSize: '0.6875rem', color: '#60A5FA', fontWeight: 600 }}>
+                    Live Stream • 0.2s latency
+                  </span>
                 </div>
               </div>
 
               {/* CONNECTOR 1 -> 2 */}
-              <div style={{ width: '100%', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <svg width="40" height="24" viewBox="0 0 40 24" fill="none">
+              <div style={{ width: '100%', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <svg width="36" height="24" viewBox="0 0 36 24" fill="none">
                   <path
-                    d="M 0 12 L 40 12"
-                    stroke={isDark ? '#3B82F6' : '#60A5FA'}
-                    strokeWidth="2.5"
+                    d="M 0 12 L 32 12"
+                    stroke={isDark ? '#60A5FA' : '#3B82F6'}
+                    strokeWidth="2.2"
                     strokeDasharray="4 4"
                     strokeLinecap="round"
                   />
-                  <polygon points="36,7 40,12 36,17" fill={isDark ? '#3B82F6' : '#60A5FA'} />
+                  <polygon points="28,8 36,12 28,16" fill={isDark ? '#60A5FA' : '#3B82F6'} />
                 </svg>
               </div>
 
-              {/* NODE 2: Extract Content & Images */}
+              {/* NODE 2: Extract & Route */}
               <div
                 style={{
                   backgroundColor: isDark ? 'rgba(15, 23, 42, 0.75)' : 'rgba(255, 255, 255, 0.85)',
                   border: isDark ? '1px solid rgba(139, 92, 246, 0.35)' : '1px solid rgba(139, 92, 246, 0.25)',
                   borderRadius: '0.875rem',
-                  padding: '1.25rem',
+                  padding: '1.15rem',
                   backdropFilter: 'blur(12px)',
                   boxShadow: isDark
                     ? '0 10px 25px -4px rgba(139, 92, 246, 0.25), 0 0 0 1px rgba(139, 92, 246, 0.2)'
                     : '0 10px 25px -4px rgba(139, 92, 246, 0.15)',
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: '0.75rem',
+                  gap: '0.65rem',
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
                   <div
                     style={{
-                      width: '38px',
-                      height: '38px',
+                      width: '36px',
+                      height: '36px',
                       borderRadius: '50%',
                       backgroundColor: 'rgba(139, 92, 246, 0.18)',
                       color: '#A78BFA',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      fontSize: '1.15rem',
-                      border: '1px solid rgba(139, 92, 246, 0.3)',
+                      fontSize: '1.1rem',
+                      boxShadow: '0 4px 12px rgba(139, 92, 246, 0.3)',
                       flexShrink: 0,
                     }}
                   >
@@ -668,18 +715,17 @@ export const CreateWorkflowView: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Chips of extracted properties */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
                   <div
                     style={{
                       display: 'flex',
                       alignItems: 'center',
                       gap: '5px',
-                      padding: '4px 8px',
-                      borderRadius: '4px',
-                      backgroundColor: isDark ? 'rgba(56, 189, 248, 0.1)' : 'rgba(56, 189, 248, 0.08)',
-                      color: isDark ? '#38BDF8' : '#0284C7',
+                      backgroundColor: isDark ? 'rgba(59, 130, 246, 0.12)' : 'rgba(59, 130, 246, 0.08)',
+                      borderRadius: '0.375rem',
+                      padding: '5px 8px',
                       fontSize: '0.6875rem',
+                      color: isDark ? '#93C5FD' : '#1D4ED8',
                       fontWeight: 600,
                     }}
                   >
@@ -691,15 +737,15 @@ export const CreateWorkflowView: React.FC = () => {
                       display: 'flex',
                       alignItems: 'center',
                       gap: '5px',
-                      padding: '4px 8px',
-                      borderRadius: '4px',
-                      backgroundColor: isDark ? 'rgba(16, 185, 129, 0.1)' : 'rgba(16, 185, 129, 0.08)',
-                      color: '#10B981',
+                      backgroundColor: isDark ? 'rgba(16, 185, 129, 0.12)' : 'rgba(16, 185, 129, 0.08)',
+                      borderRadius: '0.375rem',
+                      padding: '5px 8px',
                       fontSize: '0.6875rem',
+                      color: isDark ? '#6EE7B7' : '#047857',
                       fontWeight: 600,
                     }}
                   >
-                    <FiCheckCircle style={{ fontSize: '11px' }} />
+                    <FiCheck style={{ fontSize: '11px' }} />
                     <span>8 HD Listing Photos</span>
                   </div>
                 </div>
@@ -707,44 +753,44 @@ export const CreateWorkflowView: React.FC = () => {
 
               {/* CONNECTOR 2 -> 3 (Branching) */}
               <div style={{ width: '100%', height: '90px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <svg width="40" height="90" viewBox="0 0 40 90" fill="none">
-                  {/* Top branch to Gemini */}
+                <svg width="36" height="90" viewBox="0 0 36 90" fill="none">
+                  {/* Top branch */}
                   <path
-                    d="M 0 45 C 20 45, 20 22, 40 22"
+                    d="M 0 45 C 18 45, 18 22, 36 22"
                     stroke={isDark ? '#A78BFA' : '#8B5CF6'}
                     strokeWidth="2.2"
                     strokeDasharray="4 4"
                     strokeLinecap="round"
                   />
-                  <polygon points="36,18 40,22 36,26" fill={isDark ? '#A78BFA' : '#8B5CF6'} />
-                  {/* Bottom branch to GPT-4o */}
+                  <polygon points="30,18 36,22 30,26" fill={isDark ? '#A78BFA' : '#8B5CF6'} />
+                  {/* Bottom branch */}
                   <path
-                    d="M 0 45 C 20 45, 20 68, 40 68"
+                    d="M 0 45 C 18 45, 18 68, 36 68"
                     stroke={isDark ? '#10B981' : '#059669'}
                     strokeWidth="2.2"
                     strokeDasharray="4 4"
                     strokeLinecap="round"
                   />
-                  <polygon points="36,64 40,68 36,72" fill={isDark ? '#10B981' : '#059669'} />
+                  <polygon points="30,64 36,68 30,72" fill={isDark ? '#10B981' : '#059669'} />
                 </svg>
               </div>
 
-              {/* NODE 3: DYNAMIC AI NODES (GLOW CHAT DESIGN) */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                {/* AI Chat Card 1: Gemini Flash Real Estate Copywriter */}
+              {/* NODE 3: Branching AI Dynamic Generators */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                {/* AI Chat Card 1: Gemini Flash Bilingual */}
                 <div
                   style={{
                     backgroundColor: isDark ? 'rgba(15, 23, 42, 0.85)' : 'rgba(255, 255, 255, 0.95)',
                     border: isDark ? '1px solid rgba(168, 85, 247, 0.35)' : '1px solid rgba(168, 85, 247, 0.25)',
                     borderRadius: '0.875rem',
-                    padding: '0.875rem 1rem',
+                    padding: '0.85rem 1rem',
                     backdropFilter: 'blur(12px)',
                     boxShadow: isDark
                       ? '0 8px 24px -4px rgba(168, 85, 247, 0.28), 0 0 0 1px rgba(168, 85, 247, 0.2)'
                       : '0 8px 20px -4px rgba(168, 85, 247, 0.15)',
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: '0.5rem',
+                    gap: '0.45rem',
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -767,7 +813,6 @@ export const CreateWorkflowView: React.FC = () => {
                       fontSize: '0.6875rem',
                       color: 'var(--text-primary)',
                       lineHeight: '1.4',
-                      fontFamily: 'inherit',
                     }}
                   >
                     🏢 <strong>Regent Home Bangna</strong>: Modern 2-Bedroom Condo with Sky Pool. BTS Bangna 5 mins. Line ID: @bolthaven
@@ -780,14 +825,14 @@ export const CreateWorkflowView: React.FC = () => {
                     backgroundColor: isDark ? 'rgba(15, 23, 42, 0.85)' : 'rgba(255, 255, 255, 0.95)',
                     border: isDark ? '1px solid rgba(16, 185, 129, 0.35)' : '1px solid rgba(16, 185, 129, 0.25)',
                     borderRadius: '0.875rem',
-                    padding: '0.875rem 1rem',
+                    padding: '0.85rem 1rem',
                     backdropFilter: 'blur(12px)',
                     boxShadow: isDark
                       ? '0 8px 24px -4px rgba(16, 185, 129, 0.28), 0 0 0 1px rgba(16, 185, 129, 0.2)'
                       : '0 8px 20px -4px rgba(16, 185, 129, 0.15)',
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: '0.5rem',
+                    gap: '0.45rem',
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -810,7 +855,6 @@ export const CreateWorkflowView: React.FC = () => {
                       fontSize: '0.6875rem',
                       color: 'var(--text-primary)',
                       lineHeight: '1.4',
-                      fontFamily: 'inherit',
                     }}
                   >
                     🎬 <em>"Stop scrolling! This Bangna condo has an infinity pool overlooking the city skyline for under ฿15k..."</em>
@@ -820,10 +864,10 @@ export const CreateWorkflowView: React.FC = () => {
 
               {/* CONNECTOR 3 -> 4 (Merging) */}
               <div style={{ width: '100%', height: '90px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <svg width="40" height="90" viewBox="0 0 40 90" fill="none">
+                <svg width="36" height="90" viewBox="0 0 36 90" fill="none">
                   {/* Top branch merging */}
                   <path
-                    d="M 0 22 C 20 22, 20 45, 40 45"
+                    d="M 0 22 C 18 22, 18 45, 36 45"
                     stroke={isDark ? '#A78BFA' : '#8B5CF6'}
                     strokeWidth="2.2"
                     strokeDasharray="4 4"
@@ -831,13 +875,13 @@ export const CreateWorkflowView: React.FC = () => {
                   />
                   {/* Bottom branch merging */}
                   <path
-                    d="M 0 68 C 20 68, 20 45, 40 45"
+                    d="M 0 68 C 18 68, 18 45, 36 45"
                     stroke={isDark ? '#10B981' : '#059669'}
                     strokeWidth="2.2"
                     strokeDasharray="4 4"
                     strokeLinecap="round"
                   />
-                  <polygon points="36,41 40,45 36,49" fill={isDark ? '#10B981' : '#059669'} />
+                  <polygon points="30,41 36,45 30,49" fill={isDark ? '#10B981' : '#059669'} />
                 </svg>
               </div>
 
@@ -847,28 +891,28 @@ export const CreateWorkflowView: React.FC = () => {
                   backgroundColor: isDark ? 'rgba(15, 23, 42, 0.75)' : 'rgba(255, 255, 255, 0.85)',
                   border: isDark ? '1px solid rgba(16, 185, 129, 0.35)' : '1px solid rgba(16, 185, 129, 0.25)',
                   borderRadius: '0.875rem',
-                  padding: '1.25rem',
+                  padding: '1.15rem',
                   backdropFilter: 'blur(12px)',
                   boxShadow: isDark
                     ? '0 10px 25px -4px rgba(16, 185, 129, 0.25), 0 0 0 1px rgba(16, 185, 129, 0.2)'
                     : '0 10px 25px -4px rgba(16, 185, 129, 0.15)',
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: '0.75rem',
+                  gap: '0.65rem',
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
                   <div
                     style={{
-                      width: '38px',
-                      height: '38px',
+                      width: '36px',
+                      height: '36px',
                       borderRadius: '50%',
                       backgroundColor: 'rgba(16, 185, 129, 0.18)',
                       color: '#10B981',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      fontSize: '1.2rem',
+                      fontSize: '1.15rem',
                       boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)',
                       flexShrink: 0,
                     }}
@@ -889,7 +933,7 @@ export const CreateWorkflowView: React.FC = () => {
                   style={{
                     backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.03)',
                     borderRadius: '0.5rem',
-                    padding: '8px 10px',
+                    padding: '7px 9px',
                     fontSize: '0.6875rem',
                     color: 'var(--text-secondary)',
                     lineHeight: '1.4',
