@@ -63,6 +63,7 @@ export const CreateWorkflowView: React.FC = () => {
   // Create New Format and open in modal immediately
   const handleCreateNewFormat = () => {
     const newId = `format-${Date.now()}`;
+    const newBoxId = `ai-box-${Date.now()}`;
     const newFormat: WorkflowFormat = {
       id: newId,
       name: `Custom Workflow #${formats.length + 1}`,
@@ -73,7 +74,7 @@ export const CreateWorkflowView: React.FC = () => {
         ...DEFAULT_FB_WORKFLOW_CONFIG,
         aiBoxes: [
           {
-            id: `ai-box-${Date.now()}`,
+            id: newBoxId,
             title: 'Dynamic Real Estate Copywriter',
             processType: 'rental',
             provider: 'google_ai',
@@ -83,9 +84,13 @@ export const CreateWorkflowView: React.FC = () => {
               'Generate an attractive Facebook real estate listing post from the extracted caption.',
             customPrompt: '',
             enabled: true,
-            x: 680,
-            y: 120,
+            x: 640,
+            y: 110,
           },
+        ],
+        connections: [
+          { id: `conn-content-${newBoxId}`, fromNodeId: 'get-content', toNodeId: newBoxId },
+          { id: `conn-${newBoxId}-dest`, fromNodeId: newBoxId, toNodeId: 'destination' },
         ],
       },
     };
@@ -149,6 +154,9 @@ export const CreateWorkflowView: React.FC = () => {
     setActiveId('');
     setActiveWorkflowFormatId('');
     setEditingFormat(null);
+    try {
+      localStorage.removeItem('ea_workflow_deleted_boxes');
+    } catch {}
     if (isModalOpen) {
       setIsModalOpen(false);
     }

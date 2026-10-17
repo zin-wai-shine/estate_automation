@@ -280,7 +280,20 @@ export const sanitizeAndResolveCollisions = (
       ? { ...conf.getContent, y: 110 }
       : conf.getContent;
 
-  let connections = Array.isArray(conf.connections) ? conf.connections : undefined;
+  const validNodeIds = new Set([
+    'trigger',
+    'get-content',
+    'get-images',
+    'destination',
+    ...updatedAiBoxes.map((b: any) => b.id),
+  ]);
+
+  let connections = Array.isArray(conf.connections)
+    ? conf.connections.filter(
+        (c: any) => c && validNodeIds.has(c.fromNodeId) && validNodeIds.has(c.toNodeId)
+      )
+    : undefined;
+
   if (!connections || connections.length === 0) {
     connections = [];
     updatedAiBoxes.forEach((b: any) => {
@@ -2168,6 +2181,15 @@ export const FacebookWorkflowCanvas = forwardRef<
             {(config.connections || []).map((conn) => {
               const fromPos = getNodeSocketPos(conn.fromNodeId, 'output');
               const toPos = getNodeSocketPos(conn.toNodeId, 'input');
+              // Safety check: skip any wire with unresolved coordinates to prevent broken loops to (0, 0)
+              if (
+                !fromPos ||
+                !toPos ||
+                (fromPos.x === 0 && fromPos.y === 0) ||
+                (toPos.x === 0 && toPos.y === 0)
+              ) {
+                return null;
+              }
               const path =
                 conn.fromNodeId === 'get-images' && conn.toNodeId === 'destination'
                   ? createBaseChannelPath(fromPos, toPos)
