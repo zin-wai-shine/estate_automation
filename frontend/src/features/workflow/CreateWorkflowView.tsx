@@ -679,36 +679,103 @@ export const CreateWorkflowView: React.FC = () => {
         }
         headerExtra={
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <Button
-              variant="outline"
-              size="sm"
+            {/* Reset Layout Button */}
+            <button
+              type="button"
               onClick={() => canvasRef.current?.resetLayout()}
-              leftIcon={<FiCrosshair style={{ fontSize: '13px' }} />}
               style={{
                 height: '32px',
+                padding: '0 12px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
                 fontSize: '0.75rem',
                 fontWeight: 500,
-                boxShadow: 'none',
+                borderRadius: '6px',
+                backgroundColor: 'var(--bg-surface)',
+                color: 'var(--text-secondary)',
+                border: '1px solid var(--border-color)',
+                boxShadow: '0 1px 2px rgba(0, 0, 0, 0.04)',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+                outline: 'none',
+                userSelect: 'none',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)';
+                e.currentTarget.style.borderColor = 'var(--border-color-hover)';
+                e.currentTarget.style.color = 'var(--text-primary)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'var(--bg-surface)';
+                e.currentTarget.style.borderColor = 'var(--border-color)';
+                e.currentTarget.style.color = 'var(--text-secondary)';
+              }}
+              onMouseDown={(e) => {
+                e.currentTarget.style.transform = 'scale(0.98)';
+              }}
+              onMouseUp={(e) => {
+                e.currentTarget.style.transform = 'scale(1)';
               }}
             >
-              Reset Layout
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
+              <FiCrosshair size={13} style={{ color: 'var(--text-muted)' }} />
+              <span>Reset Layout</span>
+            </button>
+
+            {/* Save Format Button */}
+            <button
+              type="button"
               onClick={handleSaveModalFormat}
-              leftIcon={saveSuccess ? <FiCheck style={{ color: '#10B981' }} /> : <FiSave />}
               style={{
                 height: '32px',
+                padding: '0 12px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
                 fontSize: '0.75rem',
-                fontWeight: 600,
-                borderColor: saveSuccess ? '#10B981' : undefined,
-                color: saveSuccess ? '#10B981' : undefined,
-                boxShadow: 'none',
+                fontWeight: 500,
+                borderRadius: '6px',
+                backgroundColor: saveSuccess
+                  ? 'var(--status-success-bg)'
+                  : 'var(--bg-surface)',
+                color: saveSuccess ? 'var(--status-success)' : 'var(--text-primary)',
+                border: saveSuccess
+                  ? '1px solid var(--status-success)'
+                  : '1px solid var(--border-color)',
+                boxShadow: saveSuccess
+                  ? '0 0 0 1px rgba(34, 197, 94, 0.2)'
+                  : '0 1px 2px rgba(0, 0, 0, 0.04)',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+                outline: 'none',
+                userSelect: 'none',
+              }}
+              onMouseEnter={(e) => {
+                if (!saveSuccess) {
+                  e.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)';
+                  e.currentTarget.style.borderColor = 'var(--border-color-hover)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!saveSuccess) {
+                  e.currentTarget.style.backgroundColor = 'var(--bg-surface)';
+                  e.currentTarget.style.borderColor = 'var(--border-color)';
+                }
+              }}
+              onMouseDown={(e) => {
+                e.currentTarget.style.transform = 'scale(0.98)';
+              }}
+              onMouseUp={(e) => {
+                e.currentTarget.style.transform = 'scale(1)';
               }}
             >
-              {saveSuccess ? 'Saved!' : 'Save Format'}
-            </Button>
+              {saveSuccess ? (
+                <FiCheck size={13} style={{ color: 'var(--status-success)' }} />
+              ) : (
+                <FiSave size={13} style={{ color: 'var(--accent-primary)' }} />
+              )}
+              <span>{saveSuccess ? 'Saved!' : 'Save Format'}</span>
+            </button>
             <Button
               variant="primary"
               size="sm"
