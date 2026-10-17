@@ -80,6 +80,86 @@ export const calculateAnchorCoordinates = (
   return { x: Math.round(x), y: Math.round(y) };
 };
 
+export const drawWatermarkOnContext = async (
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  config: WatermarkConfig,
+  dynamicTags: Record<string, string> = {}
+): Promise<void> => {
+  if (!config.enabled) return;
+
+  if (config.type === 'logo' && config.logoUrl) {
+    try {
+      const logoImg = await loadImageElement(config.logoUrl);
+      const logoAspect = (logoImg.naturalHeight || logoImg.height) / (logoImg.naturalWidth || logoImg.width || 1);
+      const targetWidth = Math.round(width * (config.scale / 100));
+      const targetHeight = Math.round(targetWidth * logoAspect);
+
+      const { x, y } = calculateAnchorCoordinates(
+        width,
+        height,
+        targetWidth,
+        targetHeight,
+        config.position,
+        config.margin
+      );
+
+      ctx.save();
+      ctx.globalAlpha = Math.max(0.1, Math.min(1.0, config.opacity / 100));
+
+      if (config.hasShadow) {
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.55)';
+        ctx.shadowBlur = Math.max(4, Math.round(width * 0.008));
+        ctx.shadowOffsetX = Math.max(2, Math.round(width * 0.003));
+        ctx.shadowOffsetY = Math.max(2, Math.round(width * 0.003));
+      }
+
+      ctx.drawImage(logoImg, x, y, targetWidth, targetHeight);
+      ctx.restore();
+    } catch (logoErr) {
+      console.warn('Failed to draw logo watermark:', logoErr);
+    }
+  } else if (config.type === 'text' && config.text) {
+    // Interpolate dynamic tags
+    let resolvedText = config.text;
+    Object.entries(dynamicTags).forEach(([key, val]) => {
+      resolvedText = resolvedText.replace(new RegExp(`{${key}}`, 'gi'), val);
+    });
+
+    const scaledFontSize = Math.max(14, Math.round((width / 1000) * config.fontSize));
+    ctx.save();
+    ctx.font = `${config.fontWeight || '600'} ${scaledFontSize}px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`;
+    ctx.textBaseline = 'top';
+
+    const metrics = ctx.measureText(resolvedText);
+    const textWidth = Math.round(metrics.width);
+    const textHeight = Math.round(scaledFontSize * 1.25);
+
+    const { x, y } = calculateAnchorCoordinates(
+      width,
+      height,
+      textWidth,
+      textHeight,
+      config.position,
+      config.margin
+    );
+
+    ctx.globalAlpha = Math.max(0.1, Math.min(1.0, config.opacity / 100));
+
+    if (config.hasShadow) {
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.75)';
+      ctx.shadowBlur = Math.max(4, Math.round(width * 0.006));
+      ctx.shadowOffsetX = Math.max(1, Math.round(width * 0.002));
+      ctx.shadowOffsetY = Math.max(1, Math.round(width * 0.002));
+    }
+
+    ctx.fillStyle = config.textColor || '#FFFFFF';
+    ctx.fillText(resolvedText, x, y);
+    ctx.restore();
+  }
+};
+
 export const renderWatermarkedImage = async ({
   sourceImageUrl,
   config,
@@ -103,75 +183,7 @@ export const renderWatermarkedImage = async ({
   ctx.drawImage(baseImg, 0, 0, canvas.width, canvas.height);
 
   // 2. Render Watermark
-  if (config.type === 'logo' && config.logoUrl) {
-    try {
-      const logoImg = await loadImageElement(config.logoUrl);
-      const logoAspect = (logoImg.naturalHeight || logoImg.height) / (logoImg.naturalWidth || logoImg.width || 1);
-      const targetWidth = Math.round(canvas.width * (config.scale / 100));
-      const targetHeight = Math.round(targetWidth * logoAspect);
-
-      const { x, y } = calculateAnchorCoordinates(
-        canvas.width,
-        canvas.height,
-        targetWidth,
-        targetHeight,
-        config.position,
-        config.margin
-      );
-
-      ctx.save();
-      ctx.globalAlpha = Math.max(0.1, Math.min(1.0, config.opacity / 100));
-
-      if (config.hasShadow) {
-        ctx.shadowColor = 'rgba(0, 0, 0, 0.55)';
-        ctx.shadowBlur = Math.max(4, Math.round(canvas.width * 0.008));
-        ctx.shadowOffsetX = Math.max(2, Math.round(canvas.width * 0.003));
-        ctx.shadowOffsetY = Math.max(2, Math.round(canvas.width * 0.003));
-      }
-
-      ctx.drawImage(logoImg, x, y, targetWidth, targetHeight);
-      ctx.restore();
-    } catch (logoErr) {
-      console.warn('Failed to draw logo watermark:', logoErr);
-    }
-  } else if (config.type === 'text' && config.text) {
-    // Interpolate dynamic tags
-    let resolvedText = config.text;
-    Object.entries(dynamicTags).forEach(([key, val]) => {
-      resolvedText = resolvedText.replace(new RegExp(`{${key}}`, 'gi'), val);
-    });
-
-    const scaledFontSize = Math.max(14, Math.round((canvas.width / 1000) * config.fontSize));
-    ctx.save();
-    ctx.font = `${config.fontWeight || '600'} ${scaledFontSize}px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`;
-    ctx.textBaseline = 'top';
-
-    const metrics = ctx.measureText(resolvedText);
-    const textWidth = Math.round(metrics.width);
-    const textHeight = Math.round(scaledFontSize * 1.25);
-
-    const { x, y } = calculateAnchorCoordinates(
-      canvas.width,
-      canvas.height,
-      textWidth,
-      textHeight,
-      config.position,
-      config.margin
-    );
-
-    ctx.globalAlpha = Math.max(0.1, Math.min(1.0, config.opacity / 100));
-
-    if (config.hasShadow) {
-      ctx.shadowColor = 'rgba(0, 0, 0, 0.75)';
-      ctx.shadowBlur = Math.max(4, Math.round(canvas.width * 0.006));
-      ctx.shadowOffsetX = Math.max(1, Math.round(canvas.width * 0.002));
-      ctx.shadowOffsetY = Math.max(1, Math.round(canvas.width * 0.002));
-    }
-
-    ctx.fillStyle = config.textColor || '#FFFFFF';
-    ctx.fillText(resolvedText, x, y);
-    ctx.restore();
-  }
+  await drawWatermarkOnContext(ctx, canvas.width, canvas.height, config, dynamicTags);
 
   return canvas.toDataURL(format, quality);
 };

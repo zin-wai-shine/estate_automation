@@ -1,5 +1,5 @@
 {
-  "timestamp": 1792271821100,
+  "timestamp": 1792272640579,
   "workflow_formats": [
     {
       "config": {
@@ -18,16 +18,18 @@
             "y": 80
           },
           {
+            "cropFormatId": "format-story-reel",
             "customPrompt": "",
             "enabled": true,
             "id": "ai-box-watermark-1792271455814",
             "model": "google:nano-banana@2.1",
             "processType": "image_enhance",
             "provider": "runware_ai",
+            "subtitle": "1080×1920 (9:16)",
             "targetPages": "all",
-            "templateId": "preset-gold-shield",
-            "templateText": "Gold Estate Badge (Bottom Right)",
-            "title": "Watermark #1 (Gold Estate Badge)",
+            "templateId": "format-story-reel",
+            "templateText": "Story / Reel (9:16)",
+            "title": "Format: Story / Reel (9:16)",
             "watermarkConfig": {
               "enabled": true,
               "fontSize": 26,
@@ -44,9 +46,39 @@
               "textColor": "#FFFFFF",
               "type": "logo"
             },
-            "watermarkPresetId": "preset-gold-shield",
-            "x": 641.0526315789474,
-            "y": 358.4210526315786
+            "watermarkPresetId": "format-story-reel",
+            "x": 640,
+            "y": 230
+          },
+          {
+            "cropFormatId": "format-ig-portrait",
+            "customPrompt": "",
+            "enabled": true,
+            "id": "ai-box-watermark-1792272569046",
+            "model": "google:nano-banana@2.1",
+            "processType": "image_enhance",
+            "provider": "runware_ai",
+            "subtitle": "1080×1350 (4:5)",
+            "templateId": "format-ig-portrait",
+            "templateText": "Instagram Portrait (4:5)",
+            "title": "Format: Instagram Portrait (4:5)",
+            "x": 640,
+            "y": 380
+          },
+          {
+            "cropFormatId": "format-ig-portrait",
+            "customPrompt": "",
+            "enabled": true,
+            "id": "ai-box-watermark-1792272609522",
+            "model": "google:nano-banana@2.1",
+            "processType": "image_enhance",
+            "provider": "runware_ai",
+            "subtitle": "1080×1350 (4:5)",
+            "templateId": "format-ig-portrait",
+            "templateText": "Instagram Portrait (4:5)",
+            "title": "Format: Instagram Portrait (4:5)",
+            "x": 640,
+            "y": 530
           }
         ],
         "connections": [
@@ -61,19 +93,39 @@
             "toNodeId": "destination"
           },
           {
+            "fromNodeId": "get-images",
+            "id": "conn-1792271474962-xckf",
+            "toNodeId": "ai-box-watermark-1792271455814"
+          },
+          {
+            "fromNodeId": "get-images",
+            "id": "conn-1792272583854-mwst",
+            "toNodeId": "ai-box-watermark-1792272569046"
+          },
+          {
             "fromNodeId": "ai-box-watermark-1792271455814",
-            "id": "conn-ai-box-watermark-1792271455814-dest",
+            "id": "conn-1792272590454-24dr",
             "toNodeId": "destination"
           },
           {
             "fromNodeId": "get-images",
-            "id": "conn-1792271474962-xckf",
-            "toNodeId": "ai-box-watermark-1792271455814"
+            "id": "conn-1792272630195-xn3j",
+            "toNodeId": "ai-box-watermark-1792272609522"
+          },
+          {
+            "fromNodeId": "ai-box-watermark-1792272569046",
+            "id": "conn-1792272632845-b73f",
+            "toNodeId": "destination"
+          },
+          {
+            "fromNodeId": "ai-box-watermark-1792272609522",
+            "id": "conn-1792272638812-y1b0",
+            "toNodeId": "destination"
           }
         ],
         "destination": {
           "x": 960,
-          "y": 155
+          "y": 230
         },
         "getContent": {
           "cleanThai": true,
@@ -90,16 +142,16 @@
           "preserveOrder": true,
           "watermark": false,
           "x": 340,
-          "y": 390
+          "y": 380
         },
         "panOffset": {
-          "x": 73,
-          "y": -55
+          "x": 30,
+          "y": 30
         },
         "trigger": {
           "autoImport": true,
           "x": 80,
-          "y": 155
+          "y": 230
         },
         "zoom": 0.95
       },
@@ -107,7 +159,7 @@
       "description": "Custom Facebook import extraction with dynamic AI prompt generator",
       "id": "format-1792260379105",
       "name": "Custom Workflow #1",
-      "updatedAt": 1792271821100
+      "updatedAt": 1792272640579
     }
   ]
 }

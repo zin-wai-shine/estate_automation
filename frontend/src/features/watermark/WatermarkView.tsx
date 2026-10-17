@@ -27,11 +27,20 @@ import {
   FiFolder,
   FiEdit2,
   FiLayers,
+  FiShield,
 } from 'react-icons/fi';
 import { motion, AnimatePresence } from 'framer-motion';
 import JSZip from 'jszip';
 import { useTheme } from '../../context/ThemeContext';
 import { SwitchToggle } from '../autopost/SwitchToggle';
+import {
+  type WatermarkConfig,
+  DEFAULT_WATERMARK_CONFIG,
+  SAMPLE_BADGES,
+  loadActiveWatermarkConfig,
+  saveActiveWatermarkConfig,
+} from '../autopost/watermarkStorage';
+import { drawWatermarkOnContext } from '../autopost/watermarkCanvas';
 import {
   type CropStudioFormat,
   getSavedCropFormats,
@@ -533,6 +542,80 @@ export const WatermarkView: React.FC = () => {
   const [useWatermarkOnTiles, setUseWatermarkOnTiles] = useState<boolean>(false);
   const [hideGuides, setHideGuides] = useState<boolean>(false);
 
+  // Watermark Configuration State
+  const [watermarkConfig, setWatermarkConfig] = useState<WatermarkConfig>(() => {
+    try {
+      const loaded = loadActiveWatermarkConfig();
+      if (loaded?.config) {
+        return loaded.config;
+      }
+    } catch {}
+    return {
+      ...DEFAULT_WATERMARK_CONFIG,
+      enabled: false,
+    };
+  });
+  const [hideWatermarkPreview, setHideWatermarkPreview] = useState<boolean>(false);
+  const [isWatermarkCardExpanded, setIsWatermarkCardExpanded] = useState<boolean>(true);
+  const logoInputRef = useRef<HTMLInputElement>(null);
+
+  // Auto-save watermark config to storage whenever updated
+  useEffect(() => {
+    try {
+      saveActiveWatermarkConfig(watermarkConfig);
+    } catch {}
+  }, [watermarkConfig]);
+
+  const handleUploadLogoFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      alert('Please upload an image file (PNG, SVG, JPG, WEBP).');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const res = ev.target?.result as string;
+      if (res) {
+        setWatermarkConfig((prev) => ({
+          ...prev,
+          enabled: true,
+          type: 'logo',
+          logoUrl: res,
+          logoName: file.name,
+        }));
+        showToast(`Uploaded watermark logo: ${file.name}`);
+      }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const getWatermarkOverlayStyle = (pos: WatermarkPosition, marginPercent: number) => {
+    const m = `${marginPercent}%`;
+    switch (pos) {
+      case 'top-left':
+        return { top: m, left: m, transform: 'none' };
+      case 'top-center':
+        return { top: m, left: '50%', transform: 'translateX(-50%)' };
+      case 'top-right':
+        return { top: m, right: m, transform: 'none' };
+      case 'center-left':
+        return { top: '50%', left: m, transform: 'translateY(-50%)' };
+      case 'center':
+        return { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' };
+      case 'center-right':
+        return { top: '50%', right: m, transform: 'translateY(-50%)' };
+      case 'bottom-left':
+        return { bottom: m, left: m, transform: 'none' };
+      case 'bottom-center':
+        return { bottom: m, left: '50%', transform: 'translateX(-50%)' };
+      case 'bottom-right':
+      default:
+        return { bottom: m, right: m, transform: 'none' };
+    }
+  };
+
   // Tile Crop Settings (Grid Split Mode) with Auto-save & Persistence
   const [applyToAllTiles, setApplyToAllTiles] = useState<boolean>(() => {
     try {
@@ -844,6 +927,14 @@ export const WatermarkView: React.FC = () => {
       ctx.fillStyle = '#FFFFFF';
       ctx.fillRect(0, 0, width, height);
       ctx.drawImage(img, sx, sy, zoomedW, zoomedH, 0, 0, width, height);
+    }
+
+    if (watermarkConfig.enabled) {
+      await drawWatermarkOnContext(ctx, width, height, watermarkConfig, {
+        project: activeImage?.name?.replace(/\.[^/.]+$/, '') || 'Condo Listing',
+        phone: '081-234-5678',
+        line: '@estatebangkok',
+      });
     }
 
     return canvas.toDataURL(getExportMimeType(imgSrc), 0.95);
@@ -1170,6 +1261,7 @@ export const WatermarkView: React.FC = () => {
       fitMode,
       focusPosition,
       cropZoom,
+      watermarkConfig: watermarkConfig.enabled ? { ...watermarkConfig } : undefined,
       gridLayoutId: studioMode === 'grid' ? gridLayoutId : undefined,
       tileCropMap: studioMode === 'grid' ? tileCropMap : undefined,
       tileFocusMap: studioMode === 'grid' ? tileFocusMap : undefined,
@@ -1198,6 +1290,9 @@ export const WatermarkView: React.FC = () => {
     setFitMode(format.fitMode);
     setFocusPosition(format.focusPosition);
     setCropZoom(format.cropZoom || 1);
+    if (format.watermarkConfig) {
+      setWatermarkConfig({ ...format.watermarkConfig });
+    }
     const matchingPreset = presets.find((p) => p.width === format.targetWidth && p.height === format.targetHeight);
     if (matchingPreset) {
       setActivePresetId(matchingPreset.id);
@@ -1232,13 +1327,13 @@ export const WatermarkView: React.FC = () => {
       const mime = getExportMimeType(activeImage.originalUrl || activeImage.url);
       const ext = mime === 'image/png' ? 'png' : mime === 'image/webp' ? 'webp' : 'jpg';
       let dataUrl: string;
-      if (activePresetId === 'original') {
+      if (activePresetId === 'original' && !watermarkConfig.enabled) {
         dataUrl = activeImage.originalUrl || activeImage.url;
       } else {
         dataUrl = await renderCroppedCanvas(
           activeImage.originalUrl || activeImage.url,
-          targetWidth,
-          targetHeight,
+          activePresetId === 'original' ? (activeImage.width || 1200) : targetWidth,
+          activePresetId === 'original' ? (activeImage.height || 1200) : targetHeight,
           fitMode,
           focusPosition,
           cropZoom
@@ -1279,13 +1374,13 @@ export const WatermarkView: React.FC = () => {
         const dimSuffix = activePresetId === 'original' ? 'original' : `${targetWidth}x${targetHeight}`;
         const fileName = `${img.name.replace(/\.[^/.]+$/, '')}-${dimSuffix}.${ext}`;
 
-        if (activePresetId === 'original') {
+        if (activePresetId === 'original' && !watermarkConfig.enabled) {
           itemsToDownload.push({ url: sourceUrl, fileName });
         } else {
           const dataUrl = await renderCroppedCanvas(
             sourceUrl,
-            targetWidth,
-            targetHeight,
+            activePresetId === 'original' ? (img.width || 1200) : targetWidth,
+            activePresetId === 'original' ? (img.height || 1200) : targetHeight,
             fitMode,
             focusPosition,
             cropZoom
@@ -1327,8 +1422,8 @@ export const WatermarkView: React.FC = () => {
         const ext = mime === 'image/png' ? 'png' : mime === 'image/webp' ? 'webp' : 'jpg';
         const dataUrl = await renderCroppedCanvas(
           sourceUrl,
-          targetWidth,
-          targetHeight,
+          activePresetId === 'original' ? (img.width || 1200) : targetWidth,
+          activePresetId === 'original' ? (img.height || 1200) : targetHeight,
           fitMode,
           focusPosition,
           cropZoom
@@ -1433,6 +1528,14 @@ export const WatermarkView: React.FC = () => {
         ctx.fillRect(0, 0, tileOutW, tileOutH);
         ctx.drawImage(img, sx, sy, cropW, cropH, 0, 0, tileOutW, tileOutH);
 
+        if (useWatermarkOnTiles && watermarkConfig.enabled) {
+          await drawWatermarkOnContext(ctx, tileOutW, tileOutH, watermarkConfig, {
+            project: activeImage?.name?.replace(/\.[^/.]+$/, '') || 'Condo Listing',
+            phone: '081-234-5678',
+            line: '@estatebangkok',
+          });
+        }
+
         const dataUrl = canvas.toDataURL(mime, 0.95);
         const base64Data = dataUrl.split(',')[1];
         const cleanTileName = tile.label.toLowerCase().replace(/[^a-z0-9]+/g, '-');
@@ -1526,6 +1629,14 @@ export const WatermarkView: React.FC = () => {
         ctx.fillStyle = '#FFFFFF';
         ctx.fillRect(0, 0, tileOutW, tileOutH);
         ctx.drawImage(img, sx, sy, cropW, cropH, 0, 0, tileOutW, tileOutH);
+
+        if (useWatermarkOnTiles && watermarkConfig.enabled) {
+          await drawWatermarkOnContext(ctx, tileOutW, tileOutH, watermarkConfig, {
+            project: activeImage?.name?.replace(/\.[^/.]+$/, '') || 'Condo Listing',
+            phone: '081-234-5678',
+            line: '@estatebangkok',
+          });
+        }
 
         const blob = await canvasToBlob(canvas, mime, 0.95);
         const cleanTileName = tile.label.toLowerCase().replace(/[^a-z0-9]+/g, '-');
@@ -2610,6 +2721,66 @@ export const WatermarkView: React.FC = () => {
                       transition: 'object-position 0.2s ease, transform 0.2s ease',
                     }}
                   />
+
+                  {/* Real-time Watermark Overlay for Live Studio Preview */}
+                  {studioMode === 'standard' && watermarkConfig.enabled && !hideWatermarkPreview && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        inset: 0,
+                        pointerEvents: 'none',
+                        overflow: 'hidden',
+                        zIndex: 10,
+                      }}
+                    >
+                      <div
+                        style={{
+                          position: 'absolute',
+                          ...getWatermarkOverlayStyle(watermarkConfig.position, watermarkConfig.margin),
+                          opacity: watermarkConfig.opacity / 100,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          filter: watermarkConfig.hasShadow ? 'drop-shadow(0 2px 8px rgba(0,0,0,0.75))' : 'none',
+                          maxWidth: '92%',
+                          transition: 'all 0.15s ease',
+                        }}
+                      >
+                        {watermarkConfig.type === 'logo' && watermarkConfig.logoUrl ? (
+                          <img
+                            src={watermarkConfig.logoUrl}
+                            alt={watermarkConfig.logoName || 'Watermark'}
+                            style={{
+                              width: `${watermarkConfig.scale * 3.8}px`,
+                              maxWidth: `${watermarkConfig.scale * 2.2}vw`,
+                              height: 'auto',
+                              display: 'block',
+                              userSelect: 'none',
+                            }}
+                          />
+                        ) : watermarkConfig.type === 'text' && watermarkConfig.text ? (
+                          <span
+                            style={{
+                              color: watermarkConfig.textColor || '#FFFFFF',
+                              fontSize: `clamp(13px, ${(watermarkConfig.fontSize || 24) * 0.75}px, 32px)`,
+                              fontWeight: watermarkConfig.fontWeight || '600',
+                              fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                              whiteSpace: 'nowrap',
+                              textShadow: watermarkConfig.hasShadow ? '0 2px 4px rgba(0, 0, 0, 0.85)' : 'none',
+                              userSelect: 'none',
+                              padding: '2px 6px',
+                            }}
+                          >
+                            {watermarkConfig.text
+                              .replace(/{project}/gi, activeImage?.name.replace(/\.[^/.]+$/, '') || 'Condo Listing')
+                              .replace(/{price}/gi, '฿ 5.2M')
+                              .replace(/{phone}/gi, '081-234-5678')
+                              .replace(/{line}/gi, '@estatebangkok')}
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                  )}
 
                   {studioMode === 'grid' && (
                     <div
@@ -4893,6 +5064,726 @@ export const WatermarkView: React.FC = () => {
 
             </div>
           )}
+
+          {/* ========================================================================= */}
+          {/* CARD: WATERMARK & BRANDING (Images, Text, and Position/Scale Adjustments) */}
+          {/* ========================================================================= */}
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '10px',
+              padding: '12px',
+              borderRadius: '10px',
+              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'var(--bg-main)',
+              border: watermarkConfig.enabled
+                ? '1px solid var(--accent-primary)'
+                : '1px solid var(--border-color)',
+              boxShadow: watermarkConfig.enabled
+                ? (isDark ? '0 0 12px rgba(59, 130, 246, 0.15)' : '0 2px 8px rgba(37, 99, 235, 0.08)')
+                : 'none',
+              transition: 'all 0.2s ease',
+              flexShrink: 0,
+            }}
+          >
+            {/* Card Header with Enable Switch & Expand Toggle */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <div
+                onClick={() => setIsWatermarkCardExpanded((prev) => !prev)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '7px',
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                }}
+              >
+                <FiShield
+                  size={14}
+                  style={{
+                    color: watermarkConfig.enabled ? 'var(--accent-primary)' : 'var(--text-muted)',
+                    transition: 'color 0.2s ease',
+                  }}
+                />
+                <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                  Watermark & Branding
+                </span>
+                <span
+                  style={{
+                    fontSize: '0.625rem',
+                    fontWeight: 700,
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    backgroundColor: watermarkConfig.enabled
+                      ? 'var(--accent-primary-alpha)'
+                      : (isDark ? 'rgba(255, 255, 255, 0.06)' : '#E2E8F0'),
+                    color: watermarkConfig.enabled ? 'var(--accent-primary)' : 'var(--text-muted)',
+                    letterSpacing: '0.02em',
+                  }}
+                >
+                  {watermarkConfig.enabled ? 'Active' : 'Off'}
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <SwitchToggle
+                  checked={watermarkConfig.enabled}
+                  onChange={(val) => {
+                    setWatermarkConfig((p) => ({ ...p, enabled: val }));
+                    if (val) setIsWatermarkCardExpanded(true);
+                  }}
+                  activeColor="var(--accent-primary)"
+                  isDark={isDark}
+                />
+                <button
+                  type="button"
+                  onClick={() => setIsWatermarkCardExpanded((prev) => !prev)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    padding: '2px',
+                    color: 'var(--text-muted)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    transform: isWatermarkCardExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                    transition: 'transform 0.2s ease',
+                  }}
+                  title={isWatermarkCardExpanded ? 'Collapse' : 'Expand'}
+                >
+                  <FiChevronDown size={14} />
+                </button>
+              </div>
+            </div>
+
+            {/* Hidden Logo File Input */}
+            <input
+              ref={logoInputRef}
+              type="file"
+              accept="image/png,image/svg+xml,image/jpeg,image/webp"
+              style={{ display: 'none' }}
+              onChange={handleUploadLogoFile}
+            />
+
+            {/* Watermark Details (Shown when expanded) */}
+            {isWatermarkCardExpanded && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', paddingTop: '4px' }}>
+                {/* Type Switcher: [ Logo / Image ]  [ Text Watermark ] */}
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr',
+                    gap: '4px',
+                    padding: '3px',
+                    backgroundColor: isDark ? 'rgba(0, 0, 0, 0.25)' : 'var(--bg-surface-hover)',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-color)',
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setWatermarkConfig((p) => ({ ...p, type: 'logo', enabled: true }));
+                    }}
+                    style={{
+                      height: '30px',
+                      borderRadius: '6px',
+                      border: 'none',
+                      backgroundColor: watermarkConfig.type === 'logo' ? 'var(--accent-primary)' : 'transparent',
+                      color: watermarkConfig.type === 'logo' ? '#FFFFFF' : 'var(--text-secondary)',
+                      fontSize: '0.75rem',
+                      fontWeight: watermarkConfig.type === 'logo' ? 600 : 500,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
+                    <FiImageIcon size={12} />
+                    <span>Image / Logo</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setWatermarkConfig((p) => ({ ...p, type: 'text', enabled: true }));
+                    }}
+                    style={{
+                      height: '30px',
+                      borderRadius: '6px',
+                      border: 'none',
+                      backgroundColor: watermarkConfig.type === 'text' ? 'var(--accent-primary)' : 'transparent',
+                      color: watermarkConfig.type === 'text' ? '#FFFFFF' : 'var(--text-secondary)',
+                      fontSize: '0.75rem',
+                      fontWeight: watermarkConfig.type === 'text' ? 600 : 500,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
+                    <FiType size={12} />
+                    <span>Text Watermark</span>
+                  </button>
+                </div>
+
+                {/* ---------------------------------------------------- */}
+                {/* SECTION A: LOGO / IMAGE WATERMARK                    */}
+                {/* ---------------------------------------------------- */}
+                {watermarkConfig.type === 'logo' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {/* Active Logo Display & Upload Button */}
+                    <div
+                      style={{
+                        padding: '8px 10px',
+                        borderRadius: '8px',
+                        border: '1px dashed var(--border-color)',
+                        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'var(--bg-secondary)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '10px',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                        <div
+                          style={{
+                            width: '38px',
+                            height: '38px',
+                            borderRadius: '6px',
+                            backgroundColor: '#0F172A',
+                            border: '1px solid rgba(255, 255, 255, 0.1)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            overflow: 'hidden',
+                            flexShrink: 0,
+                            padding: '2px',
+                          }}
+                        >
+                          {watermarkConfig.logoUrl ? (
+                            <img
+                              src={watermarkConfig.logoUrl}
+                              alt="Logo"
+                              style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+                            />
+                          ) : (
+                            <FiImageIcon size={18} style={{ color: 'var(--text-muted)' }} />
+                          )}
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                          <span
+                            style={{
+                              fontSize: '0.75rem',
+                              fontWeight: 600,
+                              color: 'var(--text-primary)',
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                            }}
+                          >
+                            {watermarkConfig.logoName || 'Logo Badge'}
+                          </span>
+                          <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
+                            PNG, SVG, or JPG
+                          </span>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+                        <button
+                          type="button"
+                          onClick={() => logoInputRef.current?.click()}
+                          style={{
+                            height: '28px',
+                            padding: '0 9px',
+                            borderRadius: '6px',
+                            border: '1px solid var(--accent-primary)',
+                            backgroundColor: 'var(--accent-primary-alpha)',
+                            color: 'var(--accent-primary)',
+                            fontSize: '0.6875rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            transition: 'all 0.15s ease',
+                          }}
+                          title="Upload PNG / SVG logo image"
+                        >
+                          <FiUploadCloud size={12} />
+                          <span>Upload</span>
+                        </button>
+
+                        {watermarkConfig.logoUrl !== SAMPLE_BADGES.goldShield && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setWatermarkConfig((p) => ({
+                                ...p,
+                                logoUrl: SAMPLE_BADGES.goldShield,
+                                logoName: 'Gold Estate Shield Badge',
+                              }));
+                            }}
+                            style={{
+                              height: '28px',
+                              width: '28px',
+                              borderRadius: '6px',
+                              border: '1px solid var(--border-color)',
+                              backgroundColor: 'transparent',
+                              color: 'var(--text-muted)',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                            }}
+                            title="Reset to default badge"
+                          >
+                            <FiRotateCcw size={11} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Quick Real Estate Presets */}
+                    <div>
+                      <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '5px' }}>
+                        Preset Luxury Badges
+                      </span>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
+                        {[
+                          { id: 'goldShield', name: 'Gold Shield', badge: SAMPLE_BADGES.goldShield },
+                          { id: 'modernMinimal', name: 'Prime Minimal', badge: SAMPLE_BADGES.modernMinimal },
+                          { id: 'luxurySignature', name: 'Emerald', badge: SAMPLE_BADGES.luxurySignature },
+                        ].map((item) => {
+                          const isSelected = watermarkConfig.logoUrl === item.badge;
+                          return (
+                            <button
+                              key={item.id}
+                              type="button"
+                              onClick={() => {
+                                setWatermarkConfig((p) => ({
+                                  ...p,
+                                  logoUrl: item.badge,
+                                  logoName: `${item.name} Badge`,
+                                  enabled: true,
+                                }));
+                              }}
+                              style={{
+                                height: '42px',
+                                padding: '3px 4px',
+                                borderRadius: '6px',
+                                border: isSelected
+                                  ? '1.5px solid var(--accent-primary)'
+                                  : '1px solid var(--border-color)',
+                                backgroundColor: isDark ? '#0F172A' : '#1E293B',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '2px',
+                                transition: 'all 0.15s ease',
+                                overflow: 'hidden',
+                              }}
+                            >
+                              <img
+                                src={item.badge}
+                                alt={item.name}
+                                style={{ maxHeight: '20px', maxWidth: '85%', objectFit: 'contain' }}
+                              />
+                              <span
+                                style={{
+                                  fontSize: '0.5625rem',
+                                  fontWeight: isSelected ? 700 : 500,
+                                  color: isSelected ? 'var(--accent-primary)' : '#94A3B8',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                {item.name}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ---------------------------------------------------- */}
+                {/* SECTION B: TEXT WATERMARK                            */}
+                {/* ---------------------------------------------------- */}
+                {watermarkConfig.type === 'text' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {/* Custom Text Input */}
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                        <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                          Watermark Text
+                        </label>
+                      </div>
+                      <input
+                        type="text"
+                        value={watermarkConfig.text}
+                        onChange={(e) => {
+                          setWatermarkConfig((p) => ({ ...p, text: e.target.value, enabled: true }));
+                        }}
+                        placeholder="{project} • 081-234-5678"
+                        style={{
+                          width: '100%',
+                          height: '34px',
+                          padding: '0 9px',
+                          fontSize: '0.75rem',
+                          borderRadius: '7px',
+                          border: '1px solid var(--border-color)',
+                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF',
+                          color: 'var(--text-primary)',
+                          outline: 'none',
+                        }}
+                      />
+                    </div>
+
+                    {/* Dynamic Tag Pills */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)', marginRight: '2px' }}>Tags:</span>
+                      {[
+                        { label: '+Project', tag: '{project}' },
+                        { label: '+Phone', tag: '081-234-5678' },
+                        { label: '+Line', tag: '@estatebangkok' },
+                      ].map((t) => (
+                        <button
+                          key={t.tag}
+                          type="button"
+                          onClick={() => {
+                            setWatermarkConfig((p) => ({
+                              ...p,
+                              text: p.text ? `${p.text} · ${t.tag}` : t.tag,
+                              enabled: true,
+                            }));
+                          }}
+                          style={{
+                            height: '22px',
+                            padding: '0 6px',
+                            borderRadius: '4px',
+                            border: '1px solid var(--border-color)',
+                            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'var(--bg-secondary)',
+                            color: 'var(--text-secondary)',
+                            fontSize: '0.625rem',
+                            fontWeight: 500,
+                            cursor: 'pointer',
+                            transition: 'all 0.12s ease',
+                          }}
+                        >
+                          {t.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Text Color Swatches & Shadow Toggle */}
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '6px',
+                        paddingTop: '4px',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>Color:</span>
+                        {[
+                          { color: '#FFFFFF', name: 'White' },
+                          { color: '#EAB308', name: 'Gold' },
+                          { color: '#38BDF8', name: 'Blue' },
+                          { color: '#10B981', name: 'Emerald' },
+                          { color: '#0F172A', name: 'Slate' },
+                        ].map((c) => {
+                          const isSelected = (watermarkConfig.textColor || '#FFFFFF').toUpperCase() === c.color;
+                          return (
+                            <button
+                              key={c.color}
+                              type="button"
+                              onClick={() => setWatermarkConfig((p) => ({ ...p, textColor: c.color }))}
+                              style={{
+                                width: '18px',
+                                height: '18px',
+                                borderRadius: '50%',
+                                backgroundColor: c.color,
+                                border: isSelected ? '2px solid var(--accent-primary)' : '1px solid rgba(128,128,128,0.4)',
+                                boxShadow: isSelected ? '0 0 0 1.5px #FFFFFF' : 'none',
+                                cursor: 'pointer',
+                                padding: 0,
+                              }}
+                              title={c.name}
+                            />
+                          );
+                        })}
+
+                        {/* Native Color Picker */}
+                        <input
+                          type="color"
+                          value={watermarkConfig.textColor || '#FFFFFF'}
+                          onChange={(e) => setWatermarkConfig((p) => ({ ...p, textColor: e.target.value }))}
+                          style={{
+                            width: '20px',
+                            height: '20px',
+                            borderRadius: '4px',
+                            border: 'none',
+                            cursor: 'pointer',
+                            padding: 0,
+                            background: 'none',
+                          }}
+                          title="Custom color"
+                        />
+                      </div>
+
+                      {/* Drop Shadow Switch */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>Shadow:</span>
+                        <SwitchToggle
+                          checked={watermarkConfig.hasShadow}
+                          onChange={(val) => setWatermarkConfig((p) => ({ ...p, hasShadow: val }))}
+                          activeColor="var(--accent-primary)"
+                          isDark={isDark}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ---------------------------------------------------- */}
+                {/* SECTION C: ADJUSTMENTS (Position, Scale, Opacity)    */}
+                {/* ---------------------------------------------------- */}
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px',
+                    paddingTop: '8px',
+                    borderTop: '1px solid var(--border-color)',
+                  }}
+                >
+                  {/* 1. Position 3x3 Matrix Pad */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                    }}
+                  >
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                        Watermark Position
+                      </span>
+                      <span style={{ fontSize: '0.6875rem', color: 'var(--accent-primary)', fontWeight: 600 }}>
+                        {POSITION_LABELS[watermarkConfig.position] || 'Bottom Right'}
+                      </span>
+                    </div>
+
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(3, 20px)',
+                        gridTemplateRows: 'repeat(3, 20px)',
+                        gap: '6px',
+                        padding: '6px',
+                        borderRadius: '8px',
+                        backgroundColor: isDark ? '#0c1017' : 'var(--bg-main)',
+                        border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid var(--border-color)',
+                        boxShadow: isDark ? 'inset 0 1px 3px rgba(0,0,0,0.4)' : 'inset 0 1px 2px rgba(0,0,0,0.05)',
+                      }}
+                    >
+                      {NINE_POSITIONS.map((pos) => {
+                        const isActive = watermarkConfig.position === pos;
+                        return (
+                          <button
+                            key={pos}
+                            type="button"
+                            onClick={() => setWatermarkConfig((p) => ({ ...p, position: pos, enabled: true }))}
+                            style={{
+                              width: '20px',
+                              height: '20px',
+                              borderRadius: '4px',
+                              border: isActive
+                                ? (isDark ? '1px solid #FFFFFF' : '1px solid var(--accent-primary)')
+                                : (isDark ? '1px solid transparent' : '1px solid var(--border-color)'),
+                              backgroundColor: isActive
+                                ? (isDark ? '#FFFFFF' : 'var(--accent-primary)')
+                                : (isDark ? 'rgba(255, 255, 255, 0.1)' : 'var(--bg-surface)'),
+                              boxShadow: isActive
+                                ? (isDark ? '0 0 8px rgba(255, 255, 255, 0.6)' : '0 2px 6px var(--accent-primary-alpha)')
+                                : 'none',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              padding: 0,
+                              transition: 'all 0.12s ease',
+                            }}
+                            title={`Position: ${POSITION_LABELS[pos]}`}
+                          >
+                            {isActive && (
+                              <span
+                                style={{
+                                  width: '5px',
+                                  height: '5px',
+                                  borderRadius: '50%',
+                                  backgroundColor: isDark ? '#0F172A' : '#FFFFFF',
+                                }}
+                              />
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* 2. Scale / Size Slider */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                        Size / Scale
+                      </span>
+                      <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                        {watermarkConfig.scale}%
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="10"
+                      max="50"
+                      step="1"
+                      value={watermarkConfig.scale}
+                      onChange={(e) => setWatermarkConfig((p) => ({ ...p, scale: parseInt(e.target.value, 10), enabled: true }))}
+                      style={{ width: '100%', accentColor: 'var(--accent-primary)', cursor: 'pointer' }}
+                    />
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px', marginTop: '1px' }}>
+                      {[16, 24, 32, 42].map((s) => (
+                        <button
+                          key={s}
+                          type="button"
+                          onClick={() => setWatermarkConfig((p) => ({ ...p, scale: s, enabled: true }))}
+                          style={{
+                            height: '24px',
+                            fontSize: '0.625rem',
+                            fontWeight: watermarkConfig.scale === s ? 700 : 500,
+                            borderRadius: '5px',
+                            border: watermarkConfig.scale === s ? '1px solid var(--accent-primary)' : '1px solid var(--border-color)',
+                            backgroundColor: watermarkConfig.scale === s ? 'var(--accent-primary-alpha)' : 'transparent',
+                            color: watermarkConfig.scale === s ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {s}%
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 3. Opacity Slider */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                        Opacity
+                      </span>
+                      <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                        {watermarkConfig.opacity}%
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="20"
+                      max="100"
+                      step="5"
+                      value={watermarkConfig.opacity}
+                      onChange={(e) => setWatermarkConfig((p) => ({ ...p, opacity: parseInt(e.target.value, 10), enabled: true }))}
+                      style={{ width: '100%', accentColor: 'var(--accent-primary)', cursor: 'pointer' }}
+                    />
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px', marginTop: '1px' }}>
+                      {[50, 75, 85, 100].map((o) => (
+                        <button
+                          key={o}
+                          type="button"
+                          onClick={() => setWatermarkConfig((p) => ({ ...p, opacity: o, enabled: true }))}
+                          style={{
+                            height: '24px',
+                            fontSize: '0.625rem',
+                            fontWeight: watermarkConfig.opacity === o ? 700 : 500,
+                            borderRadius: '5px',
+                            border: watermarkConfig.opacity === o ? '1px solid var(--accent-primary)' : '1px solid var(--border-color)',
+                            backgroundColor: watermarkConfig.opacity === o ? 'var(--accent-primary-alpha)' : 'transparent',
+                            color: watermarkConfig.opacity === o ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {o}%
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 4. Margin / Padding from Edge */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                        Margin / Edge Distance
+                      </span>
+                      <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                        {watermarkConfig.margin}%
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="15"
+                      step="1"
+                      value={watermarkConfig.margin}
+                      onChange={(e) => setWatermarkConfig((p) => ({ ...p, margin: parseInt(e.target.value, 10), enabled: true }))}
+                      style={{ width: '100%', accentColor: 'var(--accent-primary)', cursor: 'pointer' }}
+                    />
+                  </div>
+
+                  {/* Peek Clean Photo Toggle */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '2px' }}>
+                    <button
+                      type="button"
+                      onClick={() => setHideWatermarkPreview((prev) => !prev)}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '4px 10px',
+                        borderRadius: '6px',
+                        border: '1px solid var(--border-color)',
+                        backgroundColor: hideWatermarkPreview ? 'var(--accent-primary-alpha)' : 'transparent',
+                        color: hideWatermarkPreview ? 'var(--accent-primary)' : 'var(--text-muted)',
+                        fontSize: '0.6875rem',
+                        fontWeight: 500,
+                        cursor: 'pointer',
+                        width: '100%',
+                        justifyContent: 'center',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      {hideWatermarkPreview ? <FiEyeOff size={12} /> : <FiEye size={12} />}
+                      <span>{hideWatermarkPreview ? 'Watermark Hidden (Click to Show)' : 'Peek Clean Image (Hide Watermark)'}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -5266,6 +6157,16 @@ export const WatermarkView: React.FC = () => {
                       </strong>
                     </div>
                   )}
+                  <div style={{ gridColumn: 'span 2' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Watermark: </span>
+                    <strong style={{ color: watermarkConfig.enabled ? 'var(--accent-primary)' : 'var(--text-secondary)' }}>
+                      {watermarkConfig.enabled
+                        ? (watermarkConfig.type === 'logo'
+                            ? `Logo (${watermarkConfig.logoName || 'Custom'}) • ${POSITION_LABELS[watermarkConfig.position] || watermarkConfig.position} • ${watermarkConfig.scale}% size`
+                            : `Text ("${watermarkConfig.text}") • ${POSITION_LABELS[watermarkConfig.position] || watermarkConfig.position}`)
+                        : 'Disabled (Clean Image)'}
+                    </strong>
+                  </div>
                 </div>
               </div>
 
@@ -5617,6 +6518,24 @@ export const WatermarkView: React.FC = () => {
                           >
                             {fmt.mode === 'grid' ? 'Grid Split' : 'Standard Crop'}
                           </span>
+
+                          {fmt.watermarkConfig?.enabled && (
+                            <span
+                              style={{
+                                padding: '2px 8px',
+                                borderRadius: '6px',
+                                backgroundColor: 'var(--accent-primary-alpha)',
+                                color: 'var(--accent-primary)',
+                                fontWeight: 600,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                              }}
+                            >
+                              <FiShield size={11} />
+                              <span>Watermark: {fmt.watermarkConfig.type === 'logo' ? 'Logo' : 'Text'}</span>
+                            </span>
+                          )}
                         </div>
                       </div>
                     );

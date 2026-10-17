@@ -1,3 +1,6 @@
+import type { WatermarkConfig } from '../autopost/watermarkStorage';
+import { drawWatermarkOnContext } from '../autopost/watermarkCanvas';
+
 export type WatermarkPosition =
   | 'top-left'
   | 'top-center'
@@ -20,6 +23,8 @@ export interface CropStudioFormat {
   fitMode: 'cover' | 'contain';
   focusPosition: WatermarkPosition;
   cropZoom: number;
+  // Watermark configuration
+  watermarkConfig?: WatermarkConfig;
   // Grid mode settings
   gridLayoutId?: string;
   tileCropMap?: Record<number, { width: number; height: number; presetId?: string }>;
@@ -178,7 +183,7 @@ export const formatImageWithCropFormat = async (
   return new Promise<string>((resolve) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
-    img.onload = () => {
+    img.onload = async () => {
       try {
         const naturalW = img.naturalWidth || 1200;
         const naturalH = img.naturalHeight || 1200;
@@ -253,6 +258,10 @@ export const formatImageWithCropFormat = async (
           ctx.fillStyle = '#1E293B';
           ctx.fillRect(0, 0, width, height);
           ctx.drawImage(img, offsetX, offsetY, zoomedW, zoomedH);
+        }
+
+        if (format.watermarkConfig?.enabled) {
+          await drawWatermarkOnContext(ctx, width, height, format.watermarkConfig);
         }
 
         const mime = imgSrc.includes('.png') ? 'image/png' : imgSrc.includes('.webp') ? 'image/webp' : 'image/jpeg';
