@@ -39,8 +39,14 @@ import {
   getActiveCropFormatId,
   setActiveCropFormatId,
 } from './cropFormats';
+import {
+  savePhotoToIndexedDB,
+  loadPhotosFromIndexedDB,
+  deletePhotoFromIndexedDB,
+  clearSessionPhotosFromIndexedDB,
+} from './cropStudioStorage';
 
-interface StudioImage {
+export interface StudioImage {
   id: string;
   url: string;
   name: string;
@@ -386,7 +392,11 @@ export const WatermarkView: React.FC = () => {
       const saved = localStorage.getItem('ea_crop_studio_standard_images_v2') || localStorage.getItem('ea_crop_studio_images_v1');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // Keep persistent remote URLs (e.g. unsplash sample photos), exclude stale blob: URLs that die on reload
+          const valid = parsed.filter((img: StudioImage) => img?.url && !img.url.startsWith('blob:'));
+          if (valid.length > 0) return valid;
+        }
       }
     } catch (e) {}
     return DEFAULT_SAMPLE_PHOTOS;
@@ -398,12 +408,60 @@ export const WatermarkView: React.FC = () => {
       const saved = localStorage.getItem('ea_crop_studio_grid_images_v4');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const valid = parsed.filter((img: StudioImage) => img?.url && !img.url.startsWith('blob:'));
+          if (valid.length > 0) return valid;
+        }
       }
     } catch (e) {}
     return []; // Empty by default for Cut session
   });
   const [gridSelectedImageIndex, setGridSelectedImageIndex] = useState<number>(0);
+
+  // Restore persisted binary Blobs from IndexedDB on page load / reload
+  // This guarantees uploaded images survive browser reloads and never break even if deleted from the user's local hard drive
+  useEffect(() => {
+    let isMounted = true;
+    const restoreSavedPhotos = async () => {
+      try {
+        const [storedStd, storedGrid] = await Promise.all([
+          loadPhotosFromIndexedDB('standard'),
+          loadPhotosFromIndexedDB('grid'),
+        ]);
+        if (!isMounted) return;
+
+        if (storedStd && storedStd.length > 0) {
+          setStandardImages(storedStd);
+        }
+        if (storedGrid && storedGrid.length > 0) {
+          setGridImages(storedGrid);
+        }
+      } catch (err) {
+        console.warn('Error restoring photos from IndexedDB:', err);
+      }
+    };
+
+    restoreSavedPhotos();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Ask permission before leaving or reloading if there are active photos in the workspace
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (standardImages.length > 0 || gridImages.length > 0) {
+        e.preventDefault();
+        e.returnValue = ''; // Standard trigger for native browser confirmation dialog: "Leave site? Changes you made may not be saved."
+        return '';
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [standardImages.length, gridImages.length]);
 
   // Active Session Image Library
   const images = studioMode === 'standard' ? standardImages : gridImages;
@@ -954,6 +1012,19 @@ export const WatermarkView: React.FC = () => {
         const objectUrl = URL.createObjectURL(file);
         const tempImg = new Image();
         const imgId = `upload-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+
+        const newImgItem: StudioImage = {
+          id: imgId,
+          url: objectUrl,
+          originalUrl: objectUrl,
+          name: file.name,
+          width: 1536,
+          height: 1024,
+        };
+
+        // Persist the binary Blob immediately to IndexedDB browser storage
+        savePhotoToIndexedDB(studioMode, newImgItem, file);
+
         tempImg.onload = () => {
           setImages((prev) =>
             prev.map((img) =>
@@ -962,6 +1033,12 @@ export const WatermarkView: React.FC = () => {
                 : img
             )
           );
+          // Update dimension metadata in IndexedDB
+          savePhotoToIndexedDB(
+            studioMode,
+            { ...newImgItem, width: tempImg.naturalWidth, height: tempImg.naturalHeight },
+            file
+          );
           if (activePresetId === 'original' || studioMode === 'grid') {
             setTargetWidth(tempImg.naturalWidth);
             setTargetHeight(tempImg.naturalHeight);
@@ -969,14 +1046,7 @@ export const WatermarkView: React.FC = () => {
         };
         tempImg.src = objectUrl;
 
-        newImgs.push({
-          id: imgId,
-          url: objectUrl,
-          originalUrl: objectUrl,
-          name: file.name,
-          width: 1536,
-          height: 1024,
-        });
+        newImgs.push(newImgItem);
       }
     });
 
@@ -1002,6 +1072,7 @@ export const WatermarkView: React.FC = () => {
       ...currentStd,
       id: `grid-copy-${Date.now()}`,
     };
+    savePhotoToIndexedDB('grid', newGridImg);
     setGridImages((prev) => [...prev, newGridImg]);
     setGridSelectedImageIndex(gridImages.length);
     showToast(`Copied "${currentStd.name}" to Cut session`);
@@ -1009,6 +1080,7 @@ export const WatermarkView: React.FC = () => {
 
   const handleDeleteImage = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    deletePhotoFromIndexedDB(id);
     if (studioMode === 'standard') {
       const next = standardImages.filter((img) => img.id !== id);
       setStandardImages(next);
@@ -1026,6 +1098,7 @@ export const WatermarkView: React.FC = () => {
   };
 
   const handleClearAll = () => {
+    clearSessionPhotosFromIndexedDB(studioMode);
     if (studioMode === 'standard') {
       setStandardImages([]);
       setStandardSelectedImageIndex(0);
@@ -1038,6 +1111,7 @@ export const WatermarkView: React.FC = () => {
   };
 
   const handleResetToDefaults = () => {
+    clearSessionPhotosFromIndexedDB(studioMode);
     if (studioMode === 'standard') {
       setStandardImages(DEFAULT_SAMPLE_PHOTOS);
       setStandardSelectedImageIndex(0);
@@ -2517,6 +2591,9 @@ export const WatermarkView: React.FC = () => {
                   <img
                     src={activeImage.originalUrl || activeImage.url}
                     alt={activeImage.name}
+                    onError={(e) => {
+                      (e.currentTarget as HTMLImageElement).style.opacity = '0';
+                    }}
                     style={{
                       maxWidth: '100%',
                       maxHeight: '100%',
@@ -2598,6 +2675,9 @@ export const WatermarkView: React.FC = () => {
                               <img
                                 src={activeImage.originalUrl || activeImage.url}
                                 alt={activeImage.name}
+                                onError={(e) => {
+                                  (e.currentTarget as HTMLImageElement).style.opacity = '0';
+                                }}
                                 style={{
                                   width: '100%',
                                   height: '100%',
@@ -2979,9 +3059,44 @@ export const WatermarkView: React.FC = () => {
                       transition: 'all 0.18s cubic-bezier(0.4, 0, 0.2, 1)',
                     }}
                   >
+                    {/* Fallback card underneath in case of missing or loading blob */}
+                    <div
+                      style={{
+                        position: 'absolute',
+                        inset: 0,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '4px',
+                        backgroundColor: '#1E293B',
+                        color: 'rgba(255, 255, 255, 0.65)',
+                        padding: '6px',
+                        textAlign: 'center',
+                        userSelect: 'none',
+                      }}
+                    >
+                      <FiFolder style={{ fontSize: '1.25rem', opacity: 0.8 }} />
+                      <span
+                        style={{
+                          fontSize: '0.625rem',
+                          maxWidth: '90px',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          color: '#CBD5E1',
+                        }}
+                      >
+                        {img.name}
+                      </span>
+                    </div>
+
                     <img
                       src={img.originalUrl || img.url}
                       alt={img.name}
+                      onError={(e) => {
+                        (e.currentTarget as HTMLImageElement).style.display = 'none';
+                      }}
                       style={{
                         position: 'absolute',
                         inset: 0,
