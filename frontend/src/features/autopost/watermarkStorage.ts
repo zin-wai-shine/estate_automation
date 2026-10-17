@@ -11,6 +11,8 @@ export type WatermarkPosition =
 
 export type WatermarkType = 'logo' | 'text';
 export type WatermarkScope = 'all' | 'body-only' | 'body-and-footer';
+export type WatermarkLayoutMode = 'single' | 'repeat-grid' | 'top-bottom';
+export type WatermarkBorderStyle = 'none' | 'solid-thin-white' | 'solid-dark' | 'luxury-gold' | 'modern-accent';
 
 export interface WatermarkConfig {
   enabled: boolean;
@@ -27,6 +29,14 @@ export interface WatermarkConfig {
   margin: number; // 2 to 12 (% padding from edge)
   hasShadow: boolean;
   smartScope: WatermarkScope;
+  // Multi-layout, repeat pattern & frame styling
+  layoutMode?: WatermarkLayoutMode;
+  rows?: number;
+  columns?: number;
+  gapSpacing?: number;
+  offsetAlternateRows?: boolean;
+  rotation?: number;
+  borderStyle?: WatermarkBorderStyle;
 }
 
 export interface WatermarkPreset {
@@ -89,6 +99,13 @@ export const DEFAULT_WATERMARK_CONFIG: WatermarkConfig = {
   margin: 4,
   hasShadow: true,
   smartScope: 'body-only',
+  layoutMode: 'single',
+  rows: 2,
+  columns: 6,
+  gapSpacing: 8,
+  offsetAlternateRows: false,
+  rotation: 0,
+  borderStyle: 'none',
 };
 
 export const DEFAULT_PRESETS: WatermarkPreset[] = [
@@ -155,9 +172,63 @@ export const DEFAULT_PRESETS: WatermarkPreset[] = [
   },
 ];
 
+const STORAGE_KEY_SAVED_WATERMARKS = 'ea_saved_watermarks_list_v2';
 const STORAGE_KEY_PRESETS = 'ea_watermark_presets_v2';
 const STORAGE_KEY_ACTIVE_PRESET_ID = 'ea_watermark_active_preset_id_v2';
 const STORAGE_KEY_CURRENT_CONFIG = 'ea_watermark_current_config_v2';
+
+export interface SavedWatermarkItem {
+  id: string;
+  name: string;
+  type: 'logo' | 'text';
+  url?: string;
+  text?: string;
+  createdAt?: number;
+}
+
+export const DEFAULT_SAVED_WATERMARKS: SavedWatermarkItem[] = [
+  {
+    id: 'badge-gold-shield',
+    name: 'Gold Estate Shield Badge',
+    type: 'logo',
+    url: SAMPLE_BADGES.goldShield,
+  },
+  {
+    id: 'badge-modern-minimal',
+    name: 'Prime Modern Minimal Badge',
+    type: 'logo',
+    url: SAMPLE_BADGES.modernMinimal,
+  },
+  {
+    id: 'badge-luxury-emerald',
+    name: 'Emerald Signature Badge',
+    type: 'logo',
+    url: SAMPLE_BADGES.luxurySignature,
+  },
+];
+
+export const loadSavedWatermarksList = (): SavedWatermarkItem[] => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_SAVED_WATERMARKS);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to load saved watermarks from localStorage:', err);
+  }
+  return DEFAULT_SAVED_WATERMARKS;
+};
+
+export const saveSavedWatermarksList = (items: SavedWatermarkItem[]) => {
+  try {
+    localStorage.setItem(STORAGE_KEY_SAVED_WATERMARKS, JSON.stringify(items));
+  } catch (err) {
+    console.warn('Failed to save saved watermarks to localStorage:', err);
+  }
+};
 
 export const loadWatermarkPresets = (): WatermarkPreset[] => {
   try {
@@ -213,3 +284,5 @@ export const saveActiveWatermarkConfig = (config: WatermarkConfig, activePresetI
     console.warn('Failed to save active watermark config:', err);
   }
 };
+
+

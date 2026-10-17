@@ -89,74 +89,184 @@ export const drawWatermarkOnContext = async (
 ): Promise<void> => {
   if (!config.enabled) return;
 
+  const layoutMode = config.layoutMode || 'single';
+  const rotation = config.rotation || 0;
+  const opacity = Math.max(0.05, Math.min(1.0, (config.opacity ?? 80) / 100));
+
+  // 1. Draw Image Frame / Border if enabled
+  if (config.borderStyle && config.borderStyle !== 'none') {
+    ctx.save();
+    let borderW = Math.max(3, Math.round(width * 0.01));
+    if (config.borderStyle === 'solid-thin-white') {
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = Math.max(2, Math.round(width * 0.006));
+      ctx.strokeRect(ctx.lineWidth / 2, ctx.lineWidth / 2, width - ctx.lineWidth, height - ctx.lineWidth);
+    } else if (config.borderStyle === 'solid-dark') {
+      ctx.strokeStyle = '#0F172A';
+      ctx.lineWidth = Math.max(4, Math.round(width * 0.014));
+      ctx.strokeRect(ctx.lineWidth / 2, ctx.lineWidth / 2, width - ctx.lineWidth, height - ctx.lineWidth);
+    } else if (config.borderStyle === 'luxury-gold') {
+      ctx.strokeStyle = '#EAB308';
+      ctx.lineWidth = Math.max(3, Math.round(width * 0.008));
+      ctx.strokeRect(borderW, borderW, width - borderW * 2, height - borderW * 2);
+      ctx.strokeStyle = 'rgba(234, 179, 8, 0.4)';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(borderW + 5, borderW + 5, width - (borderW + 5) * 2, height - (borderW + 5) * 2);
+    } else if (config.borderStyle === 'modern-accent') {
+      ctx.strokeStyle = '#3B82F6';
+      ctx.lineWidth = Math.max(4, Math.round(width * 0.01));
+      ctx.strokeRect(ctx.lineWidth / 2, ctx.lineWidth / 2, width - ctx.lineWidth, height - ctx.lineWidth);
+    }
+    ctx.restore();
+  }
+
+  // 2. Prepare Watermark Item (Logo or Text)
   if (config.type === 'logo' && config.logoUrl) {
     try {
       const logoImg = await loadImageElement(config.logoUrl);
       const logoAspect = (logoImg.naturalHeight || logoImg.height) / (logoImg.naturalWidth || logoImg.width || 1);
-      const targetWidth = Math.round(width * (config.scale / 100));
+      const targetWidth = Math.round(width * ((config.scale || 20) / 100));
       const targetHeight = Math.round(targetWidth * logoAspect);
 
-      const { x, y } = calculateAnchorCoordinates(
-        width,
-        height,
-        targetWidth,
-        targetHeight,
-        config.position,
-        config.margin
-      );
+      const drawMarkAt = (cx: number, cy: number) => {
+        ctx.save();
+        ctx.translate(cx, cy);
+        if (rotation !== 0) {
+          ctx.rotate((rotation * Math.PI) / 180);
+        }
+        ctx.globalAlpha = opacity;
+        if (config.hasShadow) {
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.55)';
+          ctx.shadowBlur = Math.max(3, Math.round(width * 0.007));
+          ctx.shadowOffsetX = Math.max(1, Math.round(width * 0.002));
+          ctx.shadowOffsetY = Math.max(1, Math.round(width * 0.002));
+        }
+        ctx.drawImage(logoImg, -targetWidth / 2, -targetHeight / 2, targetWidth, targetHeight);
+        ctx.restore();
+      };
 
-      ctx.save();
-      ctx.globalAlpha = Math.max(0.1, Math.min(1.0, config.opacity / 100));
+      if (layoutMode === 'repeat-grid') {
+        const rows = Math.max(1, Math.min(10, config.rows || 2));
+        const cols = Math.max(1, Math.min(12, config.columns || 6));
+        const gapPct = (config.gapSpacing ?? 8) / 100;
+        const marginPx = Math.min(width, height) * gapPct;
+        const usableW = width - 2 * marginPx;
+        const usableH = height - 2 * marginPx;
 
-      if (config.hasShadow) {
-        ctx.shadowColor = 'rgba(0, 0, 0, 0.55)';
-        ctx.shadowBlur = Math.max(4, Math.round(width * 0.008));
-        ctx.shadowOffsetX = Math.max(2, Math.round(width * 0.003));
-        ctx.shadowOffsetY = Math.max(2, Math.round(width * 0.003));
+        for (let r = 0; r < rows; r++) {
+          const cy = rows === 1 ? height / 2 : marginPx + (r / (rows - 1)) * usableH;
+          const rowOffset = (config.offsetAlternateRows && r % 2 === 1) ? (usableW / cols) * 0.5 : 0;
+          for (let c = 0; c < cols; c++) {
+            const cx = cols === 1 ? width / 2 : marginPx + (c / (cols - 1)) * usableW + rowOffset;
+            drawMarkAt(cx, cy);
+          }
+        }
+      } else if (layoutMode === 'top-bottom') {
+        const cols = Math.max(1, Math.min(12, config.columns || 5));
+        const marginPx = Math.min(width, height) * 0.07;
+        const usableW = width - 2 * marginPx;
+        const topY = marginPx + targetHeight / 2;
+        const bottomY = height - marginPx - targetHeight / 2;
+
+        [topY, bottomY].forEach((cy) => {
+          for (let c = 0; c < cols; c++) {
+            const cx = cols === 1 ? width / 2 : marginPx + (c / (cols - 1)) * usableW;
+            drawMarkAt(cx, cy);
+          }
+        });
+      } else {
+        // Single Mark
+        const { x, y } = calculateAnchorCoordinates(
+          width,
+          height,
+          targetWidth,
+          targetHeight,
+          config.position,
+          config.margin
+        );
+        drawMarkAt(x + targetWidth / 2, y + targetHeight / 2);
       }
-
-      ctx.drawImage(logoImg, x, y, targetWidth, targetHeight);
-      ctx.restore();
     } catch (logoErr) {
       console.warn('Failed to draw logo watermark:', logoErr);
     }
   } else if (config.type === 'text' && config.text) {
-    // Interpolate dynamic tags
     let resolvedText = config.text;
     Object.entries(dynamicTags).forEach(([key, val]) => {
       resolvedText = resolvedText.replace(new RegExp(`{${key}}`, 'gi'), val);
     });
 
-    const scaledFontSize = Math.max(14, Math.round((width / 1000) * config.fontSize));
+    const scaledFontSize = Math.max(13, Math.round((width / 1000) * (config.fontSize || 24)));
     ctx.save();
     ctx.font = `${config.fontWeight || '600'} ${scaledFontSize}px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`;
-    ctx.textBaseline = 'top';
-
     const metrics = ctx.measureText(resolvedText);
     const textWidth = Math.round(metrics.width);
     const textHeight = Math.round(scaledFontSize * 1.25);
-
-    const { x, y } = calculateAnchorCoordinates(
-      width,
-      height,
-      textWidth,
-      textHeight,
-      config.position,
-      config.margin
-    );
-
-    ctx.globalAlpha = Math.max(0.1, Math.min(1.0, config.opacity / 100));
-
-    if (config.hasShadow) {
-      ctx.shadowColor = 'rgba(0, 0, 0, 0.75)';
-      ctx.shadowBlur = Math.max(4, Math.round(width * 0.006));
-      ctx.shadowOffsetX = Math.max(1, Math.round(width * 0.002));
-      ctx.shadowOffsetY = Math.max(1, Math.round(width * 0.002));
-    }
-
-    ctx.fillStyle = config.textColor || '#FFFFFF';
-    ctx.fillText(resolvedText, x, y);
     ctx.restore();
+
+    const drawTextAt = (cx: number, cy: number) => {
+      ctx.save();
+      ctx.translate(cx, cy);
+      if (rotation !== 0) {
+        ctx.rotate((rotation * Math.PI) / 180);
+      }
+      ctx.globalAlpha = opacity;
+      ctx.font = `${config.fontWeight || '600'} ${scaledFontSize}px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+
+      if (config.hasShadow) {
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.75)';
+        ctx.shadowBlur = Math.max(3, Math.round(width * 0.006));
+        ctx.shadowOffsetX = Math.max(1, Math.round(width * 0.002));
+        ctx.shadowOffsetY = Math.max(1, Math.round(width * 0.002));
+      }
+
+      ctx.fillStyle = config.textColor || '#FFFFFF';
+      ctx.fillText(resolvedText, 0, 0);
+      ctx.restore();
+    };
+
+    if (layoutMode === 'repeat-grid') {
+      const rows = Math.max(1, Math.min(10, config.rows || 2));
+      const cols = Math.max(1, Math.min(12, config.columns || 6));
+      const gapPct = (config.gapSpacing ?? 8) / 100;
+      const marginPx = Math.min(width, height) * gapPct;
+      const usableW = width - 2 * marginPx;
+      const usableH = height - 2 * marginPx;
+
+      for (let r = 0; r < rows; r++) {
+        const cy = rows === 1 ? height / 2 : marginPx + (r / (rows - 1)) * usableH;
+        const rowOffset = (config.offsetAlternateRows && r % 2 === 1) ? (usableW / cols) * 0.5 : 0;
+        for (let c = 0; c < cols; c++) {
+          const cx = cols === 1 ? width / 2 : marginPx + (c / (cols - 1)) * usableW + rowOffset;
+          drawTextAt(cx, cy);
+        }
+      }
+    } else if (layoutMode === 'top-bottom') {
+      const cols = Math.max(1, Math.min(12, config.columns || 5));
+      const marginPx = Math.min(width, height) * 0.07;
+      const usableW = width - 2 * marginPx;
+      const topY = marginPx + textHeight / 2;
+      const bottomY = height - marginPx - textHeight / 2;
+
+      [topY, bottomY].forEach((cy) => {
+        for (let c = 0; c < cols; c++) {
+          const cx = cols === 1 ? width / 2 : marginPx + (c / (cols - 1)) * usableW;
+          drawTextAt(cx, cy);
+        }
+      });
+    } else {
+      // Single Mark
+      const { x, y } = calculateAnchorCoordinates(
+        width,
+        height,
+        textWidth,
+        textHeight,
+        config.position,
+        config.margin
+      );
+      drawTextAt(x + textWidth / 2, y + textHeight / 2);
+    }
   }
 };
 
