@@ -29,7 +29,6 @@ import {
   FiCheckCircle,
   FiMaximize2,
   FiCrosshair,
-  FiRotateCcw,
   FiLayers,
 } from 'react-icons/fi';
 import { HiSparkles } from 'react-icons/hi2';
@@ -50,7 +49,6 @@ export const CreateWorkflowView: React.FC = () => {
 
   // Editing state for modal
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [deletedCount, setDeletedCount] = useState<number>(0);
   const [editingFormat, setEditingFormat] = useState<WorkflowFormat | null>(() => {
     const list = getSavedWorkflowFormats();
     const id = getActiveWorkflowFormatId();
@@ -682,43 +680,6 @@ export const CreateWorkflowView: React.FC = () => {
         headerExtra={
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
             <Button
-              variant="primary"
-              size="sm"
-              onClick={() => canvasRef.current?.addAIBox()}
-              leftIcon={<FiPlus style={{ fontSize: '13px' }} />}
-              style={{
-                height: '32px',
-                fontSize: '0.75rem',
-                fontWeight: 600,
-                backgroundColor: '#10B981',
-                borderColor: '#10B981',
-                color: '#FFFFFF',
-                boxShadow: 'none',
-              }}
-            >
-              Add Dynamic AI Node
-            </Button>
-            {deletedCount > 0 && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => canvasRef.current?.openRecoverModal()}
-                leftIcon={<FiRotateCcw style={{ fontSize: '13px', color: '#0284C7' }} />}
-                style={{
-                  height: '32px',
-                  fontSize: '0.75rem',
-                  fontWeight: 600,
-                  backgroundColor: isDark ? 'rgba(56, 189, 248, 0.12)' : 'rgba(56, 189, 248, 0.08)',
-                  borderColor: isDark ? 'rgba(56, 189, 248, 0.35)' : 'rgba(56, 189, 248, 0.5)',
-                  color: isDark ? '#38BDF8' : '#0284C7',
-                  boxShadow: 'none',
-                }}
-                title="Recover deleted AI nodes"
-              >
-                Recover ({deletedCount})
-              </Button>
-            )}
-            <Button
               variant="outline"
               size="sm"
               onClick={() => canvasRef.current?.resetLayout()}
@@ -773,7 +734,6 @@ export const CreateWorkflowView: React.FC = () => {
             ref={canvasRef}
             initialConfig={editingFormat.config}
             onConfigChange={handleCanvasConfigChange}
-            onDeletedCountChange={setDeletedCount}
             allowEditPrompt={true}
           />
         </div>
