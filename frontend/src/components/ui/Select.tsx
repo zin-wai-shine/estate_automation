@@ -1,6 +1,7 @@
 import React from 'react';
-import ReactSelect from 'react-select';
+import ReactSelect, { components, type DropdownIndicatorProps } from 'react-select';
 import type { StylesConfig } from 'react-select';
+import { FiChevronDown } from 'react-icons/fi';
 
 export interface SelectOption {
   value: string;
@@ -19,6 +20,23 @@ export interface SelectProps {
   className?: string;
   id?: string;
 }
+
+const CustomDropdownIndicator: React.FC<DropdownIndicatorProps<SelectOption, false>> = (props) => {
+  return (
+    <components.DropdownIndicator {...props}>
+      <FiChevronDown
+        size={13}
+        strokeWidth={1.75}
+        style={{
+          color: props.isFocused ? 'var(--accent-primary, #3B82F6)' : 'var(--text-muted, #94A3B8)',
+          transition: 'transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), color 0.15s ease',
+          transform: props.selectProps.menuIsOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+          flexShrink: 0,
+        }}
+      />
+    </components.DropdownIndicator>
+  );
+};
 
 export const Select: React.FC<SelectProps> = ({
   options,
@@ -45,35 +63,47 @@ export const Select: React.FC<SelectProps> = ({
       height,
       backgroundColor: 'var(--bg-main)',
       borderColor: state.isFocused ? 'var(--accent-primary)' : 'var(--border-color)',
-      borderRadius: '0.5rem',
+      borderRadius: '0.375rem',
       boxShadow: state.isFocused ? '0 0 0 1px var(--accent-primary)' : 'none',
       fontSize: '0.8125rem',
       color: 'var(--text-primary)',
       cursor: 'pointer',
       boxSizing: 'border-box',
+      display: 'flex',
+      alignItems: 'center',
       '&:hover': {
         borderColor: state.isFocused ? 'var(--accent-primary)' : 'var(--border-hover, #4B5563)',
       },
     }),
     valueContainer: (provided) => ({
       ...provided,
-      height,
-      padding: '0 0.75rem',
+      height: '100%',
+      padding: '0 0.25rem 0 0.625rem',
       display: 'flex',
       alignItems: 'center',
+      overflow: 'hidden',
     }),
     singleValue: (provided) => ({
       ...provided,
       color: 'var(--text-primary)',
       fontSize: '0.8125rem',
-      fontWeight: 400,
+      fontWeight: 500,
       margin: 0,
+      display: 'flex',
+      alignItems: 'center',
+      lineHeight: 1,
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'nowrap',
     }),
     placeholder: (provided) => ({
       ...provided,
       color: 'var(--text-muted)',
       fontSize: '0.8125rem',
       margin: 0,
+      display: 'flex',
+      alignItems: 'center',
+      lineHeight: 1,
     }),
     input: (provided) => ({
       ...provided,
@@ -82,18 +112,23 @@ export const Select: React.FC<SelectProps> = ({
       margin: 0,
       padding: 0,
     }),
+    indicatorsContainer: (provided) => ({
+      ...provided,
+      height: '100%',
+      display: 'flex',
+      alignItems: 'center',
+      paddingRight: '0.25rem',
+    }),
     indicatorSeparator: () => ({
       display: 'none',
     }),
-    dropdownIndicator: (provided, state) => ({
+    dropdownIndicator: (provided) => ({
       ...provided,
-      color: state.isFocused ? 'var(--accent-primary)' : 'var(--text-muted)',
-      padding: '0 0.5rem',
-      transition: 'transform 0.2s ease',
-      transform: state.selectProps.menuIsOpen ? 'rotate(180deg)' : 'none',
-      '&:hover': {
-        color: 'var(--text-primary)',
-      },
+      padding: '0 0.375rem',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      cursor: 'pointer',
     }),
     menu: (provided) => ({
       ...provided,
@@ -141,6 +176,7 @@ export const Select: React.FC<SelectProps> = ({
       }}
       options={options}
       styles={customStyles}
+      components={{ DropdownIndicator: CustomDropdownIndicator }}
       placeholder={placeholder}
       isSearchable={isSearchable}
       isDisabled={isDisabled}

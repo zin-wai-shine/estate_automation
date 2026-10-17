@@ -56,6 +56,7 @@ import { useNavigate } from 'react-router-dom';
 import { FaFacebook } from 'react-icons/fa';
 import { SiGooglegemini } from 'react-icons/si';
 import { HiSparkles } from 'react-icons/hi2';
+import { LuWorkflow } from 'react-icons/lu';
 import type { PromptTemplate } from '../../types';
 import { CustomDropdown } from '../../components/ui/CustomDropdown';
 import {
@@ -2137,7 +2138,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
       {/* Top Nav Bar Center Portal: Select Workflow Format */}
       {headerCenterEl &&
         createPortal(
-          <div style={{ width: '280px', maxWidth: '100%', display: 'flex', alignItems: 'center' }}>
+          <div style={{ width: '315px', maxWidth: '100%', display: 'flex', alignItems: 'center' }}>
             <Select
               options={workflowFormats.map((f) => {
                 const connectedCount = (f.config?.aiBoxes || []).filter((b: any) =>
@@ -2150,7 +2151,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
               })}
               value={selectedFormatId}
               onChange={handleFormatChange}
-              height="32px"
+              height="30px"
             />
           </div>,
           headerCenterEl
@@ -2209,13 +2210,13 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
             </label>
 
 
-            {/* Open Canvas in Modal Button */}
+            {/* Open Workflow in Modal Button */}
             <Button
               variant="outline"
               size="sm"
               onClick={() => setShowWorkflowCanvasModal(true)}
               title="Open workflow canvas editor"
-              leftIcon={<FiMaximize2 style={{ fontSize: '12px' }} />}
+              leftIcon={<LuWorkflow size={13} style={{ color: 'var(--accent-primary, #3B82F6)' }} />}
               style={{
                 height: '30px',
                 padding: '0 0.625rem',
@@ -2229,7 +2230,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                 borderRadius: '0.375rem',
               }}
             >
-              Canvas
+              Workflow
             </Button>
 
             {/* Compact Live Browser Button */}
