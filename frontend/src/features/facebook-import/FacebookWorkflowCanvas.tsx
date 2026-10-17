@@ -28,6 +28,7 @@ import {
   FiZap,
   FiChevronLeft,
   FiChevronRight,
+  FiTerminal,
 } from 'react-icons/fi';
 import { FaFacebook } from 'react-icons/fa';
 import { SiGooglegemini } from 'react-icons/si';
@@ -373,16 +374,22 @@ const CANVAS_NODE_ACTION_CSS = `
 .canvas-node:hover::before,
 .canvas-node.is-hovered::before{opacity:.7;transform:scale(1);animation:nodeRingSpin 10s linear infinite}
 .canvas-node.is-receptive::before{opacity:.5;border-color:var(--receptive-color,#D97706);transform:scale(1.02);animation:nodeRingSpin 8s linear infinite}
-.canvas-node.is-running::before{content:'' !important;position:absolute !important;inset:-10px !important;border-radius:50% !important;border:2.5px solid transparent !important;border-top-color:#38BDF8 !important;border-right-color:#0284C7 !important;border-bottom-color:#60A5FA !important;box-shadow:0 0 22px rgba(56,189,248,.95),inset 0 0 12px rgba(56,189,248,.4) !important;animation:nodeRingSpin 1.1s linear infinite !important;opacity:1 !important;transform:scale(1) !important}
-.canvas-node.is-running::after{content:'';position:absolute;inset:-16px;border-radius:50%;border:2px solid rgba(56,189,248,.6);animation:nodeRadarPulse 1.6s cubic-bezier(0.215,0.61,0.355,1) infinite !important;pointer-events:none}
-.canvas-node.is-running{animation:nodeActivePulse 1.6s ease-in-out infinite !important}
+.canvas-node.is-running::before{content:'' !important;position:absolute !important;inset:-11px !important;border-radius:50% !important;border:2.8px solid transparent !important;border-top-color:#38BDF8 !important;border-right-color:#0284C7 !important;border-bottom-color:#818CF8 !important;box-shadow:0 0 24px rgba(56,189,248,1),inset 0 0 14px rgba(56,189,248,.45) !important;animation:nodeRingSpin 0.95s linear infinite !important;opacity:1 !important;transform:scale(1) !important}
+.canvas-node.is-running::after{content:'';position:absolute;inset:-18px;border-radius:50%;border:2px solid rgba(56,189,248,.65);animation:nodeRadarPulse 1.5s cubic-bezier(0.215,0.61,0.355,1) infinite !important;pointer-events:none}
+.canvas-node.is-running{animation:nodeActivePulse 1.5s ease-in-out infinite !important}
 .canvas-node.is-completed::before{content:'' !important;position:absolute !important;inset:-6px !important;border-radius:50% !important;border:2px solid #10B981 !important;box-shadow:0 0 16px rgba(16,185,129,.75),inset 0 0 8px rgba(16,185,129,.35) !important;opacity:1 !important;transform:scale(1) !important;animation:none !important}
 .canvas-node.is-completed{filter:drop-shadow(0 0 10px rgba(16,185,129,.55)) !important}
 @keyframes nodeRingSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
-@keyframes nodeRadarPulse{0%{transform:scale(0.92);opacity:0.95}60%{opacity:0.35}100%{transform:scale(1.42);opacity:0}}
-@keyframes nodeActivePulse{0%,100%{filter:drop-shadow(0 0 12px rgba(56,189,248,.85)) drop-shadow(0 0 25px rgba(56,189,248,.45));transform:scale(1)}50%{filter:drop-shadow(0 0 22px rgba(56,189,248,1)) drop-shadow(0 0 42px rgba(56,189,248,.7));transform:scale(1.035)}}
+@keyframes nodeRadarPulse{0%{transform:scale(0.9);opacity:0.95}60%{opacity:0.35}100%{transform:scale(1.48);opacity:0}}
+@keyframes nodeActivePulse{0%,100%{filter:drop-shadow(0 0 14px rgba(56,189,248,.9)) drop-shadow(0 0 28px rgba(56,189,248,.5));transform:scale(1)}50%{filter:drop-shadow(0 0 24px rgba(56,189,248,1)) drop-shadow(0 0 45px rgba(56,189,248,.75));transform:scale(1.04)}}
 @keyframes badgePopIn{0%{transform:scale(0);opacity:0}70%{transform:scale(1.25)}100%{transform:scale(1);opacity:1}}
-@keyframes spinnerGlowPulse{0%,100%{box-shadow:0 0 14px rgba(56,189,248,.95),0 0 26px rgba(56,189,248,.5)}50%{box-shadow:0 0 24px rgba(56,189,248,1),0 0 40px rgba(56,189,248,.8)}}
+@keyframes spinnerGlowPulse{0%,100%{box-shadow:0 0 18px #38BDF8,0 0 32px rgba(56,189,248,.75),inset 0 0 8px rgba(255,255,255,.8)}50%{box-shadow:0 0 28px #38BDF8,0 0 48px rgba(56,189,248,1),inset 0 0 10px rgba(255,255,255,1)}}
+@keyframes hudGlowPulse{0%,100%{box-shadow:0 20px 48px rgba(0,0,0,.8),0 0 32px rgba(56,189,248,.35),inset 0 1px 1px rgba(255,255,255,.25);border-color:rgba(56,189,248,.6)}50%{box-shadow:0 24px 56px rgba(0,0,0,.9),0 0 50px rgba(56,189,248,.65),inset 0 1px 1px rgba(255,255,255,.45);border-color:rgba(56,189,248,1)}}
+@keyframes hudSlideDown{0%{transform:translate(-50%,-20px) scale(0.95);opacity:0}100%{transform:translate(-50%,0) scale(1);opacity:1}}
+@keyframes laserBeamScan{0%{transform:translateX(-100%);opacity:0}20%{opacity:1}80%{opacity:1}100%{transform:translateX(240%);opacity:0}}
+@keyframes eqBounce{0%,100%{height:4px;opacity:0.55}50%{height:14px;opacity:1}}
+@keyframes innerCoreGlow{0%,100%{opacity:0.35;transform:scale(0.92)}50%{opacity:0.85;transform:scale(1.06)}}
+@keyframes coreSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
 .node-hit{position:absolute;display:flex;align-items:center;pointer-events:none !important;z-index:45}
 .node-action{width:28px;height:28px;border-radius:50%;background:var(--na-bg);border:1.5px solid var(--na-color);color:var(--na-color);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;opacity:0;transform:scale(.3) translateX(-6px);box-shadow:0 2px 8px rgba(0,0,0,.18);transition:opacity .18s ease,transform .25s cubic-bezier(.34,1.56,.64,1),background-color .15s ease,color .15s ease;pointer-events:none}
 .canvas-node:hover .node-action,
@@ -430,42 +437,42 @@ export const NodeExecutionBadge: React.FC<{
       <div
         style={{
           position: 'absolute',
-          top: '-7px',
-          right: '-7px',
-          width: '28px',
-          height: '28px',
+          top: '-8px',
+          right: '-8px',
+          width: '32px',
+          height: '32px',
           borderRadius: '50%',
-          background: 'linear-gradient(135deg, #0284C7 0%, #38BDF8 60%, #06B6D4 100%)',
+          background: 'linear-gradient(135deg, #0284C7 0%, #38BDF8 55%, #06B6D4 100%)',
           color: '#FFFFFF',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          boxShadow: '0 0 16px rgba(56, 189, 248, 1), 0 0 28px rgba(56, 189, 248, 0.55), inset 0 0 6px rgba(255, 255, 255, 0.6)',
-          border: '2px solid #FFFFFF',
+          boxShadow: '0 0 18px #38BDF8, 0 0 32px rgba(56, 189, 248, 0.75), inset 0 0 8px rgba(255, 255, 255, 0.8)',
+          border: '2.5px solid #FFFFFF',
           zIndex: 35,
-          animation: 'badgePopIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), spinnerGlowPulse 1.6s infinite',
+          animation: 'badgePopIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), spinnerGlowPulse 1.4s infinite',
           pointerEvents: 'none',
         }}
         title="Executing step..."
       >
         <svg
-          width="15"
-          height="15"
+          width="18"
+          height="18"
           viewBox="0 0 24 24"
           fill="none"
-          style={{ animation: 'spin 0.8s linear infinite' }}
+          style={{ animation: 'spin 0.85s linear infinite' }}
         >
           <circle
             cx="12"
             cy="12"
             r="9"
             stroke="rgba(255, 255, 255, 0.35)"
-            strokeWidth="3.5"
+            strokeWidth="3.2"
           />
           <path
             d="M12 3a9 9 0 0 1 9 9"
             stroke="#FFFFFF"
-            strokeWidth="3.5"
+            strokeWidth="3.6"
             strokeLinecap="round"
           />
         </svg>
@@ -849,8 +856,8 @@ export const FacebookWorkflowCanvas = forwardRef<
     autoEnhance: propsAutoEnhance,
     onToggleAutoEnhance: propsOnToggleAutoEnhance,
     executionState,
-    onCloseCanvas: _onCloseCanvas,
-    onViewLogs: _onViewLogs,
+    onCloseCanvas,
+    onViewLogs,
   },
   ref
 ) {
@@ -2061,6 +2068,327 @@ export const FacebookWorkflowCanvas = forwardRef<
       >
 
 
+        {/* Futuristic Cyber Island Execution HUD ("Above of Process") */}
+        {executionState && (executionState.isRunning || executionState.isComplete || executionState.hasError) && (
+          <div
+            style={{
+              position: 'absolute',
+              top: '18px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              zIndex: 40,
+              minWidth: '400px',
+              maxWidth: '720px',
+              borderRadius: '26px',
+              background: 'linear-gradient(135deg, rgba(13, 18, 36, 0.96) 0%, rgba(8, 12, 24, 0.98) 100%)',
+              backdropFilter: 'blur(24px)',
+              WebkitBackdropFilter: 'blur(24px)',
+              border: `1.5px solid ${
+                executionState.hasError
+                  ? 'rgba(239, 68, 68, 0.75)'
+                  : executionState.isComplete
+                  ? 'rgba(16, 185, 129, 0.75)'
+                  : 'rgba(56, 189, 248, 0.7)'
+              }`,
+              boxShadow: executionState.hasError
+                ? '0 20px 48px rgba(0, 0, 0, 0.8), 0 0 35px rgba(239, 68, 68, 0.45), inset 0 1px 1px rgba(255, 255, 255, 0.25)'
+                : executionState.isComplete
+                ? '0 20px 48px rgba(0, 0, 0, 0.8), 0 0 40px rgba(16, 185, 129, 0.5), inset 0 1px 1px rgba(255, 255, 255, 0.3)'
+                : '0 20px 48px rgba(0, 0, 0, 0.8), 0 0 42px rgba(56, 189, 248, 0.45), inset 0 1px 1px rgba(255, 255, 255, 0.3)',
+              padding: '9px 16px 11px 16px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '6px',
+              overflow: 'hidden',
+              animation: executionState.isRunning
+                ? 'hudSlideDown 0.35s cubic-bezier(0.16, 1, 0.3, 1), hudGlowPulse 2.4s ease-in-out infinite'
+                : 'fadeIn 0.25s ease-out',
+              pointerEvents: 'auto',
+            }}
+          >
+            {/* Top iridescent laser accent line */}
+            <div
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                height: '2px',
+                background: executionState.hasError
+                  ? 'linear-gradient(90deg, transparent, #EF4444, transparent)'
+                  : executionState.isComplete
+                  ? 'linear-gradient(90deg, transparent, #10B981, #34D399, transparent)'
+                  : 'linear-gradient(90deg, transparent, #38BDF8, #A855F7, #EC4899, #38BDF8, transparent)',
+                boxShadow: executionState.hasError
+                  ? '0 0 10px #EF4444'
+                  : executionState.isComplete
+                  ? '0 0 12px #10B981'
+                  : '0 0 14px #38BDF8',
+              }}
+            />
+
+            {/* Main Row */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
+              {/* Left Core & Stage Text */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
+                {/* Glowing Orbital Core */}
+                <div
+                  style={{
+                    position: 'relative',
+                    width: '34px',
+                    height: '34px',
+                    borderRadius: '50%',
+                    background: executionState.hasError
+                      ? 'linear-gradient(135deg, #DC2626, #EF4444)'
+                      : executionState.isComplete
+                      ? 'linear-gradient(135deg, #059669, #10B981)'
+                      : 'linear-gradient(135deg, #0284C7, #38BDF8)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                    boxShadow: executionState.hasError
+                      ? '0 0 18px rgba(239, 68, 68, 0.9)'
+                      : executionState.isComplete
+                      ? '0 0 18px rgba(16, 185, 129, 0.95)'
+                      : '0 0 20px rgba(56, 189, 248, 1)',
+                  }}
+                >
+                  {executionState.hasError ? (
+                    <FiAlertTriangle style={{ fontSize: '16px', color: '#FFFFFF' }} />
+                  ) : executionState.isComplete ? (
+                    <FiCheck style={{ fontSize: '18px', color: '#FFFFFF', strokeWidth: 3 }} />
+                  ) : (
+                    <svg
+                      width="20"
+                      height="20"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      style={{ animation: 'coreSpin 0.9s linear infinite' }}
+                    >
+                      <circle cx="12" cy="12" r="9" stroke="rgba(255, 255, 255, 0.3)" strokeWidth="3" />
+                      <path d="M12 3a9 9 0 0 1 9 9" stroke="#FFFFFF" strokeWidth="3.2" strokeLinecap="round" />
+                    </svg>
+                  )}
+                </div>
+
+                {/* Status Content */}
+                <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+                    <span
+                      style={{
+                        fontSize: '0.625rem',
+                        fontWeight: 800,
+                        letterSpacing: '0.08em',
+                        textTransform: 'uppercase',
+                        color: executionState.hasError
+                          ? '#F87171'
+                          : executionState.isComplete
+                          ? '#34D399'
+                          : '#38BDF8',
+                        textShadow: executionState.hasError
+                          ? '0 0 10px rgba(239, 68, 68, 0.7)'
+                          : executionState.isComplete
+                          ? '0 0 10px rgba(16, 185, 129, 0.7)'
+                          : '0 0 10px rgba(56, 189, 248, 0.7)',
+                      }}
+                    >
+                      {executionState.hasError
+                        ? '● EXECUTION ERROR'
+                        : executionState.isComplete
+                        ? '✓ PIPELINE COMPLETED'
+                        : '⚡ N8N LIVE PIPELINE'}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: '0.5625rem',
+                        fontWeight: 700,
+                        padding: '1px 6px',
+                        borderRadius: '8px',
+                        backgroundColor: executionState.isComplete ? 'rgba(16, 185, 129, 0.2)' : 'rgba(56, 189, 248, 0.2)',
+                        border: `1px solid ${executionState.isComplete ? 'rgba(16, 185, 129, 0.45)' : 'rgba(56, 189, 248, 0.45)'}`,
+                        color: executionState.isComplete ? '#34D399' : '#38BDF8',
+                        letterSpacing: '0.04em',
+                      }}
+                    >
+                      REAL-TIME
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '1px' }}>
+                    {executionState.isRunning && (
+                      <div style={{ display: 'flex', alignItems: 'flex-end', gap: '2px', height: '14px', flexShrink: 0 }}>
+                        <span style={{ width: '2.5px', height: '6px', backgroundColor: '#38BDF8', borderRadius: '1.5px', animation: 'eqBounce 0.8s ease-in-out infinite' }} />
+                        <span style={{ width: '2.5px', height: '13px', backgroundColor: '#818CF8', borderRadius: '1.5px', animation: 'eqBounce 0.8s ease-in-out 0.2s infinite' }} />
+                        <span style={{ width: '2.5px', height: '8px', backgroundColor: '#C084FC', borderRadius: '1.5px', animation: 'eqBounce 0.8s ease-in-out 0.4s infinite' }} />
+                        <span style={{ width: '2.5px', height: '11px', backgroundColor: '#38BDF8', borderRadius: '1.5px', animation: 'eqBounce 0.8s ease-in-out 0.6s infinite' }} />
+                      </div>
+                    )}
+                    <span
+                      style={{
+                        fontSize: '0.78125rem',
+                        fontWeight: 600,
+                        color: '#F8FAFC',
+                        textShadow: '0 0 10px rgba(255, 255, 255, 0.25)',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        maxWidth: '430px',
+                      }}
+                    >
+                      {executionState.currentStepMessage ||
+                        (executionState.isComplete
+                          ? 'All workflow steps finished successfully.'
+                          : 'Processing workflow nodes...')}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Controls */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                {onViewLogs && (
+                  <button
+                    type="button"
+                    onClick={onViewLogs}
+                    style={{
+                      height: '28px',
+                      padding: '0 10px',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      borderRadius: '14px',
+                      backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      color: '#E2E8F0',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      transition: 'all 0.2s ease',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.16)';
+                      e.currentTarget.style.borderColor = '#38BDF8';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)';
+                      e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+                    }}
+                  >
+                    <FiTerminal style={{ fontSize: '12px', color: '#38BDF8' }} />
+                    <span>Logs</span>
+                  </button>
+                )}
+
+                {executionState.isComplete ? (
+                  <button
+                    type="button"
+                    onClick={onCloseCanvas}
+                    style={{
+                      height: '28px',
+                      padding: '0 12px',
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      borderRadius: '14px',
+                      background: 'linear-gradient(135deg, #059669 0%, #10B981 100%)',
+                      border: '1.5px solid #34D399',
+                      color: '#FFFFFF',
+                      boxShadow: '0 0 18px rgba(16, 185, 129, 0.9), 0 2px 8px rgba(0, 0, 0, 0.3)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      transition: 'all 0.2s ease',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.transform = 'scale(1.05)';
+                      e.currentTarget.style.boxShadow = '0 0 26px rgba(16, 185, 129, 1)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = 'scale(1)';
+                      e.currentTarget.style.boxShadow = '0 0 18px rgba(16, 185, 129, 0.9)';
+                    }}
+                  >
+                    <FiCheck style={{ fontSize: '13px', strokeWidth: 3 }} />
+                    <span>View Results</span>
+                  </button>
+                ) : executionState.hasError ? (
+                  <button
+                    type="button"
+                    onClick={onCloseCanvas}
+                    style={{
+                      height: '28px',
+                      padding: '0 12px',
+                      fontSize: '0.75rem',
+                      borderRadius: '14px',
+                      backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                      border: '1px solid rgba(239, 68, 68, 0.4)',
+                      color: '#F87171',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Dismiss
+                  </button>
+                ) : (
+                  <div
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '3px 10px',
+                      borderRadius: '14px',
+                      backgroundColor: 'rgba(56, 189, 248, 0.15)',
+                      border: '1px solid rgba(56, 189, 248, 0.45)',
+                      boxShadow: '0 0 12px rgba(56, 189, 248, 0.35)',
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: '7px',
+                        height: '7px',
+                        borderRadius: '50%',
+                        backgroundColor: '#38BDF8',
+                        boxShadow: '0 0 8px #38BDF8',
+                        animation: 'pulse 1.2s infinite',
+                      }}
+                    />
+                    <span style={{ fontSize: '0.6875rem', color: '#38BDF8', fontWeight: 700, letterSpacing: '0.04em' }}>
+                      RUNNING
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Bottom animated scanning laser beam */}
+            {executionState.isRunning && (
+              <div
+                style={{
+                  position: 'relative',
+                  width: '100%',
+                  height: '2.5px',
+                  backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                  borderRadius: '2px',
+                  overflow: 'hidden',
+                  marginTop: '2px',
+                }}
+              >
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    bottom: 0,
+                    width: '45%',
+                    background: 'linear-gradient(90deg, transparent, #38BDF8 40%, #A855F7 70%, #EC4899 90%, transparent)',
+                    boxShadow: '0 0 14px #38BDF8, 0 0 24px #A855F7',
+                    animation: 'laserBeamScan 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite',
+                  }}
+                />
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Floating Automations Control Bar (Auto Format & Auto Enhance) */}
         <div
           className="canvas-control"
@@ -2603,6 +2931,19 @@ export const FacebookWorkflowCanvas = forwardRef<
                   onSocketMouseUp={(type, e) => handleSocketMouseUp('trigger', type, e)}
                 />
                 <FaFacebook style={{ fontSize: '30px', color: '#1877F2', position: 'relative', zIndex: 2 }} />
+                {triggerStatus === 'running' && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      inset: '4px',
+                      borderRadius: '50%',
+                      background: 'radial-gradient(circle, rgba(56, 189, 248, 0.35) 0%, rgba(56, 189, 248, 0.08) 60%, transparent 100%)',
+                      pointerEvents: 'none',
+                      zIndex: 1,
+                      animation: 'innerCoreGlow 1.4s ease-in-out infinite',
+                    }}
+                  />
+                )}
                 <NodeExecutionBadge status={triggerStatus} />
 
                 {/* Label below circle */}
@@ -2742,6 +3083,19 @@ export const FacebookWorkflowCanvas = forwardRef<
                     }
                   }}
                 />
+                {contentStatus === 'running' && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      inset: '4px',
+                      borderRadius: '50%',
+                      background: 'radial-gradient(circle, rgba(56, 189, 248, 0.35) 0%, rgba(56, 189, 248, 0.08) 60%, transparent 100%)',
+                      pointerEvents: 'none',
+                      zIndex: 1,
+                      animation: 'innerCoreGlow 1.4s ease-in-out infinite',
+                    }}
+                  />
+                )}
                 <FiFileText
                   style={{
                     fontSize: '28px',
@@ -2965,6 +3319,19 @@ export const FacebookWorkflowCanvas = forwardRef<
                     }
                   }}
                 />
+                {imagesStatus === 'running' && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      inset: '4px',
+                      borderRadius: '50%',
+                      background: 'radial-gradient(circle, rgba(56, 189, 248, 0.35) 0%, rgba(56, 189, 248, 0.08) 60%, transparent 100%)',
+                      pointerEvents: 'none',
+                      zIndex: 1,
+                      animation: 'innerCoreGlow 1.4s ease-in-out infinite',
+                    }}
+                  />
+                )}
                 <FiImage
                   style={{
                     fontSize: '28px',
@@ -3205,6 +3572,19 @@ export const FacebookWorkflowCanvas = forwardRef<
                 />
 
                 {/* Center Icon - preserves natural brand colors with clear visibility */}
+                {boxStatus === 'running' && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      inset: '4px',
+                      borderRadius: '50%',
+                      background: 'radial-gradient(circle, rgba(56, 189, 248, 0.35) 0%, rgba(56, 189, 248, 0.08) 60%, transparent 100%)',
+                      pointerEvents: 'none',
+                      zIndex: 1,
+                      animation: 'innerCoreGlow 1.4s ease-in-out infinite',
+                    }}
+                  />
+                )}
                 <div
                   style={{
                     position: 'relative',
@@ -3493,6 +3873,19 @@ export const FacebookWorkflowCanvas = forwardRef<
                     }
                   }}
                 />
+                {destStatus === 'running' && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      inset: '4px',
+                      borderRadius: '50%',
+                      background: 'radial-gradient(circle, rgba(16, 185, 129, 0.35) 0%, rgba(16, 185, 129, 0.08) 60%, transparent 100%)',
+                      pointerEvents: 'none',
+                      zIndex: 1,
+                      animation: 'innerCoreGlow 1.4s ease-in-out infinite',
+                    }}
+                  />
+                )}
                 <FiCheckCircle
                   style={{
                     fontSize: '30px',

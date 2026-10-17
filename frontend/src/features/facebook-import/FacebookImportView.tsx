@@ -4537,17 +4537,6 @@ style={{
             <span style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-primary)' }}>
               Workflow Format: {activeFormat.name}
             </span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-              <Badge variant={workflowConfig.getContent.enabled ? 'info' : 'default'} size="sm">
-                Content: {workflowConfig.getContent.enabled ? 'ON' : 'OFF'}
-              </Badge>
-              <Badge variant={workflowConfig.getImages.enabled ? 'success' : 'default'} size="sm">
-                Images: {workflowConfig.getImages.enabled ? 'ON' : 'OFF'}
-              </Badge>
-              <Badge variant="warning" size="sm">
-                {(workflowConfig.aiBoxes || []).filter((b) => isAIBoxConnected(b, workflowConfig.connections)).length} AI Boxes
-              </Badge>
-            </div>
           </div>
         }
         headerExtra={
