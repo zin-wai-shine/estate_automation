@@ -1639,7 +1639,6 @@ export const FacebookWorkflowCanvas = forwardRef<
       addAIBox: (templateOverride) => handleAddAIBox(templateOverride),
       resetLayout: () => handleResetLayout(),
       openRecoverModal: () => {
-        setSelectRecoverIds(new Set(deletedBoxes.map((d) => d.box.id)));
         setIsRecoverModalOpen(true);
       },
       getDeletedBoxesCount: () => deletedBoxes.length,
@@ -3512,13 +3511,7 @@ export const FacebookWorkflowCanvas = forwardRef<
         <button
           type="button"
           onClick={() => {
-            setIsRecoverModalOpen((prev) => {
-              const next = !prev;
-              if (next && selectRecoverIds.size === 0) {
-                setSelectRecoverIds(new Set(deletedBoxes.map((d) => d.box.id)));
-              }
-              return next;
-            });
+            setIsRecoverModalOpen((prev) => !prev);
           }}
           style={{
             position: 'absolute',
@@ -3534,28 +3527,28 @@ export const FacebookWorkflowCanvas = forwardRef<
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: '6px',
-            backgroundColor: 'var(--bg-surface)',
-            color: 'var(--text-primary)',
-            border: '1px solid var(--border-color)',
+            backgroundColor: 'var(--accent-primary)',
+            color: '#FFFFFF',
+            border: '1px solid var(--accent-primary)',
             borderRight: 'none',
             borderTopLeftRadius: '8px',
             borderBottomLeftRadius: '8px',
             borderTopRightRadius: '0px',
             borderBottomRightRadius: '0px',
             boxShadow: isDark
-              ? '-4px 0 16px rgba(0, 0, 0, 0.45)'
-              : '-2px 0 10px rgba(0, 0, 0, 0.06)',
+              ? '-4px 0 20px rgba(59, 130, 246, 0.45)'
+              : '-3px 0 14px rgba(37, 99, 235, 0.35)',
             cursor: 'pointer',
             transition:
               'right 0.28s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease',
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.borderColor = 'var(--accent-primary)';
-            e.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)';
+            e.currentTarget.style.backgroundColor = 'var(--accent-hover)';
+            e.currentTarget.style.borderColor = 'var(--accent-hover)';
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.borderColor = 'var(--border-color)';
-            e.currentTarget.style.backgroundColor = 'var(--bg-surface)';
+            e.currentTarget.style.backgroundColor = 'var(--accent-primary)';
+            e.currentTarget.style.borderColor = 'var(--accent-primary)';
           }}
         >
           {/* Top Recover Icon */}
@@ -3564,11 +3557,11 @@ export const FacebookWorkflowCanvas = forwardRef<
               width: '20px',
               height: '20px',
               borderRadius: '4px',
-              backgroundColor: 'var(--accent-primary-alpha)',
+              backgroundColor: 'rgba(255, 255, 255, 0.22)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              color: 'var(--accent-primary)',
+              color: '#FFFFFF',
               flexShrink: 0,
             }}
           >
@@ -3589,10 +3582,11 @@ export const FacebookWorkflowCanvas = forwardRef<
               fontSize: '0.5625rem',
               fontWeight: 700,
               letterSpacing: '0.14em',
-              color: 'var(--text-secondary)',
+              color: '#FFFFFF',
               textTransform: 'uppercase',
               userSelect: 'none',
               margin: '2px 0',
+              opacity: 0.95,
             }}
           >
             Recover
@@ -3606,8 +3600,8 @@ export const FacebookWorkflowCanvas = forwardRef<
               minWidth: '17px',
               height: '17px',
               borderRadius: '9999px',
-              backgroundColor: 'var(--accent-primary-alpha)',
-              color: 'var(--accent-primary)',
+              backgroundColor: 'rgba(255, 255, 255, 0.28)',
+              color: '#FFFFFF',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -3620,7 +3614,7 @@ export const FacebookWorkflowCanvas = forwardRef<
           </span>
 
           {/* Toggle Chevron Arrow */}
-          <div style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ color: 'rgba(255, 255, 255, 0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             {isRecoverModalOpen ? <FiChevronRight size={11} /> : <FiChevronLeft size={11} />}
           </div>
         </button>
@@ -3809,7 +3803,7 @@ export const FacebookWorkflowCanvas = forwardRef<
           style={{
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'space-between',
+            gap: '0.5rem',
             padding: '0.75rem 0.875rem',
             borderBottom: '1px solid var(--border-color)',
             backgroundColor: 'var(--bg-surface)',
@@ -3817,52 +3811,22 @@ export const FacebookWorkflowCanvas = forwardRef<
             height: '46px',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <FiRotateCcw size={14} style={{ color: 'var(--accent-primary)' }} />
-            <span style={{ fontWeight: 600, fontSize: '0.8125rem', color: 'var(--text-primary)' }}>
-              Recover Nodes
-            </span>
-            <span
-              style={{
-                fontSize: '0.6875rem',
-                fontWeight: 600,
-                padding: '1px 6px',
-                borderRadius: '9999px',
-                backgroundColor: 'var(--accent-primary-alpha)',
-                color: 'var(--accent-primary)',
-              }}
-            >
-              {deletedBoxes.length}
-            </span>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setIsRecoverModalOpen(false)}
+          <FiRotateCcw size={14} style={{ color: 'var(--accent-primary)' }} />
+          <span style={{ fontWeight: 600, fontSize: '0.8125rem', color: 'var(--text-primary)' }}>
+            Recover Nodes
+          </span>
+          <span
             style={{
-              width: '26px',
-              height: '26px',
-              borderRadius: '0.375rem',
-              border: 'none',
-              backgroundColor: 'transparent',
-              color: 'var(--text-muted)',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              transition: 'all 0.15s ease',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)';
-              e.currentTarget.style.color = 'var(--text-primary)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = 'transparent';
-              e.currentTarget.style.color = 'var(--text-muted)';
+              fontSize: '0.6875rem',
+              fontWeight: 600,
+              padding: '1px 6px',
+              borderRadius: '9999px',
+              backgroundColor: 'var(--accent-primary-alpha)',
+              color: 'var(--accent-primary)',
             }}
           >
-            <FiX size={15} />
-          </button>
+            {deletedBoxes.length}
+          </span>
         </div>
 
         {/* Select All & Clear History Bar */}
