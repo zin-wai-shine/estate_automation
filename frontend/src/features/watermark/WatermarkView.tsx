@@ -343,6 +343,35 @@ const getAutoTileFocusMap = (layoutId: string): Record<number, WatermarkPosition
       return { 1: 'center' };
   }
 };
+const canvasToBlob = (canvas: HTMLCanvasElement, mime: string, quality = 0.95): Promise<Blob> => {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error('Canvas to blob conversion failed'));
+      },
+      mime,
+      quality
+    );
+  });
+};
+
+const triggerFileDownload = (url: string, fileName: string) => {
+  const a = document.createElement('a');
+  a.style.display = 'none';
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    try {
+      document.body.removeChild(a);
+      if (url.startsWith('blob:')) {
+        URL.revokeObjectURL(url);
+      }
+    } catch {}
+  }, 4000);
+};
 
 export const WatermarkView: React.FC = () => {
   const { actualTheme } = useTheme();
@@ -1165,16 +1194,21 @@ export const WatermarkView: React.FC = () => {
     setIsDownloadingAllDirect(true);
     setIsDownloadImageDropdownOpen(false);
     try {
+      showToast(`Preparing ${images.length} photos for download...`);
+      const itemsToDownload: { url: string; fileName: string }[] = [];
+
       for (let i = 0; i < images.length; i++) {
         const img = images[i];
         const sourceUrl = img.originalUrl || img.url;
         const mime = getExportMimeType(sourceUrl);
         const ext = mime === 'image/png' ? 'png' : mime === 'image/webp' ? 'webp' : 'jpg';
-        let dataUrl: string;
+        const dimSuffix = activePresetId === 'original' ? 'original' : `${targetWidth}x${targetHeight}`;
+        const fileName = `${img.name.replace(/\.[^/.]+$/, '')}-${dimSuffix}.${ext}`;
+
         if (activePresetId === 'original') {
-          dataUrl = sourceUrl;
+          itemsToDownload.push({ url: sourceUrl, fileName });
         } else {
-          dataUrl = await renderCroppedCanvas(
+          const dataUrl = await renderCroppedCanvas(
             sourceUrl,
             targetWidth,
             targetHeight,
@@ -1182,18 +1216,21 @@ export const WatermarkView: React.FC = () => {
             focusPosition,
             cropZoom
           );
-        }
-        const a = document.createElement('a');
-        a.href = dataUrl;
-        const dimSuffix = activePresetId === 'original' ? 'original' : `${targetWidth}x${targetHeight}`;
-        a.download = `${img.name.replace(/\.[^/.]+$/, '')}-${dimSuffix}.${ext}`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        if (images.length > 1) {
-          await new Promise((res) => setTimeout(res, 200));
+          const res = await fetch(dataUrl);
+          const blob = await res.blob();
+          const blobUrl = URL.createObjectURL(blob);
+          itemsToDownload.push({ url: blobUrl, fileName });
         }
       }
+
+      for (let i = 0; i < itemsToDownload.length; i++) {
+        const item = itemsToDownload[i];
+        triggerFileDownload(item.url, item.fileName);
+        if (i < itemsToDownload.length - 1) {
+          await new Promise((res) => setTimeout(res, 650));
+        }
+      }
+
       showToast(`Downloaded all ${images.length} photos directly as image files!`);
     } catch (err) {
       console.error('Error downloading photos directly', err);
@@ -1358,6 +1395,10 @@ export const WatermarkView: React.FC = () => {
       const ext = mime === 'image/png' ? 'png' : mime === 'image/webp' ? 'webp' : 'jpg';
       const batchCode = `FB-${Math.floor(100000 + Math.random() * 900000)}`;
 
+      showToast(`Generating all ${layout.tileCount} slice images...`);
+
+      const generatedTiles: { blob: Blob; fileName: string }[] = [];
+
       for (let i = 0; i < layout.tiles.length; i++) {
         const tile = layout.tiles[i];
         const tileRawX = Math.round(tile.x * naturalW);
@@ -1412,25 +1453,25 @@ export const WatermarkView: React.FC = () => {
         ctx.fillRect(0, 0, tileOutW, tileOutH);
         ctx.drawImage(img, sx, sy, cropW, cropH, 0, 0, tileOutW, tileOutH);
 
-        const dataUrl = canvas.toDataURL(mime, 0.95);
+        const blob = await canvasToBlob(canvas, mime, 0.95);
         const cleanTileName = tile.label.toLowerCase().replace(/[^a-z0-9]+/g, '-');
         const fileName = `${batchCode}-tile${tile.id}-${cleanTileName}.${ext}`;
+        generatedTiles.push({ blob, fileName });
+      }
 
-        const a = document.createElement('a');
-        a.href = dataUrl;
-        a.download = fileName;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-
-        if (layout.tiles.length > 1) {
-          await new Promise((res) => setTimeout(res, 200));
+      for (let i = 0; i < generatedTiles.length; i++) {
+        const item = generatedTiles[i];
+        const blobUrl = URL.createObjectURL(item.blob);
+        triggerFileDownload(blobUrl, item.fileName);
+        if (i < generatedTiles.length - 1) {
+          await new Promise((res) => setTimeout(res, 650));
         }
       }
-      showToast(`Exported ${layout.tileCount} grid tiles directly as images!`);
+
+      showToast(`Exported all ${layout.tileCount} grid tiles directly as images!`);
     } catch (err) {
       console.error('Error slicing tiles to images:', err);
-      alert('Error exporting tiles as images.');
+      showToast('⚠️ Error exporting tiles as images.');
     } finally {
       setIsSlicing(false);
     }
