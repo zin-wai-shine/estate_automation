@@ -1409,67 +1409,48 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
           }));
         }
 
-        // 2b. Auto Watermark: Stamp watermark on extracted/enhanced photos based on multi-page targeting
+        // 2b. Auto Format: Apply saved Crop & Cut Studio format to photos
         const watermarkedPhotosResult: Record<number, string> = {};
+        const savedCropFormatsList = getSavedCropFormats();
         const watermarkAIBoxes = (workflowConfig.aiBoxes || []).filter(
           (b) => isWatermarkAIBox(b) && b.enabled && (b.watermarkConfig?.enabled ?? true)
         );
 
         if (watermarkAIBoxes.length > 0 && photoList.length > 0) {
-          addLog(`🛡️ Watermark pipeline active: Processing ${watermarkAIBoxes.length} watermark configuration(s)...`, 'info');
+          addLog(`✂️ Photo format pipeline active: Processing ${watermarkAIBoxes.length} format configuration(s)...`, 'info');
 
           for (const wmBox of watermarkAIBoxes) {
             setWorkflowExecutionState((prev) => ({
               ...prev,
               activeNodeIds: [wmBox.id],
-              currentStepMessage: `🛡️ Stamping ${wmBox.title || 'Watermark'}...`,
+              currentStepMessage: `✂️ Formatting photos with ${wmBox.title || 'Studio Format'}...`,
             }));
 
-            const configToUse = wmBox.watermarkConfig || DEFAULT_WATERMARK_CONFIG;
-            const targetScope = wmBox.targetPages || 'all';
+            const targetFormat =
+              savedCropFormatsList.find((f) => f.id === wmBox.cropFormatId) ||
+              savedCropFormatsList.find((f) => f.id === wmBox.templateId) ||
+              savedCropFormatsList.find((f) => f.isDefault) ||
+              savedCropFormatsList[0];
 
-            const matchingPhotos = photoList.filter((_img, idx) => {
-              if (targetScope === 'all') return true;
-              if (targetScope === 'first-only') return idx === 0;
-              if (targetScope === 'body-only') return idx > 0;
-              if (targetScope === 'custom') {
-                const pages = (wmBox.customPages || '')
-                  .split(',')
-                  .map((p) => parseInt(p.trim(), 10))
-                  .filter((n) => !isNaN(n));
-                return pages.includes(idx + 1);
-              }
-              return true;
-            });
+            if (targetFormat) {
+              addLog(`✂️ [${wmBox.title}] Applying "${targetFormat.name}" (${targetFormat.targetWidth}×${targetFormat.targetHeight}) to all ${photoList.length} photo(s)...`, 'info');
 
-            addLog(`🛡️ [${wmBox.title}] Stamping watermark on ${matchingPhotos.length} photo(s) (${targetScope})...`, 'info');
+              for (const img of photoList) {
+                const currentImgUrl =
+                  enhancedPhotosResult[img.index] ||
+                  (img.stored_url
+                    ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
+                    : img.source_url);
 
-            for (const img of matchingPhotos) {
-              const currentImgUrl =
-                watermarkedPhotosResult[img.index] ||
-                enhancedPhotosResult[img.index] ||
-                (img.stored_url
-                  ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
-                  : img.source_url);
-
-              try {
-                const stampedDataUrl = await renderWatermarkedImage({
-                  sourceImageUrl: currentImgUrl,
-                  config: configToUse,
-                  dynamicTags: {
-                    price: propertyData.price ? `${propertyData.price} ${propertyData.currency || 'THB'}` : '',
-                    projectName: result.property?.project_name || '',
-                    phone: result.contact?.phone || '',
-                    line: result.contact?.line || '',
-                  },
-                });
-
-                if (stampedDataUrl) {
-                  watermarkedPhotosResult[img.index] = stampedDataUrl;
-                  setWatermarkedPhotos((prev) => ({ ...prev, [img.index]: stampedDataUrl }));
+                try {
+                  const formattedDataUrl = await formatImageWithCropFormat(currentImgUrl, targetFormat);
+                  if (formattedDataUrl) {
+                    enhancedPhotosResult[img.index] = formattedDataUrl;
+                    setEnhancedPhotos((prev) => ({ ...prev, [img.index]: formattedDataUrl }));
+                  }
+                } catch (fmtErr: any) {
+                  console.error(`Format error for #${img.index}:`, fmtErr);
                 }
-              } catch (wmErr: any) {
-                console.error(`Watermark stamping error for #${img.index}:`, wmErr);
               }
             }
 
@@ -1477,11 +1458,11 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
               ...prev,
               completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), wmBox.id])),
               activeNodeIds: [],
-              currentStepMessage: `✓ [${wmBox.title}] stamped!`,
+              currentStepMessage: `✓ [${wmBox.title}] formatted!`,
             }));
           }
 
-          addLog(`✓ All watermark node processes complete!`, 'success');
+          addLog(`✓ All photo format node processes complete!`, 'success');
         }
 
         // 3. Store data automatically into Remaining Posts (Property Inbox Destination)

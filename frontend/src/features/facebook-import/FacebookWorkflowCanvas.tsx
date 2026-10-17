@@ -30,6 +30,7 @@ import {
   FiChevronRight,
   FiTerminal,
   FiShield,
+  FiScissors,
 } from 'react-icons/fi';
 import { FaFacebook } from 'react-icons/fa';
 import { SiGooglegemini } from 'react-icons/si';
@@ -40,6 +41,7 @@ import { AIImageStudio } from './AIImageStudio';
 import { WatermarkNodeModal } from './WatermarkNodeModal';
 import { ToggleSwitch } from '../../components/ui/ToggleSwitch';
 import { loadWatermarkPresets, DEFAULT_WATERMARK_CONFIG, DEFAULT_PRESETS, type WatermarkConfig } from '../autopost/watermarkStorage';
+import { getSavedCropFormats } from '../watermark/cropFormats';
 
 export { getAIModelDisplayName, isWatermarkAIBox, isEnhanceAIBox };
 
@@ -109,6 +111,8 @@ export interface DynamicAIBoxConfig {
   strength?: number;
   watermarkPresetId?: string;
   watermarkConfig?: WatermarkConfig;
+  cropFormatId?: string;
+  subtitle?: string;
   targetPages?: 'all' | 'first-only' | 'body-only' | 'custom';
   customPages?: string;
   x: number;
@@ -1599,21 +1603,17 @@ export const FacebookWorkflowCanvas = forwardRef<
     setSelectedBoxId(newId);
   };
 
-  // Add Dynamic Watermark Node (with saved presets & multi-page support)
+  // Add Dynamic Studio Format Node (using saved formats from Crop & Cut Studio)
   const handleAddWatermarkNodeConnectedFromImages = (sourceId?: string) => {
-    const presets = loadWatermarkPresets();
-    const defaultPreset = presets[0] || DEFAULT_PRESETS[0];
+    const savedCropFormats = getSavedCropFormats();
+    const defaultFormat = savedCropFormats.find((f) => f.isDefault) || savedCropFormats[0];
 
     const watermarkBoxes = config.aiBoxes.filter((b) => isWatermarkAIBox(b));
     const newCount = watermarkBoxes.length + 1;
     const newId = `ai-box-watermark-${Date.now()}`;
 
-    // Target pages: 1st watermark defaults to 'all', 2nd watermark defaults to 'body-only' (pages 2+)
-    const targetPages: 'all' | 'first-only' | 'body-only' | 'custom' = newCount === 1 ? 'all' : 'body-only';
-
     let conns = [...(config.connections || [])];
 
-    // User requirement: "if that enhance have that watermark must be have after that enhance if not that after image"
     // Find upstream source node:
     const enhanceBoxes = config.aiBoxes.filter((b) => isEnhanceAIBox(b) && isAIBoxConnected(b, conns));
     let fromNodeId = 'get-images';
@@ -1621,23 +1621,21 @@ export const FacebookWorkflowCanvas = forwardRef<
     if (sourceId && (sourceId.startsWith('ai-box-') || sourceId === 'get-images')) {
       fromNodeId = sourceId;
     } else if (enhanceBoxes.length > 0) {
-      // If an enhance box exists, place watermark AFTER enhance!
       fromNodeId = enhanceBoxes[enhanceBoxes.length - 1].id;
     }
 
     const newBox: DynamicAIBoxConfig = {
       id: newId,
-      title: `Watermark #${newCount} (${defaultPreset.name.split(' (')[0]})`,
+      title: defaultFormat ? `Format: ${defaultFormat.name}` : `Crop & Format #${newCount}`,
+      subtitle: defaultFormat ? `${defaultFormat.targetWidth}×${defaultFormat.targetHeight} (${defaultFormat.aspect || 'Crop'})` : 'Saved Studio Format',
       processType: 'watermark',
       provider: 'watermark',
       model: 'watermark',
-      templateId: defaultPreset.id,
-      templateText: defaultPreset.name,
+      templateId: defaultFormat?.id || '',
+      templateText: defaultFormat?.name || '',
+      cropFormatId: defaultFormat?.id || '',
       customPrompt: '',
       enabled: true,
-      watermarkPresetId: defaultPreset.id,
-      watermarkConfig: { ...defaultPreset.config, enabled: true },
-      targetPages,
       x: fromNodeId === 'get-images' ? 640 : 800,
       y: 390 + (newCount - 1) * 140,
     };
@@ -3176,13 +3174,13 @@ export const FacebookWorkflowCanvas = forwardRef<
                   <FiImage style={{ fontSize: '13px' }} />
                 </NodeActionButton>
                 <NodeActionButton
-                  title="Add Watermark (Saved presets & multi-page)"
-                  color="#F59E0B"
+                  title="Add Crop & Format (Saved Studio Formats)"
+                  color="#8B5CF6"
                   isDark={isDark}
                   delay={40}
                   onClick={() => handleAddWatermarkNodeConnectedFromImages()}
                 >
-                  <FiShield style={{ fontSize: '13px' }} />
+                  <FiScissors style={{ fontSize: '13px' }} />
                 </NodeActionButton>
               </div>
             )}
@@ -3404,7 +3402,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   }}
                 >
                   {isWatermark ? (
-                    <FiShield style={{ fontSize: '24px', color: boxStatus === 'success' ? '#10B981' : isEffectiveEnabled ? '#F59E0B' : '#8B949E', transition: 'color 0.2s ease' }} />
+                    <FiScissors style={{ fontSize: '24px', color: boxStatus === 'success' ? '#10B981' : isEffectiveEnabled ? '#8B5CF6' : '#8B949E', transition: 'color 0.2s ease' }} />
                   ) : isRunware ? (
                     <RunwareIcon size={26} color={boxStatus === 'success' ? '#10B981' : isEffectiveEnabled ? '#10B981' : '#8B949E'} />
                   ) : isLaoZhang ? (
@@ -3438,8 +3436,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                   >
                     {(isRunware || isWatermark) && (
                       <NodeActionButton
-                        title={isRunware ? 'Add Watermark after Enhance' : 'Add another Watermark'}
-                        color="#F59E0B"
+                        title={isRunware ? 'Add Format after Enhance' : 'Add another Format'}
+                        color="#8B5CF6"
                         isDark={isDark}
                         delay={0}
                         onClick={(e) => {
@@ -3447,7 +3445,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                           handleAddWatermarkNodeConnectedFromImages(box.id);
                         }}
                       >
-                        <FiShield style={{ fontSize: '13px' }} />
+                        <FiScissors style={{ fontSize: '13px' }} />
                       </NodeActionButton>
                     )}
                     <NodeActionButton
@@ -3583,7 +3581,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                         : isBoxReceptive
                         ? 'Ready to Connect'
                         : isWatermark
-                        ? `${box.targetPages === 'first-only' ? 'Cover Only (P1)' : box.targetPages === 'body-only' ? 'Pages 2+' : box.targetPages === 'custom' ? `Pages ${box.customPages || ''}` : 'All Pages'} · ${isEffectiveEnabled ? 'Active' : 'Disabled'}`
+                        ? `${box.subtitle || 'Saved Studio Format'} · ${isEffectiveEnabled ? 'Active' : 'Disabled'}`
                         : `${!isImageNode && isImageModel(box.model, box.provider) ? 'Gemini Flash' : getAIModelDisplayName(box.provider, box.model)} · ${isEffectiveEnabled ? 'Active' : 'Disabled'}`}
                     </span>
                   )}
@@ -3649,7 +3647,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                             : 'var(--text-muted)',
                         }}
                       >
-                        {isWatermark ? 'Auto Watermark' : isRunware ? 'Auto Enhance' : 'Auto Format'}
+                        {isWatermark ? 'Auto Format' : isRunware ? 'Auto Enhance' : 'Auto Format'}
                       </span>
                       <ToggleSwitch
                         checked={
@@ -3672,7 +3670,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                           }
                         }}
                         size="sm"
-                        activeColor={isWatermark ? '#F59E0B' : isRunware ? '#10B981' : '#388BFD'}
+                        activeColor={isWatermark ? '#8B5CF6' : isRunware ? '#10B981' : '#388BFD'}
                       />
                     </div>
                   )}
@@ -3893,7 +3891,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0, minHeight: '32px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
                       {isBoxWatermark ? (
-                        <FiShield style={{ fontSize: '18px', color: '#F59E0B' }} />
+                        <FiScissors style={{ fontSize: '18px', color: '#8B5CF6' }} />
                       ) : isBoxImage ? (
                         <RunwareIcon size={18} color="#10B981" />
                       ) : currentModalAIBox.provider === 'laozhang_ai' ? (
