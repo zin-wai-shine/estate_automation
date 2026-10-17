@@ -1,9 +1,9 @@
 import React, { useState, useMemo } from 'react';
 import {
-  FiScissors,
   FiCheck,
   FiTrash2,
   FiExternalLink,
+  FiEdit2,
 } from 'react-icons/fi';
 import {
   type CropStudioFormat,
@@ -41,10 +41,14 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     );
   });
 
+  const [nodeTitle, setNodeTitle] = useState<string>(box.title || 'Photo Format');
+
   const handleSelectFormat = (format: CropStudioFormat) => {
     setSelectedFormatId(format.id);
+    const newTitle = `Format: ${format.name}`;
+    setNodeTitle(newTitle);
     onUpdateBox(box.id, {
-      title: `Format: ${format.name}`,
+      title: newTitle,
       subtitle: `${format.targetWidth}×${format.targetHeight} (${format.aspect || 'Crop'})`,
       cropFormatId: format.id,
       templateId: format.id,
@@ -53,56 +57,41 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     });
   };
 
+  const handleTitleChange = (val: string) => {
+    setNodeTitle(val);
+    onUpdateBox(box.id, { title: val });
+  };
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-      {/* Header Info */}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+      {/* Intro info bar */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
-          <div
-            style={{
-              width: '32px',
-              height: '32px',
-              borderRadius: '8px',
-              backgroundColor: isDark ? 'rgba(139, 92, 246, 0.15)' : 'rgba(139, 92, 246, 0.1)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <FiScissors style={{ color: '#8B5CF6', fontSize: '16px' }} />
-          </div>
-          <div>
-            <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-              Choose Saved Studio Format
-            </div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              Select a format saved in Crop & Cut Studio to automatically format imported photos
-            </div>
-          </div>
-        </div>
+        <span style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
+          Select a format to automatically crop & frame photos:
+        </span>
         <span
           style={{
             fontSize: '0.6875rem',
             padding: '2px 8px',
-            borderRadius: '12px',
-            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.05)',
-            color: 'var(--text-secondary)',
+            borderRadius: '10px',
+            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.04)',
+            color: 'var(--text-muted)',
             fontWeight: 500,
           }}
         >
-          {savedFormats.length} formats available
+          {savedFormats.length} presets
         </span>
       </div>
 
-      {/* Grid of Saved Formats */}
+      {/* Preset Format Cards (Single-column clean list) */}
       <div
         style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
-          gap: '0.75rem',
-          maxHeight: '380px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '8px',
+          maxHeight: '340px',
           overflowY: 'auto',
-          padding: '2px',
+          paddingRight: '2px',
         }}
       >
         {savedFormats.map((format) => {
@@ -112,131 +101,174 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
               key={format.id}
               onClick={() => handleSelectFormat(format)}
               style={{
-                padding: '0.875rem 1rem',
-                borderRadius: '10px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '10px 14px',
+                borderRadius: '8px',
+                border: `1.5px solid ${isSelected ? 'var(--accent-primary, #3B82F6)' : 'var(--border-color)'}`,
                 backgroundColor: isSelected
-                  ? (isDark ? 'rgba(139, 92, 246, 0.12)' : 'rgba(139, 92, 246, 0.08)')
-                  : (isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.02)'),
-                border: isSelected
-                  ? '1.5px solid #8B5CF6'
-                  : `1px solid ${isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)'}`,
+                  ? (isDark ? 'rgba(59, 130, 246, 0.12)' : 'rgba(59, 130, 246, 0.05)')
+                  : (isDark ? 'rgba(255, 255, 255, 0.02)' : 'var(--bg-main)'),
                 cursor: 'pointer',
                 transition: 'all 0.15s ease',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '8px',
-                position: 'relative',
+                gap: '12px',
+              }}
+              onMouseEnter={(e) => {
+                if (!isSelected) {
+                  e.currentTarget.style.borderColor = 'var(--accent-primary, #3B82F6)';
+                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.04)' : 'var(--bg-surface)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!isSelected) {
+                  e.currentTarget.style.borderColor = 'var(--border-color)';
+                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.02)' : 'var(--bg-main)';
+                }
               }}
             >
-              {/* Top row: Format Name & Check Badge */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                <span
-                  style={{
-                    fontSize: '0.8125rem',
-                    fontWeight: isSelected ? 700 : 600,
-                    color: isSelected ? '#8B5CF6' : 'var(--text-primary)',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {format.name}
-                </span>
-                {isSelected ? (
-                  <span
-                    style={{
-                      width: '18px',
-                      height: '18px',
-                      borderRadius: '50%',
-                      backgroundColor: '#8B5CF6',
-                      color: '#FFFFFF',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '11px',
-                      flexShrink: 0,
-                    }}
-                  >
-                    <FiCheck />
-                  </span>
-                ) : (
-                  <span
-                    style={{
-                      width: '16px',
-                      height: '16px',
-                      borderRadius: '50%',
-                      border: `1.5px solid ${isDark ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.2)'}`,
-                      flexShrink: 0,
-                    }}
-                  />
-                )}
-              </div>
-
-              {/* Dimensions and Aspect Pill */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              {/* Left Aspect Badge & Text */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flex: 1 }}>
                 <span
                   style={{
                     fontSize: '0.6875rem',
                     fontWeight: 700,
-                    padding: '1px 6px',
-                    borderRadius: '4px',
+                    padding: '3px 8px',
+                    borderRadius: '5px',
                     backgroundColor: isSelected
-                      ? '#8B5CF6'
-                      : (isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.08)'),
-                    color: isSelected ? '#FFFFFF' : 'var(--text-secondary)',
+                      ? 'var(--accent-primary, #3B82F6)'
+                      : (isDark ? 'rgba(255, 255, 255, 0.08)' : '#FFFFFF'),
+                    border: isSelected
+                      ? 'none'
+                      : '1px solid var(--border-color)',
+                    color: isSelected ? '#FFFFFF' : 'var(--text-primary)',
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                    flexShrink: 0,
+                    minWidth: '38px',
+                    textAlign: 'center',
                   }}
                 >
-                  {format.aspect || 'Custom'}
+                  {format.aspect || '1:1'}
                 </span>
-                <span style={{ fontSize: '0.75rem', fontWeight: 500, color: 'var(--text-secondary)' }}>
-                  {format.targetWidth} × {format.targetHeight} px
-                </span>
-                <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-                  • {format.mode === 'grid' ? 'Grid Split' : 'Cover'}
-                </span>
+
+                <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span
+                      style={{
+                        fontSize: '0.8125rem',
+                        fontWeight: 600,
+                        color: isSelected ? 'var(--accent-primary, #3B82F6)' : 'var(--text-primary)',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
+                      {format.name}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: '0.6875rem',
+                        color: 'var(--text-muted)',
+                        fontWeight: 500,
+                      }}
+                    >
+                      {format.targetWidth} × {format.targetHeight} px
+                    </span>
+                  </div>
+
+                  {format.description && (
+                    <span
+                      style={{
+                        fontSize: '0.6875rem',
+                        color: 'var(--text-muted)',
+                        marginTop: '1px',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
+                      {format.description.split('•')[1]?.trim() || format.description}
+                    </span>
+                  )}
+                </div>
               </div>
 
-              {/* Description */}
-              {format.description && (
-                <div
-                  style={{
-                    fontSize: '0.6875rem',
-                    color: 'var(--text-muted)',
-                    lineHeight: 1.35,
-                    display: '-webkit-box',
-                    WebkitLineClamp: 2,
-                    WebkitBoxOrient: 'vertical',
-                    overflow: 'hidden',
-                  }}
-                >
-                  {format.description}
-                </div>
-              )}
+              {/* Right Radio Indicator */}
+              <div
+                style={{
+                  width: '18px',
+                  height: '18px',
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: isSelected ? 'var(--accent-primary, #3B82F6)' : 'transparent',
+                  border: isSelected ? 'none' : `1.5px solid ${isDark ? 'rgba(255, 255, 255, 0.25)' : '#CBD5E1'}`,
+                  color: '#FFFFFF',
+                  fontSize: '11px',
+                  flexShrink: 0,
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                {isSelected && <FiCheck strokeWidth={2.5} />}
+              </div>
             </div>
           );
         })}
       </div>
 
-      {/* Footer Controls: Delete, Manage in Studio, Done */}
+      {/* Node Name input (compact & subtle) */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          padding: '6px 10px',
+          borderRadius: '6px',
+          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'var(--bg-main)',
+          border: '1px solid var(--border-color)',
+        }}
+      >
+        <FiEdit2 size={12} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+        <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 500, flexShrink: 0 }}>
+          Node Label:
+        </span>
+        <input
+          type="text"
+          value={nodeTitle}
+          onChange={(e) => handleTitleChange(e.target.value)}
+          placeholder="e.g. Format: Instagram Portrait"
+          style={{
+            flex: 1,
+            border: 'none',
+            background: 'transparent',
+            fontSize: '0.75rem',
+            color: 'var(--text-primary)',
+            outline: 'none',
+            padding: 0,
+            fontWeight: 500,
+          }}
+        />
+      </div>
+
+      {/* Footer Controls */}
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
           paddingTop: '0.75rem',
-          borderTop: `1px solid ${isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)'}`,
-          flexWrap: 'wrap',
-          gap: '8px',
+          borderTop: '1px solid var(--border-color)',
         }}
       >
         <Button
           variant="outline"
           size="sm"
           onClick={() => onDeleteBox(box.id)}
-          leftIcon={<FiTrash2 style={{ fontSize: '13px' }} />}
+          leftIcon={<FiTrash2 style={{ fontSize: '12px' }} />}
           style={{
             color: '#EF4444',
-            borderColor: isDark ? 'rgba(239, 68, 68, 0.3)' : 'rgba(239, 68, 68, 0.4)',
+            borderColor: isDark ? 'rgba(239, 68, 68, 0.3)' : 'rgba(239, 68, 68, 0.35)',
             fontSize: '0.75rem',
             height: '32px',
           }}
@@ -252,14 +284,15 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
               onClose();
               navigate('/watermark');
             }}
-            leftIcon={<FiExternalLink style={{ fontSize: '13px' }} />}
+            leftIcon={<FiExternalLink style={{ fontSize: '12px' }} />}
             style={{
               fontSize: '0.75rem',
               height: '32px',
+              color: 'var(--text-secondary)',
             }}
             title="Open Crop & Cut Studio to edit or save new formats"
           >
-            Open Crop & Cut Studio
+            Open Studio
           </Button>
 
           <Button
@@ -268,8 +301,6 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
             onClick={onClose}
             leftIcon={<FiCheck style={{ fontSize: '13px' }} />}
             style={{
-              backgroundColor: '#8B5CF6',
-              borderColor: '#8B5CF6',
               fontSize: '0.75rem',
               height: '32px',
               fontWeight: 600,

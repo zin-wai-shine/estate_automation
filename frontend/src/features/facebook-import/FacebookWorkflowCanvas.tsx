@@ -3841,19 +3841,13 @@ export const FacebookWorkflowCanvas = forwardRef<
           <Modal
             isOpen={Boolean(activeModalNode)}
             onClose={handleCloseModal}
-            maxWidth={isModalWatermark ? '880px' : activeModalNode.type === 'ai-box' ? '96vw' : '560px'}
-            height={isModalWatermark ? '88vh' : activeModalNode.type === 'ai-box' ? '92vh' : undefined}
-            bodyPadding={activeModalNode.type === 'ai-box' ? '0' : undefined}
+            maxWidth={isModalWatermark ? '580px' : activeModalNode.type === 'ai-box' ? '96vw' : '560px'}
+            height={isModalWatermark ? undefined : activeModalNode.type === 'ai-box' ? '92vh' : undefined}
+            bodyPadding={isModalWatermark ? '1.25rem 1.5rem' : activeModalNode.type === 'ai-box' ? '0' : undefined}
             headerExtra={
-              isModalWatermark && currentModalAIBox ? (
-                <span style={{ fontSize: '0.75rem', color: '#F59E0B', fontWeight: 600, marginRight: '0.25rem' }}>
-                  {currentModalAIBox.targetPages === 'first-only'
-                    ? 'Cover Photo Only'
-                    : currentModalAIBox.targetPages === 'body-only'
-                    ? 'Pages 2+ (Interior)'
-                    : currentModalAIBox.targetPages === 'custom'
-                    ? `Pages ${currentModalAIBox.customPages || ''}`
-                    : 'All Pages'}
+              isModalWatermark ? (
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 500, marginRight: '0.25rem' }}>
+                  Crop & Cut Studio
                 </span>
               ) : isModalImageBox && currentModalAIBox ? (
                 <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 500, marginRight: '0.25rem' }}>
@@ -3887,12 +3881,38 @@ export const FacebookWorkflowCanvas = forwardRef<
               (() => {
                 const isBoxWatermark = isWatermarkAIBox(currentModalAIBox);
                 const isBoxImage = !isBoxWatermark && isImageAIBox(currentModalAIBox, config.connections);
+                if (isBoxWatermark) {
+                  return (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+                      <div
+                        style={{
+                          width: '28px',
+                          height: '28px',
+                          borderRadius: '6px',
+                          backgroundColor: 'var(--accent-primary-alpha, rgba(37, 99, 235, 0.1))',
+                          color: 'var(--accent-primary, #3B82F6)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        <FiScissors size={15} />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.2 }}>
+                          Photo Format & Crop
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400, marginTop: '2px' }}>
+                          Select a format preset saved in Crop & Cut Studio
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
                 return (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0, minHeight: '32px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
-                      {isBoxWatermark ? (
-                        <FiScissors style={{ fontSize: '18px', color: '#8B5CF6' }} />
-                      ) : isBoxImage ? (
+                      {isBoxImage ? (
                         <RunwareIcon size={18} color="#10B981" />
                       ) : currentModalAIBox.provider === 'laozhang_ai' ? (
                         <LaoZhangIcon size={18} />
