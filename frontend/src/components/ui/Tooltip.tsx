@@ -249,7 +249,10 @@ export const GlobalTooltip: React.FC = () => {
 
   useEffect(() => {
     const handleMouseOver = (e: MouseEvent) => {
-      const target = (e.target as HTMLElement)?.closest?.('[data-tooltip], [title]') as HTMLElement | null;
+      const el = e.target as HTMLElement | null;
+      if (el?.closest?.('[data-no-tooltip="true"], [data-no-tooltip]')) return;
+
+      const target = el?.closest?.('[data-tooltip], [title]') as HTMLElement | null;
       if (!target) return;
 
       // If element has a native title, capture it and remove the native attribute

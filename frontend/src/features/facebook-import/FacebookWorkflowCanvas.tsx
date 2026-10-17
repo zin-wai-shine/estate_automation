@@ -3510,6 +3510,7 @@ export const FacebookWorkflowCanvas = forwardRef<
       {(deletedBoxes.length > 0 || isRecoverModalOpen) && (
         <button
           type="button"
+          data-no-tooltip="true"
           onClick={() => {
             setIsRecoverModalOpen((prev) => !prev);
           }}
