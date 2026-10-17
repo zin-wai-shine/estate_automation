@@ -60,8 +60,6 @@ interface RichPostEditorProps {
   onChange: (socialPlainText: string, rawHtml: string) => void;
   disabled?: boolean;
   placeholder?: string;
-  onCopyFromOther?: () => void;
-  copyFromOtherLabel?: string;
   minHeight?: string;
   height?: string;
 }
@@ -71,8 +69,6 @@ export const RichPostEditor: React.FC<RichPostEditorProps> = ({
   onChange,
   disabled = false,
   placeholder = 'Write or paste post content here...',
-  onCopyFromOther,
-  copyFromOtherLabel,
   minHeight = '230px',
   height,
 }) => {
@@ -191,121 +187,6 @@ export const RichPostEditor: React.FC<RichPostEditorProps> = ({
           >
             I
           </button>
-
-          <span style={{ color: 'var(--border-color)', margin: '0 2px' }}>|</span>
-
-          {/* Quick Real Estate Shortcuts */}
-          <button
-            type="button"
-            title="Add Hashtag"
-            disabled={disabled}
-            onClick={() => insertText('#')}
-            style={{
-              padding: '2px 7px',
-              height: '26px',
-              border: '1px solid var(--border-color)',
-              borderRadius: '5px',
-              backgroundColor: 'var(--bg-secondary)',
-              color: 'var(--text-secondary)',
-              fontSize: '0.75rem',
-              fontWeight: 600,
-              cursor: disabled ? 'not-allowed' : 'pointer',
-              boxShadow: 'none',
-            }}
-          >
-            #
-          </button>
-
-          <button
-            type="button"
-            title="Sparkles"
-            disabled={disabled}
-            onClick={() => insertText('✨ ')}
-            style={{
-              width: '26px',
-              height: '26px',
-              border: '1px solid var(--border-color)',
-              borderRadius: '5px',
-              backgroundColor: 'var(--bg-secondary)',
-              fontSize: '0.75rem',
-              cursor: disabled ? 'not-allowed' : 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: 'none',
-            }}
-          >
-            ✨
-          </button>
-
-          <button
-            type="button"
-            title="Building"
-            disabled={disabled}
-            onClick={() => insertText('🏢 ')}
-            style={{
-              width: '26px',
-              height: '26px',
-              border: '1px solid var(--border-color)',
-              borderRadius: '5px',
-              backgroundColor: 'var(--bg-secondary)',
-              fontSize: '0.75rem',
-              cursor: disabled ? 'not-allowed' : 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: 'none',
-            }}
-          >
-            🏢
-          </button>
-
-          <button
-            type="button"
-            title="Pin"
-            disabled={disabled}
-            onClick={() => insertText('📍 ')}
-            style={{
-              width: '26px',
-              height: '26px',
-              border: '1px solid var(--border-color)',
-              borderRadius: '5px',
-              backgroundColor: 'var(--bg-secondary)',
-              fontSize: '0.75rem',
-              cursor: disabled ? 'not-allowed' : 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: 'none',
-            }}
-          >
-            📍
-          </button>
-
-          {onCopyFromOther && (
-            <>
-              <span style={{ color: 'var(--border-color)', margin: '0 2px' }}>|</span>
-              <button
-                type="button"
-                onClick={onCopyFromOther}
-                disabled={disabled}
-                style={{
-                  padding: '2px 8px',
-                  height: '26px',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: '5px',
-                  backgroundColor: 'var(--bg-secondary)',
-                  color: 'var(--text-secondary)',
-                  fontSize: '0.6875rem',
-                  fontWeight: 500,
-                  cursor: disabled ? 'not-allowed' : 'pointer',
-                  boxShadow: 'none',
-                }}
-              >
-                {copyFromOtherLabel || 'Copy Content'}
-              </button>
-            </>
-          )}
         </div>
 
         {/* Live Counter */}

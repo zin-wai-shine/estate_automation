@@ -17,6 +17,7 @@ import { CreateWorkflowView } from './features/workflow/CreateWorkflowView';
 import { AutoPostView } from './features/autopost/AutoPostView';
 import { PostHistoryView } from './features/autopost/PostHistoryView';
 import { AuthManagerView } from './features/autopost/AuthManagerView';
+import { WatermarkView } from './features/watermark/WatermarkView';
 import type { Property } from './types';
 
 const initialProperties: Property[] = [
@@ -185,6 +186,7 @@ const MainApp: React.FC = () => {
         <Route path="/facebook-import" element={<FacebookImportView onSaveToInbox={(prop) => handleAddProperty(prop.sourceUrl || '', prop)} onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
         <Route path="/remaining-posts" element={<RemainingPostsView onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
         <Route path="/auto-post" element={<AutoPostView onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
+        <Route path="/watermark" element={<WatermarkView />} />
         <Route path="/post-history" element={<PostHistoryView onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
         <Route path="/auth-manager" element={<AuthManagerView onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
         <Route path="/facebook-tokens" element={<AuthManagerView onNavigateTab={(tab) => navigate(`/${tab}`)} />} />

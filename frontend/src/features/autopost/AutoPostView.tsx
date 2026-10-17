@@ -32,9 +32,18 @@ import {
   FiMove,
   FiZoomIn,
   FiZoomOut,
-  FiDownload,
   FiChevronLeft,
   FiChevronRight,
+  FiZap,
+  FiMusic,
+  FiFileText,
+  FiGlobe,
+  FiDownload,
+  FiMoreHorizontal,
+  FiHome,
+  FiCompass,
+  FiMessageSquare,
+  FiUser,
 } from 'react-icons/fi';
 import { motion } from 'framer-motion';
 import {
@@ -48,6 +57,8 @@ import {
   FaRegComment,
   FaRegBookmark,
   FaMusic,
+  FaRegThumbsUp,
+  FaThumbsUp,
 } from 'react-icons/fa6';
 import { SiMeta } from 'react-icons/si';
 import { HiSparkles } from 'react-icons/hi2';
@@ -68,6 +79,9 @@ import {
   getStoredTikTokAccounts,
   subscribeTikTokAccounts,
   type ManagedTikTokAccount,
+  getStoredInstagramAccounts,
+  subscribeInstagramAccounts,
+  type ManagedInstagramAccount,
   type AutoPostItem,
   type AutoPostImage,
   type SocialPlatform,
@@ -169,6 +183,48 @@ const SwitchToggle: React.FC<SwitchToggleProps> = ({
     </button>
   );
 };
+
+export const TikTokAppIcon: React.FC<{ size?: number; rounded?: number }> = ({ size = 36, rounded = 8 }) => (
+  <div
+    style={{
+      width: `${size}px`,
+      height: `${size}px`,
+      borderRadius: `${rounded}px`,
+      backgroundColor: '#000000',
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexShrink: 0,
+      position: 'relative',
+      overflow: 'hidden',
+    }}
+  >
+    <svg
+      viewBox="0 0 448 512"
+      width={Math.round(size * 0.58)}
+      height={Math.round(size * 0.58)}
+      style={{ display: 'block' }}
+    >
+      {/* Cyan/Aqua offset (top-left) */}
+      <path
+        d="M448,209.91a210.06,210.06,0,0,1-122.77-39.25V349.38A162.55,162.55,0,1,1,185,188.31V278.2a74.62,74.62,0,1,0,52.23,71.18V0l88,0a121.18,121.18,0,0,0,1.86,22.17h0A122.18,122.18,0,0,0,381,102.39a121.43,121.43,0,0,0,67,20.14Z"
+        fill="#25F4EE"
+        transform="translate(-10, -8)"
+      />
+      {/* Pink/Red offset (bottom-right) */}
+      <path
+        d="M448,209.91a210.06,210.06,0,0,1-122.77-39.25V349.38A162.55,162.55,0,1,1,185,188.31V278.2a74.62,74.62,0,1,0,52.23,71.18V0l88,0a121.18,121.18,0,0,0,1.86,22.17h0A122.18,122.18,0,0,0,381,102.39a121.43,121.43,0,0,0,67,20.14Z"
+        fill="#FE2C55"
+        transform="translate(10, 8)"
+      />
+      {/* White center note */}
+      <path
+        d="M448,209.91a210.06,210.06,0,0,1-122.77-39.25V349.38A162.55,162.55,0,1,1,185,188.31V278.2a74.62,74.62,0,1,0,52.23,71.18V0l88,0a121.18,121.18,0,0,0,1.86,22.17h0A122.18,122.18,0,0,0,381,102.39a121.43,121.43,0,0,0,67,20.14Z"
+        fill="#FFFFFF"
+      />
+    </svg>
+  </div>
+);
 
 interface AutoPostViewProps {
   onNavigateTab?: (tab: string) => void;
@@ -299,8 +355,20 @@ export const AutoPostView: React.FC<AutoPostViewProps> = ({ onNavigateTab }) => 
   // Form State: Platform Dedicated Content Boxes
   // ----------------------------------------------------
   // Facebook Page Boxes: Page 1 (61568058604134) & Page 2 (61593000699921)
-  const [fbPage1Enabled, setFbPage1Enabled] = useState(true);
-  const [fbPage2Enabled, setFbPage2Enabled] = useState(true);
+  const [fbPage1Enabled, setFbPage1Enabled] = useState(() => {
+    const s = localStorage.getItem('autopost_fb_page_1_enabled') ?? localStorage.getItem('autopost_fb_page_1287202894475973_enabled');
+    if (s !== null) return s === 'true';
+    const pages = getStoredManagedPages();
+    const p1 = pages.find((p) => p.slot === 1 || p.page_id === '1287202894475973');
+    return p1?.auto_publish_enabled ?? true;
+  });
+  const [fbPage2Enabled, setFbPage2Enabled] = useState(() => {
+    const s = localStorage.getItem('autopost_fb_page_2_enabled') ?? localStorage.getItem('autopost_fb_page_494870343703559_enabled');
+    if (s !== null) return s === 'true';
+    const pages = getStoredManagedPages();
+    const p2 = pages.find((p) => p.slot === 2 || p.page_id === '494870343703559');
+    return p2?.auto_publish_enabled ?? true;
+  });
   const fbEnabled = fbPage1Enabled || fbPage2Enabled;
   const fbTargetMode: 'both' | 'page1' | 'page2' =
     fbPage1Enabled && fbPage2Enabled ? 'both' : fbPage2Enabled ? 'page2' : 'page1';
@@ -361,14 +429,14 @@ export const AutoPostView: React.FC<AutoPostViewProps> = ({ onNavigateTab }) => 
   };
 
   // Page 1 Dedicated Content (Slot 1: 61568058604134) - Fully Isolated
-  const [fbHeadline, setFbHeadline] = useState('✨ High-Floor Modern Studio at Ideo Sukhumvit 93 for Rent!');
+  const [fbHeadline, setFbHeadline] = useState('High-Floor Modern Studio at Ideo Sukhumvit 93 for Rent!');
   const [fbCaption, setFbCaption] = useState(
-    `🏙️ ให้เช่าคอนโด Ideo Sukhumvit 93 ขนาด 28 ตร.ม. ชั้น 28 แต่งครบพร้อมอยู่!
+    `ให้เช่าคอนโด Ideo Sukhumvit 93 ขนาด 28 ตร.ม. ชั้น 28 แต่งครบพร้อมอยู่!
 ราคาเพียง 18,000 บาท/เดือน (สัญญา 1 ปี)
 ติด BTS บางจาก เพียง 15 เมตร เดินทางสะดวกมาก วิวเมืองโล่งสวย
 เฟอร์นิเจอร์และเครื่องใช้ไฟฟ้าครบครัน: แอร์, ทีวี, ตู้เย็น, ไมโครเวฟ, เครื่องซักผ้า, ดิจิตอลดอร์ล็อก หิ้วกระเป๋าเข้าอยู่ได้ทันที
 
-📲 สอบถาม/นัดชมห้องจริง Line ID: @estatebangkok | โทร 081-234-5678
+สอบถาม/นัดชมห้องจริง Line ID: @estatebangkok | โทร 081-234-5678
 
 #IdeoSukhumvit93 #CondoForRent #BTSBangChak #BangkokCondo #RealEstateBangkok`
   );
@@ -379,9 +447,9 @@ export const AutoPostView: React.FC<AutoPostViewProps> = ({ onNavigateTab }) => 
   const [fbScheduledAt, setFbScheduledAt] = useState('');
 
   // Page 2 Dedicated Content (Slot 2: 61593000699921) - Fully Isolated, Never Mixed
-  const [fbPage2Headline, setFbPage2Headline] = useState('🏙️ Premium High-Floor City Living | Ideo Sukhumvit 93 Studio For Rent');
+  const [fbPage2Headline, setFbPage2Headline] = useState('Premium High-Floor City Living | Ideo Sukhumvit 93 Studio For Rent');
   const [fbPage2Caption, setFbPage2Caption] = useState(
-    `✨ คอนโดคุณภาพเยี่ยมติดบันได BTS บางจาก (15 เมตร)
+    `คอนโดคุณภาพเยี่ยมติดบันได BTS บางจาก (15 เมตร)
 ให้เช่า Ideo Sukhumvit 93 สตูดิโอขนาด 28 ตร.ม. ชั้น 28 แต่งสวยพร้อมเข้าอยู่ทันที
 เพียง 18,000 บาท/เดือน (สัญญา 1 ปี / ประกัน 2 เดือน ล่วงหน้า 1 เดือน)
 
@@ -390,7 +458,7 @@ export const AutoPostView: React.FC<AutoPostViewProps> = ({ onNavigateTab }) => 
 • เครื่องใช้ไฟฟ้าและเฟอร์นิเจอร์ครบ (Smart TV, เครื่องซักผ้า, ตู้เย็น, ไมโครเวฟ)
 • ส่วนกลางระดับโรงแรม สระว่ายน้ำ 2 สระ ฟิตเนส Co-working space
 
-💬 ติดต่อนัดชมห้องล่วงหน้า:
+ติดต่อนัดชมห้องล่วงหน้า:
 Line: @estatebangkok | โทร: 081-234-5678
 
 #IdeoSukhumvit #BangkokCondoRental #BTSBangChak #BangkokProperty #CondoLiving`
@@ -401,11 +469,11 @@ Line: @estatebangkok | โทร: 081-234-5678
   const [fbPage2ScheduledAt, setFbPage2ScheduledAt] = useState('');
   const [fbPage1Html, setFbPage1Html] = useState(
     () =>
-      `<b>✨ High-Floor Modern Studio at Ideo Sukhumvit 93 for Rent!</b><br><br>🏙️ ให้เช่าคอนโด Ideo Sukhumvit 93 ขนาด 28 ตร.ม. ชั้น 28 แต่งครบพร้อมอยู่!<br>ราคาเพียง 18,000 บาท/เดือน (สัญญา 1 ปี)<br>ติด BTS บางจาก เพียง 15 เมตร เดินทางสะดวกมาก วิวเมืองโล่งสวย<br>เฟอร์นิเจอร์และเครื่องใช้ไฟฟ้าครบครัน: แอร์, ทีวี, ตู้เย็น, ไมโครเวฟ, เครื่องซักผ้า, ดิจิตอลดอร์ล็อก หิ้วกระเป๋าเข้าอยู่ได้ทันที<br><br>📲 สอบถาม/นัดชมห้องจริง Line ID: @estatebangkok | โทร 081-234-5678<br><br>#IdeoSukhumvit93 #CondoForRent #BTSBangChak #BangkokCondo #RealEstateBangkok`
+      `<b>High-Floor Modern Studio at Ideo Sukhumvit 93 for Rent!</b><br><br>ให้เช่าคอนโด Ideo Sukhumvit 93 ขนาด 28 ตร.ม. ชั้น 28 แต่งครบพร้อมอยู่!<br>ราคาเพียง 18,000 บาท/เดือน (สัญญา 1 ปี)<br>ติด BTS บางจาก เพียง 15 เมตร เดินทางสะดวกมาก วิวเมืองโล่งสวย<br>เฟอร์นิเจอร์และเครื่องใช้ไฟฟ้าครบครัน: แอร์, ทีวี, ตู้เย็น, ไมโครเวฟ, เครื่องซักผ้า, ดิจิตอลดอร์ล็อก หิ้วกระเป๋าเข้าอยู่ได้ทันที<br><br>สอบถาม/นัดชมห้องจริง Line ID: @estatebangkok | โทร 081-234-5678<br><br>#IdeoSukhumvit93 #CondoForRent #BTSBangChak #BangkokCondo #RealEstateBangkok`
   );
   const [fbPage2Html, setFbPage2Html] = useState(
     () =>
-      `<b>🏙️ Premium High-Floor City Living | Ideo Sukhumvit 93 Studio For Rent</b><br><br>✨ คอนโดคุณภาพเยี่ยมติดบันได BTS บางจาก (15 เมตร)<br>ให้เช่า Ideo Sukhumvit 93 สตูดิโอขนาด 28 ตร.ม. ชั้น 28 แต่งสวยพร้อมเข้าอยู่ทันที<br>เพียง 18,000 บาท/เดือน (สัญญา 1 ปี / ประกัน 2 เดือน ล่วงหน้า 1 เดือน)<br><br>จุดเด่นห้อง:<br>• ชั้นสูง วิวพาโนรามา ไม่มีตึกบัง ลมพัดเย็นสบาย<br>• เครื่องใช้ไฟฟ้าและเฟอร์นิเจอร์ครบ (Smart TV, เครื่องซักผ้า, ตู้เย็น, ไมโครเวฟ)<br>• ส่วนกลางระดับโรงแรม สระว่ายน้ำ 2 สระ ฟิตเนส Co-working space<br><br>💬 ติดต่อนัดชมห้องล่วงหน้า:<br>Line: @estatebangkok | โทร: 081-234-5678<br><br>#IdeoSukhumvit #BangkokCondoRental #BTSBangChak #BangkokProperty #CondoLiving`
+      `<b>Premium High-Floor City Living | Ideo Sukhumvit 93 Studio For Rent</b><br><br>คอนโดคุณภาพเยี่ยมติดบันได BTS บางจาก (15 เมตร)<br>ให้เช่า Ideo Sukhumvit 93 สตูดิโอขนาด 28 ตร.ม. ชั้น 28 แต่งสวยพร้อมเข้าอยู่ทันที<br>เพียง 18,000 บาท/เดือน (สัญญา 1 ปี / ประกัน 2 เดือน ล่วงหน้า 1 เดือน)<br><br>จุดเด่นห้อง:<br>• ชั้นสูง วิวพาโนรามา ไม่มีตึกบัง ลมพัดเย็นสบาย<br>• เครื่องใช้ไฟฟ้าและเฟอร์นิเจอร์ครบ (Smart TV, เครื่องซักผ้า, ตู้เย็น, ไมโครเวฟ)<br>• ส่วนกลางระดับโรงแรม สระว่ายน้ำ 2 สระ ฟิตเนส Co-working space<br><br>ติดต่อนัดชมห้องล่วงหน้า:<br>Line: @estatebangkok | โทร: 081-234-5678<br><br>#IdeoSukhumvit #BangkokCondoRental #BTSBangChak #BangkokProperty #CondoLiving`
   );
 
   // Two Main Workspace Sessions: 'content' | 'images'
@@ -542,32 +610,49 @@ Line: @estatebangkok | โทร: 081-234-5678
   const [igEnabled, setIgEnabled] = useState(true);
   const [igAccountId, setIgAccountId] = useState(CONNECTED_IG_ACCOUNTS[0].id);
   const [igCaption, setIgCaption] = useState(
-    `Elevated city living next to BTS Bang Chak 🏙️✨
+    `Elevated city living next to BTS Bang Chak
 
 Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skyline views. Fully furnished with premium appliances, walk-in layout, and turnkey readiness.
 
-📍 Ideo Sukhumvit 93 (BTS Bang Chak 15m)
-💰 ฿18,000 / month
-🛋️ Fully Furnished | Ready to move in
+Location: Ideo Sukhumvit 93 (BTS Bang Chak 15m)
+Rent: ฿18,000 / month
+Condition: Fully Furnished | Ready to move in
 
-📩 DM or contact Line: @estatebangkok for private viewings`
+DM or contact Line: @estatebangkok for private viewings`
   );
   const [igFirstCommentHashtags, setIgFirstCommentHashtags] = useState(
     '#BangkokCondo #BangkokRealEstate #CondoForRent #SukhumvitCondo #IdeoSukhumvit93 #BTSBangChak #BangkokLiving #InteriorInspo #LuxuryCondoBangkok'
   );
   const [igLocationTag, setIgLocationTag] = useState('Ideo Sukhumvit 93, Sukhumvit Road, Bangkok');
 
-  // TikTok Box
-  const [ttEnabled, setTtEnabled] = useState(true);
-  const [ttAccountId, setTtAccountId] = useState(CONNECTED_TIKTOK_ACCOUNTS[0]?.id || '');
-  const [ttHook, setTtHook] = useState('Is this the best condo value under 20k in Sukhumvit? 😱✨');
-  const [ttCaption, setTtCaption] = useState(
-    `Only 15 meters from BTS Bang Chak! High floor 28 sqm studio with insane city skyline views for 18,000 THB/month. Would you live here? 👇 Comment below! #BangkokCondo #CondoTour #BKKLiving #IdeoSukhumvit93`
+  // TikTok Box State
+  const [ttAccountId, setTtAccountId] = useState('');
+  const [tt1Hook, setTt1Hook] = useState('Is this the best condo value under 20k in Sukhumvit?');
+  const [tt2Hook, setTt2Hook] = useState('Wait until you see the rooftop view on this Sukhumvit condo...');
+  const [tt1Caption, setTt1Caption] = useState(
+    `Only 15 meters from BTS Bang Chak! High floor 28 sqm studio with insane city skyline views for 18,000 THB/month. Would you live here? Comment below! #BangkokCondo #CondoTour #BKKLiving #IdeoSukhumvit93`
   );
-  const [ttSound, setTtSound] = useState('Trending Luxury Real Estate Beat (Original Sound)');
-  const [ttPrivacy, setTtPrivacy] = useState<'public' | 'friends' | 'private'>('public');
-  const [ttAllowComments, setTtAllowComments] = useState(true);
-  const [ttAllowDuet, setTtAllowDuet] = useState(true);
+  const [tt2Caption, setTt2Caption] = useState(
+    `Bangkok luxury rental gem! 28 sqm studio with unblocked city views directly next to BTS Bang Chak. Monthly rent ฿18,000. Book viewings in bio! #BangkokRealEstate #CondoRental #BangkokLiving`
+  );
+  const [tt1Sound, setTt1Sound] = useState('Trending Luxury Real Estate Beat (Original Sound)');
+  const [tt2Sound, setTt2Sound] = useState('Trending Luxury Real Estate Beat (Original Sound)');
+  const [ttHooks, setTtHooks] = useState<Record<string, string>>({});
+  const [ttCaptions, setTtCaptions] = useState<Record<string, string>>({});
+  const [ttSounds, setTtSounds] = useState<Record<string, string>>({});
+  const [selectedPreviewTikTokAccount, setSelectedPreviewTikTokAccount] = useState<ManagedTikTokAccount | null>(null);
+  const [ttPrivacy] = useState<'public' | 'friends' | 'private'>('public');
+  const [ttAllowComments] = useState(true);
+  const [ttAllowDuet] = useState(true);
+  const [ttPreviewAccountId, setTtPreviewAccountId] = useState<'tt-acc-1' | 'tt-acc-2'>('tt-acc-1');
+
+  // Compatibility aliases
+  const ttHook = tt1Hook;
+  const setTtHook = setTt1Hook;
+  const ttCaption = tt1Caption;
+  const setTtCaption = setTt1Caption;
+  const ttSound = tt1Sound;
+  const setTtSound = setTt1Sound;
 
   // Scheduling & Publishing state
   const [scheduleType, setScheduleType] = useState<'NOW' | 'SCHEDULED'>('NOW');
@@ -699,12 +784,32 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
     [selectStyles, isDark]
   );
 
-  const igAccountOptions = useMemo(() => CONNECTED_IG_ACCOUNTS.map((acc) => ({
-    value: acc.id,
-    label: `${acc.handle} (${acc.followers})`,
-    handle: acc.handle,
-    followers: acc.followers,
-  })), []);
+  const [storedInstagramAccounts, setStoredInstagramAccounts] = useState<ManagedInstagramAccount[]>(() => getStoredInstagramAccounts());
+  useEffect(() => {
+    return subscribeInstagramAccounts((accounts) => {
+      setStoredInstagramAccounts(accounts);
+    });
+  }, []);
+
+  const hasInstagramAccount = storedInstagramAccounts.length > 0;
+  const isEffectiveIgEnabled = hasInstagramAccount && igEnabled;
+
+  const igAccountOptions = useMemo(() => {
+    if (storedInstagramAccounts.length > 0) {
+      return storedInstagramAccounts.map((acc) => ({
+        value: acc.id,
+        label: `${acc.handle} (${acc.name || 'Instagram'})`,
+        handle: acc.handle,
+        followers: acc.followers || '',
+      }));
+    }
+    return CONNECTED_IG_ACCOUNTS.map((acc) => ({
+      value: acc.id,
+      label: `${acc.handle} (${acc.followers})`,
+      handle: acc.handle,
+      followers: acc.followers,
+    }));
+  }, [storedInstagramAccounts]);
 
   const [storedTikTokAccounts, setStoredTikTokAccounts] = useState<ManagedTikTokAccount[]>(() => getStoredTikTokAccounts());
   useEffect(() => {
@@ -742,12 +847,27 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
     });
   }, [ttAccountId]);
 
-  const ttAccountOptions = useMemo(() => storedTikTokAccounts.map((acc) => ({
+  const activeTikTokAccounts = useMemo(() => {
+    return storedTikTokAccounts.filter((acc) => acc.auto_publish_enabled !== false);
+  }, [storedTikTokAccounts]);
+
+  const [ttEnabledOverride, setTtEnabledOverride] = useState<boolean | null>(null);
+  const tt1Enabled = activeTikTokAccounts.length > 0;
+  const tt2Enabled = activeTikTokAccounts.length > 1;
+  const ttEnabled = ttEnabledOverride !== null ? ttEnabledOverride : (activeTikTokAccounts.length > 0 || true);
+  const setTt1Enabled = (_val: boolean) => {};
+  const setTt2Enabled = (_val: boolean) => {};
+  const setTtEnabled = (val: boolean) => setTtEnabledOverride(val);
+
+  const tiktokAccount1 = activeTikTokAccounts[0] || storedTikTokAccounts[0] || null;
+  const tiktokAccount2 = activeTikTokAccounts[1] || storedTikTokAccounts[1] || null;
+
+  const ttAccountOptions = useMemo(() => activeTikTokAccounts.map((acc) => ({
     value: acc.id,
-    label: `${acc.handle} (${acc.followers})`,
+    label: `${acc.handle} (${acc.name})`,
     handle: acc.handle,
     followers: acc.followers,
-  })), [storedTikTokAccounts]);
+  })), [activeTikTokAccounts]);
 
   const ttSoundOptions = useMemo(() => [
     { value: 'Trending Luxury Real Estate Beat (Original Sound)', label: 'Trending Luxury Real Estate Beat (Original Sound)' },
@@ -767,6 +887,7 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
   // ----------------------------------------------------
   const [activePlatformTab, setActivePlatformTab] = useState<'all' | 'facebook' | 'instagram' | 'tiktok'>('all');
   const [previewPlatform, setPreviewPlatform] = useState<SocialPlatform | null>(null);
+  const [previewTtSlideIdx, setPreviewTtSlideIdx] = useState<number>(0);
   const [previewFbTab, setPreviewFbTab] = useState<'page1' | 'page2'>('page1');
   const [selectedFbPageTab, setSelectedFbPageTab] = useState<'page1' | 'page2'>('page1');
 
@@ -840,32 +961,45 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
     },
   ], [page1Name, page2Name, page1PageId, page2PageId, page1Picture, page2Picture]);
 
-  const channelOptions = useMemo(() => [
-    {
-      value: 'all',
-      label: 'All Channels',
-      icon: <FiSliders style={{ fontSize: '0.8125rem' }} />,
-      enabled: true,
-    },
-    {
-      value: 'facebook',
-      label: 'Facebook',
-      icon: <FaFacebook style={{ color: '#1877F2', fontSize: '0.875rem' }} />,
-      enabled: fbEnabled,
-    },
-    {
-      value: 'instagram',
-      label: 'Instagram',
-      icon: <FaInstagram style={{ color: '#E4405F', fontSize: '0.875rem' }} />,
-      enabled: igEnabled,
-    },
-    {
+  const channelOptions = useMemo(() => {
+    const list: {
+      value: 'all' | 'facebook' | 'instagram' | 'tiktok';
+      label: string;
+      icon: React.ReactNode;
+      enabled: boolean;
+    }[] = [
+      {
+        value: 'all',
+        label: 'All Channels',
+        icon: <FiSliders style={{ fontSize: '0.8125rem' }} />,
+        enabled: true,
+      },
+      {
+        value: 'facebook',
+        label: 'Facebook',
+        icon: <FaFacebook style={{ color: '#1877F2', fontSize: '0.875rem' }} />,
+        enabled: fbEnabled,
+      },
+    ];
+
+    if (hasInstagramAccount) {
+      list.push({
+        value: 'instagram',
+        label: 'Instagram',
+        icon: <FaInstagram style={{ color: '#E4405F', fontSize: '0.875rem' }} />,
+        enabled: isEffectiveIgEnabled,
+      });
+    }
+
+    list.push({
       value: 'tiktok',
       label: 'TikTok',
       icon: <FaTiktok style={{ color: isDark ? '#00F2FE' : '#000000', fontSize: '0.8125rem' }} />,
       enabled: ttEnabled,
-    },
-  ], [fbEnabled, igEnabled, ttEnabled, isDark]);
+    });
+
+    return list;
+  }, [fbEnabled, hasInstagramAccount, isEffectiveIgEnabled, ttEnabled, isDark]);
   const [isPublishingModalOpen, setIsPublishingModalOpen] = useState(false);
   const [publishProgress, setPublishProgress] = useState<{
     step: number;
@@ -936,7 +1070,7 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
       return merged.map((img, i) => ({ ...img, isCover: i === 0 }));
     });
 
-    showToast(`📸 Added ${newImages.length} image${newImages.length > 1 ? 's' : ''}!`);
+    showToast(`Added ${newImages.length} image${newImages.length > 1 ? 's' : ''}!`);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -960,7 +1094,7 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
         const merged = [...prev, ...newImages];
         return merged.map((img, i) => ({ ...img, isCover: i === 0 }));
       });
-      showToast(`📸 Uploaded ${newImages.length} images!`);
+      showToast(`Uploaded ${newImages.length} images!`);
     }
   };
 
@@ -1207,7 +1341,7 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
       post.caption;
 
     if (thaiCopy) {
-      setFbHeadline(`✨ ${post.projectName} - Ready for ${post.propertyData?.listing_type || 'Rent'}`);
+      setFbHeadline(`${post.projectName} - Ready for ${post.propertyData?.listing_type || 'Rent'}`);
       setFbCaption(thaiCopy);
     }
 
@@ -1221,7 +1355,7 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
     }
 
     setIsRemainingPostsModalOpen(false);
-    showToast(`✅ Loaded "${post.projectName}" with ${loadedImages.length} images!`);
+    showToast(`Loaded "${post.projectName}" with ${loadedImages.length} images!`);
   };
 
   // ----------------------------------------------------
@@ -1257,22 +1391,69 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
   };
 
   useEffect(() => {
+    const syncEnabledFromPages = (pages: ManagedPageMeta[]) => {
+      const p1 = pages.find((p) => p.slot === 1 || p.page_id === '1287202894475973');
+      if (p1 && p1.auto_publish_enabled !== undefined) {
+        setFbPage1Enabled(p1.auto_publish_enabled);
+      } else {
+        const s1 = localStorage.getItem('autopost_fb_page_1_enabled');
+        if (s1 !== null) setFbPage1Enabled(s1 === 'true');
+      }
+
+      const p2 = pages.find((p) => p.slot === 2 || p.page_id === '494870343703559');
+      if (p2 && p2.auto_publish_enabled !== undefined) {
+        setFbPage2Enabled(p2.auto_publish_enabled);
+      } else {
+        const s2 = localStorage.getItem('autopost_fb_page_2_enabled');
+        if (s2 !== null) setFbPage2Enabled(s2 === 'true');
+      }
+    };
+
     const unsub = subscribeManagedPages((pages) => {
       setManagedPages(pages);
       setFbPagesList(getStoredFbPages());
+      syncEnabledFromPages(pages);
     });
-    return unsub;
+
+    const handleStorage = () => {
+      const s1 = localStorage.getItem('autopost_fb_page_1_enabled');
+      if (s1 !== null) setFbPage1Enabled(s1 === 'true');
+      const s2 = localStorage.getItem('autopost_fb_page_2_enabled');
+      if (s2 !== null) setFbPage2Enabled(s2 === 'true');
+    };
+    window.addEventListener('storage', handleStorage);
+
+    return () => {
+      unsub();
+      window.removeEventListener('storage', handleStorage);
+    };
   }, []);
 
   const fetchManagedPages = async () => {
     try {
-      const res = await fetch('http://localhost:8085/api/facebook/pages');
+      const res = await fetch(apiUrl('/api/facebook/pages'));
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data.pages)) {
           setManagedPages(data.pages);
           const synced = syncStoredFbPagesWithMeta(data.pages);
           setFbPagesList(synced);
+
+          const s1 = localStorage.getItem('autopost_fb_page_1_enabled');
+          const p1 = data.pages.find((p: any) => p.slot === 1 || p.page_id === '1287202894475973');
+          if (s1 !== null) {
+            setFbPage1Enabled(s1 === 'true');
+          } else if (p1 && p1.auto_publish_enabled !== undefined) {
+            setFbPage1Enabled(p1.auto_publish_enabled);
+          }
+
+          const s2 = localStorage.getItem('autopost_fb_page_2_enabled');
+          const p2 = data.pages.find((p: any) => p.slot === 2 || p.page_id === '494870343703559');
+          if (s2 !== null) {
+            setFbPage2Enabled(s2 === 'true');
+          } else if (p2 && p2.auto_publish_enabled !== undefined) {
+            setFbPage2Enabled(p2.auto_publish_enabled);
+          }
         }
       }
     } catch (e) {
@@ -1290,15 +1471,15 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
       if (res.ok && data.page) {
         const targetPage = data.page as ManagedPageMeta;
         setManagedPages(prev => prev.map(p => (p.page_id === pageId || p.slot === targetPage.slot ? { ...p, ...targetPage } : p)));
-        showToast(`✅ Refreshed Facebook Page info for "${targetPage.name || pageId}" from Meta Graph API!`);
+        showToast(`Refreshed Facebook Page info for "${targetPage.name || pageId}" from Meta Graph API!`);
         fetchManagedPages();
       } else {
         const errMsg = data.message || 'Could not refresh Page information';
-        showToast(`⚠️ ${errMsg}`);
+        showToast(errMsg);
         fetchManagedPages();
       }
     } catch (e: any) {
-      showToast('❌ Network error refreshing Facebook Page info');
+      showToast('Network error refreshing Facebook Page info');
     } finally {
       setRefreshingPageId(null);
     }
@@ -1309,19 +1490,19 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
     setFbPage2Caption(fbCaption);
     setFbPage2Hashtags(fbHashtags);
     setFbPage2Images([...(fbImages.length > 0 ? fbImages : images)]);
-    showToast('📋 Copied Page 1 content into Page 2. Tweak and customize freely!');
+    showToast('Copied Page 1 content into Page 2. Tweak and customize freely.');
   };
 
   const handleDifferentiatePage2 = () => {
     setFbPage2Headline(
-      fbHeadline.includes('✨')
-        ? fbHeadline.replace('✨', '🏙️ [Page 2 Exclusive]')
-        : `🏙️ [Page 2 Exclusive] ${fbHeadline}`
+      fbHeadline.includes('[Page 2 Exclusive]')
+        ? fbHeadline
+        : `[Page 2 Exclusive] ${fbHeadline}`
     );
     setFbPage2Caption(
       `[Special Community Listing for Page 2]\n\n${fbCaption}`
     );
-    showToast('✨ Differentiated copy generated for Page 2!');
+    showToast('Differentiated copy generated for Page 2!');
   };
 
   useEffect(() => {
@@ -1336,7 +1517,7 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
     // Listen for OAuth completion from popup
     const handleOAuthMessage = (event: MessageEvent) => {
       if (event.data?.type === 'FB_AUTH_SUCCESS') {
-        showToast('✅ Facebook Account connected! Loading discovered pages...');
+        showToast('Facebook Account connected! Loading discovered pages...');
         fetchManagedPages();
         fetchMetaConnectionStatus();
         setIsPageSelectionModalOpen(true);
@@ -1347,7 +1528,7 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
     // Detect redirect with ?fb_connected=true
     const params = new URLSearchParams(window.location.search);
     if (params.get('fb_connected') === 'true') {
-      showToast('✅ Facebook Account connected! Select your pages to continue.');
+      showToast('Facebook Account connected! Select your pages to continue.');
       fetchManagedPages();
       setIsPageSelectionModalOpen(true);
       window.history.replaceState({}, document.title, window.location.pathname);
@@ -1379,7 +1560,7 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
         window.open('https://www.facebook.com/v26.0/dialog/oauth', '_blank');
       }
     } catch (e) {
-      showToast('❌ Failed to start Facebook authorization');
+      showToast('Failed to start Facebook authorization');
     } finally {
       setIsConnectingMeta(false);
     }
@@ -1394,16 +1575,16 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
       const data = await res.json();
       if (res.ok && data.test_result) {
         if (data.test_result.passed) {
-          showToast(`✅ Page (${pageId}) Test PASSED! Access verified with CREATE_CONTENT.`);
+          showToast(`Page (${pageId}) Test PASSED: Access verified with CREATE_CONTENT.`);
         } else {
-          showToast(`⚠️ Page (${pageId}) Test: ${data.test_result.message || 'Verification failed'}`);
+          showToast(`Page (${pageId}) Test: ${data.test_result.message || 'Verification failed'}`);
         }
         await fetchManagedPages();
       } else {
-        showToast(`❌ Connection test failed: ${data.message || 'Unknown error'}`);
+        showToast(`Connection test failed: ${data.message || 'Unknown error'}`);
       }
     } catch (e) {
-      showToast('❌ Network error running connection test');
+      showToast('Network error running connection test');
     } finally {
       setTestingPageId(null);
     }
@@ -1424,7 +1605,7 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
           message: `Connection Verified! Page "${data.page_name}" (ID: ${data.facebook_page_id}) has CREATE_CONTENT access via Meta Graph API ${data.graph_api_version}.`,
           permissions: data.permissions || [],
         });
-        showToast('✅ Facebook Page connection & permissions verified!');
+        showToast('Facebook Page connection & permissions verified!');
       } else {
         const err = data.error_message || (data.status === 'EXPIRED' ? 'Token expired or revoked.' : 'Page lacks CREATE_CONTENT permission or token invalid.');
         setTestResult({
@@ -1433,7 +1614,7 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
           message: err,
           permissions: data.permissions || [],
         });
-        showToast(`⚠️ Connection test: ${data.status || 'Failed'}`);
+        showToast(`Connection test: ${data.status || 'Failed'}`);
       }
       setMetaStatus(data);
     } catch (err: any) {
@@ -1442,7 +1623,7 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
         passed: false,
         message: 'Network error connecting to backend API.',
       });
-      showToast('❌ Failed to test connection');
+      showToast('Failed to test connection');
     } finally {
       setIsTestingMetaConn(false);
     }
@@ -1451,7 +1632,7 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
   const handleSavePageAccessToken = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTokenInput.trim()) {
-      showToast('⚠️ Please enter a Page Access Token');
+      showToast('Please enter a Page Access Token');
       return;
     }
     setIsSavingToken(true);
@@ -1463,15 +1644,15 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
       });
       const data = await res.json();
       if (res.ok && data.status === 'success') {
-        showToast('✅ Page Access Token updated & validated successfully!');
+        showToast('Page Access Token updated and validated successfully!');
         setIsTokenModalOpen(false);
         setNewTokenInput('');
         await fetchMetaConnectionStatus();
       } else {
-        showToast(`❌ Error: ${data.message || 'Failed to update token'}`);
+        showToast(`Error: ${data.message || 'Failed to update token'}`);
       }
     } catch (err: any) {
-      showToast('❌ Network error updating token');
+      showToast('Network error updating token');
     } finally {
       setIsSavingToken(false);
     }
@@ -1480,7 +1661,7 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
   const handleConnectCustomMetaPage = (e: React.FormEvent) => {
     e.preventDefault();
     if (!metaPageName.trim()) {
-      showToast('⚠️ Please enter a Facebook Page Name');
+      showToast('Please enter a Facebook Page Name');
       return;
     }
     const newAccount: ConnectedAccount = {
@@ -1499,7 +1680,7 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
     setMetaPageName('');
     setMetaPageIdInput('');
     setMetaPageFollowers('');
-    showToast(`✅ Successfully linked "${newAccount.name}" with Facebook Meta!`);
+    showToast(`Successfully linked "${newAccount.name}" with Facebook Meta!`);
   };
 
   const handleStartMetaOAuthLogin = async () => {
@@ -1530,15 +1711,15 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
     const cleanSpecs = specs || 'Prime Sukhumvit Location';
 
     // 1. Facebook: Clean unified Title and Description
-    setFbHeadline(`🏢 ${cleanProject} - ${listingType === 'SALE' ? 'คอนโดหรูเพื่อการลงทุน / ขาย' : 'ห้องสวยแต่งครบพร้อมเข้าอยู่'}`);
+    setFbHeadline(`${cleanProject} - ${listingType === 'SALE' ? 'คอนโดหรูเพื่อการลงทุน / ขาย' : 'ห้องสวยแต่งครบพร้อมเข้าอยู่'}`);
     setFbCaption(
-      `💎 โครงการ: ${cleanProject}\n` +
-      `📍 จุดเด่น: ${cleanSpecs}\n` +
-      `💰 ราคา: ${cleanPrice}\n\n` +
+      `โครงการ: ${cleanProject}\n` +
+      `จุดเด่น: ${cleanSpecs}\n` +
+      `ราคา: ${cleanPrice}\n\n` +
       `ห้องตกแต่งครบสไตล์ Modern Luxury เฟอร์นิเจอร์บิวท์อิน เครื่องใช้ไฟฟ้าพรีเมียมครบครัน ส่วนกลางระดับ 5 ดาว สระว่ายน้ำลอยฟ้า ฟิตเนสครบวงจร ทำเลดีเยี่ยมใกล้ระบบขนส่งสาธารณะ เดินทางสะดวกสบายมากครับ\n\n` +
       `• สัญญาเช่าขั้นต่ำ 1 ปี (ประกัน 2 เดือน, ล่วงหน้า 1 เดือน)\n` +
       `• มีบริการดูแลตลอดสัญญาเช่า\n\n` +
-      `📲 สนใจนัดชมห้องจริงได้ทุกวัน Line ID: @estatebangkok | โทร 081-234-5678\n\n` +
+      `สนใจนัดชมห้องจริงได้ทุกวัน Line ID: @estatebangkok | โทร 081-234-5678\n\n` +
       `#${cleanProject.replace(/\s+/g, '')} #BangkokRealEstate #CondoFor${listingType === 'SALE' ? 'Sale' : 'Rent'} #BTS #คอนโดติดรถไฟฟ้า`
     );
     setFbCta('');
@@ -1546,11 +1727,11 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
 
     // 2. Instagram: Minimalist, Aesthetic spacing, DM cta
     setIgCaption(
-      `Serene luxury redefined at ${cleanProject} 🏙️✨\n\n` +
+      `Serene luxury redefined at ${cleanProject}\n\n` +
       `Experience refined Bangkok living in this meticulously styled unit featuring ${cleanSpecs}.\n\n` +
-      `✨ ${cleanProject}\n` +
-      `🏷️ ${cleanPrice}\n` +
-      `🔑 Turnkey Ready | Modern Furnishings\n\n` +
+      `Project: ${cleanProject}\n` +
+      `Price: ${cleanPrice}\n` +
+      `Condition: Turnkey Ready | Modern Furnishings\n\n` +
       `Tap link in bio or send a direct message for a personalized tour walkthrough.`
     );
     setIgFirstCommentHashtags(
@@ -1558,23 +1739,27 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
     );
     setIgLocationTag(`${cleanProject}, Bangkok, Thailand`);
 
-    // 3. TikTok: Catchy hook in first 3 seconds, Photo Mode Carousel script
-    setTtHook(`Is this Bangkok's prettiest condo under ${cleanPrice}? 😱✨`);
-    setTtCaption(
-      `Would you live in this unit at ${cleanProject}? High floor, city view, and only steps from the station! Swipe through the photos and let us know what you think in the comments 👇✨ #${cleanProject.replace(/\s+/g, '')} #BangkokCondo #RealEstateTikTok #RoomTour`
+    // 3. TikTok: Catchy hook in first 3 seconds, Photo Mode Carousel script for both accounts
+    setTt1Hook(`Is this Bangkok's prettiest condo under ${cleanPrice}?`);
+    setTt1Caption(
+      `Would you live in this unit at ${cleanProject}? High floor, city view, and only steps from the station! Swipe through the photos and let us know what you think in the comments. #${cleanProject.replace(/\s+/g, '')} #BangkokCondo #RealEstateTikTok #RoomTour`
+    );
+    setTt2Hook(`Wait until you see this ${cleanProject} studio tour...`);
+    setTt2Caption(
+      `Luxury condo living next to BTS! Studio unit at ${cleanProject} with stunning skyline view for ${cleanPrice}. Book private viewings now! #${cleanProject.replace(/\s+/g, '')} #BangkokRealEstate #CondoRental`
     );
 
-    showToast('✨ AI generated tailored content for Facebook, Instagram, and TikTok!');
+    showToast(hasInstagramAccount ? 'AI generated tailored content for Facebook, Instagram, and TikTok!' : 'AI generated tailored content for Facebook and TikTok!');
   };
 
   // ----------------------------------------------------
   // Publishing Workflow Execution
   // ----------------------------------------------------
-  const selectedChannelsCount = (fbPage1Enabled ? 1 : 0) + (fbPage2Enabled ? 1 : 0) + (igEnabled ? 1 : 0) + (ttEnabled ? 1 : 0);
+  const selectedChannelsCount = (fbPage1Enabled ? 1 : 0) + (fbPage2Enabled ? 1 : 0) + (isEffectiveIgEnabled ? 1 : 0) + activeTikTokAccounts.length;
 
   const handleStartPublish = () => {
     if (selectedChannelsCount === 0) {
-      alert('Please enable at least one social media channel (Facebook, Instagram, or TikTok).');
+      alert(hasInstagramAccount ? 'Please enable at least one social media channel (Facebook, Instagram, or TikTok).' : 'Please enable at least one social media channel (Facebook or TikTok).');
       return;
     }
     if (images.length === 0) {
@@ -1770,7 +1955,7 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
         },
       },
       instagram: {
-        enabled: igEnabled,
+        enabled: isEffectiveIgEnabled,
         accountId: igAccountId,
         accountName: CONNECTED_IG_ACCOUNTS.find((a) => a.id === igAccountId)?.handle || '@instagram',
         caption: igCaption,
@@ -1801,7 +1986,7 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
         facebookPage1: fbP1Result,
         facebookPage2: fbP2Result,
         instagram: {
-          status: igEnabled ? 'scheduled' : 'skipped',
+          status: isEffectiveIgEnabled ? 'scheduled' : 'skipped',
           timestamp: Date.now(),
         },
         tiktok: {
@@ -1999,7 +2184,7 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
       setPublishProgress({
         step: 3,
         total: 4,
-        text: igEnabled
+        text: isEffectiveIgEnabled
           ? 'Uploading Instagram Carousel with 1st-comment hashtags...'
           : 'Skipping Instagram...',
         completed: false,
@@ -2021,12 +2206,15 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
         });
 
         try {
-          const numAccId = parseInt(ttAccountId, 10) || 1;
+          const targetAcc = activeTikTokAccounts[0];
+          const numAccId = targetAcc ? (parseInt(targetAcc.id.replace('tt-acc-', ''), 10) || 1) : 1;
           const photoUrls = (fbImages.length > 0 ? fbImages : images).map((img) => img.url);
+          const thisHook = targetAcc ? (ttHooks[targetAcc.id] ?? tt1Hook) : tt1Hook;
+          const thisCaption = targetAcc ? (ttCaptions[targetAcc.id] ?? tt1Caption) : tt1Caption;
 
           const published = await publishTikTokPhotoPost({
             account_id: numAccId,
-            title: `${ttHook ? ttHook + '\n\n' : ''}${ttCaption}`,
+            title: `${thisHook ? thisHook + '\n\n' : ''}${thisCaption}`,
             photo_images: photoUrls,
             photo_cover_index: 1,
             privacy_level: ttPrivacy === 'private' ? 'SELF_ONLY' : (ttPrivacy === 'friends' ? 'MUTUAL_FOLLOW_FRIENDS' : 'PUBLIC_TO_EVERYONE'),
@@ -2109,7 +2297,7 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
           },
         },
         instagram: {
-          enabled: igEnabled,
+          enabled: isEffectiveIgEnabled,
           accountId: igAccountId,
           accountName: CONNECTED_IG_ACCOUNTS.find((a) => a.id === igAccountId)?.handle || '@instagram',
           caption: igCaption,
@@ -2135,9 +2323,9 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
           facebookPage1: fbP1Result,
           facebookPage2: fbP2Result,
           instagram: {
-            status: igEnabled ? 'success' : 'skipped',
-            postId: igEnabled ? `ig_${randomSeed}` : undefined,
-            postUrl: igEnabled ? `https://instagram.com/p/${randomSeed}` : undefined,
+            status: isEffectiveIgEnabled ? 'success' : 'skipped',
+            postId: isEffectiveIgEnabled ? `ig_${randomSeed}` : undefined,
+            postUrl: isEffectiveIgEnabled ? `https://instagram.com/p/${randomSeed}` : undefined,
             timestamp: Date.now(),
           },
           tiktok: ttResult,
@@ -2957,7 +3145,9 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
           <style>{`
             @media (min-width: 820px) {
               .facebook-pages-row,
-              .social-cards-row {
+              .social-cards-row,
+              .tiktok-cards-row,
+              .instagram-cards-row {
                 grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
               }
             }
@@ -2965,19 +3155,20 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
           {/* Social Media Boxes Stack (Facebook cards 2-in-1-row, Instagram & TikTok 2-in-1-row) */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', width: '100%' }}>
             {/* FACEBOOK PAGES (Page 1 & Page 2 Individual Cards - 2 in one row) */}
-            {(activePlatformTab === 'all' || activePlatformTab === 'facebook') && (
+            {(activePlatformTab === 'all' || activePlatformTab === 'facebook') && (fbPage1Enabled || fbPage2Enabled) && (
               <div
                 className="facebook-pages-row"
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))',
+                  gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
                   gap: '1.25rem',
                   width: '100%',
                   alignItems: 'stretch',
                 }}
               >
                 {/* --- Facebook Card 1: Page 1 (Dot BKK Living) --- */}
-                <div
+                {fbPage1Enabled && (
+                  <div
                   style={{
                     backgroundColor: 'var(--bg-secondary)',
                     border: '1px solid var(--border-color)',
@@ -3025,9 +3216,6 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
                         <h3 style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
                           {page1Name}
                         </h3>
-                        <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-                          Connected Facebook Page
-                        </span>
                       </div>
                     </div>
 
@@ -3054,14 +3242,6 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
                         <FiSliders style={{ fontSize: '0.75rem' }} />
                         <span>Auth Manager</span>
                       </button>
-
-                      <SwitchToggle
-                        checked={fbPage1Enabled}
-                        onChange={(val) => setFbPage1Enabled(val)}
-                        activeColor="#1877F2"
-                        label={fbPage1Enabled ? 'Active' : 'Off'}
-                        isDark={isDark}
-                      />
                     </div>
                   </div>
 
@@ -3090,8 +3270,8 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
                     />
                   </div>
 
-                  {/* Preview Post Button (Normal size, centered) */}
-                  <div style={{ display: 'flex', justifyContent: 'center', marginTop: '1rem' }}>
+                  {/* Preview Post Button (Aligned right, TikTok size, Facebook color) */}
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
                     <button
                       type="button"
                       onClick={() => {
@@ -3104,27 +3284,36 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
                         alignItems: 'center',
                         justifyContent: 'center',
                         gap: '6px',
-                        height: '32px',
-                        padding: '0 14px',
-                        fontSize: '0.78125rem',
-                        fontWeight: 500,
-                        borderRadius: '6px',
-                        border: '1px solid var(--border-color)',
-                        color: fbPage1Enabled ? 'var(--text-primary)' : 'var(--text-muted)',
-                        backgroundColor: 'var(--bg-main)',
+                        height: '34px',
+                        padding: '0 20px',
+                        fontSize: '0.8125rem',
+                        fontWeight: 600,
+                        borderRadius: '8px',
+                        border: 'none',
+                        color: '#FFFFFF',
+                        backgroundColor: '#1877F2',
                         cursor: fbPage1Enabled ? 'pointer' : 'not-allowed',
+                        opacity: fbPage1Enabled ? 1 : 0.6,
                         boxShadow: 'none',
                         transition: 'all 0.15s ease',
                       }}
+                      onMouseEnter={(e) => {
+                        if (fbPage1Enabled) (e.currentTarget as HTMLElement).style.backgroundColor = '#166FE5';
+                      }}
+                      onMouseLeave={(e) => {
+                        if (fbPage1Enabled) (e.currentTarget as HTMLElement).style.backgroundColor = '#1877F2';
+                      }}
                     >
-                      <FiEye style={{ fontSize: '0.8125rem' }} />
-                      <span>Preview {page1Name} Post</span>
+                      <FiEye style={{ fontSize: '0.875rem' }} />
+                      <span>Preview</span>
                     </button>
                   </div>
                 </div>
+                )}
 
                 {/* --- Facebook Card 2: Page 2 (Bolt Haven Realty) --- */}
-                <div
+                {fbPage2Enabled && (
+                  <div
                   style={{
                     backgroundColor: 'var(--bg-secondary)',
                     border: '1px solid var(--border-color)',
@@ -3172,9 +3361,6 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
                         <h3 style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
                           {page2Name}
                         </h3>
-                        <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-                          Connected Facebook Page
-                        </span>
                       </div>
                     </div>
 
@@ -3201,14 +3387,6 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
                         <FiSliders style={{ fontSize: '0.75rem' }} />
                         <span>Auth Manager</span>
                       </button>
-
-                      <SwitchToggle
-                        checked={fbPage2Enabled}
-                        onChange={(val) => setFbPage2Enabled(val)}
-                        activeColor="#1877F2"
-                        label={fbPage2Enabled ? 'Active' : 'Off'}
-                        isDark={isDark}
-                      />
                     </div>
                   </div>
 
@@ -3227,14 +3405,6 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
                       initialHtml={fbPage2Html}
                       disabled={!fbPage2Enabled}
                       height="420px"
-                      onCopyFromOther={() => {
-                        setFbPage2Html(fbPage1Html);
-                        setFbPage2Caption(fbCaption);
-                        setFbPage2Headline('');
-                        setFbPage2Hashtags('');
-                        showToast(`Copied content from ${page1Name} to ${page2Name}`);
-                      }}
-                      copyFromOtherLabel={`Copy from ${page1Name}`}
                       onChange={(socialText, rawHtml) => {
                         setFbPage2Caption(socialText);
                         setFbPage2Html(rawHtml);
@@ -3245,8 +3415,8 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
                     />
                   </div>
 
-                  {/* Preview Post Button (Normal size, centered) */}
-                  <div style={{ display: 'flex', justifyContent: 'center', marginTop: '1rem' }}>
+                  {/* Preview Post Button (Aligned right, TikTok size, Facebook color) */}
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
                     <button
                       type="button"
                       onClick={() => {
@@ -3259,46 +3429,50 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
                         alignItems: 'center',
                         justifyContent: 'center',
                         gap: '6px',
-                        height: '32px',
-                        padding: '0 14px',
-                        fontSize: '0.78125rem',
-                        fontWeight: 500,
-                        borderRadius: '6px',
-                        border: '1px solid var(--border-color)',
-                        color: fbPage2Enabled ? 'var(--text-primary)' : 'var(--text-muted)',
-                        backgroundColor: 'var(--bg-main)',
+                        height: '34px',
+                        padding: '0 20px',
+                        fontSize: '0.8125rem',
+                        fontWeight: 600,
+                        borderRadius: '8px',
+                        border: 'none',
+                        color: '#FFFFFF',
+                        backgroundColor: '#1877F2',
                         cursor: fbPage2Enabled ? 'pointer' : 'not-allowed',
+                        opacity: fbPage2Enabled ? 1 : 0.6,
                         boxShadow: 'none',
                         transition: 'all 0.15s ease',
                       }}
+                      onMouseEnter={(e) => {
+                        if (fbPage2Enabled) (e.currentTarget as HTMLElement).style.backgroundColor = '#166FE5';
+                      }}
+                      onMouseLeave={(e) => {
+                        if (fbPage2Enabled) (e.currentTarget as HTMLElement).style.backgroundColor = '#1877F2';
+                      }}
                     >
-                      <FiEye style={{ fontSize: '0.8125rem' }} />
-                      <span>Preview {page2Name} Post</span>
+                      <FiEye style={{ fontSize: '0.875rem' }} />
+                      <span>Preview</span>
                     </button>
                   </div>
                 </div>
+                )}
               </div>
             )}
 
-          {/* OTHER PLATFORMS: Instagram & TikTok (2 in one row when both shown, or full width if single) */}
-          {(activePlatformTab === 'all' || activePlatformTab === 'instagram' || activePlatformTab === 'tiktok') && (
+          {/* ==================================================== */}
+          {/* INSTAGRAM: 2 CARDS IN ONE ROW                        */}
+          {/* ==================================================== */}
+          {hasInstagramAccount && (activePlatformTab === 'all' || activePlatformTab === 'instagram') && (
             <div
-              className="social-cards-row"
+              className="instagram-cards-row"
               style={{
                 display: 'grid',
-                gridTemplateColumns:
-                  activePlatformTab === 'all'
-                    ? 'repeat(auto-fit, minmax(360px, 1fr))'
-                    : '1fr',
+                gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
                 gap: '1.25rem',
                 width: '100%',
                 alignItems: 'stretch',
               }}
             >
-              {/* ==================================================== */}
-              {/* BOX 2: Instagram                                     */}
-              {/* ==================================================== */}
-              {(activePlatformTab === 'all' || activePlatformTab === 'instagram') && (
+              {/* --- Instagram Card 1: Content & Geotag --- */}
               <div
                 style={{
                   backgroundColor: 'var(--bg-secondary)',
@@ -3312,426 +3486,589 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
                   height: '100%',
                 }}
               >
-            {/* Box Header */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', paddingBottom: '0.75rem', borderBottom: '1px solid var(--border-color)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+                {/* Box Header */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', paddingBottom: '0.75rem', borderBottom: '1px solid var(--border-color)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+                    <div
+                      style={{
+                        width: '32px',
+                        height: '32px',
+                        borderRadius: '8px',
+                        background: 'linear-gradient(45deg, #F58529 0%, #D62976 50%, #962FBF 100%)',
+                        color: '#FFFFFF',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '1.125rem',
+                      }}
+                    >
+                      <FaInstagram />
+                    </div>
+                    <div>
+                      <h3 style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+                        Instagram
+                      </h3>
+                      <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                        Carousel feed with aesthetic layout
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Enable Switch Toggle */}
+                  <SwitchToggle
+                    checked={igEnabled}
+                    onChange={(val) => setIgEnabled(val)}
+                    activeColor="#E4405F"
+                    label={igEnabled ? 'Active' : 'Off'}
+                    isDark={isDark}
+                  />
+                </div>
+
+                {/* Target Account Selector */}
+                <div style={{ marginBottom: '0.875rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                    Target Instagram Account
+                  </label>
+                  <Select
+                    value={igAccountOptions.find((opt) => opt.value === igAccountId) || igAccountOptions[0]}
+                    onChange={(option: any) => {
+                      if (option) setIgAccountId(option.value);
+                    }}
+                    options={igAccountOptions}
+                    isDisabled={!igEnabled}
+                    styles={selectStyles}
+                    isSearchable={false}
+                    formatOptionLabel={(option: any) => (
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                        <span style={{ fontWeight: 600 }}>{option.handle}</span>
+                        <span style={{ fontSize: '0.6875rem', opacity: 0.7 }}>{option.followers}</span>
+                      </div>
+                    )}
+                  />
+                </div>
+
+                {/* Location Tag */}
+                <div style={{ marginBottom: '0.875rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                    Location Tag (Instagram Geotag)
+                  </label>
+                  <input
+                    type="text"
+                    value={igLocationTag}
+                    onChange={(e) => setIgLocationTag(e.target.value)}
+                    disabled={!igEnabled}
+                    placeholder="e.g. Ashton Asoke, Sukhumvit Road"
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-color)',
+                      backgroundColor: 'var(--bg-main)',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.8125rem',
+                      outline: 'none',
+                      opacity: igEnabled ? 1 : 0.6,
+                    }}
+                  />
+                </div>
+
+                {/* Caption Textarea */}
+                <div style={{ marginBottom: '0.5rem', flex: 1, display: 'flex', flexDirection: 'column' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                    <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                      Instagram Caption
+                    </label>
+                    <span
+                      style={{
+                        fontSize: '0.6875rem',
+                        color: igCaption.length > 2200 ? '#EF4444' : 'var(--text-muted)',
+                        fontWeight: igCaption.length > 2200 ? 700 : 400,
+                      }}
+                    >
+                      {igCaption.length} / 2,200 chars
+                    </span>
+                  </div>
+                  <textarea
+                    value={igCaption}
+                    onChange={(e) => setIgCaption(e.target.value)}
+                    disabled={!igEnabled}
+                    rows={6}
+                    placeholder="Clean aesthetic caption with line breaks and DM CTA..."
+                    style={{
+                      width: '100%',
+                      flex: 1,
+                      minHeight: '130px',
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-color)',
+                      backgroundColor: 'var(--bg-main)',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.8125rem',
+                      outline: 'none',
+                      resize: 'vertical',
+                      fontFamily: 'inherit',
+                      lineHeight: 1.5,
+                      opacity: igEnabled ? 1 : 0.6,
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* --- Instagram Card 2: 1st Comment Hashtags & Feed Preview --- */}
+              <div
+                style={{
+                  backgroundColor: 'var(--bg-secondary)',
+                  border: igEnabled ? '2px solid rgba(228, 64, 95, 0.4)' : '1px solid var(--border-color)',
+                  borderRadius: '14px',
+                  padding: '1.25rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  boxShadow: igEnabled ? '0 4px 20px rgba(228, 64, 95, 0.08)' : 'none',
+                  transition: 'all 0.2s ease',
+                  height: '100%',
+                }}
+              >
+                {/* Box Header */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', paddingBottom: '0.75rem', borderBottom: '1px solid var(--border-color)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+                    <div
+                      style={{
+                        width: '32px',
+                        height: '32px',
+                        borderRadius: '8px',
+                        backgroundColor: 'rgba(228, 64, 95, 0.1)',
+                        color: '#E4405F',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '1rem',
+                        border: '1px solid rgba(228, 64, 95, 0.3)',
+                      }}
+                    >
+                      <FaInstagram />
+                    </div>
+                    <div>
+                      <h3 style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+                        Feed Preview & Comment
+                      </h3>
+                      <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                        Clean feed & auto-comment hashtags
+                      </span>
+                    </div>
+                  </div>
+
+                  <span
+                    style={{
+                      fontSize: '0.6875rem',
+                      fontWeight: 600,
+                      padding: '3px 8px',
+                      borderRadius: '6px',
+                      backgroundColor: 'rgba(228, 64, 95, 0.1)',
+                      color: '#E4405F',
+                      border: '1px solid rgba(228, 64, 95, 0.25)',
+                    }}
+                  >
+                    Carousel Feed
+                  </span>
+                </div>
+
+                {/* First Comment / Hashtags (Clean IG Style) */}
+                <div style={{ marginBottom: '0.875rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                    <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                      1st Comment Hashtags (Clean Feed)
+                    </label>
+                    <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                      Auto-posted immediately
+                    </span>
+                  </div>
+                  <input
+                    type="text"
+                    value={igFirstCommentHashtags}
+                    onChange={(e) => setIgFirstCommentHashtags(e.target.value)}
+                    disabled={!igEnabled}
+                    placeholder="#BangkokCondo #RealEstate #LuxuryLiving"
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-color)',
+                      backgroundColor: 'var(--bg-main)',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.8125rem',
+                      outline: 'none',
+                      opacity: igEnabled ? 1 : 0.6,
+                    }}
+                  />
+                </div>
+
+                {/* Live Instagram Feed Mockup Preview */}
                 <div
                   style={{
-                    width: '32px',
-                    height: '32px',
-                    borderRadius: '8px',
-                    background: 'linear-gradient(45deg, #F58529 0%, #D62976 50%, #962FBF 100%)',
-                    color: '#FFFFFF',
+                    flex: 1,
+                    minHeight: '220px',
+                    maxHeight: '270px',
+                    backgroundColor: 'var(--bg-main)',
+                    borderRadius: '14px',
+                    border: '1px solid var(--border-color)',
+                    position: 'relative',
+                    overflow: 'hidden',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    boxShadow: '0 8px 24px rgba(0, 0, 0, 0.08)',
+                    marginBottom: '0.875rem',
+                  }}
+                >
+                  {/* Top Bar with Profile */}
+                  <div
+                    style={{
+                      padding: '8px 12px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      borderBottom: '1px solid var(--border-color)',
+                      backgroundColor: 'var(--bg-secondary)',
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: '24px',
+                        height: '24px',
+                        borderRadius: '50%',
+                        background: 'linear-gradient(45deg, #F58529 0%, #D62976 50%, #962FBF 100%)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: '#FFFFFF',
+                        fontSize: '0.6875rem',
+                      }}
+                    >
+                      <FaInstagram />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                        {CONNECTED_IG_ACCOUNTS.find((a) => a.id === igAccountId)?.handle || '@dot_bkk_living'}
+                      </div>
+                      {igLocationTag && (
+                        <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
+                          {igLocationTag}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Image Container */}
+                  <div style={{ flex: 1, position: 'relative', minHeight: '140px', backgroundColor: '#000000', overflow: 'hidden' }}>
+                    {images[0] ? (
+                      <img
+                        src={images[0].url}
+                        alt="Instagram Feed Preview"
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                      />
+                    ) : (
+                      <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6B7280', fontSize: '0.75rem' }}>
+                        No Image Selected
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Bottom Action Bar */}
+                  <div style={{ padding: '8px 12px', backgroundColor: 'var(--bg-secondary)', borderTop: '1px solid var(--border-color)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.875rem', color: 'var(--text-primary)' }}>
+                        <FaRegHeart />
+                        <FaRegComment />
+                        <FiShare2 />
+                      </div>
+                      <FaRegBookmark style={{ fontSize: '0.875rem', color: 'var(--text-primary)' }} />
+                    </div>
+                    <div style={{ fontSize: '0.6875rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <span style={{ fontWeight: 700, marginRight: '4px', color: 'var(--text-primary)' }}>
+                        {CONNECTED_IG_ACCOUNTS.find((a) => a.id === igAccountId)?.handle || 'dot_bkk_living'}
+                      </span>
+                      {igCaption || 'Caption text...'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Preview Button */}
+                <Button
+                  variant="secondary"
+                  onClick={() => setPreviewPlatform('instagram')}
+                  style={{
+                    width: '100%',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    fontSize: '1.125rem',
+                    gap: '6px',
+                    height: '36px',
+                    fontSize: '0.8125rem',
+                    fontWeight: 500,
+                    borderRadius: '6px',
+                    borderColor: 'rgba(228, 64, 95, 0.3)',
+                    color: '#E4405F',
+                    backgroundColor: 'rgba(228, 64, 95, 0.05)',
                   }}
                 >
-                  <FaInstagram />
-                </div>
-                <div>
-                  <h3 style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-                    Instagram
-                  </h3>
-                  <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-                    Carousel feed with aesthetic layout
-                  </span>
-                </div>
+                  <FiEye />
+                  <span>Preview Instagram Carousel</span>
+                </Button>
               </div>
-
-              {/* Enable Switch Toggle */}
-              <SwitchToggle
-                checked={igEnabled}
-                onChange={(val) => setIgEnabled(val)}
-                activeColor="#E4405F"
-                label={igEnabled ? 'Active' : 'Off'}
-                isDark={isDark}
-              />
             </div>
-
-            {/* Target Account Selector */}
-            <div style={{ marginBottom: '0.875rem' }}>
-              <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                Target Instagram Account
-              </label>
-              <Select
-                value={igAccountOptions.find((opt) => opt.value === igAccountId) || igAccountOptions[0]}
-                onChange={(option: any) => {
-                  if (option) setIgAccountId(option.value);
-                }}
-                options={igAccountOptions}
-                isDisabled={!igEnabled}
-                styles={selectStyles}
-                isSearchable={false}
-                formatOptionLabel={(option: any) => (
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                    <span style={{ fontWeight: 600 }}>{option.handle}</span>
-                    <span style={{ fontSize: '0.6875rem', opacity: 0.7 }}>{option.followers}</span>
-                  </div>
-                )}
-              />
-            </div>
-
-            {/* Location Tag */}
-            <div style={{ marginBottom: '0.875rem' }}>
-              <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                Location Tag (Instagram Geotag)
-              </label>
-              <input
-                type="text"
-                value={igLocationTag}
-                onChange={(e) => setIgLocationTag(e.target.value)}
-                disabled={!igEnabled}
-                placeholder="e.g. Ashton Asoke, Sukhumvit Road"
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  borderRadius: '8px',
-                  border: '1px solid var(--border-color)',
-                  backgroundColor: 'var(--bg-main)',
-                  color: 'var(--text-primary)',
-                  fontSize: '0.8125rem',
-                  outline: 'none',
-                  opacity: igEnabled ? 1 : 0.6,
-                }}
-              />
-            </div>
-
-            {/* Caption Textarea */}
-            <div style={{ marginBottom: '0.875rem', flex: 1, display: 'flex', flexDirection: 'column' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                  Instagram Caption
-                </label>
-                <span
-                  style={{
-                    fontSize: '0.6875rem',
-                    color: igCaption.length > 2200 ? '#EF4444' : 'var(--text-muted)',
-                    fontWeight: igCaption.length > 2200 ? 700 : 400,
-                  }}
-                >
-                  {igCaption.length} / 2,200 chars
-                </span>
-              </div>
-              <textarea
-                value={igCaption}
-                onChange={(e) => setIgCaption(e.target.value)}
-                disabled={!igEnabled}
-                rows={7}
-                placeholder="Clean aesthetic caption with line breaks and DM CTA..."
-                style={{
-                  width: '100%',
-                  padding: '10px 12px',
-                  borderRadius: '8px',
-                  border: '1px solid var(--border-color)',
-                  backgroundColor: 'var(--bg-main)',
-                  color: 'var(--text-primary)',
-                  fontSize: '0.8125rem',
-                  outline: 'none',
-                  resize: 'vertical',
-                  fontFamily: 'inherit',
-                  lineHeight: 1.5,
-                  opacity: igEnabled ? 1 : 0.6,
-                }}
-              />
-            </div>
-
-            {/* First Comment / Hashtags (Clean IG Style) */}
-            <div style={{ marginBottom: '1rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                  1st Comment Hashtags (Clean Feed)
-                </label>
-                <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-                  Auto-posted immediately
-                </span>
-              </div>
-              <input
-                type="text"
-                value={igFirstCommentHashtags}
-                onChange={(e) => setIgFirstCommentHashtags(e.target.value)}
-                disabled={!igEnabled}
-                placeholder="#BangkokCondo #RealEstate #LuxuryLiving"
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  borderRadius: '8px',
-                  border: '1px solid var(--border-color)',
-                  backgroundColor: 'var(--bg-main)',
-                  color: 'var(--text-primary)',
-                  fontSize: '0.8125rem',
-                  outline: 'none',
-                  opacity: igEnabled ? 1 : 0.6,
-                }}
-              />
-            </div>
-
-            {/* Preview Button */}
-            <Button
-              variant="secondary"
-              onClick={() => setPreviewPlatform('instagram')}
-              style={{
-                width: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '6px',
-                height: '36px',
-                fontSize: '0.8125rem',
-                fontWeight: 500,
-                borderRadius: '6px',
-                borderColor: 'rgba(228, 64, 95, 0.3)',
-                color: '#E4405F',
-                backgroundColor: 'rgba(228, 64, 95, 0.05)',
-              }}
-            >
-              <FiEye />
-              <span>Preview Instagram Carousel</span>
-            </Button>
-          </div>
           )}
 
           {/* ==================================================== */}
-          {/* BOX 3: TikTok                                        */}
+          {/* TIKTOK: ONLY SHOW CARDS FOR CONNECTED ACCOUNTS       */}
           {/* ==================================================== */}
           {(activePlatformTab === 'all' || activePlatformTab === 'tiktok') && (
-          <div
-            style={{
-              backgroundColor: 'var(--bg-secondary)',
-              border: ttEnabled ? '2px solid rgba(0, 242, 254, 0.4)' : '1px solid var(--border-color)',
-              borderRadius: '14px',
-              padding: '1.25rem',
-              display: 'flex',
-              flexDirection: 'column',
-              boxShadow: ttEnabled ? '0 4px 20px rgba(0, 242, 254, 0.08)' : 'none',
-              transition: 'all 0.2s ease',
-              height: '100%',
-            }}
-          >
-            {/* Box Header */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', paddingBottom: '0.75rem', borderBottom: '1px solid var(--border-color)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
-                <div
-                  style={{
-                    width: '32px',
-                    height: '32px',
-                    borderRadius: '8px',
-                    backgroundColor: '#000000',
-                    color: '#00F2FE',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '1.125rem',
-                    border: '1px solid rgba(254, 44, 85, 0.4)',
-                  }}
-                >
-                  <FaTiktok />
-                </div>
-                <div>
-                  <h3 style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-                    TikTok
-                  </h3>
-                  <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-                    Viral Hook & Photo Mode carousel
-                  </span>
-                </div>
-              </div>
-
-              {/* Header Right Actions */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <button
-                  type="button"
-                  onClick={() => (onNavigateTab ? onNavigateTab('auth-manager') : setIsTokenManagerModalOpen(true))}
-                  style={{
-                    background: 'none',
-                    border: '1px solid rgba(254, 44, 85, 0.3)',
-                    borderRadius: '7px',
-                    padding: '4px 10px',
-                    color: isDark ? '#00F2FE' : '#0891B2',
-                    fontSize: '0.6875rem',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '5px',
-                    backgroundColor: 'rgba(254, 44, 85, 0.05)',
-                    transition: 'all 0.15s ease',
-                  }}
-                  title="Open Auth Manager for TikTok & Meta credentials"
-                >
-                  <FiSliders />
-                  <span>Auth Manager</span>
-                </button>
-
-                {/* Enable Switch Toggle */}
-                <SwitchToggle
-                  checked={ttEnabled}
-                  onChange={(val) => setTtEnabled(val)}
-                  activeColor={isDark ? '#00F2FE' : '#0891B2'}
-                  label={ttEnabled ? 'Active' : 'Off'}
-                  isDark={isDark}
-                />
-              </div>
-            </div>
-
-            {/* Target Account Selector */}
-            <div style={{ marginBottom: '0.875rem' }}>
-              <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                Target TikTok Account
-              </label>
-              <Select
-                value={ttAccountOptions.find((opt) => opt.value === ttAccountId) || ttAccountOptions[0]}
-                onChange={(option: any) => {
-                  if (option) setTtAccountId(option.value);
-                }}
-                options={ttAccountOptions}
-                isDisabled={!ttEnabled}
-                styles={selectStyles}
-                isSearchable={false}
-                formatOptionLabel={(option: any) => (
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                    <span style={{ fontWeight: 600 }}>{option.handle}</span>
-                    <span style={{ fontSize: '0.6875rem', opacity: 0.7 }}>{option.followers}</span>
+            <>
+              {activeTikTokAccounts.length === 0 ? (
+                activePlatformTab === 'tiktok' ? (
+                  <div
+                    style={{
+                      backgroundColor: 'var(--bg-secondary)',
+                      border: '1px dashed var(--border-color)',
+                      borderRadius: '14px',
+                      padding: '3rem 1.5rem',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      textAlign: 'center',
+                      gap: '12px',
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: '48px',
+                        height: '48px',
+                        borderRadius: '12px',
+                        backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                        color: isDark ? '#000000' : '#FFFFFF',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '1.5rem',
+                      }}
+                    >
+                      <FaTiktok />
+                    </div>
+                    <div>
+                      <h3 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 4px 0' }}>
+                        No TikTok Accounts Connected
+                      </h3>
+                      <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', margin: 0, maxWidth: '420px', lineHeight: 1.5 }}>
+                        Connect your TikTok account in Auth Manager first to configure Photo Mode carousels and start auto-publishing.
+                      </p>
+                    </div>
+                    <Button
+                      variant="primary"
+                      onClick={() => (onNavigateTab ? onNavigateTab('auth-manager') : setIsTokenManagerModalOpen(true))}
+                      style={{
+                        backgroundColor: '#FE2C55',
+                        borderColor: '#FE2C55',
+                        color: '#FFFFFF',
+                        height: '36px',
+                        padding: '0 16px',
+                        fontSize: '0.8125rem',
+                        fontWeight: 600,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        marginTop: '4px',
+                      }}
+                    >
+                      <FiPlus />
+                      <span>Connect TikTok Account</span>
+                    </Button>
                   </div>
-                )}
-              />
-            </div>
-
-            {/* Viral Hook (First 3 Seconds) */}
-            <div style={{ marginBottom: '0.875rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: '#FE2C55' }}>
-                  ⚡ First 3-Sec Hook (TikTok Overlay)
-                </label>
-                <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-                  Grab attention immediately
-                </span>
-              </div>
-              <input
-                type="text"
-                value={ttHook}
-                onChange={(e) => setTtHook(e.target.value)}
-                disabled={!ttEnabled}
-                placeholder="e.g. Is this the best condo value under 20k? 😱"
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  borderRadius: '8px',
-                  border: '1px solid rgba(254, 44, 85, 0.4)',
-                  backgroundColor: 'var(--bg-main)',
-                  color: 'var(--text-primary)',
-                  fontSize: '0.8125rem',
-                  outline: 'none',
-                  opacity: ttEnabled ? 1 : 0.6,
-                }}
-              />
-            </div>
-
-            {/* Caption Textarea */}
-            <div style={{ marginBottom: '0.875rem', flex: 1, display: 'flex', flexDirection: 'column' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                  TikTok Caption & Tags
-                </label>
-                <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-                  {ttCaption.length} / 2,200
-                </span>
-              </div>
-              <textarea
-                value={ttCaption}
-                onChange={(e) => setTtCaption(e.target.value)}
-                disabled={!ttEnabled}
-                rows={5}
-                placeholder="Short punchy caption with question to provoke comments..."
-                style={{
-                  width: '100%',
-                  padding: '10px 12px',
-                  borderRadius: '8px',
-                  border: '1px solid var(--border-color)',
-                  backgroundColor: 'var(--bg-main)',
-                  color: 'var(--text-primary)',
-                  fontSize: '0.8125rem',
-                  outline: 'none',
-                  resize: 'vertical',
-                  fontFamily: 'inherit',
-                  lineHeight: 1.5,
-                  opacity: ttEnabled ? 1 : 0.6,
-                }}
-              />
-            </div>
-
-            {/* Audio & Privacy Settings (Two in one row) */}
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'minmax(0, 1fr) 140px',
-                gap: '0.625rem',
-                marginBottom: '1rem',
-              }}
-            >
-              <div>
-                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                  🎵 Background Music / Audio
-                </label>
-                <Select
-                  value={ttSoundOptions.find((opt) => opt.value === ttSound) || ttSoundOptions[0]}
-                  onChange={(option: any) => {
-                    if (option) setTtSound(option.value);
+                ) : null
+              ) : (
+                <div
+                  className="tiktok-cards-row"
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                    gap: '1.25rem',
+                    width: '100%',
+                    alignItems: 'stretch',
                   }}
-                  options={ttSoundOptions}
-                  isDisabled={!ttEnabled}
-                  styles={selectStyles}
-                  isSearchable={false}
-                />
-              </div>
+                >
+                  {activeTikTokAccounts.map((account, idx) => {
+                    const accHook = ttHooks[account.id] ?? (idx === 0 ? tt1Hook : (idx === 1 ? tt2Hook : tt1Hook));
+                    const accCaption = ttCaptions[account.id] ?? (idx === 0 ? tt1Caption : (idx === 1 ? tt2Caption : tt1Caption));
+                    const accSound = ttSounds[account.id] ?? (idx === 0 ? tt1Sound : (idx === 1 ? tt2Sound : tt1Sound));
 
-              <div>
-                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                  Privacy
-                </label>
-                <Select
-                  value={ttPrivacyOptions.find((opt) => opt.value === ttPrivacy) || ttPrivacyOptions[0]}
-                  onChange={(option: any) => {
-                    if (option) setTtPrivacy(option.value);
-                  }}
-                  options={ttPrivacyOptions}
-                  isDisabled={!ttEnabled}
-                  styles={selectStyles}
-                  isSearchable={false}
-                />
-              </div>
-            </div>
+                    return (
+                      <div
+                        key={account.id}
+                        style={{
+                          backgroundColor: 'var(--bg-secondary)',
+                          border: isDark ? '1px solid rgba(254, 44, 85, 0.45)' : '1px solid rgba(254, 44, 85, 0.28)',
+                          borderRadius: '14px',
+                          padding: '1.25rem',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          boxShadow: 'none',
+                          transition: 'all 0.2s ease',
+                          height: '100%',
+                        }}
+                      >
+                        {/* Box Header - NO SWITCH BUTTON ON CARD */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', paddingBottom: '0.75rem', borderBottom: '1px solid var(--border-color)' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                            <TikTokAppIcon size={36} rounded={8} />
+                            <div>
+                              <h3 style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+                                {account.name}
+                              </h3>
+                            </div>
+                          </div>
+                        </div>
 
-            {/* Preview Button */}
-            <Button
-              variant="secondary"
-              onClick={() => setPreviewPlatform('tiktok')}
-              style={{
-                width: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '6px',
-                height: '36px',
-                fontSize: '0.8125rem',
-                fontWeight: 500,
-                borderRadius: '6px',
-                borderColor: 'rgba(0, 242, 254, 0.3)',
-                color: isDark ? '#00F2FE' : '#0891B2',
-                backgroundColor: 'rgba(0, 242, 254, 0.05)',
-              }}
-            >
-              <FiEye />
-              <span>Preview TikTok Photo Mode</span>
-            </Button>
-          </div>
-          )}
-            </div>
+                        {/* 1. Background Music / Audio */}
+                        <div style={{ marginBottom: '0.875rem' }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                            <FiMusic style={{ color: '#FE2C55' }} />
+                            <span>Background Music / Audio</span>
+                          </label>
+                          <Select
+                            value={ttSoundOptions.find((opt) => opt.value === accSound) || ttSoundOptions[0]}
+                            onChange={(option: any) => {
+                              if (option) {
+                                setTtSounds((prev) => ({ ...prev, [account.id]: option.value }));
+                                if (idx === 0) setTt1Sound(option.value);
+                                if (idx === 1) setTt2Sound(option.value);
+                              }
+                            }}
+                            options={ttSoundOptions}
+                            styles={selectStyles}
+                            isSearchable={false}
+                          />
+                        </div>
+
+                        {/* 2. First 3-Sec Hook */}
+                        <div style={{ marginBottom: '0.875rem' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', fontWeight: 600, color: '#FE2C55' }}>
+                              <FiZap style={{ color: '#FE2C55' }} />
+                              <span>First 3-Sec Hook (TikTok Overlay)</span>
+                            </label>
+                            <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                              Grab attention immediately
+                            </span>
+                          </div>
+                          <input
+                            type="text"
+                            value={accHook}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setTtHooks((prev) => ({ ...prev, [account.id]: val }));
+                              if (idx === 0) setTt1Hook(val);
+                              if (idx === 1) setTt2Hook(val);
+                            }}
+                            placeholder="e.g. Is this the best condo value under 20k in Sukhumvit?"
+                            style={{
+                              width: '100%',
+                              padding: '8px 12px',
+                              borderRadius: '8px',
+                              border: '1px solid rgba(254, 44, 85, 0.35)',
+                              backgroundColor: 'var(--bg-main)',
+                              color: 'var(--text-primary)',
+                              fontSize: '0.8125rem',
+                              outline: 'none',
+                            }}
+                          />
+                        </div>
+
+                        {/* 3. TikTok Caption & Tags */}
+                        <div style={{ marginBottom: '1rem', flex: 1, display: 'flex', flexDirection: 'column' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                              <FiFileText style={{ color: 'var(--text-muted)' }} />
+                              <span>TikTok Caption & Tags</span>
+                            </label>
+                            <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                              {accCaption.length} / 2,200
+                            </span>
+                          </div>
+                          <textarea
+                            value={accCaption}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setTtCaptions((prev) => ({ ...prev, [account.id]: val }));
+                              if (idx === 0) setTt1Caption(val);
+                              if (idx === 1) setTt2Caption(val);
+                            }}
+                            rows={7}
+                            placeholder="Short punchy caption with question to provoke comments..."
+                            style={{
+                              width: '100%',
+                              flex: 1,
+                              minHeight: '170px',
+                              padding: '10px 12px',
+                              borderRadius: '8px',
+                              border: '1px solid var(--border-color)',
+                              backgroundColor: 'var(--bg-main)',
+                              color: 'var(--text-primary)',
+                              fontSize: '0.8125rem',
+                              outline: 'none',
+                              resize: 'vertical',
+                              fontFamily: 'inherit',
+                              lineHeight: 1.5,
+                            }}
+                          />
+                        </div>
+
+                        {/* Preview Button (Right-aligned, TikTok size) */}
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 'auto', paddingTop: '0.5rem' }}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedPreviewTikTokAccount(account);
+                              setTtPreviewAccountId(idx === 1 ? 'tt-acc-2' : 'tt-acc-1');
+                              setPreviewTtSlideIdx(0);
+                              setPreviewPlatform('tiktok');
+                            }}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '6px',
+                              height: '34px',
+                              padding: '0 20px',
+                              fontSize: '0.8125rem',
+                              fontWeight: 600,
+                              borderRadius: '8px',
+                              border: 'none',
+                              backgroundColor: '#FE2C55',
+                              color: '#FFFFFF',
+                              cursor: 'pointer',
+                              boxShadow: 'none',
+                              transition: 'all 0.15s ease',
+                            }}
+                            onMouseEnter={(e) => {
+                              (e.currentTarget as HTMLElement).style.backgroundColor = '#E0264D';
+                            }}
+                            onMouseLeave={(e) => {
+                              (e.currentTarget as HTMLElement).style.backgroundColor = '#FE2C55';
+                            }}
+                          >
+                            <FiEye style={{ fontSize: '0.875rem' }} />
+                            <span>Preview</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
           )}
         </div>
 
-        {/* SECTION 4: Social Publishing Manager (Cool, streamlined footer) */}
+        {/* SECTION 4: Publishing Action Bar */}
         <div
           style={{
             backgroundColor: 'var(--bg-secondary)',
@@ -3741,84 +4078,7 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
             boxShadow: 'none',
           }}
         >
-          {/* Header Row: Title & Active Channel Chips */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                <h2 style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-                  Social Publishing Manager
-                </h2>
-                <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-                  • Account selection · Scheduling · Multi-channel Queue & Distribution
-                </span>
-              </div>
-            </div>
-
-            {/* Active Channels Chips */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', flexWrap: 'wrap' }}>
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '5px',
-                  padding: '4px 9px',
-                  borderRadius: '6px',
-                  backgroundColor: fbEnabled ? 'rgba(24, 119, 242, 0.1)' : 'rgba(255, 255, 255, 0.03)',
-                  border: `1px solid ${fbEnabled ? 'rgba(24, 119, 242, 0.25)' : 'var(--border-color)'}`,
-                  color: fbEnabled ? '#1877F2' : 'var(--text-muted)',
-                  fontSize: '0.75rem',
-                  fontWeight: 600,
-                }}
-              >
-                <FaFacebook style={{ fontSize: '0.75rem' }} />
-                <span>Facebook Page</span>
-                {fbEnabled && <FiCheckCircle style={{ color: '#22C55E', fontSize: '0.75rem' }} />}
-              </div>
-
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '5px',
-                  padding: '4px 9px',
-                  borderRadius: '6px',
-                  backgroundColor: igEnabled ? 'rgba(228, 64, 95, 0.1)' : 'rgba(255, 255, 255, 0.03)',
-                  border: `1px solid ${igEnabled ? 'rgba(228, 64, 95, 0.25)' : 'var(--border-color)'}`,
-                  color: igEnabled ? '#E4405F' : 'var(--text-muted)',
-                  fontSize: '0.75rem',
-                  fontWeight: 600,
-                }}
-              >
-                <FaInstagram style={{ fontSize: '0.75rem' }} />
-                <span>Instagram</span>
-                {igEnabled && <FiCheckCircle style={{ color: '#22C55E', fontSize: '0.75rem' }} />}
-              </div>
-
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '5px',
-                  padding: '4px 9px',
-                  borderRadius: '6px',
-                  backgroundColor: ttEnabled ? 'rgba(0, 242, 254, 0.1)' : 'rgba(255, 255, 255, 0.03)',
-                  border: `1px solid ${ttEnabled ? 'rgba(0, 242, 254, 0.25)' : 'var(--border-color)'}`,
-                  color: ttEnabled ? (isDark ? '#00F2FE' : '#0891B2') : 'var(--text-muted)',
-                  fontSize: '0.75rem',
-                  fontWeight: 600,
-                }}
-              >
-                <FaTiktok style={{ fontSize: '0.75rem' }} />
-                <span>TikTok</span>
-                {ttEnabled && <FiCheckCircle style={{ color: '#22C55E', fontSize: '0.75rem' }} />}
-              </div>
-            </div>
-          </div>
-
-          {/* Clean Thin Divider */}
-          <div style={{ height: '1px', backgroundColor: 'var(--border-color)', margin: '0.75rem 0' }} />
-
-          {/* Schedule & Action Row (Clean, streamlined, normal button size) */}
+          {/* Schedule & Action Row */}
           <div
             style={{
               display: 'flex',
@@ -3838,7 +4098,10 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
                   onChange={() => setScheduleType('NOW')}
                   style={{ accentColor: 'var(--accent-primary)', cursor: 'pointer', width: '13px', height: '13px' }}
                 />
-                <span>⚡ Publish Immediately</span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                  <FiZap style={{ fontSize: '0.8125rem', color: 'var(--accent-primary)' }} />
+                  <span>Publish Immediately</span>
+                </span>
               </label>
 
               <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>
@@ -3849,7 +4112,10 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
                   onChange={() => setScheduleType('SCHEDULED')}
                   style={{ accentColor: 'var(--accent-primary)', cursor: 'pointer', width: '13px', height: '13px' }}
                 />
-                <span>🕒 Schedule for Later</span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                  <FiClock style={{ fontSize: '0.8125rem' }} />
+                  <span>Schedule for Later</span>
+                </span>
               </label>
 
               {scheduleType === 'SCHEDULED' && (
@@ -3915,7 +4181,7 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
           }}
           title={
             publishProgress.completed
-              ? (publishProgress.isSuccess ? '🎉 Publishing Completed!' : '❌ Publishing Failed')
+              ? (publishProgress.isSuccess ? 'Publishing Completed' : 'Publishing Failed')
               : 'Publishing to Social Channels...'
           }
         >
@@ -4316,15 +4582,40 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
         <Modal
           isOpen={Boolean(previewPlatform)}
           onClose={() => setPreviewPlatform(null)}
-          title={`Preview: ${
-            previewPlatform === 'facebook'
-              ? 'Facebook Page Post'
-              : previewPlatform === 'instagram'
-              ? 'Instagram Carousel Post'
-              : 'TikTok Photo Mode'
-          }`}
+          maxWidth={previewPlatform === 'facebook' ? '560px' : previewPlatform === 'tiktok' ? '460px' : '450px'}
+          title={
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {previewPlatform === 'facebook' ? (
+                <>
+                  <FaFacebook style={{ color: '#1877F2', fontSize: '1.125rem' }} />
+                  <span>Preview: Facebook Page Post</span>
+                </>
+              ) : previewPlatform === 'instagram' ? (
+                <>
+                  <FaInstagram style={{ color: '#E4405F', fontSize: '1.125rem' }} />
+                  <span>Preview: Instagram Carousel Post</span>
+                </>
+              ) : (
+                <>
+                  <FaTiktok style={{ color: '#FE2C55', fontSize: '1.125rem' }} />
+                  <span>Preview: TikTok Photo Mode</span>
+                </>
+              )}
+            </div>
+          }
         >
-          <div style={{ maxHeight: '75vh', overflowY: 'auto', display: 'flex', justifyContent: 'center', padding: '1rem 0' }}>
+          <div
+            style={{
+              maxHeight: '78vh',
+              overflowY: 'auto',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              width: '100%',
+              padding: '0.25rem 0.25rem 1.75rem',
+              boxSizing: 'border-box',
+            }}
+          >
             {/* Facebook Preview Card */}
             {previewPlatform === 'facebook' && (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', maxWidth: '520px' }}>
@@ -4334,12 +4625,13 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
                     style={{
                       display: 'flex',
                       gap: '8px',
-                      marginBottom: '12px',
+                      marginBottom: '14px',
                       backgroundColor: 'var(--bg-secondary)',
                       padding: '4px',
-                      borderRadius: '8px',
+                      borderRadius: '10px',
                       border: '1px solid var(--border-color)',
                       width: '100%',
+                      boxSizing: 'border-box',
                     }}
                   >
                     <button
@@ -4347,34 +4639,48 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
                       onClick={() => setPreviewFbTab('page1')}
                       style={{
                         flex: 1,
-                        padding: '6px 10px',
-                        borderRadius: '6px',
+                        padding: '8px 12px',
+                        borderRadius: '8px',
                         border: 'none',
                         backgroundColor: previewFbTab === 'page1' ? '#1877F2' : 'transparent',
                         color: previewFbTab === 'page1' ? '#FFFFFF' : 'var(--text-secondary)',
-                        fontSize: '0.75rem',
+                        fontSize: '0.8125rem',
                         fontWeight: 600,
                         cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                        boxShadow: previewFbTab === 'page1' ? '0 1px 3px rgba(24, 119, 242, 0.3)' : 'none',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
                       }}
                     >
-                      📘 {page1Name} ({page1PageId})
+                      <FaFacebook style={{ color: previewFbTab === 'page1' ? '#FFFFFF' : '#1877F2', fontSize: '0.9375rem' }} />
+                      <span>{page1Name || 'Page 1'}</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => setPreviewFbTab('page2')}
                       style={{
                         flex: 1,
-                        padding: '6px 10px',
-                        borderRadius: '6px',
+                        padding: '8px 12px',
+                        borderRadius: '8px',
                         border: 'none',
-                        backgroundColor: previewFbTab === 'page2' ? '#10B981' : 'transparent',
+                        backgroundColor: previewFbTab === 'page2' ? '#1877F2' : 'transparent',
                         color: previewFbTab === 'page2' ? '#FFFFFF' : 'var(--text-secondary)',
-                        fontSize: '0.75rem',
+                        fontSize: '0.8125rem',
                         fontWeight: 600,
                         cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                        boxShadow: previewFbTab === 'page2' ? '0 1px 3px rgba(24, 119, 242, 0.3)' : 'none',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
                       }}
                     >
-                      📗 {page2Name} ({page2PageId})
+                      <FaFacebook style={{ color: previewFbTab === 'page2' ? '#FFFFFF' : '#1877F2', fontSize: '0.9375rem' }} />
+                      <span>{page2Name || 'Page 2'}</span>
                     </button>
                   </div>
                 )}
@@ -4382,9 +4688,7 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
                 {(() => {
                   const isPreviewingPage2 = fbTargetMode === 'page2' || (fbTargetMode === 'both' && previewFbTab === 'page2');
                   const targetPageName = isPreviewingPage2 ? page2Name : page1Name;
-                  const targetHeadline = isPreviewingPage2 ? fbPage2Headline : fbHeadline;
                   const targetCaption = isPreviewingPage2 ? fbPage2Caption : fbCaption;
-                  const targetHashtags = isPreviewingPage2 ? fbPage2Hashtags : fbHashtags;
                   const targetImgs = isPreviewingPage2
                     ? (fbPage2Images.length > 0 ? fbPage2Images : images)
                     : (fbImages.length > 0 ? fbImages : images);
@@ -4397,71 +4701,119 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
                         backgroundColor: '#FFFFFF',
                         color: '#050505',
                         borderRadius: '12px',
-                        boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)',
+                        boxShadow: '0 2px 14px rgba(0, 0, 0, 0.12)',
                         overflow: 'hidden',
-                        fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
+                        border: '1px solid #CED0D4',
+                        fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
                       }}
                     >
                       {/* FB Post Header */}
-                      <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <div
-                          style={{
-                            width: '40px',
-                            height: '40px',
-                            borderRadius: '50%',
-                            backgroundColor: isPreviewingPage2 ? '#10B981' : '#1877F2',
-                            color: '#FFFFFF',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: '1.25rem',
-                            overflow: 'hidden',
-                            border: '1px solid rgba(0, 0, 0, 0.08)',
-                          }}
-                        >
-                          {targetProfilePic ? (
-                            <img
-                              src={targetProfilePic}
-                              alt={targetPageName}
-                              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                            />
-                          ) : (
-                            <FaFacebook />
-                          )}
-                        </div>
-                        <div>
-                          <div style={{ fontWeight: 700, fontSize: '0.9375rem', color: '#050505' }}>
-                            {targetPageName}
+                      <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div
+                            style={{
+                              width: '40px',
+                              height: '40px',
+                              borderRadius: '50%',
+                              backgroundColor: '#1877F2',
+                              color: '#FFFFFF',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: '1.25rem',
+                              overflow: 'hidden',
+                              border: '1px solid rgba(0, 0, 0, 0.08)',
+                              flexShrink: 0,
+                            }}
+                          >
+                            {targetProfilePic ? (
+                              <img
+                                src={targetProfilePic}
+                                alt={targetPageName}
+                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                              />
+                            ) : (
+                              <FaFacebook />
+                            )}
                           </div>
-                          <div style={{ fontSize: '0.75rem', color: '#65676B' }}>
-                            Just now · 🌐 Public
+                          <div>
+                            <div style={{ fontWeight: 600, fontSize: '0.9375rem', color: '#050505', lineHeight: 1.25 }}>
+                              {targetPageName || 'Facebook Page'}
+                            </div>
+                            <div style={{ fontSize: '0.75rem', color: '#65676B', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                              <span>Just now</span>
+                              <span>·</span>
+                              <FiGlobe style={{ fontSize: '0.75rem' }} />
+                              <span>Public</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#65676B' }}>
+                          <div style={{ padding: '4px', borderRadius: '50%', display: 'flex', alignItems: 'center' }}>
+                            <FiMoreHorizontal style={{ fontSize: '1.25rem' }} />
                           </div>
                         </div>
                       </div>
 
-                      {/* FB Post Text */}
-                      <div style={{ padding: '0 16px 12px', fontSize: '0.875rem', lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>
-                        <strong style={{ display: 'block', marginBottom: '6px' }}>{targetHeadline}</strong>
-                        {targetCaption}
-                        {fbCta && <div style={{ marginTop: '8px', color: '#1877F2', fontWeight: 600 }}>{fbCta}</div>}
-                        {targetHashtags && <div style={{ marginTop: '6px', color: '#1877F2' }}>{targetHashtags}</div>}
+                      {/* FB Post Text - cleanly showing only the formatted content */}
+                      <div
+                        style={{
+                          padding: '0 16px 14px',
+                          fontSize: '0.9375rem',
+                          lineHeight: 1.5,
+                          whiteSpace: 'pre-wrap',
+                          color: '#050505',
+                          wordBreak: 'break-word',
+                        }}
+                      >
+                        {targetCaption || 'No content written yet...'}
                       </div>
 
                       {/* FB Post Photos Grid */}
                       {targetImgs.length > 0 && (
-                        <div style={{ width: '100%', backgroundColor: '#000000' }}>
+                        <div style={{ width: '100%', backgroundColor: '#F0F2F5', borderTop: '1px solid #E4E6EB', borderBottom: '1px solid #E4E6EB' }}>
                           <img
                             src={targetImgs[0].url}
                             alt="Cover"
-                            style={{ width: '100%', maxHeight: '360px', objectFit: 'cover', display: 'block' }}
+                            style={{
+                              width: '100%',
+                              maxHeight: '460px',
+                              objectFit: 'cover',
+                              display: 'block',
+                            }}
                           />
                           {targetImgs.length > 1 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(targetImgs.length - 1, 3)}, 1fr)`, gap: '2px', marginTop: '2px' }}>
+                            <div
+                              style={{
+                                display: 'grid',
+                                gridTemplateColumns: `repeat(${Math.min(targetImgs.length - 1, 3)}, 1fr)`,
+                                gap: '2px',
+                                marginTop: '2px',
+                                backgroundColor: '#CED0D4',
+                              }}
+                            >
                               {targetImgs.slice(1, 4).map((img, i) => (
-                                <div key={img.id} style={{ height: '90px', position: 'relative' }}>
-                                  <img src={img.url} alt="Gallery" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                <div key={img.id} style={{ height: '100px', position: 'relative', overflow: 'hidden' }}>
+                                  <img
+                                    src={img.url}
+                                    alt="Gallery"
+                                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                                  />
                                   {i === 2 && targetImgs.length > 4 && (
-                                    <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', color: '#FFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>
+                                    <div
+                                      style={{
+                                        position: 'absolute',
+                                        inset: 0,
+                                        backgroundColor: 'rgba(0,0,0,0.55)',
+                                        color: '#FFF',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        fontSize: '1.25rem',
+                                        fontWeight: 700,
+                                      }}
+                                    >
                                       +{targetImgs.length - 4}
                                     </div>
                                   )}
@@ -4471,6 +4823,126 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
                           )}
                         </div>
                       )}
+
+                      {/* FB Engagement Stats Bar */}
+                      <div
+                        style={{
+                          padding: '10px 16px 8px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          fontSize: '0.8125rem',
+                          color: '#65676B',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center' }}>
+                            <div
+                              style={{
+                                width: '18px',
+                                height: '18px',
+                                borderRadius: '50%',
+                                backgroundColor: '#1877F2',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                color: '#FFF',
+                                fontSize: '0.625rem',
+                                zIndex: 2,
+                              }}
+                            >
+                              <FaThumbsUp style={{ fontSize: '0.6rem' }} />
+                            </div>
+                            <div
+                              style={{
+                                width: '18px',
+                                height: '18px',
+                                borderRadius: '50%',
+                                backgroundColor: '#FA383E',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                color: '#FFF',
+                                fontSize: '0.55rem',
+                                marginLeft: '-4px',
+                                zIndex: 1,
+                              }}
+                            >
+                              <FaHeart style={{ fontSize: '0.55rem' }} />
+                            </div>
+                          </div>
+                          <span style={{ fontWeight: 500, marginLeft: '2px' }}>24</span>
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <span>4 comments</span>
+                          <span>·</span>
+                          <span>2 shares</span>
+                        </div>
+                      </div>
+
+                      {/* FB Action Buttons Bar (Like, Comment, Share) */}
+                      <div
+                        style={{
+                          margin: '0 12px 6px',
+                          padding: '4px 0',
+                          borderTop: '1px solid #CED0D4',
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(3, 1fr)',
+                          gap: '4px',
+                        }}
+                      >
+                        <div
+                          style={{
+                            padding: '8px 0',
+                            borderRadius: '6px',
+                            color: '#65676B',
+                            fontSize: '0.875rem',
+                            fontWeight: 600,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '8px',
+                            userSelect: 'none',
+                          }}
+                        >
+                          <FaRegThumbsUp style={{ fontSize: '1.05rem' }} />
+                          <span>Like</span>
+                        </div>
+                        <div
+                          style={{
+                            padding: '8px 0',
+                            borderRadius: '6px',
+                            color: '#65676B',
+                            fontSize: '0.875rem',
+                            fontWeight: 600,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '8px',
+                            userSelect: 'none',
+                          }}
+                        >
+                          <FaRegComment style={{ fontSize: '1.05rem' }} />
+                          <span>Comment</span>
+                        </div>
+                        <div
+                          style={{
+                            padding: '8px 0',
+                            borderRadius: '6px',
+                            color: '#65676B',
+                            fontSize: '0.875rem',
+                            fontWeight: 600,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '8px',
+                            userSelect: 'none',
+                          }}
+                        >
+                          <FiShare2 style={{ fontSize: '1.05rem' }} />
+                          <span>Share</span>
+                        </div>
+                      </div>
                     </div>
                   );
                 })()}
@@ -4558,90 +5030,795 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
             )}
 
             {/* TikTok Preview Card */}
-            {previewPlatform === 'tiktok' && (
-              <div
-                style={{
-                  width: '320px',
-                  height: '580px',
-                  backgroundColor: '#000000',
-                  color: '#FFFFFF',
-                  borderRadius: '24px',
-                  boxShadow: '0 4px 30px rgba(0, 0, 0, 0.6)',
-                  overflow: 'hidden',
-                  position: 'relative',
-                  fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
-                  border: '8px solid #1F2937',
-                }}
-              >
-                {/* Background Image / Photo Mode */}
-                {images[0] ? (
-                  <img
-                    src={images[0].url}
-                    alt="TikTok Cover"
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                  />
-                ) : (
-                  <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>No Image</div>
-                )}
+            {previewPlatform === 'tiktok' && (() => {
+              const activePreviewAcc = selectedPreviewTikTokAccount || (ttPreviewAccountId === 'tt-acc-2' ? tiktokAccount2 : tiktokAccount1) || {
+                id: 'preview',
+                name: 'BoltHaven Property',
+                handle: '@bolthavenrealty',
+                followers: '',
+              };
+              const activePreviewHook = (selectedPreviewTikTokAccount ? ttHooks[selectedPreviewTikTokAccount.id] : null) || (ttPreviewAccountId === 'tt-acc-2' ? tt2Hook : tt1Hook);
+              const activePreviewCaption = (selectedPreviewTikTokAccount ? ttCaptions[selectedPreviewTikTokAccount.id] : null) || (ttPreviewAccountId === 'tt-acc-2' ? tt2Caption : tt1Caption);
+              const activePreviewSound = (selectedPreviewTikTokAccount ? ttSounds[selectedPreviewTikTokAccount.id] : null) || (ttPreviewAccountId === 'tt-acc-2' ? tt2Sound : tt1Sound);
 
-                {/* Top Hook Banner */}
-                {ttHook && (
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', boxSizing: 'border-box' }}>
+                  <style>{`
+                    @keyframes ttDiscSpin {
+                      from { transform: rotate(0deg); }
+                      to { transform: rotate(360deg); }
+                    }
+                    @keyframes ttNoteFloat1 {
+                      0% { transform: translate(0, 0) scale(0.6); opacity: 0; }
+                      50% { opacity: 0.9; }
+                      100% { transform: translate(-16px, -30px) scale(1.1); opacity: 0; }
+                    }
+                    @keyframes ttNoteFloat2 {
+                      0% { transform: translate(0, 0) scale(0.6); opacity: 0; }
+                      40% { opacity: 0.9; }
+                      100% { transform: translate(-24px, -38px) scale(1.2); opacity: 0; }
+                    }
+                  `}</style>
+
+                  {/* Account Selector if multiple accounts connected */}
+                  {activeTikTokAccounts.length > 1 && (
+                    <div
+                      style={{
+                        display: 'flex',
+                        gap: '6px',
+                        marginBottom: '10px',
+                        backgroundColor: 'var(--bg-secondary)',
+                        padding: '4px',
+                        borderRadius: '10px',
+                        border: '1px solid var(--border-color)',
+                        maxWidth: '320px',
+                        width: '100%',
+                        boxSizing: 'border-box',
+                      }}
+                    >
+                      {activeTikTokAccounts.map((acc, accIdx) => {
+                        const isSelected = (selectedPreviewTikTokAccount?.id || tiktokAccount1?.id) === acc.id;
+                        return (
+                          <button
+                            key={acc.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedPreviewTikTokAccount(acc);
+                              setTtPreviewAccountId(accIdx === 1 ? 'tt-acc-2' : 'tt-acc-1');
+                            }}
+                            style={{
+                              flex: 1,
+                              padding: '6px 8px',
+                              borderRadius: '7px',
+                              border: 'none',
+                              backgroundColor: isSelected ? '#FE2C55' : 'transparent',
+                              color: isSelected ? '#FFFFFF' : 'var(--text-secondary)',
+                              fontSize: '0.75rem',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              transition: 'all 0.15s ease',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '5px',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            <FaTiktok style={{ fontSize: '0.75rem', color: isSelected ? '#FFFFFF' : '#FE2C55' }} />
+                            <span>{acc.handle}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Device Tag */}
                   <div
                     style={{
-                      position: 'absolute',
-                      top: '40px',
-                      left: '14px',
-                      right: '14px',
-                      padding: '8px 12px',
-                      backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                      backdropFilter: 'blur(4px)',
-                      borderRadius: '8px',
-                      borderLeft: '4px solid #FE2C55',
-                      fontSize: '0.8125rem',
-                      fontWeight: 700,
-                      color: '#FFFFFF',
-                      boxShadow: '0 4px 10px rgba(0,0,0,0.5)',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '3px 10px',
+                      borderRadius: '16px',
+                      backgroundColor: 'var(--bg-secondary)',
+                      border: '1px solid var(--border-color)',
+                      fontSize: '0.6875rem',
+                      color: 'var(--text-muted)',
+                      marginBottom: '10px',
                     }}
                   >
-                    {ttHook}
+                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#22C55E' }} />
+                    <span>iPhone 16 Pro • Photo Mode 9:16</span>
                   </div>
-                )}
 
-                {/* Right Sidebar Icons */}
-                <div style={{ position: 'absolute', right: '12px', bottom: '90px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', fontSize: '1.25rem' }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                    <FaHeart style={{ color: '#FE2C55' }} />
-                    <span style={{ fontSize: '0.625rem', marginTop: '2px' }}>4.8K</span>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                    <FaComment />
-                    <span style={{ fontSize: '0.625rem', marginTop: '2px' }}>182</span>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                    <FaBookmark />
-                    <span style={{ fontSize: '0.625rem', marginTop: '2px' }}>920</span>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                    <FiShare2 />
-                    <span style={{ fontSize: '0.625rem', marginTop: '2px' }}>Share</span>
+                  {/* iPhone 16 Pro Chassis */}
+                  <div
+                    style={{
+                      position: 'relative',
+                      width: '320px',
+                      height: '640px',
+                      borderRadius: '48px',
+                      padding: '10px',
+                      background: 'linear-gradient(145deg, #2b303c 0%, #171a22 45%, #0b0d10 100%)',
+                      boxShadow: '0 0 0 1px rgba(255, 255, 255, 0.15) inset, 0 25px 60px -15px rgba(0, 0, 0, 0.85), 0 0 35px rgba(254, 44, 85, 0.12)',
+                      boxSizing: 'border-box',
+                      userSelect: 'none',
+                    }}
+                  >
+                    {/* Hardware Buttons */}
+                    <div style={{ position: 'absolute', left: '-3px', top: '95px', width: '3px', height: '22px', backgroundColor: '#374151', borderRadius: '2px 0 0 2px' }} />
+                    <div style={{ position: 'absolute', left: '-3px', top: '135px', width: '3px', height: '42px', backgroundColor: '#374151', borderRadius: '2px 0 0 2px' }} />
+                    <div style={{ position: 'absolute', left: '-3px', top: '190px', width: '3px', height: '42px', backgroundColor: '#374151', borderRadius: '2px 0 0 2px' }} />
+                    <div style={{ position: 'absolute', right: '-3px', top: '145px', width: '3px', height: '60px', backgroundColor: '#374151', borderRadius: '0 2px 2px 0' }} />
+
+                    {/* Inside Screen */}
+                    <div
+                      style={{
+                        position: 'relative',
+                        width: '100%',
+                        height: '100%',
+                        borderRadius: '38px',
+                        overflow: 'hidden',
+                        backgroundColor: '#000000',
+                        color: '#FFFFFF',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                      }}
+                    >
+                      {/* Dynamic Island */}
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: '10px',
+                          left: '50%',
+                          transform: 'translateX(-50%)',
+                          width: '86px',
+                          height: '24px',
+                          backgroundColor: '#000000',
+                          borderRadius: '16px',
+                          zIndex: 60,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'flex-end',
+                          paddingRight: '8px',
+                          boxShadow: '0 0 2px rgba(255,255,255,0.08)',
+                        }}
+                      >
+                        <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#0b0f19', border: '1px solid #1a2233' }} />
+                      </div>
+
+                      {/* iOS Status Bar */}
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          height: '38px',
+                          zIndex: 55,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '0 20px',
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          color: '#FFFFFF',
+                          pointerEvents: 'none',
+                        }}
+                      >
+                        <span>9:41</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                          <svg width="14" height="10" viewBox="0 0 17 11" fill="currentColor">
+                            <rect x="0" y="8" width="3" height="3" rx="0.5" />
+                            <rect x="4.5" y="5.5" width="3" height="5.5" rx="0.5" />
+                            <rect x="9" y="3" width="3" height="8" rx="0.5" />
+                            <rect x="13.5" y="0" width="3" height="11" rx="0.5" />
+                          </svg>
+                          <svg width="13" height="10" viewBox="0 0 16 12" fill="currentColor">
+                            <path d="M8 12a1.5 1.5 0 100-3 1.5 1.5 0 000 3zm-4.95-4.95a7 7 0 019.9 0l-1.4 1.4a5 5 0 00-7.1 0l-1.4-1.4zm-2.83-2.83a11 11 0 0115.56 0l-1.4 1.4a9 9 0 00-12.76 0l-1.4-1.4z" />
+                          </svg>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '1px' }}>
+                            <div style={{ width: '19px', height: '9px', borderRadius: '2.5px', border: '1px solid #FFFFFF', padding: '1px', display: 'flex' }}>
+                              <div style={{ width: '85%', height: '100%', backgroundColor: '#FFFFFF', borderRadius: '1px' }} />
+                            </div>
+                            <div style={{ width: '1.5px', height: '3.5px', backgroundColor: '#FFFFFF', borderRadius: '0 1px 1px 0' }} />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Top TikTok Navigation Bar */}
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: '38px',
+                          left: 0,
+                          right: 0,
+                          height: '40px',
+                          zIndex: 50,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '0 14px',
+                          color: '#FFFFFF',
+                          pointerEvents: 'auto',
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            padding: '3px 7px',
+                            borderRadius: '10px',
+                            backgroundColor: 'rgba(0, 0, 0, 0.45)',
+                            backdropFilter: 'blur(6px)',
+                            border: '1px solid rgba(255, 255, 255, 0.15)',
+                            fontSize: '9.5px',
+                            fontWeight: 700,
+                            letterSpacing: '0.4px',
+                          }}
+                        >
+                          <span style={{ width: '5px', height: '5px', borderRadius: '50%', backgroundColor: '#FE2C55', boxShadow: '0 0 5px #FE2C55' }} />
+                          LIVE
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', fontSize: '13px', fontWeight: 600 }}>
+                          <span style={{ opacity: 0.65, cursor: 'pointer' }}>Following</span>
+                          <div style={{ position: 'relative', fontWeight: 700, cursor: 'pointer' }}>
+                            <span>For You</span>
+                            <div style={{ position: 'absolute', bottom: '-4px', left: '50%', transform: 'translateX(-50%)', width: '22px', height: '2px', backgroundColor: '#FFFFFF', borderRadius: '2px', boxShadow: '0 0 4px rgba(255,255,255,0.8)' }} />
+                          </div>
+                        </div>
+
+                        <div
+                          style={{
+                            width: '26px',
+                            height: '26px',
+                            borderRadius: '50%',
+                            backgroundColor: 'rgba(0,0,0,0.45)',
+                            backdropFilter: 'blur(6px)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            border: '1px solid rgba(255, 255, 255, 0.15)',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <FiSearch style={{ fontSize: '13px' }} />
+                        </div>
+                      </div>
+
+                      {/* Main Full-Bleed Media Canvas */}
+                      <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
+                        {images.length > 0 && images[previewTtSlideIdx] ? (
+                          <img
+                            src={images[previewTtSlideIdx].url}
+                            alt={`TikTok Photo ${previewTtSlideIdx + 1}`}
+                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                          />
+                        ) : images[0] ? (
+                          <img
+                            src={images[0].url}
+                            alt="TikTok Photo Cover"
+                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                          />
+                        ) : (
+                          <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px', color: '#6B7280' }}>
+                            <FiImage style={{ fontSize: '32px' }} />
+                            <span style={{ fontSize: '0.8125rem' }}>No Photo Selected</span>
+                          </div>
+                        )}
+
+                        {/* Top & Bottom Legibility Vignettes */}
+                        <div
+                          style={{
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            height: '130px',
+                            background: 'linear-gradient(to bottom, rgba(0,0,0,0.65) 0%, rgba(0,0,0,0.25) 60%, transparent 100%)',
+                            pointerEvents: 'none',
+                          }}
+                        />
+                        <div
+                          style={{
+                            position: 'absolute',
+                            bottom: 0,
+                            left: 0,
+                            right: 0,
+                            height: '240px',
+                            background: 'linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.65) 45%, rgba(0,0,0,0.2) 75%, transparent 100%)',
+                            pointerEvents: 'none',
+                          }}
+                        />
+
+                        {/* TikTok Photo Mode Pill Badge (Top Right) */}
+                        {images.length > 0 && (
+                          <div
+                            style={{
+                              position: 'absolute',
+                              top: '84px',
+                              right: '12px',
+                              zIndex: 40,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              padding: '3px 8px',
+                              borderRadius: '12px',
+                              backgroundColor: 'rgba(0, 0, 0, 0.65)',
+                              backdropFilter: 'blur(8px)',
+                              border: '1px solid rgba(255, 255, 255, 0.18)',
+                              fontSize: '10px',
+                              fontWeight: 700,
+                              color: '#FFFFFF',
+                              boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
+                            }}
+                          >
+                            <span>📷</span>
+                            <span>Photo</span>
+                            <span style={{ opacity: 0.6 }}>•</span>
+                            <span>{previewTtSlideIdx + 1}/{images.length}</span>
+                          </div>
+                        )}
+
+                        {/* Carousel Arrows (if multiple photos) */}
+                        {images.length > 1 && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setPreviewTtSlideIdx((prev) => (prev > 0 ? prev - 1 : images.length - 1));
+                              }}
+                              style={{
+                                position: 'absolute',
+                                left: '8px',
+                                top: '50%',
+                                transform: 'translateY(-50%)',
+                                zIndex: 45,
+                                width: '28px',
+                                height: '28px',
+                                borderRadius: '50%',
+                                backgroundColor: 'rgba(0, 0, 0, 0.55)',
+                                backdropFilter: 'blur(6px)',
+                                border: '1px solid rgba(255, 255, 255, 0.25)',
+                                color: '#FFFFFF',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                cursor: 'pointer',
+                                boxShadow: '0 4px 10px rgba(0,0,0,0.5)',
+                              }}
+                            >
+                              <FiChevronLeft style={{ fontSize: '16px' }} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setPreviewTtSlideIdx((prev) => (prev < images.length - 1 ? prev + 1 : 0));
+                              }}
+                              style={{
+                                position: 'absolute',
+                                right: '8px',
+                                top: '50%',
+                                transform: 'translateY(-50%)',
+                                zIndex: 45,
+                                width: '28px',
+                                height: '28px',
+                                borderRadius: '50%',
+                                backgroundColor: 'rgba(0, 0, 0, 0.55)',
+                                backdropFilter: 'blur(6px)',
+                                border: '1px solid rgba(255, 255, 255, 0.25)',
+                                color: '#FFFFFF',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                cursor: 'pointer',
+                                boxShadow: '0 4px 10px rgba(0,0,0,0.5)',
+                              }}
+                            >
+                              <FiChevronRight style={{ fontSize: '16px' }} />
+                            </button>
+                          </>
+                        )}
+
+                        {/* Authentic TikTok Viral Hook Sticker */}
+                        {activePreviewHook && (
+                          <div
+                            style={{
+                              position: 'absolute',
+                              top: '120px',
+                              left: '12px',
+                              right: '12px',
+                              zIndex: 40,
+                              padding: '10px 12px',
+                              borderRadius: '12px',
+                              backgroundColor: 'rgba(0, 0, 0, 0.82)',
+                              backdropFilter: 'blur(10px)',
+                              border: '1px solid rgba(255, 255, 255, 0.16)',
+                              boxShadow: '0 8px 24px rgba(0,0,0,0.6)',
+                              overflow: 'hidden',
+                            }}
+                          >
+                            {/* Dual-tone TikTok gradient top accent bar */}
+                            <div
+                              style={{
+                                position: 'absolute',
+                                top: 0,
+                                left: 0,
+                                right: 0,
+                                height: '3px',
+                                background: 'linear-gradient(90deg, #FE2C55 0%, #25F4EE 100%)',
+                              }}
+                            />
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
+                              <span style={{ fontSize: '8.5px', fontWeight: 800, color: '#25F4EE', letterSpacing: '0.6px', textTransform: 'uppercase' }}>
+                                ✦ PROPERTY HOOK
+                              </span>
+                            </div>
+                            <div
+                              style={{
+                                fontSize: '0.8125rem',
+                                fontWeight: 700,
+                                color: '#FFFFFF',
+                                lineHeight: 1.35,
+                                textShadow: '0 1px 3px rgba(0,0,0,0.85)',
+                              }}
+                            >
+                              {activePreviewHook}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Right Action Rail */}
+                        <div
+                          style={{
+                            position: 'absolute',
+                            right: '8px',
+                            bottom: '76px',
+                            zIndex: 45,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            gap: '12px',
+                          }}
+                        >
+                          {/* Creator Avatar with pink-red '+' Follow badge */}
+                          <div style={{ position: 'relative', marginBottom: '2px' }}>
+                            <div
+                              style={{
+                                width: '40px',
+                                height: '40px',
+                                borderRadius: '50%',
+                                border: '2px solid #FFFFFF',
+                                backgroundColor: '#1E293B',
+                                overflow: 'hidden',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
+                              }}
+                            >
+                              {images[0] ? (
+                                <img src={images[0].url} alt="Creator" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                              ) : (
+                                <span style={{ fontWeight: 800, fontSize: '14px', color: '#FE2C55' }}>B</span>
+                              )}
+                            </div>
+                            <div
+                              style={{
+                                position: 'absolute',
+                                bottom: '-5px',
+                                left: '50%',
+                                transform: 'translateX(-50%)',
+                                width: '17px',
+                                height: '17px',
+                                borderRadius: '50%',
+                                backgroundColor: '#FE2C55',
+                                color: '#FFFFFF',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontSize: '11px',
+                                fontWeight: 900,
+                                boxShadow: '0 2px 5px rgba(0,0,0,0.4)',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              +
+                            </div>
+                          </div>
+
+                          {/* Heart */}
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer' }}>
+                            <FaHeart style={{ color: '#FE2C55', fontSize: '23px', filter: 'drop-shadow(0 2px 5px rgba(254,44,85,0.4))' }} />
+                            <span style={{ fontSize: '10.5px', fontWeight: 700, marginTop: '2px', textShadow: '0 1px 3px rgba(0,0,0,0.9)' }}>4.8K</span>
+                          </div>
+
+                          {/* Comment */}
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer' }}>
+                            <FaComment style={{ color: '#FFFFFF', fontSize: '21px', filter: 'drop-shadow(0 2px 5px rgba(0,0,0,0.6))' }} />
+                            <span style={{ fontSize: '10.5px', fontWeight: 700, marginTop: '2px', textShadow: '0 1px 3px rgba(0,0,0,0.9)' }}>182</span>
+                          </div>
+
+                          {/* Bookmark */}
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer' }}>
+                            <FaBookmark style={{ color: '#FBBF24', fontSize: '20px', filter: 'drop-shadow(0 2px 5px rgba(251,191,36,0.3))' }} />
+                            <span style={{ fontSize: '10.5px', fontWeight: 700, marginTop: '2px', textShadow: '0 1px 3px rgba(0,0,0,0.9)' }}>920</span>
+                          </div>
+
+                          {/* Share */}
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer' }}>
+                            <FiShare2 style={{ color: '#FFFFFF', fontSize: '21px', filter: 'drop-shadow(0 2px 5px rgba(0,0,0,0.6))' }} />
+                            <span style={{ fontSize: '10px', fontWeight: 700, marginTop: '2px', textShadow: '0 1px 3px rgba(0,0,0,0.9)' }}>Share</span>
+                          </div>
+
+                          {/* Spinning Vinyl Record with Animated Floating Musical Notes */}
+                          <div style={{ position: 'relative', marginTop: '4px', cursor: 'pointer' }}>
+                            <div
+                              style={{
+                                position: 'absolute',
+                                top: '-12px',
+                                left: '-6px',
+                                color: '#25F4EE',
+                                fontSize: '11px',
+                                animation: 'ttNoteFloat1 2.2s ease-out infinite',
+                                pointerEvents: 'none',
+                              }}
+                            >
+                              ♪
+                            </div>
+                            <div
+                              style={{
+                                position: 'absolute',
+                                top: '-16px',
+                                left: '6px',
+                                color: '#FE2C55',
+                                fontSize: '13px',
+                                animation: 'ttNoteFloat2 2.6s ease-out 0.6s infinite',
+                                pointerEvents: 'none',
+                              }}
+                            >
+                              ♫
+                            </div>
+                            <div
+                              style={{
+                                width: '34px',
+                                height: '34px',
+                                borderRadius: '50%',
+                                background: 'radial-gradient(circle, #2a2a2a 20%, #111111 50%, #2a2a2a 70%, #000000 100%)',
+                                border: '6px solid #18181b',
+                                boxShadow: '0 3px 10px rgba(0,0,0,0.8)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                animation: 'ttDiscSpin 3.5s linear infinite',
+                              }}
+                            >
+                              <div
+                                style={{
+                                  width: '12px',
+                                  height: '12px',
+                                  borderRadius: '50%',
+                                  backgroundColor: '#FE2C55',
+                                  border: '1.2px solid #FFFFFF',
+                                  overflow: 'hidden',
+                                }}
+                              >
+                                {images[0] && (
+                                  <img src={images[0].url} alt="Sound" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Bottom Creator Info, Caption & Audio */}
+                        <div
+                          style={{
+                            position: 'absolute',
+                            bottom: '48px',
+                            left: '10px',
+                            right: '58px',
+                            zIndex: 40,
+                          }}
+                        >
+                          {/* Handle + Verification */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '4px' }}>
+                            <span style={{ fontWeight: 800, fontSize: '0.8125rem', letterSpacing: '-0.01em', textShadow: '0 1px 3px rgba(0,0,0,0.9)' }}>
+                              {activePreviewAcc.handle}
+                            </span>
+                            <span
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                width: '12px',
+                                height: '12px',
+                                borderRadius: '50%',
+                                backgroundColor: '#20D5EC',
+                                color: '#000000',
+                                fontSize: '7.5px',
+                                fontWeight: 900,
+                              }}
+                            >
+                              ✓
+                            </span>
+                            <span style={{ fontSize: '9.5px', color: 'rgba(255,255,255,0.7)', marginLeft: '2px' }}>• 1h ago</span>
+                          </div>
+
+                          {/* Caption */}
+                          <div
+                            style={{
+                              fontSize: '0.75rem',
+                              lineHeight: 1.35,
+                              maxHeight: '62px',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              color: '#FFFFFF',
+                              textShadow: '0 1px 3px rgba(0,0,0,0.95)',
+                            }}
+                          >
+                            {activePreviewCaption}
+                          </div>
+
+                          {/* Carousel Dots */}
+                          {images.length > 1 && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '6px' }}>
+                              {images.map((_, dotIdx) => (
+                                <div
+                                  key={dotIdx}
+                                  onClick={() => setPreviewTtSlideIdx(dotIdx)}
+                                  style={{
+                                    width: dotIdx === previewTtSlideIdx ? '14px' : '4px',
+                                    height: '4px',
+                                    borderRadius: '2px',
+                                    backgroundColor: dotIdx === previewTtSlideIdx ? '#FFFFFF' : 'rgba(255, 255, 255, 0.4)',
+                                    transition: 'all 0.2s ease',
+                                    cursor: 'pointer',
+                                    boxShadow: '0 1px 3px rgba(0,0,0,0.8)',
+                                  }}
+                                />
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Sound Row */}
+                          <div
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '5px',
+                              fontSize: '0.6875rem',
+                              marginTop: '6px',
+                              color: '#E5E7EB',
+                              backgroundColor: 'rgba(0, 0, 0, 0.45)',
+                              backdropFilter: 'blur(6px)',
+                              padding: '3px 7px',
+                              borderRadius: '8px',
+                              width: 'fit-content',
+                              maxWidth: '100%',
+                            }}
+                          >
+                            <FaMusic style={{ color: '#25F4EE', fontSize: '9px', flexShrink: 0 }} />
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {activePreviewSound || 'Original Sound - bolthavenrealty'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* TikTok Bottom App Bar */}
+                        <div
+                          style={{
+                            position: 'absolute',
+                            bottom: 0,
+                            left: 0,
+                            right: 0,
+                            height: '44px',
+                            backgroundColor: 'rgba(0, 0, 0, 0.95)',
+                            borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+                            zIndex: 50,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-around',
+                            padding: '0 4px 8px',
+                            fontSize: '9px',
+                            fontWeight: 600,
+                            color: '#9CA3AF',
+                          }}
+                        >
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', color: '#FFFFFF', gap: '2px', cursor: 'pointer' }}>
+                            <FiHome style={{ fontSize: '14px' }} />
+                            <span>Home</span>
+                          </div>
+
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', cursor: 'pointer' }}>
+                            <FiCompass style={{ fontSize: '14px' }} />
+                            <span>Friends</span>
+                          </div>
+
+                          {/* Iconic TikTok Create '+' Button */}
+                          <div style={{ position: 'relative', width: '36px', height: '24px', cursor: 'pointer' }}>
+                            <div
+                              style={{
+                                position: 'absolute',
+                                top: 0,
+                                bottom: 0,
+                                left: 0,
+                                width: '30px',
+                                backgroundColor: '#25F4EE',
+                                borderRadius: '6px',
+                              }}
+                            />
+                            <div
+                              style={{
+                                position: 'absolute',
+                                top: 0,
+                                bottom: 0,
+                                right: 0,
+                                width: '30px',
+                                backgroundColor: '#FE2C55',
+                                borderRadius: '6px',
+                              }}
+                            />
+                            <div
+                              style={{
+                                position: 'absolute',
+                                top: 0,
+                                bottom: 0,
+                                left: '3px',
+                                right: '3px',
+                                backgroundColor: '#FFFFFF',
+                                borderRadius: '5px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                color: '#000000',
+                                fontWeight: 900,
+                                fontSize: '14px',
+                              }}
+                            >
+                              +
+                            </div>
+                          </div>
+
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', cursor: 'pointer' }}>
+                            <FiMessageSquare style={{ fontSize: '14px' }} />
+                            <span>Inbox</span>
+                          </div>
+
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', cursor: 'pointer' }}>
+                            <FiUser style={{ fontSize: '14px' }} />
+                            <span>Profile</span>
+                          </div>
+                        </div>
+
+                        {/* iPhone Home Indicator Line */}
+                        <div
+                          style={{
+                            position: 'absolute',
+                            bottom: '3px',
+                            left: '50%',
+                            transform: 'translateX(-50%)',
+                            width: '100px',
+                            height: '3.5px',
+                            backgroundColor: 'rgba(255, 255, 255, 0.65)',
+                            borderRadius: '2px',
+                            zIndex: 60,
+                            pointerEvents: 'none',
+                          }}
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
-
-                {/* Bottom Overlay & Audio */}
-                <div style={{ position: 'absolute', bottom: '16px', left: '12px', right: '60px' }}>
-                  <div style={{ fontWeight: 700, fontSize: '0.875rem', marginBottom: '4px' }}>
-                    {CONNECTED_TIKTOK_ACCOUNTS.find((a) => a.id === ttAccountId)?.handle || '@bkk_condo_tours'}
-                  </div>
-                  <div style={{ fontSize: '0.75rem', lineHeight: 1.3, maxHeight: '60px', overflow: 'hidden' }}>
-                    {ttCaption}
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.6875rem', marginTop: '6px', color: '#A1A1AA' }}>
-                    <FaMusic style={{ color: '#00F2FE' }} />
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ttSound}</span>
-                  </div>
-                </div>
-              </div>
-            )}
+              );
+            })()}
           </div>
         </Modal>
       )}
@@ -5314,38 +6491,13 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
                     </div>
                   </div>
                 )}
-
-                {!historyDetailItem.facebook.page1 && !historyDetailItem.facebook.page2 && (
-                  <div style={{ padding: '10px 14px', borderRadius: '10px', backgroundColor: 'var(--bg-main)', border: '1px solid var(--border-color)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#1877F2', fontWeight: 600, fontSize: '0.8125rem', marginBottom: '4px' }}>
-                      <FaFacebook />
-                      <span>Facebook Page ({historyDetailItem.facebook.pageName})</span>
-                    </div>
-                    <div style={{ fontSize: '0.8125rem', whiteSpace: 'pre-wrap', lineHeight: 1.45 }}>
-                      {historyDetailItem.facebook.caption}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Instagram Copy */}
-            {historyDetailItem.instagram.enabled && (
-              <div style={{ padding: '10px 14px', borderRadius: '10px', backgroundColor: 'var(--bg-main)', border: '1px solid var(--border-color)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#E4405F', fontWeight: 600, fontSize: '0.8125rem', marginBottom: '4px' }}>
-                  <FaInstagram />
-                  <span>Instagram ({historyDetailItem.instagram.accountName})</span>
-                </div>
-                <div style={{ fontSize: '0.8125rem', whiteSpace: 'pre-wrap', lineHeight: 1.45 }}>
-                  {historyDetailItem.instagram.caption}
-                </div>
               </div>
             )}
 
             {/* TikTok Copy */}
-            {historyDetailItem.tiktok.enabled && (
+            {historyDetailItem.tiktok?.enabled && (
               <div style={{ padding: '10px 14px', borderRadius: '10px', backgroundColor: 'var(--bg-main)', border: '1px solid var(--border-color)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: isDark ? '#00F2FE' : '#0891B2', fontWeight: 600, fontSize: '0.8125rem', marginBottom: '4px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#FE2C55', fontWeight: 600, fontSize: '0.8125rem', marginBottom: '4px' }}>
                   <FaTiktok />
                   <span>TikTok ({historyDetailItem.tiktok.accountName})</span>
                 </div>
@@ -5422,8 +6574,9 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#1877F2' }}>
-                      📘 Destination 1: {page1Name} (ID: {page1PageId})
+                    <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#1877F2', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <FaFacebook />
+                      <span>Destination 1: {page1Name} (ID: {page1PageId})</span>
                     </span>
                     <a
                       href={`https://www.facebook.com/${page1PageId}`}
@@ -5457,8 +6610,9 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#10B981' }}>
-                      📗 Destination 2: {page2Name} (ID: {page2PageId})
+                    <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#10B981', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <FaFacebook />
+                      <span>Destination 2: {page2Name} (ID: {page2PageId})</span>
                     </span>
                     <a
                       href={`https://www.facebook.com/${page2PageId}`}
@@ -5483,16 +6637,22 @@ Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skylin
             {/* Confirmation Note */}
             <div
               style={{
-                padding: '10px 12px',
+                padding: '10px 14px',
                 borderRadius: '8px',
                 backgroundColor: 'rgba(245, 158, 11, 0.1)',
                 border: '1px solid rgba(245, 158, 11, 0.25)',
                 color: '#D97706',
                 fontSize: '0.75rem',
                 lineHeight: 1.4,
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: '8px',
               }}
             >
-              ⚠️ <strong>Confirmation Required:</strong> Clicking confirm will immediately upload photos and create official Meta Feed Posts. Page 1 and Page 2 are published independently using their own encrypted tokens with zero content mixing.
+              <FiAlertCircle style={{ fontSize: '1rem', flexShrink: 0, marginTop: '2px' }} />
+              <div>
+                <strong>Confirmation Required:</strong> Clicking confirm will immediately upload photos and create official Meta Feed Posts. Page 1 and Page 2 are published independently using their own encrypted tokens with zero content mixing.
+              </div>
             </div>
 
             {/* Action Buttons */}

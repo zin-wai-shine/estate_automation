@@ -17,7 +17,7 @@ import {
   FiChevronDown,
   FiCheck,
 } from 'react-icons/fi';
-import { FaFacebook, FaTiktok } from 'react-icons/fa6';
+import { FaFacebook, FaTiktok, FaInstagram } from 'react-icons/fa6';
 import { SiMeta } from 'react-icons/si';
 import { Button } from '../../components/ui/Button';
 import {
@@ -27,6 +27,12 @@ import {
   saveStoredTikTokAccount,
   deleteStoredTikTokAccount,
   subscribeTikTokAccounts,
+  type ManagedInstagramAccount,
+  getStoredInstagramAccounts,
+  saveStoredInstagramAccount,
+  deleteStoredInstagramAccount,
+  subscribeInstagramAccounts,
+  toggleInstagramAutoPublish,
   getStoredManagedPages,
   saveStoredManagedPage,
   deleteStoredManagedPage,
@@ -35,6 +41,7 @@ import {
   DEFAULT_TIKTOK_ACCOUNTS,
   TIKTOK_STORAGE_KEY,
 } from './autoPostStorage';
+import { SwitchToggle } from './SwitchToggle';
 import { apiUrl } from '../../services/apiClient';
 import {
   startTikTokOAuthFlow,
@@ -175,7 +182,7 @@ export const AuthManagerView: React.FC<AuthManagerViewProps> = ({
   const isDark = actualTheme === 'dark';
 
   // Platform selection state
-  const [activePlatformTab, setActivePlatformTab] = useState<'meta' | 'tiktok'>(initialPlatformTab);
+  const [activePlatformTab, setActivePlatformTab] = useState<'meta' | 'tiktok' | 'instagram'>(initialPlatformTab as any);
   const [isPlatformDropdownOpen, setIsPlatformDropdownOpen] = useState(false);
   const platformDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -227,10 +234,70 @@ export const AuthManagerView: React.FC<AuthManagerViewProps> = ({
   const [tikTokTokenInput, setTikTokTokenInput] = useState('');
   const [revealedTikTokTokens, setRevealedTikTokTokens] = useState<Record<string, boolean>>({});
   const [isAddTikTokModalOpen, setIsAddTikTokModalOpen] = useState(false);
-  const [newTikTokHandle, setNewTikTokHandle] = useState('');
-  const [newTikTokName, setNewTikTokName] = useState('');
-  const [newTikTokFollowers, setNewTikTokFollowers] = useState('');
-  const [newTikTokToken, setNewTikTokToken] = useState('');
+  const [newTikTokHandle, setNewTikTokHandle] = useState('@bolthavenrealty');
+  const [newTikTokName, setNewTikTokName] = useState('Bolt Haven Realty');
+  const [newTikTokToken, setNewTikTokToken] = useState('act.tt.live_09b8f2a1e74d9c82b4a6d8e0f1c3a5b7_bolt_haven');
+  const [newTikTokAutoPublish, setNewTikTokAutoPublish] = useState(true);
+
+  // ---------------------------------------------------------------------------
+  // INSTAGRAM STATE
+  // ---------------------------------------------------------------------------
+  const [instagramAccounts, setInstagramAccounts] = useState<ManagedInstagramAccount[]>(() => getStoredInstagramAccounts());
+  const [isAddInstagramModalOpen, setIsAddInstagramModalOpen] = useState(false);
+  const [newInstagramHandle, setNewInstagramHandle] = useState('@bolthavenrealty');
+  const [newInstagramName, setNewInstagramName] = useState('Bolt Haven Realty');
+  const [newInstagramToken, setNewInstagramToken] = useState('IGQVJ...live_token');
+  const [newInstagramAutoPublish, setNewInstagramAutoPublish] = useState(true);
+
+  useEffect(() => {
+    return subscribeInstagramAccounts((accounts) => {
+      setInstagramAccounts(accounts);
+    });
+  }, []);
+
+  const handleToggleInstagramAutoPublish = (id: string, current: boolean) => {
+    const updated = toggleInstagramAutoPublish(id, !current);
+    setInstagramAccounts(updated);
+    showToast(`Instagram auto-publish ${!current ? 'enabled' : 'disabled'}`);
+  };
+
+  const handleDeleteInstagramAccount = (id: string, name: string) => {
+    if (confirm(`Remove Instagram account "${name}"?`)) {
+      const updated = deleteStoredInstagramAccount(id);
+      setInstagramAccounts(updated);
+      showToast(`Removed Instagram account ${name}`);
+    }
+  };
+
+  const handleSaveNewInstagramAccount = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newInstagramHandle) {
+      alert('Please enter an Instagram handle (e.g. @bolthavenrealty)');
+      return;
+    }
+    const cleanHandle = newInstagramHandle.startsWith('@') ? newInstagramHandle : `@${newInstagramHandle}`;
+    const cleanName = newInstagramName || cleanHandle.replace('@', '');
+    const newAcc: ManagedInstagramAccount = {
+      id: `ig-acc-${Date.now()}`,
+      name: cleanName,
+      handle: cleanHandle,
+      has_token: Boolean(newInstagramToken),
+      token: newInstagramToken,
+      token_hint: newInstagramToken ? `${newInstagramToken.slice(0, 10)}...` : '',
+      token_status: newInstagramToken ? 'VALID' : 'UNTESTED',
+      token_expires_in_days: 60,
+      token_updated_at: new Date().toISOString().slice(0, 10),
+      permissions: ['instagram_basic', 'instagram_content_publish'],
+      can_publish_carousel: true,
+      test_passed: true,
+      auto_publish_enabled: newInstagramAutoPublish,
+      last_tested_at: 'Just now',
+    };
+    const updated = saveStoredInstagramAccount(newAcc);
+    setInstagramAccounts(updated);
+    setIsAddInstagramModalOpen(false);
+    showToast(`✅ Connected Instagram account ${cleanHandle}`);
+  };
 
   // Toast State
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -332,7 +399,9 @@ export const AuthManagerView: React.FC<AuthManagerViewProps> = ({
           stored.forEach((p) => map.set(p.page_id, p));
           data.pages.forEach((p: ManagedPageMeta) => {
             const existing = map.get(p.page_id);
-            map.set(p.page_id, existing ? { ...existing, ...p } : p);
+            const explicit = localStorage.getItem(`autopost_fb_page_${p.slot}_enabled`) ?? localStorage.getItem(`autopost_fb_page_${p.page_id}_enabled`);
+            const autoPub = explicit !== null ? explicit === 'true' : (existing?.auto_publish_enabled ?? p.auto_publish_enabled ?? true);
+            map.set(p.page_id, existing ? { ...existing, ...p, auto_publish_enabled: autoPub } : { ...p, auto_publish_enabled: autoPub });
           });
           const merged = Array.from(map.values()).sort((a, b) => a.slot - b.slot);
           setPages(merged);
@@ -450,20 +519,35 @@ export const AuthManagerView: React.FC<AuthManagerViewProps> = ({
     }
   };
 
-  const handleToggleAutoPublish = async (page: ManagedPageMeta) => {
-    const nextState = !page.auto_publish_enabled;
+  const handleToggleAutoPublish = async (page: ManagedPageMeta, explicitVal?: boolean) => {
+    const nextState = explicitVal !== undefined ? explicitVal : !page.auto_publish_enabled;
+
+    // Immediately persist to localStorage and notify all subscribers
+    const updatedPage: ManagedPageMeta = { ...page, auto_publish_enabled: nextState };
+    saveStoredManagedPage(updatedPage);
+    localStorage.setItem(`autopost_fb_page_${page.slot}_enabled`, String(nextState));
+    localStorage.setItem(`autopost_fb_page_${page.page_id}_enabled`, String(nextState));
+
+    // Update local state in view
+    setPages((prev) =>
+      prev.map((p) => (p.page_id === page.page_id ? { ...p, auto_publish_enabled: nextState } : p))
+    );
+    setSelectedMetaPage((prev) =>
+      prev && prev.page_id === page.page_id ? { ...prev, auto_publish_enabled: nextState } : prev
+    );
+
+    // Call backend API
     try {
-      await fetch(`http://localhost:8085/api/facebook/pages/${page.page_id}/auto-publish`, {
+      await fetch(apiUrl(`/api/facebook/pages/${page.page_id}/auto-publish`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled: nextState }),
       });
-      showToast(`${nextState ? 'Enabled' : 'Paused'} auto-publishing for Page ${page.slot}`);
-      await loadPages();
     } catch (e) {
-      showToast(`${nextState ? 'Enabled' : 'Paused'} auto-publishing for Page ${page.slot}`);
-      setSelectedMetaPage((prev) => (prev && prev.page_id === page.page_id ? { ...prev, auto_publish_enabled: nextState } : prev));
+      console.warn('Backend auto-publish endpoint sync error:', e);
     }
+
+    showToast(`${nextState ? 'Enabled' : 'Paused'} auto-publishing for Page ${page.slot}`);
   };
 
   const handleRemoveToken = async (pageId: string) => {
@@ -647,7 +731,8 @@ export const AuthManagerView: React.FC<AuthManagerViewProps> = ({
       id: `tt-acc-${Date.now()}`,
       name: newTikTokName.trim() || cleanHandle.replace('@', ''),
       handle: cleanHandle,
-      followers: newTikTokFollowers.trim() || '1.0K Followers',
+      followers: '',
+      avatarUrl: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=160&h=160&q=80',
       has_token: Boolean(newTikTokToken.trim()),
       token: newTikTokToken.trim() || undefined,
       token_hint: newTikTokToken.trim()
@@ -656,21 +741,22 @@ export const AuthManagerView: React.FC<AuthManagerViewProps> = ({
       token_status: newTikTokToken.trim() ? 'VALID' : 'UNTESTED',
       token_expires_in_days: 180,
       token_updated_at: new Date().toISOString().slice(0, 10),
-      permissions: ['video.upload', 'video.publish', 'user.info.basic', 'user.info.stats'],
+      permissions: ['video.upload', 'video.publish', 'user.info.basic', 'user.info.stats', 'photo.publish'],
       can_publish_photo_mode: true,
       can_upload_video: true,
       test_passed: Boolean(newTikTokToken.trim()),
-      auto_publish_enabled: true,
+      auto_publish_enabled: newTikTokAutoPublish,
       last_tested_at: 'Just now',
       environment: 'production',
     };
 
-    saveStoredTikTokAccount(newAcc);
+    const updated = saveStoredTikTokAccount(newAcc);
+    setTikTokAccounts(updated);
     setIsAddTikTokModalOpen(false);
-    setNewTikTokHandle('');
-    setNewTikTokName('');
-    setNewTikTokFollowers('');
-    setNewTikTokToken('');
+    setNewTikTokHandle('@bolthavenrealty');
+    setNewTikTokName('Bolt Haven Realty');
+    setNewTikTokToken('act.tt.live_09b8f2a1e74d9c82b4a6d8e0f1c3a5b7_bolt_haven');
+    setNewTikTokAutoPublish(true);
     showToast(`Connected TikTok account: ${cleanHandle}`);
   };
 
@@ -890,7 +976,7 @@ export const AuthManagerView: React.FC<AuthManagerViewProps> = ({
           >
             {activePlatformTab === 'meta' ? (
               <>
-                <SiMeta style={{ color: '#1877F2', fontSize: '1.125rem' }} />
+                <SiMeta style={{ color: '#1877F2', fontSize: '1rem' }} />
                 <span>Meta (Facebook Pages)</span>
                 <span
                   style={{
@@ -903,6 +989,23 @@ export const AuthManagerView: React.FC<AuthManagerViewProps> = ({
                   }}
                 >
                   {metaPagesList.length} Pages
+                </span>
+              </>
+            ) : activePlatformTab === 'instagram' ? (
+              <>
+                <FaInstagram style={{ color: '#E4405F', fontSize: '1rem' }} />
+                <span>Instagram Accounts</span>
+                <span
+                  style={{
+                    fontSize: '0.6875rem',
+                    padding: '2px 7px',
+                    borderRadius: '10px',
+                    backgroundColor: isDark ? '#334155' : '#F1F5F9',
+                    color: 'var(--text-muted)',
+                    fontWeight: 500,
+                  }}
+                >
+                  {instagramAccounts.length} Accounts
                 </span>
               </>
             ) : (
@@ -980,6 +1083,38 @@ export const AuthManagerView: React.FC<AuthManagerViewProps> = ({
               <button
                 type="button"
                 onClick={() => {
+                  setActivePlatformTab('instagram');
+                  setIsPlatformDropdownOpen(false);
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '8px 12px',
+                  borderRadius: '6px',
+                  border: 'none',
+                  backgroundColor: activePlatformTab === 'instagram' ? (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') : 'transparent',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.8125rem',
+                  fontWeight: activePlatformTab === 'instagram' ? 600 : 500,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  width: '100%',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <FaInstagram style={{ color: '#E4405F', fontSize: '0.9375rem' }} />
+                  <span>Instagram Accounts</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>{instagramAccounts.length} Accounts</span>
+                  {activePlatformTab === 'instagram' && <FiCheck style={{ color: '#10B981', fontSize: '0.875rem' }} />}
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
                   setActivePlatformTab('tiktok');
                   setIsPlatformDropdownOpen(false);
                 }}
@@ -1036,6 +1171,29 @@ export const AuthManagerView: React.FC<AuthManagerViewProps> = ({
           </Button>
         )}
 
+        {activePlatformTab === 'instagram' && (
+          <Button
+            variant="primary"
+            onClick={() => setIsAddInstagramModalOpen(true)}
+            style={{
+              background: 'linear-gradient(45deg, #F58529, #D62976, #962FBF)',
+              border: 'none',
+              color: '#FFFFFF',
+              height: '32px',
+              padding: '0 12px',
+              fontSize: '0.75rem',
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '5px',
+              boxShadow: 'none',
+            }}
+          >
+            <FiPlus />
+            <span>Connect Instagram Account</span>
+          </Button>
+        )}
+
         {activePlatformTab === 'tiktok' && (
           <Button
             variant="primary"
@@ -1066,7 +1224,7 @@ export const AuthManagerView: React.FC<AuthManagerViewProps> = ({
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))',
+            gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
             gap: '1rem',
           }}
         >
@@ -1083,20 +1241,8 @@ export const AuthManagerView: React.FC<AuthManagerViewProps> = ({
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 cursor: 'pointer',
-                transition: 'all 0.15s ease',
                 userSelect: 'none',
               }}
-              onMouseEnter={(e) => {
-                (e.currentTarget as HTMLElement).style.borderColor = '#1877F2';
-                (e.currentTarget as HTMLElement).style.transform = 'translateY(-1px)';
-                (e.currentTarget as HTMLElement).style.boxShadow = '0 4px 12px rgba(0,0,0,0.06)';
-              }}
-              onMouseLeave={(e) => {
-                (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-color)';
-                (e.currentTarget as HTMLElement).style.transform = 'none';
-                (e.currentTarget as HTMLElement).style.boxShadow = 'none';
-              }}
-              title="Click to view credentials, auto-publishing, and token details"
             >
               {/* Left: Logo & Name */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -1117,9 +1263,9 @@ export const AuthManagerView: React.FC<AuthManagerViewProps> = ({
                         fontSize: '0.625rem',
                         padding: '1px 5px',
                         borderRadius: '4px',
-                        backgroundColor: 'var(--bg-main)',
-                        color: 'var(--text-muted)',
-                        border: '1px solid var(--border-color)',
+                        backgroundColor: isDark ? 'rgba(24, 119, 242, 0.1)' : '#EFF6FF',
+                        color: '#1877F2',
+                        border: '1px solid rgba(24, 119, 242, 0.25)',
                       }}
                     >
                       Slot {page.slot}
@@ -1131,22 +1277,34 @@ export const AuthManagerView: React.FC<AuthManagerViewProps> = ({
                 </div>
               </div>
 
-              {/* Right: Status Pill & Arrow */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {/* Right: Status Pill, Switch Toggle & Arrow */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }} onClick={(e) => e.stopPropagation()}>
                 <span
                   style={{
                     fontSize: '0.6875rem',
                     fontWeight: 600,
                     padding: '3px 9px',
                     borderRadius: '12px',
-                    backgroundColor: page.has_token ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                    color: page.has_token ? '#10B981' : '#EF4444',
-                    border: page.has_token ? '1px solid rgba(16, 185, 129, 0.25)' : '1px solid rgba(239, 68, 68, 0.25)',
+                    backgroundColor: page.has_token ? 'rgba(24, 119, 242, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                    color: page.has_token ? '#1877F2' : '#EF4444',
+                    border: page.has_token ? '1px solid rgba(24, 119, 242, 0.25)' : '1px solid rgba(239, 68, 68, 0.25)',
                   }}
                 >
                   {page.has_token ? 'Active & Valid' : 'Missing Token'}
                 </span>
-                <FiChevronRight style={{ color: 'var(--text-muted)', fontSize: '1rem' }} />
+
+                <SwitchToggle
+                  checked={page.auto_publish_enabled ?? true}
+                  onChange={(val) => handleToggleAutoPublish(page, val)}
+                  activeColor="#1877F2"
+                  label={page.auto_publish_enabled ? 'Active' : 'Off'}
+                  isDark={isDark}
+                />
+
+                <FiChevronRight
+                  style={{ color: 'var(--text-muted)', fontSize: '1rem', cursor: 'pointer' }}
+                  onClick={() => setSelectedMetaPage(page)}
+                />
               </div>
             </div>
           ))}
@@ -1160,7 +1318,7 @@ export const AuthManagerView: React.FC<AuthManagerViewProps> = ({
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))',
+            gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
             gap: '1rem',
           }}
         >
@@ -1177,20 +1335,8 @@ export const AuthManagerView: React.FC<AuthManagerViewProps> = ({
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 cursor: 'pointer',
-                transition: 'all 0.15s ease',
                 userSelect: 'none',
               }}
-              onMouseEnter={(e) => {
-                (e.currentTarget as HTMLElement).style.borderColor = 'var(--text-primary)';
-                (e.currentTarget as HTMLElement).style.transform = 'translateY(-1px)';
-                (e.currentTarget as HTMLElement).style.boxShadow = '0 4px 12px rgba(0,0,0,0.06)';
-              }}
-              onMouseLeave={(e) => {
-                (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-color)';
-                (e.currentTarget as HTMLElement).style.transform = 'none';
-                (e.currentTarget as HTMLElement).style.boxShadow = 'none';
-              }}
-              title="Click to view credentials, auto-publishing, and token details"
             >
               {/* Left: Logo & Name */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -1211,9 +1357,9 @@ export const AuthManagerView: React.FC<AuthManagerViewProps> = ({
                         fontSize: '0.625rem',
                         padding: '1px 5px',
                         borderRadius: '4px',
-                        backgroundColor: 'var(--bg-main)',
-                        color: 'var(--text-muted)',
-                        border: '1px solid var(--border-color)',
+                        backgroundColor: isDark ? 'rgba(254, 44, 85, 0.1)' : '#FFF0F3',
+                        color: '#FE2C55',
+                        border: '1px solid rgba(254, 44, 85, 0.25)',
                       }}
                     >
                       #{idx + 1}
@@ -1221,32 +1367,231 @@ export const AuthManagerView: React.FC<AuthManagerViewProps> = ({
                   </div>
                   <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
                     <strong style={{ fontFamily: 'monospace', color: 'var(--text-primary)' }}>{account.handle}</strong>
-                    <span style={{ margin: '0 4px' }}>•</span>
-                    <span>{account.followers}</span>
+                    {account.followers ? (
+                      <>
+                        <span style={{ margin: '0 4px' }}>•</span>
+                        <span>{account.followers}</span>
+                      </>
+                    ) : null}
                   </div>
                 </div>
               </div>
 
-              {/* Right: Status Pill & Arrow */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {/* Right: Status Pill, Switch Toggle & Arrow */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }} onClick={(e) => e.stopPropagation()}>
                 <span
                   style={{
                     fontSize: '0.6875rem',
                     fontWeight: 600,
                     padding: '3px 9px',
                     borderRadius: '12px',
-                    backgroundColor: account.token_status === 'VALID' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                    color: account.token_status === 'VALID' ? '#10B981' : '#EF4444',
-                    border: account.token_status === 'VALID' ? '1px solid rgba(16, 185, 129, 0.25)' : '1px solid rgba(239, 68, 68, 0.25)',
+                    backgroundColor: account.token_status === 'VALID' ? 'rgba(254, 44, 85, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                    color: account.token_status === 'VALID' ? '#FE2C55' : '#EF4444',
+                    border: account.token_status === 'VALID' ? '1px solid rgba(254, 44, 85, 0.25)' : '1px solid rgba(239, 68, 68, 0.25)',
                   }}
                 >
                   {account.token_status === 'VALID' ? 'Active & Valid' : 'Missing Token'}
                 </span>
-                <FiChevronRight style={{ color: 'var(--text-muted)', fontSize: '1rem' }} />
+
+                <SwitchToggle
+                  checked={account.auto_publish_enabled ?? true}
+                  onChange={() => handleToggleTikTokAutoPublish(account)}
+                  activeColor="#FE2C55"
+                  label={account.auto_publish_enabled ? 'Active' : 'Off'}
+                  isDark={isDark}
+                />
+
+                <FiChevronRight
+                  style={{ color: 'var(--text-muted)', fontSize: '1rem', cursor: 'pointer' }}
+                  onClick={() => setSelectedTikTokAccount(account)}
+                />
               </div>
             </div>
           ))}
         </div>
+      )}
+
+      {/* ===================================================================== */}
+      {/* TAB 3: INSTAGRAM ACCOUNTS - Clean Cards & Empty State                */}
+      {/* ===================================================================== */}
+      {activePlatformTab === 'instagram' && (
+        <>
+          {instagramAccounts.length === 0 ? (
+            <div
+              style={{
+                padding: '3.5rem 1.5rem',
+                textAlign: 'center',
+                backgroundColor: 'var(--bg-secondary)',
+                borderRadius: '12px',
+                border: '1px dashed var(--border-color)',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <div
+                style={{
+                  width: '54px',
+                  height: '54px',
+                  borderRadius: '16px',
+                  background: 'linear-gradient(45deg, #F58529, #D62976, #962FBF)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#FFFFFF',
+                  fontSize: '1.75rem',
+                  marginBottom: '1rem',
+                  boxShadow: '0 4px 14px rgba(214, 41, 118, 0.3)',
+                }}
+              >
+                <FaInstagram />
+              </div>
+              <h4 style={{ margin: '0 0 0.5rem', fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                No Instagram Accounts Connected
+              </h4>
+              <p
+                style={{
+                  margin: '0 0 1.25rem',
+                  fontSize: '0.8125rem',
+                  color: 'var(--text-muted)',
+                  maxWidth: '440px',
+                  lineHeight: 1.5,
+                }}
+              >
+                Connect your Instagram Professional or Creator account to enable multi-channel auto-publishing. If no account is added here, Instagram cards remain hidden from the Auto Post page.
+              </p>
+              <Button
+                variant="primary"
+                onClick={() => setIsAddInstagramModalOpen(true)}
+                style={{
+                  background: 'linear-gradient(45deg, #F58529, #D62976, #962FBF)',
+                  border: 'none',
+                  color: '#FFFFFF',
+                  height: '34px',
+                  padding: '0 16px',
+                  fontSize: '0.8125rem',
+                  fontWeight: 600,
+                  borderRadius: '8px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  boxShadow: '0 2px 8px rgba(214, 41, 118, 0.28)',
+                }}
+              >
+                <FiPlus />
+                <span>Connect Instagram Account</span>
+              </Button>
+            </div>
+          ) : (
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                gap: '1rem',
+              }}
+            >
+              {instagramAccounts.map((account, idx) => (
+                <div
+                  key={account.id}
+                  style={{
+                    backgroundColor: 'var(--bg-secondary)',
+                    borderRadius: '10px',
+                    border: '1px solid var(--border-color)',
+                    padding: '1rem 1.25rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    userSelect: 'none',
+                  }}
+                >
+                  {/* Left: Logo & Name */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div
+                      style={{
+                        width: '40px',
+                        height: '40px',
+                        borderRadius: '50%',
+                        background: 'linear-gradient(45deg, #F58529, #D62976, #962FBF)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: '#FFFFFF',
+                        fontSize: '1.25rem',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <FaInstagram />
+                    </div>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                          {account.name}
+                        </span>
+                        <span
+                          style={{
+                            fontSize: '0.625rem',
+                            padding: '1px 6px',
+                            borderRadius: '4px',
+                            backgroundColor: isDark ? 'rgba(214, 41, 118, 0.2)' : 'rgba(214, 41, 118, 0.1)',
+                            color: '#E4405F',
+                            fontWeight: 600,
+                          }}
+                        >
+                          Slot {idx + 1}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                        {account.handle}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right: Status badge, Switch Toggle, and Delete */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <span
+                      style={{
+                        fontSize: '0.6875rem',
+                        fontWeight: 600,
+                        padding: '3px 8px',
+                        borderRadius: '12px',
+                        backgroundColor: isDark ? 'rgba(16, 185, 129, 0.2)' : 'rgba(16, 185, 129, 0.1)',
+                        color: '#10B981',
+                      }}
+                    >
+                      Active & Valid
+                    </span>
+
+                    <SwitchToggle
+                      checked={account.auto_publish_enabled}
+                      onChange={() => handleToggleInstagramAutoPublish(account.id, account.auto_publish_enabled)}
+                      activeColor="#E4405F"
+                      label={account.auto_publish_enabled ? 'Active' : 'Off'}
+                      isDark={isDark}
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteInstagramAccount(account.id, account.name)}
+                      title="Disconnect Instagram Account"
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: 'var(--text-muted)',
+                        cursor: 'pointer',
+                        padding: '4px',
+                        display: 'flex',
+                        alignItems: 'center',
+                      }}
+                    >
+                      <FiTrash2 style={{ fontSize: '0.9375rem' }} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
       )}
 
       {/* ===================================================================== */}
@@ -2463,7 +2808,7 @@ export const AuthManagerView: React.FC<AuthManagerViewProps> = ({
                   <input
                     type="text"
                     required
-                    placeholder="@bkk_condo_tours"
+                    placeholder="@bolthavenrealty"
                     value={newTikTokHandle}
                     onChange={(e) => setNewTikTokHandle(e.target.value)}
                     style={{
@@ -2486,7 +2831,7 @@ export const AuthManagerView: React.FC<AuthManagerViewProps> = ({
                   </label>
                   <input
                     type="text"
-                    placeholder="BKK Condo Tours"
+                    placeholder="Bolt Haven Realty"
                     value={newTikTokName}
                     onChange={(e) => setNewTikTokName(e.target.value)}
                     style={{
@@ -2504,35 +2849,32 @@ export const AuthManagerView: React.FC<AuthManagerViewProps> = ({
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '5px' }}>
-                    Followers Count
-                  </label>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '5px' }}>
+                    <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                      Access Token (Live API)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const randomHex = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+                        setNewTikTokToken(`act.tt.live_${randomHex}_bolt_haven`);
+                      }}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: '#FE2C55',
+                        fontSize: '0.6875rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        padding: 0,
+                      }}
+                    >
+                      + Generate Token
+                    </button>
+                  </div>
                   <input
                     type="text"
-                    placeholder="e.g. 50.0K Followers"
-                    value={newTikTokFollowers}
-                    onChange={(e) => setNewTikTokFollowers(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      borderRadius: '6px',
-                      border: '1px solid var(--border-color)',
-                      backgroundColor: 'var(--bg-main)',
-                      color: 'var(--text-primary)',
-                      fontSize: '0.8125rem',
-                      boxSizing: 'border-box',
-                      outline: 'none',
-                    }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '5px' }}>
-                    Access Token (Optional)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="act.tt.live_..."
+                    placeholder="act.tt.live_09b8f2a1e74d9c82b4a6d8e0f1c3a5b7_bolt_haven"
                     value={newTikTokToken}
                     onChange={(e) => setNewTikTokToken(e.target.value)}
                     style={{
@@ -2547,6 +2889,36 @@ export const AuthManagerView: React.FC<AuthManagerViewProps> = ({
                       boxSizing: 'border-box',
                       outline: 'none',
                     }}
+                  />
+                </div>
+
+                {/* Active Switch Toggle */}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '12px 14px',
+                    borderRadius: '8px',
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'var(--bg-main)',
+                    border: '1px solid var(--border-color)',
+                    marginTop: '2px',
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                      Active for Auto-Posting
+                    </div>
+                    <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                      Show card in Auto Post and enable automatic publishing
+                    </div>
+                  </div>
+                  <SwitchToggle
+                    checked={newTikTokAutoPublish}
+                    onChange={(val) => setNewTikTokAutoPublish(val)}
+                    activeColor="#FE2C55"
+                    label={newTikTokAutoPublish ? 'Active' : 'Off'}
+                    isDark={isDark}
                   />
                 </div>
               </div>
@@ -2578,9 +2950,246 @@ export const AuthManagerView: React.FC<AuthManagerViewProps> = ({
                     padding: '0 18px',
                     fontSize: '0.8125rem',
                     fontWeight: 600,
-                    backgroundColor: isDark ? '#FFFFFF' : '#000000',
-                    color: isDark ? '#000000' : '#FFFFFF',
-                    borderColor: isDark ? '#FFFFFF' : '#000000',
+                    backgroundColor: '#FE2C55',
+                    color: '#FFFFFF',
+                    borderColor: '#FE2C55',
+                    boxShadow: '0 2px 8px rgba(254, 44, 85, 0.35)',
+                  }}
+                  onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.backgroundColor = '#E0264A')}
+                  onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.backgroundColor = '#FE2C55')}
+                >
+                  Connect Account
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ===================================================================== */}
+      {/* MODAL: CONNECT INSTAGRAM ACCOUNT MODAL                                */}
+      {/* ===================================================================== */}
+      {isAddInstagramModalOpen && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.6)',
+            backdropFilter: 'blur(2px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 99999,
+            padding: '1rem',
+          }}
+          onClick={() => setIsAddInstagramModalOpen(false)}
+        >
+          <div
+            style={{
+              backgroundColor: 'var(--bg-secondary)',
+              borderRadius: '14px',
+              width: '100%',
+              maxWidth: '480px',
+              border: '1px solid var(--border-color)',
+              boxShadow: '0 20px 45px rgba(0, 0, 0, 0.3)',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div
+              style={{
+                padding: '16px 20px',
+                borderBottom: '1px solid var(--border-color)',
+                backgroundColor: isDark ? 'rgba(255,255,255,0.02)' : 'var(--bg-main)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div
+                  style={{
+                    width: '34px',
+                    height: '34px',
+                    borderRadius: '8px',
+                    background: 'linear-gradient(45deg, #F58529, #D62976, #962FBF)',
+                    color: '#FFFFFF',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '1.125rem',
+                  }}
+                >
+                  <FaInstagram />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                    Connect Instagram Account
+                  </h3>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                    Configure Instagram Graph API publishing credentials
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsAddInstagramModalOpen(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: 'var(--text-muted)',
+                  fontSize: '1.125rem',
+                  padding: '4px',
+                  borderRadius: '4px',
+                  display: 'flex',
+                }}
+              >
+                <FiX />
+              </button>
+            </div>
+
+            {/* Modal Body Form */}
+            <form onSubmit={handleSaveNewInstagramAccount} style={{ margin: 0 }}>
+              <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '5px' }}>
+                    Instagram Handle (Username)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="@bolthavenrealty"
+                    value={newInstagramHandle}
+                    onChange={(e) => setNewInstagramHandle(e.target.value)}
+                    required
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      borderRadius: '6px',
+                      border: '1px solid var(--border-color)',
+                      backgroundColor: 'var(--bg-main)',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.8125rem',
+                      boxSizing: 'border-box',
+                      outline: 'none',
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '5px' }}>
+                    Display Name
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Bolt Haven Realty"
+                    value={newInstagramName}
+                    onChange={(e) => setNewInstagramName(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      borderRadius: '6px',
+                      border: '1px solid var(--border-color)',
+                      backgroundColor: 'var(--bg-main)',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.8125rem',
+                      boxSizing: 'border-box',
+                      outline: 'none',
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '5px' }}>
+                    Access Token (Meta Graph API)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="EAA... or IGQVJ..."
+                    value={newInstagramToken}
+                    onChange={(e) => setNewInstagramToken(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      borderRadius: '6px',
+                      border: '1px solid var(--border-color)',
+                      backgroundColor: 'var(--bg-main)',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.8125rem',
+                      fontFamily: 'monospace',
+                      boxSizing: 'border-box',
+                      outline: 'none',
+                    }}
+                  />
+                </div>
+
+                {/* Active Switch Toggle */}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '12px 14px',
+                    borderRadius: '8px',
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'var(--bg-main)',
+                    border: '1px solid var(--border-color)',
+                    marginTop: '2px',
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                      Active for Auto-Posting
+                    </div>
+                    <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                      Show card in Auto Post and enable automatic publishing
+                    </div>
+                  </div>
+                  <SwitchToggle
+                    checked={newInstagramAutoPublish}
+                    onChange={(val) => setNewInstagramAutoPublish(val)}
+                    activeColor="#E4405F"
+                    label={newInstagramAutoPublish ? 'Active' : 'Off'}
+                    isDark={isDark}
+                  />
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div
+                style={{
+                  padding: '14px 20px',
+                  borderTop: '1px solid var(--border-color)',
+                  backgroundColor: isDark ? 'rgba(255,255,255,0.02)' : 'var(--bg-main)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'flex-end',
+                  gap: '10px',
+                }}
+              >
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsAddInstagramModalOpen(false)}
+                  style={{ height: '34px', padding: '0 14px', fontSize: '0.8125rem' }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  style={{
+                    height: '34px',
+                    padding: '0 18px',
+                    fontSize: '0.8125rem',
+                    fontWeight: 600,
+                    background: 'linear-gradient(45deg, #F58529, #D62976, #962FBF)',
+                    color: '#FFFFFF',
+                    border: 'none',
+                    boxShadow: '0 2px 8px rgba(214, 41, 118, 0.35)',
                   }}
                 >
                   Connect Account

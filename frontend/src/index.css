@@ -200,3 +200,59 @@ button svg {
   }
 }
 
+/* Custom Ratio Preset Card Hover Delete Button */
+.preset-item-wrapper {
+  position: relative;
+}
+
+.preset-item-wrapper .preset-delete-btn {
+  opacity: 0 !important;
+  pointer-events: none !important;
+  transform: scale(0.85);
+  transition: opacity 0.15s ease, transform 0.15s ease, background-color 0.15s ease, color 0.15s ease !important;
+}
+
+.preset-item-wrapper:hover .preset-delete-btn {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  transform: scale(1);
+}
+
+/* Scissors Cut Seam & Snipping Animation */
+@keyframes scissorSnipMove {
+  0% {
+    top: 0%;
+    transform: translate(-50%, -50%) rotate(-15deg);
+  }
+  25% {
+    transform: translate(-50%, -50%) rotate(15deg);
+  }
+  50% {
+    transform: translate(-50%, -50%) rotate(-15deg);
+  }
+  75% {
+    transform: translate(-50%, -50%) rotate(15deg);
+  }
+  100% {
+    top: 100%;
+    transform: translate(-50%, -50%) rotate(-5deg);
+  }
+}
+
+@keyframes cutLinePulse {
+  0% {
+    opacity: 0.4;
+    filter: drop-shadow(0 0 2px #3B82F6);
+  }
+  50% {
+    opacity: 1;
+    filter: drop-shadow(0 0 8px #60A5FA);
+  }
+  100% {
+    opacity: 0.4;
+    filter: drop-shadow(0 0 2px #3B82F6);
+  }
+}
+
+
+

@@ -1,0 +1,14 @@
+.git
+.env
+.env.*
+data
+browser-profiles
+storage
+tmp
+node_modules
+screenshots
+main
+api
+*.db
+*.sqlite
+*.log

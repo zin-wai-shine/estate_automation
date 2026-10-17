@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import JSZip from 'jszip';
 import type { Property } from '../../types';
@@ -49,7 +49,10 @@ import {
   FiTarget,
   FiShield,
   FiCheckCircle,
+  FiScissors,
+  FiFolder,
 } from 'react-icons/fi';
+import { useNavigate } from 'react-router-dom';
 import { FaFacebook } from 'react-icons/fa';
 import { SiGooglegemini } from 'react-icons/si';
 import { HiSparkles } from 'react-icons/hi2';
@@ -80,6 +83,13 @@ import {
 } from '../workflow/workflowFormats';
 import { ToggleSwitch } from '../../components/ui/ToggleSwitch';
 import { saveRemainingPost } from '../remaining-posts/remainingPostsStorage';
+import {
+  type CropStudioFormat,
+  getSavedCropFormats,
+  getActiveCropFormatId,
+  setActiveCropFormatId,
+  formatImageWithCropFormat,
+} from '../watermark/cropFormats';
 
 const DEFAULT_PROMPT_TEMPLATES: PromptTemplate[] = [
   {
@@ -372,6 +382,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
   );
 
   // UI helpers
+  const navigate = useNavigate();
   const [copiedCaption, setCopiedCaption] = useState(false);
   const [copiedImageIndex, setCopiedImageIndex] = useState<number | null>(null);
   const [savedSuccessMsg, setSavedSuccessMsg] = useState(false);
@@ -464,6 +475,97 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
   const [studioInitialImages, setStudioInitialImages] = useState<AttachedPhotoItem[]>([]);
   const [lightboxShowOriginal, setLightboxShowOriginal] = useState(false);
   const [hoveredPhotoIndex, setHoveredPhotoIndex] = useState<number | null>(null);
+
+  // Crop & Cut Studio Formats Integration
+  const [cropFormats, setCropFormats] = useState<CropStudioFormat[]>(() => getSavedCropFormats());
+  const [activeCropFormatId, setActiveCropFormatIdState] = useState<string | null>(null);
+  const [isCropFormatDropdownOpen, setIsCropFormatDropdownOpen] = useState(false);
+  const [isFormattingPhotos, setIsFormattingPhotos] = useState(false);
+  const cropFormatDropdownRef = useRef<HTMLDivElement>(null);
+  const [isDownloadDropdownOpen, setIsDownloadDropdownOpen] = useState(false);
+  const downloadDropdownRef = useRef<HTMLDivElement>(null);
+
+  const activeCropFormat = useMemo(
+    () => cropFormats.find((f) => f.id === activeCropFormatId) || null,
+    [cropFormats, activeCropFormatId]
+  );
+
+  // Close dropdowns on outside click
+  useEffect(() => {
+    const handleOutside = (e: MouseEvent) => {
+      if (cropFormatDropdownRef.current && !cropFormatDropdownRef.current.contains(e.target as Node)) {
+        setIsCropFormatDropdownOpen(false);
+      }
+      if (downloadDropdownRef.current && !downloadDropdownRef.current.contains(e.target as Node)) {
+        setIsDownloadDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, []);
+
+  // Re-sync crop studio formats on window focus
+  useEffect(() => {
+    const handleSync = () => {
+      setCropFormats(getSavedCropFormats());
+    };
+    window.addEventListener('focus', handleSync);
+    return () => window.removeEventListener('focus', handleSync);
+  }, []);
+
+  // Apply a Crop & Cut Studio format to all arrived photos
+  const handleApplyCropFormat = async (format: CropStudioFormat) => {
+    if (images.length === 0) return;
+    setIsFormattingPhotos(true);
+    setActiveCropFormatIdState(format.id);
+    setActiveCropFormatId(format.id);
+    setIsCropFormatDropdownOpen(false);
+
+    try {
+      const updatedEnhanced: Record<number, string> = { ...enhancedPhotos };
+      for (let i = 0; i < images.length; i++) {
+        const img = images[i];
+        const rawUrl = img.stored_url
+          ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
+          : img.source_url;
+        const formattedDataUrl = await formatImageWithCropFormat(rawUrl, format);
+        updatedEnhanced[img.index] = formattedDataUrl;
+      }
+      setEnhancedPhotos(updatedEnhanced);
+      showToast(`✨ Formatted all ${images.length} photos with "${format.name}" (${format.targetWidth}×${format.targetHeight})!`);
+    } catch (err) {
+      console.error('Failed to format photos with crop format', err);
+      showToast('⚠️ Could not format all photos.');
+    } finally {
+      setIsFormattingPhotos(false);
+    }
+  };
+
+  // Revert photos to native unformatted resolution
+  const handleResetPhotoFormat = () => {
+    setActiveCropFormatIdState(null);
+    setEnhancedPhotos({});
+    setIsCropFormatDropdownOpen(false);
+    showToast('Reverted to original photo dimensions');
+  };
+
+  // Open the current photos directly in Crop & Cut Studio
+  const handleOpenInCropStudio = () => {
+    if (images.length === 0) return;
+    const studioImages = images.map((img) => ({
+      id: `img-${img.index}`,
+      url: img.stored_url
+        ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
+        : img.source_url,
+      name: `Photo #${img.index}.jpg`,
+      width: 1200,
+      height: 1200,
+    }));
+    try {
+      localStorage.setItem('ea_crop_studio_images_v1', JSON.stringify(studioImages));
+    } catch {}
+    navigate('/watermark');
+  };
 
   const handleOpenImageStudio = (targetBox?: DynamicAIBoxConfig, specificPhoto?: ExtractedImage) => {
     const chosenBox = targetBox || imageAIBoxes[0];
@@ -1505,6 +1607,42 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
       setIsDownloadingAll(false);
       setDownloadProgress(0);
     }
+  };
+
+  // Download all photos directly as individual image files
+  const handleDownloadAllImagesDirect = async () => {
+    if (!images || images.length === 0 || isDownloadingAll) return;
+    setIsDownloadingAll(true);
+    setDownloadProgress(0);
+    setIsDownloadDropdownOpen(false);
+    addLog(`Downloading all ${images.length} photos directly as image files...`, 'info');
+
+    try {
+      for (let i = 0; i < images.length; i++) {
+        const img = images[i];
+        const fullUrl = enhancedPhotos[img.index] || (img.stored_url
+          ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
+          : img.source_url);
+        await handleDownloadImage(fullUrl, img.index);
+        setDownloadProgress(i + 1);
+        if (images.length > 1) {
+          await new Promise((res) => setTimeout(res, 250));
+        }
+      }
+      addLog(`All ${images.length} photos downloaded directly`, 'success');
+      showToast(`Downloaded all ${images.length} photos directly as image files!`);
+    } catch (err: any) {
+      console.error('Failed to download images directly', err);
+      showToast('⚠️ Error downloading some photos');
+    } finally {
+      setIsDownloadingAll(false);
+      setDownloadProgress(0);
+    }
+  };
+
+  const handleDownloadAllImagesZip = async () => {
+    setIsDownloadDropdownOpen(false);
+    await handleDownloadAllImages();
   };
 
   // Scroll isolation & smooth wheel zoom for studio image lightbox
@@ -3118,9 +3256,27 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'nowrap', flexShrink: 0 }}>
-              <h3 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
-                Imported Photos ({images.length})
-              </h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0 }}>
+                <h3 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
+                  Imported Photos ({images.length})
+                </h3>
+                {activeCropFormat && (
+                  <span
+                    style={{
+                      fontSize: '0.6875rem',
+                      fontWeight: 600,
+                      padding: '2px 8px',
+                      borderRadius: '12px',
+                      background: 'rgba(37,99,235,0.1)',
+                      color: 'var(--accent-primary)',
+                      border: '1px solid rgba(37,99,235,0.25)',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    ✂ {activeCropFormat.name} ({activeCropFormat.targetWidth}×{activeCropFormat.targetHeight})
+                  </span>
+                )}
+              </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'nowrap', flexShrink: 0 }}>
                 {/* Auto Enhance Switch */}
                 <div
@@ -3144,6 +3300,200 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                     activeColor="#10B981"
                   />
                 </div>
+
+                {/* Crop & Cut Studio Format Selector */}
+                {images.length > 0 && (
+                  <div ref={cropFormatDropdownRef} style={{ position: 'relative' }}>
+                    <Button
+                      variant={activeCropFormat ? "primary" : "secondary"}
+                      size="sm"
+                      onClick={() => setIsCropFormatDropdownOpen((prev) => !prev)}
+                      disabled={isFormattingPhotos}
+                      leftIcon={
+                        isFormattingPhotos ? (
+                          <FiRefreshCw className="animate-spin" style={{ fontSize: '12px' }} />
+                        ) : (
+                          <FiScissors style={{ fontSize: '13px' }} />
+                        )
+                      }
+                      rightIcon={<FiChevronDown style={{ fontSize: '11px', transition: 'transform 0.15s ease', transform: isCropFormatDropdownOpen ? 'rotate(180deg)' : 'none' }} />}
+                      style={{
+                        height: '34px',
+                        padding: '0 0.875rem',
+                        fontSize: '0.8125rem',
+                        fontWeight: 500,
+                        borderRadius: '8px',
+                        backgroundColor: activeCropFormat ? 'var(--accent-primary)' : 'var(--bg-main)',
+                        borderColor: activeCropFormat ? 'var(--accent-primary)' : 'var(--border-color)',
+                        color: activeCropFormat ? '#ffffff' : 'var(--text-primary)',
+                        boxShadow: 'var(--shadow-sm)',
+                        whiteSpace: 'nowrap',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.35rem',
+                        cursor: isFormattingPhotos ? 'wait' : 'pointer',
+                      }}
+                      title="Apply saved format from Crop & Cut Studio"
+                    >
+                      {isFormattingPhotos
+                        ? 'Formatting...'
+                        : activeCropFormat
+                        ? `Format: ${activeCropFormat.name}`
+                        : 'Format Photos'}
+                    </Button>
+
+                    {isCropFormatDropdownOpen && (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: 'calc(100% + 6px)',
+                          right: 0,
+                          width: '280px',
+                          backgroundColor: 'var(--bg-surface, #ffffff)',
+                          border: '1px solid var(--border-color, #e2e8f0)',
+                          borderRadius: '12px',
+                          boxShadow: '0 12px 28px -4px rgba(0,0,0,0.15), 0 4px 12px rgba(0,0,0,0.08)',
+                          zIndex: 1000,
+                          overflow: 'hidden',
+                          display: 'flex',
+                          flexDirection: 'column',
+                        }}
+                      >
+                        <div
+                          style={{
+                            padding: '10px 14px 8px',
+                            borderBottom: '1px solid var(--border-color, #e2e8f0)',
+                            backgroundColor: 'var(--bg-main, #f8fafc)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                          }}
+                        >
+                          <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                            Saved Studio Formats
+                          </span>
+                          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                            {cropFormats.length} available
+                          </span>
+                        </div>
+
+                        <div style={{ maxHeight: '260px', overflowY: 'auto', padding: '4px' }}>
+                          {cropFormats.map((fmt) => {
+                            const isSelected = activeCropFormatId === fmt.id;
+                            return (
+                              <button
+                                key={fmt.id}
+                                type="button"
+                                onClick={() => handleApplyCropFormat(fmt)}
+                                style={{
+                                  width: '100%',
+                                  padding: '8px 10px',
+                                  borderRadius: '8px',
+                                  border: 'none',
+                                  background: isSelected ? 'rgba(37,99,235,0.08)' : 'transparent',
+                                  color: isSelected ? 'var(--accent-primary)' : 'var(--text-primary)',
+                                  textAlign: 'left',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  gap: '8px',
+                                  transition: 'background-color 0.15s ease',
+                                }}
+                                onMouseEnter={(e) => {
+                                  if (!isSelected) e.currentTarget.style.backgroundColor = 'var(--bg-hover, #f1f5f9)';
+                                }}
+                                onMouseLeave={(e) => {
+                                  if (!isSelected) e.currentTarget.style.backgroundColor = 'transparent';
+                                }}
+                              >
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
+                                  <span style={{ fontSize: '0.8125rem', fontWeight: isSelected ? 600 : 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {fmt.name}
+                                  </span>
+                                  <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+                                    {fmt.mode === 'grid' ? `Grid Split • ${fmt.targetWidth}×${fmt.targetHeight}` : `${fmt.aspect === 'custom' ? 'Custom' : fmt.aspect} • ${fmt.targetWidth}×${fmt.targetHeight} • ${fmt.fitMode}`}
+                                  </span>
+                                </div>
+                                {isSelected && (
+                                  <FiCheck style={{ color: 'var(--accent-primary)', fontSize: '14px', flexShrink: 0 }} />
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        <div
+                          style={{
+                            padding: '6px 4px',
+                            borderTop: '1px solid var(--border-color, #e2e8f0)',
+                            backgroundColor: 'var(--bg-main, #f8fafc)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '2px',
+                          }}
+                        >
+                          {activeCropFormat && (
+                            <button
+                              type="button"
+                              onClick={handleResetPhotoFormat}
+                              style={{
+                                width: '100%',
+                                padding: '6px 10px',
+                                borderRadius: '6px',
+                                border: 'none',
+                                background: 'transparent',
+                                color: 'var(--text-secondary)',
+                                textAlign: 'left',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                fontSize: '0.75rem',
+                                fontWeight: 500,
+                              }}
+                              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--bg-hover, #f1f5f9)')}
+                              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                            >
+                              <FiRotateCcw style={{ fontSize: '12px' }} />
+                              Reset to Original Photos
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsCropFormatDropdownOpen(false);
+                              handleOpenInCropStudio();
+                            }}
+                            style={{
+                              width: '100%',
+                              padding: '6px 10px',
+                              borderRadius: '6px',
+                              border: 'none',
+                              background: 'transparent',
+                              color: 'var(--accent-primary)',
+                              textAlign: 'left',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              fontSize: '0.75rem',
+                              fontWeight: 500,
+                            }}
+                            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--bg-hover, #f1f5f9)')}
+                            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                          >
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <FiScissors style={{ fontSize: '12px' }} />
+                              Open in Crop & Cut Studio
+                            </span>
+                            <FiExternalLink style={{ fontSize: '11px' }} />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {imageAIBoxes.length > 0 && (
                   <Button
@@ -3209,38 +3559,171 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                   </Button>
                 )}
                 {images.length > 0 && (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={handleDownloadAllImages}
-                    disabled={isDownloadingAll}
-                    leftIcon={
-                      isDownloadingAll ? (
-                        <FiRefreshCw className="animate-spin" style={{ fontSize: '12px' }} />
-                      ) : (
-                        <FiDownload style={{ fontSize: '12px' }} />
-                      )
-                    }
-                    style={{
-                      height: '34px',
-                      padding: '0 0.875rem',
-                      fontSize: '0.8125rem',
-                      fontWeight: 500,
-                      borderRadius: '8px',
-                      backgroundColor: 'var(--bg-main)',
-                      border: '1px solid var(--border-color)',
-                      color: 'var(--text-primary)',
-                      boxShadow: 'var(--shadow-sm)',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '0.35rem',
-                      whiteSpace: 'nowrap',
-                      cursor: isDownloadingAll ? 'not-allowed' : 'pointer',
-                    }}
-                    title="Download all photos as a ZIP package"
-                  >
-                    {isDownloadingAll ? `Downloading ${downloadProgress}/${images.length}` : 'Download'}
-                  </Button>
+                  <div ref={downloadDropdownRef} style={{ position: 'relative' }}>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setIsDownloadDropdownOpen((prev) => !prev)}
+                      disabled={isDownloadingAll}
+                      leftIcon={
+                        isDownloadingAll ? (
+                          <FiRefreshCw className="animate-spin" style={{ fontSize: '12px' }} />
+                        ) : (
+                          <FiDownload style={{ fontSize: '12px' }} />
+                        )
+                      }
+                      rightIcon={
+                        <FiChevronDown
+                          style={{
+                            fontSize: '11px',
+                            transition: 'transform 0.15s ease',
+                            transform: isDownloadDropdownOpen ? 'rotate(180deg)' : 'none',
+                          }}
+                        />
+                      }
+                      style={{
+                        height: '34px',
+                        padding: '0 0.875rem',
+                        fontSize: '0.8125rem',
+                        fontWeight: 500,
+                        borderRadius: '8px',
+                        backgroundColor: 'var(--bg-main)',
+                        border: '1px solid var(--border-color)',
+                        color: 'var(--text-primary)',
+                        boxShadow: 'var(--shadow-sm)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.35rem',
+                        whiteSpace: 'nowrap',
+                        cursor: isDownloadingAll ? 'not-allowed' : 'pointer',
+                      }}
+                      title="Download photos directly as image files or as a ZIP archive"
+                    >
+                      {isDownloadingAll ? `Downloading ${downloadProgress}/${images.length}` : 'Download'}
+                    </Button>
+
+                    {isDownloadDropdownOpen && (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: 'calc(100% + 6px)',
+                          right: 0,
+                          width: '260px',
+                          backgroundColor: 'var(--bg-surface, #ffffff)',
+                          border: '1px solid var(--border-color, #e2e8f0)',
+                          borderRadius: '12px',
+                          boxShadow: '0 12px 28px -4px rgba(0,0,0,0.15), 0 4px 12px rgba(0,0,0,0.08)',
+                          zIndex: 1000,
+                          overflow: 'hidden',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          padding: '6px',
+                          gap: '4px',
+                        }}
+                      >
+                        <div
+                          style={{
+                            padding: '6px 10px 4px',
+                            fontSize: '0.7rem',
+                            fontWeight: 600,
+                            color: 'var(--text-secondary)',
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.04em',
+                          }}
+                        >
+                          Select Download Format
+                        </div>
+
+                        {/* Choice 1: Download Image(s) */}
+                        <button
+                          type="button"
+                          onClick={handleDownloadAllImagesDirect}
+                          style={{
+                            width: '100%',
+                            padding: '8px 10px',
+                            borderRadius: '8px',
+                            border: 'none',
+                            background: 'transparent',
+                            color: 'var(--text-primary)',
+                            textAlign: 'left',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '10px',
+                            transition: 'background-color 0.15s ease',
+                          }}
+                          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--bg-hover, #f1f5f9)')}
+                          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                        >
+                          <div
+                            style={{
+                              width: '30px',
+                              height: '30px',
+                              borderRadius: '6px',
+                              backgroundColor: 'rgba(37,99,235,0.08)',
+                              color: 'var(--accent-primary)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <FiImage style={{ fontSize: '15px' }} />
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
+                            <span style={{ fontSize: '0.8125rem', fontWeight: 600 }}>Download Images</span>
+                            <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+                              Save all {images.length} files directly
+                            </span>
+                          </div>
+                        </button>
+
+                        {/* Choice 2: Download ZIP */}
+                        <button
+                          type="button"
+                          onClick={handleDownloadAllImagesZip}
+                          style={{
+                            width: '100%',
+                            padding: '8px 10px',
+                            borderRadius: '8px',
+                            border: 'none',
+                            background: 'transparent',
+                            color: 'var(--text-primary)',
+                            textAlign: 'left',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '10px',
+                            transition: 'background-color 0.15s ease',
+                          }}
+                          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--bg-hover, #f1f5f9)')}
+                          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                        >
+                          <div
+                            style={{
+                              width: '30px',
+                              height: '30px',
+                              borderRadius: '6px',
+                              backgroundColor: 'rgba(16,185,129,0.08)',
+                              color: '#10B981',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <FiFolder style={{ fontSize: '15px' }} />
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
+                            <span style={{ fontSize: '0.8125rem', fontWeight: 600 }}>Download ZIP</span>
+                            <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+                              Bundle all {images.length} photos in .zip
+                            </span>
+                          </div>
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
@@ -4704,7 +5187,7 @@ style={{
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              Authenticate directly in the window above. EstateAutomate never sees or stores your password.
+              Authenticate directly in the window above. BoltHavenProperty never sees or stores your password.
             </span>
             <div style={{ display: 'flex', gap: '0.5rem' }}>
               <Button

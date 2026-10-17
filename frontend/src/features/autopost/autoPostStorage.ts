@@ -3,9 +3,11 @@ export type SocialPlatform = 'facebook' | 'instagram' | 'tiktok';
 export interface AutoPostImage {
   id: string;
   url: string;
+  originalUrl?: string;
   name: string;
   isCover: boolean;
   section?: 'header' | 'body' | 'footer';
+  watermarked?: boolean;
 }
 
 export interface FacebookPagePostConfig {
@@ -174,23 +176,36 @@ const FB_PAGES_UPDATE_EVENT = 'autopost_managed_fb_pages_updated';
 export function getStoredManagedPages(): ManagedPageMeta[] {
   try {
     const raw = localStorage.getItem(MANAGED_FB_PAGES_STORAGE_KEY);
-    if (!raw) return DEFAULT_MANAGED_FB_PAGES;
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      const hasSlot1 = parsed.some(p => p.slot === 1 || p.page_id === '1287202894475973');
-      const hasSlot2 = parsed.some(p => p.slot === 2 || p.page_id === '494870343703559');
-      const merged = [...parsed];
-      if (!hasSlot1) merged.unshift(DEFAULT_MANAGED_FB_PAGES[0]);
-      if (!hasSlot2) merged.splice(1, 0, DEFAULT_MANAGED_FB_PAGES[1]);
-      return merged;
+    let baseList = DEFAULT_MANAGED_FB_PAGES;
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const hasSlot1 = parsed.some(p => p.slot === 1 || p.page_id === '1287202894475973');
+        const hasSlot2 = parsed.some(p => p.slot === 2 || p.page_id === '494870343703559');
+        const merged = [...parsed];
+        if (!hasSlot1) merged.unshift(DEFAULT_MANAGED_FB_PAGES[0]);
+        if (!hasSlot2) merged.splice(1, 0, DEFAULT_MANAGED_FB_PAGES[1]);
+        baseList = merged;
+      }
     }
-    return DEFAULT_MANAGED_FB_PAGES;
+    // Overlay explicit persisted user toggle preferences
+    return baseList.map(p => {
+      const explicit = localStorage.getItem(`autopost_fb_page_${p.slot}_enabled`) ?? localStorage.getItem(`autopost_fb_page_${p.page_id}_enabled`);
+      if (explicit !== null) {
+        return { ...p, auto_publish_enabled: explicit === 'true' };
+      }
+      return p;
+    });
   } catch (e) {
     return DEFAULT_MANAGED_FB_PAGES;
   }
 }
 
 export function saveStoredManagedPage(page: ManagedPageMeta): ManagedPageMeta[] {
+  if (page.auto_publish_enabled !== undefined) {
+    if (page.slot) localStorage.setItem(`autopost_fb_page_${page.slot}_enabled`, String(page.auto_publish_enabled));
+    if (page.page_id) localStorage.setItem(`autopost_fb_page_${page.page_id}_enabled`, String(page.auto_publish_enabled));
+  }
   const current = getStoredManagedPages();
   const index = current.findIndex(p => p.page_id === page.page_id || (page.slot && p.slot === page.slot));
   let updated: ManagedPageMeta[];
@@ -327,6 +342,89 @@ export function syncStoredFbPagesWithMeta(managedPages: ManagedPageMeta[]): Conn
   return updated;
 }
 
+export interface ManagedInstagramAccount {
+  id: string;
+  name: string;
+  handle: string;
+  followers?: string;
+  avatarUrl?: string;
+  has_token: boolean;
+  token_hint: string;
+  token?: string;
+  token_status: 'VALID' | 'EXPIRED' | 'MISSING' | 'UNTESTED';
+  token_expires_in_days?: number;
+  token_updated_at?: string;
+  permissions: string[];
+  can_publish_carousel: boolean;
+  test_passed: boolean;
+  auto_publish_enabled: boolean;
+  last_tested_at?: string;
+  environment?: 'production' | 'sandbox';
+}
+
+export const INSTAGRAM_STORAGE_KEY = 'autopost_connected_instagram_accounts_v1';
+export const INSTAGRAM_UPDATE_EVENT = 'autopost_instagram_accounts_updated';
+
+export function getStoredInstagramAccounts(): ManagedInstagramAccount[] {
+  try {
+    const raw = localStorage.getItem(INSTAGRAM_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+export function saveStoredInstagramAccount(account: ManagedInstagramAccount): ManagedInstagramAccount[] {
+  const current = getStoredInstagramAccounts();
+  const index = current.findIndex(a => a.id === account.id || a.handle === account.handle);
+  let updated: ManagedInstagramAccount[];
+  if (index >= 0) {
+    updated = [...current];
+    updated[index] = { ...updated[index], ...account };
+  } else {
+    updated = [account, ...current];
+  }
+  try {
+    localStorage.setItem(INSTAGRAM_STORAGE_KEY, JSON.stringify(updated));
+    window.dispatchEvent(new CustomEvent(INSTAGRAM_UPDATE_EVENT, { detail: updated }));
+  } catch (e) {}
+  return updated;
+}
+
+export function deleteStoredInstagramAccount(id: string): ManagedInstagramAccount[] {
+  const current = getStoredInstagramAccounts();
+  const updated = current.filter(a => a.id !== id);
+  try {
+    localStorage.setItem(INSTAGRAM_STORAGE_KEY, JSON.stringify(updated));
+    window.dispatchEvent(new CustomEvent(INSTAGRAM_UPDATE_EVENT, { detail: updated }));
+  } catch (e) {}
+  return updated;
+}
+
+export function toggleInstagramAutoPublish(id: string, enabled: boolean): ManagedInstagramAccount[] {
+  const current = getStoredInstagramAccounts();
+  const updated = current.map(a => (a.id === id ? { ...a, auto_publish_enabled: enabled } : a));
+  try {
+    localStorage.setItem(INSTAGRAM_STORAGE_KEY, JSON.stringify(updated));
+    window.dispatchEvent(new CustomEvent(INSTAGRAM_UPDATE_EVENT, { detail: updated }));
+  } catch (e) {}
+  return updated;
+}
+
+export function subscribeInstagramAccounts(callback: (accounts: ManagedInstagramAccount[]) => void): () => void {
+  const handler = () => {
+    callback(getStoredInstagramAccounts());
+  };
+  window.addEventListener(INSTAGRAM_UPDATE_EVENT, handler);
+  window.addEventListener('storage', handler);
+  return () => {
+    window.removeEventListener(INSTAGRAM_UPDATE_EVENT, handler);
+    window.removeEventListener('storage', handler);
+  };
+}
+
 export const CONNECTED_IG_ACCOUNTS: ConnectedAccount[] = [
   {
     id: 'ig-acc-1',
@@ -373,7 +471,28 @@ export interface ManagedTikTokAccount {
   environment?: 'production' | 'sandbox';
 }
 
-export const DEFAULT_TIKTOK_ACCOUNTS: ManagedTikTokAccount[] = [];
+export const DEFAULT_TIKTOK_ACCOUNTS: ManagedTikTokAccount[] = [
+  {
+    id: 'tt-acc-bolthavenrealty',
+    name: 'Bolt Haven Realty',
+    handle: '@bolthavenrealty',
+    followers: '',
+    avatarUrl: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=160&h=160&q=80',
+    has_token: true,
+    token_hint: 'act.tt.live_09b8...ven',
+    token: 'act.tt.live_09b8f2a1e74d9c82b4a6d8e0f1c3a5b7_bolt_haven',
+    token_status: 'VALID',
+    token_expires_in_days: 180,
+    token_updated_at: new Date().toISOString().slice(0, 10),
+    permissions: ['video.upload', 'video.publish', 'user.info.basic', 'user.info.stats', 'photo.publish'],
+    can_publish_photo_mode: true,
+    can_upload_video: true,
+    test_passed: true,
+    auto_publish_enabled: true,
+    last_tested_at: 'Just now',
+    environment: 'production',
+  },
+];
 
 export const TIKTOK_STORAGE_KEY = 'autopost_connected_tiktok_accounts_v1';
 export const TIKTOK_UPDATE_EVENT = 'autopost_tiktok_accounts_updated';
@@ -383,8 +502,10 @@ export function getStoredTikTokAccounts(): ManagedTikTokAccount[] {
     const raw = localStorage.getItem(TIKTOK_STORAGE_KEY);
     if (!raw) return DEFAULT_TIKTOK_ACCOUNTS;
     const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) {
-      return parsed;
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      const cleaned = parsed.filter(a => a.handle !== '@bkk_condo_tours' && a.handle !== '@estate_bangkok_official');
+      if (cleaned.length === 0) return DEFAULT_TIKTOK_ACCOUNTS;
+      return cleaned;
     }
     return DEFAULT_TIKTOK_ACCOUNTS;
   } catch (e) {

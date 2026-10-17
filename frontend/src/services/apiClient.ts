@@ -1,7 +1,7 @@
 /**
  * Centralized API configuration for BoltHavenProperties.
  * Ensures that API and media requests stay on the same HTTPS origin when accessed
- * through app.bolthavenproperty.com or ngrok tunnel, preventing mixed-content errors.
+ * through app.bolthavenproperty.com, preventing mixed-content errors.
  */
 
 export function getApiBaseUrl(): string {
@@ -11,7 +11,7 @@ export function getApiBaseUrl(): string {
     if ((hostname === 'localhost' || hostname === '127.0.0.1') && port === '5174') {
       return 'http://localhost:8085';
     }
-    // When accessed through Nginx reverse proxy, ngrok, or app.bolthavenproperty.com:
+    // When accessed through Nginx reverse proxy or app.bolthavenproperty.com:
     return '';
   }
   return '';

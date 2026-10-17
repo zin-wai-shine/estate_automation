@@ -18,6 +18,8 @@ import {
   FiShare2,
   FiClock,
   FiKey,
+  FiShield,
+  FiScissors,
 } from 'react-icons/fi';
 import { FaFacebook } from 'react-icons/fa';
 import { getRemainingPostsCount, subscribeRemainingPosts } from '../../features/remaining-posts/remainingPostsStorage';
@@ -125,6 +127,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     {
       title: 'System & Tools',
       items: [
+        { id: 'watermark', label: 'Crop & Cut Studio', icon: <FiScissors /> },
         { id: 'testing', label: 'Testing Lab', icon: <FiZap /> },
         { id: 'settings', label: 'Settings', icon: <FiSettings /> },
       ],
@@ -195,7 +198,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                   <h1 style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {currentNav.label}
                   </h1>
-                  <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>EstateAutomate</span>
+                  <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>BoltHavenProperty</span>
                 </div>
               </div>
             </div>
@@ -221,17 +224,17 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
               }}
             >
               {!isCollapsed ? (
-                <div style={{ overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                  <h1 style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.2, margin: 0, letterSpacing: '-0.01em' }}>
-                    EstateAutomate
+                <div style={{ overflow: 'hidden', whiteSpace: 'nowrap', textAlign: 'left' }}>
+                  <h1 style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.2, margin: 0, letterSpacing: '-0.01em', textAlign: 'left' }}>
+                    BoltHavenProperty
                   </h1>
-                  <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                  <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', textAlign: 'left', display: 'block' }}>
                     AI Automation Studio
                   </span>
                 </div>
               ) : (
                 <span style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
-                  EA
+                  BHP
                 </span>
               )}
             </div>
@@ -256,9 +259,11 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                         {currentNav.label}
                       </h2>
                     </div>
-                    <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-                      Workflow Engine · Real Estate SaaS
-                    </span>
+                    {activeTab !== 'watermark' && (
+                      <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                        Workflow Engine · Real Estate SaaS
+                      </span>
+                    )}
                   </div>
                 )}
               </div>
@@ -267,24 +272,22 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexShrink: 0 }}>
                 <div id="header-action-portal" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }} />
 
-                {/* Status Indicator Pill */}
+                {/* Status Indicator: Minimal & Discreet */}
                 <div
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '0.375rem',
-                    padding: '4px 10px',
-                    borderRadius: '20px',
-                    backgroundColor: isDark ? 'rgba(34, 197, 94, 0.08)' : 'rgba(22, 163, 74, 0.08)',
-                    border: `1px solid ${isDark ? 'rgba(34, 197, 94, 0.25)' : 'rgba(22, 163, 74, 0.25)'}`,
-                    color: isDark ? '#4ADE80' : '#16A34A',
+                    gap: '6px',
+                    padding: '4px 8px',
+                    borderRadius: '6px',
+                    color: 'var(--text-muted)',
                     fontSize: '0.6875rem',
-                    fontWeight: 600,
+                    fontWeight: 500,
                   }}
                   title="All AI & API Services Operational"
                 >
                   <div style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#22C55E' }} />
-                  <span>API Online</span>
+                  <span>Online</span>
                 </div>
               </div>
             </div>
