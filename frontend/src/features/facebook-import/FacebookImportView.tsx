@@ -63,6 +63,7 @@ import {
   loadSavedFacebookWorkflowConfig,
   type FacebookWorkflowConfig,
   type DynamicAIBoxConfig,
+  type WorkflowExecutionState,
 } from './FacebookWorkflowCanvas';
 import { RunwareIcon, LaoZhangIcon, ModelSelectorMenu } from './AITrainingChatbot';
 import {
@@ -416,6 +417,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
   );
   const [aiBoxGenerating, setAiBoxGenerating] = useState<Record<string, boolean>>({});
   const [showWorkflowCanvasModal, setShowWorkflowCanvasModal] = useState(false);
+  const [workflowExecutionState, setWorkflowExecutionState] = useState<WorkflowExecutionState | undefined>(undefined);
   const [viewingResultBox, setViewingResultBox] = useState<DynamicAIBoxConfig | null>(null);
   const [viewingPromptBox, setViewingPromptBox] = useState<DynamicAIBoxConfig | null>(null);
   const [copiedBoxId, setCopiedBoxId] = useState<string | null>(null);
@@ -980,7 +982,19 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
 
     setIsProcessing(true);
     setPipelineError(null);
-    setShowPipelineModal(true);
+    setShowPipelineModal(false);
+    setShowWorkflowCanvasModal(true);
+    setWorkflowExecutionState({
+      isRunning: true,
+      isComplete: false,
+      hasError: false,
+      activeNodeIds: ['trigger'],
+      completedNodeIds: [],
+      failedNodeIds: [],
+      currentStepMessage: 'Resolving Facebook post URL...',
+      stepIndex: 1,
+      totalSteps: 6,
+    });
     startLivePreview();
     setPipelineErrorCode(null);
     setManualMode(false);
@@ -1020,6 +1034,14 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
       // Step 1: URL Normalization & Resolution
       setCurrentStepIndex(1);
       addLog('Resolving Facebook share URL...');
+      setWorkflowExecutionState((prev) => ({
+        ...prev,
+        isRunning: true,
+        activeNodeIds: ['trigger'],
+        completedNodeIds: [],
+        currentStepMessage: 'Resolving Facebook post URL...',
+      }));
+
       const resResp = await fetch('http://localhost:8085/api/facebook-import/resolve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1034,11 +1056,23 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
       const resData = await resResp.json();
       addLog(`Facebook URL resolved to: ${resData.canonical_url}`, 'success');
       addLog(`Source detected: ${resData.source_name || resData.source_type}`);
+      setWorkflowExecutionState((prev) => ({
+        ...prev,
+        completedNodeIds: ['trigger'],
+        activeNodeIds: ['trigger'],
+        currentStepMessage: `Facebook URL resolved: ${resData.source_name || 'Post Detected'}`,
+      }));
       await delay(250);
 
       // Step 2: Opening Facebook Browser / Calling Meta Graph API
       setCurrentStepIndex(2);
       addLog('Initializing headless browser session & connecting pipeline...');
+      setWorkflowExecutionState((prev) => ({
+        ...prev,
+        activeNodeIds: ['trigger'],
+        completedNodeIds: ['trigger'],
+        currentStepMessage: 'Connecting headless browser session...',
+      }));
 
       // Dynamic milestone timers during extraction so UI actively reflects real-time stages
       let activePhase = 2;
@@ -1047,6 +1081,12 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
           activePhase = 3;
           setCurrentStepIndex(3);
           addLog('Target post container isolated in browser DOM', 'info');
+          setWorkflowExecutionState((prev) => ({
+            ...prev,
+            completedNodeIds: ['trigger'],
+            activeNodeIds: workflowConfig.getContent.enabled ? ['get-content'] : ['trigger'],
+            currentStepMessage: 'Target post container isolated in browser DOM',
+          }));
         }
       }, 1600);
 
@@ -1055,6 +1095,12 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
           activePhase = 4;
           setCurrentStepIndex(4);
           addLog('Extracting post description, hashtags & copy...', 'info');
+          setWorkflowExecutionState((prev) => ({
+            ...prev,
+            completedNodeIds: ['trigger'],
+            activeNodeIds: workflowConfig.getContent.enabled ? ['get-content'] : [],
+            currentStepMessage: 'Extracting post caption & attributes...',
+          }));
         }
       }, 3400);
 
@@ -1063,6 +1109,12 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
           activePhase = 5;
           setCurrentStepIndex(5);
           addLog('Scanning DOM for high-resolution photo gallery...', 'info');
+          setWorkflowExecutionState((prev) => ({
+            ...prev,
+            completedNodeIds: workflowConfig.getContent.enabled ? ['trigger', 'get-content'] : ['trigger'],
+            activeNodeIds: workflowConfig.getImages.enabled ? ['get-images'] : [],
+            currentStepMessage: 'Scanning DOM for high-resolution photo gallery...',
+          }));
         }
       }, 5200);
 
@@ -1093,6 +1145,14 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
         setPipelineErrorCode(errCode);
         setPipelineError(errMsg);
         addLog(`Extraction interrupted: [${errCode}] ${errMsg}`, 'error');
+        setWorkflowExecutionState((prev) => ({
+          ...prev,
+          isRunning: false,
+          hasError: true,
+          errorMessage: errMsg,
+          failedNodeIds: prev?.activeNodeIds || ['trigger'],
+          currentStepMessage: `Extraction interrupted: [${errCode}] ${errMsg}`,
+        }));
 
         if (errCode === 'LOGIN_REQUIRED') {
           setBrowserState('Facebook Login Required');
@@ -1118,6 +1178,12 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
         setCaption(result.caption.original || '');
         setLanguages(result.caption.language_detected || []);
         addLog(`Post caption extracted (${result.caption.original?.length || 0} characters)`, 'success');
+        setWorkflowExecutionState((prev) => ({
+          ...prev,
+          completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), 'trigger', 'get-content'])),
+          activeNodeIds: workflowConfig.getImages.enabled ? ['get-images'] : [],
+          currentStepMessage: `✓ Post caption extracted (${result.caption.original?.length || 0} characters)`,
+        }));
       } else {
         setCaption('');
         setLanguages([]);
@@ -1130,6 +1196,11 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
         setCurrentStepIndex(5);
         const photoList: ExtractedImage[] = result.images || [];
         addLog(`${photoList.length} photos detected in post container`, 'success');
+        setWorkflowExecutionState((prev) => ({
+          ...prev,
+          activeNodeIds: ['get-images'],
+          currentStepMessage: `⚡ Downloading ${photoList.length} photos...`,
+        }));
         await delay(240);
 
         // Step 6: Verifying Photos
@@ -1142,6 +1213,12 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
         setCurrentStepIndex(7);
         setImages(photoList);
         addLog(`${verifiedCount} target-verified photos downloaded & stored locally`, 'success');
+        setWorkflowExecutionState((prev) => ({
+          ...prev,
+          completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), 'trigger', 'get-content', 'get-images'])),
+          activeNodeIds: [],
+          currentStepMessage: `✓ ${verifiedCount} photos downloaded & stored locally`,
+        }));
         await delay(260);
       } else {
         setImages([]);
@@ -1151,6 +1228,10 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
       // Step 8: AI Analysis
       setCurrentStepIndex(8);
       addLog('AI analyzing property attributes & Thai/Myanmar/English context...', 'info');
+      setWorkflowExecutionState((prev) => ({
+        ...prev,
+        currentStepMessage: 'AI parsing property attributes & details...',
+      }));
 
       if (result.property) {
         setPropertyData({
@@ -1209,35 +1290,46 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
         if (autoEnabledContentBoxes.length > 0 && result.caption?.original) {
           addLog(`⚡ Auto generating ${autoEnabledContentBoxes.length} selected format copies...`, 'info');
           for (const box of autoEnabledContentBoxes) {
-              const providerName = `${box.provider === 'runware_ai' ? 'Runware AI' : box.provider === 'laozhang_ai' ? 'LaoZhang AI' : box.provider === 'openai' ? 'OpenAI' : 'Google AI'} (${getAIModelDisplayName(box.provider, box.model)})`;
-              addLog(`Generating copy for [${box.title}] with ${providerName}...`, 'info');
-              try {
-                const resp = await fetch('http://localhost:8085/api/facebook-import/generate-ai', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    provider: box.provider,
-                    model: box.model,
-                    template_id: box.templateId || '',
-                    template_name: box.title,
-                    template_text: box.templateText || '',
-                    raw_content: result.caption.original,
-                    custom_prompt: box.customPrompt || '',
-                  }),
-                });
-                const data = await resp.json();
-                if (resp.ok && data.success && data.generated_content) {
-                  generatedCopiesMap[box.id] = data.generated_content;
-                  if (!generatedPrimaryCopy) generatedPrimaryCopy = data.generated_content;
-                  setAiGeneratedOutputs((prev) => ({ ...prev, [box.id]: data.generated_content }));
-                  setAiGeneratedCopy(data.generated_content);
-                  addLog(`✨ [${box.title}] copy generated successfully!`, 'success');
-                }
-              } catch (copyErr: any) {
-                console.error(`Auto format error for [${box.title}]:`, copyErr);
-                addLog(`[${box.title}] copy generation error: ${copyErr.message}`, 'error');
+            setWorkflowExecutionState((prev) => ({
+              ...prev,
+              activeNodeIds: [box.id],
+              currentStepMessage: `⚡ Generating copy with [${box.title}]...`,
+            }));
+            const providerName = `${box.provider === 'runware_ai' ? 'Runware AI' : box.provider === 'laozhang_ai' ? 'LaoZhang AI' : box.provider === 'openai' ? 'OpenAI' : 'Google AI'} (${getAIModelDisplayName(box.provider, box.model)})`;
+            addLog(`Generating copy for [${box.title}] with ${providerName}...`, 'info');
+            try {
+              const resp = await fetch('http://localhost:8085/api/facebook-import/generate-ai', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  provider: box.provider,
+                  model: box.model,
+                  template_id: box.templateId || '',
+                  template_name: box.title,
+                  template_text: box.templateText || '',
+                  raw_content: result.caption.original,
+                  custom_prompt: box.customPrompt || '',
+                }),
+              });
+              const data = await resp.json();
+              if (resp.ok && data.success && data.generated_content) {
+                generatedCopiesMap[box.id] = data.generated_content;
+                if (!generatedPrimaryCopy) generatedPrimaryCopy = data.generated_content;
+                setAiGeneratedOutputs((prev) => ({ ...prev, [box.id]: data.generated_content }));
+                setAiGeneratedCopy(data.generated_content);
+                addLog(`✨ [${box.title}] copy generated successfully!`, 'success');
+                setWorkflowExecutionState((prev) => ({
+                  ...prev,
+                  completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), box.id])),
+                  activeNodeIds: [],
+                  currentStepMessage: `✓ [${box.title}] copy generated!`,
+                }));
               }
+            } catch (copyErr: any) {
+              console.error(`Auto format error for [${box.title}]:`, copyErr);
+              addLog(`[${box.title}] copy generation error: ${copyErr.message}`, 'error');
             }
+          }
         }
 
         // 2. Auto Enhance: Enhance all extracted photos
@@ -1247,6 +1339,12 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
         if (currentAutoEnhance && photoList.length > 0) {
           addLog(`⚡ Auto Enhance active: Enhancing ${photoList.length} photos...`, 'info');
           const chosenBox = imageAIBoxes.find((b) => b.enabled) || imageAIBoxes[0];
+          const imgBoxId = chosenBox?.id || 'ai-box-image-enhancer';
+          setWorkflowExecutionState((prev) => ({
+            ...prev,
+            activeNodeIds: [imgBoxId],
+            currentStepMessage: `⚡ Auto Enhancing ${photoList.length} photos...`,
+          }));
           const provider = chosenBox?.provider || 'runware_ai';
           const model = chosenBox?.model || 'runware:101@1';
           const prompt =
@@ -1261,6 +1359,11 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
               : img.source_url;
 
             addLog(`🎨 Auto Enhancing Photo #${img.index}...`, 'info');
+            setWorkflowExecutionState((prev) => ({
+              ...prev,
+              activeNodeIds: [imgBoxId],
+              currentStepMessage: `🎨 Enhancing photo #${img.index + 1} of ${photoList.length}...`,
+            }));
             try {
               const res = await fetch('http://localhost:8085/api/facebook-import/enhance-image', {
                 method: 'POST',
@@ -1284,9 +1387,22 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
               console.error(`Auto enhance error for #${img.index}:`, enhErr);
             }
           }
+          setWorkflowExecutionState((prev) => ({
+            ...prev,
+            completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), imgBoxId])),
+            activeNodeIds: [],
+            currentStepMessage: `✓ ${photoList.length} photos auto enhanced!`,
+          }));
         }
 
-        // 3. Store data automatically into Remaining Posts
+        // 3. Store data automatically into Remaining Posts (Property Inbox Destination)
+        setWorkflowExecutionState((prev) => ({
+          ...prev,
+          activeNodeIds: ['destination'],
+          currentStepMessage: '⚡ Storing listing in Property Inbox...',
+        }));
+        await delay(300);
+
         const projectName =
           result.property?.project_name ||
           (result.source?.post_id ? `Facebook Post #${result.source.post_id}` : 'Facebook Property Post');
@@ -1325,14 +1441,31 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
         });
 
         addLog(`🎉 All processes complete! Automatically stored in Remaining Posts.`, 'success');
-
-        // 4. Automatically clean data in Facebook Import form!
-        await delay(1200);
-        handleDeleteImport();
-        setShowPipelineModal(false);
-        showToast(`🎉 "${projectName}" automatically stored in Remaining Posts & import form cleared!`);
+        setWorkflowExecutionState((prev) => ({
+          ...prev,
+          isRunning: false,
+          isComplete: true,
+          activeNodeIds: [],
+          completedNodeIds: Array.from(new Set([
+            ...(prev?.completedNodeIds || []),
+            'trigger',
+            'get-content',
+            'get-images',
+            ...autoEnabledContentBoxes.map((b) => b.id),
+            'destination',
+          ])),
+          currentStepMessage: `✓ Workflow completed! "${projectName}" stored in Property Inbox.`,
+        }));
+        showToast(`🎉 "${projectName}" automatically stored in Remaining Posts!`);
       } else {
         // Even when no auto actions are toggled, automatically store the imported post in Remaining Posts!
+        setWorkflowExecutionState((prev) => ({
+          ...prev,
+          activeNodeIds: ['destination'],
+          currentStepMessage: '⚡ Storing listing in Property Inbox...',
+        }));
+        await delay(300);
+
         const projectName =
           result.property?.project_name ||
           (result.source?.post_id ? `Facebook Post #${result.source.post_id}` : 'Facebook Property Post');
@@ -1372,10 +1505,34 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
         });
 
         addLog(`💾 "${projectName}" automatically stored in Remaining Posts.`, 'success');
+        setWorkflowExecutionState((prev) => ({
+          ...prev,
+          isRunning: false,
+          isComplete: true,
+          activeNodeIds: [],
+          completedNodeIds: Array.from(new Set([
+            ...(prev?.completedNodeIds || []),
+            'trigger',
+            'get-content',
+            'get-images',
+            ...workflowConfig.aiBoxes.map((b) => b.id),
+            'destination',
+          ])),
+          currentStepMessage: `✓ Workflow completed! "${projectName}" ready in Property Inbox.`,
+        }));
+        showToast(`💾 "${projectName}" saved in Remaining Posts.`);
       }
     } catch (err: any) {
       setPipelineError(err.message || 'An error occurred during extraction');
       addLog(`Failed: ${err.message}`, 'error');
+      setWorkflowExecutionState((prev) => ({
+        ...prev,
+        isRunning: false,
+        hasError: true,
+        errorMessage: err.message,
+        failedNodeIds: prev?.activeNodeIds || ['trigger'],
+        currentStepMessage: `Failed: ${err.message}`,
+      }));
     } finally {
       setIsProcessing(false);
       stopLivePreview();
@@ -4428,6 +4585,9 @@ style={{
             onToggleBoxAutoFormat={handleToggleBoxAutoFormat}
             autoEnhance={autoEnhance}
             onToggleAutoEnhance={handleToggleAutoEnhance}
+            executionState={workflowExecutionState}
+            onCloseCanvas={() => setShowWorkflowCanvasModal(false)}
+            onViewLogs={() => setShowPipelineModal(true)}
             onConfigChange={(newCfg) => {
               setWorkflowConfig(newCfg);
               const updatedFmt: WorkflowFormat = { ...activeFormat, config: newCfg, updatedAt: Date.now() };

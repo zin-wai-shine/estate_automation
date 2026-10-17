@@ -373,7 +373,12 @@ const CANVAS_NODE_ACTION_CSS = `
 .canvas-node:hover::before,
 .canvas-node.is-hovered::before{opacity:.7;transform:scale(1);animation:nodeRingSpin 10s linear infinite}
 .canvas-node.is-receptive::before{opacity:.5;border-color:var(--receptive-color,#D97706);transform:scale(1.02);animation:nodeRingSpin 8s linear infinite}
+.canvas-node.is-running::before{opacity:1 !important;border:2px dashed #0284C7 !important;transform:scale(1.12) !important;animation:nodeRingSpin 2s linear infinite !important}
+.canvas-node.is-running{animation:nodePulseGlow 1.8s ease-in-out infinite !important}
+.canvas-node.is-completed::before{opacity:.95 !important;border:2px solid #10B981 !important;transform:scale(1.05) !important;animation:none !important}
 @keyframes nodeRingSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+@keyframes nodePulseGlow{0%,100%{filter:drop-shadow(0 0 6px rgba(56,189,248,.6));transform:scale(1)}50%{filter:drop-shadow(0 0 20px rgba(56,189,248,.95));transform:scale(1.04)}}
+@keyframes badgePopIn{0%{transform:scale(0);opacity:0}70%{transform:scale(1.25)}100%{transform:scale(1);opacity:1}}
 .node-hit{position:absolute;display:flex;align-items:center;pointer-events:none !important;z-index:45}
 .node-action{width:28px;height:28px;border-radius:50%;background:var(--na-bg);border:1.5px solid var(--na-color);color:var(--na-color);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;opacity:0;transform:scale(.3) translateX(-6px);box-shadow:0 2px 8px rgba(0,0,0,.18);transition:opacity .18s ease,transform .25s cubic-bezier(.34,1.56,.64,1),background-color .15s ease,color .15s ease;pointer-events:none}
 .canvas-node:hover .node-action,
@@ -410,6 +415,95 @@ const NodeActionButton: React.FC<{
     {children}
   </button>
 );
+
+export const NodeExecutionBadge: React.FC<{
+  status?: 'idle' | 'running' | 'success' | 'error';
+}> = ({ status }) => {
+  if (!status || status === 'idle') return null;
+
+  if (status === 'running') {
+    return (
+      <div
+        style={{
+          position: 'absolute',
+          top: '-4px',
+          right: '-4px',
+          width: '22px',
+          height: '22px',
+          borderRadius: '50%',
+          backgroundColor: '#0284C7',
+          color: '#FFFFFF',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          boxShadow: '0 2px 8px rgba(2, 132, 199, 0.6), 0 0 0 2px rgba(255, 255, 255, 0.9)',
+          zIndex: 25,
+          animation: 'badgePopIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
+          pointerEvents: 'none',
+        }}
+        title="Executing step..."
+      >
+        <FiRefreshCw style={{ fontSize: '11px', animation: 'spin 1s linear infinite' }} />
+      </div>
+    );
+  }
+
+  if (status === 'success') {
+    return (
+      <div
+        style={{
+          position: 'absolute',
+          top: '-4px',
+          right: '-4px',
+          width: '22px',
+          height: '22px',
+          borderRadius: '50%',
+          backgroundColor: '#10B981',
+          color: '#FFFFFF',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          boxShadow: '0 2px 8px rgba(16, 185, 129, 0.6), 0 0 0 2px rgba(255, 255, 255, 0.9)',
+          zIndex: 25,
+          animation: 'badgePopIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
+          pointerEvents: 'none',
+        }}
+        title="Step completed"
+      >
+        <FiCheck style={{ fontSize: '12px', strokeWidth: 3 }} />
+      </div>
+    );
+  }
+
+  if (status === 'error') {
+    return (
+      <div
+        style={{
+          position: 'absolute',
+          top: '-4px',
+          right: '-4px',
+          width: '22px',
+          height: '22px',
+          borderRadius: '50%',
+          backgroundColor: '#EF4444',
+          color: '#FFFFFF',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          boxShadow: '0 2px 8px rgba(239, 68, 68, 0.6), 0 0 0 2px rgba(255, 255, 255, 0.9)',
+          zIndex: 25,
+          animation: 'badgePopIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
+          pointerEvents: 'none',
+        }}
+        title="Execution error"
+      >
+        <FiAlertTriangle style={{ fontSize: '11px' }} />
+      </div>
+    );
+  }
+
+  return null;
+};
 
 export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
   sockets,
@@ -684,6 +778,19 @@ export interface FacebookWorkflowCanvasRef {
   getDeletedBoxesCount: () => number;
 }
 
+export interface WorkflowExecutionState {
+  isRunning?: boolean;
+  activeNodeIds?: string[];
+  completedNodeIds?: string[];
+  failedNodeIds?: string[];
+  currentStepMessage?: string;
+  stepIndex?: number;
+  totalSteps?: number;
+  isComplete?: boolean;
+  hasError?: boolean;
+  errorMessage?: string;
+}
+
 export interface FacebookWorkflowCanvasProps {
   initialConfig?: FacebookWorkflowConfig;
   onSwitchToLiveImport?: () => void;
@@ -695,6 +802,9 @@ export interface FacebookWorkflowCanvasProps {
   onToggleBoxAutoFormat?: (boxId: string, checked: boolean) => void;
   autoEnhance?: boolean;
   onToggleAutoEnhance?: (checked: boolean) => void;
+  executionState?: WorkflowExecutionState;
+  onCloseCanvas?: () => void;
+  onViewLogs?: () => void;
 }
 
 export const FacebookWorkflowCanvas = forwardRef<
@@ -711,6 +821,9 @@ export const FacebookWorkflowCanvas = forwardRef<
     onToggleBoxAutoFormat: propsOnToggleBoxAutoFormat,
     autoEnhance: propsAutoEnhance,
     onToggleAutoEnhance: propsOnToggleAutoEnhance,
+    executionState,
+    onCloseCanvas,
+    onViewLogs,
   },
   ref
 ) {
@@ -723,6 +836,14 @@ export const FacebookWorkflowCanvas = forwardRef<
   const [config, setConfig] = useState<FacebookWorkflowConfig>(() =>
     sanitizeAndResolveCollisions(initialConfig || loadSavedFacebookWorkflowConfig())
   );
+
+  const getNodeExecutionStatus = (nodeId: string): 'idle' | 'running' | 'success' | 'error' => {
+    if (!executionState) return 'idle';
+    if (executionState.failedNodeIds?.includes(nodeId)) return 'error';
+    if (executionState.activeNodeIds?.includes(nodeId)) return 'running';
+    if (executionState.completedNodeIds?.includes(nodeId)) return 'success';
+    return 'idle';
+  };
 
   // Auto format state per box (synced with localStorage & parent)
   const [internalAutoFormat, setInternalAutoFormat] = useState<Record<string, boolean>>(() => {
@@ -1911,6 +2032,219 @@ export const FacebookWorkflowCanvas = forwardRef<
           boxShadow: isDark ? 'inset 0 0 40px rgba(0, 0, 0, 0.8)' : 'inset 0 0 20px rgba(0, 0, 0, 0.03)',
         }}
       >
+        {/* Floating n8n Execution Status HUD */}
+        {executionState && (executionState.isRunning || executionState.isComplete || executionState.hasError) && (
+          <div
+            className="canvas-control"
+            style={{
+              position: 'absolute',
+              top: '16px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              zIndex: 35,
+              minWidth: '420px',
+              maxWidth: '740px',
+              padding: '0.625rem 1.125rem',
+              borderRadius: '14px',
+              backgroundColor: isDark ? 'rgba(15, 23, 42, 0.94)' : 'rgba(255, 255, 255, 0.96)',
+              backdropFilter: 'blur(16px)',
+              WebkitBackdropFilter: 'blur(16px)',
+              border: `1.5px solid ${
+                executionState.hasError
+                  ? 'rgba(239, 68, 68, 0.5)'
+                  : executionState.isComplete
+                  ? 'rgba(16, 185, 129, 0.5)'
+                  : 'rgba(56, 189, 248, 0.5)'
+              }`,
+              boxShadow: isDark
+                ? '0 16px 36px rgba(0, 0, 0, 0.6), 0 0 24px rgba(56, 189, 248, 0.2)'
+                : '0 12px 32px rgba(0, 0, 0, 0.12), 0 0 20px rgba(56, 189, 248, 0.15)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '1rem',
+              pointerEvents: 'auto',
+              animation: 'fadeIn 0.25s ease-out',
+            }}
+          >
+            {/* Left status icon */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0 }}>
+              {executionState.hasError ? (
+                <div
+                  style={{
+                    width: '34px',
+                    height: '34px',
+                    borderRadius: '50%',
+                    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                    color: '#EF4444',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  <FiAlertTriangle style={{ fontSize: '18px' }} />
+                </div>
+              ) : executionState.isComplete ? (
+                <div
+                  style={{
+                    width: '34px',
+                    height: '34px',
+                    borderRadius: '50%',
+                    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                    color: '#10B981',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                    boxShadow: '0 0 12px rgba(16, 185, 129, 0.4)',
+                  }}
+                >
+                  <FiCheckCircle style={{ fontSize: '20px' }} />
+                </div>
+              ) : (
+                <div
+                  style={{
+                    width: '34px',
+                    height: '34px',
+                    borderRadius: '50%',
+                    backgroundColor: 'rgba(56, 189, 248, 0.15)',
+                    color: '#38BDF8',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                    boxShadow: '0 0 12px rgba(56, 189, 248, 0.35)',
+                  }}
+                >
+                  <FiRefreshCw style={{ fontSize: '17px', animation: 'spin 1.2s linear infinite' }} />
+                </div>
+              )}
+
+              {/* Middle text */}
+              <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <span
+                    style={{
+                      fontSize: '0.875rem',
+                      fontWeight: 700,
+                      color: executionState.hasError
+                        ? '#EF4444'
+                        : executionState.isComplete
+                        ? '#10B981'
+                        : 'var(--text-primary)',
+                    }}
+                  >
+                    {executionState.hasError
+                      ? 'Workflow Interrupted'
+                      : executionState.isComplete
+                      ? 'Workflow Succeeded!'
+                      : 'Executing Workflow'}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: '0.625rem',
+                      fontWeight: 700,
+                      letterSpacing: '0.04em',
+                      padding: '1px 6px',
+                      borderRadius: '4px',
+                      backgroundColor: executionState.hasError
+                        ? '#EF4444'
+                        : executionState.isComplete
+                        ? '#10B981'
+                        : '#0284C7',
+                      color: '#FFFFFF',
+                      textTransform: 'uppercase',
+                    }}
+                  >
+                    {executionState.hasError ? 'Failed' : executionState.isComplete ? 'Complete' : 'n8n Live'}
+                  </span>
+                </div>
+                <span
+                  style={{
+                    fontSize: '0.75rem',
+                    color: 'var(--text-secondary)',
+                    marginTop: '1px',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    maxWidth: '400px',
+                  }}
+                >
+                  {executionState.currentStepMessage ||
+                    (executionState.isComplete ? 'All workflow steps finished successfully.' : 'Processing...')}
+                </span>
+              </div>
+            </div>
+
+            {/* Right actions */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+              {onViewLogs && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onViewLogs}
+                  style={{ height: '30px', fontSize: '0.75rem', padding: '0 0.625rem' }}
+                  title="View terminal activity logs"
+                >
+                  Logs
+                </Button>
+              )}
+              {executionState.isComplete ? (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={onCloseCanvas}
+                  leftIcon={<FiCheck />}
+                  style={{
+                    height: '32px',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    backgroundColor: '#10B981',
+                    borderColor: '#10B981',
+                    boxShadow: '0 2px 10px rgba(16, 185, 129, 0.4)',
+                  }}
+                >
+                  View Results
+                </Button>
+              ) : executionState.hasError ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onCloseCanvas}
+                  style={{ height: '30px', fontSize: '0.75rem' }}
+                >
+                  Close
+                </Button>
+              ) : (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '4px 10px',
+                    borderRadius: '12px',
+                    backgroundColor: 'rgba(56, 189, 248, 0.1)',
+                    border: '1px solid rgba(56, 189, 248, 0.25)',
+                  }}
+                >
+                  <span
+                    style={{
+                      width: '8px',
+                      height: '8px',
+                      borderRadius: '50%',
+                      backgroundColor: '#38BDF8',
+                      boxShadow: '0 0 8px #38BDF8',
+                      animation: 'pulse 1.5s infinite',
+                    }}
+                  />
+                  <span style={{ fontSize: '0.6875rem', color: '#38BDF8', fontWeight: 600 }}>Running</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Floating Automations Control Bar (Auto Format & Auto Enhance) */}
         <div
           className="canvas-control"
@@ -2119,18 +2453,30 @@ export const FacebookWorkflowCanvas = forwardRef<
             {/* 1. Trigger -> Get Content Line */}
             {(() => {
               const path = createBezierPath(triggerOut, contentIn);
-              const isFlowing = config.getContent.enabled;
+              const isExec = Boolean(executionState?.isRunning || executionState?.isComplete);
+              const isWireActive = isExec
+                ? Boolean(executionState?.completedNodeIds?.includes('trigger') || executionState?.activeNodeIds?.includes('get-content'))
+                : config.getContent.enabled;
+              const isCompleted = isExec && Boolean(executionState?.completedNodeIds?.includes('get-content'));
+              const strokeColor = isCompleted
+                ? '#10B981'
+                : isWireActive
+                ? '#388BFD'
+                : (isDark ? '#30363D' : '#CBD5E1');
+              const isFastFlow = isExec && Boolean(executionState?.activeNodeIds?.includes('get-content'));
               return (
                 <path
                   key="wire-trigger-content"
                   d={path}
                   fill="none"
-                  stroke={isFlowing ? '#388BFD' : (isDark ? '#30363D' : '#CBD5E1')}
-                  strokeWidth="2"
-                  strokeDasharray={isFlowing ? '8, 8' : 'none'}
+                  stroke={strokeColor}
+                  strokeWidth={isWireActive ? '2.5' : '2'}
+                  strokeDasharray={isCompleted ? 'none' : isWireActive ? '6, 6' : 'none'}
                   strokeLinecap="round"
                   style={{
-                    animation: isFlowing ? 'n8nFlow 1.2s linear infinite' : 'none',
+                    animation: isFastFlow ? 'n8nFlow 0.8s linear infinite' : isWireActive ? 'n8nFlow 1.2s linear infinite' : 'none',
+                    filter: isWireActive ? 'drop-shadow(0 0 6px rgba(56, 189, 248, 0.7))' : 'none',
+                    transition: 'stroke 0.25s ease',
                   }}
                 />
               );
@@ -2139,18 +2485,30 @@ export const FacebookWorkflowCanvas = forwardRef<
             {/* 2. Trigger -> Get Images Line */}
             {(() => {
               const path = createBezierPath(triggerOut, imagesIn);
-              const isFlowing = config.getImages.enabled;
+              const isExec = Boolean(executionState?.isRunning || executionState?.isComplete);
+              const isWireActive = isExec
+                ? Boolean(executionState?.completedNodeIds?.includes('trigger') || executionState?.activeNodeIds?.includes('get-images'))
+                : config.getImages.enabled;
+              const isCompleted = isExec && Boolean(executionState?.completedNodeIds?.includes('get-images'));
+              const strokeColor = isCompleted
+                ? '#10B981'
+                : isWireActive
+                ? '#10B981'
+                : (isDark ? '#30363D' : '#CBD5E1');
+              const isFastFlow = isExec && Boolean(executionState?.activeNodeIds?.includes('get-images'));
               return (
                 <path
                   key="wire-trigger-images"
                   d={path}
                   fill="none"
-                  stroke={isFlowing ? '#2EA043' : (isDark ? '#30363D' : '#CBD5E1')}
-                  strokeWidth="2"
-                  strokeDasharray={isFlowing ? '8, 8' : 'none'}
+                  stroke={strokeColor}
+                  strokeWidth={isWireActive ? '2.5' : '2'}
+                  strokeDasharray={isCompleted ? 'none' : isWireActive ? '6, 6' : 'none'}
                   strokeLinecap="round"
                   style={{
-                    animation: isFlowing ? 'n8nFlow 1.2s linear infinite' : 'none',
+                    animation: isFastFlow ? 'n8nFlow 0.8s linear infinite' : isWireActive ? 'n8nFlow 1.2s linear infinite' : 'none',
+                    filter: isWireActive ? 'drop-shadow(0 0 6px rgba(16, 185, 129, 0.7))' : 'none',
+                    transition: 'stroke 0.25s ease',
                   }}
                 />
               );
@@ -2161,18 +2519,30 @@ export const FacebookWorkflowCanvas = forwardRef<
               const hasImageAIBranch = (config.connections || []).some((c) => c.fromNodeId === 'get-images');
               if (hasImageAIBranch) return null;
               const path = createBaseChannelPath(imagesOut, destIn);
-              const isFlowing = config.getImages.enabled;
+              const isExec = Boolean(executionState?.isRunning || executionState?.isComplete);
+              const isWireActive = isExec
+                ? Boolean(executionState?.completedNodeIds?.includes('get-images') || executionState?.activeNodeIds?.includes('destination'))
+                : config.getImages.enabled;
+              const isCompleted = isExec && Boolean(executionState?.completedNodeIds?.includes('destination'));
+              const strokeColor = isCompleted
+                ? '#10B981'
+                : isWireActive
+                ? '#10B981'
+                : (isDark ? '#30363D' : '#CBD5E1');
+              const isFastFlow = isExec && Boolean(executionState?.activeNodeIds?.includes('destination'));
               return (
                 <path
                   key="wire-images-dest"
                   d={path}
                   fill="none"
-                  stroke={isFlowing ? '#2EA043' : (isDark ? '#30363D' : '#CBD5E1')}
-                  strokeWidth="2"
-                  strokeDasharray={isFlowing ? '8, 8' : 'none'}
+                  stroke={strokeColor}
+                  strokeWidth={isWireActive ? '2.5' : '2'}
+                  strokeDasharray={isCompleted ? 'none' : isWireActive ? '6, 6' : 'none'}
                   strokeLinecap="round"
                   style={{
-                    animation: isFlowing ? 'n8nFlow 1.2s linear infinite' : 'none',
+                    animation: isFastFlow ? 'n8nFlow 0.8s linear infinite' : isWireActive ? 'n8nFlow 1.2s linear infinite' : 'none',
+                    filter: isWireActive ? 'drop-shadow(0 0 6px rgba(16, 185, 129, 0.7))' : 'none',
+                    transition: 'stroke 0.25s ease',
                   }}
                 />
               );
@@ -2198,7 +2568,18 @@ export const FacebookWorkflowCanvas = forwardRef<
 
               const fromEnabled = isNodeEffectivelyEnabled(conn.fromNodeId);
               const toEnabled = isNodeEffectivelyEnabled(conn.toNodeId);
-              const isFlowing = fromEnabled && toEnabled;
+
+              const isExec = Boolean(executionState?.isRunning || executionState?.isComplete);
+              const fromCompleted = Boolean(executionState?.completedNodeIds?.includes(conn.fromNodeId));
+              const toActive = Boolean(executionState?.activeNodeIds?.includes(conn.toNodeId));
+              const toCompleted = Boolean(executionState?.completedNodeIds?.includes(conn.toNodeId));
+
+              const isExecActive = isExec && (fromCompleted || toActive);
+              const isExecDone = isExec && toCompleted;
+
+              const isFlowing = isExec ? isExecActive : (fromEnabled && toEnabled);
+              const isFastFlow = isExec && toActive;
+
               const isWireHovered = hoveredWireId === conn.id;
               const isXHovered = hoveredXId === conn.id;
 
@@ -2207,6 +2588,8 @@ export const FacebookWorkflowCanvas = forwardRef<
               );
               const wireStrokeColor = isXHovered
                 ? '#F85149'
+                : isExecDone
+                ? '#10B981'
                 : isFlowing
                 ? (isFromImages ? '#10B981' : '#A371F7')
                 : (isDark ? '#30363D' : '#CBD5E1');
@@ -2238,13 +2621,17 @@ export const FacebookWorkflowCanvas = forwardRef<
                     d={path}
                     fill="none"
                     stroke={wireStrokeColor}
-                    strokeWidth={isXHovered ? '2.5' : isWireHovered ? '2.25' : '2'}
-                    strokeDasharray={isFlowing ? '8, 8' : 'none'}
+                    strokeWidth={isXHovered ? '2.5' : isFlowing ? '2.5' : isWireHovered ? '2.25' : '2'}
+                    strokeDasharray={isExecDone ? 'none' : isFlowing ? '6, 6' : 'none'}
                     strokeLinecap="round"
                     style={{
-                      animation: isFlowing ? 'n8nFlow 1.2s linear infinite' : 'none',
+                      animation: isFastFlow ? 'n8nFlow 0.8s linear infinite' : isFlowing ? 'n8nFlow 1.2s linear infinite' : 'none',
                       transition: 'stroke 0.18s ease, stroke-width 0.18s ease',
-                      filter: isXHovered ? 'drop-shadow(0 0 6px rgba(248, 81, 73, 0.65))' : 'none',
+                      filter: isXHovered
+                        ? 'drop-shadow(0 0 6px rgba(248, 81, 73, 0.65))'
+                        : isFlowing
+                        ? `drop-shadow(0 0 6px ${isFromImages ? 'rgba(16, 185, 129, 0.7)' : 'rgba(163, 113, 247, 0.7)'})`
+                        : 'none',
                     }}
                   />
                   {/* Disconnect indicator on hover - only active when connection is enabled ("if that disabled these action are not work too") */}
@@ -2353,60 +2740,81 @@ export const FacebookWorkflowCanvas = forwardRef<
           {/* ======================================================== */}
           {/* NODE 1: FACEBOOK URL IMPORTER (TRIGGER CIRCLE)           */}
           {/* ======================================================== */}
-          <div
-            className={`canvas-node ${hoveredNodeId === 'trigger' ? 'is-hovered' : ''}`}
-            onMouseEnter={() => handleNodeMouseEnter('trigger')}
-            onMouseLeave={() => handleNodeMouseLeave('trigger')}
-            onMouseDown={(e) => startDragNode('trigger', e)}
-            onClick={(e) => handleNodeClick({ type: 'trigger' }, e)}
-            style={{
-              position: 'absolute',
-              left: `${config.trigger.x}px`,
-              top: `${config.trigger.y}px`,
-              width: `${CIRCLE_SIZE}px`,
-              height: `${CIRCLE_SIZE}px`,
-              zIndex: 15,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <MergedNodeShape
-              sockets="right"
-              strokeColor="#388BFD"
-              socketDotColor="#388BFD"
-              isConnectedOutput={true}
-              highlightOutput={false}
-              hasReceiver={false}
-              onSocketMouseDown={(type, e) => handleSocketMouseDown('trigger', type, e)}
-              onSocketMouseUp={(type, e) => handleSocketMouseUp('trigger', type, e)}
-            />
-            <FaFacebook style={{ fontSize: '30px', color: '#1877F2', position: 'relative', zIndex: 2 }} />
+          {(() => {
+            const triggerStatus = getNodeExecutionStatus('trigger');
+            return (
+              <div
+                className={`canvas-node ${hoveredNodeId === 'trigger' ? 'is-hovered' : ''} ${triggerStatus === 'running' ? 'is-running' : ''} ${triggerStatus === 'success' ? 'is-completed' : ''}`}
+                onMouseEnter={() => handleNodeMouseEnter('trigger')}
+                onMouseLeave={() => handleNodeMouseLeave('trigger')}
+                onMouseDown={(e) => startDragNode('trigger', e)}
+                onClick={(e) => handleNodeClick({ type: 'trigger' }, e)}
+                style={{
+                  position: 'absolute',
+                  left: `${config.trigger.x}px`,
+                  top: `${config.trigger.y}px`,
+                  width: `${CIRCLE_SIZE}px`,
+                  height: `${CIRCLE_SIZE}px`,
+                  zIndex: 15,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <MergedNodeShape
+                  sockets="right"
+                  strokeColor={triggerStatus === 'running' ? '#0284C7' : triggerStatus === 'success' ? '#10B981' : '#388BFD'}
+                  socketDotColor={triggerStatus === 'running' ? '#0284C7' : triggerStatus === 'success' ? '#10B981' : '#388BFD'}
+                  isConnectedOutput={true}
+                  highlightOutput={false}
+                  hasReceiver={false}
+                  onSocketMouseDown={(type, e) => handleSocketMouseDown('trigger', type, e)}
+                  onSocketMouseUp={(type, e) => handleSocketMouseUp('trigger', type, e)}
+                />
+                <FaFacebook style={{ fontSize: '30px', color: '#1877F2', position: 'relative', zIndex: 2 }} />
+                <NodeExecutionBadge status={triggerStatus} />
 
-            {/* Label below circle */}
-            <div
-              style={{
-                position: 'absolute',
-                top: `${CIRCLE_SIZE + 8}px`,
-                left: '50%',
-                transform: 'translateX(-50%)',
-                whiteSpace: 'nowrap',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                gap: '2px',
-                pointerEvents: 'none',
-              }}
-            >
-              <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                Facebook Post
-              </span>
-              <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', fontWeight: 400 }}>
-                Trigger · Auto
-              </span>
-            </div>
-          </div>
+                {/* Label below circle */}
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: `${CIRCLE_SIZE + 8}px`,
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    whiteSpace: 'nowrap',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '2px',
+                    pointerEvents: 'none',
+                  }}
+                >
+                  <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                    Facebook Post
+                  </span>
+                  <span
+                    style={{
+                      fontSize: '0.6875rem',
+                      color:
+                        triggerStatus === 'running'
+                          ? '#0284C7'
+                          : triggerStatus === 'success'
+                          ? '#10B981'
+                          : 'var(--text-muted)',
+                      fontWeight: triggerStatus !== 'idle' ? 600 : 400,
+                    }}
+                  >
+                    {triggerStatus === 'running'
+                      ? '⚡ Fetching Post...'
+                      : triggerStatus === 'success'
+                      ? '✓ Post Located'
+                      : 'Trigger · Auto'}
+                  </span>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* ======================================================== */}
           {/* NODE 2A: GET CONTENT BRANCH (CIRCLE)                     */}
@@ -2415,10 +2823,11 @@ export const FacebookWorkflowCanvas = forwardRef<
             const isContentReceptive = Boolean(
               activeConnectingTargetId && isValidConnection('get-content', activeConnectingTargetId)
             );
+            const contentStatus = getNodeExecutionStatus('get-content');
 
             return (
               <div
-                className={`canvas-node ${hoveredNodeId === 'get-content' ? 'is-hovered' : ''} ${isContentReceptive ? 'is-receptive' : ''}`}
+                className={`canvas-node ${hoveredNodeId === 'get-content' ? 'is-hovered' : ''} ${isContentReceptive ? 'is-receptive' : ''} ${contentStatus === 'running' ? 'is-running' : ''} ${contentStatus === 'success' ? 'is-completed' : ''}`}
                 onMouseEnter={() => handleNodeMouseEnter('get-content')}
                 onMouseLeave={() => handleNodeMouseLeave('get-content')}
                 onMouseDown={(e) => startDragNode('get-content', e)}
@@ -2434,7 +2843,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   top: `${config.getContent.y}px`,
                   width: `${CIRCLE_SIZE}px`,
                   height: `${CIRCLE_SIZE}px`,
-                  ['--ring' as any]: isContentReceptive ? RECEPTIVE_COLOR : '#388BFD',
+                  ['--ring' as any]: isContentReceptive ? RECEPTIVE_COLOR : contentStatus === 'running' ? '#0284C7' : '#388BFD',
                   ['--receptive-color' as any]: RECEPTIVE_COLOR,
                   opacity: config.getContent.enabled ? 1 : 0.6,
                   zIndex: isContentReceptive ? 35 : hoveredNodeId === 'get-content' ? 25 : 15,
@@ -2448,8 +2857,28 @@ export const FacebookWorkflowCanvas = forwardRef<
               >
                 <MergedNodeShape
                   sockets="both"
-                  strokeColor={isContentReceptive ? RECEPTIVE_COLOR : config.getContent.enabled ? '#388BFD' : '#30363D'}
-                  socketDotColor={isContentReceptive ? RECEPTIVE_COLOR : config.getContent.enabled ? '#388BFD' : '#484F58'}
+                  strokeColor={
+                    contentStatus === 'running'
+                      ? '#0284C7'
+                      : contentStatus === 'success'
+                      ? '#10B981'
+                      : isContentReceptive
+                      ? RECEPTIVE_COLOR
+                      : config.getContent.enabled
+                      ? '#388BFD'
+                      : '#30363D'
+                  }
+                  socketDotColor={
+                    contentStatus === 'running'
+                      ? '#0284C7'
+                      : contentStatus === 'success'
+                      ? '#10B981'
+                      : isContentReceptive
+                      ? RECEPTIVE_COLOR
+                      : config.getContent.enabled
+                      ? '#388BFD'
+                      : '#484F58'
+                  }
                   isConnectedInput={true}
                   isConnectedOutput={isContentOutputConnected}
                   highlightInput={false}
@@ -2472,11 +2901,12 @@ export const FacebookWorkflowCanvas = forwardRef<
                 <FiFileText
                   style={{
                     fontSize: '28px',
-                    color: config.getContent.enabled ? '#58A6FF' : '#8B949E',
+                    color: contentStatus === 'success' ? '#10B981' : config.getContent.enabled ? '#58A6FF' : '#8B949E',
                     position: 'relative',
                     zIndex: 2,
                   }}
                 />
+                <NodeExecutionBadge status={contentStatus} />
 
                 {/* Hover: animated plus to add + connect a node with seamless hover bridge */}
                 {config.getContent.enabled && (
@@ -2521,8 +2951,29 @@ export const FacebookWorkflowCanvas = forwardRef<
                   <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                     Get Content
                   </span>
-                  <span style={{ fontSize: '0.6875rem', color: isContentReceptive ? RECEPTIVE_COLOR : 'var(--text-muted)', fontWeight: isContentReceptive ? 600 : 400 }}>
-                    {isContentReceptive ? 'Connect Back Here' : config.getContent.enabled ? 'Full Content' : 'Disabled'}
+                  <span
+                    style={{
+                      fontSize: '0.6875rem',
+                      color:
+                        contentStatus === 'running'
+                          ? '#0284C7'
+                          : contentStatus === 'success'
+                          ? '#10B981'
+                          : isContentReceptive
+                          ? RECEPTIVE_COLOR
+                          : 'var(--text-muted)',
+                      fontWeight: contentStatus !== 'idle' || isContentReceptive ? 600 : 400,
+                    }}
+                  >
+                    {contentStatus === 'running'
+                      ? '⚡ Extracting Text...'
+                      : contentStatus === 'success'
+                      ? (rawContent ? `✓ ${rawContent.length} chars` : '✓ Caption Extracted')
+                      : isContentReceptive
+                      ? 'Connect Back Here'
+                      : config.getContent.enabled
+                      ? 'Full Content'
+                      : 'Disabled'}
                   </span>
                   {config.getContent.enabled && (
                     <div
@@ -2576,10 +3027,11 @@ export const FacebookWorkflowCanvas = forwardRef<
             const isImagesReceptive = Boolean(
               activeConnectingTargetId && isValidConnection('get-images', activeConnectingTargetId)
             );
+            const imagesStatus = getNodeExecutionStatus('get-images');
 
             return (
               <div
-                className={`canvas-node ${hoveredNodeId === 'get-images' ? 'is-hovered' : ''} ${isImagesReceptive ? 'is-receptive' : ''}`}
+                className={`canvas-node ${hoveredNodeId === 'get-images' ? 'is-hovered' : ''} ${isImagesReceptive ? 'is-receptive' : ''} ${imagesStatus === 'running' ? 'is-running' : ''} ${imagesStatus === 'success' ? 'is-completed' : ''}`}
                 onMouseEnter={() => handleNodeMouseEnter('get-images')}
                 onMouseLeave={() => handleNodeMouseLeave('get-images')}
                 onMouseDown={(e) => startDragNode('get-images', e)}
@@ -2595,7 +3047,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   top: `${config.getImages.y}px`,
                   width: `${CIRCLE_SIZE}px`,
                   height: `${CIRCLE_SIZE}px`,
-                  ['--ring' as any]: isImagesReceptive ? RECEPTIVE_COLOR : '#2EA043',
+                  ['--ring' as any]: isImagesReceptive ? RECEPTIVE_COLOR : imagesStatus === 'running' ? '#10B981' : '#2EA043',
                   ['--receptive-color' as any]: RECEPTIVE_COLOR,
                   opacity: config.getImages.enabled ? 1 : 0.6,
                   zIndex: isImagesReceptive ? 35 : hoveredNodeId === 'get-images' ? 25 : 15,
@@ -2609,8 +3061,28 @@ export const FacebookWorkflowCanvas = forwardRef<
               >
                 <MergedNodeShape
                   sockets="both"
-                  strokeColor={isImagesReceptive ? RECEPTIVE_COLOR : config.getImages.enabled ? '#2EA043' : '#30363D'}
-                  socketDotColor={isImagesReceptive ? RECEPTIVE_COLOR : config.getImages.enabled ? '#2EA043' : '#484F58'}
+                  strokeColor={
+                    imagesStatus === 'running'
+                      ? '#10B981'
+                      : imagesStatus === 'success'
+                      ? '#10B981'
+                      : isImagesReceptive
+                      ? RECEPTIVE_COLOR
+                      : config.getImages.enabled
+                      ? '#2EA043'
+                      : '#30363D'
+                  }
+                  socketDotColor={
+                    imagesStatus === 'running'
+                      ? '#10B981'
+                      : imagesStatus === 'success'
+                      ? '#10B981'
+                      : isImagesReceptive
+                      ? RECEPTIVE_COLOR
+                      : config.getImages.enabled
+                      ? '#2EA043'
+                      : '#484F58'
+                  }
                   isConnectedInput={true}
                   isConnectedOutput={isImagesOutputConnected}
                   highlightInput={false}
@@ -2633,11 +3105,12 @@ export const FacebookWorkflowCanvas = forwardRef<
                 <FiImage
                   style={{
                     fontSize: '28px',
-                    color: config.getImages.enabled ? '#3FB950' : '#8B949E',
+                    color: imagesStatus === 'success' ? '#10B981' : config.getImages.enabled ? '#3FB950' : '#8B949E',
                     position: 'relative',
                     zIndex: 2,
                   }}
                 />
+                <NodeExecutionBadge status={imagesStatus} />
 
             {/* Hover: animated plus to add + connect a node with seamless hover bridge */}
             {config.getImages.enabled && (
@@ -2682,8 +3155,29 @@ export const FacebookWorkflowCanvas = forwardRef<
               <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                 Get Images
               </span>
-              <span style={{ fontSize: '0.6875rem', color: isImagesReceptive ? RECEPTIVE_COLOR : 'var(--text-muted)', fontWeight: isImagesReceptive ? 600 : 400 }}>
-                {isImagesReceptive ? 'Connect Back Here' : config.getImages.enabled ? 'All Media' : 'Disabled'}
+              <span
+                style={{
+                  fontSize: '0.6875rem',
+                  color:
+                    imagesStatus === 'running'
+                      ? '#10B981'
+                      : imagesStatus === 'success'
+                      ? '#10B981'
+                      : isImagesReceptive
+                      ? RECEPTIVE_COLOR
+                      : 'var(--text-muted)',
+                  fontWeight: imagesStatus !== 'idle' || isImagesReceptive ? 600 : 400,
+                }}
+              >
+                {imagesStatus === 'running'
+                  ? '⚡ Downloading Photos...'
+                  : imagesStatus === 'success'
+                  ? '✓ Photos Ready'
+                  : isImagesReceptive
+                  ? 'Connect Back Here'
+                  : config.getImages.enabled
+                  ? 'All Media'
+                  : 'Disabled'}
               </span>
               {config.getImages.enabled && (
                 <div
@@ -2745,8 +3239,20 @@ export const FacebookWorkflowCanvas = forwardRef<
               (activeConnectingNodeId && isValidConnection(activeConnectingNodeId, box.id)) ||
               (activeConnectingTargetId && isValidConnection(box.id, activeConnectingTargetId))
             );
-            const strokeColor = isSelected ? '#A371F7' : isBoxReceptive ? RECEPTIVE_COLOR : isEffectiveEnabled ? themeColor : '#30363D';
-            const strokeDasharray = !isSelected && !isEffectiveEnabled ? '4, 4' : 'none';
+            const boxStatus = getNodeExecutionStatus(box.id);
+            const strokeColor =
+              boxStatus === 'running'
+                ? '#A855F7'
+                : boxStatus === 'success'
+                ? '#10B981'
+                : isSelected
+                ? '#A371F7'
+                : isBoxReceptive
+                ? RECEPTIVE_COLOR
+                : isEffectiveEnabled
+                ? themeColor
+                : '#30363D';
+            const strokeDasharray = !isSelected && !isEffectiveEnabled && boxStatus === 'idle' ? '4, 4' : 'none';
             const isBoxInputConnected = (config.connections || []).some((c) => c.toNodeId === box.id);
             const isBoxOutputConnected = (config.connections || []).some((c) => c.fromNodeId === box.id);
             const boxCanConnectToDest = isValidConnection(box.id, 'destination');
@@ -2757,7 +3263,7 @@ export const FacebookWorkflowCanvas = forwardRef<
             return (
               <div
                 key={box.id}
-                className={`canvas-node ${hoveredNodeId === box.id ? 'is-hovered' : ''} ${isBoxReceptive ? 'is-receptive' : ''}`}
+                className={`canvas-node ${hoveredNodeId === box.id ? 'is-hovered' : ''} ${isBoxReceptive ? 'is-receptive' : ''} ${boxStatus === 'running' ? 'is-running' : ''} ${boxStatus === 'success' ? 'is-completed' : ''}`}
                 onMouseEnter={() => handleNodeMouseEnter(box.id)}
                 onMouseLeave={() => handleNodeMouseLeave(box.id)}
                 onMouseDown={(e) => startDragNode(box.id, e)}
@@ -2775,7 +3281,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   top: `${box.y}px`,
                   width: `${CIRCLE_SIZE}px`,
                   height: `${CIRCLE_SIZE}px`,
-                  ['--ring' as any]: isBoxReceptive ? RECEPTIVE_COLOR : isEffectiveEnabled ? themeColor : '#30363D',
+                  ['--ring' as any]: isBoxReceptive ? RECEPTIVE_COLOR : boxStatus === 'running' ? '#A855F7' : isEffectiveEnabled ? themeColor : '#30363D',
                   ['--receptive-color' as any]: RECEPTIVE_COLOR,
                   opacity: isEffectiveEnabled ? 1 : 0.6,
                   zIndex: isSelected ? 30 : isBoxReceptive ? 35 : hoveredNodeId === box.id ? 25 : 15,
@@ -2827,15 +3333,16 @@ export const FacebookWorkflowCanvas = forwardRef<
                   }}
                 >
                   {isRunware ? (
-                    <RunwareIcon size={26} color={isEffectiveEnabled ? '#10B981' : '#8B949E'} />
+                    <RunwareIcon size={26} color={boxStatus === 'success' ? '#10B981' : isEffectiveEnabled ? '#10B981' : '#8B949E'} />
                   ) : isLaoZhang ? (
                     <LaoZhangIcon size={28} />
                   ) : isGoogle ? (
-                    <SiGooglegemini style={{ fontSize: '28px', color: isEffectiveEnabled ? '#58A6FF' : '#8B949E', transition: 'color 0.2s ease' }} />
+                    <SiGooglegemini style={{ fontSize: '28px', color: boxStatus === 'success' ? '#10B981' : isEffectiveEnabled ? '#58A6FF' : '#8B949E', transition: 'color 0.2s ease' }} />
                   ) : (
-                    <OpenAIIcon size={28} color={isEffectiveEnabled ? '#3FB950' : '#8B949E'} />
+                    <OpenAIIcon size={28} color={boxStatus === 'success' ? '#10B981' : isEffectiveEnabled ? '#3FB950' : '#8B949E'} />
                   )}
                 </div>
+                <NodeExecutionBadge status={boxStatus} />
 
                 {/* Hover: animated duplicate + delete actions with arrow centered between both buttons */}
                 {isEffectiveEnabled && (
@@ -2938,8 +3445,26 @@ export const FacebookWorkflowCanvas = forwardRef<
                       {box.title}
                     </span>
                   )}
-                  <span style={{ fontSize: '0.6875rem', color: isBoxReceptive ? RECEPTIVE_COLOR : 'var(--text-muted)', fontWeight: isBoxReceptive ? 600 : 400, transition: 'color 0.2s ease' }}>
-                    {isBoxReceptive
+                  <span
+                    style={{
+                      fontSize: '0.6875rem',
+                      color:
+                        boxStatus === 'running'
+                          ? '#A855F7'
+                          : boxStatus === 'success'
+                          ? '#10B981'
+                          : isBoxReceptive
+                          ? RECEPTIVE_COLOR
+                          : 'var(--text-muted)',
+                      fontWeight: boxStatus !== 'idle' || isBoxReceptive ? 600 : 400,
+                      transition: 'color 0.2s ease',
+                    }}
+                  >
+                    {boxStatus === 'running'
+                      ? '⚡ Generating AI Copy...'
+                      : boxStatus === 'success'
+                      ? '✓ Generated'
+                      : isBoxReceptive
                       ? 'Ready to Connect'
                       : `${!isImageNode && isImageModel(box.model, box.provider) ? 'Gemini Flash' : getAIModelDisplayName(box.provider, box.model)} · ${isEffectiveEnabled ? 'Active' : 'Disabled'}`}
                   </span>
@@ -3016,10 +3541,11 @@ export const FacebookWorkflowCanvas = forwardRef<
               activeConnectingNodeId && isValidConnection(activeConnectingNodeId, 'destination')
             );
             const destHasSource = config.aiBoxes.some((b) => isValidConnection(b.id, 'destination'));
+            const destStatus = getNodeExecutionStatus('destination');
 
             return (
               <div
-                className={`canvas-node ${hoveredNodeId === 'destination' ? 'is-hovered' : ''} ${isDestReceptive ? 'is-receptive' : ''}`}
+                className={`canvas-node ${hoveredNodeId === 'destination' ? 'is-hovered' : ''} ${isDestReceptive ? 'is-receptive' : ''} ${destStatus === 'running' ? 'is-running' : ''} ${destStatus === 'success' ? 'is-completed' : ''}`}
                 onMouseEnter={() => handleNodeMouseEnter('destination')}
                 onMouseLeave={() => handleNodeMouseLeave('destination')}
                 onMouseDown={(e) => startDragNode('destination', e)}
@@ -3035,7 +3561,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   top: `${config.destination.y}px`,
                   width: `${CIRCLE_SIZE}px`,
                   height: `${CIRCLE_SIZE}px`,
-                  ['--ring' as any]: isDestReceptive ? RECEPTIVE_COLOR : '#2EA043',
+                  ['--ring' as any]: destStatus === 'running' ? '#10B981' : destStatus === 'success' ? '#10B981' : isDestReceptive ? RECEPTIVE_COLOR : '#2EA043',
                   ['--receptive-color' as any]: RECEPTIVE_COLOR,
                   zIndex: isDestReceptive ? 35 : 15,
                   cursor: isDestReceptive ? 'crosshair' : 'pointer',
@@ -3048,8 +3574,8 @@ export const FacebookWorkflowCanvas = forwardRef<
               >
                 <MergedNodeShape
                   sockets="left"
-                  strokeColor={isDestReceptive ? RECEPTIVE_COLOR : '#2EA043'}
-                  socketDotColor={isDestReceptive ? RECEPTIVE_COLOR : '#2EA043'}
+                  strokeColor={destStatus === 'running' || destStatus === 'success' ? '#10B981' : isDestReceptive ? RECEPTIVE_COLOR : '#2EA043'}
+                  socketDotColor={destStatus === 'running' || destStatus === 'success' ? '#10B981' : isDestReceptive ? RECEPTIVE_COLOR : '#2EA043'}
                   isConnectedInput={(config.connections || []).some((c) => c.toNodeId === 'destination')}
                   highlightInput={isDestReceptive}
                   hasReceiver={false}
@@ -3070,12 +3596,13 @@ export const FacebookWorkflowCanvas = forwardRef<
                 <FiCheckCircle
                   style={{
                     fontSize: '30px',
-                    color: '#2EA043',
+                    color: destStatus === 'running' || destStatus === 'success' ? '#10B981' : '#2EA043',
                     position: 'relative',
                     zIndex: 2,
                     transition: 'color 0.2s ease',
                   }}
                 />
+                <NodeExecutionBadge status={destStatus} />
 
                 {/* Label below circle */}
                 <div
@@ -3105,12 +3632,25 @@ export const FacebookWorkflowCanvas = forwardRef<
                   <span
                     style={{
                       fontSize: '0.6875rem',
-                      color: isDestReceptive ? RECEPTIVE_COLOR : 'var(--text-muted)',
-                      fontWeight: isDestReceptive ? 600 : 400,
+                      color:
+                        destStatus === 'running'
+                          ? '#10B981'
+                          : destStatus === 'success'
+                          ? '#10B981'
+                          : isDestReceptive
+                          ? RECEPTIVE_COLOR
+                          : 'var(--text-muted)',
+                      fontWeight: destStatus !== 'idle' || isDestReceptive ? 600 : 400,
                       transition: 'color 0.2s ease',
                     }}
                   >
-                    {isDestReceptive ? 'Ready to Connect' : 'Destination · Ready'}
+                    {destStatus === 'running'
+                      ? '⚡ Storing in Inbox...'
+                      : destStatus === 'success'
+                      ? '✓ Ready in Inbox'
+                      : isDestReceptive
+                      ? 'Ready to Connect'
+                      : 'Destination · Ready'}
                   </span>
                 </div>
               </div>
