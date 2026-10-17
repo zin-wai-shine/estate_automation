@@ -4552,6 +4552,66 @@ style={{
         }
         headerExtra={
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            {workflowExecutionState?.isRunning && (
+              <div
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '3px 10px',
+                  borderRadius: '12px',
+                  backgroundColor: 'rgba(56, 189, 248, 0.1)',
+                  border: '1px solid rgba(56, 189, 248, 0.3)',
+                  boxShadow: '0 0 10px rgba(56, 189, 248, 0.15)',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  color: '#38BDF8',
+                }}
+              >
+                <span
+                  style={{
+                    width: '7px',
+                    height: '7px',
+                    borderRadius: '50%',
+                    backgroundColor: '#38BDF8',
+                    boxShadow: '0 0 8px #38BDF8',
+                    animation: 'pulse 1.2s infinite',
+                  }}
+                />
+                <span style={{ maxWidth: '240px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {workflowExecutionState.currentStepMessage || 'Running...'}
+                </span>
+              </div>
+            )}
+            {workflowExecutionState?.isComplete && (
+              <div
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  padding: '3px 10px',
+                  borderRadius: '12px',
+                  backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                  border: '1px solid rgba(16, 185, 129, 0.3)',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  color: '#10B981',
+                }}
+              >
+                <FiCheck style={{ fontSize: '13px', strokeWidth: 3 }} />
+                <span>Complete</span>
+              </div>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setShowPipelineModal(true);
+              }}
+              style={{ height: '32px', fontSize: '0.75rem' }}
+            >
+              Logs
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -4563,16 +4623,22 @@ style={{
               leftIcon={<FiSliders />}
               style={{ height: '32px', fontSize: '0.75rem' }}
             >
-              Manage All Formats
+              Manage Formats
             </Button>
             <Button
               variant="primary"
               size="sm"
               onClick={() => setShowWorkflowCanvasModal(false)}
               leftIcon={<FiCheck />}
-              style={{ height: '32px', fontSize: '0.75rem' }}
+              style={{
+                height: '32px',
+                fontSize: '0.75rem',
+                backgroundColor: workflowExecutionState?.isComplete ? '#10B981' : undefined,
+                borderColor: workflowExecutionState?.isComplete ? '#10B981' : undefined,
+                boxShadow: workflowExecutionState?.isComplete ? '0 2px 10px rgba(16, 185, 129, 0.35)' : undefined,
+              }}
             >
-              Done
+              {workflowExecutionState?.isComplete ? 'View Results' : 'Done'}
             </Button>
           </div>
         }
