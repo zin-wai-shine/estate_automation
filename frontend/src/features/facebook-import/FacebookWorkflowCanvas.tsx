@@ -29,16 +29,19 @@ import {
   FiChevronLeft,
   FiChevronRight,
   FiTerminal,
+  FiShield,
 } from 'react-icons/fi';
 import { FaFacebook } from 'react-icons/fa';
 import { SiGooglegemini } from 'react-icons/si';
 import { AITrainingChatbot, ModelSelectorMenu, LaoZhangIcon, RunwareIcon } from './AITrainingChatbot';
 import { useTheme } from '../../context/ThemeContext';
-import { getAIModelDisplayName, isImageAIBox, isImageModel } from './aiModelUtils';
+import { getAIModelDisplayName, isImageAIBox, isImageModel, isWatermarkAIBox, isEnhanceAIBox, isAIBoxConnected } from './aiModelUtils';
 import { AIImageStudio } from './AIImageStudio';
+import { WatermarkNodeModal } from './WatermarkNodeModal';
 import { ToggleSwitch } from '../../components/ui/ToggleSwitch';
+import { loadWatermarkPresets, DEFAULT_WATERMARK_CONFIG, DEFAULT_PRESETS, type WatermarkConfig } from '../autopost/watermarkStorage';
 
-export { getAIModelDisplayName };
+export { getAIModelDisplayName, isWatermarkAIBox, isEnhanceAIBox };
 
 export interface CanvasPromptOption {
   id: string;
@@ -96,14 +99,18 @@ export const loadAvailablePromptTemplates = (): CanvasPromptOption[] => {
 export interface DynamicAIBoxConfig {
   id: string;
   title: string;
-  processType?: 'rental' | 'sale' | 'tiktok' | 'line_oa' | 'seo_tags' | 'custom' | string;
-  provider: 'google_ai' | 'openai' | 'laozhang_ai' | 'runware_ai';
+  processType?: 'rental' | 'sale' | 'tiktok' | 'line_oa' | 'seo_tags' | 'custom' | 'image_enhance' | 'watermark' | string;
+  provider: 'google_ai' | 'openai' | 'laozhang_ai' | 'runware_ai' | 'watermark';
   model: string;
   templateId: string;
   templateText: string;
   customPrompt: string;
   enabled: boolean;
   strength?: number;
+  watermarkPresetId?: string;
+  watermarkConfig?: WatermarkConfig;
+  targetPages?: 'all' | 'first-only' | 'body-only' | 'custom';
+  customPages?: string;
   x: number;
   y: number;
 }
@@ -1253,28 +1260,46 @@ export const FacebookWorkflowCanvas = forwardRef<
       return !alreadyHasInput;
     }
 
-    // Step 2b: get-images -> dynamic AI image enhancer nodes
+    // Step 2b: get-images -> dynamic AI image enhancer OR watermark nodes
     if (fromId === 'get-images') {
       if (!toId.startsWith('ai-box-')) return false;
       const targetBox = config.aiBoxes.find((b) => b.id === toId);
       if (!targetBox) return false;
-      // Cannot connect if already connected to get-content
+      // Cannot connect if connected to get-content
       const isConnectedToContent = conns.some((c) => c.fromNodeId === 'get-content' && c.toNodeId === toId);
       if (isConnectedToContent) return false;
+      // Must be an image node (enhancer or watermark)
+      if (!isImageAIBox(targetBox, conns)) return false;
       const alreadyHasInput = conns.some((c) => c.toNodeId === toId);
       return !alreadyHasInput;
     }
 
-    // Step 3: dynamic AI nodes -> destination ONLY
-    // An AI node cannot connect to other AI nodes (neither the same copywriter type nor the image enhancer below it).
-    // It can ONLY connect forward to the final Property Inbox destination!
+    // Step 3: dynamic AI / Watermark nodes
     if (fromId.startsWith('ai-box-')) {
+      const sourceBox = config.aiBoxes.find((b) => b.id === fromId);
+      const targetBox = config.aiBoxes.find((b) => b.id === toId);
+
+      // A) Can connect to final Property Inbox destination
       if (toId === 'destination') {
         const alreadyConnectedToDest = conns.some(
           (c) => c.fromNodeId === fromId && c.toNodeId === 'destination'
         );
         return !alreadyConnectedToDest;
       }
+
+      // B) Image Enhancer -> Watermark node
+      // "if that enhance have that watermark must be have after that enhance"
+      if (sourceBox && isEnhanceAIBox(sourceBox, conns) && targetBox && isWatermarkAIBox(targetBox)) {
+        const alreadyConnected = conns.some((c) => c.fromNodeId === fromId && c.toNodeId === toId);
+        return !alreadyConnected;
+      }
+
+      // C) Watermark -> Watermark node (chaining multiple watermarks for multiple pages)
+      if (sourceBox && isWatermarkAIBox(sourceBox) && targetBox && isWatermarkAIBox(targetBox)) {
+        const alreadyConnected = conns.some((c) => c.fromNodeId === fromId && c.toNodeId === toId);
+        return !alreadyConnected;
+      }
+
       return false;
     }
 
@@ -1513,16 +1538,14 @@ export const FacebookWorkflowCanvas = forwardRef<
     setSelectedBoxId(newId);
   };
 
-  // Add Dynamic Image AI Box connected from Get Images
+  // Add Dynamic Image AI Box connected from Get Images (Enhance Images)
   const handleAddAIBoxConnectedFromImages = () => {
-    const boxCount = config.aiBoxes.length;
-    const maxY = config.aiBoxes.reduce((max, b) => Math.max(max, b.y), 0);
-    const newY = boxCount === 0 ? 360 : Math.max(maxY + 150, 260 + boxCount * 140);
-
+    const enhanceBoxes = config.aiBoxes.filter((b) => isEnhanceAIBox(b));
+    const newCount = enhanceBoxes.length + 1;
     const newId = `ai-box-${Date.now()}`;
     const newBox: DynamicAIBoxConfig = {
       id: newId,
-      title: `Image Enhancer #${boxCount + 1}`,
+      title: `Image Enhancer #${newCount}`,
       processType: 'image_enhance',
       provider: 'runware_ai',
       model: 'runware:101@1',
@@ -1531,20 +1554,113 @@ export const FacebookWorkflowCanvas = forwardRef<
         'Enhance real estate property photo: clean natural lighting, architectural clarity, realistic interior staging, ultra sharp 8k detail.',
       customPrompt: 'Real estate interior luxury enhancement, warm lighting, high detail, remove noise',
       enabled: true,
-      x: 640,
-      y: newY,
+      x: 580,
+      y: 360 + (newCount - 1) * 140,
     };
 
-    // Automatically connect Get Images -> this new AI image node
-    const newConn: WorkflowWireConnection = {
-      id: `conn-images-${newId}`,
-      fromNodeId: 'get-images',
-      toNodeId: newId,
-    };
+    let conns = [...(config.connections || [])];
+
+    // Check if there is already a watermark node directly connected from get-images
+    // User requirement: "if that enhance have that watermark must be have after that enhance if not that after image"
+    const directWatermarkConn = conns.find(
+      (c) => c.fromNodeId === 'get-images' && config.aiBoxes.some((b) => b.id === c.toNodeId && isWatermarkAIBox(b))
+    );
+
+    if (directWatermarkConn) {
+      // Rewire: get-images -> new Enhancer -> Watermark
+      const watermarkId = directWatermarkConn.toNodeId;
+      conns = conns.filter((c) => c.id !== directWatermarkConn.id);
+      conns.push({
+        id: `conn-images-${newId}`,
+        fromNodeId: 'get-images',
+        toNodeId: newId,
+      });
+      conns.push({
+        id: `conn-${newId}-${watermarkId}`,
+        fromNodeId: newId,
+        toNodeId: watermarkId,
+      });
+    } else {
+      // Connect get-images -> new Enhancer -> destination
+      conns.push({
+        id: `conn-images-${newId}`,
+        fromNodeId: 'get-images',
+        toNodeId: newId,
+      });
+      conns.push({
+        id: `conn-${newId}-dest`,
+        fromNodeId: newId,
+        toNodeId: 'destination',
+      });
+    }
 
     const nextBoxes = [...config.aiBoxes, newBox];
-    const nextConns = [...(config.connections || []), newConn];
-    updateConfig(buildAlignedLayout(nextBoxes, nextConns, { ...config, aiBoxes: nextBoxes, connections: nextConns }));
+    updateConfig(buildAlignedLayout(nextBoxes, conns, { ...config, aiBoxes: nextBoxes, connections: conns }));
+    setSelectedBoxId(newId);
+  };
+
+  // Add Dynamic Watermark Node (with saved presets & multi-page support)
+  const handleAddWatermarkNodeConnectedFromImages = (sourceId?: string) => {
+    const presets = loadWatermarkPresets();
+    const defaultPreset = presets[0] || DEFAULT_PRESETS[0];
+
+    const watermarkBoxes = config.aiBoxes.filter((b) => isWatermarkAIBox(b));
+    const newCount = watermarkBoxes.length + 1;
+    const newId = `ai-box-watermark-${Date.now()}`;
+
+    // Target pages: 1st watermark defaults to 'all', 2nd watermark defaults to 'body-only' (pages 2+)
+    const targetPages: 'all' | 'first-only' | 'body-only' | 'custom' = newCount === 1 ? 'all' : 'body-only';
+
+    let conns = [...(config.connections || [])];
+
+    // User requirement: "if that enhance have that watermark must be have after that enhance if not that after image"
+    // Find upstream source node:
+    const enhanceBoxes = config.aiBoxes.filter((b) => isEnhanceAIBox(b) && isAIBoxConnected(b, conns));
+    let fromNodeId = 'get-images';
+
+    if (sourceId && (sourceId.startsWith('ai-box-') || sourceId === 'get-images')) {
+      fromNodeId = sourceId;
+    } else if (enhanceBoxes.length > 0) {
+      // If an enhance box exists, place watermark AFTER enhance!
+      fromNodeId = enhanceBoxes[enhanceBoxes.length - 1].id;
+    }
+
+    const newBox: DynamicAIBoxConfig = {
+      id: newId,
+      title: `Watermark #${newCount} (${defaultPreset.name.split(' (')[0]})`,
+      processType: 'watermark',
+      provider: 'watermark',
+      model: 'watermark',
+      templateId: defaultPreset.id,
+      templateText: defaultPreset.name,
+      customPrompt: '',
+      enabled: true,
+      watermarkPresetId: defaultPreset.id,
+      watermarkConfig: { ...defaultPreset.config, enabled: true },
+      targetPages,
+      x: fromNodeId === 'get-images' ? 640 : 800,
+      y: 390 + (newCount - 1) * 140,
+    };
+
+    // If upstream node was previously connected directly to destination, rewire through watermark!
+    conns = conns.filter((c) => !(c.fromNodeId === fromNodeId && c.toNodeId === 'destination'));
+
+    // 1. Upstream -> Watermark
+    conns.push({
+      id: `conn-${fromNodeId}-${newId}`,
+      fromNodeId,
+      toNodeId: newId,
+    });
+
+    // 2. Watermark -> Destination
+    conns.push({
+      id: `conn-${newId}-dest`,
+      fromNodeId: newId,
+      toNodeId: 'destination',
+    });
+
+    const nextBoxes = [...config.aiBoxes, newBox];
+    updateConfig(buildAlignedLayout(nextBoxes, conns, { ...config, aiBoxes: nextBoxes, connections: conns }));
     setSelectedBoxId(newId);
   };
 
@@ -1770,9 +1886,9 @@ export const FacebookWorkflowCanvas = forwardRef<
     updateConfig({ ...config, aiBoxes: newBoxes });
   };
 
-  // Auto-layout: stacks AI nodes in one clean column grouped by their source
-  // (Get Content first, then Get Images, then unconnected) and vertically centers
-  // the source / trigger / destination nodes on their groups.
+  // Auto-layout: stacks AI nodes in clean columns grouped by their processing type and source
+  // If both Enhancers and Watermarks exist: Enhancers at x: 580, Watermarks at x: 820, Destination at x: 1060
+  // Vertically centers source/trigger/destination nodes on their groups.
   const buildAlignedLayout = (
     boxes: DynamicAIBoxConfig[],
     connections: WorkflowWireConnection[] | undefined,
@@ -1782,34 +1898,78 @@ export const FacebookWorkflowCanvas = forwardRef<
     const fromContent = (id: string) => conns.some((c) => c.fromNodeId === 'get-content' && c.toNodeId === id);
     const fromImages = (id: string) => conns.some((c) => c.fromNodeId === 'get-images' && c.toNodeId === id);
 
-    const contentBoxes = boxes.filter((b) => fromContent(b.id));
-    const imageBoxes = boxes.filter((b) => !fromContent(b.id) && fromImages(b.id));
-    const otherBoxes = boxes.filter((b) => !fromContent(b.id) && !fromImages(b.id));
+    const watermarkBoxes = boxes.filter((b) => isWatermarkAIBox(b));
+    const enhanceBoxes = boxes.filter(
+      (b) => !isWatermarkAIBox(b) && (isEnhanceAIBox(b) || fromImages(b.id))
+    );
+    const contentBoxes = boxes.filter(
+      (b) => !isWatermarkAIBox(b) && !enhanceBoxes.includes(b) && (fromContent(b.id) || !fromImages(b.id))
+    );
+    const otherBoxes = boxes.filter(
+      (b) => !contentBoxes.includes(b) && !enhanceBoxes.includes(b) && !watermarkBoxes.includes(b)
+    );
+
+    const hasBothEnhanceAndWatermark = enhanceBoxes.length > 0 && watermarkBoxes.length > 0;
+    const enhanceColX = hasBothEnhanceAndWatermark ? 580 : 640;
+    const watermarkColX = hasBothEnhanceAndWatermark ? 820 : 640;
+    const contentColX = hasBothEnhanceAndWatermark ? 580 : 640;
 
     const ROW_GAP = 150;
     const TOP = 80;
     const yById: Record<string, number> = {};
+    const xById: Record<string, number> = {};
+
     let row = 0;
-    [contentBoxes, imageBoxes, otherBoxes].forEach((group) =>
-      group.forEach((b) => {
-        yById[b.id] = TOP + row * ROW_GAP;
-        row += 1;
-      })
-    );
+    // 1. Content boxes stack first
+    contentBoxes.forEach((b) => {
+      yById[b.id] = TOP + row * ROW_GAP;
+      xById[b.id] = contentColX;
+      row += 1;
+    });
+
+    const imageStartRow = row;
+    // 2. Enhance boxes
+    enhanceBoxes.forEach((b, idx) => {
+      yById[b.id] = TOP + (imageStartRow + idx) * ROW_GAP;
+      xById[b.id] = enhanceColX;
+    });
+
+    // 3. Watermark boxes
+    watermarkBoxes.forEach((b, idx) => {
+      yById[b.id] = TOP + (imageStartRow + idx) * ROW_GAP;
+      xById[b.id] = watermarkColX;
+    });
+
+    const imageRowsCount = Math.max(enhanceBoxes.length, watermarkBoxes.length);
+    row = imageStartRow + Math.max(imageRowsCount, 1);
+
+    // 4. Other boxes
+    otherBoxes.forEach((b) => {
+      yById[b.id] = TOP + row * ROW_GAP;
+      xById[b.id] = 640;
+      row += 1;
+    });
 
     const mean = (list: DynamicAIBoxConfig[], fallback: number) =>
-      list.length ? list.reduce((sum, b) => sum + yById[b.id], 0) / list.length : fallback;
+      list.length ? list.reduce((sum, b) => sum + (yById[b.id] ?? fallback), 0) / list.length : fallback;
+
     const contentMid = mean(contentBoxes, TOP);
-    const imageMid = mean(imageBoxes, TOP + Math.max(contentBoxes.length, 1) * ROW_GAP);
+    const imageMid = mean([...enhanceBoxes, ...watermarkBoxes], TOP + Math.max(contentBoxes.length, 1) * ROW_GAP);
     const centerMid = (contentMid + imageMid) / 2;
+
+    const destX = hasBothEnhanceAndWatermark ? 1060 : 960;
 
     return {
       ...base,
-      aiBoxes: boxes.map((b) => ({ ...b, x: 640, y: yById[b.id] })),
+      aiBoxes: boxes.map((b) => ({
+        ...b,
+        x: xById[b.id] ?? 640,
+        y: yById[b.id] ?? TOP,
+      })),
       trigger: { ...base.trigger, x: 80, y: Math.round(centerMid) },
       getContent: { ...base.getContent, x: 340, y: Math.round(contentMid) },
       getImages: { ...base.getImages, x: 340, y: Math.round(imageMid) },
-      destination: { x: 960, y: Math.round(centerMid) },
+      destination: { x: destX, y: Math.round(centerMid) },
     };
   };
 
@@ -2988,7 +3148,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 />
                 <NodeExecutionBadge status={imagesStatus} />
 
-            {/* Hover: animated plus to add + connect a node with seamless hover bridge */}
+            {/* Hover: 2 choices to add downstream image node (Enhance Images OR Watermark) */}
             {config.getImages.enabled && (
               <div
                 className="node-hit"
@@ -3002,11 +3162,27 @@ export const FacebookWorkflowCanvas = forwardRef<
                   paddingRight: '16px',
                   display: 'flex',
                   alignItems: 'center',
+                  gap: '6px',
                   boxSizing: 'border-box',
                 }}
               >
-                <NodeActionButton title="Add Image Enhancement node" color="#2EA043" isDark={isDark} onClick={() => handleAddAIBoxConnectedFromImages()}>
-                  <FiPlus style={{ fontSize: '14px' }} />
+                <NodeActionButton
+                  title="Enhance Images (AI HDR / Upscale)"
+                  color="#10B981"
+                  isDark={isDark}
+                  delay={0}
+                  onClick={() => handleAddAIBoxConnectedFromImages()}
+                >
+                  <FiImage style={{ fontSize: '13px' }} />
+                </NodeActionButton>
+                <NodeActionButton
+                  title="Add Watermark (Saved presets & multi-page)"
+                  color="#F59E0B"
+                  isDark={isDark}
+                  delay={40}
+                  onClick={() => handleAddWatermarkNodeConnectedFromImages()}
+                >
+                  <FiShield style={{ fontSize: '13px' }} />
                 </NodeActionButton>
               </div>
             )}
@@ -3125,11 +3301,12 @@ export const FacebookWorkflowCanvas = forwardRef<
           {config.aiBoxes.map((box) => {
             const isEffectiveEnabled = isNodeEffectivelyEnabled(box.id);
             const isSelected = selectedBoxId === box.id;
-            const isImageNode = isImageAIBox(box, config.connections);
+            const isWatermark = isWatermarkAIBox(box);
+            const isImageNode = isImageAIBox(box, config.connections) || isWatermark;
             const isGoogle = !isImageNode && (box.provider === 'google_ai' || isImageModel(box.model, box.provider) || (!box.provider && !box.model?.startsWith('runware:')));
             const isLaoZhang = !isImageNode && box.provider === 'laozhang_ai';
-            const isRunware = isImageNode;
-            const themeColor = isRunware ? '#10B981' : isLaoZhang ? '#2563EB' : isGoogle ? '#388BFD' : '#2EA043';
+            const isRunware = isImageNode && !isWatermark;
+            const themeColor = isWatermark ? '#F59E0B' : isRunware ? '#10B981' : isLaoZhang ? '#2563EB' : isGoogle ? '#388BFD' : '#2EA043';
             const isBoxReceptive = Boolean(
               (activeConnectingNodeId && isValidConnection(activeConnectingNodeId, box.id)) ||
               (activeConnectingTargetId && isValidConnection(box.id, activeConnectingTargetId))
@@ -3137,7 +3314,7 @@ export const FacebookWorkflowCanvas = forwardRef<
             const boxStatus = getNodeExecutionStatus(box.id);
             const strokeColor =
               boxStatus === 'running'
-                ? '#A855F7'
+                ? (isWatermark ? '#F59E0B' : '#A855F7')
                 : boxStatus === 'success'
                 ? '#10B981'
                 : isSelected
@@ -3226,7 +3403,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                     justifyContent: 'center',
                   }}
                 >
-                  {isRunware ? (
+                  {isWatermark ? (
+                    <FiShield style={{ fontSize: '24px', color: boxStatus === 'success' ? '#10B981' : isEffectiveEnabled ? '#F59E0B' : '#8B949E', transition: 'color 0.2s ease' }} />
+                  ) : isRunware ? (
                     <RunwareIcon size={26} color={boxStatus === 'success' ? '#10B981' : isEffectiveEnabled ? '#10B981' : '#8B949E'} />
                   ) : isLaoZhang ? (
                     <LaoZhangIcon size={28} />
@@ -3238,7 +3417,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 </div>
                 <NodeExecutionBadge status={boxStatus} />
 
-                {/* Hover: animated duplicate + delete actions with arrow centered between both buttons */}
+                {/* Hover: animated duplicate + delete actions (+ add watermark for image processors) */}
                 {isEffectiveEnabled && (
                   <div
                     className="node-hit"
@@ -3246,8 +3425,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                     onMouseLeave={() => handleNodeMouseLeave(box.id)}
                     style={{
                       left: '36px',
-                      top: '-12px',
-                      bottom: '-12px',
+                      top: isRunware || isWatermark ? '-18px' : '-12px',
+                      bottom: isRunware || isWatermark ? '-18px' : '-12px',
                       paddingLeft: '58px',
                       paddingRight: '16px',
                       display: 'flex',
@@ -3257,10 +3436,36 @@ export const FacebookWorkflowCanvas = forwardRef<
                       boxSizing: 'border-box',
                     }}
                   >
-                    <NodeActionButton title="Duplicate node" color={themeColor} isDark={isDark} delay={0} onClick={(e) => handleDuplicateAIBox(box, e)}>
+                    {(isRunware || isWatermark) && (
+                      <NodeActionButton
+                        title={isRunware ? 'Add Watermark after Enhance' : 'Add another Watermark'}
+                        color="#F59E0B"
+                        isDark={isDark}
+                        delay={0}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleAddWatermarkNodeConnectedFromImages(box.id);
+                        }}
+                      >
+                        <FiShield style={{ fontSize: '13px' }} />
+                      </NodeActionButton>
+                    )}
+                    <NodeActionButton
+                      title="Duplicate node"
+                      color={themeColor}
+                      isDark={isDark}
+                      delay={isRunware || isWatermark ? 25 : 0}
+                      onClick={(e) => handleDuplicateAIBox(box, e)}
+                    >
                       <FiPlus style={{ fontSize: '14px' }} />
                     </NodeActionButton>
-                    <NodeActionButton title="Delete node" color="#EF4444" isDark={isDark} delay={40} onClick={(e) => handleDeleteAIBox(box.id, e)}>
+                    <NodeActionButton
+                      title="Delete node"
+                      color="#EF4444"
+                      isDark={isDark}
+                      delay={isRunware || isWatermark ? 50 : 40}
+                      onClick={(e) => handleDeleteAIBox(box.id, e)}
+                    >
                       <FiTrash2 style={{ fontSize: '13px' }} />
                     </NodeActionButton>
                   </div>
@@ -3344,7 +3549,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                       style={{
                         fontSize: '0.6875rem',
                         fontWeight: 500,
-                        color: isDark ? '#C084FC' : '#7C3AED',
+                        color: isDark ? (isWatermark ? '#FBBF24' : '#C084FC') : (isWatermark ? '#D97706' : '#7C3AED'),
                         display: 'inline-flex',
                         alignItems: 'center',
                         gap: '4px',
@@ -3355,10 +3560,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                           width: '5px',
                           height: '5px',
                           borderRadius: '50%',
-                          backgroundColor: isDark ? '#C084FC' : '#7C3AED',
+                          backgroundColor: isDark ? (isWatermark ? '#FBBF24' : '#C084FC') : (isWatermark ? '#D97706' : '#7C3AED'),
                         }}
                       />
-                      <span>Generating AI Copy...</span>
+                      <span>{isWatermark ? 'Stamping Watermark...' : isRunware ? 'Enhancing Photos...' : 'Generating AI Copy...'}</span>
                     </span>
                   ) : (
                     <span
@@ -3374,14 +3579,16 @@ export const FacebookWorkflowCanvas = forwardRef<
                       }}
                     >
                       {boxStatus === 'success'
-                        ? '✓ Generated'
+                        ? (isWatermark ? '✓ Watermarked' : isRunware ? '✓ Enhanced' : '✓ Generated')
                         : isBoxReceptive
                         ? 'Ready to Connect'
+                        : isWatermark
+                        ? `${box.targetPages === 'first-only' ? 'Cover Only (P1)' : box.targetPages === 'body-only' ? 'Pages 2+' : box.targetPages === 'custom' ? `Pages ${box.customPages || ''}` : 'All Pages'} · ${isEffectiveEnabled ? 'Active' : 'Disabled'}`
                         : `${!isImageNode && isImageModel(box.model, box.provider) ? 'Gemini Flash' : getAIModelDisplayName(box.provider, box.model)} · ${isEffectiveEnabled ? 'Active' : 'Disabled'}`}
                     </span>
                   )}
 
-                  {/* Switch button for Auto Format or Auto Enhance on this AI node */}
+                  {/* Switch button for Auto Format, Auto Enhance, or Auto Watermark */}
                   {isEffectiveEnabled && (
                     <div
                       style={{
@@ -3393,21 +3600,35 @@ export const FacebookWorkflowCanvas = forwardRef<
                         borderRadius: '10px',
                         backgroundColor: isDark ? 'rgba(22, 27, 34, 0.85)' : 'rgba(255, 255, 255, 0.95)',
                         border: `1px solid ${
-                          (isImageNode ? autoEnhanceState : Boolean(autoFormatState[box.id]))
-                            ? (isImageNode ? '#10B981' : '#388BFD')
+                          isWatermark
+                            ? (box.watermarkConfig?.enabled ?? true)
+                              ? '#F59E0B'
+                              : (isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.12)')
+                            : (isRunware ? autoEnhanceState : Boolean(autoFormatState[box.id]))
+                            ? (isRunware ? '#10B981' : '#388BFD')
                             : (isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.12)')
                         }`,
-                        boxShadow: (isImageNode ? autoEnhanceState : Boolean(autoFormatState[box.id]))
+                        boxShadow: isWatermark
+                          ? (box.watermarkConfig?.enabled ?? true)
+                            ? (isDark ? '0 0 8px rgba(245, 158, 11, 0.3)' : '0 1px 4px rgba(245, 158, 11, 0.2)')
+                            : '0 1px 3px rgba(0,0,0,0.06)'
+                          : (isRunware ? autoEnhanceState : Boolean(autoFormatState[box.id]))
                           ? (isDark
-                            ? `0 0 8px ${isImageNode ? 'rgba(16, 185, 129, 0.3)' : 'rgba(56, 139, 253, 0.3)'}`
-                            : `0 1px 4px ${isImageNode ? 'rgba(16, 185, 129, 0.2)' : 'rgba(56, 139, 253, 0.2)'}`)
+                            ? `0 0 8px ${isRunware ? 'rgba(16, 185, 129, 0.3)' : 'rgba(56, 139, 253, 0.3)'}`
+                            : `0 1px 4px ${isRunware ? 'rgba(16, 185, 129, 0.2)' : 'rgba(56, 139, 253, 0.2)'}`)
                           : '0 1px 3px rgba(0,0,0,0.06)',
                         cursor: 'pointer',
                         transition: 'all 0.2s ease',
                       }}
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (isImageNode) {
+                        if (isWatermark) {
+                          const currentEnabled = box.watermarkConfig?.enabled ?? true;
+                          const currentCfg = box.watermarkConfig || DEFAULT_WATERMARK_CONFIG;
+                          handleUpdateAIBox(box.id, {
+                            watermarkConfig: { ...currentCfg, enabled: !currentEnabled },
+                          });
+                        } else if (isRunware) {
                           handleToggleAutoEnhance(!autoEnhanceState);
                         } else {
                           handleToggleBoxAutoFormat(box.id, !Boolean(autoFormatState[box.id]));
@@ -3419,24 +3640,39 @@ export const FacebookWorkflowCanvas = forwardRef<
                         style={{
                           fontSize: '0.6875rem',
                           fontWeight: 600,
-                          color: (isImageNode ? autoEnhanceState : Boolean(autoFormatState[box.id]))
-                            ? (isImageNode ? '#10B981' : '#388BFD')
+                          color: isWatermark
+                            ? (box.watermarkConfig?.enabled ?? true)
+                              ? '#F59E0B'
+                              : 'var(--text-muted)'
+                            : (isRunware ? autoEnhanceState : Boolean(autoFormatState[box.id]))
+                            ? (isRunware ? '#10B981' : '#388BFD')
                             : 'var(--text-muted)',
                         }}
                       >
-                        {isImageNode ? 'Auto Enhance' : 'Auto Format'}
+                        {isWatermark ? 'Auto Watermark' : isRunware ? 'Auto Enhance' : 'Auto Format'}
                       </span>
                       <ToggleSwitch
-                        checked={isImageNode ? autoEnhanceState : Boolean(autoFormatState[box.id])}
+                        checked={
+                          isWatermark
+                            ? (box.watermarkConfig?.enabled ?? true)
+                            : isRunware
+                            ? autoEnhanceState
+                            : Boolean(autoFormatState[box.id])
+                        }
                         onChange={(checked) => {
-                          if (isImageNode) {
+                          if (isWatermark) {
+                            const currentCfg = box.watermarkConfig || DEFAULT_WATERMARK_CONFIG;
+                            handleUpdateAIBox(box.id, {
+                              watermarkConfig: { ...currentCfg, enabled: checked },
+                            });
+                          } else if (isRunware) {
                             handleToggleAutoEnhance(checked);
                           } else {
                             handleToggleBoxAutoFormat(box.id, checked);
                           }
                         }}
                         size="sm"
-                        activeColor={isImageNode ? '#10B981' : '#388BFD'}
+                        activeColor={isWatermark ? '#F59E0B' : isRunware ? '#10B981' : '#388BFD'}
                       />
                     </div>
                   )}
@@ -3592,20 +3828,36 @@ export const FacebookWorkflowCanvas = forwardRef<
       {/* NODE CONFIGURATION MODAL BOX                             */}
       {/* ======================================================== */}
       {activeModalNode && (() => {
+        const isModalWatermark = Boolean(
+          activeModalNode.type === 'ai-box' &&
+          currentModalAIBox &&
+          isWatermarkAIBox(currentModalAIBox)
+        );
         const isModalImageBox = Boolean(
           activeModalNode.type === 'ai-box' &&
           currentModalAIBox &&
+          !isModalWatermark &&
           isImageAIBox(currentModalAIBox, config.connections)
         );
         return (
           <Modal
             isOpen={Boolean(activeModalNode)}
             onClose={handleCloseModal}
-            maxWidth={activeModalNode.type === 'ai-box' ? '96vw' : '560px'}
-            height={activeModalNode.type === 'ai-box' ? '92vh' : undefined}
+            maxWidth={isModalWatermark ? '880px' : activeModalNode.type === 'ai-box' ? '96vw' : '560px'}
+            height={isModalWatermark ? '88vh' : activeModalNode.type === 'ai-box' ? '92vh' : undefined}
             bodyPadding={activeModalNode.type === 'ai-box' ? '0' : undefined}
             headerExtra={
-              currentModalAIBox && isImageAIBox(currentModalAIBox, config.connections) ? (
+              isModalWatermark && currentModalAIBox ? (
+                <span style={{ fontSize: '0.75rem', color: '#F59E0B', fontWeight: 600, marginRight: '0.25rem' }}>
+                  {currentModalAIBox.targetPages === 'first-only'
+                    ? 'Cover Photo Only'
+                    : currentModalAIBox.targetPages === 'body-only'
+                    ? 'Pages 2+ (Interior)'
+                    : currentModalAIBox.targetPages === 'custom'
+                    ? `Pages ${currentModalAIBox.customPages || ''}`
+                    : 'All Pages'}
+                </span>
+              ) : isModalImageBox && currentModalAIBox ? (
                 <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 500, marginRight: '0.25rem' }}>
                   Strength: {Math.round((currentModalAIBox.strength ?? 0.25) * 100)}%
                 </span>
@@ -3635,11 +3887,14 @@ export const FacebookWorkflowCanvas = forwardRef<
               </div>
             ) : currentModalAIBox ? (
               (() => {
-                const isModalImageBox = isImageAIBox(currentModalAIBox, config.connections);
+                const isBoxWatermark = isWatermarkAIBox(currentModalAIBox);
+                const isBoxImage = !isBoxWatermark && isImageAIBox(currentModalAIBox, config.connections);
                 return (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0, minHeight: '32px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
-                      {isModalImageBox ? (
+                      {isBoxWatermark ? (
+                        <FiShield style={{ fontSize: '18px', color: '#F59E0B' }} />
+                      ) : isBoxImage ? (
                         <RunwareIcon size={18} color="#10B981" />
                       ) : currentModalAIBox.provider === 'laozhang_ai' ? (
                         <LaoZhangIcon size={18} />
@@ -3900,9 +4155,20 @@ export const FacebookWorkflowCanvas = forwardRef<
             </div>
           )}
 
-          {/* DYNAMIC AI BOX MODAL CONTENT (Interactive AI Training & Testing Studio) */}
+          {/* DYNAMIC AI BOX MODAL CONTENT (Interactive AI Training, Testing Studio, or Watermark Preset Manager) */}
           {activeModalNode.type === 'ai-box' && currentModalAIBox && (
-            isImageAIBox(currentModalAIBox, config.connections) ? (
+            isWatermarkAIBox(currentModalAIBox) ? (
+              <WatermarkNodeModal
+                box={currentModalAIBox}
+                isDark={isDark}
+                onUpdateBox={(id, updates) => handleUpdateAIBox(id, updates)}
+                onDeleteBox={(id) => {
+                  handleDeleteAIBox(id);
+                  handleCloseModal();
+                }}
+                onClose={handleCloseModal}
+              />
+            ) : isImageAIBox(currentModalAIBox, config.connections) ? (
               <AIImageStudio
                 box={currentModalAIBox}
                 availablePrompts={availablePrompts}

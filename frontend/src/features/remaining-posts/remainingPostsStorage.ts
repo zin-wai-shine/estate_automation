@@ -51,6 +51,7 @@ export interface RemainingPost {
   propertyData: RemainingPostPropertyData;
   originalImages: RemainingPostImage[];
   enhancedPhotos: Record<number, string>; // map of photoIndex -> enhancedUrl
+  watermarkedPhotos?: Record<number, string>; // map of photoIndex -> watermarkedUrl
   aiGeneratedOutputs: Record<string, string>; // map of boxId -> generated content
   aiGeneratedCopy: string;
   workflowFormatName?: string;

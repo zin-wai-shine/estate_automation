@@ -72,7 +72,10 @@ import {
   isAIBoxConnected,
   isContentConnectedAIBox,
   isImageConnectedAIBox,
+  isWatermarkAIBox,
 } from './aiModelUtils';
+import { renderWatermarkedImage } from '../autopost/watermarkCanvas';
+import { DEFAULT_WATERMARK_CONFIG } from '../autopost/watermarkStorage';
 import { AIImageStudio, type AttachedPhotoItem } from './AIImageStudio';
 import {
   getSavedWorkflowFormats,
@@ -202,6 +205,7 @@ interface FacebookImportSessionState {
   autoImport: boolean;
   preferredMethod: 'auto' | 'meta_graph_api' | 'openclaw_browser';
   enhancedPhotos?: Record<number, string>;
+  watermarkedPhotos?: Record<number, string>;
 }
 
 const loadSavedImportSession = (): FacebookImportSessionState | null => {
@@ -470,6 +474,9 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
   const [enhancedPhotos, setEnhancedPhotos] = useState<Record<number, string>>(
     () => savedSession?.enhancedPhotos || {}
   );
+  const [watermarkedPhotos, setWatermarkedPhotos] = useState<Record<number, string>>(
+    () => savedSession?.watermarkedPhotos || {}
+  );
   const [enhancingPhotos, setEnhancingPhotos] = useState<Record<number, boolean>>({});
   const [isEnhancingAllPhotos, setIsEnhancingAllPhotos] = useState(false);
   const [selectedImageAIBoxModal, setSelectedImageAIBoxModal] = useState<DynamicAIBoxConfig | null>(null);
@@ -654,6 +661,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
           autoImport,
           preferredMethod,
           enhancedPhotos,
+          watermarkedPhotos,
         };
         localStorage.setItem(FB_IMPORT_SESSION_KEY, JSON.stringify(sessionData));
       } catch (err) {
@@ -680,6 +688,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
     autoImport,
     preferredMethod,
     enhancedPhotos,
+    watermarkedPhotos,
   ]);
 
   // Load saved prompt templates from localStorage on mount
@@ -736,7 +745,9 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
 
       setAiGeneratedOutputs((prev) => ({ ...prev, [boxId]: data.generated_content }));
       setAiGeneratedCopy(data.generated_content);
-      setGeneratedProvider(box.provider);
+      if (box.provider !== 'watermark') {
+        setGeneratedProvider(box.provider);
+      }
       addLog(`✨ [${box.title}] generated copy successfully!`, 'success');
     } catch (err: any) {
       const msg = err.message || `Error communicating with ${providerName}`;
@@ -1002,6 +1013,8 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
     setLogs([]);
     setCaption('');
     setImages([]);
+    setEnhancedPhotos({});
+    setWatermarkedPhotos({});
     setSource(null);
     setAiGeneratedOutputs({});
     setAiGeneratedCopy('');
@@ -1395,6 +1408,81 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
           }));
         }
 
+        // 2b. Auto Watermark: Stamp watermark on extracted/enhanced photos based on multi-page targeting
+        const watermarkedPhotosResult: Record<number, string> = {};
+        const watermarkAIBoxes = (workflowConfig.aiBoxes || []).filter(
+          (b) => isWatermarkAIBox(b) && b.enabled && (b.watermarkConfig?.enabled ?? true)
+        );
+
+        if (watermarkAIBoxes.length > 0 && photoList.length > 0) {
+          addLog(`🛡️ Watermark pipeline active: Processing ${watermarkAIBoxes.length} watermark configuration(s)...`, 'info');
+
+          for (const wmBox of watermarkAIBoxes) {
+            setWorkflowExecutionState((prev) => ({
+              ...prev,
+              activeNodeIds: [wmBox.id],
+              currentStepMessage: `🛡️ Stamping ${wmBox.title || 'Watermark'}...`,
+            }));
+
+            const configToUse = wmBox.watermarkConfig || DEFAULT_WATERMARK_CONFIG;
+            const targetScope = wmBox.targetPages || 'all';
+
+            const matchingPhotos = photoList.filter((_img, idx) => {
+              if (targetScope === 'all') return true;
+              if (targetScope === 'first-only') return idx === 0;
+              if (targetScope === 'body-only') return idx > 0;
+              if (targetScope === 'custom') {
+                const pages = (wmBox.customPages || '')
+                  .split(',')
+                  .map((p) => parseInt(p.trim(), 10))
+                  .filter((n) => !isNaN(n));
+                return pages.includes(idx + 1);
+              }
+              return true;
+            });
+
+            addLog(`🛡️ [${wmBox.title}] Stamping watermark on ${matchingPhotos.length} photo(s) (${targetScope})...`, 'info');
+
+            for (const img of matchingPhotos) {
+              const currentImgUrl =
+                watermarkedPhotosResult[img.index] ||
+                enhancedPhotosResult[img.index] ||
+                (img.stored_url
+                  ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
+                  : img.source_url);
+
+              try {
+                const stampedDataUrl = await renderWatermarkedImage({
+                  sourceImageUrl: currentImgUrl,
+                  config: configToUse,
+                  dynamicTags: {
+                    price: propertyData.price ? `${propertyData.price} ${propertyData.currency || 'THB'}` : '',
+                    projectName: result.property?.project_name || '',
+                    phone: result.contact?.phone || '',
+                    line: result.contact?.line || '',
+                  },
+                });
+
+                if (stampedDataUrl) {
+                  watermarkedPhotosResult[img.index] = stampedDataUrl;
+                  setWatermarkedPhotos((prev) => ({ ...prev, [img.index]: stampedDataUrl }));
+                }
+              } catch (wmErr: any) {
+                console.error(`Watermark stamping error for #${img.index}:`, wmErr);
+              }
+            }
+
+            setWorkflowExecutionState((prev) => ({
+              ...prev,
+              completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), wmBox.id])),
+              activeNodeIds: [],
+              currentStepMessage: `✓ [${wmBox.title}] stamped!`,
+            }));
+          }
+
+          addLog(`✓ All watermark node processes complete!`, 'success');
+        }
+
         // 3. Store data automatically into Remaining Posts (Property Inbox Destination)
         setWorkflowExecutionState((prev) => ({
           ...prev,
@@ -1434,6 +1522,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
           },
           originalImages: photoList,
           enhancedPhotos: enhancedPhotosResult,
+          watermarkedPhotos: watermarkedPhotosResult,
           aiGeneratedOutputs: generatedCopiesMap,
           aiGeneratedCopy: generatedPrimaryCopy,
           workflowFormatName: activeFormat.name,
@@ -1719,7 +1808,9 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
 
       for (let i = 0; i < images.length; i++) {
         const img = images[i];
-        const rawUrl = enhancedPhotos[img.index] || (img.stored_url
+        const isWatermarked = Boolean(watermarkedPhotos[img.index]);
+        const isEnh = Boolean(enhancedPhotos[img.index]);
+        const rawUrl = watermarkedPhotos[img.index] || enhancedPhotos[img.index] || (img.stored_url
           ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
           : img.source_url);
 
@@ -1728,8 +1819,8 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
           const blob = await resp.blob();
           const ext = blob.type.includes('png') ? 'png' : 'jpg';
           const padIndex = String(img.index !== undefined ? img.index : i + 1).padStart(2, '0');
-          const isEnh = Boolean(enhancedPhotos[img.index]);
-          zip.file(`photo-${padIndex}${isEnh ? '-enhanced' : ''}.${ext}`, blob);
+          const tag = isWatermarked ? '-watermarked' : isEnh ? '-enhanced' : '';
+          zip.file(`photo-${padIndex}${tag}.${ext}`, blob);
         } catch (fetchErr) {
           console.warn(`Failed to package photo #${img.index || i + 1}:`, fetchErr);
         }
@@ -1853,7 +1944,9 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
     const saleNum = propertyData.listing_type === 'SALE' && propertyData.price ? parseFloat(propertyData.price) : undefined;
 
     const originalImgUrls = images.map((img) => img.stored_url || img.source_url);
-    const finalEnhancedUrls = images.map((img) => enhancedPhotos[img.index] || img.stored_url || img.source_url);
+    const finalEnhancedUrls = images.map(
+      (img) => watermarkedPhotos[img.index] || enhancedPhotos[img.index] || img.stored_url || img.source_url
+    );
 
     const finalDescription = aiGeneratedCopy || caption;
 
@@ -1902,7 +1995,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
             caption: { original: caption, ai_copy: aiGeneratedCopy, language_detected: languages },
             images: images.map((img) => ({
               ...img,
-              stored_url: enhancedPhotos[img.index] || img.stored_url,
+              stored_url: watermarkedPhotos[img.index] || enhancedPhotos[img.index] || img.stored_url,
             })),
           },
         }),
@@ -3920,9 +4013,12 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                 }}
               >
                 {images.map((img, idx) => {
+                  const isWatermarked = Boolean(watermarkedPhotos[img.index]);
                   const isEnhanced = Boolean(enhancedPhotos[img.index]);
                   const isEnhancing = Boolean(enhancingPhotos[img.index]);
-                  const displayUrl = isEnhanced
+                  const displayUrl = isWatermarked
+                    ? watermarkedPhotos[img.index]
+                    : isEnhanced
                     ? enhancedPhotos[img.index]
                     : (img.stored_url ? `http://localhost:8085${img.stored_url}` : img.source_url);
 
@@ -3978,8 +4074,32 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                         {img.index}
                       </span>
 
-                      {/* Enhanced badge */}
-                      {isEnhanced && (
+                      {/* Watermarked or Enhanced badge */}
+                      {isWatermarked ? (
+                        <span
+                          style={{
+                            position: 'absolute',
+                            bottom: '6px',
+                            left: '6px',
+                            padding: '3px 7px',
+                            borderRadius: '4px',
+                            backgroundColor: 'rgba(217, 119, 6, 0.88)',
+                            backdropFilter: 'blur(6px)',
+                            border: '1px solid rgba(255, 255, 255, 0.25)',
+                            color: '#FFFFFF',
+                            fontSize: '0.625rem',
+                            fontWeight: 600,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            zIndex: 2,
+                            letterSpacing: '0.2px',
+                          }}
+                        >
+                          <FiShield style={{ fontSize: '10px', color: '#FFFFFF' }} />
+                          Watermarked
+                        </span>
+                      ) : isEnhanced ? (
                         <span
                           style={{
                             position: 'absolute',
@@ -4003,7 +4123,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                           <HiSparkles style={{ fontSize: '10px', color: '#FFFFFF' }} />
                           Enhanced
                         </span>
-                      )}
+                      ) : null}
 
                       {/* Enhancing overlay */}
                       {isEnhancing && (
@@ -4655,10 +4775,11 @@ style={{
       {/* FULLSCREEN STUDIO IMAGE LIGHTBOX (Image 2 style) */}
       {previewImageIndex !== null && images[previewImageIndex] && (() => {
         const activeImg = images[previewImageIndex];
+        const isWatermarked = Boolean(watermarkedPhotos[activeImg.index]);
         const isEnhanced = Boolean(enhancedPhotos[activeImg.index]);
         const isEnhancing = Boolean(enhancingPhotos[activeImg.index]);
-        const activeImgUrl = (isEnhanced && !lightboxShowOriginal)
-          ? enhancedPhotos[activeImg.index]
+        const activeImgUrl = (!lightboxShowOriginal && (watermarkedPhotos[activeImg.index] || enhancedPhotos[activeImg.index]))
+          ? (watermarkedPhotos[activeImg.index] || enhancedPhotos[activeImg.index])
           : (activeImg.stored_url
             ? (activeImg.stored_url.startsWith('http') ? activeImg.stored_url : `http://localhost:8085${activeImg.stored_url}`)
             : activeImg.source_url);

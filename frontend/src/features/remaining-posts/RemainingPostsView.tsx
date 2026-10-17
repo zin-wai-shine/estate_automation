@@ -297,8 +297,13 @@ export const RemainingPostsView: React.FC<RemainingPostsViewProps> = ({ onNaviga
 
       for (let i = 0; i < (post.originalImages || []).length; i++) {
         const img = post.originalImages[i];
+        const isWatermarked = post.watermarkedPhotos && post.watermarkedPhotos[img.index];
         const isEnhanced = post.enhancedPhotos && post.enhancedPhotos[img.index];
-        const targetUrl = isEnhanced ? post.enhancedPhotos[img.index] : (img.stored_url || img.source_url);
+        const targetUrl = isWatermarked
+          ? post.watermarkedPhotos![img.index]
+          : isEnhanced
+          ? post.enhancedPhotos[img.index]
+          : (img.stored_url || img.source_url);
 
         try {
           const fetchUrl = targetUrl.startsWith('http')
@@ -306,7 +311,7 @@ export const RemainingPostsView: React.FC<RemainingPostsViewProps> = ({ onNaviga
             : `http://localhost:8085${targetUrl}`;
           const res = await fetch(fetchUrl);
           const blob = await res.blob();
-          const fileName = `photo_${img.index}${isEnhanced ? '_enhanced' : ''}.jpg`;
+          const fileName = `photo_${img.index}${isWatermarked ? '_watermarked' : isEnhanced ? '_enhanced' : ''}.jpg`;
           folder?.file(fileName, blob);
         } catch (e) {
           console.warn(`Failed to package photo #${img.index} in zip:`, e);
@@ -816,9 +821,13 @@ export const RemainingPostsView: React.FC<RemainingPostsViewProps> = ({ onNaviga
               const englishInfo = getEnglishPropertyInfo(post);
               const condoName = englishInfo.condoName;
               const firstPhoto = post.originalImages && post.originalImages[0];
+              const hasWatermarkedPhoto = Boolean(post.watermarkedPhotos && Object.keys(post.watermarkedPhotos).length > 0);
               const hasEnhancedPhoto = Boolean(post.enhancedPhotos && Object.keys(post.enhancedPhotos).length > 0);
               const thumbnailSrc = firstPhoto
-                ? ((hasEnhancedPhoto && post.enhancedPhotos[firstPhoto.index]) || firstPhoto.stored_url || firstPhoto.source_url)
+                ? ((hasWatermarkedPhoto && post.watermarkedPhotos?.[firstPhoto.index]) ||
+                   (hasEnhancedPhoto && post.enhancedPhotos[firstPhoto.index]) ||
+                   firstPhoto.stored_url ||
+                   firstPhoto.source_url)
                 : null;
               const thumbFinalUrl = thumbnailSrc
                 ? (thumbnailSrc.startsWith('http') ? thumbnailSrc : `http://localhost:8085${thumbnailSrc}`)
@@ -1579,8 +1588,13 @@ export const RemainingPostsView: React.FC<RemainingPostsViewProps> = ({ onNaviga
                   {viewingPost.originalImages && viewingPost.originalImages.length > 0 ? (
                     <div className="gallery-thumb-grid">
                       {viewingPost.originalImages.map((img, idx) => {
+                        const isWatermarked = viewingPost.watermarkedPhotos && viewingPost.watermarkedPhotos[img.index];
                         const isEnhanced = viewingPost.enhancedPhotos && viewingPost.enhancedPhotos[img.index];
-                        const imgSrc = isEnhanced ? viewingPost.enhancedPhotos[img.index] : (img.stored_url || img.source_url);
+                        const imgSrc = isWatermarked
+                          ? viewingPost.watermarkedPhotos![img.index]
+                          : isEnhanced
+                          ? viewingPost.enhancedPhotos[img.index]
+                          : (img.stored_url || img.source_url);
                         const fullUrl = imgSrc.startsWith('http') ? imgSrc : `http://localhost:8085${imgSrc}`;
 
                         return (

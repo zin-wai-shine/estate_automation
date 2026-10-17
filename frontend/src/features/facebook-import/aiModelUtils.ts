@@ -2,6 +2,9 @@
  * Utility helper to get clean display names for AI providers and models.
  */
 export const getAIModelDisplayName = (provider?: string, model?: string): string => {
+  if (provider === 'watermark' || model === 'watermark') {
+    return 'Watermark Stamp';
+  }
   if (
     provider === 'runware_ai' ||
     model?.startsWith('runware:') ||
@@ -49,6 +52,7 @@ export const getAIModelDisplayName = (provider?: string, model?: string): string
  */
 export const isImageModel = (model?: string, provider?: string): boolean => {
   if (!model && !provider) return false;
+  if (provider === 'watermark' || model === 'watermark') return true;
   if (provider === 'runware_ai' || provider === 'runware') return true;
   if (
     model?.startsWith('runware:') ||
@@ -63,14 +67,25 @@ export const isImageModel = (model?: string, provider?: string): boolean => {
 };
 
 /**
+ * Determines whether an AI Box is specifically a Watermark node.
+ */
+export const isWatermarkAIBox = (
+  box?: { id?: string; provider?: string; model?: string; processType?: string }
+): boolean => {
+  if (!box) return false;
+  return box.processType === 'watermark' || box.provider === 'watermark' || Boolean(box.id?.includes('watermark'));
+};
+
+/**
  * Determines whether a workflow AI Box is designated for Image Enhancement & Editing
- * rather than Text/Copy generation.
+ * rather than Text/Copy generation (includes both enhance & watermark in the image branch).
  */
 export const isImageAIBox = (
   box: { id?: string; provider?: string; model?: string; processType?: string },
   connections: { fromNodeId: string; toNodeId: string }[] = []
 ): boolean => {
   if (!box) return false;
+  if (isWatermarkAIBox(box)) return true;
   // If connected from 'get-content', it is guaranteed to be a Content / Copywriting node
   if (box.id && connections.some((c) => c.fromNodeId === 'get-content' && c.toNodeId === box.id)) {
     return false;
@@ -80,7 +95,7 @@ export const isImageAIBox = (
     return true;
   }
   // If process type is explicitly image
-  if (box.processType === 'image_enhance' || box.processType === 'image_edit') {
+  if (box.processType === 'image_enhance' || box.processType === 'image_edit' || box.processType === 'watermark') {
     return true;
   }
   // If the model itself is an image model
@@ -88,6 +103,17 @@ export const isImageAIBox = (
     return true;
   }
   return false;
+};
+
+/**
+ * Specifically checks if an AI box is an Image Enhancer (not a watermark node).
+ */
+export const isEnhanceAIBox = (
+  box: { id?: string; provider?: string; model?: string; processType?: string },
+  connections: { fromNodeId: string; toNodeId: string }[] = []
+): boolean => {
+  if (!box || isWatermarkAIBox(box)) return false;
+  return isImageAIBox(box, connections);
 };
 
 /**
@@ -106,18 +132,18 @@ export const isAIBoxConnected = (
 
 /**
  * Checks whether an AI Box is an active connected Content / Copywriting node.
- * Unconnected nodes are excluded.
+ * Unconnected nodes and image/watermark nodes are excluded.
  */
 export const isContentConnectedAIBox = (
   box: { id?: string; provider?: string; model?: string; processType?: string },
   connections: { fromNodeId: string; toNodeId: string }[] = []
 ): boolean => {
   if (!box || !box.id) return false;
-  if (connections.length > 0 && !connections.some((c) => c.fromNodeId === box.id || c.toNodeId === box.id)) {
-    return false;
-  }
-  return !isImageAIBox(box, connections);
+  if (isWatermarkAIBox(box)) return false;
+  if (isImageAIBox(box, connections)) return false;
+  return isAIBoxConnected(box, connections);
 };
+
 
 /**
  * Checks whether an AI Box is an active connected Image Enhancement node.
