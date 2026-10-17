@@ -26,6 +26,8 @@ import {
   FiAlertTriangle,
   FiEdit2,
   FiZap,
+  FiChevronLeft,
+  FiChevronRight,
 } from 'react-icons/fi';
 import { FaFacebook } from 'react-icons/fa';
 import { SiGooglegemini } from 'react-icons/si';
@@ -3505,45 +3507,127 @@ export const FacebookWorkflowCanvas = forwardRef<
         );
       })()}
 
-      {/* Floating Recover Button on Canvas */}
-      {deletedBoxes.length > 0 && !isRecoverModalOpen && (
+      {/* Vertical Edge Sidebar Toggle Tab (Long-Y along right edge) */}
+      {(deletedBoxes.length > 0 || isRecoverModalOpen) && (
         <button
           type="button"
           onClick={() => {
-            setSelectRecoverIds(new Set(deletedBoxes.map((d) => d.box.id)));
-            setIsRecoverModalOpen(true);
+            setIsRecoverModalOpen((prev) => {
+              const next = !prev;
+              if (next && selectRecoverIds.size === 0) {
+                setSelectRecoverIds(new Set(deletedBoxes.map((d) => d.box.id)));
+              }
+              return next;
+            });
           }}
           style={{
             position: 'absolute',
-            top: '16px',
-            right: '24px',
-            zIndex: 80,
-            display: 'inline-flex',
+            top: '50%',
+            transform: 'translateY(-50%)',
+            right: isRecoverModalOpen ? '400px' : '0px',
+            zIndex: 160,
+            width: '36px',
+            minHeight: '130px',
+            padding: '12px 4px',
+            display: 'flex',
+            flexDirection: 'column',
             alignItems: 'center',
-            gap: '7px',
-            padding: '7px 14px',
-            borderRadius: '9999px',
+            justifyContent: 'space-between',
+            gap: '8px',
             backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
             color: isDark ? '#F1F5F9' : '#0F172A',
             border: isDark ? '1px solid #334155' : '1px solid #CBD5E1',
-            boxShadow: '0 4px 14px rgba(0, 0, 0, 0.25)',
-            fontSize: '0.8125rem',
-            fontWeight: 600,
+            borderRight: 'none',
+            borderTopLeftRadius: '10px',
+            borderBottomLeftRadius: '10px',
+            borderTopRightRadius: '0px',
+            borderBottomRightRadius: '0px',
+            boxShadow: isDark
+              ? '-6px 0 20px rgba(0, 0, 0, 0.45)'
+              : '-4px 0 16px rgba(0, 0, 0, 0.08)',
             cursor: 'pointer',
-            transition: 'all 0.15s ease',
+            transition:
+              'right 0.28s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease',
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-1px)';
             e.currentTarget.style.borderColor = '#38BDF8';
+            e.currentTarget.style.boxShadow = isDark
+              ? '-8px 0 24px rgba(56, 189, 248, 0.3)'
+              : '-6px 0 20px rgba(2, 132, 199, 0.2)';
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'translateY(0)';
             e.currentTarget.style.borderColor = isDark ? '#334155' : '#CBD5E1';
+            e.currentTarget.style.boxShadow = isDark
+              ? '-6px 0 20px rgba(0, 0, 0, 0.45)'
+              : '-4px 0 16px rgba(0, 0, 0, 0.08)';
           }}
-          title="Recover deleted AI nodes"
+          title={isRecoverModalOpen ? 'Close recover panel' : `Recover deleted nodes (${deletedBoxes.length})`}
         >
-          <FiRotateCcw size={14} style={{ color: '#0284C7' }} />
-          <span>Recover ({deletedBoxes.length})</span>
+          {/* Top Recover Icon */}
+          <div
+            style={{
+              width: '26px',
+              height: '26px',
+              borderRadius: '6px',
+              backgroundColor: isDark ? 'rgba(56, 189, 248, 0.15)' : 'rgba(2, 132, 199, 0.1)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: isDark ? '#38BDF8' : '#0284C7',
+              flexShrink: 0,
+            }}
+          >
+            <FiRotateCcw
+              size={14}
+              style={{
+                transform: isRecoverModalOpen ? 'rotate(-90deg)' : 'none',
+                transition: 'transform 0.28s ease',
+              }}
+            />
+          </div>
+
+          {/* Vertical Text Label */}
+          <span
+            style={{
+              writingMode: 'vertical-rl',
+              transform: 'rotate(180deg)',
+              fontSize: '0.625rem',
+              fontWeight: 700,
+              letterSpacing: '0.12em',
+              color: isDark ? '#94A3B8' : '#64748B',
+              textTransform: 'uppercase',
+              userSelect: 'none',
+              margin: '2px 0',
+            }}
+          >
+            Recover
+          </span>
+
+          {/* Count Badge */}
+          <span
+            style={{
+              fontSize: '0.6875rem',
+              fontWeight: 700,
+              minWidth: '20px',
+              height: '20px',
+              borderRadius: '9999px',
+              backgroundColor: isDark ? 'rgba(56, 189, 248, 0.2)' : 'rgba(2, 132, 199, 0.12)',
+              color: isDark ? '#38BDF8' : '#0284C7',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '0 4px',
+              lineHeight: 1,
+              flexShrink: 0,
+            }}
+          >
+            {deletedBoxes.length}
+          </span>
+
+          {/* Toggle Chevron Arrow */}
+          <div style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            {isRecoverModalOpen ? <FiChevronRight size={13} /> : <FiChevronLeft size={13} />}
+          </div>
         </button>
       )}
 
