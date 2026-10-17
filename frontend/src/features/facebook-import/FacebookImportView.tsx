@@ -4549,22 +4549,19 @@ style={{
                   gap: '6px',
                   padding: '3px 10px',
                   borderRadius: '12px',
-                  backgroundColor: 'rgba(56, 189, 248, 0.1)',
-                  border: '1px solid rgba(56, 189, 248, 0.3)',
-                  boxShadow: '0 0 10px rgba(56, 189, 248, 0.15)',
+                  backgroundColor: isDark ? 'rgba(56, 189, 248, 0.12)' : '#F0F9FF',
+                  border: `1px solid ${isDark ? 'rgba(56, 189, 248, 0.3)' : '#BAE6FD'}`,
                   fontSize: '0.75rem',
-                  fontWeight: 600,
-                  color: '#38BDF8',
+                  fontWeight: 500,
+                  color: isDark ? '#38BDF8' : '#0284C7',
                 }}
               >
                 <span
                   style={{
-                    width: '7px',
-                    height: '7px',
+                    width: '6px',
+                    height: '6px',
                     borderRadius: '50%',
-                    backgroundColor: '#38BDF8',
-                    boxShadow: '0 0 8px #38BDF8',
-                    animation: 'pulse 1.2s infinite',
+                    backgroundColor: isDark ? '#38BDF8' : '#0284C7',
                   }}
                 />
                 <span style={{ maxWidth: '240px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

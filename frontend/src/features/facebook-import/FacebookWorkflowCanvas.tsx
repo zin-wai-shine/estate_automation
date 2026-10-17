@@ -370,26 +370,63 @@ export interface MergedNodeShapeProps {
 }
 
 const CANVAS_NODE_ACTION_CSS = `
-.canvas-node::before{content:'';position:absolute;inset:-7px;border-radius:50%;border:1.5px dashed var(--ring,#388BFD);opacity:0;transform:scale(.88);transition:opacity .2s ease,transform .35s cubic-bezier(.34,1.56,.64,1);pointer-events:none}
+.canvas-node::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 1.5px dashed var(--ring, #388BFD);
+  opacity: 0;
+  transform: scale(0.92);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  pointer-events: none;
+}
 .canvas-node:hover::before,
-.canvas-node.is-hovered::before{opacity:.7;transform:scale(1);animation:nodeRingSpin 10s linear infinite}
-.canvas-node.is-receptive::before{opacity:.5;border-color:var(--receptive-color,#D97706);transform:scale(1.02);animation:nodeRingSpin 8s linear infinite}
-.canvas-node.is-running::before{content:'' !important;position:absolute !important;inset:-11px !important;border-radius:50% !important;border:2.8px solid transparent !important;border-top-color:#38BDF8 !important;border-right-color:#0284C7 !important;border-bottom-color:#818CF8 !important;box-shadow:0 0 24px rgba(56,189,248,1),inset 0 0 14px rgba(56,189,248,.45) !important;animation:nodeRingSpin 0.95s linear infinite !important;opacity:1 !important;transform:scale(1) !important}
-.canvas-node.is-running::after{content:'';position:absolute;inset:-18px;border-radius:50%;border:2px solid rgba(56,189,248,.65);animation:nodeRadarPulse 1.5s cubic-bezier(0.215,0.61,0.355,1) infinite !important;pointer-events:none}
-.canvas-node.is-running{animation:nodeActivePulse 1.5s ease-in-out infinite !important}
-.canvas-node.is-completed::before{content:'' !important;position:absolute !important;inset:-6px !important;border-radius:50% !important;border:2px solid #10B981 !important;box-shadow:0 0 16px rgba(16,185,129,.75),inset 0 0 8px rgba(16,185,129,.35) !important;opacity:1 !important;transform:scale(1) !important;animation:none !important}
-.canvas-node.is-completed{filter:drop-shadow(0 0 10px rgba(16,185,129,.55)) !important}
-@keyframes nodeRingSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
-@keyframes nodeRadarPulse{0%{transform:scale(0.9);opacity:0.95}60%{opacity:0.35}100%{transform:scale(1.48);opacity:0}}
-@keyframes nodeActivePulse{0%,100%{filter:drop-shadow(0 0 14px rgba(56,189,248,.9)) drop-shadow(0 0 28px rgba(56,189,248,.5));transform:scale(1)}50%{filter:drop-shadow(0 0 24px rgba(56,189,248,1)) drop-shadow(0 0 45px rgba(56,189,248,.75));transform:scale(1.04)}}
-@keyframes badgePopIn{0%{transform:scale(0);opacity:0}70%{transform:scale(1.25)}100%{transform:scale(1);opacity:1}}
-@keyframes spinnerGlowPulse{0%,100%{box-shadow:0 0 18px #38BDF8,0 0 32px rgba(56,189,248,.75),inset 0 0 8px rgba(255,255,255,.8)}50%{box-shadow:0 0 28px #38BDF8,0 0 48px rgba(56,189,248,1),inset 0 0 10px rgba(255,255,255,1)}}
-@keyframes hudGlowPulse{0%,100%{box-shadow:0 20px 48px rgba(0,0,0,.8),0 0 32px rgba(56,189,248,.35),inset 0 1px 1px rgba(255,255,255,.25);border-color:rgba(56,189,248,.6)}50%{box-shadow:0 24px 56px rgba(0,0,0,.9),0 0 50px rgba(56,189,248,.65),inset 0 1px 1px rgba(255,255,255,.45);border-color:rgba(56,189,248,1)}}
-@keyframes hudSlideDown{0%{transform:translate(-50%,-20px) scale(0.95);opacity:0}100%{transform:translate(-50%,0) scale(1);opacity:1}}
-@keyframes laserBeamScan{0%{transform:translateX(-100%);opacity:0}20%{opacity:1}80%{opacity:1}100%{transform:translateX(240%);opacity:0}}
-@keyframes eqBounce{0%,100%{height:4px;opacity:0.55}50%{height:14px;opacity:1}}
-@keyframes innerCoreGlow{0%,100%{opacity:0.35;transform:scale(0.92)}50%{opacity:0.85;transform:scale(1.06)}}
-@keyframes coreSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+.canvas-node.is-hovered::before {
+  opacity: 0.6;
+  transform: scale(1);
+}
+.canvas-node.is-receptive::before {
+  opacity: 0.7;
+  border-color: var(--receptive-color, #D97706);
+  transform: scale(1.02);
+}
+.canvas-node.is-running::before {
+  content: '' !important;
+  position: absolute !important;
+  inset: -5px !important;
+  border-radius: 50% !important;
+  border: 2px dashed #0284C7 !important;
+  animation: nodeRingSpin 6s linear infinite !important;
+  opacity: 0.85 !important;
+  transform: scale(1) !important;
+  box-shadow: none !important;
+}
+.canvas-node.is-running::after {
+  display: none !important;
+}
+.canvas-node.is-completed::before {
+  content: '' !important;
+  position: absolute !important;
+  inset: -4px !important;
+  border-radius: 50% !important;
+  border: 1.5px solid #10B981 !important;
+  opacity: 0.75 !important;
+  transform: scale(1) !important;
+  animation: none !important;
+  box-shadow: none !important;
+}
+.canvas-node.is-completed {
+  filter: none !important;
+}
+@keyframes nodeRingSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes badgePopIn {
+  0% { transform: scale(0); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
 .node-hit{position:absolute;display:flex;align-items:center;pointer-events:none !important;z-index:45}
 .node-action{width:28px;height:28px;border-radius:50%;background:var(--na-bg);border:1.5px solid var(--na-color);color:var(--na-color);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;opacity:0;transform:scale(.3) translateX(-6px);box-shadow:0 2px 8px rgba(0,0,0,.18);transition:opacity .18s ease,transform .25s cubic-bezier(.34,1.56,.64,1),background-color .15s ease,color .15s ease;pointer-events:none}
 .canvas-node:hover .node-action,
@@ -437,42 +474,41 @@ export const NodeExecutionBadge: React.FC<{
       <div
         style={{
           position: 'absolute',
-          top: '-8px',
-          right: '-8px',
-          width: '32px',
-          height: '32px',
+          top: '-5px',
+          right: '-5px',
+          width: '22px',
+          height: '22px',
           borderRadius: '50%',
-          background: 'linear-gradient(135deg, #0284C7 0%, #38BDF8 55%, #06B6D4 100%)',
-          color: '#FFFFFF',
+          backgroundColor: '#FFFFFF',
+          color: '#0284C7',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          boxShadow: '0 0 18px #38BDF8, 0 0 32px rgba(56, 189, 248, 0.75), inset 0 0 8px rgba(255, 255, 255, 0.8)',
-          border: '2.5px solid #FFFFFF',
-          zIndex: 35,
-          animation: 'badgePopIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), spinnerGlowPulse 1.4s infinite',
+          boxShadow: '0 1px 4px rgba(0, 0, 0, 0.15)',
+          border: '1.5px solid #0284C7',
+          zIndex: 25,
           pointerEvents: 'none',
         }}
         title="Executing step..."
       >
         <svg
-          width="18"
-          height="18"
+          width="13"
+          height="13"
           viewBox="0 0 24 24"
           fill="none"
-          style={{ animation: 'spin 0.85s linear infinite' }}
+          style={{ animation: 'spin 0.9s linear infinite' }}
         >
           <circle
             cx="12"
             cy="12"
             r="9"
-            stroke="rgba(255, 255, 255, 0.35)"
-            strokeWidth="3.2"
+            stroke="rgba(2, 132, 199, 0.25)"
+            strokeWidth="3"
           />
           <path
             d="M12 3a9 9 0 0 1 9 9"
-            stroke="#FFFFFF"
-            strokeWidth="3.6"
+            stroke="#0284C7"
+            strokeWidth="3"
             strokeLinecap="round"
           />
         </svg>
@@ -485,25 +521,24 @@ export const NodeExecutionBadge: React.FC<{
       <div
         style={{
           position: 'absolute',
-          top: '-6px',
-          right: '-6px',
-          width: '26px',
-          height: '26px',
+          top: '-5px',
+          right: '-5px',
+          width: '20px',
+          height: '20px',
           borderRadius: '50%',
-          background: 'linear-gradient(135deg, #059669 0%, #10B981 100%)',
+          backgroundColor: '#10B981',
           color: '#FFFFFF',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          boxShadow: '0 0 16px rgba(16, 185, 129, 0.95), 0 0 24px rgba(16, 185, 129, 0.45), inset 0 0 5px rgba(255, 255, 255, 0.5)',
-          border: '2px solid #FFFFFF',
-          zIndex: 35,
-          animation: 'badgePopIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
+          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.15)',
+          border: '1.5px solid #FFFFFF',
+          zIndex: 25,
           pointerEvents: 'none',
         }}
         title="Step completed"
       >
-        <FiCheck style={{ fontSize: '14px', strokeWidth: 3.5 }} />
+        <FiCheck style={{ fontSize: '11px', strokeWidth: 3 }} />
       </div>
     );
   }
@@ -513,25 +548,24 @@ export const NodeExecutionBadge: React.FC<{
       <div
         style={{
           position: 'absolute',
-          top: '-6px',
-          right: '-6px',
-          width: '26px',
-          height: '26px',
+          top: '-5px',
+          right: '-5px',
+          width: '20px',
+          height: '20px',
           borderRadius: '50%',
-          background: 'linear-gradient(135deg, #DC2626 0%, #EF4444 100%)',
+          backgroundColor: '#EF4444',
           color: '#FFFFFF',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          boxShadow: '0 0 16px rgba(239, 68, 68, 0.9), 0 0 24px rgba(239, 68, 68, 0.45)',
-          border: '2px solid #FFFFFF',
-          zIndex: 35,
-          animation: 'badgePopIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
+          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.15)',
+          border: '1.5px solid #FFFFFF',
+          zIndex: 25,
           pointerEvents: 'none',
         }}
         title="Execution error"
       >
-        <FiAlertTriangle style={{ fontSize: '13px' }} />
+        <FiAlertTriangle style={{ fontSize: '11px' }} />
       </div>
     );
   }
@@ -856,17 +890,14 @@ export const FacebookWorkflowCanvas = forwardRef<
     autoEnhance: propsAutoEnhance,
     onToggleAutoEnhance: propsOnToggleAutoEnhance,
     executionState,
-    onCloseCanvas,
-    onViewLogs,
+    onCloseCanvas: _onCloseCanvas,
+    onViewLogs: _onViewLogs,
   },
   ref
 ) {
   const { actualTheme } = useTheme();
   const isDark = actualTheme === 'dark';
   const RECEPTIVE_COLOR = isDark ? '#EAB308' : '#D97706';
-  const RECEPTIVE_GLOW = isDark
-    ? 'drop-shadow(0 0 5px rgba(234, 179, 8, 0.35))'
-    : 'drop-shadow(0 0 4px rgba(217, 119, 6, 0.22))';
   const [config, setConfig] = useState<FacebookWorkflowConfig>(() =>
     sanitizeAndResolveCollisions(initialConfig || loadSavedFacebookWorkflowConfig())
   );
@@ -2068,326 +2099,7 @@ export const FacebookWorkflowCanvas = forwardRef<
       >
 
 
-        {/* Futuristic Cyber Island Execution HUD ("Above of Process") */}
-        {executionState && (executionState.isRunning || executionState.isComplete || executionState.hasError) && (
-          <div
-            style={{
-              position: 'absolute',
-              top: '18px',
-              left: '50%',
-              transform: 'translateX(-50%)',
-              zIndex: 40,
-              minWidth: '400px',
-              maxWidth: '720px',
-              borderRadius: '26px',
-              background: 'linear-gradient(135deg, rgba(13, 18, 36, 0.96) 0%, rgba(8, 12, 24, 0.98) 100%)',
-              backdropFilter: 'blur(24px)',
-              WebkitBackdropFilter: 'blur(24px)',
-              border: `1.5px solid ${
-                executionState.hasError
-                  ? 'rgba(239, 68, 68, 0.75)'
-                  : executionState.isComplete
-                  ? 'rgba(16, 185, 129, 0.75)'
-                  : 'rgba(56, 189, 248, 0.7)'
-              }`,
-              boxShadow: executionState.hasError
-                ? '0 20px 48px rgba(0, 0, 0, 0.8), 0 0 35px rgba(239, 68, 68, 0.45), inset 0 1px 1px rgba(255, 255, 255, 0.25)'
-                : executionState.isComplete
-                ? '0 20px 48px rgba(0, 0, 0, 0.8), 0 0 40px rgba(16, 185, 129, 0.5), inset 0 1px 1px rgba(255, 255, 255, 0.3)'
-                : '0 20px 48px rgba(0, 0, 0, 0.8), 0 0 42px rgba(56, 189, 248, 0.45), inset 0 1px 1px rgba(255, 255, 255, 0.3)',
-              padding: '9px 16px 11px 16px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '6px',
-              overflow: 'hidden',
-              animation: executionState.isRunning
-                ? 'hudSlideDown 0.35s cubic-bezier(0.16, 1, 0.3, 1), hudGlowPulse 2.4s ease-in-out infinite'
-                : 'fadeIn 0.25s ease-out',
-              pointerEvents: 'auto',
-            }}
-          >
-            {/* Top iridescent laser accent line */}
-            <div
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                right: 0,
-                height: '2px',
-                background: executionState.hasError
-                  ? 'linear-gradient(90deg, transparent, #EF4444, transparent)'
-                  : executionState.isComplete
-                  ? 'linear-gradient(90deg, transparent, #10B981, #34D399, transparent)'
-                  : 'linear-gradient(90deg, transparent, #38BDF8, #A855F7, #EC4899, #38BDF8, transparent)',
-                boxShadow: executionState.hasError
-                  ? '0 0 10px #EF4444'
-                  : executionState.isComplete
-                  ? '0 0 12px #10B981'
-                  : '0 0 14px #38BDF8',
-              }}
-            />
 
-            {/* Main Row */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
-              {/* Left Core & Stage Text */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
-                {/* Glowing Orbital Core */}
-                <div
-                  style={{
-                    position: 'relative',
-                    width: '34px',
-                    height: '34px',
-                    borderRadius: '50%',
-                    background: executionState.hasError
-                      ? 'linear-gradient(135deg, #DC2626, #EF4444)'
-                      : executionState.isComplete
-                      ? 'linear-gradient(135deg, #059669, #10B981)'
-                      : 'linear-gradient(135deg, #0284C7, #38BDF8)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    flexShrink: 0,
-                    boxShadow: executionState.hasError
-                      ? '0 0 18px rgba(239, 68, 68, 0.9)'
-                      : executionState.isComplete
-                      ? '0 0 18px rgba(16, 185, 129, 0.95)'
-                      : '0 0 20px rgba(56, 189, 248, 1)',
-                  }}
-                >
-                  {executionState.hasError ? (
-                    <FiAlertTriangle style={{ fontSize: '16px', color: '#FFFFFF' }} />
-                  ) : executionState.isComplete ? (
-                    <FiCheck style={{ fontSize: '18px', color: '#FFFFFF', strokeWidth: 3 }} />
-                  ) : (
-                    <svg
-                      width="20"
-                      height="20"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      style={{ animation: 'coreSpin 0.9s linear infinite' }}
-                    >
-                      <circle cx="12" cy="12" r="9" stroke="rgba(255, 255, 255, 0.3)" strokeWidth="3" />
-                      <path d="M12 3a9 9 0 0 1 9 9" stroke="#FFFFFF" strokeWidth="3.2" strokeLinecap="round" />
-                    </svg>
-                  )}
-                </div>
-
-                {/* Status Content */}
-                <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
-                    <span
-                      style={{
-                        fontSize: '0.625rem',
-                        fontWeight: 800,
-                        letterSpacing: '0.08em',
-                        textTransform: 'uppercase',
-                        color: executionState.hasError
-                          ? '#F87171'
-                          : executionState.isComplete
-                          ? '#34D399'
-                          : '#38BDF8',
-                        textShadow: executionState.hasError
-                          ? '0 0 10px rgba(239, 68, 68, 0.7)'
-                          : executionState.isComplete
-                          ? '0 0 10px rgba(16, 185, 129, 0.7)'
-                          : '0 0 10px rgba(56, 189, 248, 0.7)',
-                      }}
-                    >
-                      {executionState.hasError
-                        ? '● EXECUTION ERROR'
-                        : executionState.isComplete
-                        ? '✓ PIPELINE COMPLETED'
-                        : '⚡ N8N LIVE PIPELINE'}
-                    </span>
-                    <span
-                      style={{
-                        fontSize: '0.5625rem',
-                        fontWeight: 700,
-                        padding: '1px 6px',
-                        borderRadius: '8px',
-                        backgroundColor: executionState.isComplete ? 'rgba(16, 185, 129, 0.2)' : 'rgba(56, 189, 248, 0.2)',
-                        border: `1px solid ${executionState.isComplete ? 'rgba(16, 185, 129, 0.45)' : 'rgba(56, 189, 248, 0.45)'}`,
-                        color: executionState.isComplete ? '#34D399' : '#38BDF8',
-                        letterSpacing: '0.04em',
-                      }}
-                    >
-                      REAL-TIME
-                    </span>
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '1px' }}>
-                    {executionState.isRunning && (
-                      <div style={{ display: 'flex', alignItems: 'flex-end', gap: '2px', height: '14px', flexShrink: 0 }}>
-                        <span style={{ width: '2.5px', height: '6px', backgroundColor: '#38BDF8', borderRadius: '1.5px', animation: 'eqBounce 0.8s ease-in-out infinite' }} />
-                        <span style={{ width: '2.5px', height: '13px', backgroundColor: '#818CF8', borderRadius: '1.5px', animation: 'eqBounce 0.8s ease-in-out 0.2s infinite' }} />
-                        <span style={{ width: '2.5px', height: '8px', backgroundColor: '#C084FC', borderRadius: '1.5px', animation: 'eqBounce 0.8s ease-in-out 0.4s infinite' }} />
-                        <span style={{ width: '2.5px', height: '11px', backgroundColor: '#38BDF8', borderRadius: '1.5px', animation: 'eqBounce 0.8s ease-in-out 0.6s infinite' }} />
-                      </div>
-                    )}
-                    <span
-                      style={{
-                        fontSize: '0.78125rem',
-                        fontWeight: 600,
-                        color: '#F8FAFC',
-                        textShadow: '0 0 10px rgba(255, 255, 255, 0.25)',
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        maxWidth: '430px',
-                      }}
-                    >
-                      {executionState.currentStepMessage ||
-                        (executionState.isComplete
-                          ? 'All workflow steps finished successfully.'
-                          : 'Processing workflow nodes...')}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Right Controls */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-                {onViewLogs && (
-                  <button
-                    type="button"
-                    onClick={onViewLogs}
-                    style={{
-                      height: '28px',
-                      padding: '0 10px',
-                      fontSize: '0.75rem',
-                      fontWeight: 600,
-                      borderRadius: '14px',
-                      backgroundColor: 'rgba(255, 255, 255, 0.08)',
-                      border: '1px solid rgba(255, 255, 255, 0.2)',
-                      color: '#E2E8F0',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      transition: 'all 0.2s ease',
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.16)';
-                      e.currentTarget.style.borderColor = '#38BDF8';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)';
-                      e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)';
-                    }}
-                  >
-                    <FiTerminal style={{ fontSize: '12px', color: '#38BDF8' }} />
-                    <span>Logs</span>
-                  </button>
-                )}
-
-                {executionState.isComplete ? (
-                  <button
-                    type="button"
-                    onClick={onCloseCanvas}
-                    style={{
-                      height: '28px',
-                      padding: '0 12px',
-                      fontSize: '0.75rem',
-                      fontWeight: 700,
-                      borderRadius: '14px',
-                      background: 'linear-gradient(135deg, #059669 0%, #10B981 100%)',
-                      border: '1.5px solid #34D399',
-                      color: '#FFFFFF',
-                      boxShadow: '0 0 18px rgba(16, 185, 129, 0.9), 0 2px 8px rgba(0, 0, 0, 0.3)',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '5px',
-                      transition: 'all 0.2s ease',
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.transform = 'scale(1.05)';
-                      e.currentTarget.style.boxShadow = '0 0 26px rgba(16, 185, 129, 1)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.transform = 'scale(1)';
-                      e.currentTarget.style.boxShadow = '0 0 18px rgba(16, 185, 129, 0.9)';
-                    }}
-                  >
-                    <FiCheck style={{ fontSize: '13px', strokeWidth: 3 }} />
-                    <span>View Results</span>
-                  </button>
-                ) : executionState.hasError ? (
-                  <button
-                    type="button"
-                    onClick={onCloseCanvas}
-                    style={{
-                      height: '28px',
-                      padding: '0 12px',
-                      fontSize: '0.75rem',
-                      borderRadius: '14px',
-                      backgroundColor: 'rgba(239, 68, 68, 0.15)',
-                      border: '1px solid rgba(239, 68, 68, 0.4)',
-                      color: '#F87171',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Dismiss
-                  </button>
-                ) : (
-                  <div
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      padding: '3px 10px',
-                      borderRadius: '14px',
-                      backgroundColor: 'rgba(56, 189, 248, 0.15)',
-                      border: '1px solid rgba(56, 189, 248, 0.45)',
-                      boxShadow: '0 0 12px rgba(56, 189, 248, 0.35)',
-                    }}
-                  >
-                    <span
-                      style={{
-                        width: '7px',
-                        height: '7px',
-                        borderRadius: '50%',
-                        backgroundColor: '#38BDF8',
-                        boxShadow: '0 0 8px #38BDF8',
-                        animation: 'pulse 1.2s infinite',
-                      }}
-                    />
-                    <span style={{ fontSize: '0.6875rem', color: '#38BDF8', fontWeight: 700, letterSpacing: '0.04em' }}>
-                      RUNNING
-                    </span>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Bottom animated scanning laser beam */}
-            {executionState.isRunning && (
-              <div
-                style={{
-                  position: 'relative',
-                  width: '100%',
-                  height: '2.5px',
-                  backgroundColor: 'rgba(255, 255, 255, 0.08)',
-                  borderRadius: '2px',
-                  overflow: 'hidden',
-                  marginTop: '2px',
-                }}
-              >
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    bottom: 0,
-                    width: '45%',
-                    background: 'linear-gradient(90deg, transparent, #38BDF8 40%, #A855F7 70%, #EC4899 90%, transparent)',
-                    boxShadow: '0 0 14px #38BDF8, 0 0 24px #A855F7',
-                    animation: 'laserBeamScan 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite',
-                  }}
-                />
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Floating Automations Control Bar (Auto Format & Auto Enhance) */}
         <div
@@ -2614,16 +2326,11 @@ export const FacebookWorkflowCanvas = forwardRef<
                   d={path}
                   fill="none"
                   stroke={strokeColor}
-                  strokeWidth={isFastFlow ? '3.2' : isWireActive ? '2.8' : '2'}
+                  strokeWidth={isFastFlow ? '2.5' : isWireActive ? '2.2' : '2'}
                   strokeDasharray={isCompleted ? 'none' : isWireActive ? '8, 6' : 'none'}
                   strokeLinecap="round"
                   style={{
-                    animation: isFastFlow ? 'n8nFlow 0.5s linear infinite' : isWireActive ? 'n8nFlow 0.9s linear infinite' : 'none',
-                    filter: isFastFlow
-                      ? 'drop-shadow(0 0 10px rgba(56, 189, 248, 1)) drop-shadow(0 0 20px rgba(56, 189, 248, 0.6))'
-                      : isWireActive
-                      ? 'drop-shadow(0 0 8px rgba(56, 189, 248, 0.8))'
-                      : 'none',
+                    animation: isFastFlow ? 'n8nFlow 0.8s linear infinite' : isWireActive ? 'n8nFlow 1.4s linear infinite' : 'none',
                     transition: 'stroke 0.25s ease',
                   }}
                 />
@@ -2650,16 +2357,11 @@ export const FacebookWorkflowCanvas = forwardRef<
                   d={path}
                   fill="none"
                   stroke={strokeColor}
-                  strokeWidth={isFastFlow ? '3.2' : isWireActive ? '2.8' : '2'}
+                  strokeWidth={isFastFlow ? '2.5' : isWireActive ? '2.2' : '2'}
                   strokeDasharray={isCompleted ? 'none' : isWireActive ? '8, 6' : 'none'}
                   strokeLinecap="round"
                   style={{
-                    animation: isFastFlow ? 'n8nFlow 0.5s linear infinite' : isWireActive ? 'n8nFlow 0.9s linear infinite' : 'none',
-                    filter: isFastFlow
-                      ? 'drop-shadow(0 0 10px rgba(16, 185, 129, 1)) drop-shadow(0 0 20px rgba(16, 185, 129, 0.6))'
-                      : isWireActive
-                      ? 'drop-shadow(0 0 8px rgba(16, 185, 129, 0.8))'
-                      : 'none',
+                    animation: isFastFlow ? 'n8nFlow 0.8s linear infinite' : isWireActive ? 'n8nFlow 1.4s linear infinite' : 'none',
                     transition: 'stroke 0.25s ease',
                   }}
                 />
@@ -2688,16 +2390,11 @@ export const FacebookWorkflowCanvas = forwardRef<
                   d={path}
                   fill="none"
                   stroke={strokeColor}
-                  strokeWidth={isFastFlow ? '3.2' : isWireActive ? '2.8' : '2'}
+                  strokeWidth={isFastFlow ? '2.5' : isWireActive ? '2.2' : '2'}
                   strokeDasharray={isCompleted ? 'none' : isWireActive ? '8, 6' : 'none'}
                   strokeLinecap="round"
                   style={{
-                    animation: isFastFlow ? 'n8nFlow 0.5s linear infinite' : isWireActive ? 'n8nFlow 0.9s linear infinite' : 'none',
-                    filter: isFastFlow
-                      ? 'drop-shadow(0 0 10px rgba(16, 185, 129, 1)) drop-shadow(0 0 20px rgba(16, 185, 129, 0.6))'
-                      : isWireActive
-                      ? 'drop-shadow(0 0 8px rgba(16, 185, 129, 0.8))'
-                      : 'none',
+                    animation: isFastFlow ? 'n8nFlow 0.8s linear infinite' : isWireActive ? 'n8nFlow 1.4s linear infinite' : 'none',
                     transition: 'stroke 0.25s ease',
                   }}
                 />
@@ -2777,19 +2474,12 @@ export const FacebookWorkflowCanvas = forwardRef<
                     d={path}
                     fill="none"
                     stroke={wireStrokeColor}
-                    strokeWidth={isXHovered ? '2.5' : isFastFlow ? '3.2' : isFlowing ? '2.8' : isWireHovered ? '2.25' : '2'}
+                    strokeWidth={isXHovered ? '2.5' : isFastFlow ? '2.5' : isFlowing ? '2.2' : isWireHovered ? '2.2' : '2'}
                     strokeDasharray={isExecDone ? 'none' : isFlowing ? '8, 6' : 'none'}
                     strokeLinecap="round"
                     style={{
-                      animation: isFastFlow ? 'n8nFlow 0.5s linear infinite' : isFlowing ? 'n8nFlow 0.9s linear infinite' : 'none',
+                      animation: isFastFlow ? 'n8nFlow 0.8s linear infinite' : isFlowing ? 'n8nFlow 1.4s linear infinite' : 'none',
                       transition: 'stroke 0.18s ease, stroke-width 0.18s ease',
-                      filter: isXHovered
-                        ? 'drop-shadow(0 0 6px rgba(248, 81, 73, 0.65))'
-                        : isFastFlow
-                        ? `drop-shadow(0 0 10px ${isFromImages ? '#10B981' : '#A371F7'}) drop-shadow(0 0 20px ${isFromImages ? 'rgba(16, 185, 129, 0.7)' : 'rgba(163, 113, 247, 0.7)'})`
-                        : isFlowing
-                        ? `drop-shadow(0 0 6px ${isFromImages ? 'rgba(16, 185, 129, 0.7)' : 'rgba(163, 113, 247, 0.7)'})`
-                        : 'none',
                     }}
                   />
                   {/* Disconnect indicator on hover - only active when connection is enabled ("if that disabled these action are not work too") */}
@@ -2813,9 +2503,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                         strokeWidth="2"
                         style={{
                           transition: 'all 0.15s cubic-bezier(0.34, 1.56, 0.64, 1)',
-                          filter: isXHovered
-                            ? 'drop-shadow(0 0 8px rgba(248, 81, 73, 0.85))'
-                            : 'drop-shadow(0 2px 4px rgba(0, 0, 0, 0.25))',
+                          filter: 'drop-shadow(0 1px 3px rgba(0, 0, 0, 0.2))',
                         }}
                       />
                       <line
@@ -2877,7 +2565,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                     strokeLinecap="round"
                     style={{
                       animation: 'n8nFlow 1.2s linear infinite',
-                      filter: `drop-shadow(0 0 6px ${wireColor}99)`,
                     }}
                   />
                   <circle
@@ -2931,19 +2618,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                   onSocketMouseUp={(type, e) => handleSocketMouseUp('trigger', type, e)}
                 />
                 <FaFacebook style={{ fontSize: '30px', color: '#1877F2', position: 'relative', zIndex: 2 }} />
-                {triggerStatus === 'running' && (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      inset: '4px',
-                      borderRadius: '50%',
-                      background: 'radial-gradient(circle, rgba(56, 189, 248, 0.35) 0%, rgba(56, 189, 248, 0.08) 60%, transparent 100%)',
-                      pointerEvents: 'none',
-                      zIndex: 1,
-                      animation: 'innerCoreGlow 1.4s ease-in-out infinite',
-                    }}
-                  />
-                )}
                 <NodeExecutionBadge status={triggerStatus} />
 
                 {/* Label below circle */}
@@ -2965,32 +2639,32 @@ export const FacebookWorkflowCanvas = forwardRef<
                     Facebook Post
                   </span>
                   {triggerStatus === 'running' ? (
-                    <div
+                    <span
                       style={{
+                        fontSize: '0.6875rem',
+                        fontWeight: 500,
+                        color: isDark ? '#38BDF8' : '#0284C7',
                         display: 'inline-flex',
                         alignItems: 'center',
-                        gap: '5px',
-                        padding: '2px 8px',
-                        borderRadius: '12px',
-                        backgroundColor: isDark ? 'rgba(2, 132, 199, 0.22)' : 'rgba(56, 189, 248, 0.16)',
-                        border: '1px solid rgba(56, 189, 248, 0.55)',
-                        boxShadow: '0 0 10px rgba(56, 189, 248, 0.35)',
-                        color: isDark ? '#38BDF8' : '#0284C7',
-                        fontWeight: 700,
-                        fontSize: '0.6875rem',
-                        animation: 'pulse 1.8s infinite',
+                        gap: '4px',
                       }}
                     >
-                      <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#38BDF8', boxShadow: '0 0 6px #38BDF8', animation: 'spin 1s infinite' }} />
+                      <span
+                        style={{
+                          width: '5px',
+                          height: '5px',
+                          borderRadius: '50%',
+                          backgroundColor: isDark ? '#38BDF8' : '#0284C7',
+                        }}
+                      />
                       <span>Fetching Post...</span>
-                    </div>
+                    </span>
                   ) : (
                     <span
                       style={{
                         fontSize: '0.6875rem',
                         color: triggerStatus === 'success' ? '#10B981' : 'var(--text-muted)',
                         fontWeight: triggerStatus === 'success' ? 600 : 400,
-                        textShadow: triggerStatus === 'success' ? '0 0 8px rgba(16, 185, 129, 0.4)' : undefined,
                       }}
                     >
                       {triggerStatus === 'success' ? '✓ Post Located' : 'Trigger · Auto'}
@@ -3036,8 +2710,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  filter: isContentReceptive ? RECEPTIVE_GLOW : undefined,
-                  transition: 'filter 0.2s ease, transform 0.2s ease',
+                  transition: 'transform 0.2s ease',
                 }}
               >
                 <MergedNodeShape
@@ -3083,19 +2756,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                     }
                   }}
                 />
-                {contentStatus === 'running' && (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      inset: '4px',
-                      borderRadius: '50%',
-                      background: 'radial-gradient(circle, rgba(56, 189, 248, 0.35) 0%, rgba(56, 189, 248, 0.08) 60%, transparent 100%)',
-                      pointerEvents: 'none',
-                      zIndex: 1,
-                      animation: 'innerCoreGlow 1.4s ease-in-out infinite',
-                    }}
-                  />
-                )}
                 <FiFileText
                   style={{
                     fontSize: '28px',
@@ -3150,25 +2810,26 @@ export const FacebookWorkflowCanvas = forwardRef<
                     Get Content
                   </span>
                   {contentStatus === 'running' ? (
-                    <div
+                    <span
                       style={{
+                        fontSize: '0.6875rem',
+                        fontWeight: 500,
+                        color: isDark ? '#38BDF8' : '#0284C7',
                         display: 'inline-flex',
                         alignItems: 'center',
-                        gap: '5px',
-                        padding: '2px 8px',
-                        borderRadius: '12px',
-                        backgroundColor: isDark ? 'rgba(2, 132, 199, 0.22)' : 'rgba(56, 189, 248, 0.16)',
-                        border: '1px solid rgba(56, 189, 248, 0.55)',
-                        boxShadow: '0 0 10px rgba(56, 189, 248, 0.35)',
-                        color: isDark ? '#38BDF8' : '#0284C7',
-                        fontWeight: 700,
-                        fontSize: '0.6875rem',
-                        animation: 'pulse 1.8s infinite',
+                        gap: '4px',
                       }}
                     >
-                      <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#38BDF8', boxShadow: '0 0 6px #38BDF8', animation: 'spin 1s infinite' }} />
+                      <span
+                        style={{
+                          width: '5px',
+                          height: '5px',
+                          borderRadius: '50%',
+                          backgroundColor: isDark ? '#38BDF8' : '#0284C7',
+                        }}
+                      />
                       <span>Extracting Text...</span>
-                    </div>
+                    </span>
                   ) : (
                     <span
                       style={{
@@ -3180,7 +2841,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                             ? RECEPTIVE_COLOR
                             : 'var(--text-muted)',
                         fontWeight: contentStatus === 'success' || isContentReceptive ? 600 : 400,
-                        textShadow: contentStatus === 'success' ? '0 0 8px rgba(16, 185, 129, 0.4)' : undefined,
                       }}
                     >
                       {contentStatus === 'success'
@@ -3272,8 +2932,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  filter: isImagesReceptive ? RECEPTIVE_GLOW : undefined,
-                  transition: 'filter 0.2s ease, transform 0.2s ease',
+                  transition: 'transform 0.2s ease',
                 }}
               >
                 <MergedNodeShape
@@ -3319,19 +2978,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                     }
                   }}
                 />
-                {imagesStatus === 'running' && (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      inset: '4px',
-                      borderRadius: '50%',
-                      background: 'radial-gradient(circle, rgba(56, 189, 248, 0.35) 0%, rgba(56, 189, 248, 0.08) 60%, transparent 100%)',
-                      pointerEvents: 'none',
-                      zIndex: 1,
-                      animation: 'innerCoreGlow 1.4s ease-in-out infinite',
-                    }}
-                  />
-                )}
                 <FiImage
                   style={{
                     fontSize: '28px',
@@ -3386,25 +3032,26 @@ export const FacebookWorkflowCanvas = forwardRef<
                 Get Images
               </span>
               {imagesStatus === 'running' ? (
-                <div
+                <span
                   style={{
+                    fontSize: '0.6875rem',
+                    fontWeight: 500,
+                    color: isDark ? '#38BDF8' : '#0284C7',
                     display: 'inline-flex',
                     alignItems: 'center',
-                    gap: '5px',
-                    padding: '2px 8px',
-                    borderRadius: '12px',
-                    backgroundColor: isDark ? 'rgba(2, 132, 199, 0.22)' : 'rgba(56, 189, 248, 0.16)',
-                    border: '1px solid rgba(56, 189, 248, 0.55)',
-                    boxShadow: '0 0 10px rgba(56, 189, 248, 0.35)',
-                    color: isDark ? '#38BDF8' : '#0284C7',
-                    fontWeight: 700,
-                    fontSize: '0.6875rem',
-                    animation: 'pulse 1.8s infinite',
+                    gap: '4px',
                   }}
                 >
-                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#38BDF8', boxShadow: '0 0 6px #38BDF8', animation: 'spin 1s infinite' }} />
+                  <span
+                    style={{
+                      width: '5px',
+                      height: '5px',
+                      borderRadius: '50%',
+                      backgroundColor: isDark ? '#38BDF8' : '#0284C7',
+                    }}
+                  />
                   <span>Downloading Photos...</span>
-                </div>
+                </span>
               ) : (
                 <span
                   style={{
@@ -3416,7 +3063,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                         ? RECEPTIVE_COLOR
                         : 'var(--text-muted)',
                     fontWeight: imagesStatus === 'success' || isImagesReceptive ? 600 : 400,
-                    textShadow: imagesStatus === 'success' ? '0 0 8px rgba(16, 185, 129, 0.4)' : undefined,
                   }}
                 >
                   {imagesStatus === 'success'
@@ -3538,8 +3184,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  filter: isBoxReceptive ? RECEPTIVE_GLOW : undefined,
-                  transition: 'filter 0.2s ease, transform 0.2s ease',
+                  transition: 'transform 0.2s ease',
                 }}
               >
                 <MergedNodeShape
@@ -3572,19 +3217,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                 />
 
                 {/* Center Icon - preserves natural brand colors with clear visibility */}
-                {boxStatus === 'running' && (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      inset: '4px',
-                      borderRadius: '50%',
-                      background: 'radial-gradient(circle, rgba(56, 189, 248, 0.35) 0%, rgba(56, 189, 248, 0.08) 60%, transparent 100%)',
-                      pointerEvents: 'none',
-                      zIndex: 1,
-                      animation: 'innerCoreGlow 1.4s ease-in-out infinite',
-                    }}
-                  />
-                )}
                 <div
                   style={{
                     position: 'relative',
@@ -3708,25 +3340,26 @@ export const FacebookWorkflowCanvas = forwardRef<
                     </span>
                   )}
                   {boxStatus === 'running' ? (
-                    <div
+                    <span
                       style={{
+                        fontSize: '0.6875rem',
+                        fontWeight: 500,
+                        color: isDark ? '#C084FC' : '#7C3AED',
                         display: 'inline-flex',
                         alignItems: 'center',
-                        gap: '5px',
-                        padding: '2px 8px',
-                        borderRadius: '12px',
-                        backgroundColor: isDark ? 'rgba(168, 85, 247, 0.22)' : 'rgba(168, 85, 247, 0.16)',
-                        border: '1px solid rgba(168, 85, 247, 0.55)',
-                        boxShadow: '0 0 10px rgba(168, 85, 247, 0.35)',
-                        color: isDark ? '#C084FC' : '#9333EA',
-                        fontWeight: 700,
-                        fontSize: '0.6875rem',
-                        animation: 'pulse 1.8s infinite',
+                        gap: '4px',
                       }}
                     >
-                      <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#C084FC', boxShadow: '0 0 6px #C084FC', animation: 'spin 1s infinite' }} />
+                      <span
+                        style={{
+                          width: '5px',
+                          height: '5px',
+                          borderRadius: '50%',
+                          backgroundColor: isDark ? '#C084FC' : '#7C3AED',
+                        }}
+                      />
                       <span>Generating AI Copy...</span>
-                    </div>
+                    </span>
                   ) : (
                     <span
                       style={{
@@ -3738,7 +3371,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                             ? RECEPTIVE_COLOR
                             : 'var(--text-muted)',
                         fontWeight: boxStatus === 'success' || isBoxReceptive ? 600 : 400,
-                        textShadow: boxStatus === 'success' ? '0 0 8px rgba(16, 185, 129, 0.4)' : undefined,
                       }}
                     >
                       {boxStatus === 'success'
@@ -3848,8 +3480,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  filter: isDestReceptive ? RECEPTIVE_GLOW : undefined,
-                  transition: 'filter 0.2s ease, transform 0.2s ease',
+                  transition: 'transform 0.2s ease',
                 }}
               >
                 <MergedNodeShape
@@ -3873,19 +3504,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                     }
                   }}
                 />
-                {destStatus === 'running' && (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      inset: '4px',
-                      borderRadius: '50%',
-                      background: 'radial-gradient(circle, rgba(16, 185, 129, 0.35) 0%, rgba(16, 185, 129, 0.08) 60%, transparent 100%)',
-                      pointerEvents: 'none',
-                      zIndex: 1,
-                      animation: 'innerCoreGlow 1.4s ease-in-out infinite',
-                    }}
-                  />
-                )}
                 <FiCheckCircle
                   style={{
                     fontSize: '30px',
@@ -3923,25 +3541,26 @@ export const FacebookWorkflowCanvas = forwardRef<
                     Property Inbox
                   </span>
                   {destStatus === 'running' ? (
-                    <div
+                    <span
                       style={{
+                        fontSize: '0.6875rem',
+                        fontWeight: 500,
+                        color: isDark ? '#34D399' : '#059669',
                         display: 'inline-flex',
                         alignItems: 'center',
-                        gap: '5px',
-                        padding: '2px 8px',
-                        borderRadius: '12px',
-                        backgroundColor: isDark ? 'rgba(16, 185, 129, 0.22)' : 'rgba(16, 185, 129, 0.16)',
-                        border: '1px solid rgba(16, 185, 129, 0.55)',
-                        boxShadow: '0 0 10px rgba(16, 185, 129, 0.35)',
-                        color: isDark ? '#34D399' : '#059669',
-                        fontWeight: 700,
-                        fontSize: '0.6875rem',
-                        animation: 'pulse 1.8s infinite',
+                        gap: '4px',
                       }}
                     >
-                      <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#34D399', boxShadow: '0 0 6px #34D399', animation: 'spin 1s infinite' }} />
-                      <span>Storing in Inbox...</span>
-                    </div>
+                      <span
+                        style={{
+                          width: '5px',
+                          height: '5px',
+                          borderRadius: '50%',
+                          backgroundColor: isDark ? '#34D399' : '#059669',
+                        }}
+                      />
+                      <span>Finalizing Import...</span>
+                    </span>
                   ) : (
                     <span
                       style={{
@@ -3953,7 +3572,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                             ? RECEPTIVE_COLOR
                             : 'var(--text-muted)',
                         fontWeight: destStatus === 'success' || isDestReceptive ? 600 : 400,
-                        textShadow: destStatus === 'success' ? '0 0 8px rgba(16, 185, 129, 0.4)' : undefined,
                       }}
                     >
                       {destStatus === 'success'
