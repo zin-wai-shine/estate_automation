@@ -1,4 +1,5 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
@@ -41,6 +42,11 @@ export const CreateWorkflowView: React.FC = () => {
   const canvasRef = useRef<FacebookWorkflowCanvasRef>(null);
   const [formats, setFormats] = useState<WorkflowFormat[]>(() => getSavedWorkflowFormats());
   const [activeFormatId, setActiveId] = useState<string>(() => getActiveWorkflowFormatId());
+  const [headerActionEl, setHeaderActionEl] = useState<HTMLElement | null>(null);
+
+  useEffect(() => {
+    setHeaderActionEl(document.getElementById('header-action-portal'));
+  }, []);
 
   // Editing state for modal
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -235,7 +241,49 @@ export const CreateWorkflowView: React.FC = () => {
         paddingBottom: formats.length > 0 ? '3rem' : 0,
       }}
     >
-      {/* Sleek Minimal Header: Only shown when workflows exist */}
+      {/* Portal action buttons into Top Navbar when workflows exist */}
+      {headerActionEl &&
+        formats.length > 0 &&
+        createPortal(
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleDeleteAllFormats}
+              leftIcon={<FiTrash2 style={{ fontSize: '13px' }} />}
+              style={{
+                height: '32px',
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                borderColor: 'rgba(239, 68, 68, 0.35)',
+                color: '#EF4444',
+                borderRadius: '0.375rem',
+              }}
+              title="Remove all workflow formats and samples"
+            >
+              Remove All
+            </Button>
+
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={handleCreateNewFormat}
+              leftIcon={<FiPlus style={{ fontSize: '14px' }} />}
+              style={{
+                height: '32px',
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                borderRadius: '0.375rem',
+                boxShadow: 'none',
+              }}
+            >
+              Create Workflow
+            </Button>
+          </div>,
+          headerActionEl
+        )}
+
+      {/* Page Header: Shown when workflows exist */}
       {formats.length > 0 && (
         <div
           style={{
@@ -275,48 +323,10 @@ export const CreateWorkflowView: React.FC = () => {
               </div>
             </div>
           </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
-            <Button
-              variant="outline"
-              size="md"
-              onClick={handleDeleteAllFormats}
-              leftIcon={<FiTrash2 style={{ fontSize: '14px' }} />}
-              style={{
-                height: '38px',
-                fontSize: '0.8125rem',
-                fontWeight: 600,
-                borderColor: 'rgba(239, 68, 68, 0.35)',
-                color: '#EF4444',
-                borderRadius: '0.5rem',
-              }}
-              title="Remove all workflow formats and samples"
-            >
-              Remove All
-            </Button>
-
-            <Button
-              variant="primary"
-              size="md"
-              onClick={handleCreateNewFormat}
-              leftIcon={<HiSparkles style={{ fontSize: '15px' }} />}
-              style={{
-                height: '38px',
-                fontSize: '0.8125rem',
-                fontWeight: 600,
-                background: 'linear-gradient(135deg, #4F46E5 0%, #6366F1 100%)',
-                borderColor: '#4F46E5',
-                borderRadius: '0.5rem',
-                boxShadow: '0 2px 10px rgba(79, 70, 229, 0.3)',
-              }}
-            >
-              Create New Workflow
-            </Button>
-          </div>
         </div>
       )}
 
-      {/* FULL-HEIGHT EMPTY STATE CANVAS: ONLY ONE BUTTON IN CENTER AND SPREAD DOTS */}
+      {/* FULL-HEIGHT EMPTY STATE CANVAS: SQUARE BUTTON IN CENTER & SPREAD REDUCED DOTS */}
       {formats.length === 0 ? (
         <div
           style={{
@@ -334,7 +344,7 @@ export const CreateWorkflowView: React.FC = () => {
             boxSizing: 'border-box',
           }}
         >
-          {/* Spread Dot Canvas Pattern */}
+          {/* Spread Dot Canvas Pattern with Reduced Dot Size */}
           <div
             style={{
               position: 'absolute',
@@ -349,12 +359,12 @@ export const CreateWorkflowView: React.FC = () => {
           >
             <svg width="100%" height="100%">
               <defs>
-                <pattern id="spread-canvas-dots" x="0" y="0" width="30" height="30" patternUnits="userSpaceOnUse">
+                <pattern id="spread-canvas-dots" x="0" y="0" width="24" height="24" patternUnits="userSpaceOnUse">
                   <circle
-                    cx="15"
-                    cy="15"
-                    r="1.5"
-                    fill={isDark ? '#475569' : '#94A3B8'}
+                    cx="12"
+                    cy="12"
+                    r="0.9"
+                    fill={isDark ? 'rgba(255, 255, 255, 0.22)' : 'rgba(0, 0, 0, 0.22)'}
                   />
                 </pattern>
               </defs>
@@ -362,25 +372,73 @@ export const CreateWorkflowView: React.FC = () => {
             </svg>
           </div>
 
-          {/* Just Only One Button in Center - No Glow, Primary Variant */}
-          <div style={{ position: 'relative', zIndex: 2 }}>
-            <Button
-              variant="primary"
-              size="md"
-              onClick={handleCreateNewFormat}
-              leftIcon={<FiPlus style={{ fontSize: '15px' }} />}
+          {/* Square Button in Center with Plus and Small Text Underneath */}
+          <button
+            type="button"
+            onClick={handleCreateNewFormat}
+            style={{
+              position: 'relative',
+              zIndex: 2,
+              background: 'none',
+              border: 'none',
+              padding: 0,
+              margin: 0,
+              cursor: 'pointer',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '0.625rem',
+              outline: 'none',
+              transition: 'transform 0.15s ease',
+            }}
+            onMouseEnter={(e) => {
+              const box = e.currentTarget.querySelector('.square-step-box') as HTMLElement | null;
+              if (box) {
+                box.style.borderColor = 'var(--accent-primary)';
+                box.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)';
+                box.style.color = 'var(--accent-primary)';
+              }
+              e.currentTarget.style.transform = 'translateY(-2px)';
+            }}
+            onMouseLeave={(e) => {
+              const box = e.currentTarget.querySelector('.square-step-box') as HTMLElement | null;
+              if (box) {
+                box.style.borderColor = isDark ? 'rgba(255, 255, 255, 0.4)' : 'rgba(0, 0, 0, 0.3)';
+                box.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.02)';
+                box.style.color = 'var(--text-secondary)';
+              }
+              e.currentTarget.style.transform = 'translateY(0)';
+            }}
+          >
+            <div
+              className="square-step-box"
               style={{
-                height: '40px',
-                padding: '0 1.375rem',
-                fontSize: '0.875rem',
-                fontWeight: 600,
-                borderRadius: '0.5rem',
-                boxShadow: 'none',
+                width: '64px',
+                height: '64px',
+                borderRadius: '0.75rem',
+                border: isDark ? '2px dashed rgba(255, 255, 255, 0.4)' : '2px dashed rgba(0, 0, 0, 0.3)',
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.02)',
+                color: 'var(--text-secondary)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.15s ease',
+                boxSizing: 'border-box',
               }}
             >
-              Create Workflow
-            </Button>
-          </div>
+              <FiPlus style={{ fontSize: '26px', strokeWidth: 2 }} />
+            </div>
+            <span
+              style={{
+                fontSize: '0.8125rem',
+                fontWeight: 600,
+                color: 'var(--text-primary)',
+                letterSpacing: '-0.01em',
+              }}
+            >
+              Add first step...
+            </span>
+          </button>
         </div>
       ) : (
         /* WORKFLOW FORMAT CARDS GRID */
