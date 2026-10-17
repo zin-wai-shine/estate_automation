@@ -2055,76 +2055,32 @@ export const WatermarkView: React.FC = () => {
 
                   <span style={{ fontSize: '0.8125rem', color: 'var(--text-muted)' }}>•</span>
 
-                  <span style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-                    {activeImage.width || 1536} × {activeImage.height || 1024} px
-                  </span>
-
                   {studioMode === 'grid' ? (
-                    <>
-                      <span style={{ fontSize: '0.8125rem', color: 'var(--text-muted)' }}>→</span>
-                      <span
-                        style={{
-                          fontSize: '0.8125rem',
-                          fontWeight: 700,
-                          color: 'var(--accent-primary)',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {currentGridLayout.tileCount} Tiles ({currentTileWidth} × {currentTileHeight} px)
-                      </span>
-                    </>
+                    <span style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                      {currentGridLayout.name} ({currentGridLayout.tileCount} Tiles • {currentTileWidth} × {currentTileHeight} px)
+                    </span>
                   ) : activePresetId === 'original' ? (
-                    <span
-                      style={{
-                        fontSize: '0.75rem',
-                        fontWeight: 600,
-                        color: 'var(--accent-primary)',
-                        backgroundColor: 'var(--accent-primary-alpha)',
-                        padding: '2px 8px',
-                        borderRadius: '6px',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      Original Size (No Crop)
+                    <span style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                      {activeImage.width || 1536} × {activeImage.height || 1024} px <span style={{ color: 'var(--text-muted)' }}>(Original)</span>
                     </span>
                   ) : (
-                    <>
-                      <span style={{ fontSize: '0.8125rem', color: 'var(--text-muted)' }}>→</span>
-                      <span
-                        style={{
-                          fontSize: '0.8125rem',
-                          fontWeight: 700,
-                          color: 'var(--accent-primary)',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap', fontSize: '0.8125rem' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>
+                        {activeImage.width || 1536} × {activeImage.height || 1024} px
+                      </span>
+                      <span style={{ color: 'var(--text-muted)' }}>→</span>
+                      <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
                         {targetWidth} × {targetHeight} px
                       </span>
-                    </>
+                      <span style={{ color: 'var(--accent-primary)', fontWeight: 600, fontSize: '0.75rem' }}>
+                        ({activePreset?.aspect || 'Custom'})
+                      </span>
+                    </div>
                   )}
                 </div>
 
                 {/* Header Action controls */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-
-                  <span
-                    style={{
-                      fontSize: '0.75rem',
-                      fontWeight: 600,
-                      color: 'var(--text-secondary)',
-                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-main)',
-                      border: '1px solid var(--border-color)',
-                      padding: '4px 10px',
-                      borderRadius: '6px',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {studioMode === 'grid'
-                      ? `${currentGridLayout.name} (${currentGridLayout.tileCount} Tiles)`
-                      : activePresetId === 'original'
-                      ? 'Original Ratio'
-                      : `${fitMode === 'cover' ? 'Fill' : 'Fit'} • ${activePreset?.aspect || '1:1'}`}
-                  </span>
 
                   <button
                     type="button"
