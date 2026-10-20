@@ -7235,54 +7235,6 @@ export const FacebookWorkflowCanvas = forwardRef<
             );
           })}
 
-          {/* Quick Add Output Node Button on Canvas */}
-          {(() => {
-            const allDests = getNormalizedDestinations(config).filter((d) => d.enabled !== false);
-            if (allDests.length === 0) return null;
-            const lastDest = allDests[allDests.length - 1];
-            const btnX = lastDest.x ?? 740;
-            const btnY = (lastDest.y ?? 248) + 120;
-            return (
-              <button
-                type="button"
-                onClick={() => handleAddDestinationNode('social_media')}
-                style={{
-                  position: 'absolute',
-                  left: `${btnX}px`,
-                  top: `${btnY}px`,
-                  width: `${CIRCLE_SIZE}px`,
-                  height: '30px',
-                  borderRadius: '15px',
-                  border: isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1',
-                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#F8FAFC',
-                  color: 'var(--text-secondary)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '4px',
-                  fontSize: '0.6875rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  zIndex: 10,
-                  transition: 'all 0.15s ease',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = '#2563EB';
-                  e.currentTarget.style.color = '#2563EB';
-                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(37, 99, 235, 0.08)' : '#EFF6FF';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = isDark ? '#30363D' : '#CBD5E1';
-                  e.currentTarget.style.color = 'var(--text-secondary)';
-                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.03)' : '#F8FAFC';
-                }}
-              >
-                <FiPlus size={12} />
-                <span>+ Output</span>
-              </button>
-            );
-          })()}
-
 
 
           {/* QUICK ADD POPOVER (Store in Database / Post to Social Media) */}

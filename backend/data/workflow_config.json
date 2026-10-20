@@ -1,5 +1,5 @@
 {
-  "timestamp": 1792497876401,
+  "timestamp": 1792498076778,
   "workflow_formats": [
     {
       "config": {
@@ -134,6 +134,11 @@
             "fromNodeId": "get-images",
             "id": "conn-images-ai-box-watermark-1792356628548",
             "toNodeId": "ai-box-watermark-1792356628548"
+          },
+          {
+            "fromNodeId": "ai-box-1792453830819",
+            "id": "conn-ai-box-1792453830819-dest-platform-instagram-1792498076777-1792498076777",
+            "toNodeId": "dest-platform-instagram-1792498076777"
           }
         ],
         "destination": {
@@ -233,6 +238,20 @@
             "title": "Bolt Haven Realty",
             "x": 1400,
             "y": 427
+          },
+          {
+            "enabled": true,
+            "id": "dest-platform-instagram-1792498076777",
+            "includeContent": true,
+            "includeImages": true,
+            "platform": "instagram",
+            "postToSocialMedia": true,
+            "publishDirectly": true,
+            "storeInDatabase": false,
+            "targetMode": "social_media",
+            "title": "Instagram",
+            "x": 1400,
+            "y": 567
           }
         ],
         "getContent": {
@@ -261,8 +280,8 @@
           "y": 248
         },
         "panOffset": {
-          "x": 36,
-          "y": 206
+          "x": 62,
+          "y": 227
         },
         "trigger": {
           "autoClassifyProperty": true,
@@ -278,13 +297,13 @@
           "x": 100,
           "y": 248
         },
-        "zoom": 0.88
+        "zoom": 0.79
       },
       "createdAt": 1792350804351,
       "description": "Custom Facebook import extraction with dynamic AI prompt generator",
       "id": "format-1792350804351",
       "name": "Custom Workflow #1",
-      "updatedAt": 1792497876401
+      "updatedAt": 1792498076778
     },
     {
       "config": {
