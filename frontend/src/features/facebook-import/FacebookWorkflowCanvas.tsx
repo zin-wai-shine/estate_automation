@@ -7691,7 +7691,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                           color: 'var(--text-primary)',
                           backgroundColor: 'transparent',
                           border: 'none',
-                          borderBottom: isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1',
                           outline: 'none',
                           width: '100%',
                           padding: '1px 0',
@@ -7715,7 +7714,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                           color: 'var(--text-primary)',
                           backgroundColor: 'transparent',
                           border: 'none',
-                          borderBottom: isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1',
                           outline: 'none',
                           width: '100%',
                           padding: '1px 0',
@@ -7729,13 +7727,14 @@ export const FacebookWorkflowCanvas = forwardRef<
                         {isImages && 'Get Images Branch'}
                       </div>
                     )}
-                    <div style={{ fontSize: '0.6875rem', color: isDark ? '#8B949E' : '#64748B', marginTop: '2px' }}>
-                      {isTrigger && 'Trigger Node · OpenClaw'}
-                      {isContent && '100% Full Content Extraction'}
-                      {isImages && 'High-Res Media Downloader'}
-                      {isCombine && `${combineInputs.length} inputs merged`}
-                      {isAIBox && currentModalAIBox && `${currentModalAIBox.provider === 'google_ai' ? 'Google Gemini' : 'OpenAI'} · ${currentModalAIBox.model || 'Model'}`}
-                    </div>
+                    {!isAIBox && (
+                      <div style={{ fontSize: '0.6875rem', color: isDark ? '#8B949E' : '#64748B', marginTop: '2px' }}>
+                        {isTrigger && 'Trigger Node · OpenClaw'}
+                        {isContent && '100% Full Content Extraction'}
+                        {isImages && 'High-Res Media Downloader'}
+                        {isCombine && `${combineInputs.length} inputs merged`}
+                      </div>
+                    )}
                   </div>
                 </div>
 
