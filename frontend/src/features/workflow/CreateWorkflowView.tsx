@@ -443,9 +443,11 @@ export const CreateWorkflowView: React.FC = () => {
     };
     setEditingFormat(updated);
     if (autoSave) {
-      const updatedList = formats.map((f) => (f.id === editingFormat.id ? updated : f));
-      setFormats(updatedList);
-      saveWorkflowFormatsList(updatedList);
+      setFormats((prevFormats) => {
+        const updatedList = prevFormats.map((f) => (f.id === editingFormat.id ? updated : f));
+        saveWorkflowFormatsList(updatedList);
+        return updatedList;
+      });
     }
   };
 

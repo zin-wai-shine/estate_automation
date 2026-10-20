@@ -1,5 +1,5 @@
 {
-  "timestamp": 1792512749041,
+  "timestamp": 1792513475287,
   "workflow_formats": [
     {
       "config": {
@@ -100,6 +100,16 @@
             "fromNodeId": "combine-box-1792511220987",
             "id": "conn-combine-box-1792511220987-dest-platform-instagram-1792511239089-1792511239089",
             "toNodeId": "dest-platform-instagram-1792511239089"
+          },
+          {
+            "fromNodeId": "dest-platform-instagram-1792511239089",
+            "id": "conn-dest-platform-instagram-1792511239089-dest-instagram-ig-102-1792513472553-1792513472553",
+            "toNodeId": "dest-instagram-ig-102-1792513472553"
+          },
+          {
+            "fromNodeId": "dest-platform-instagram-1792511239089",
+            "id": "conn-dest-platform-instagram-1792511239089-dest-instagram-ig-101-1792513475286-1792513475286",
+            "toNodeId": "dest-instagram-ig-101-1792513475286"
           }
         ],
         "destination": {
@@ -222,6 +232,53 @@
             "title": "Instagram",
             "x": 960,
             "y": 320
+          },
+          {
+            "accountId": "ig-102",
+            "accountName": "Living Space Bangkok",
+            "accountUsername": "@livingspace_bkk",
+            "enabled": true,
+            "id": "dest-instagram-ig-102-1792513472553",
+            "includeContent": true,
+            "includeFirstComment": false,
+            "includeHashtags": true,
+            "includeImages": true,
+            "platform": "instagram",
+            "postToSocialMedia": true,
+            "publishDirectly": true,
+            "selectedIgAccountIds": [
+              "ig-102"
+            ],
+            "selectedPageIds": [
+              "1287202894475973"
+            ],
+            "storeInDatabase": false,
+            "targetMode": "social_media",
+            "title": "Living Space Bangkok",
+            "x": 1180,
+            "y": 320
+          },
+          {
+            "accountId": "ig-101",
+            "accountName": "Dot BKK Living IG",
+            "accountUsername": "@dotbkk_living",
+            "enabled": true,
+            "id": "dest-instagram-ig-101-1792513475286",
+            "includeContent": true,
+            "includeFirstComment": false,
+            "includeHashtags": true,
+            "includeImages": true,
+            "platform": "instagram",
+            "postToSocialMedia": true,
+            "publishDirectly": true,
+            "selectedIgAccountIds": [
+              "ig-101"
+            ],
+            "storeInDatabase": false,
+            "targetMode": "social_media",
+            "title": "Dot BKK Living IG",
+            "x": 1140,
+            "y": 435
           }
         ],
         "getContent": {
@@ -272,7 +329,7 @@
       "description": "Custom Facebook import extraction with dynamic AI prompt generator",
       "id": "format-1792501906367",
       "name": "Custom Workflow #1",
-      "updatedAt": 1792512749040
+      "updatedAt": 1792513475287
     },
     {
       "config": {
@@ -281,7 +338,7 @@
             "customPrompt": "",
             "enabled": true,
             "id": "ai-box-1792509870904",
-            "model": "gemini-flash-latest",
+            "model": "gemini-2.5-flash",
             "processType": "text_ai",
             "provider": "google_ai",
             "templateId": "",
@@ -422,7 +479,7 @@
       "description": "Custom Facebook import extraction with dynamic AI prompt generator",
       "id": "format-1792509841171",
       "name": "Custom Workflow #2",
-      "updatedAt": 1792511200105
+      "updatedAt": 1792513109264
     }
   ]
 }

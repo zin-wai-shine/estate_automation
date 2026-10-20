@@ -1325,12 +1325,12 @@ export const sanitizeAndResolveCollisions = (
     ) {
       return b;
     }
-    // If text AI box uses an inactive provider without credits (openai or laozhang_ai), migrate to active google_ai
-    if (b.provider === 'openai' || b.provider === 'laozhang_ai') {
+    // If text AI box uses an inactive provider without credits (laozhang_ai), migrate to active google_ai
+    if (b.provider === 'laozhang_ai') {
       return {
         ...b,
         provider: 'google_ai' as const,
-        model: 'gemini-flash-latest',
+        model: b.model || 'gemini-2.5-flash',
       };
     }
     return b;
@@ -2648,6 +2648,8 @@ export const FacebookWorkflowCanvas = forwardRef<
     setActiveModalNode(null);
     setConnectDrawerNode(null);
     setIsAISettingsDrawerOpen(false);
+    setSelectedNodeIds(new Set());
+    setSelectedBoxId(null);
   };
 
   // Comprehensive Escape Key Listener to dismiss any active drawer, modal, or popover
@@ -4461,7 +4463,7 @@ export const FacebookWorkflowCanvas = forwardRef<
       title: 'Gemini 2.5 Flash',
       processType: 'text_ai',
       provider: 'google_ai',
-      model: 'gemini-flash-latest',
+      model: 'gemini-2.5-flash',
       templateId: '',
       templateText: '',
       customPrompt: '',
@@ -5472,6 +5474,20 @@ export const FacebookWorkflowCanvas = forwardRef<
       setConnectDrawerNode(null);
       setQuickAddPopover(null);
       setActiveModalNode(node);
+
+      if (node) {
+        let nodeId = '';
+        if (node.type === 'trigger') nodeId = 'trigger';
+        else if (node.type === 'get-content') nodeId = 'get-content';
+        else if (node.type === 'get-images') nodeId = 'get-images';
+        else if (node.type === 'ai-box') nodeId = node.boxId;
+        else if (node.type === 'combine') nodeId = node.combineId || (node as any).id;
+        else if (node.type === 'destination') nodeId = node.destinationId || 'destination';
+        if (nodeId) {
+          setSelectedNodeIds(new Set([nodeId]));
+          setSelectedBoxId(nodeId);
+        }
+      }
     }
   };
 
@@ -6295,7 +6311,7 @@ export const FacebookWorkflowCanvas = forwardRef<
             const triggerStatus = getNodeExecutionStatus('trigger');
             return (
               <div
-                className={`canvas-node is-trigger ${selectedNodeIds.has('trigger') ? 'is-selected' : ''} ${hoveredNodeId === 'trigger' ? 'is-hovered' : ''} ${triggerStatus === 'running' ? 'is-running' : ''} ${triggerStatus === 'success' ? 'is-completed' : ''}`}
+                className={`canvas-node is-trigger ${activeModalNode?.type === 'trigger' || selectedNodeIds.has('trigger') ? 'is-selected' : ''} ${hoveredNodeId === 'trigger' ? 'is-hovered' : ''} ${triggerStatus === 'running' ? 'is-running' : ''} ${triggerStatus === 'success' ? 'is-completed' : ''}`}
                 onMouseEnter={() => handleNodeMouseEnter('trigger')}
                 onMouseLeave={() => handleNodeMouseLeave('trigger')}
                 onMouseDown={(e) => startDragNode('trigger', e)}
@@ -6353,8 +6369,11 @@ export const FacebookWorkflowCanvas = forwardRef<
                     flexDirection: 'column',
                     alignItems: 'center',
                     gap: '2px',
-                    pointerEvents: 'none',
+                    pointerEvents: 'auto',
+                    cursor: 'pointer',
+                    zIndex: 2,
                   }}
+                  onClick={(e) => handleNodeClick({ type: 'trigger' }, e)}
                 >
                   <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                     {config.trigger.monitoredPageName || 'Extract Link'}
@@ -6408,7 +6427,7 @@ export const FacebookWorkflowCanvas = forwardRef<
 
             return (
               <div
-                className={`canvas-node ${selectedNodeIds.has('get-content') ? 'is-selected' : ''} ${hoveredNodeId === 'get-content' ? 'is-hovered' : ''} ${isContentReceptive ? 'is-receptive' : ''} ${contentStatus === 'running' ? 'is-running' : ''} ${contentStatus === 'success' ? 'is-completed' : ''}`}
+                className={`canvas-node ${activeModalNode?.type === 'get-content' || selectedNodeIds.has('get-content') ? 'is-selected' : ''} ${hoveredNodeId === 'get-content' ? 'is-hovered' : ''} ${isContentReceptive ? 'is-receptive' : ''} ${contentStatus === 'running' ? 'is-running' : ''} ${contentStatus === 'success' ? 'is-completed' : ''}`}
                 onMouseEnter={() => handleNodeMouseEnter('get-content')}
                 onMouseLeave={() => handleNodeMouseLeave('get-content')}
                 onMouseDown={(e) => startDragNode('get-content', e)}
@@ -6500,9 +6519,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                     alignItems: 'center',
                     gap: '2px',
                     pointerEvents: 'auto',
+                    cursor: 'pointer',
                     zIndex: 2,
                   }}
-                  onClick={(e) => e.stopPropagation()}
+                  onClick={(e) => handleNodeClick({ type: 'get-content' }, e)}
                 >
                   <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                     Get Content
@@ -6563,7 +6583,7 @@ export const FacebookWorkflowCanvas = forwardRef<
 
             return (
               <div
-                className={`canvas-node ${selectedNodeIds.has('get-images') ? 'is-selected' : ''} ${hoveredNodeId === 'get-images' ? 'is-hovered' : ''} ${isImagesReceptive ? 'is-receptive' : ''} ${imagesStatus === 'running' ? 'is-running' : ''} ${imagesStatus === 'success' ? 'is-completed' : ''}`}
+                className={`canvas-node ${activeModalNode?.type === 'get-images' || selectedNodeIds.has('get-images') ? 'is-selected' : ''} ${hoveredNodeId === 'get-images' ? 'is-hovered' : ''} ${isImagesReceptive ? 'is-receptive' : ''} ${imagesStatus === 'running' ? 'is-running' : ''} ${imagesStatus === 'success' ? 'is-completed' : ''}`}
                 onMouseEnter={() => handleNodeMouseEnter('get-images')}
                 onMouseLeave={() => handleNodeMouseLeave('get-images')}
                 onMouseDown={(e) => startDragNode('get-images', e)}
@@ -6655,9 +6675,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                 alignItems: 'center',
                 gap: '2px',
                 pointerEvents: 'auto',
+                cursor: 'pointer',
                 zIndex: 2,
               }}
-              onClick={(e) => e.stopPropagation()}
+              onClick={(e) => handleNodeClick({ type: 'get-images' }, e)}
             >
               <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                 Get Images
@@ -6712,7 +6733,10 @@ export const FacebookWorkflowCanvas = forwardRef<
           {/* ======================================================== */}
           {config.aiBoxes.map((box) => {
             const isEffectiveEnabled = isNodeEffectivelyEnabled(box.id);
-            const isSelected = selectedBoxId === box.id;
+            const isSelected =
+              (activeModalNode?.type === 'ai-box' && activeModalNode.boxId === box.id) ||
+              selectedNodeIds.has(box.id) ||
+              selectedBoxId === box.id;
             const isWatermark = isWatermarkAIBox(box);
             const isImageNode = isImageAIBox(box, config.connections) || isWatermark;
             const isGoogle = !isImageNode && (box.provider === 'google_ai' || isImageModel(box.model, box.provider) || (!box.provider && !box.model?.startsWith('runware:')));
@@ -6741,7 +6765,7 @@ export const FacebookWorkflowCanvas = forwardRef<
             return (
               <div
                 key={box.id}
-                className={`canvas-node ${selectedNodeIds.has(box.id) ? 'is-selected' : ''} ${hoveredNodeId === box.id ? 'is-hovered' : ''} ${isBoxReceptive ? 'is-receptive' : ''} ${boxStatus === 'running' ? 'is-running' : ''} ${boxStatus === 'success' ? 'is-completed' : ''}`}
+                className={`canvas-node ${isSelected ? 'is-selected' : ''} ${hoveredNodeId === box.id ? 'is-hovered' : ''} ${isBoxReceptive ? 'is-receptive' : ''} ${boxStatus === 'running' ? 'is-running' : ''} ${boxStatus === 'success' ? 'is-completed' : ''}`}
                 onMouseEnter={() => handleNodeMouseEnter(box.id)}
                 onMouseLeave={() => handleNodeMouseLeave(box.id)}
                 onMouseDown={(e) => startDragNode(box.id, e)}
@@ -6960,7 +6984,9 @@ export const FacebookWorkflowCanvas = forwardRef<
           {/* DESTINATION / OUTPUT NODES (Supports Multiple Independent Nodes: Database, Social Media, or Hybrid) */}
           {/* COMBINE BOX NODES */}
           {(config.combineBoxes || []).filter((cb) => cb.enabled !== false).map((cb) => {
-            const cbIsSelected = activeModalNode?.type === 'combine' && (activeModalNode.combineId === cb.id || (activeModalNode as any).id === cb.id);
+            const cbIsSelected =
+              (activeModalNode?.type === 'combine' && (activeModalNode.combineId === cb.id || (activeModalNode as any).id === cb.id)) ||
+              selectedNodeIds.has(cb.id);
             const cbConnsIn = dedupeConnections(config.connections || []).filter((c) => c.toNodeId === cb.id);
             const cbConnsOut = dedupeConnections(config.connections || []).filter((c) => c.fromNodeId === cb.id);
             const uniqueCbInputs = Array.from(new Set(cbConnsIn.map((c) => c.fromNodeId)));
@@ -6977,7 +7003,7 @@ export const FacebookWorkflowCanvas = forwardRef<
             return (
               <div
                 key={`node-combine-${cb.id}`}
-                className={`canvas-node ${selectedNodeIds.has(cb.id) ? 'is-selected' : ''} ${hoveredNodeId === cb.id ? 'is-hovered' : ''} ${isCbReceptive ? 'is-receptive' : ''}`}
+                className={`canvas-node ${cbIsSelected ? 'is-selected' : ''} ${hoveredNodeId === cb.id ? 'is-hovered' : ''} ${isCbReceptive ? 'is-receptive' : ''}`}
                 onMouseEnter={() => handleNodeMouseEnter(cb.id)}
                 onMouseLeave={() => handleNodeMouseLeave(cb.id)}
                 onMouseDown={(e) => startDragNode(cb.id, e)}
@@ -7040,7 +7066,23 @@ export const FacebookWorkflowCanvas = forwardRef<
                   <FiGitMerge style={{ fontSize: '30px', color: '#F59E0B', filter: 'drop-shadow(0 2px 6px rgba(245, 158, 11, 0.4))' }} />
                 </div>
                 {/* Label */}
-                <div style={{ position: 'absolute', top: `${CIRCLE_SIZE + 8}px`, left: '50%', transform: 'translateX(-50%)', whiteSpace: 'nowrap', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', pointerEvents: 'none' }}>
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: `${CIRCLE_SIZE + 8}px`,
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    whiteSpace: 'nowrap',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '2px',
+                    pointerEvents: 'auto',
+                    cursor: 'pointer',
+                    zIndex: 2,
+                  }}
+                  onClick={(e) => handleNodeClick({ type: 'combine', combineId: cb.id, id: cb.id }, e)}
+                >
                   <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>{cb.title || 'Combine Box'}</span>
                   <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
                     {cbStatus === 'success' ? `✓ Merged Output · ${uniqueCbInputs.length} ready` : `Merged Output · ${uniqueCbInputs.length} input${uniqueCbInputs.length !== 1 ? 's' : ''}`}
@@ -7056,8 +7098,9 @@ export const FacebookWorkflowCanvas = forwardRef<
             const destX = destNode.x ?? 740;
             const destY = destNode.y ?? (248 + destIdx * 140);
             const isSelected =
-              activeModalNode?.type === 'destination' &&
-              (activeModalNode.destinationId ? activeModalNode.destinationId === destId : destIdx === 0);
+              (activeModalNode?.type === 'destination' &&
+              (activeModalNode.destinationId ? activeModalNode.destinationId === destId : destIdx === 0)) ||
+              selectedNodeIds.has(destId);
             const isDestReceptive = Boolean(
               dragWire && dragWire.fromType === 'output' && isValidConnection(dragWire.fromNodeId, destId)
             );
@@ -7129,7 +7172,7 @@ export const FacebookWorkflowCanvas = forwardRef<
             return (
               <div
                 key={`node-dest-${destId}`}
-                className={`canvas-node ${isAccountNode ? 'is-circle' : ''} ${hoveredNodeId === destId ? 'is-hovered' : ''} ${
+                className={`canvas-node ${isAccountNode ? 'is-circle' : ''} ${isSelected ? 'is-selected' : ''} ${hoveredNodeId === destId ? 'is-hovered' : ''} ${
                   isDestReceptive ? 'is-receptive' : ''
                 } ${isDestRunning ? 'is-running' : ''} ${isDestSuccess ? 'is-completed' : ''}`}
                 onMouseEnter={() => handleNodeMouseEnter(destId)}
@@ -7380,8 +7423,11 @@ export const FacebookWorkflowCanvas = forwardRef<
                     flexDirection: 'column',
                     alignItems: 'center',
                     gap: '2px',
-                    pointerEvents: 'none',
+                    pointerEvents: 'auto',
+                    cursor: 'pointer',
+                    zIndex: 2,
                   }}
+                  onClick={(e) => handleNodeClick({ type: 'destination', destinationId: destId }, e)}
                 >
                   <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                     {targetTitle}

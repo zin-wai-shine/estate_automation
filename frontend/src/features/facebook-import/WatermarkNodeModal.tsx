@@ -50,6 +50,18 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
   });
 
   const [nodeTitle, setNodeTitle] = useState<string>(box.title || 'Photo Format');
+
+  React.useEffect(() => {
+    const formatId =
+      box.cropFormatId ||
+      savedFormats.find((f) => f.id === box.templateId)?.id ||
+      savedFormats.find((f) => f.isDefault)?.id ||
+      savedFormats[0]?.id ||
+      'format-ig-portrait';
+    setSelectedFormatId(formatId);
+    setNodeTitle(box.title || 'Photo Format');
+  }, [box.id, box.cropFormatId, box.templateId, box.title, savedFormats]);
+
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
 
