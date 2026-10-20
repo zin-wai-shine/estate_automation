@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { Badge } from '../../components/ui/Badge';
-import { Select } from '../../components/ui/Select';
+import { Select, type SelectGroup } from '../../components/ui/Select';
 import {
   FiCpu,
   FiPlay,
@@ -318,6 +318,26 @@ export const CONTENT_AI_MODEL_OPTIONS = [
   { value: 'google_ai|gemini-2.0-flash', label: 'Google · Gemini 2.0 Flash (Next Gen)' },
   { value: 'google_ai|gemini-2.5-flash', label: 'Google · Gemini 2.5 Flash (Ultra Fast)' },
   { value: 'google_ai|gemini-pro-latest', label: 'Google · Gemini Pro (High Precision)' },
+];
+
+export const AI_ENGINE_MODEL_GROUPS: SelectGroup[] = [
+  {
+    label: 'Google Gemini',
+    options: [
+      { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (Ultra Fast & Precise)' },
+      { value: 'gemini-flash-latest', label: 'Gemini Flash Latest' },
+      { value: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro (Deep Reasoning)' },
+      { value: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash (Balanced)' },
+      { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash (Next Gen)' },
+    ],
+  },
+  {
+    label: 'OpenAI',
+    options: [
+      { value: 'gpt-4o', label: 'GPT-4o (High Precision)' },
+      { value: 'gpt-4o-mini', label: 'GPT-4o-mini (Lightweight & Fast)' },
+    ],
+  },
 ];
 
 export const DEFAULT_FB_WORKFLOW_CONFIG: FacebookWorkflowConfig = {
@@ -8347,78 +8367,18 @@ export const FacebookWorkflowCanvas = forwardRef<
                       <label style={{ display: 'block', fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
                         AI Engine & Model
                       </label>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '0.25rem' }}>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleUpdateAIBox(currentModalAIBox.id, {
-                              provider: 'google_ai',
-                              model: 'gemini-2.5-flash',
-                            })
-                          }
-                          style={{
-                            height: '34px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '0.5rem',
-                            borderRadius: '0.375rem',
-                            border: `1.5px solid ${currentModalAIBox.provider === 'google_ai' ? '#3B82F6' : isDark ? '#30363D' : '#CBD5E1'}`,
-                            backgroundColor: currentModalAIBox.provider === 'google_ai' ? 'rgba(59, 130, 246, 0.12)' : 'transparent',
-                            color: currentModalAIBox.provider === 'google_ai' ? '#60A5FA' : 'var(--text-secondary)',
-                            fontSize: '0.75rem',
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                          }}
-                        >
-                          <SiGooglegemini style={{ fontSize: '15px' }} />
-                          <span>Google Gemini</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleUpdateAIBox(currentModalAIBox.id, {
-                              provider: 'openai',
-                              model: 'gpt-4o',
-                            })
-                          }
-                          style={{
-                            height: '34px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '0.5rem',
-                            borderRadius: '0.375rem',
-                            border: `1.5px solid ${currentModalAIBox.provider === 'openai' ? '#10B981' : isDark ? '#30363D' : '#CBD5E1'}`,
-                            backgroundColor: currentModalAIBox.provider === 'openai' ? 'rgba(16, 185, 129, 0.12)' : 'transparent',
-                            color: currentModalAIBox.provider === 'openai' ? '#34D399' : 'var(--text-secondary)',
-                            fontSize: '0.75rem',
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                          }}
-                        >
-                          <OpenAIIcon size={15} />
-                          <span>OpenAI</span>
-                        </button>
-                      </div>
-
                       <Select
-                        options={
-                          currentModalAIBox.provider === 'google_ai'
-                            ? [
-                                { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (Ultra Fast & Precise)' },
-                                { value: 'gemini-flash-latest', label: 'Gemini Flash Latest' },
-                                { value: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro (Deep Reasoning)' },
-                              ]
-                            : [
-                                { value: 'gpt-4o', label: 'GPT-4o (High Precision)' },
-                                { value: 'gpt-4o-mini', label: 'GPT-4o-mini (Lightweight & Fast)' },
-                              ]
-                        }
-                        value={currentModalAIBox.model || (currentModalAIBox.provider === 'google_ai' ? 'gemini-2.5-flash' : 'gpt-4o')}
-                        onChange={(val) => handleUpdateAIBox(currentModalAIBox.id, { model: val })}
-                        height="34px"
+                        options={AI_ENGINE_MODEL_GROUPS}
+                        value={currentModalAIBox.model || (currentModalAIBox.provider === 'openai' ? 'gpt-4o' : 'gemini-2.5-flash')}
+                        onChange={(val) => {
+                          const isGoogle = AI_ENGINE_MODEL_GROUPS[0]?.options.some((o) => o.value === val);
+                          handleUpdateAIBox(currentModalAIBox.id, {
+                            model: val,
+                            provider: isGoogle ? 'google_ai' : 'openai',
+                          });
+                        }}
+                        height="36px"
+                        placeholder="Select AI Model..."
                       />
                     </div>
 

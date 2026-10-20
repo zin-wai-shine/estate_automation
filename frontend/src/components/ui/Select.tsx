@@ -1,6 +1,11 @@
 import React from 'react';
-import ReactSelect, { components, type DropdownIndicatorProps, type SingleValueProps } from 'react-select';
-import type { StylesConfig } from 'react-select';
+import ReactSelect, {
+  components,
+  type DropdownIndicatorProps,
+  type SingleValueProps,
+  type GroupBase,
+  type StylesConfig,
+} from 'react-select';
 import { FiChevronDown } from 'react-icons/fi';
 
 export interface SelectOption {
@@ -8,8 +13,13 @@ export interface SelectOption {
   label: string;
 }
 
-export interface SelectProps {
+export interface SelectGroup {
+  label: string;
   options: SelectOption[];
+}
+
+export interface SelectProps {
+  options: (SelectOption | SelectGroup)[];
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
@@ -21,7 +31,7 @@ export interface SelectProps {
   id?: string;
 }
 
-const CustomDropdownIndicator: React.FC<DropdownIndicatorProps<SelectOption, false>> = (props) => {
+const CustomDropdownIndicator: React.FC<DropdownIndicatorProps<SelectOption, false, GroupBase<SelectOption>>> = (props) => {
   return (
     <components.DropdownIndicator {...props}>
       <FiChevronDown
@@ -38,7 +48,7 @@ const CustomDropdownIndicator: React.FC<DropdownIndicatorProps<SelectOption, fal
   );
 };
 
-const CustomSingleValue: React.FC<SingleValueProps<SelectOption, false>> = ({ children, ...props }) => {
+const CustomSingleValue: React.FC<SingleValueProps<SelectOption, false, GroupBase<SelectOption>>> = ({ children, ...props }) => {
   return (
     <components.SingleValue {...props}>
       <span
@@ -69,9 +79,19 @@ export const Select: React.FC<SelectProps> = ({
   className,
   id,
 }) => {
-  const selectedOption = options.find((opt) => String(opt.value) === String(value)) || null;
+  const selectedOption = React.useMemo(() => {
+    for (const opt of options) {
+      if ('options' in opt && Array.isArray((opt as SelectGroup).options)) {
+        const found = (opt as SelectGroup).options.find((sub) => String(sub.value) === String(value));
+        if (found) return found;
+      } else if ('value' in opt && String((opt as SelectOption).value) === String(value)) {
+        return opt as SelectOption;
+      }
+    }
+    return null;
+  }, [options, value]);
 
-  const customStyles: StylesConfig<SelectOption, false> = {
+  const customStyles: StylesConfig<SelectOption, false, GroupBase<SelectOption>> = {
     container: (provided) => ({
       ...provided,
       width,
@@ -200,17 +220,31 @@ export const Select: React.FC<SelectProps> = ({
         backgroundColor: 'var(--accent-primary)',
       },
     }),
+    groupHeading: (provided) => ({
+      ...provided,
+      color: 'var(--text-muted, #71717A)',
+      fontSize: '0.6875rem',
+      fontWeight: 700,
+      textTransform: 'uppercase',
+      letterSpacing: '0.05em',
+      padding: '0.45rem 0.75rem 0.2rem',
+      margin: 0,
+    }),
+    group: (provided) => ({
+      ...provided,
+      padding: '0.125rem 0',
+    }),
   };
 
   return (
-    <ReactSelect<SelectOption, false>
+    <ReactSelect<SelectOption, false, GroupBase<SelectOption>>
       id={id}
       className={className}
       value={selectedOption}
       onChange={(opt) => {
         if (opt) onChange(opt.value);
       }}
-      options={options}
+      options={options as (SelectOption | GroupBase<SelectOption>)[]}
       styles={customStyles}
       components={{
         DropdownIndicator: CustomDropdownIndicator,
