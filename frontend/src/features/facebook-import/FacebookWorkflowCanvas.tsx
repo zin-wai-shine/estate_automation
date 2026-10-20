@@ -1144,7 +1144,7 @@ export const buildAlignedLayout = (
 
   const isSingleCbMode = activeCombineBoxes.length <= 1;
   const singleCb = activeCombineBoxes[0];
-  const singleCbCenterY = triggerY;
+  const singleCbCenterY = singleCb ? getNodeInputCenterY(singleCb.id) : contentCenterY;
   const singleCbConnectedDestId = singleCb
     ? conns.find((c) => c.fromNodeId === singleCb.id && primaryDests.some((p) => p.id === c.toNodeId))?.toNodeId
     : undefined;
@@ -1517,17 +1517,10 @@ const CANVAS_NODE_ACTION_CSS = `
   transform: scale(1.02);
 }
 .canvas-node.is-running::before {
-  content: '' !important;
-  position: absolute !important;
-  inset: -4px !important;
-  border-radius: 20px !important;
-  border: 2px solid #0284C7 !important;
-  opacity: 0.85 !important;
-  transform: scale(1) !important;
-  box-shadow: 0 0 12px rgba(2, 132, 199, 0.45) !important;
+  display: none !important;
 }
 .canvas-node.is-trigger.is-running::before {
-  border-radius: 40px 19px 19px 40px !important;
+  display: none !important;
 }
 .canvas-node.is-running::after {
   display: none !important;
@@ -1613,38 +1606,38 @@ export const NodeExecutionBadge: React.FC<{
           position: 'absolute',
           top: badgeTop,
           right: badgeRight,
-          width: '22px',
-          height: '22px',
+          width: '20px',
+          height: '20px',
           borderRadius: '50%',
-          backgroundColor: '#FFFFFF',
-          color: '#0284C7',
+          backgroundColor: isDark ? '#1C2128' : '#FFFFFF',
+          border: isDark ? '1.5px solid #30363D' : '1.5px solid #D0D7DE',
+          color: isDark ? '#38BDF8' : '#0284C7',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          boxShadow: '0 1px 4px rgba(0, 0, 0, 0.15)',
-          border: '1.5px solid #0284C7',
+          boxShadow: isDark ? '0 2px 6px rgba(0, 0, 0, 0.4)' : '0 1px 3px rgba(0, 0, 0, 0.12)',
           zIndex: 25,
           pointerEvents: 'none',
         }}
         title="Executing step..."
       >
         <svg
-          width="13"
-          height="13"
+          width="12"
+          height="12"
           viewBox="0 0 24 24"
           fill="none"
-          style={{ animation: 'spin 0.9s linear infinite' }}
+          style={{ animation: 'spin 0.8s linear infinite' }}
         >
           <circle
             cx="12"
             cy="12"
             r="9"
-            stroke="rgba(2, 132, 199, 0.25)"
+            stroke={isDark ? 'rgba(56, 189, 248, 0.25)' : 'rgba(2, 132, 199, 0.25)'}
             strokeWidth="3"
           />
           <path
             d="M12 3a9 9 0 0 1 9 9"
-            stroke="#0284C7"
+            stroke={isDark ? '#38BDF8' : '#0284C7'}
             strokeWidth="3"
             strokeLinecap="round"
           />
@@ -6198,16 +6191,12 @@ export const FacebookWorkflowCanvas = forwardRef<
                   sockets="right"
                   isTrigger={true}
                   strokeColor={
-                    triggerStatus === 'running'
-                      ? '#0284C7'
-                      : activeModalNode?.type === 'trigger'
+                    activeModalNode?.type === 'trigger'
                       ? PRIMARY_NODE_COLOR
                       : (isDark ? '#30363D' : '#D0D7DE')
                   }
                   socketDotColor={
-                    triggerStatus === 'running'
-                      ? '#0284C7'
-                      : activeModalNode?.type === 'trigger'
+                    activeModalNode?.type === 'trigger'
                       ? PRIMARY_NODE_COLOR
                       : (isDark ? '#8B949E' : '#64748B')
                   }
@@ -6323,18 +6312,14 @@ export const FacebookWorkflowCanvas = forwardRef<
                 <MergedNodeShape
                   sockets="both"
                   strokeColor={
-                    contentStatus === 'running'
-                      ? '#0284C7'
-                      : activeModalNode?.type === 'get-content'
+                    activeModalNode?.type === 'get-content'
                       ? PRIMARY_NODE_COLOR
                       : isContentReceptive
                       ? RECEPTIVE_COLOR
                       : (isDark ? '#30363D' : '#D0D7DE')
                   }
                   socketDotColor={
-                    contentStatus === 'running'
-                      ? '#0284C7'
-                      : activeModalNode?.type === 'get-content'
+                    activeModalNode?.type === 'get-content'
                       ? PRIMARY_NODE_COLOR
                       : isContentReceptive
                       ? RECEPTIVE_COLOR
@@ -6482,18 +6467,14 @@ export const FacebookWorkflowCanvas = forwardRef<
                 <MergedNodeShape
                   sockets="both"
                   strokeColor={
-                    imagesStatus === 'running'
-                      ? '#0284C7'
-                      : activeModalNode?.type === 'get-images'
+                    activeModalNode?.type === 'get-images'
                       ? PRIMARY_NODE_COLOR
                       : isImagesReceptive
                       ? RECEPTIVE_COLOR
                       : (isDark ? '#30363D' : '#D0D7DE')
                   }
                   socketDotColor={
-                    imagesStatus === 'running'
-                      ? '#0284C7'
-                      : activeModalNode?.type === 'get-images'
+                    activeModalNode?.type === 'get-images'
                       ? PRIMARY_NODE_COLOR
                       : isImagesReceptive
                       ? RECEPTIVE_COLOR
@@ -6618,9 +6599,7 @@ export const FacebookWorkflowCanvas = forwardRef<
             );
             const boxStatus = getNodeExecutionStatus(box.id);
             const strokeColor =
-              boxStatus === 'running'
-                ? '#0284C7'
-                : isSelected
+              isSelected
                 ? PRIMARY_NODE_COLOR
                 : isBoxReceptive
                 ? RECEPTIVE_COLOR
@@ -6654,7 +6633,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   top: `${box.y}px`,
                   width: `${CIRCLE_SIZE}px`,
                   height: `${CIRCLE_SIZE}px`,
-                  ['--ring' as any]: isBoxReceptive ? RECEPTIVE_COLOR : boxStatus === 'running' ? '#0284C7' : (isDark ? '#30363D' : '#D0D7DE'),
+                  ['--ring' as any]: isBoxReceptive ? RECEPTIVE_COLOR : (isDark ? '#30363D' : '#D0D7DE'),
                   ['--receptive-color' as any]: RECEPTIVE_COLOR,
                   opacity: isEffectiveEnabled ? 1 : 0.6,
                   zIndex: isSelected ? 30 : isBoxReceptive ? 35 : hoveredNodeId === box.id ? 25 : 15,
@@ -6858,9 +6837,7 @@ export const FacebookWorkflowCanvas = forwardRef<
             );
             const cbStatus = getNodeExecutionStatus(cb.id);
             const cbStrokeColor =
-              cbStatus === 'running'
-                ? '#0284C7'
-                : cbIsSelected
+              cbIsSelected
                 ? '#F59E0B'
                 : isCbReceptive
                 ? RECEPTIVE_COLOR
@@ -7001,9 +6978,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 : 'Active';
 
             const strokeThemeColor =
-              isDestRunning
-                ? '#0284C7'
-                : isSelected
+              isSelected
                 ? isFb
                   ? '#1877F2'
                   : isIg
