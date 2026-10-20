@@ -2577,8 +2577,8 @@ export const FacebookWorkflowCanvas = forwardRef<
         marginBottom: '0.875rem',
         padding: '0 1rem',
         borderRadius: '8px',
-        border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-        backgroundColor: isDark ? '#21262D' : '#F1F5F9',
+        border: '1px solid var(--border-color)',
+        backgroundColor: isDark ? 'var(--bg-surface)' : '#F1F5F9',
         color: 'var(--text-primary)',
         fontSize: '0.8125rem',
         fontWeight: 600,
@@ -2587,14 +2587,14 @@ export const FacebookWorkflowCanvas = forwardRef<
         boxShadow: isDark ? '0 1px 2px rgba(0, 0, 0, 0.25)' : '0 1px 2px rgba(0, 0, 0, 0.05)',
       }}
       onMouseEnter={(e) => {
-        e.currentTarget.style.backgroundColor = isDark ? '#282E33' : '#E2E8F0';
-        e.currentTarget.style.borderColor = isDark ? '#484F58' : '#94A3B8';
+        e.currentTarget.style.backgroundColor = isDark ? 'var(--bg-surface-hover)' : '#E2E8F0';
+        e.currentTarget.style.borderColor = isDark ? 'var(--border-color-hover)' : '#94A3B8';
         const arrow = e.currentTarget.querySelector('.next-step-arrow') as HTMLElement | null;
         if (arrow) arrow.style.transform = 'translateX(3px)';
       }}
       onMouseLeave={(e) => {
-        e.currentTarget.style.backgroundColor = isDark ? '#21262D' : '#F1F5F9';
-        e.currentTarget.style.borderColor = isDark ? '#30363D' : '#CBD5E1';
+        e.currentTarget.style.backgroundColor = isDark ? 'var(--bg-surface)' : '#F1F5F9';
+        e.currentTarget.style.borderColor = 'var(--border-color)';
         const arrow = e.currentTarget.querySelector('.next-step-arrow') as HTMLElement | null;
         if (arrow) arrow.style.transform = 'translateX(0)';
       }}
@@ -7592,8 +7592,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                 bottom: 0,
                 width: '380px',
                 maxWidth: '100%',
-                backgroundColor: isDark ? '#161B22' : '#FFFFFF',
-                borderLeft: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
+                borderLeft: '1px solid var(--border-color)',
                 boxShadow: isDark
                   ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
                   : '-3px 0 16px rgba(0, 0, 0, 0.06)',
@@ -7610,8 +7610,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                   alignItems: 'center',
                   justifyContent: 'space-between',
                   padding: '0.875rem 1rem',
-                  borderBottom: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#F8FAFC',
+                  borderBottom: '1px solid var(--border-color)',
+                  backgroundColor: isDark ? 'var(--bg-main)' : '#F8FAFC',
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', minWidth: 0, flex: 1 }}>
@@ -7761,9 +7761,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                         justifyContent: 'space-between',
                         alignItems: 'center',
                         padding: '0.875rem',
-                        backgroundColor: isDark ? '#1C2128' : '#F8FAFC',
+                        backgroundColor: isDark ? 'var(--bg-surface)' : '#F8FAFC',
                         borderRadius: '0.5rem',
-                        border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                        border: '1px solid var(--border-color)',
                       }}
                     >
                       <div>
@@ -7830,9 +7830,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                           justifyContent: 'space-between',
                           alignItems: 'center',
                           padding: '0.875rem',
-                          backgroundColor: isDark ? '#1C2128' : '#F8FAFC',
+                          backgroundColor: isDark ? 'var(--bg-surface)' : '#F8FAFC',
                           borderRadius: '0.5rem',
-                          border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                          border: '1px solid var(--border-color)',
                         }}
                       >
                         <div>
@@ -7996,9 +7996,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                           justifyContent: 'space-between',
                           alignItems: 'center',
                           padding: '0.875rem',
-                          backgroundColor: isDark ? '#1C2128' : '#F8FAFC',
+                          backgroundColor: isDark ? 'var(--bg-surface)' : '#F8FAFC',
                           borderRadius: '0.5rem',
-                          border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                          border: '1px solid var(--border-color)',
                         }}
                       >
                         <div>
@@ -8139,8 +8139,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                         justifyContent: 'space-between',
                         padding: '0.875rem',
                         borderRadius: '8px',
-                        border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                        backgroundColor: isDark ? '#1C2128' : '#F8FAFC',
+                        border: '1px solid var(--border-color)',
+                        backgroundColor: isDark ? 'var(--bg-surface)' : '#F8FAFC',
                       }}
                     >
                       <div>
@@ -8239,8 +8239,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                         alignItems: 'center',
                         padding: '0.75rem 0.875rem',
                         borderRadius: '8px',
-                        border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                        backgroundColor: isDark ? '#1C2128' : '#F8FAFC',
+                        border: '1px solid var(--border-color)',
+                        backgroundColor: isDark ? 'var(--bg-surface)' : '#F8FAFC',
                       }}
                     >
                       <div>
@@ -8654,8 +8654,8 @@ export const FacebookWorkflowCanvas = forwardRef<
               <div
                 style={{
                   padding: '0.875rem 1rem',
-                  borderTop: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#F8FAFC',
+                  borderTop: '1px solid var(--border-color)',
+                  backgroundColor: isDark ? 'var(--bg-main)' : '#F8FAFC',
                 }}
               >
                 <Button
@@ -8672,8 +8672,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                     fontSize: '0.75rem',
                     fontWeight: 500,
                     color: 'var(--text-primary)',
-                    backgroundColor: isDark ? '#21262D' : '#F1F5F9',
-                    borderColor: isDark ? '#30363D' : '#CBD5E1',
+                    backgroundColor: isDark ? 'var(--bg-surface)' : '#F1F5F9',
+                    borderColor: 'var(--border-color)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -8764,8 +8764,8 @@ export const FacebookWorkflowCanvas = forwardRef<
               bottom: 0,
               width: '380px',
               maxWidth: '100%',
-              backgroundColor: isDark ? '#161B22' : '#FFFFFF',
-              borderLeft: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+              backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
+              borderLeft: '1px solid var(--border-color)',
               boxShadow: isDark
                 ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
                 : '-3px 0 16px rgba(0, 0, 0, 0.06)',
@@ -8782,8 +8782,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 padding: '0.875rem 1rem',
-                borderBottom: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#F8FAFC',
+                borderBottom: '1px solid var(--border-color)',
+                backgroundColor: isDark ? 'var(--bg-main)' : '#F8FAFC',
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', minWidth: 0 }}>
@@ -8821,8 +8821,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                   width: '28px',
                   height: '28px',
                   borderRadius: '6px',
-                  border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+                  border: '1px solid var(--border-color)',
+                  backgroundColor: isDark ? 'var(--bg-surface)' : 'rgba(0, 0, 0, 0.04)',
                   color: 'var(--text-secondary)',
                   cursor: 'pointer',
                 }}
@@ -8859,8 +8859,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                   justifyContent: 'space-between',
                   padding: '0.875rem',
                   borderRadius: '10px',
-                  border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                  backgroundColor: isDark ? '#1C2128' : '#F8FAFC',
+                  border: '1px solid var(--border-color)',
+                  backgroundColor: isDark ? 'var(--bg-surface)' : '#F8FAFC',
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0 }}>
@@ -8910,8 +8910,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                     gap: '0.5rem',
                     padding: '0.875rem',
                     borderRadius: '8px',
-                    border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF',
+                    border: '1px solid var(--border-color)',
+                    backgroundColor: isDark ? 'var(--bg-surface)' : '#FFFFFF',
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -8936,8 +8936,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                     style={{
                       padding: '0.65rem 0.75rem',
                       borderRadius: '6px',
-                      backgroundColor: isDark ? '#161B22' : '#F8FAFC',
-                      border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                      backgroundColor: isDark ? 'var(--bg-main)' : '#F8FAFC',
+                      border: '1px solid var(--border-color)',
                       fontSize: '0.7rem',
                       lineHeight: 1.5,
                       color: 'var(--text-primary)',
@@ -8960,8 +8960,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                     gap: '0.5rem',
                     padding: '0.875rem',
                     borderRadius: '8px',
-                    border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF',
+                    border: '1px solid var(--border-color)',
+                    backgroundColor: isDark ? 'var(--bg-surface)' : '#FFFFFF',
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -8996,7 +8996,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                             flexShrink: 0,
                             borderRadius: '6px',
                             overflow: 'hidden',
-                            border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                            border: '1px solid var(--border-color)',
                             cursor: 'pointer',
                           }}
                         >
@@ -9019,7 +9019,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                     padding: '1.25rem',
                     textAlign: 'center',
                     borderRadius: '8px',
-                    border: isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1',
+                    border: isDark ? '1px dashed var(--border-color)' : '1px dashed #CBD5E1',
                     color: isDark ? '#8B949E' : '#64748B',
                     fontSize: '0.75rem',
                   }}
@@ -9036,8 +9036,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                   gap: '0.625rem',
                   padding: '0.875rem',
                   borderRadius: '8px',
-                  border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF',
+                  border: '1px solid var(--border-color)',
+                  backgroundColor: isDark ? 'var(--bg-surface)' : '#FFFFFF',
                 }}
               >
                 <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
@@ -9052,7 +9052,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                       padding: '4px 10px',
                       borderRadius: '5px',
                       border: 'none',
-                      backgroundColor: currentDest.publishDirectly !== false ? '#10B981' : isDark ? '#30363D' : '#E2E8F0',
+                      backgroundColor: currentDest.publishDirectly !== false ? '#10B981' : isDark ? 'var(--bg-main)' : '#E2E8F0',
                       color: '#FFFFFF',
                       fontSize: '0.7rem',
                       fontWeight: 600,
@@ -9087,8 +9087,8 @@ export const FacebookWorkflowCanvas = forwardRef<
             <div
               style={{
                 padding: '0.875rem 1rem',
-                borderTop: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#F8FAFC',
+                borderTop: '1px solid var(--border-color)',
+                backgroundColor: isDark ? 'var(--bg-main)' : '#F8FAFC',
               }}
             >
               <Button
@@ -9105,8 +9105,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                   fontSize: '0.75rem',
                   fontWeight: 500,
                   color: 'var(--text-primary)',
-                  backgroundColor: isDark ? '#21262D' : '#F1F5F9',
-                  borderColor: isDark ? '#30363D' : '#CBD5E1',
+                  backgroundColor: isDark ? 'var(--bg-surface)' : '#F1F5F9',
+                  borderColor: 'var(--border-color)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -11637,7 +11637,7 @@ export const FacebookWorkflowCanvas = forwardRef<
           position: 'absolute',
           top: '50%',
           transform: 'translateY(-50%)',
-          right: isRecoverModalOpen ? '320px' : '0px',
+          right: isRecoverModalOpen ? '380px' : '0px',
           zIndex: 160,
           width: '28px',
           minHeight: '92px',
@@ -11720,7 +11720,7 @@ export const FacebookWorkflowCanvas = forwardRef<
           top: 0,
           right: 0,
           bottom: 0,
-          width: '320px',
+          width: '380px',
           maxWidth: '100%',
           backgroundColor: 'var(--bg-main)',
           borderLeft: '1px solid var(--border-color)',

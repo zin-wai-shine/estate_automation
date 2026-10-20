@@ -1,5 +1,5 @@
 {
-  "timestamp": 1792499222704,
+  "timestamp": 1792499373001,
   "workflow_formats": [
     {
       "config": {
@@ -139,7 +139,7 @@
         "destination": {
           "enabled": true,
           "id": "dest-1792361089402",
-          "includeFirstComment": false,
+          "includeFirstComment": true,
           "includeHashtags": true,
           "postToSocialMedia": false,
           "publishDirectly": true,
@@ -157,7 +157,7 @@
           {
             "enabled": true,
             "id": "dest-1792361089402",
-            "includeFirstComment": false,
+            "includeFirstComment": true,
             "includeHashtags": true,
             "postToSocialMedia": false,
             "publishDirectly": true,
@@ -261,8 +261,8 @@
           "y": 248
         },
         "panOffset": {
-          "x": 36,
-          "y": 206
+          "x": 107,
+          "y": 233
         },
         "trigger": {
           "autoClassifyProperty": true,
@@ -278,13 +278,13 @@
           "x": 100,
           "y": 248
         },
-        "zoom": 0.88
+        "zoom": 0.79
       },
       "createdAt": 1792350804351,
       "description": "Custom Facebook import extraction with dynamic AI prompt generator",
       "id": "format-1792350804351",
       "name": "Custom Workflow #1",
-      "updatedAt": 1792499222704
+      "updatedAt": 1792499373001
     },
     {
       "config": {
