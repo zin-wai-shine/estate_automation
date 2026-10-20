@@ -387,6 +387,60 @@ func (m *FacebookPageManager) GetPage(pageID string) (*models.FacebookManagedPag
 	return &page, nil
 }
 
+// GetOrCreatePage retrieves a managed page or registers it automatically if not found.
+func (m *FacebookPageManager) GetOrCreatePage(pageID string, defaultName string) (*models.FacebookManagedPage, error) {
+	page, err := m.GetPage(pageID)
+	if err == nil && page != nil {
+		return page, nil
+	}
+	if database.DB == nil {
+		return nil, fmt.Errorf("database not available")
+	}
+	cleanID := strings.TrimSpace(pageID)
+	var maxSlot int
+	row := database.DB.Model(&models.FacebookManagedPage{}).Select("COALESCE(MAX(slot), 0)").Row()
+	_ = row.Scan(&maxSlot)
+	newSlot := maxSlot + 1
+
+	name := strings.TrimSpace(defaultName)
+	if name == "" {
+		name = fmt.Sprintf("Page %s", cleanID)
+	}
+
+	newPage := models.FacebookManagedPage{
+		Slot:        newSlot,
+		PageID:      cleanID,
+		Name:        name,
+		Label:       fmt.Sprintf("Page %d", newSlot),
+		PageURL:     fmt.Sprintf("https://www.facebook.com/%s", cleanID),
+		PictureURL:  fmt.Sprintf("https://graph.facebook.com/%s/picture?type=large", cleanID),
+		TokenStatus: models.FBTokenUntested,
+		IsConnected: false,
+	}
+	if err := database.DB.Create(&newPage).Error; err != nil {
+		return nil, fmt.Errorf("failed to register Facebook Page %s: %w", cleanID, err)
+	}
+	return &newPage, nil
+}
+
+// UpdatePagePicture updates the picture URL of a managed page.
+func (m *FacebookPageManager) UpdatePagePicture(ctx context.Context, pageID, pictureURL string) (*ManagedPageDTO, error) {
+	page, err := m.GetOrCreatePage(pageID, "")
+	if err != nil {
+		return nil, err
+	}
+	page.PictureURL = strings.TrimSpace(pictureURL)
+	now := time.Now()
+	page.PictureFetchedAt = &now
+	if database.DB != nil {
+		if err := database.DB.Save(page).Error; err != nil {
+			return nil, err
+		}
+	}
+	dto := toDTO(*page)
+	return &dto, nil
+}
+
 // GetDecryptedPageToken retrieves the decrypted token for inspection.
 func (m *FacebookPageManager) GetDecryptedPageToken(pageID string) (string, *models.FacebookManagedPage, error) {
 	page, err := m.GetPage(pageID)
@@ -636,7 +690,7 @@ func (m *FacebookPageManager) SetPageToken(ctx context.Context, pageID, token st
 	if token == "" {
 		return nil, fmt.Errorf("token cannot be empty")
 	}
-	page, err := m.GetPage(pageID)
+	page, err := m.GetOrCreatePage(pageID, "")
 	if err != nil {
 		return nil, err
 	}
@@ -805,7 +859,7 @@ func (m *FacebookPageManager) ImportFromUserToken(ctx context.Context, userToken
 // TestPage verifies the page's own token against Meta Graph API and records the outcome.
 // Automatically retrieves real Facebook Page name and profile picture logo.
 func (m *FacebookPageManager) TestPage(ctx context.Context, pageID string) (*PageTestResult, error) {
-	page, err := m.GetPage(pageID)
+	page, err := m.GetOrCreatePage(pageID, "")
 	if err != nil {
 		return nil, err
 	}

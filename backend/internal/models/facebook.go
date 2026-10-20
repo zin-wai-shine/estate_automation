@@ -237,6 +237,7 @@ type FacebookPublishPost struct {
 	Hashtags         string                    `gorm:"type:text" json:"hashtags"`
 	ImageURLs        string                    `gorm:"type:text" json:"image_urls"`          // JSON string array of image URLs
 	AttachedMediaIDs string                    `gorm:"type:text" json:"attached_media_ids"`  // JSON string array of Meta photo IDs
+	OriginalURL      string                    `gorm:"type:text" json:"original_url,omitempty"`  // Original input Facebook post link
 	FacebookPostID   string                    `gorm:"type:varchar(100);index" json:"facebook_post_id"`
 	PermalinkURL     string                    `gorm:"type:text" json:"permalink_url"`
 	Status           FacebookPostPublishStatus `gorm:"type:varchar(30);default:'QUEUED';index" json:"status"`

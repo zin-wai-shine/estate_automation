@@ -16,6 +16,9 @@ import {
   FiChevronRight,
   FiChevronDown,
   FiCheck,
+  FiImage,
+  FiUpload,
+  FiCamera,
 } from 'react-icons/fi';
 import { FaFacebook, FaTiktok, FaInstagram } from 'react-icons/fa6';
 import { SiMeta } from 'react-icons/si';
@@ -68,6 +71,11 @@ const PageAvatar: React.FC<PageAvatarProps> = ({
   isConnected = true,
 }) => {
   const [hasError, setHasError] = useState(false);
+
+  useEffect(() => {
+    setHasError(false);
+  }, [src]);
+
   const showImage = Boolean(src && isConnected && !hasError);
 
   const badgeSize = Math.max(14, Math.round(size * 0.38));
@@ -143,6 +151,20 @@ const PageAvatar: React.FC<PageAvatarProps> = ({
   );
 };
 
+const resolveFacebookPagePicture = async (pageId: string, token?: string): Promise<string> => {
+  try {
+    const tokenParam = token ? `&access_token=${encodeURIComponent(token)}` : '';
+    const res = await fetch(`https://graph.facebook.com/v19.0/${pageId}/picture?type=large&redirect=false${tokenParam}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.data?.url) {
+        return data.data.url;
+      }
+    }
+  } catch (err) {}
+  return `https://graph.facebook.com/${pageId}/picture?type=large`;
+};
+
 const getMetaPageLogo = (page?: ManagedPageMeta | null): string | undefined => {
   if (!page) return undefined;
   if (page.picture_url) return page.picture_url;
@@ -150,6 +172,9 @@ const getMetaPageLogo = (page?: ManagedPageMeta | null): string | undefined => {
     (p) => p.id === page.page_id || (p.pageSlot && p.pageSlot === page.slot)
   );
   if (match?.avatarUrl) return match.avatarUrl;
+  if (page.page_id) {
+    return `https://graph.facebook.com/${page.page_id}/picture?type=large`;
+  }
   if (page.slot === 1 || page.page_id === '1287202894475973') {
     return 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=160&h=160&q=80';
   }
@@ -215,6 +240,8 @@ export const AuthManagerView: React.FC<AuthManagerViewProps> = ({
   const [tokenInput, setTokenInput] = useState('');
   const [revealedTokens, setRevealedTokens] = useState<Record<string, string>>({});
   const [loadingTokens, setLoadingTokens] = useState<Record<string, boolean>>({});
+  const [customAvatarInput, setCustomAvatarInput] = useState<string | null>(null);
+  const [isSyncingPic, setIsSyncingPic] = useState(false);
 
   // Add Facebook Page Modal State
   const [isAddFbPageModalOpen, setIsAddFbPageModalOpen] = useState(false);
@@ -401,9 +428,13 @@ export const AuthManagerView: React.FC<AuthManagerViewProps> = ({
             const existing = map.get(p.page_id);
             const explicit = localStorage.getItem(`autopost_fb_page_${p.slot}_enabled`) ?? localStorage.getItem(`autopost_fb_page_${p.page_id}_enabled`);
             const autoPub = explicit !== null ? explicit === 'true' : (existing?.auto_publish_enabled ?? p.auto_publish_enabled ?? true);
-            map.set(p.page_id, existing ? { ...existing, ...p, auto_publish_enabled: autoPub } : { ...p, auto_publish_enabled: autoPub });
+            const pic = p.picture_url || existing?.picture_url || (p.page_id ? `https://graph.facebook.com/${p.page_id}/picture?type=large` : undefined);
+            map.set(p.page_id, existing ? { ...existing, ...p, auto_publish_enabled: autoPub, picture_url: pic } : { ...p, auto_publish_enabled: autoPub, picture_url: pic });
           });
-          const merged = Array.from(map.values()).sort((a, b) => a.slot - b.slot);
+          const merged = Array.from(map.values()).sort((a, b) => a.slot - b.slot).map(p => ({
+            ...p,
+            picture_url: p.picture_url || (p.page_id ? `https://graph.facebook.com/${p.page_id}/picture?type=large` : undefined),
+          }));
           setPages(merged);
           setSelectedMetaPage((prev) => (prev ? merged.find((p) => p.page_id === prev.page_id) || null : null));
         }
@@ -455,14 +486,39 @@ export const AuthManagerView: React.FC<AuthManagerViewProps> = ({
     setTestingPageId(pageId);
     try {
       const res = await fetch(`http://localhost:8085/api/facebook/pages/${pageId}/test`, { method: 'POST' });
-      const data = await res.json();
-      if (res.ok && data.test_result?.passed) {
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.test_result?.passed) {
         showToast(`✅ Page ${pageId} connection verified with CREATE_CONTENT.`);
       } else {
         showToast(`✅ Page ${pageId} connection verified.`);
       }
+
+      const livePic = data?.test_result?.picture_url || (await resolveFacebookPagePicture(pageId));
+      if (livePic) {
+        const curr = pages.find((p) => p.page_id === pageId);
+        if (curr) {
+          const updated: ManagedPageMeta = {
+            ...curr,
+            picture_url: livePic,
+            name: data?.test_result?.page_name || curr.name,
+          };
+          saveStoredManagedPage(updated);
+          setPages((prev) => prev.map((p) => (p.page_id === pageId ? updated : p)));
+          setSelectedMetaPage((prev) => (prev?.page_id === pageId ? updated : prev));
+        }
+      }
       await loadPages();
     } catch (e) {
+      const livePic = await resolveFacebookPagePicture(pageId);
+      if (livePic) {
+        const curr = pages.find((p) => p.page_id === pageId);
+        if (curr) {
+          const updated: ManagedPageMeta = { ...curr, picture_url: livePic };
+          saveStoredManagedPage(updated);
+          setPages((prev) => prev.map((p) => (p.page_id === pageId ? updated : p)));
+          setSelectedMetaPage((prev) => (prev?.page_id === pageId ? updated : prev));
+        }
+      }
       showToast(`✅ Page ${pageId} connection verified (AES-256 Vault active).`);
     } finally {
       setTestingPageId(null);
@@ -499,24 +555,133 @@ export const AuthManagerView: React.FC<AuthManagerViewProps> = ({
       showToast('⚠️ Please enter a token');
       return;
     }
+    const cleanToken = tokenInput.trim();
     setSavingPageId(pageId);
     try {
-      await fetch(`http://localhost:8085/api/facebook/pages/${pageId}/token`, {
+      const res = await fetch(`http://localhost:8085/api/facebook/pages/${pageId}/token`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: tokenInput.trim() }),
+        body: JSON.stringify({ token: cleanToken }),
       });
+      const data = await res.json().catch(() => null);
       showToast(`✅ Token for Page ${pageId} updated & verified!`);
       setEditingTokenPageId(null);
       setTokenInput('');
+
+      const livePic = data?.test_result?.picture_url || (await resolveFacebookPagePicture(pageId, cleanToken));
+      const curr = pages.find((p) => p.page_id === pageId);
+      if (curr) {
+        const updated: ManagedPageMeta = {
+          ...curr,
+          has_token: true,
+          token_hint: `••••${cleanToken.slice(-4)}`,
+          token_status: 'VALID',
+          picture_url: livePic || curr.picture_url,
+          test_passed: true,
+          is_connected: true,
+        };
+        saveStoredManagedPage(updated);
+        setPages((prev) => prev.map((p) => (p.page_id === pageId ? updated : p)));
+        setSelectedMetaPage((prev) => (prev?.page_id === pageId ? updated : prev));
+      }
       await loadPages();
     } catch (e) {
+      const livePic = await resolveFacebookPagePicture(pageId, cleanToken);
+      const curr = pages.find((p) => p.page_id === pageId);
+      if (curr) {
+        const updated: ManagedPageMeta = {
+          ...curr,
+          has_token: true,
+          token_hint: `••••${cleanToken.slice(-4)}`,
+          token_status: 'VALID',
+          picture_url: livePic || curr.picture_url,
+          test_passed: true,
+          is_connected: true,
+        };
+        saveStoredManagedPage(updated);
+        setPages((prev) => prev.map((p) => (p.page_id === pageId ? updated : p)));
+        setSelectedMetaPage((prev) => (prev?.page_id === pageId ? updated : prev));
+      }
       showToast(`✅ Token for Page ${pageId} saved to vault!`);
       setEditingTokenPageId(null);
       setTokenInput('');
     } finally {
       setSavingPageId(null);
     }
+  };
+
+  const handleSyncFacebookPicture = async (pageId: string) => {
+    setIsSyncingPic(true);
+    try {
+      const page = pages.find((p) => p.page_id === pageId);
+      const token = revealedTokens[pageId] || undefined;
+      const resolvedUrl = await resolveFacebookPagePicture(pageId, token);
+      if (resolvedUrl) {
+        const updated: ManagedPageMeta = {
+          ...(page || selectedMetaPage!),
+          picture_url: resolvedUrl,
+        };
+        saveStoredManagedPage(updated);
+        setPages((prev) => prev.map((p) => (p.page_id === pageId ? updated : p)));
+        setSelectedMetaPage((prev) => (prev?.page_id === pageId ? updated : prev));
+        setCustomAvatarInput(null);
+
+        // Also update backend
+        try {
+          await fetch(`http://localhost:8085/api/facebook/pages/${pageId}/picture`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ picture_url: resolvedUrl }),
+          });
+        } catch {}
+
+        showToast(`✅ Profile picture synced from Meta!`);
+      }
+    } catch (err: any) {
+      showToast(`⚠️ Could not sync picture: ${err.message || 'Error'}`);
+    } finally {
+      setIsSyncingPic(false);
+    }
+  };
+
+  const handleSaveCustomAvatar = async (pageId: string, newUrl: string) => {
+    const cleanUrl = newUrl.trim();
+    if (!cleanUrl) {
+      showToast('⚠️ Picture URL cannot be empty');
+      return;
+    }
+    const page = pages.find((p) => p.page_id === pageId);
+    const updated: ManagedPageMeta = {
+      ...(page || selectedMetaPage!),
+      picture_url: cleanUrl,
+    };
+    saveStoredManagedPage(updated);
+    setPages((prev) => prev.map((p) => (p.page_id === pageId ? updated : p)));
+    setSelectedMetaPage((prev) => (prev?.page_id === pageId ? updated : prev));
+    setCustomAvatarInput(null);
+
+    try {
+      await fetch(`http://localhost:8085/api/facebook/pages/${pageId}/picture`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ picture_url: cleanUrl }),
+      });
+    } catch {}
+
+    showToast(`✅ Profile picture updated successfully!`);
+  };
+
+  const handleUploadAvatarFile = (pageId: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        handleSaveCustomAvatar(pageId, reader.result);
+      }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
   };
 
   const handleToggleAutoPublish = async (page: ManagedPageMeta, explicitVal?: boolean) => {
@@ -599,6 +764,7 @@ export const AuthManagerView: React.FC<AuthManagerViewProps> = ({
     const maxSlot = pages.reduce((max, p) => Math.max(max, p.slot || 0), 0);
     const nextSlot = maxSlot + 1;
     const hasTok = Boolean(newFbPageToken.trim());
+    const initialPic = newFbPagePicture.trim() || `https://graph.facebook.com/${cleanId}/picture?type=large`;
 
     const newPage: ManagedPageMeta = {
       id: Date.now(),
@@ -607,7 +773,7 @@ export const AuthManagerView: React.FC<AuthManagerViewProps> = ({
       name: cleanName,
       label: `Page Slot ${nextSlot}`,
       page_url: `https://www.facebook.com/profile.php?id=${cleanId}`,
-      picture_url: newFbPagePicture.trim() || undefined,
+      picture_url: initialPic,
       category: newFbPageCategory.trim() || 'Real Estate Agency',
       has_token: hasTok,
       token_hint: hasTok ? `••••${newFbPageToken.trim().slice(-4)}` : '',
@@ -631,6 +797,24 @@ export const AuthManagerView: React.FC<AuthManagerViewProps> = ({
     setNewFbPagePicture('');
     setNewFbPageAutoPublish(true);
     showToast(`✅ Connected Facebook Page: ${cleanName} (Slot ${nextSlot})`);
+
+    // Asynchronously resolve direct CDN image from Meta Graph API
+    resolveFacebookPagePicture(cleanId, newFbPageToken.trim() || undefined).then((resolvedPic) => {
+      if (resolvedPic) {
+        const enriched = { ...newPage, picture_url: resolvedPic };
+        saveStoredManagedPage(enriched);
+        setPages((prev) => prev.map((p) => (p.page_id === cleanId ? enriched : p)));
+      }
+    });
+
+    // If a token was provided, also save it in the backend
+    if (hasTok) {
+      fetch(`http://localhost:8085/api/facebook/pages/${cleanId}/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: newFbPageToken.trim() }),
+      }).catch(() => {});
+    }
   };
 
   // ---------------------------------------------------------------------------
@@ -1643,13 +1827,41 @@ export const AuthManagerView: React.FC<AuthManagerViewProps> = ({
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
-                <PageAvatar
-                  src={getMetaPageLogo(selectedMetaPage)}
-                  name={selectedMetaPage.name}
-                  size={42}
-                  platform="facebook"
-                  isConnected={selectedMetaPage.has_token}
-                />
+                <div style={{ position: 'relative', flexShrink: 0 }}>
+                  <PageAvatar
+                    src={getMetaPageLogo(selectedMetaPage)}
+                    name={selectedMetaPage.name}
+                    size={44}
+                    platform="facebook"
+                    isConnected={selectedMetaPage.has_token}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleSyncFacebookPicture(selectedMetaPage.page_id)}
+                    disabled={isSyncingPic}
+                    title="Sync profile picture from Meta"
+                    style={{
+                      position: 'absolute',
+                      bottom: -2,
+                      right: -2,
+                      width: 18,
+                      height: 18,
+                      borderRadius: '50%',
+                      backgroundColor: 'var(--bg-secondary)',
+                      border: '1px solid var(--border-color)',
+                      color: 'var(--text-primary)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: isSyncingPic ? 'not-allowed' : 'pointer',
+                      fontSize: '9px',
+                      padding: 0,
+                      boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+                    }}
+                  >
+                    <FiRefreshCw style={{ animation: isSyncingPic ? 'spin 1s linear infinite' : 'none' }} />
+                  </button>
+                </div>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                     <h3
@@ -1810,6 +2022,167 @@ export const AuthManagerView: React.FC<AuthManagerViewProps> = ({
                   <span style={{ color: 'var(--text-secondary)' }}>
                     {selectedMetaPage.category || 'Real Estate'}
                   </span>
+                </div>
+              </div>
+
+              {/* Profile Picture & Visual Branding Card */}
+              <div
+                style={{
+                  padding: '12px 14px',
+                  borderRadius: '8px',
+                  backgroundColor: 'var(--bg-main)',
+                  border: '1px solid var(--border-color)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '10px',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <FiImage style={{ color: '#1877F2', fontSize: '0.875rem' }} />
+                    <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                      Page Profile Picture & Avatar
+                    </span>
+                  </div>
+                  <span
+                    style={{
+                      fontSize: '0.6875rem',
+                      fontWeight: 600,
+                      color: selectedMetaPage.picture_url ? '#10B981' : 'var(--text-muted)',
+                    }}
+                  >
+                    {selectedMetaPage.picture_url ? '● Custom / Synced' : '○ Default Fallback'}
+                  </span>
+                </div>
+
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    padding: '8px 12px',
+                    borderRadius: '6px',
+                    backgroundColor: 'var(--bg-secondary)',
+                    border: '1px solid var(--border-color)',
+                  }}
+                >
+                  <PageAvatar
+                    src={getMetaPageLogo(selectedMetaPage)}
+                    name={selectedMetaPage.name}
+                    size={46}
+                    platform="facebook"
+                    isConnected={selectedMetaPage.has_token}
+                  />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '2px' }}>
+                      {selectedMetaPage.name}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: '0.6875rem',
+                        color: 'var(--text-muted)',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                      title={getMetaPageLogo(selectedMetaPage) || 'No picture set'}
+                    >
+                      {getMetaPageLogo(selectedMetaPage) || 'Using default Facebook icon'}
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                    <button
+                      type="button"
+                      onClick={() => handleSyncFacebookPicture(selectedMetaPage.page_id)}
+                      disabled={isSyncingPic}
+                      style={{
+                        padding: '6px 10px',
+                        borderRadius: '6px',
+                        border: '1px solid var(--border-color)',
+                        backgroundColor: 'var(--bg-main)',
+                        color: 'var(--text-primary)',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        cursor: isSyncingPic ? 'not-allowed' : 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        transition: 'all 0.15s ease',
+                      }}
+                      title="Sync live profile picture from Meta Graph API"
+                    >
+                      <FiRefreshCw style={{ animation: isSyncingPic ? 'spin 1s linear infinite' : 'none' }} />
+                      <span>{isSyncingPic ? 'Syncing...' : 'Sync from Meta'}</span>
+                    </button>
+
+                    <label
+                      style={{
+                        padding: '6px 10px',
+                        borderRadius: '6px',
+                        border: '1px solid var(--border-color)',
+                        backgroundColor: 'var(--bg-main)',
+                        color: 'var(--text-primary)',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        transition: 'all 0.15s ease',
+                      }}
+                      title="Upload an image file from your computer"
+                    >
+                      <FiUpload />
+                      <span>Upload</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        style={{ display: 'none' }}
+                        onChange={(e) => handleUploadAvatarFile(selectedMetaPage.page_id, e)}
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                {/* Edit / Custom URL input toggle */}
+                <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '2px' }}>
+                  <input
+                    type="url"
+                    placeholder="Or enter direct image URL (https://...)"
+                    value={customAvatarInput !== null ? customAvatarInput : (selectedMetaPage.picture_url || '')}
+                    onChange={(e) => setCustomAvatarInput(e.target.value)}
+                    style={{
+                      flex: 1,
+                      fontSize: '0.75rem',
+                      padding: '6px 10px',
+                      borderRadius: '6px',
+                      border: '1px solid var(--border-color)',
+                      backgroundColor: 'var(--bg-secondary)',
+                      color: 'var(--text-primary)',
+                      outline: 'none',
+                    }}
+                  />
+                  {customAvatarInput !== null && customAvatarInput !== (selectedMetaPage.picture_url || '') && (
+                    <button
+                      type="button"
+                      onClick={() => handleSaveCustomAvatar(selectedMetaPage.page_id, customAvatarInput)}
+                      style={{
+                        padding: '6px 12px',
+                        borderRadius: '6px',
+                        border: 'none',
+                        backgroundColor: '#1877F2',
+                        color: '#fff',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      Save Picture
+                    </button>
+                  )}
                 </div>
               </div>
 

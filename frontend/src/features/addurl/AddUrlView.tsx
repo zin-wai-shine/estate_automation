@@ -1,43 +1,32 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { Property } from '../../types';
 import { Button } from '../../components/ui/Button';
-import { Badge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
 import {
   FiPlus,
-  FiPlay,
   FiExternalLink,
-  FiCheckSquare,
-  FiSquare,
-  FiMinusSquare,
-  FiCheckCircle,
-  FiLoader,
-  FiCpu,
   FiCheck,
   FiEye,
-  FiImage,
-  FiFileText,
+  FiCopy,
+  FiTrash2,
   FiZap,
-  FiShield,
+  FiCheckCircle,
+  FiCalendar,
+  FiLink,
 } from 'react-icons/fi';
+import {
+  fetchUrlGroups,
+  createUrlGroup,
+  deleteUrlGroup,
+  clearAllUrlGroups,
+  type UrlGroupItem,
+} from '../../services/urlGroupService';
 
 interface AddUrlViewProps {
-  properties: Property[];
-  onAddProperty: (url: string, extractedData?: Partial<Property>) => void;
-  onProcessBatch: (ids: number[]) => void;
+  properties?: Property[];
+  onAddProperty?: (url: string, extractedData?: Partial<Property>) => void;
+  onProcessBatch?: (ids: number[]) => void;
 }
-
-// Custom code generator format: 4 text - 4 code - 3 text (e.g. ESTA-2880-BKK)
-export const generateCustomCode = (): string => {
-  const letters4 = Array.from({ length: 4 }, () =>
-    String.fromCharCode(65 + Math.floor(Math.random() * 26))
-  ).join('');
-  const digits4 = Math.floor(1000 + Math.random() * 9000).toString();
-  const letters3 = Array.from({ length: 3 }, () =>
-    String.fromCharCode(65 + Math.floor(Math.random() * 26))
-  ).join('');
-  return `${letters4}-${digits4}-${letters3}`;
-};
 
 export const formatOrParseUrls = (text: string): string[] => {
   if (!text) return [];
@@ -45,28 +34,40 @@ export const formatOrParseUrls = (text: string): string[] => {
   const matches = separated.match(/https?:\/\/[^\s,;]+/gi);
   if (!matches) {
     return separated
-      .split(/[\n\r\s,;]+/)
+      .split(/[\n\r,;]+/)
       .map((line) => line.trim())
       .filter((line) => line.length > 0);
   }
   return matches.map((u) => u.trim()).filter((u) => u.length > 0);
 };
 
-export const AddUrlView: React.FC<AddUrlViewProps> = ({
-  properties,
-  onAddProperty,
-  onProcessBatch,
-}) => {
+export const AddUrlView: React.FC<AddUrlViewProps> = () => {
+  const [urlGroups, setUrlGroups] = useState<UrlGroupItem[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [rawUrlsText, setRawUrlsText] = useState<string>('');
-  const [isExtracting, setIsExtracting] = useState(false);
-  const [extractionStep, setExtractionStep] = useState(0);
-  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
   const [notification, setNotification] = useState('');
+  const [copiedId, setCopiedId] = useState<number | null>(null);
+  const [viewingGroup, setViewingGroup] = useState<UrlGroupItem | null>(null);
+  const [viewModalCopied, setViewModalCopied] = useState(false);
 
-  // Selected property for Grouped Content & Images Inspector Modal
-  const [inspectingProperty, setInspectingProperty] = useState<Property | null>(null);
-  const [previewImageIndex, setPreviewImageIndex] = useState<number | null>(null);
+  // Load URL groups from the backend database table on mount
+  const loadGroups = async () => {
+    setIsLoading(true);
+    try {
+      const data = await fetchUrlGroups();
+      setUrlGroups(data);
+    } catch (err) {
+      console.error('Failed to load URL groups:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadGroups();
+  }, []);
 
   const sampleTestUrls = [
     'https://www.facebook.com/groups/bangkokcondos/posts/10892419401',
@@ -93,162 +94,161 @@ export const AddUrlView: React.FC<AddUrlViewProps> = ({
 
   const validUrls = getValidUrls();
 
-  const handleStartAiExtraction = async (e: React.FormEvent) => {
+  // Save multiple or single link together as ONE single row
+  const handleSaveUrlGroup = async (e: React.FormEvent) => {
     e.preventDefault();
-    const urlsToProcess = getValidUrls();
-    if (urlsToProcess.length === 0) return;
+    const textToSave = rawUrlsText.trim();
+    if (!textToSave) return;
 
-    setIsExtracting(true);
-    setExtractionStep(1);
-
-    // Live Progress Pipeline Sequence
-    setTimeout(() => setExtractionStep(2), 500);  // SESSION_CHECK
-    setTimeout(() => setExtractionStep(3), 1000); // OPENCLAW_CONNECTING
-    setTimeout(() => setExtractionStep(4), 1500); // OPENING_FACEBOOK
-    setTimeout(() => setExtractionStep(5), 2000); // VERIFYING_TARGET_POST
-    setTimeout(() => setExtractionStep(6), 2500); // EXTRACTING_TEXT
-    setTimeout(() => setExtractionStep(7), 3000); // EXTRACTING_MEDIA & DOWNLOADING_IMAGES
-    setTimeout(() => setExtractionStep(8), 3500); // UPLOADING_R2 & AI_PROCESSING
-
-    const primaryUrl = urlsToProcess[0];
-
-    const sampleImages = [
-      'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=800&q=80',
-      'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=800&q=80',
-      'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=800&q=80',
-      'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=800&q=80',
-    ];
-
+    setIsSaving(true);
     try {
-      await fetch('http://localhost:8085/api/properties/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: primaryUrl }),
-      }).catch(() => {});
-    } catch (err) {}
-
-    setTimeout(() => {
-      let firstAddedProperty: Property | null = null;
-
-      urlsToProcess.forEach((url, i) => {
-        const generatedCode = generateCustomCode();
-        const extractedMock: Partial<Property> = {
-          code: generatedCode,
-          projectName: i % 3 === 0 ? 'Ashton Asoke' : i % 3 === 1 ? 'Ideo Sukhumvit 93' : 'Rhythm Ekamai',
-          propertyType: 'CONDO',
-          listingType: i % 3 === 2 ? 'SALE' : 'RENT',
-          title: `Extracted Property Listing (${generatedCode})`,
-          description:
-            'ให้เช่า Ideo Sukhumvit 93 ขนาด 28 ตร.ม. ชั้น 28 แต่งครบ เฟอร์ครบ พร้อมเครื่องใช้ไฟฟ้า หิ้วกระเป๋าเข้าอยู่ได้เลย! ราคา 18,000 บาท/เดือน ติด BTS บางจาก เพียง 15 เมตร ติดต่อ Line ID: @estatebangkok โทร 081-234-5678',
-          rentPrice: i % 3 === 2 ? undefined : 18000 + i * 2000,
-          salePrice: i % 3 === 2 ? 12500000 : undefined,
-          sizeSqm: 28 + i * 5,
-          floor: `${20 + i}th Floor`,
-          btsMrt: 'BTS Asoke / MRT Sukhumvit (150m)',
-          ownerType: i % 2 === 0 ? 'AGENT' : 'OWNER',
-          contactInfo: 'Line: @estatebangkok | Tel: 081-234-5678',
-          sourceUrl: url,
-          sourceAuthor: 'FB Group: Bangkok Real Estate & Condo Marketplace',
-          originalImages: sampleImages,
-        };
-        onAddProperty(url, extractedMock);
-
-        if (i === 0) {
-          firstAddedProperty = {
-            id: Date.now(),
-            code: generatedCode,
-            projectName: extractedMock.projectName,
-            propertyType: 'CONDO',
-            listingType: extractedMock.listingType || 'RENT',
-            title: extractedMock.title || `Extracted Listing (${generatedCode})`,
-            description: extractedMock.description || '',
-            rentPrice: extractedMock.rentPrice,
-            salePrice: extractedMock.salePrice,
-            sizeSqm: extractedMock.sizeSqm,
-            floor: extractedMock.floor,
-            btsMrt: extractedMock.btsMrt,
-            ownerType: extractedMock.ownerType,
-            contactInfo: extractedMock.contactInfo,
-            status: 'READY_FOR_REVIEW',
-            sourceUrl: url,
-            sourceAuthor: extractedMock.sourceAuthor,
-            originalImages: sampleImages,
-            enhancedImages: sampleImages,
-            finalImages: sampleImages,
-            createdAt: 'Just now',
-          };
-        }
-      });
-
-      setIsExtracting(false);
+      const newGroup = await createUrlGroup(textToSave);
+      setUrlGroups((prev) => [...prev, newGroup]);
       setIsModalOpen(false);
       setRawUrlsText('');
-      setExtractionStep(0);
 
-      // Auto-open Import Preview Inspector for the imported post!
-      if (firstAddedProperty) {
-        setInspectingProperty(firstAddedProperty);
-      }
-
-      setNotification(
-        `OpenClaw Pipeline Complete! Extracted ${urlsToProcess.length} ${
-          urlsToProcess.length === 1 ? 'property' : 'properties'
-        } and stored original media in Cloudflare R2!`
-      );
+      const count = newGroup.url_count || validUrls.length || 1;
+      setNotification(`Saved group #${newGroup.serial} with ${count} link${count === 1 ? '' : 's'} successfully!`);
       setTimeout(() => setNotification(''), 4000);
-    }, 4000);
-  };
-
-  const handleSelectAll = () => {
-    if (selectedIds.length === properties.length) {
-      setSelectedIds([]);
-    } else {
-      setSelectedIds(properties.map((p) => p.id));
+    } catch (err: any) {
+      alert(err.message || 'Failed to save URL group');
+    } finally {
+      setIsSaving(false);
     }
   };
 
-  const handleToggleRow = (id: number) => {
-    if (selectedIds.includes(id)) {
-      setSelectedIds(selectedIds.filter((item) => item !== id));
-    } else {
-      setSelectedIds([...selectedIds, id]);
+  // Copy all links in the group text to clipboard
+  const handleCopyLinks = async (group: UrlGroupItem) => {
+    try {
+      await navigator.clipboard.writeText(group.raw_text);
+      setCopiedId(group.id);
+      setTimeout(() => setCopiedId(null), 2000);
+
+      const count = group.url_count || 1;
+      setNotification(`Copied all ${count} link${count === 1 ? '' : 's'} from Serial #${group.serial} to clipboard!`);
+      setTimeout(() => setNotification(''), 3500);
+    } catch (err) {
+      console.error('Failed to copy to clipboard:', err);
     }
   };
 
-  const handleBatchGenerate = () => {
-    if (selectedIds.length === 0) return;
-    onProcessBatch(selectedIds);
-    setNotification(`Queued ${selectedIds.length} properties into batch queue pipeline!`);
-    setSelectedIds([]);
-    setTimeout(() => setNotification(''), 4000);
+  // Copy links from inside the View modal
+  const handleCopyFromModal = async (group: UrlGroupItem) => {
+    try {
+      await navigator.clipboard.writeText(group.raw_text);
+      setViewModalCopied(true);
+      setTimeout(() => setViewModalCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
   };
 
-  const isAllSelected = properties.length > 0 && selectedIds.length === properties.length;
-  const isIndeterminate = selectedIds.length > 0 && selectedIds.length < properties.length;
-  const hasSelection = selectedIds.length > 0;
+  // Delete a specific row
+  const handleDeleteGroup = async (id: number) => {
+    if (!window.confirm('Delete this saved link group?')) return;
+    try {
+      await deleteUrlGroup(id);
+      setUrlGroups((prev) => prev.filter((g) => g.id !== id));
+      if (viewingGroup?.id === id) setViewingGroup(null);
+      setNotification('Link group deleted.');
+      setTimeout(() => setNotification(''), 3000);
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete');
+    }
+  };
 
-  const defaultMockImages = [
-    'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=800&q=80',
-    'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=800&q=80',
-    'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=800&q=80',
-    'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=800&q=80',
-  ];
+  // Bulk clear all groups
+  const handleClearAll = async () => {
+    if (urlGroups.length === 0) return;
+    if (!window.confirm('Are you sure you want to delete all saved link groups?')) return;
+    try {
+      await clearAllUrlGroups();
+      setUrlGroups([]);
+      setNotification('All URL groups cleared.');
+      setTimeout(() => setNotification(''), 3000);
+    } catch (err: any) {
+      alert(err.message || 'Failed to clear');
+    }
+  };
+
+  // Format date helper
+  const formatDate = (dateStr?: string): { formatted: string; relative: string } => {
+    if (!dateStr) return { formatted: '-', relative: '' };
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return { formatted: dateStr, relative: '' };
+
+    const formatted = date.toLocaleString('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+
+    const diffMs = Date.now() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    let relative = 'Just now';
+    if (diffMins >= 60 * 24) {
+      const days = Math.floor(diffMins / (60 * 24));
+      relative = `${days}d ago`;
+    } else if (diffMins >= 60) {
+      const hrs = Math.floor(diffMins / 60);
+      relative = `${hrs}h ago`;
+    } else if (diffMins >= 1) {
+      relative = `${diffMins}m ago`;
+    }
+
+    return { formatted, relative };
+  };
+
+  // Parse links array from urls_json or raw_text
+  const getGroupUrlsList = (group: UrlGroupItem): string[] => {
+    if (group.urls_json) {
+      try {
+        const parsed = JSON.parse(group.urls_json);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch {}
+    }
+    return formatOrParseUrls(group.raw_text);
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
       {/* Top Header Toolbar */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.875rem', width: '100%' }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          flexWrap: 'wrap',
+          gap: '0.875rem',
+          width: '100%',
+        }}
+      >
         <div style={{ minWidth: '220px', flex: '1 1 240px' }}>
-          <h3 style={{ fontSize: '1.125rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-            Add URL & Property Extraction
+          <h3 style={{ fontSize: '1.125rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+            Add Property URLs
           </h3>
-          <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.125rem' }}>
-            Collect Facebook post links, extract structured specifications via AI, and inspect grouped content & photos.
+          <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.125rem', marginBottom: 0 }}>
+            Collect and store grouped post links. View and copy saved link batches directly.
           </p>
         </div>
 
         {/* Action Buttons Bar */}
-        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap', flex: '1 1 auto', justifyContent: 'flex-end' }}>
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          {urlGroups.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              leftIcon={<FiTrash2 />}
+              onClick={handleClearAll}
+              style={{ height: '34px', fontSize: '0.78125rem', color: 'var(--text-muted)' }}
+            >
+              Clear All
+            </Button>
+          )}
+
           <Button
             variant="primary"
             size="sm"
@@ -258,31 +258,6 @@ export const AddUrlView: React.FC<AddUrlViewProps> = ({
           >
             Add Property URL
           </Button>
-
-          <button
-            type="button"
-            disabled={!hasSelection}
-            onClick={handleBatchGenerate}
-            style={{
-              height: '34px',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '0.375rem',
-              padding: '0 0.875rem',
-              fontSize: '0.8125rem',
-              fontWeight: 600,
-              borderRadius: '0.375rem',
-              border: hasSelection ? '1px solid var(--border-color)' : '1px solid #333333',
-              backgroundColor: hasSelection ? 'var(--bg-secondary)' : '#1F2023',
-              color: hasSelection ? 'var(--text-primary)' : 'var(--text-muted)',
-              cursor: hasSelection ? 'pointer' : 'not-allowed',
-              whiteSpace: 'nowrap',
-              transition: 'all 0.15s ease',
-            }}
-          >
-            <FiPlay style={{ color: hasSelection ? 'var(--accent-primary)' : 'var(--text-muted)' }} />
-            <span>Generate Selected ({selectedIds.length})</span>
-          </button>
         </div>
       </div>
 
@@ -300,6 +275,7 @@ export const AddUrlView: React.FC<AddUrlViewProps> = ({
             alignItems: 'center',
             gap: '0.5rem',
             border: '1px solid var(--border-color)',
+            animation: 'fadeIn 0.2s ease',
           }}
         >
           <FiCheckCircle style={{ flexShrink: 0 }} />
@@ -307,7 +283,7 @@ export const AddUrlView: React.FC<AddUrlViewProps> = ({
         </div>
       )}
 
-      {/* Main Extracted Property Table */}
+      {/* Main Table: Strictly Serial, Date, View, and Copy */}
       <div
         style={{
           width: '100%',
@@ -321,156 +297,226 @@ export const AddUrlView: React.FC<AddUrlViewProps> = ({
         }}
       >
         <div style={{ width: '100%', overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '1000px' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '700px' }}>
             <thead>
               <tr style={{ backgroundColor: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)' }}>
-                <th style={{ padding: '0.875rem 1rem', width: '44px', textAlign: 'center' }}>
-                  <button
-                    type="button"
-                    onClick={handleSelectAll}
-                    style={{ background: 'transparent', border: 'none', color: 'var(--accent-primary)', cursor: 'pointer', display: 'inline-flex', padding: 0 }}
-                  >
-                    {isAllSelected ? <FiCheckSquare style={{ fontSize: '1.125rem' }} /> : isIndeterminate ? <FiMinusSquare style={{ fontSize: '1.125rem' }} /> : <FiSquare style={{ fontSize: '1.125rem', color: 'var(--text-muted)' }} />}
-                  </button>
+                <th style={{ padding: '0.875rem 1.25rem', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', width: '120px' }}>
+                  Serial
                 </th>
-                <th style={{ padding: '0.875rem 0.875rem', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Project & Content Preview</th>
-                <th style={{ padding: '0.875rem 0.875rem', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Type</th>
-                <th style={{ padding: '0.875rem 0.875rem', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Size</th>
-                <th style={{ padding: '0.875rem 0.875rem', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Floor</th>
-                <th style={{ padding: '0.875rem 0.875rem', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Price</th>
-                <th style={{ padding: '0.875rem 0.875rem', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>BTS/MRT</th>
-                <th style={{ padding: '0.875rem 0.875rem', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Owner/Agent</th>
-                <th style={{ padding: '0.875rem 0.875rem', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Link</th>
-                <th style={{ padding: '0.875rem 1rem', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textAlign: 'right' }}>Actions</th>
+                <th style={{ padding: '0.875rem 1.25rem', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                  Date
+                </th>
+                <th style={{ padding: '0.875rem 1.25rem', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', width: '140px', textAlign: 'center' }}>
+                  View
+                </th>
+                <th style={{ padding: '0.875rem 1.25rem', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', width: '140px', textAlign: 'center' }}>
+                  Copy
+                </th>
+                <th style={{ padding: '0.875rem 1rem', width: '60px', textAlign: 'center' }}>
+                  {/* Action */}
+                </th>
               </tr>
             </thead>
 
             <tbody>
-              {properties.length === 0 ? (
+              {isLoading ? (
                 <tr>
-                  <td colSpan={10} style={{ padding: '3rem 1rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-                    No extracted property URLs yet. Click <strong>+ Add Property URL</strong> above to paste Facebook post links.
+                  <td colSpan={5} style={{ padding: '3rem 1rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+                    Loading saved links...
+                  </td>
+                </tr>
+              ) : urlGroups.length === 0 ? (
+                <tr>
+                  <td colSpan={5} style={{ padding: '3.5rem 1rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
+                      <FiLink style={{ fontSize: '2rem', color: 'var(--text-muted)' }} />
+                      <div>
+                        No saved property URLs yet.
+                      </div>
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        leftIcon={<FiPlus />}
+                        onClick={() => setIsModalOpen(true)}
+                        style={{ height: '32px', fontSize: '0.78125rem' }}
+                      >
+                        Add Property URL
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               ) : (
-                properties.map((p, idx) => {
-                  const isSelected = selectedIds.includes(p.id);
-                  const formattedPrice = p.rentPrice
-                    ? `฿${p.rentPrice.toLocaleString()} / mo`
-                    : p.salePrice
-                    ? `฿${p.salePrice.toLocaleString()}`
-                    : 'N/A';
-
-                  const imagesList = p.originalImages?.length ? p.originalImages : defaultMockImages;
+                urlGroups.map((group, idx) => {
+                  const { formatted, relative } = formatDate(group.created_at);
+                  const serialDisplay = group.serial || String(idx + 1).padStart(2, '0');
+                  const count = group.url_count || 1;
+                  const isCopied = copiedId === group.id;
 
                   return (
                     <tr
-                      key={p.id}
+                      key={group.id}
                       style={{
                         borderBottom: '1px solid var(--border-color)',
-                        backgroundColor: isSelected ? 'var(--accent-primary-alpha)' : 'transparent',
                         transition: 'background-color 0.15s ease',
                       }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = 'var(--bg-secondary)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = 'transparent';
+                      }}
                     >
-                      {/* Selection Checkbox */}
-                      <td style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>
+                      {/* Serial */}
+                      <td style={{ padding: '0.875rem 1.25rem', whiteSpace: 'nowrap' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <span
+                            style={{
+                              fontSize: '0.875rem',
+                              fontWeight: 700,
+                              color: 'var(--accent-primary)',
+                              fontFamily: 'monospace',
+                              letterSpacing: '0.05em',
+                            }}
+                          >
+                            {serialDisplay}
+                          </span>
+                          <span
+                            style={{
+                              fontSize: '0.6875rem',
+                              color: 'var(--text-muted)',
+                              backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                              padding: '0.1rem 0.45rem',
+                              borderRadius: '0.25rem',
+                              fontWeight: 500,
+                            }}
+                          >
+                            {count} {count === 1 ? 'link' : 'links'}
+                          </span>
+                        </div>
+                      </td>
+
+                      {/* Date */}
+                      <td style={{ padding: '0.875rem 1.25rem', whiteSpace: 'nowrap' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.125rem' }}>
+                          <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                            {formatted}
+                          </span>
+                          {relative && (
+                            <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                              {relative}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* View */}
+                      <td style={{ padding: '0.875rem 1.25rem', textAlign: 'center', whiteSpace: 'nowrap' }}>
                         <button
                           type="button"
-                          onClick={() => handleToggleRow(p.id)}
-                          style={{ background: 'transparent', border: 'none', color: isSelected ? 'var(--accent-primary)' : 'var(--text-muted)', cursor: 'pointer', display: 'inline-flex', padding: 0 }}
+                          onClick={() => setViewingGroup(group)}
+                          style={{
+                            height: '30px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.375rem',
+                            padding: '0 0.75rem',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            borderRadius: '0.375rem',
+                            border: '1px solid var(--border-color)',
+                            backgroundColor: 'var(--bg-secondary)',
+                            color: 'var(--text-primary)',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.borderColor = 'var(--accent-primary)';
+                            e.currentTarget.style.color = 'var(--accent-primary)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.borderColor = 'var(--border-color)';
+                            e.currentTarget.style.color = 'var(--text-primary)';
+                          }}
                         >
-                          {isSelected ? <FiCheckSquare style={{ fontSize: '1.125rem' }} /> : <FiSquare style={{ fontSize: '1.125rem' }} />}
+                          <FiEye style={{ fontSize: '0.875rem' }} />
+                          <span>View</span>
                         </button>
                       </td>
 
-                      {/* Project & Content Preview */}
-                      <td style={{ padding: '0.75rem 0.875rem' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--accent-primary)', fontFamily: 'monospace' }}>
-                              0{idx + 1}
-                            </span>
-                            <span style={{ fontSize: '0.84375rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                              {p.projectName || 'Unassigned Project'}
-                            </span>
-                            <span style={{ fontSize: '0.6875rem', color: '#10B981', backgroundColor: 'rgba(16, 185, 129, 0.12)', padding: '0.05rem 0.35rem', borderRadius: '0.25rem', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
-                              <FiImage style={{ fontSize: '0.6875rem' }} /> {imagesList.length} photos
-                            </span>
-                          </div>
-
-                          <div style={{ fontSize: '0.71875rem', color: 'var(--text-muted)', maxWidth: '320px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {p.description || p.title}
-                          </div>
-                        </div>
-                      </td>
-
-                      {/* Type */}
-                      <td style={{ padding: '0.75rem 0.875rem', fontSize: '0.75rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-                        {p.propertyType === 'CONDO' ? 'Condo' : p.propertyType} ({p.listingType === 'RENT' ? 'Rent' : 'Sale'})
-                      </td>
-
-                      {/* Size */}
-                      <td style={{ padding: '0.75rem 0.875rem', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
-                        {p.sizeSqm ? `${p.sizeSqm} sqm` : '-'}
-                      </td>
-
-                      {/* Floor */}
-                      <td style={{ padding: '0.75rem 0.875rem', fontSize: '0.75rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-                        {p.floor || '28th Floor'}
-                      </td>
-
-                      {/* Price */}
-                      <td style={{ padding: '0.75rem 0.875rem', fontSize: '0.8125rem', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
-                        {formattedPrice}
-                      </td>
-
-                      {/* BTS/MRT */}
-                      <td style={{ padding: '0.75rem 0.875rem', fontSize: '0.71875rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                        {p.btsMrt || 'BTS Asoke (150m)'}
-                      </td>
-
-                      {/* Owner / Agent */}
-                      <td style={{ padding: '0.75rem 0.875rem', whiteSpace: 'nowrap' }}>
-                        <Badge variant={p.ownerType === 'OWNER' ? 'success' : 'info'} size="sm">
-                          {p.ownerType || 'Agent'}
-                        </Badge>
-                      </td>
-
-                      {/* Source Link */}
-                      <td style={{ padding: '0.75rem 0.875rem', fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
-                        <a
-                          href={p.sourceUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          style={{ color: 'var(--accent-primary)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontWeight: 600 }}
+                      {/* Copy */}
+                      <td style={{ padding: '0.875rem 1.25rem', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                        <button
+                          type="button"
+                          onClick={() => handleCopyLinks(group)}
+                          style={{
+                            height: '30px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.375rem',
+                            padding: '0 0.875rem',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            borderRadius: '0.375rem',
+                            border: isCopied ? '1px solid #10B981' : '1px solid var(--border-color)',
+                            backgroundColor: isCopied ? 'rgba(16, 185, 129, 0.15)' : 'var(--bg-secondary)',
+                            color: isCopied ? '#10B981' : 'var(--text-primary)',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease',
+                          }}
+                          onMouseEnter={(e) => {
+                            if (!isCopied) {
+                              e.currentTarget.style.borderColor = 'var(--accent-primary)';
+                              e.currentTarget.style.color = 'var(--accent-primary)';
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (!isCopied) {
+                              e.currentTarget.style.borderColor = 'var(--border-color)';
+                              e.currentTarget.style.color = 'var(--text-primary)';
+                            }
+                          }}
                         >
-                          Link <FiExternalLink />
-                        </a>
+                          {isCopied ? (
+                            <>
+                              <FiCheck style={{ fontSize: '0.875rem' }} />
+                              <span>Copied!</span>
+                            </>
+                          ) : (
+                            <>
+                              <FiCopy style={{ fontSize: '0.875rem' }} />
+                              <span>Copy</span>
+                            </>
+                          )}
+                        </button>
                       </td>
 
-                      {/* Actions */}
-                      <td style={{ padding: '0.75rem 0.875rem', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                        <div style={{ display: 'flex', gap: '0.375rem', justifyContent: 'flex-end' }}>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            leftIcon={<FiEye />}
-                            onClick={() => setInspectingProperty(p)}
-                            style={{ fontSize: '0.6875rem', padding: '0 0.5rem', height: '28px' }}
-                          >
-                            Grouped Media
-                          </Button>
-
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            leftIcon={<FiPlay />}
-                            onClick={() => onProcessBatch([p.id])}
-                            style={{ fontSize: '0.6875rem', padding: '0 0.5rem', height: '28px' }}
-                          >
-                            Process Queue
-                          </Button>
-                        </div>
+                      {/* Delete */}
+                      <td style={{ padding: '0.875rem 1rem', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteGroup(group.id)}
+                          title="Delete Group"
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            color: 'var(--text-muted)',
+                            cursor: 'pointer',
+                            padding: '0.25rem',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            borderRadius: '0.25rem',
+                            transition: 'color 0.15s ease',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.color = '#EF4444';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.color = 'var(--text-muted)';
+                          }}
+                        >
+                          <FiTrash2 style={{ fontSize: '0.875rem' }} />
+                        </button>
                       </td>
                     </tr>
                   );
@@ -481,364 +527,302 @@ export const AddUrlView: React.FC<AddUrlViewProps> = ({
         </div>
       </div>
 
-      {/* AI Property Extraction Modal */}
-      <Modal isOpen={isModalOpen} onClose={() => !isExtracting && setIsModalOpen(false)} title="Add Property URLs via AI Reader" maxWidth="540px">
-        {!isExtracting ? (
-          <form onSubmit={handleStartAiExtraction} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-            <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', lineHeight: 1.4, margin: 0 }}>
-              Paste one or multiple Facebook post links below (one link per line). AI & OpenClaw Browser Agent will automatically scrape and extract property specifications.
-            </p>
+      {/* Add Property URLs Modal */}
+      <Modal
+        isOpen={isModalOpen}
+        onClose={() => !isSaving && setIsModalOpen(false)}
+        title="Add Property URLs"
+        maxWidth="540px"
+      >
+        <form onSubmit={handleSaveUrlGroup} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', lineHeight: 1.4, margin: 0 }}>
+            Paste one or multiple Facebook post links below (one link per line). All links will be saved together in a single row.
+          </p>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <label style={{ fontSize: '0.78125rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                  Facebook Post Link(s)
-                </label>
-                <button
-                  type="button"
-                  onClick={insertSampleTestUrls}
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    color: 'var(--accent-primary)',
-                    fontSize: '0.71875rem',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.25rem',
-                    padding: 0,
-                  }}
-                >
-                  <FiZap style={{ color: '#F59E0B' }} />
-                  <span>Insert Sample Facebook Test URLs</span>
-                </button>
-              </div>
-
-              <textarea
-                rows={5}
-                placeholder={`https://facebook.com/groups/realestate/posts/101\nhttps://facebook.com/groups/realestate/posts/102`}
-                value={rawUrlsText}
-                onChange={(e) => handleTextareaChange(e.target.value)}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <label style={{ fontSize: '0.78125rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                Facebook Post Link(s)
+              </label>
+              <button
+                type="button"
+                onClick={insertSampleTestUrls}
                 style={{
-                  width: '100%',
-                  padding: '0.75rem 0.875rem',
-                  backgroundColor: 'var(--bg-secondary)',
-                  color: 'var(--text-primary)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: '0.5rem',
-                  outline: 'none',
-                  fontSize: '0.8125rem',
-                  fontFamily: 'monospace',
-                  lineHeight: 1.5,
-                  resize: 'vertical',
-                  boxSizing: 'border-box',
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--accent-primary)',
+                  fontSize: '0.71875rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.25rem',
+                  padding: 0,
                 }}
-              />
+              >
+                <FiZap style={{ color: '#F59E0B' }} />
+                <span>Insert Sample Facebook Test URLs</span>
+              </button>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.25rem' }}>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                {validUrls.length > 0 ? (
-                  <span style={{ color: 'var(--status-success)', fontWeight: 500, display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
-                    <FiCheck /> {validUrls.length} {validUrls.length === 1 ? 'link' : 'links'} detected
-                  </span>
-                ) : (
-                  <span>Paste links above or use sample test button</span>
-                )}
-              </div>
+            <textarea
+              rows={6}
+              placeholder={`https://facebook.com/groups/realestate/posts/101\nhttps://facebook.com/groups/realestate/posts/102`}
+              value={rawUrlsText}
+              onChange={(e) => handleTextareaChange(e.target.value)}
+              required
+              style={{
+                width: '100%',
+                padding: '0.75rem 0.875rem',
+                backgroundColor: 'var(--bg-secondary)',
+                color: 'var(--text-primary)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '0.5rem',
+                outline: 'none',
+                fontSize: '0.8125rem',
+                fontFamily: 'monospace',
+                lineHeight: 1.5,
+                resize: 'vertical',
+                boxSizing: 'border-box',
+              }}
+            />
+          </div>
 
-              <div style={{ display: 'flex', gap: '0.625rem' }}>
-                <Button type="button" variant="outline" size="sm" onClick={() => setIsModalOpen(false)}>
-                  Cancel
-                </Button>
-                <Button type="submit" variant="primary" size="sm" leftIcon={<FiCpu />} disabled={validUrls.length === 0}>
-                  {validUrls.length > 1
-                    ? `Extract ${validUrls.length} Properties`
-                    : validUrls.length === 1
-                    ? 'Extract & Read with AI'
-                    : 'Extract with AI'}
-                </Button>
-              </div>
-            </div>
-          </form>
-        ) : (
-          /* Live Progress Steps Timeline */
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', padding: '0.5rem 0' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
-              <FiCpu style={{ fontSize: '1.5rem', color: 'var(--accent-primary)' }} />
-              <div>
-                <h4 style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                  OpenClaw Browser Agent Importer Running...
-                </h4>
-                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                  Loading authenticated Facebook session profile → Target Post Container Detection
-                </p>
-              </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.25rem' }}>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+              {validUrls.length > 0 ? (
+                <span style={{ color: 'var(--status-success)', fontWeight: 500, display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                  <FiCheck /> {validUrls.length} {validUrls.length === 1 ? 'link' : 'links'} detected
+                </span>
+              ) : (
+                <span>Paste links above or use sample test button</span>
+              )}
             </div>
 
-            {/* Live Progress Steps Timeline */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
-              {[
-                { step: 1, text: 'SESSION_CHECK: Verifying authenticated Facebook cookies (c_user)' },
-                { step: 2, text: 'OPENCLAW_CONNECTING: Connecting to persistent Chromium browser context' },
-                { step: 3, text: 'OPENING_FACEBOOK: Navigating to exact Facebook post URL' },
-                { step: 4, text: 'VERIFYING_TARGET_POST: Identifying target post container & author metadata' },
-                { step: 5, text: 'EXTRACTING_TEXT: Reading visible post text & preserving original copy' },
-                { step: 6, text: 'EXTRACTING_MEDIA: Identifying target attached property images' },
-                { step: 7, text: 'DOWNLOADING_IMAGES & UPLOADING_R2: Downloading photos & storing in Cloudflare R2' },
-                { step: 8, text: 'AI_PROCESSING & VALIDATION: Generating specs, TikTok scripts & setting status to READY_FOR_REVIEW' },
-              ].map((s) => {
-                const isDone = extractionStep > s.step;
-                const isCurrent = extractionStep === s.step;
-
-                return (
-                  <div
-                    key={s.step}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.75rem',
-                      fontSize: '0.8125rem',
-                      color: isDone
-                        ? 'var(--status-success)'
-                        : isCurrent
-                        ? 'var(--text-primary)'
-                        : 'var(--text-muted)',
-                      fontWeight: isCurrent ? 600 : 400,
-                    }}
-                  >
-                    {isDone ? (
-                      <FiCheckCircle style={{ color: 'var(--status-success)', flexShrink: 0 }} />
-                    ) : isCurrent ? (
-                      <FiLoader
-                        style={{
-                          animation: 'spin 1s linear infinite',
-                          color: 'var(--accent-primary)',
-                          flexShrink: 0,
-                        }}
-                      />
-                    ) : (
-                      <div
-                        style={{
-                          width: '14px',
-                          height: '14px',
-                          borderRadius: '50%',
-                          border: '1px solid var(--border-color)',
-                          flexShrink: 0,
-                        }}
-                      />
-                    )}
-                    <span>{s.text}</span>
-                  </div>
-                );
-              })}
+            <div style={{ display: 'flex', gap: '0.625rem' }}>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setIsModalOpen(false)}
+                disabled={isSaving}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                size="sm"
+                leftIcon={<FiCheck />}
+                disabled={isSaving || rawUrlsText.trim().length === 0}
+              >
+                {isSaving ? 'Saving...' : 'Save URLs'}
+              </Button>
             </div>
           </div>
-        )}
+        </form>
       </Modal>
 
-      {/* Grouped Original Scraped Content & Images Inspector Modal */}
-      {inspectingProperty && (
+      {/* View Grouped Links Modal */}
+      {viewingGroup && (
         <Modal
-          isOpen={!!inspectingProperty}
-          onClose={() => {
-            setInspectingProperty(null);
-            setPreviewImageIndex(null);
-          }}
-          title={`Import Preview Inspector: ${inspectingProperty.projectName || 'Property Details'}`}
-          maxWidth="780px"
+          isOpen={!!viewingGroup}
+          onClose={() => setViewingGroup(null)}
+          title={`Grouped Links — Serial ${viewingGroup.serial}`}
+          maxWidth="640px"
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-            {/* Header Information Pill */}
+            {/* Modal Info Bar */}
             <div
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                padding: '0.875rem 1rem',
-                borderRadius: '0.625rem',
+                padding: '0.75rem 1rem',
+                borderRadius: '0.5rem',
                 backgroundColor: 'var(--bg-secondary)',
                 border: '1px solid var(--border-color)',
                 flexWrap: 'wrap',
                 gap: '0.5rem',
               }}
             >
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <div style={{ fontSize: '0.90625rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                    {inspectingProperty.title}
-                  </div>
-                  <span style={{ fontSize: '0.6875rem', color: '#10B981', backgroundColor: 'rgba(16, 185, 129, 0.12)', padding: '0.1rem 0.4rem', borderRadius: '0.25rem', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
-                    <FiShield /> 95% Confidence (OpenClaw)
-                  </span>
-                </div>
-
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
-                  Code: <span style={{ fontFamily: 'monospace', color: 'var(--accent-primary)' }}>{inspectingProperty.code}</span> • {inspectingProperty.sourceAuthor || 'FB Listing'}
-                </div>
-              </div>
-
-              <a
-                href={inspectingProperty.sourceUrl}
-                target="_blank"
-                rel="noreferrer"
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '0.375rem',
-                  fontSize: '0.75rem',
-                  fontWeight: 600,
-                  color: 'var(--accent-primary)',
-                  textDecoration: 'none',
-                }}
-              >
-                View Original Post <FiExternalLink />
-              </a>
-            </div>
-
-            {/* AI Extracted Specs Grid Badges */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.625rem' }}>
-              <div style={{ padding: '0.625rem', borderRadius: '0.5rem', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
-                <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', display: 'block' }}>Project</span>
-                <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--text-primary)' }}>{inspectingProperty.projectName || 'Unassigned'}</span>
-              </div>
-              <div style={{ padding: '0.625rem', borderRadius: '0.5rem', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
-                <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', display: 'block' }}>Price</span>
-                <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#10B981' }}>
-                  {inspectingProperty.rentPrice ? `฿${inspectingProperty.rentPrice.toLocaleString()} / mo` : inspectingProperty.salePrice ? `฿${inspectingProperty.salePrice.toLocaleString()}` : 'N/A'}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <span
+                  style={{
+                    fontSize: '1rem',
+                    fontWeight: 700,
+                    color: 'var(--accent-primary)',
+                    fontFamily: 'monospace',
+                  }}
+                >
+                  #{viewingGroup.serial}
+                </span>
+                <span
+                  style={{
+                    fontSize: '0.75rem',
+                    color: '#10B981',
+                    backgroundColor: 'rgba(16, 185, 129, 0.12)',
+                    padding: '0.15rem 0.5rem',
+                    borderRadius: '0.25rem',
+                    fontWeight: 600,
+                  }}
+                >
+                  {getGroupUrlsList(viewingGroup).length} Links in Group
                 </span>
               </div>
-              <div style={{ padding: '0.625rem', borderRadius: '0.5rem', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
-                <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', display: 'block' }}>Size / Floor</span>
-                <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                  {inspectingProperty.sizeSqm ? `${inspectingProperty.sizeSqm} sqm` : '-'} • {inspectingProperty.floor || '28th'}
-                </span>
-              </div>
-              <div style={{ padding: '0.625rem', borderRadius: '0.5rem', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
-                <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', display: 'block' }}>Owner / Contact</span>
-                <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                  {inspectingProperty.ownerType || 'Agent'} • Line ID
-                </span>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                <FiCalendar style={{ fontSize: '0.8125rem' }} />
+                <span>{formatDate(viewingGroup.created_at).formatted}</span>
               </div>
             </div>
 
-            {/* Grouped Section 1: Original Scraped Post Description */}
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                <FiFileText style={{ color: 'var(--accent-primary)', fontSize: '1rem' }} />
-                <h4 style={{ fontSize: '0.84375rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-                  Original Facebook Scraped Text Content
-                </h4>
-              </div>
+            {/* Individual Links List */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <label style={{ fontSize: '0.78125rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                List of URLs in this Batch
+              </label>
+
               <div
                 style={{
-                  padding: '0.875rem',
-                  borderRadius: '0.5rem',
-                  backgroundColor: 'var(--bg-secondary)',
-                  border: '1px solid var(--border-color)',
-                  color: 'var(--text-primary)',
-                  fontSize: '0.8125rem',
-                  lineHeight: 1.6,
-                  whiteSpace: 'pre-wrap',
-                  maxHeight: '140px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.5rem',
+                  maxHeight: '260px',
                   overflowY: 'auto',
+                  paddingRight: '0.25rem',
                 }}
               >
-                {inspectingProperty.description}
-              </div>
-            </div>
-
-            {/* Grouped Section 2: Original Scraped Photos Gallery */}
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <FiImage style={{ color: '#10B981', fontSize: '1rem' }} />
-                  <h4 style={{ fontSize: '0.84375rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-                    Target Post Attached Images (Stored in Cloudflare R2)
-                  </h4>
-                </div>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                  {(inspectingProperty.originalImages?.length ? inspectingProperty.originalImages : defaultMockImages).length} photos attached
-                </span>
-              </div>
-
-              {/* Photo Gallery Grid */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '0.75rem' }}>
-                {(inspectingProperty.originalImages?.length ? inspectingProperty.originalImages : defaultMockImages).map((imgUrl, i) => (
+                {getGroupUrlsList(viewingGroup).map((url, i) => (
                   <div
                     key={i}
-                    onClick={() => setPreviewImageIndex(i)}
                     style={{
-                      height: '110px',
-                      borderRadius: '0.5rem',
-                      overflow: 'hidden',
-                      border: '1px solid var(--border-color)',
-                      cursor: 'pointer',
-                      position: 'relative',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '0.625rem 0.875rem',
+                      borderRadius: '0.375rem',
                       backgroundColor: 'var(--bg-secondary)',
+                      border: '1px solid var(--border-color)',
+                      gap: '0.5rem',
                     }}
                   >
-                    <img
-                      src={imgUrl}
-                      alt={`Property Photo ${i + 1}`}
-                      style={{ width: '100%', height: '100%', objectFit: 'cover', transition: 'transform 0.2s ease' }}
-                    />
-                    <div
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', overflow: 'hidden', flex: 1 }}>
+                      <span
+                        style={{
+                          fontSize: '0.6875rem',
+                          fontWeight: 700,
+                          color: 'var(--text-muted)',
+                          fontFamily: 'monospace',
+                          width: '20px',
+                        }}
+                      >
+                        {String(i + 1).padStart(2, '0')}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: '0.8125rem',
+                          color: 'var(--text-primary)',
+                          fontFamily: 'monospace',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {url}
+                      </span>
+                    </div>
+
+                    <a
+                      href={url}
+                      target="_blank"
+                      rel="noreferrer"
+                      title="Open link in new tab"
                       style={{
-                        position: 'absolute',
-                        bottom: '6px',
-                        right: '6px',
-                        backgroundColor: 'rgba(0,0,0,0.7)',
-                        color: '#FFFFFF',
-                        fontSize: '0.625rem',
-                        padding: '0.1rem 0.35rem',
-                        borderRadius: '0.25rem',
+                        color: 'var(--accent-primary)',
+                        textDecoration: 'none',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.25rem',
+                        fontSize: '0.75rem',
                         fontWeight: 600,
+                        flexShrink: 0,
                       }}
                     >
-                      R2 Asset #{i + 1}
-                    </div>
+                      <span>Open</span>
+                      <FiExternalLink />
+                    </a>
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* Lightbox High-Res Preview Overlay */}
-            {previewImageIndex !== null && (
-              <div
+            {/* Raw Text Box */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+              <label style={{ fontSize: '0.78125rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                Raw Group Text
+              </label>
+              <textarea
+                readOnly
+                rows={4}
+                value={viewingGroup.raw_text}
                 style={{
-                  position: 'fixed',
-                  top: 0,
-                  left: 0,
-                  width: '100vw',
-                  height: '100vh',
-                  backgroundColor: 'rgba(0,0,0,0.85)',
-                  backdropFilter: 'blur(4px)',
-                  zIndex: 200000,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  padding: '2rem',
+                  width: '100%',
+                  padding: '0.625rem 0.75rem',
+                  backgroundColor: 'var(--bg-secondary)',
+                  color: 'var(--text-primary)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '0.375rem',
+                  fontSize: '0.75rem',
+                  fontFamily: 'monospace',
+                  lineHeight: 1.4,
+                  resize: 'none',
+                  boxSizing: 'border-box',
                 }}
-                onClick={() => setPreviewImageIndex(null)}
-              >
-                <img
-                  src={
-                    (inspectingProperty.originalImages?.length ? inspectingProperty.originalImages : defaultMockImages)[
-                      previewImageIndex
-                    ]
-                  }
-                  alt="High resolution preview"
-                  style={{ maxWidth: '90%', maxHeight: '85vh', borderRadius: '0.75rem', boxShadow: '0 20px 50px rgba(0,0,0,0.9)' }}
-                />
-              </div>
-            )}
+              />
+            </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
-              <Button variant="primary" size="sm" onClick={() => setInspectingProperty(null)}>
-                Close Preview
+            {/* Modal Footer */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5rem' }}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setViewingGroup(null)}
+              >
+                Close
               </Button>
+
+              <button
+                type="button"
+                onClick={() => handleCopyFromModal(viewingGroup)}
+                style={{
+                  height: '32px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.375rem',
+                  padding: '0 0.875rem',
+                  fontSize: '0.78125rem',
+                  fontWeight: 600,
+                  borderRadius: '0.375rem',
+                  border: viewModalCopied ? '1px solid #10B981' : '1px solid var(--accent-primary)',
+                  backgroundColor: viewModalCopied ? 'rgba(16, 185, 129, 0.15)' : 'var(--accent-primary)',
+                  color: viewModalCopied ? '#10B981' : '#FFFFFF',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                {viewModalCopied ? (
+                  <>
+                    <FiCheck />
+                    <span>Copied All Links!</span>
+                  </>
+                ) : (
+                  <>
+                    <FiCopy />
+                    <span>Copy All Links</span>
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </Modal>

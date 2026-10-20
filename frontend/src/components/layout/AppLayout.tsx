@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -20,6 +20,7 @@ import {
   FiKey,
   FiShield,
   FiScissors,
+  FiCpu,
 } from 'react-icons/fi';
 import { FaFacebook } from 'react-icons/fa';
 import { getRemainingPostsCount, subscribeRemainingPosts } from '../../features/remaining-posts/remainingPostsStorage';
@@ -58,6 +59,37 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     }
     return false;
   });
+
+  // Canvas mode (toggle sidebar into collapsed mode without hiding it)
+  const [isCanvasMode, setIsCanvasMode] = useState<boolean>(false);
+  const previousCollapsedRef = useRef<boolean | null>(null);
+
+  useEffect(() => {
+    const handleSetCanvasMode = (e: Event) => {
+      const customEvent = e as CustomEvent<{ active: boolean }>;
+      const active = Boolean(customEvent.detail?.active);
+      setIsCanvasMode(active);
+      if (active) {
+        // Toggle to collapsed icon-only sidebar and remember previous state
+        previousCollapsedRef.current = isCollapsed;
+        setIsCollapsed(true);
+      } else {
+        // Restore collapse state
+        if (previousCollapsedRef.current !== null) {
+          setIsCollapsed(previousCollapsedRef.current);
+          previousCollapsedRef.current = null;
+        }
+      }
+    };
+    window.addEventListener('ea_set_canvas_mode', handleSetCanvasMode);
+    return () => {
+      window.removeEventListener('ea_set_canvas_mode', handleSetCanvasMode);
+    };
+  }, [isCollapsed]);
+
+  useEffect(() => {
+    setIsCanvasMode(false);
+  }, [location.pathname]);
 
   // Mobile drawer state & screen size detection
   const [isMobileOpen, setIsMobileOpen] = useState(false);
@@ -112,6 +144,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
           badge: remainingPostsCount > 0 ? remainingPostsCount : undefined,
         },
         { id: 'create-workflow', label: 'Create Workflow', icon: <FiGitBranch /> },
+        { id: 'ai-models', label: 'AI Models & History', icon: <FiCpu /> },
         { id: 'add-url', label: 'Add URL', icon: <FiPlusSquare /> },
         { id: 'prompts', label: 'Prompt Templates', icon: <FiFileText /> },
       ],
@@ -142,21 +175,58 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
       return;
     }
     e.preventDefault();
+
+    // If an in-flight workflow is actively processing, request permission before navigating away
+    if (typeof (window as any).__workflowConfirmLeave === 'function') {
+      (window as any).__workflowConfirmLeave(() => {
+        navigate(`/${id}`);
+        setIsMobileOpen(false);
+      });
+      return;
+    }
+
     navigate(`/${id}`);
     setIsMobileOpen(false);
   };
 
-  const currentSidebarWidth = isMobile ? '250px' : (isCollapsed ? '72px' : '250px');
+  const currentSidebarWidth = isMobile ? '250px' : (isCollapsed ? '56px' : '250px');
+
+  // Custom tooltip shown to the right of collapsed sidebar icons
+  const [navTip, setNavTip] = useState<{ label: string; top: number; left: number } | null>(null);
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-main)' }}>
+      {navTip && isCollapsed && !isMobile && (
+        <div
+          role="tooltip"
+          style={{
+            position: 'fixed',
+            top: navTip.top,
+            left: navTip.left,
+            transform: 'translateY(-50%)',
+            zIndex: 1000,
+            padding: '0.35rem 0.65rem',
+            borderRadius: '8px',
+            fontSize: '0.75rem',
+            fontWeight: 600,
+            whiteSpace: 'nowrap',
+            pointerEvents: 'none',
+            color: isDark ? '#F0F6FC' : '#0F172A',
+            backgroundColor: isDark ? '#1C2128' : '#FFFFFF',
+            border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+            boxShadow: isDark ? '0 6px 18px rgba(0,0,0,0.5)' : '0 6px 18px rgba(0,0,0,0.12)',
+          }}
+        >
+          {navTip.label}
+        </div>
+      )}
       {/* Top Navigation Bar */}
       <header
         style={{
           height: '56px',
           width: '100%',
-          backgroundColor: 'var(--bg-secondary)',
-          borderBottom: '1px solid var(--border-color)',
+          backgroundColor: isCanvasMode ? 'transparent' : 'var(--bg-secondary)',
+          borderBottom: isCanvasMode ? 'none' : (isMobile ? '1px solid var(--border-color)' : 'none'),
           display: 'flex',
           alignItems: 'center',
           position: 'fixed',
@@ -165,6 +235,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
           right: 0,
           zIndex: 40,
           padding: isMobile ? '0 0.875rem' : 0,
+          pointerEvents: isCanvasMode ? 'none' : 'auto',
+          boxShadow: isCanvasMode ? 'none' : undefined,
         }}
       >
         {isMobile ? (
@@ -208,18 +280,22 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         ) : (
           /* Desktop Top Bar */
           <>
-            {/* Top-Left Brand Logo */}
+            {/* Top-Left Brand Logo (Corner cell with border removed when collapsed) */}
             <div
               style={{
                 width: currentSidebarWidth,
                 minWidth: currentSidebarWidth,
                 height: '100%',
-                padding: isCollapsed ? '0 0.875rem' : '0 1.25rem',
+                padding: isCollapsed ? '0 0.5rem' : '0 1.25rem',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: isCollapsed ? 'center' : 'flex-start',
-                borderRight: '1px solid var(--border-color)',
+                borderRight: (isCollapsed || isCanvasMode) ? 'none' : '1px solid var(--border-color)',
+                borderBottom: 'none',
+                backgroundColor: isCanvasMode ? 'var(--bg-secondary)' : undefined,
+                pointerEvents: isCanvasMode ? 'auto' : undefined,
                 boxSizing: 'border-box',
+                overflow: 'hidden',
                 transition: 'width 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
               }}
             >
@@ -249,10 +325,14 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                 justifyContent: 'space-between',
                 padding: '0 1.25rem',
                 gap: '1rem',
+                position: 'relative',
+                borderBottom: isCanvasMode ? 'none' : '1px solid var(--border-color)',
+                boxSizing: 'border-box',
+                pointerEvents: 'none',
               }}
             >
-              <div id="header-title-portal" style={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
-                {activeTab !== 'testing' && (
+              <div id="header-title-portal" style={{ display: 'flex', alignItems: 'center', minWidth: 0, zIndex: 5, pointerEvents: 'auto' }}>
+                {!isCanvasMode && activeTab !== 'testing' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                       <h2 style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
@@ -267,28 +347,23 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                   </div>
                 )}
               </div>
-              <div id="header-center-portal" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1 }} />
+              <div
+                id="header-center-portal"
+                style={{
+                  position: 'absolute',
+                  left: '50%',
+                  top: '50%',
+                  transform: 'translate(-50%, -50%)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  pointerEvents: 'auto',
+                  zIndex: 10,
+                }}
+              />
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexShrink: 0 }}>
-                <div id="header-action-portal" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }} />
-
-                {/* Status Indicator: Minimal & Discreet */}
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    padding: '4px 8px',
-                    borderRadius: '6px',
-                    color: 'var(--text-muted)',
-                    fontSize: '0.6875rem',
-                    fontWeight: 500,
-                  }}
-                  title="All AI & API Services Operational"
-                >
-                  <div style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#22C55E' }} />
-                  <span>Online</span>
-                </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexShrink: 0, zIndex: 5, pointerEvents: 'auto' }}>
+                <div id="header-action-portal" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0, pointerEvents: 'auto' }} />
               </div>
             </div>
           </>
@@ -326,14 +401,16 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
           bottom: 0,
           left: 0,
           zIndex: 30,
-          transform: isMobile ? (isMobileOpen ? 'translateX(0)' : 'translateX(-100%)') : 'none',
+          transform: isMobile
+            ? (isMobileOpen ? 'translateX(0)' : 'translateX(-100%)')
+            : 'none',
           transition: 'width 0.25s cubic-bezier(0.4, 0, 0.2, 1), transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
           overflow: 'hidden',
         }}
       >
         <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
           {/* Menu Sections */}
-          <nav style={{ padding: isCollapsed ? '0.75rem 0.375rem' : '0.875rem 0.625rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          <nav style={{ padding: isCollapsed ? '0.625rem 0.25rem' : '0.875rem 0.625rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
             {navSections.map((section, sIdx) => (
               <div key={section.title} style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
                 {/* Section Title */}
@@ -378,7 +455,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                       key={item.id}
                       href={`/${item.id}`}
                       onClick={(e) => handleNavClick(e, item.id)}
-                      title={isCollapsed ? item.label : undefined}
+                      aria-label={isCollapsed ? item.label : undefined}
                       style={{
                         display: 'flex',
                         alignItems: 'center',
@@ -398,6 +475,10 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                         position: 'relative',
                       }}
                       onMouseEnter={(e) => {
+                        if (isCollapsed) {
+                          const r = e.currentTarget.getBoundingClientRect();
+                          setNavTip({ label: item.label, top: r.top + r.height / 2, left: r.right + 10 });
+                        }
                         if (!isActive) {
                           e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.04)';
                           e.currentTarget.style.borderColor = isDark ? 'rgba(255, 255, 255, 0.07)' : 'rgba(0, 0, 0, 0.07)';
@@ -407,6 +488,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                         }
                       }}
                       onMouseLeave={(e) => {
+                        setNavTip(null);
                         if (!isActive) {
                           e.currentTarget.style.backgroundColor = 'transparent';
                           e.currentTarget.style.borderColor = 'transparent';
@@ -598,7 +680,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         style={{
           flex: 1,
           marginLeft: isMobile ? 0 : currentSidebarWidth,
-          marginTop: '56px',
+          marginTop: isCanvasMode ? 0 : '56px',
           display: 'flex',
           flexDirection: 'column',
           minWidth: 0,
@@ -608,11 +690,15 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         <main
           style={{
             flex: 1,
-            padding: isMobile ? '0.875rem 0.75rem' : '1.25rem',
-            maxWidth: '1400px',
+            padding: isCanvasMode ? 0 : (isMobile ? '0.875rem 0.75rem' : '1.25rem'),
+            maxWidth: isCanvasMode ? '100%' : '1400px',
             width: '100%',
             margin: '0 auto',
             boxSizing: 'border-box',
+            height: isCanvasMode ? '100vh' : 'auto',
+            display: isCanvasMode ? 'flex' : 'block',
+            flexDirection: isCanvasMode ? 'column' : 'initial',
+            overflow: isCanvasMode ? 'hidden' : 'visible',
           }}
         >
           {children}

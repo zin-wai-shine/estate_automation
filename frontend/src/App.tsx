@@ -18,6 +18,8 @@ import { AutoPostView } from './features/autopost/AutoPostView';
 import { PostHistoryView } from './features/autopost/PostHistoryView';
 import { AuthManagerView } from './features/autopost/AuthManagerView';
 import { WatermarkView } from './features/watermark/WatermarkView';
+import { AIModelsHistoryView } from './features/ai-models/AIModelsHistoryView';
+import { ErrorBoundary } from './components/ui/ErrorBoundary';
 import type { Property } from './types';
 
 const initialProperties: Property[] = [
@@ -179,24 +181,27 @@ const MainApp: React.FC = () => {
 
   return (
     <AppLayout>
-      <Routes>
-        <Route path="/" element={<Navigate to="/add-url" replace />} />
-        <Route path="/dashboard" element={<DashboardView properties={properties} onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
-        <Route path="/add-url" element={<AddUrlView properties={properties} onAddProperty={handleAddProperty} onProcessBatch={handleProcessBatch} />} />
-        <Route path="/facebook-import" element={<FacebookImportView onSaveToInbox={(prop) => handleAddProperty(prop.sourceUrl || '', prop)} onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
-        <Route path="/remaining-posts" element={<RemainingPostsView onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
-        <Route path="/auto-post" element={<AutoPostView onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
-        <Route path="/watermark" element={<WatermarkView />} />
-        <Route path="/post-history" element={<PostHistoryView onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
-        <Route path="/auth-manager" element={<AuthManagerView onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
-        <Route path="/facebook-tokens" element={<AuthManagerView onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
-        <Route path="/create-workflow" element={<CreateWorkflowView />} />
-        <Route path="/inbox" element={<PropertyInboxView properties={properties} onProcessProperty={(id) => handleProcessBatch([id])} onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
-        <Route path="/prompts" element={<PromptTemplatesView />} />
-        <Route path="/testing" element={<TestingView />} />
-        <Route path="/settings" element={<SettingsView onNavigateToFacebookLogin={() => navigate('/settings/facebook-login')} />} />
-        <Route path="/settings/facebook-login" element={<FacebookLoginView onBack={() => navigate('/settings')} onSuccess={() => navigate('/dashboard')} />} />
-      </Routes>
+      <ErrorBoundary fallbackTitle="Page Error">
+        <Routes>
+          <Route path="/" element={<Navigate to="/add-url" replace />} />
+          <Route path="/dashboard" element={<DashboardView properties={properties} onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
+          <Route path="/add-url" element={<AddUrlView properties={properties} onAddProperty={handleAddProperty} onProcessBatch={handleProcessBatch} />} />
+          <Route path="/facebook-import" element={<FacebookImportView onSaveToInbox={(prop) => handleAddProperty(prop.sourceUrl || '', prop)} onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
+          <Route path="/remaining-posts" element={<RemainingPostsView onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
+          <Route path="/auto-post" element={<AutoPostView onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
+          <Route path="/watermark" element={<WatermarkView />} />
+          <Route path="/ai-models" element={<AIModelsHistoryView />} />
+          <Route path="/post-history" element={<PostHistoryView onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
+          <Route path="/auth-manager" element={<AuthManagerView onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
+          <Route path="/facebook-tokens" element={<AuthManagerView onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
+          <Route path="/create-workflow" element={<CreateWorkflowView />} />
+          <Route path="/inbox" element={<PropertyInboxView properties={properties} onProcessProperty={(id) => handleProcessBatch([id])} onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
+          <Route path="/prompts" element={<PromptTemplatesView />} />
+          <Route path="/testing" element={<TestingView />} />
+          <Route path="/settings" element={<SettingsView onNavigateToFacebookLogin={() => navigate('/settings/facebook-login')} />} />
+          <Route path="/settings/facebook-login" element={<FacebookLoginView onBack={() => navigate('/settings')} onSuccess={() => navigate('/dashboard')} />} />
+        </Routes>
+      </ErrorBoundary>
     </AppLayout>
   );
 };

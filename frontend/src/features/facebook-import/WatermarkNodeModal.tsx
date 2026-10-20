@@ -1,34 +1,24 @@
 import React, { useState, useMemo } from 'react';
-import {
-  FiCheck,
-  FiTrash2,
-  FiExternalLink,
-  FiEdit2,
-} from 'react-icons/fi';
+import { FiCheck, FiEdit2 } from 'react-icons/fi';
 import {
   type CropStudioFormat,
   getSavedCropFormats,
 } from '../watermark/cropFormats';
 import type { DynamicAIBoxConfig } from './FacebookWorkflowCanvas';
-import { Button } from '../../components/ui/Button';
-import { useNavigate } from 'react-router-dom';
 
 interface WatermarkNodeModalProps {
   box: DynamicAIBoxConfig;
   isDark: boolean;
   onUpdateBox: (id: string, updates: Partial<DynamicAIBoxConfig>) => void;
-  onDeleteBox: (id: string) => void;
-  onClose: () => void;
+  onDeleteBox?: (id: string) => void;
+  onClose?: () => void;
 }
 
 export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
   box,
   isDark,
   onUpdateBox,
-  onDeleteBox,
-  onClose,
 }) => {
-  const navigate = useNavigate();
   const savedFormats = useMemo(() => getSavedCropFormats(), []);
 
   const [selectedFormatId, setSelectedFormatId] = useState<string>(() => {
@@ -251,65 +241,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
         />
       </div>
 
-      {/* Footer Controls */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          paddingTop: '0.75rem',
-          borderTop: '1px solid var(--border-color)',
-        }}
-      >
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => onDeleteBox(box.id)}
-          leftIcon={<FiTrash2 style={{ fontSize: '12px' }} />}
-          style={{
-            color: '#EF4444',
-            borderColor: isDark ? 'rgba(239, 68, 68, 0.3)' : 'rgba(239, 68, 68, 0.35)',
-            fontSize: '0.75rem',
-            height: '32px',
-          }}
-        >
-          Delete Node
-        </Button>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              onClose();
-              navigate('/watermark');
-            }}
-            leftIcon={<FiExternalLink style={{ fontSize: '12px' }} />}
-            style={{
-              fontSize: '0.75rem',
-              height: '32px',
-              color: 'var(--text-secondary)',
-            }}
-            title="Open Crop & Cut Studio to edit or save new formats"
-          >
-            Open Studio
-          </Button>
-
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={onClose}
-            leftIcon={<FiCheck style={{ fontSize: '13px' }} />}
-            style={{
-              fontSize: '0.75rem',
-              height: '32px',
-              fontWeight: 600,
-            }}
-          >
-            Apply Format
-          </Button>
-        </div>
-      </div>
     </div>
   );
 };

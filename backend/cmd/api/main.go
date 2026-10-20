@@ -112,6 +112,7 @@ func main() {
 	fbPages.Post("/:pageId/disconnect", handlers.DisconnectManagedFacebookPage)
 	fbPages.Post("/:pageId/auto-publish", handlers.TogglePageAutoPublish)
 	fbPages.Post("/:pageId/label", handlers.UpdatePageLabel)
+	fbPages.Post("/:pageId/picture", handlers.UpdatePagePicture)
 	fbPages.Delete("/:pageId/token", handlers.RemovePageToken)
 
 	// Facebook Publishing & Scheduling
@@ -121,6 +122,7 @@ func main() {
 	fbPublish.Post("/schedule", handlers.ScheduleFacebookPost)
 	fbPublish.Get("/posts", handlers.GetFacebookPosts)
 	fbPublish.Post("/posts/:id/retry", handlers.RetryFacebookPost)
+	fbPublish.Delete("/posts", handlers.DeleteAllFacebookPosts)
 	fbPublish.Delete("/posts/:id", handlers.DeleteFacebookPost)
 
 	// Start scheduled Facebook posts processor background worker & health checker
@@ -166,6 +168,13 @@ func main() {
 	props.Post("/:id/continue-ai", handlers.ContinueAIProcessing)
 	props.Post("/:id/retry-import", handlers.RetryPropertyImport)
 	props.Post("/:id/manual-import", handlers.ManualPropertyImport)
+
+	// URL Groups Batch Management Routes (Add URL single-row grouping)
+	urlGroups := app.Group("/api/url-groups")
+	urlGroups.Get("/", handlers.GetUrlGroups)
+	urlGroups.Post("/", handlers.CreateUrlGroup)
+	urlGroups.Delete("/:id", handlers.DeleteUrlGroup)
+	urlGroups.Delete("/", handlers.ClearUrlGroups)
 
 	// Workflow Map Configuration Persistence Routes
 	wf := app.Group("/api/workflow")

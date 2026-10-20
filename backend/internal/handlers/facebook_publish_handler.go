@@ -310,6 +310,21 @@ func DeleteFacebookPost(c *fiber.Ctx) error {
 	})
 }
 
+// DeleteAllFacebookPosts removes all facebook posts records from the database
+func DeleteAllFacebookPosts(c *fiber.Ctx) error {
+	if err := database.DB.Where("1 = 1").Delete(&models.FacebookPublishPost{}).Error; err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+			"status":  "error",
+			"message": err.Error(),
+		})
+	}
+
+	return c.Status(http.StatusOK).JSON(fiber.Map{
+		"status":  "success",
+		"message": "All posts deleted successfully",
+	})
+}
+
 // -----------------------------------------------------------------------------
 // Multi-Page Management Endpoints (Unified "Page Tokens" Menu)
 // -----------------------------------------------------------------------------
@@ -670,6 +685,35 @@ func UpdatePageLabel(c *fiber.Ctx) error {
 	})
 }
 
+// UpdatePagePicture updates or refreshes the profile picture URL for a page
+func UpdatePagePicture(c *fiber.Ctx) error {
+	pageID := c.Params("pageId")
+	var body struct {
+		PictureURL string `json:"picture_url"`
+	}
+	if err := c.BodyParser(&body); err != nil || strings.TrimSpace(body.PictureURL) == "" {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{
+			"status":  "error",
+			"message": "picture_url is required",
+		})
+	}
+
+	mgr := services.GetFacebookPageManager()
+	dto, err := mgr.UpdatePagePicture(c.Context(), pageID, body.PictureURL)
+	if err != nil {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{
+			"status":  "error",
+			"message": err.Error(),
+		})
+	}
+
+	return c.Status(http.StatusOK).JSON(fiber.Map{
+		"status":  "success",
+		"message": "Profile picture updated successfully",
+		"page":    dto,
+	})
+}
+
 // RemovePageToken deletes the stored token for a specific page
 func RemovePageToken(c *fiber.Ctx) error {
 	pageID := c.Params("pageId")
@@ -697,6 +741,7 @@ type FacebookPagePublishItem struct {
 	Hashtags    string     `json:"hashtags"`
 	ImageURLs   []string   `json:"image_urls"`
 	ScheduledAt *time.Time `json:"scheduled_at,omitempty"`
+	Force       bool       `json:"force,omitempty"`
 }
 
 // FacebookPagePublishItemResult reports the individual outcome for one page
@@ -755,6 +800,7 @@ func PublishFacebookBatch(c *fiber.Ctx) error {
 			Hashtags:    item.Hashtags,
 			ImageURLs:   item.ImageURLs,
 			ScheduledAt: item.ScheduledAt,
+			Force:       item.Force,
 		}
 
 		if item.ScheduledAt != nil && item.ScheduledAt.After(time.Now()) {

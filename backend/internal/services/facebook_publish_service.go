@@ -58,6 +58,8 @@ type PublishPostRequest struct {
 	Hashtags    string     `json:"hashtags"`
 	ImageURLs   []string   `json:"image_urls"`
 	ScheduledAt *time.Time `json:"scheduled_at,omitempty"`
+	Force       bool       `json:"force,omitempty"`
+	OriginalURL string     `json:"original_url,omitempty"`
 
 	// ExistingPostID reuses an existing DB record (scheduled/retry) instead of creating a new one.
 	ExistingPostID uint `json:"-"`
@@ -68,6 +70,14 @@ func composeCaption(headline, caption, hashtags string) string {
 	full := strings.TrimSpace(caption)
 	headline = strings.TrimSpace(headline)
 	hashtags = strings.TrimSpace(hashtags)
+
+	// Filter out generic fallback placeholders so they never appear at the top of real posts
+	if strings.EqualFold(headline, "Property Listing") ||
+		strings.EqualFold(headline, "Post Listing") ||
+		strings.EqualFold(headline, "Listing") {
+		headline = ""
+	}
+
 	if headline != "" && !strings.Contains(full, headline) {
 		if full == "" {
 			full = headline
@@ -378,6 +388,9 @@ func isPermanentMetaError(err error) bool {
 }
 
 // UploadUnpublishedPhoto uploads a single image with published=false to obtain a Meta media_fbid.
+// Using published=false stages the photo as a private unpublished asset — invisible to everyone until it is
+// attached to the final feed post via attached_media, which then publishes the post publicly to all followers.
+// Do NOT use no_story=true here: that flag still creates a public page-album entry which causes admin-only visibility.
 // Permanent errors (such as #190 and #200) are never retried; temporary network errors are retried with backoff.
 func (s *FacebookPublishService) UploadUnpublishedPhoto(ctx context.Context, pageID, pageToken, imageURL string) (string, error) {
 	_, _, version, baseURL, _ := s.GetConfig()
@@ -595,18 +608,18 @@ func (s *FacebookPublishService) PublishPost(ctx context.Context, req PublishPos
 		return nil, fmt.Errorf("cannot publish post with both empty caption and empty images")
 	}
 
-	// 2. Prevent Duplicate Publishing (Idempotency check within last 5 minutes)
+	// 2. Prevent Duplicate Publishing (Rapid double-click check within last 10 seconds unless Force is requested)
 	imagesJSON, _ := json.Marshal(req.ImageURLs)
 	hashData := fmt.Sprintf("%s|%s|%s", pageID, fullCaption, string(imagesJSON))
 	hashSum := sha256.Sum256([]byte(hashData))
 	idempotencyKey := hex.EncodeToString(hashSum[:])
 
-	if database.DB != nil && req.ExistingPostID == 0 {
+	if !req.Force && database.DB != nil && req.ExistingPostID == 0 {
 		var existing models.FacebookPublishPost
-		fiveMinutesAgo := time.Now().Add(-5 * time.Minute)
+		tenSecondsAgo := time.Now().Add(-10 * time.Second)
 		if err := database.DB.Where("idempotency_key = ? AND status = ? AND created_at >= ?",
-			idempotencyKey, models.FBPostStatusPublished, fiveMinutesAgo).First(&existing).Error; err == nil {
-			log.Printf("Duplicate post prevented for key %s (PostID: %s)", idempotencyKey, existing.FacebookPostID)
+			idempotencyKey, models.FBPostStatusPublished, tenSecondsAgo).First(&existing).Error; err == nil {
+			log.Printf("Rapid duplicate post prevented for key %s (PostID: %s)", idempotencyKey, existing.FacebookPostID)
 			return &PublishPostResponse{
 				ID:             existing.ID,
 				FacebookPostID: existing.FacebookPostID,
@@ -648,6 +661,7 @@ func (s *FacebookPublishService) PublishPost(ctx context.Context, req PublishPos
 			Caption:        fullCaption,
 			Hashtags:       req.Hashtags,
 			ImageURLs:      string(imagesJSON),
+			OriginalURL:    req.OriginalURL,
 			Status:         models.FBPostStatusUploading,
 			IdempotencyKey: idempotencyKey,
 			CreatedAt:      time.Now(),
@@ -671,7 +685,7 @@ func (s *FacebookPublishService) PublishPost(ctx context.Context, req PublishPos
 		}
 	}
 
-	// 4. Step: Upload each image with published=false in preserved sequence
+	// 4. Step: Upload each image with published=false and collect media_fbid for attaching to the feed post.
 	var attachedMediaIDs []string
 	type attachedMediaItem struct {
 		MediaFBID string `json:"media_fbid"`

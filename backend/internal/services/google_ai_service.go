@@ -92,9 +92,9 @@ func (s *GoogleAIService) GenerateContent(templateText string, rawContent string
 		return "", fmt.Errorf("GEMINI_API_KEY is not configured")
 	}
 
-	// Models to try in order of capability
-	modelsToTry := []string{"gemini-flash-latest", "gemini-3.5-flash-lite", "gemini-3.8-flash"}
-	if modelOverride != "" {
+	// Models to try in order of capability and quota reliability
+	modelsToTry := []string{"gemini-flash-lite-latest", "gemini-3.1-flash-lite-preview", "gemma-4-26b-a4b-it", "gemini-flash-latest"}
+	if modelOverride != "" && modelOverride != "gemini-flash-latest" && modelOverride != "gemini-1.5-flash" {
 		modelsToTry = append([]string{modelOverride}, modelsToTry...)
 	}
 
@@ -160,8 +160,8 @@ func (s *GoogleAIService) GenerateContent(templateText string, rawContent string
 
 		if geminiResp.Error != nil {
 			lastErr = fmt.Errorf("Google AI error (%s): %s", m, geminiResp.Error.Message)
-			// Try next model if 404 or 503
-			if geminiResp.Error.Code == 404 || geminiResp.Error.Code == 503 {
+			// Try next model if 400, 404, 429, 500, or 503
+			if geminiResp.Error.Code == 400 || geminiResp.Error.Code == 404 || geminiResp.Error.Code == 429 || geminiResp.Error.Code == 500 || geminiResp.Error.Code == 503 {
 				continue
 			}
 			return "", lastErr

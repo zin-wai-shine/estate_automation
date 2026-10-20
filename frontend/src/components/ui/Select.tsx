@@ -1,5 +1,5 @@
 import React from 'react';
-import ReactSelect, { components, type DropdownIndicatorProps } from 'react-select';
+import ReactSelect, { components, type DropdownIndicatorProps, type SingleValueProps } from 'react-select';
 import type { StylesConfig } from 'react-select';
 import { FiChevronDown } from 'react-icons/fi';
 
@@ -38,6 +38,25 @@ const CustomDropdownIndicator: React.FC<DropdownIndicatorProps<SelectOption, fal
   );
 };
 
+const CustomSingleValue: React.FC<SingleValueProps<SelectOption, false>> = ({ children, ...props }) => {
+  return (
+    <components.SingleValue {...props}>
+      <span
+        style={{
+          display: 'block',
+          width: '100%',
+          maxWidth: '100%',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {children}
+      </span>
+    </components.SingleValue>
+  );
+};
+
 export const Select: React.FC<SelectProps> = ({
   options,
   value,
@@ -71,6 +90,7 @@ export const Select: React.FC<SelectProps> = ({
       boxSizing: 'border-box',
       display: 'flex',
       alignItems: 'center',
+      overflow: 'hidden',
       '&:hover': {
         borderColor: state.isFocused ? 'var(--accent-primary)' : 'var(--border-hover, #4B5563)',
       },
@@ -82,6 +102,9 @@ export const Select: React.FC<SelectProps> = ({
       display: 'flex',
       alignItems: 'center',
       overflow: 'hidden',
+      flexWrap: 'nowrap',
+      minWidth: 0,
+      flex: 1,
     }),
     singleValue: (provided) => ({
       ...provided,
@@ -89,21 +112,28 @@ export const Select: React.FC<SelectProps> = ({
       fontSize: '0.8125rem',
       fontWeight: 500,
       margin: 0,
-      display: 'flex',
-      alignItems: 'center',
-      lineHeight: 1,
+      display: 'block',
+      width: '100%',
+      maxWidth: '100%',
+      minWidth: 0,
       overflow: 'hidden',
       textOverflow: 'ellipsis',
       whiteSpace: 'nowrap',
+      lineHeight: 'normal',
     }),
     placeholder: (provided) => ({
       ...provided,
       color: 'var(--text-muted)',
       fontSize: '0.8125rem',
       margin: 0,
-      display: 'flex',
-      alignItems: 'center',
-      lineHeight: 1,
+      display: 'block',
+      width: '100%',
+      maxWidth: '100%',
+      minWidth: 0,
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'nowrap',
+      lineHeight: 'normal',
     }),
     input: (provided) => ({
       ...provided,
@@ -111,6 +141,7 @@ export const Select: React.FC<SelectProps> = ({
       fontSize: '0.8125rem',
       margin: 0,
       padding: 0,
+      lineHeight: 'normal',
     }),
     indicatorsContainer: (provided) => ({
       ...provided,
@@ -118,6 +149,7 @@ export const Select: React.FC<SelectProps> = ({
       display: 'flex',
       alignItems: 'center',
       paddingRight: '0.25rem',
+      flexShrink: 0,
     }),
     indicatorSeparator: () => ({
       display: 'none',
@@ -129,13 +161,14 @@ export const Select: React.FC<SelectProps> = ({
       alignItems: 'center',
       justifyContent: 'center',
       cursor: 'pointer',
+      flexShrink: 0,
     }),
     menu: (provided) => ({
       ...provided,
       backgroundColor: 'var(--bg-surface)',
       border: '1px solid var(--border-color)',
       borderRadius: '0.5rem',
-      boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.3)',
+      boxShadow: 'var(--shadow-md, 0 4px 12px rgba(0, 0, 0, 0.08))',
       overflow: 'hidden',
       zIndex: 9999,
       marginTop: '4px',
@@ -160,6 +193,9 @@ export const Select: React.FC<SelectProps> = ({
       cursor: 'pointer',
       margin: '0.125rem 0',
       transition: 'background-color 0.15s ease',
+      whiteSpace: 'nowrap',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
       '&:active': {
         backgroundColor: 'var(--accent-primary)',
       },
@@ -176,7 +212,10 @@ export const Select: React.FC<SelectProps> = ({
       }}
       options={options}
       styles={customStyles}
-      components={{ DropdownIndicator: CustomDropdownIndicator }}
+      components={{
+        DropdownIndicator: CustomDropdownIndicator,
+        SingleValue: CustomSingleValue,
+      }}
       placeholder={placeholder}
       isSearchable={isSearchable}
       isDisabled={isDisabled}

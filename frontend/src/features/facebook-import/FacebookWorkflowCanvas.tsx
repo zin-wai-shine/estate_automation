@@ -1,7 +1,8 @@
-import React, { useState, useRef, useEffect, useImperativeHandle, forwardRef } from 'react';
+import React, { useState, useRef, useEffect, useImperativeHandle, forwardRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { Button } from '../../components/ui/Button';
-import { Badge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
+import { Badge } from '../../components/ui/Badge';
 import { Select } from '../../components/ui/Select';
 import {
   FiCpu,
@@ -22,28 +23,48 @@ import {
   FiSliders,
   FiArrowRight,
   FiRotateCcw,
+  FiSave,
   FiX,
   FiAlertTriangle,
   FiEdit2,
-  FiZap,
   FiChevronLeft,
   FiChevronRight,
   FiTerminal,
   FiShield,
   FiScissors,
+  FiGrid,
+  FiChevronDown,
+  FiLink,
+  FiZap,
+  FiGlobe,
+  FiLayers,
+  FiSend,
+  FiExternalLink,
+  FiShare2,
+  FiLayout,
+  FiEye,
+  FiThumbsUp,
+  FiMessageSquare,
+  FiDownload,
+  FiGitMerge,
+  FiFolder,
+  FiCornerDownRight,
 } from 'react-icons/fi';
-import { FaFacebook } from 'react-icons/fa';
+import { FaFacebook, FaFacebookF, FaInstagram, FaTiktok } from 'react-icons/fa';
 import { SiGooglegemini } from 'react-icons/si';
+import { HiSparkles } from 'react-icons/hi2';
+import { useScrollLock } from '../../hooks/useScrollLock';
 import { AITrainingChatbot, ModelSelectorMenu, LaoZhangIcon, RunwareIcon } from './AITrainingChatbot';
 import { useTheme } from '../../context/ThemeContext';
-import { getAIModelDisplayName, isImageAIBox, isImageModel, isWatermarkAIBox, isEnhanceAIBox, isAIBoxConnected } from './aiModelUtils';
+import { getAIModelDisplayName, isImageAIBox, isImageModel, isWatermarkAIBox, isEnhanceAIBox, isAIBoxConnected, isTextFormatAIBox, isTextAIBox } from './aiModelUtils';
 import { AIImageStudio } from './AIImageStudio';
 import { WatermarkNodeModal } from './WatermarkNodeModal';
 import { ToggleSwitch } from '../../components/ui/ToggleSwitch';
 import { loadWatermarkPresets, DEFAULT_WATERMARK_CONFIG, DEFAULT_PRESETS, type WatermarkConfig } from '../autopost/watermarkStorage';
-import { getSavedCropFormats } from '../watermark/cropFormats';
+import { getSavedCropFormats, type CropStudioFormat } from '../watermark/cropFormats';
+import { getStoredManagedPages, saveStoredManagedPage, DEFAULT_MANAGED_FB_PAGES, type ManagedPageMeta } from '../autopost/autoPostStorage';
 
-export { getAIModelDisplayName, isWatermarkAIBox, isEnhanceAIBox };
+export { getAIModelDisplayName, isWatermarkAIBox, isEnhanceAIBox, isTextFormatAIBox, isTextAIBox };
 
 export interface CanvasPromptOption {
   id: string;
@@ -101,7 +122,7 @@ export const loadAvailablePromptTemplates = (): CanvasPromptOption[] => {
 export interface DynamicAIBoxConfig {
   id: string;
   title: string;
-  processType?: 'rental' | 'sale' | 'tiktok' | 'line_oa' | 'seo_tags' | 'custom' | 'image_enhance' | 'watermark' | string;
+  processType?: 'rental' | 'sale' | 'tiktok' | 'line_oa' | 'seo_tags' | 'custom' | 'image_enhance' | 'watermark' | 'text_ai' | 'text_format' | string;
   provider: 'google_ai' | 'openai' | 'laozhang_ai' | 'runware_ai' | 'watermark';
   model: string;
   templateId: string;
@@ -144,19 +165,114 @@ export interface FacebookWorkflowConfig {
     y: number;
   };
   trigger: {
+    enabled?: boolean;
     x: number;
     y: number;
     autoImport: boolean;
+    sourceMode?: 'paste' | 'page_sync' | 'webhook';
+    monitoredPageName?: string;
+    monitoredPageId?: string;
+    autoClassifyProperty?: boolean;
+    extractAlbums?: boolean;
+    extractVideoClips?: boolean;
+    cleanPromotionalText?: boolean;
+    syncIntervalMinutes?: number;
   };
-  destination: {
-    x: number;
-    y: number;
-  };
+  destination: DestinationNodeConfig;
+  destinations?: DestinationNodeConfig[];
+  outputNode?: OutputNodeConfig;
+  combineBoxes?: CombineBoxConfig[];
   aiBoxes: DynamicAIBoxConfig[];
   connections?: WorkflowWireConnection[];
   zoom: number;
   panOffset: { x: number; y: number };
 }
+
+export interface OutputNodeConfig {
+  id?: string;
+  enabled?: boolean;
+  x?: number;
+  y?: number;
+  title?: string;
+  previewMode?: 'card' | 'text' | 'media';
+}
+
+export interface CombineBoxConfig {
+  id: string;
+  title: string;
+  enabled: boolean;
+  x: number;
+  y: number;
+}
+
+export interface DestinationNodeConfig {
+  id: string;
+  enabled?: boolean;
+  x: number;
+  y: number;
+  targetMode?: 'remaining_posts' | 'social_media' | 'hybrid';
+  platform?: 'facebook' | 'instagram' | 'tiktok' | 'database';
+  accountId?: string;
+  accountName?: string;
+  accountUsername?: string;
+  accountAvatar?: string;
+  storeInDatabase?: boolean; // save to database / Remaining Posts
+  postToSocialMedia?: boolean; // post directly to social media
+  selectedPageId?: string;
+  selectedPageIds?: string[];
+  platforms?: ('facebook' | 'instagram' | 'tiktok')[];
+  selectedIgAccountIds?: string[];
+  selectedTiktokAccountIds?: string[];
+  publishDirectly?: boolean;
+  includeHashtags?: boolean;
+  includeFirstComment?: boolean;
+  includeContent?: boolean; // include text & description from combine box
+  includeImages?: boolean;  // include photos & visuals from combine box
+  title?: string;
+}
+
+export interface ManagedSocialAccountMeta {
+  account_id: string;
+  name: string;
+  username: string;
+  platform: 'instagram' | 'tiktok';
+  picture_url?: string;
+  category?: string;
+}
+
+export const DEFAULT_MANAGED_IG_ACCOUNTS: ManagedSocialAccountMeta[] = [
+  {
+    account_id: 'ig-101',
+    name: 'Dot BKK Living IG',
+    username: '@dotbkk_living',
+    platform: 'instagram',
+    category: 'Real Estate Agency',
+  },
+  {
+    account_id: 'ig-102',
+    name: 'Living Space Bangkok',
+    username: '@livingspace_bkk',
+    platform: 'instagram',
+    category: 'Property Rental',
+  },
+];
+
+export const DEFAULT_MANAGED_TIKTOK_ACCOUNTS: ManagedSocialAccountMeta[] = [
+  {
+    account_id: 'tt-201',
+    name: 'Dot BKK TikTok',
+    username: '@dotbkk.living',
+    platform: 'tiktok',
+    category: 'Real Estate Agency',
+  },
+  {
+    account_id: 'tt-202',
+    name: 'Bangkok Condo Tour',
+    username: '@bangkok.condo.hub',
+    platform: 'tiktok',
+    category: 'Condo Tours',
+  },
+];
 
 const LOCAL_STORAGE_KEY = 'estate_fb_workflow_config_v1';
 
@@ -184,71 +300,988 @@ export const MODEL_OPTIONS = [
   { value: 'google:nano-banana@2-lite', label: 'Runware Nano Banana 2 Lite (Google)' },
 ];
 
+export const RUNWARE_IMAGE_MODEL_OPTIONS = [
+  { value: 'runware:101@1', label: 'Runware AI · FLUX.1 Schnell (Fastest)' },
+  { value: 'runware:100@1', label: 'Runware AI · SDXL Realism' },
+  { value: 'runware:102@1', label: 'Runware AI · FLUX.1 Dev (High Detail)' },
+  { value: 'civitai:133005@782002', label: 'Runware AI · Juggernaut XL' },
+  { value: 'google:nano-banana@2.1', label: 'Runware AI · Nano Banana 2.1 (Google)' },
+  { value: 'google:nano-banana@2-lite', label: 'Runware AI · Nano Banana 2 Lite' },
+  { value: 'runware:upscale', label: 'Runware AI · Upscale & Restore' },
+];
+
+export const CONTENT_AI_MODEL_OPTIONS = [
+  // Google Gemini Models (Active & Verified with Available Credits)
+  { value: 'google_ai|gemini-flash-latest', label: 'Google · Gemini Flash (Fast & Active)' },
+  { value: 'google_ai|gemini-1.5-flash', label: 'Google · Gemini 1.5 Flash (Balanced)' },
+  { value: 'google_ai|gemini-1.5-pro', label: 'Google · Gemini 1.5 Pro (Deep Reasoning)' },
+  { value: 'google_ai|gemini-2.0-flash', label: 'Google · Gemini 2.0 Flash (Next Gen)' },
+  { value: 'google_ai|gemini-2.5-flash', label: 'Google · Gemini 2.5 Flash (Ultra Fast)' },
+  { value: 'google_ai|gemini-pro-latest', label: 'Google · Gemini Pro (High Precision)' },
+];
+
 export const DEFAULT_FB_WORKFLOW_CONFIG: FacebookWorkflowConfig = {
   trigger: {
-    x: 80,
-    y: 220,
+    enabled: false,
+    x: 100,
+    y: 232,
     autoImport: true,
+    sourceMode: 'paste',
+    monitoredPageName: 'Bangkok Real Estate & Condo Exchange',
+    monitoredPageId: 'fb-page-living-bkk',
+    autoClassifyProperty: true,
+    extractAlbums: true,
+    extractVideoClips: true,
+    cleanPromotionalText: true,
+    syncIntervalMinutes: 5,
   },
   getContent: {
-    enabled: true,
+    enabled: false,
     extractPrice: true,
     extractSpecs: true,
     cleanThai: true,
     extractContacts: true,
-    x: 340,
-    y: 110,
+    x: 300,
+    y: 140,
   },
   getImages: {
-    enabled: true,
+    enabled: false,
     downloadHD: true,
     preserveOrder: true,
     watermark: false,
-    x: 340,
-    y: 390,
+    x: 300,
+    y: 323,
   },
-  aiBoxes: [
-    {
-      id: 'ai-box-rental',
-      title: 'Thai/EN Rental Listing Copy',
-      processType: 'rental',
-      provider: 'google_ai',
-      model: 'gemini-flash-latest',
-      templateId: '1',
-      templateText:
-        'Transform the raw Facebook post into a compelling high-converting condo rental listing.\nHighlight: Rent Price, BTS/MRT station, Unit Size, Room Layout, Deposit terms, and Line ID CTA.\nLanguages: Thai primary, English summary.',
-      customPrompt: '',
-      enabled: true,
-      x: 640,
-      y: 80,
-    },
-    {
-      id: 'ai-box-tiktok',
-      title: 'TikTok Viral Hook & Script',
-      processType: 'tiktok',
-      provider: 'openai',
-      model: 'gpt-4o',
-      templateId: '2',
-      templateText:
-        'Create a viral 15-second TikTok script for this property.\nHook in the first 3 seconds, 3 quick visual highlights, and clear urgent call-to-action.',
-      customPrompt: '',
-      enabled: true,
-      x: 640,
-      y: 230,
-    },
-  ],
-  connections: [
-    { id: 'conn-content-rental', fromNodeId: 'get-content', toNodeId: 'ai-box-rental' },
-    { id: 'conn-rental-dest', fromNodeId: 'ai-box-rental', toNodeId: 'destination' },
-    { id: 'conn-content-tiktok', fromNodeId: 'get-content', toNodeId: 'ai-box-tiktok' },
-    { id: 'conn-tiktok-dest', fromNodeId: 'ai-box-tiktok', toNodeId: 'destination' },
-  ],
+  aiBoxes: [],
+  combineBoxes: [],
+  connections: [],
+  outputNode: {
+    id: 'output',
+    enabled: true,
+    x: 740,
+    y: 248,
+    title: 'Final Content & Images',
+  },
   destination: {
+    id: 'destination',
+    enabled: true,
     x: 960,
-    y: 220,
+    y: 248,
+    targetMode: 'hybrid',
+    storeInDatabase: true,
+    postToSocialMedia: true,
+    selectedPageId: '1287202894475973',
+    selectedPageIds: ['1287202894475973'],
+    selectedIgAccountIds: ['ig-1'],
+    selectedTiktokAccountIds: ['tt-1'],
+    publishDirectly: true,
+    includeHashtags: true,
+    includeFirstComment: false,
+    title: 'Social & Database Storage',
   },
-  zoom: 0.95,
-  panOffset: { x: 30, y: 30 },
+  destinations: [
+    {
+      id: 'destination',
+      enabled: true,
+      x: 960,
+      y: 248,
+      targetMode: 'hybrid',
+      storeInDatabase: true,
+      postToSocialMedia: true,
+      selectedPageId: '1287202894475973',
+      selectedPageIds: ['1287202894475973'],
+      selectedIgAccountIds: ['ig-1'],
+      selectedTiktokAccountIds: ['tt-1'],
+      publishDirectly: true,
+      includeHashtags: true,
+      includeFirstComment: false,
+      title: 'Social & Database Storage',
+    },
+  ],
+  zoom: 0.9,
+  panOffset: { x: 500, y: 180 },
+};
+
+export const getNormalizedDestinations = (conf: FacebookWorkflowConfig): DestinationNodeConfig[] => {
+  if (!conf) return [DEFAULT_FB_WORKFLOW_CONFIG.destination];
+  if (Array.isArray(conf.destinations) && conf.destinations.length > 0) {
+    return conf.destinations.map((d, i) => ({
+      ...d,
+      id: d.id || (i === 0 ? 'destination' : `dest-${i}`),
+      storeInDatabase: d.storeInDatabase ?? (d.targetMode !== 'social_media'),
+      postToSocialMedia: d.postToSocialMedia ?? (d.targetMode !== 'remaining_posts'),
+      selectedPageIds: d.selectedPageIds || (d.selectedPageId ? [d.selectedPageId] : ['1287202894475973']),
+      enabled: d.enabled !== false,
+      title: d.title || (d.targetMode === 'remaining_posts' ? 'Remaining Posts' : 'Social Media'),
+    }));
+  }
+  const dest = conf.destination || DEFAULT_FB_WORKFLOW_CONFIG.destination;
+  return [{
+    ...dest,
+    id: dest.id || 'destination',
+    storeInDatabase: dest.storeInDatabase ?? (dest.targetMode !== 'social_media'),
+    postToSocialMedia: dest.postToSocialMedia ?? (dest.targetMode !== 'remaining_posts'),
+    selectedPageIds: dest.selectedPageIds || (dest.selectedPageId ? [dest.selectedPageId] : ['1287202894475973']),
+    enabled: dest.enabled !== false,
+    title: dest.title || (dest.targetMode === 'remaining_posts' ? 'Remaining Posts' : 'Social Media'),
+  }];
+};
+
+export const dedupeConnections = (connList: WorkflowWireConnection[] | undefined): WorkflowWireConnection[] => {
+  if (!connList || !Array.isArray(connList)) return [];
+  const seen = new Set<string>();
+  return connList.filter((c) => {
+    if (!c || !c.fromNodeId || !c.toNodeId || c.fromNodeId === c.toNodeId) return false;
+    const key = `${c.fromNodeId}->${c.toNodeId}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
+/**
+ * Auto-connects workflow pipeline nodes cleanly:
+ * - Trigger -> Get Content & Get Images
+ * - Get Content -> all Content AI models (forking branches)
+ * - Get Images -> Enhancer -> all Watermark / Format nodes (forking branches)
+ * - Endpoints -> Combine Box (if present) OR Output node -> Destinations
+ * - Eliminates duplicate wires, phantom endpoints, and self-loops.
+ */
+export const autoConnectWorkflow = (
+  boxes: DynamicAIBoxConfig[],
+  existingConns: WorkflowWireConnection[] = [],
+  getContentEnabled: boolean = true,
+  getImagesEnabled: boolean = true,
+  destinationEnabled: boolean = true,
+  outputEnabled: boolean = true,
+  destinations: DestinationNodeConfig[] = [],
+  combineBoxes: CombineBoxConfig[] = []
+): WorkflowWireConnection[] => {
+  let conns = (existingConns || []).filter(Boolean);
+
+  const activeCombineBoxes = (combineBoxes || []).filter((cb) => cb && cb.enabled !== false);
+  const hasCombine = activeCombineBoxes.length > 0;
+  const primaryCombineId = hasCombine ? activeCombineBoxes[0].id : null;
+
+  // When Combine Boxes exist, the Output node is superseded/hidden
+  const effectiveOutputEnabled = !hasCombine && outputEnabled;
+
+  if (hasCombine && primaryCombineId) {
+    // Migrate any legacy connections referencing 'output' to the primary combine box
+    conns = conns.map((c) => ({
+      ...c,
+      fromNodeId: c.fromNodeId === 'output' ? primaryCombineId : c.fromNodeId,
+      toNodeId: c.toNodeId === 'output' ? primaryCombineId : c.toNodeId,
+    }));
+  }
+
+  // Remove self-connections
+  conns = conns.filter((c) => c.fromNodeId !== c.toNodeId);
+
+  if (!getContentEnabled) {
+    conns = conns.filter((c) => c.fromNodeId !== 'get-content' && c.toNodeId !== 'get-content');
+  }
+  if (!getImagesEnabled) {
+    conns = conns.filter((c) => c.fromNodeId !== 'get-images' && c.toNodeId !== 'get-images');
+  }
+  if (!destinationEnabled) {
+    conns = conns.filter(
+      (c) =>
+        c.fromNodeId !== 'destination' &&
+        c.toNodeId !== 'destination' &&
+        !c.fromNodeId.startsWith('dest-') &&
+        !c.toNodeId.startsWith('dest-')
+    );
+  }
+
+  const enhanceBoxes = boxes.filter((b) => isEnhanceAIBox(b, conns));
+  const watermarkBoxes = boxes.filter((b) => isWatermarkAIBox(b));
+  const textFormatBoxes = boxes.filter((b) => isTextFormatAIBox(b));
+  const textAIBoxes = boxes.filter(
+    (b) => !isWatermarkAIBox(b) && !enhanceBoxes.includes(b) && !isTextFormatAIBox(b)
+  );
+
+  // 1. Text Pipeline: get-content -> textAIBoxes -> textFormatBoxes
+  if (getContentEnabled) {
+    if (textAIBoxes.length > 0 && textFormatBoxes.length > 0) {
+      // Remove direct shortcuts from get-content to format boxes when AI boxes exist
+      conns = conns.filter(
+        (c) => !(c.fromNodeId === 'get-content' && textFormatBoxes.some((f) => f.id === c.toNodeId))
+      );
+
+      // Connect get-content -> each text AI box
+      textAIBoxes.forEach((aiBox) => {
+        const exists = conns.some((c) => c.fromNodeId === 'get-content' && c.toNodeId === aiBox.id);
+        if (!exists) {
+          conns.push({
+            id: `conn-content-${aiBox.id}`,
+            fromNodeId: 'get-content',
+            toNodeId: aiBox.id,
+          });
+        }
+      });
+
+      // Connect each text AI box -> text format boxes (if format box has no incoming wire, connect from first AI box)
+      textFormatBoxes.forEach((fmt) => {
+        const hasIncoming = conns.some((c) => c.toNodeId === fmt.id);
+        if (!hasIncoming) {
+          const primaryAI = textAIBoxes[0];
+          conns.push({
+            id: `conn-${primaryAI.id}-${fmt.id}`,
+            fromNodeId: primaryAI.id,
+            toNodeId: fmt.id,
+          });
+        }
+      });
+    } else if (textAIBoxes.length > 0) {
+      textAIBoxes.forEach((aiBox) => {
+        const exists = conns.some((c) => c.fromNodeId === 'get-content' && c.toNodeId === aiBox.id);
+        if (!exists) {
+          conns.push({
+            id: `conn-content-${aiBox.id}`,
+            fromNodeId: 'get-content',
+            toNodeId: aiBox.id,
+          });
+        }
+      });
+    } else if (textFormatBoxes.length > 0) {
+      textFormatBoxes.forEach((fmt) => {
+        const exists = conns.some((c) => c.fromNodeId === 'get-content' && c.toNodeId === fmt.id);
+        if (!exists) {
+          conns.push({
+            id: `conn-content-${fmt.id}`,
+            fromNodeId: 'get-content',
+            toNodeId: fmt.id,
+          });
+        }
+      });
+    }
+  }
+
+  // 2. Image Pipeline: get-images -> enhancers -> watermarks
+  if (getImagesEnabled) {
+    if (enhanceBoxes.length > 0 && watermarkBoxes.length > 0) {
+      // Remove direct shortcuts from get-images to watermark when enhancers exist
+      conns = conns.filter(
+        (c) => !(c.fromNodeId === 'get-images' && watermarkBoxes.some((w) => w.id === c.toNodeId))
+      );
+
+      // Connect get-images -> each enhance box
+      enhanceBoxes.forEach((enh) => {
+        const exists = conns.some((c) => c.fromNodeId === 'get-images' && c.toNodeId === enh.id);
+        if (!exists) {
+          conns.push({
+            id: `conn-images-${enh.id}`,
+            fromNodeId: 'get-images',
+            toNodeId: enh.id,
+          });
+        }
+      });
+
+      // Connect enhance boxes -> watermark boxes
+      enhanceBoxes.forEach((enh) => {
+        watermarkBoxes.forEach((wm) => {
+          const exists = conns.some((c) => c.fromNodeId === enh.id && c.toNodeId === wm.id);
+          if (!exists) {
+            conns.push({
+              id: `conn-${enh.id}-${wm.id}`,
+              fromNodeId: enh.id,
+              toNodeId: wm.id,
+            });
+          }
+        });
+      });
+    } else if (enhanceBoxes.length > 0) {
+      enhanceBoxes.forEach((enh) => {
+        const exists = conns.some((c) => c.fromNodeId === 'get-images' && c.toNodeId === enh.id);
+        if (!exists) {
+          conns.push({
+            id: `conn-images-${enh.id}`,
+            fromNodeId: 'get-images',
+            toNodeId: enh.id,
+          });
+        }
+      });
+    } else if (watermarkBoxes.length > 0) {
+      watermarkBoxes.forEach((wm) => {
+        const exists = conns.some((c) => c.fromNodeId === 'get-images' && c.toNodeId === wm.id);
+        if (!exists) {
+          conns.push({
+            id: `conn-images-${wm.id}`,
+            fromNodeId: 'get-images',
+            toNodeId: wm.id,
+          });
+        }
+      });
+    }
+  }
+
+  // 3. Connect Endpoints to Merger (Combine Box OR Output Node) -> Destinations
+  if (hasCombine && primaryCombineId) {
+    // 3A. Combine Box Mode: All text & image endpoints flow into primaryCombineId
+    const textEndpoints = textFormatBoxes.length > 0 ? textFormatBoxes : textAIBoxes;
+    if (textEndpoints.length > 0) {
+      // Remove shortcut from textAIBoxes to combine box when textFormatBoxes exist
+      if (textFormatBoxes.length > 0) {
+        conns = conns.filter(
+          (c) => !(textAIBoxes.some((a) => a.id === c.fromNodeId) && activeCombineBoxes.some((b) => b.id === c.toNodeId))
+        );
+      }
+      textEndpoints.forEach((cb) => {
+        const alreadyConnected = conns.some(
+          (c) =>
+            c.fromNodeId === cb.id &&
+            (activeCombineBoxes.some((b) => b.id === c.toNodeId) ||
+              c.toNodeId.startsWith('dest-') ||
+              c.toNodeId === 'destination')
+        );
+        if (!alreadyConnected) {
+          conns.push({
+            id: `conn-${cb.id}-${primaryCombineId}`,
+            fromNodeId: cb.id,
+            toNodeId: primaryCombineId,
+          });
+        }
+      });
+    } else if (getContentEnabled) {
+      const alreadyConnected = conns.some(
+        (c) =>
+          c.fromNodeId === 'get-content' &&
+          (activeCombineBoxes.some((b) => b.id === c.toNodeId) ||
+            c.toNodeId.startsWith('dest-') ||
+            c.toNodeId === 'destination')
+      );
+      if (!alreadyConnected) {
+        conns.push({
+          id: `conn-get-content-${primaryCombineId}`,
+          fromNodeId: 'get-content',
+          toNodeId: primaryCombineId,
+        });
+      }
+    }
+
+    // Image endpoints -> Combine Box
+    const imgEndpoints = watermarkBoxes.length > 0 ? watermarkBoxes : enhanceBoxes.length > 0 ? enhanceBoxes : [];
+    if (imgEndpoints.length > 0) {
+      // Remove shortcut from enhanceBoxes to combine box when watermarkBoxes exist
+      if (watermarkBoxes.length > 0) {
+        conns = conns.filter(
+          (c) => !(enhanceBoxes.some((a) => a.id === c.fromNodeId) && activeCombineBoxes.some((b) => b.id === c.toNodeId))
+        );
+      }
+      imgEndpoints.forEach((imgNode) => {
+        const alreadyConnected = conns.some(
+          (c) =>
+            c.fromNodeId === imgNode.id &&
+            (activeCombineBoxes.some((b) => b.id === c.toNodeId) ||
+              c.toNodeId.startsWith('dest-') ||
+              c.toNodeId === 'destination')
+        );
+        if (!alreadyConnected) {
+          conns.push({
+            id: `conn-${imgNode.id}-${primaryCombineId}`,
+            fromNodeId: imgNode.id,
+            toNodeId: primaryCombineId,
+          });
+        }
+      });
+    } else if (getImagesEnabled) {
+      const alreadyConnected = conns.some(
+        (c) =>
+          c.fromNodeId === 'get-images' &&
+          (activeCombineBoxes.some((b) => b.id === c.toNodeId) ||
+            c.toNodeId.startsWith('dest-') ||
+            c.toNodeId === 'destination')
+      );
+      if (!alreadyConnected) {
+        conns.push({
+          id: `conn-get-images-${primaryCombineId}`,
+          fromNodeId: 'get-images',
+          toNodeId: primaryCombineId,
+        });
+      }
+    }
+
+    // Combine Box -> Destinations
+    if (destinationEnabled) {
+      const activeDests = (destinations || []).filter((d) => d && d.enabled !== false);
+      const targetList = activeDests.length > 0 ? activeDests : [{ id: 'destination', enabled: true }];
+
+      // Connect Combine Box to destinations if it doesn't already connect to at least one destination
+      const hasAnyDestConnection = conns.some(
+        (c) =>
+          activeCombineBoxes.some((b) => b.id === c.fromNodeId) &&
+          targetList.some((d) => (d.id || 'destination') === c.toNodeId)
+      );
+      if (!hasAnyDestConnection) {
+        const firstDestId = targetList[0].id || 'destination';
+        conns.push({
+          id: `conn-${primaryCombineId}-${firstDestId}`,
+          fromNodeId: primaryCombineId,
+          toNodeId: firstDestId,
+        });
+      }
+
+      // Remove direct shortcuts from upstream AI boxes to destination (they converge into Combine Box)
+      conns = conns.filter((c) => {
+        const isTargetingDest = targetList.some((d) => (d.id || 'destination') === c.toNodeId);
+        const isFromCombine = activeCombineBoxes.some((b) => b.id === c.fromNodeId);
+        const isDestToDest = c.fromNodeId.startsWith('dest-') || c.fromNodeId === 'destination';
+        return !(isTargetingDest && !isFromCombine && !isDestToDest);
+      });
+    }
+  } else if (effectiveOutputEnabled) {
+    // 3B. Standard Output Node Mode (Final Content & Images)
+    const textEndpoints = textFormatBoxes.length > 0 ? textFormatBoxes : textAIBoxes;
+    if (textEndpoints.length > 0) {
+      textEndpoints.forEach((cb) => {
+        const exists = conns.some((c) => c.fromNodeId === cb.id && c.toNodeId === 'output');
+        if (!exists) {
+          conns.push({
+            id: `conn-${cb.id}-output`,
+            fromNodeId: cb.id,
+            toNodeId: 'output',
+          });
+        }
+      });
+    } else if (getContentEnabled) {
+      const exists = conns.some((c) => c.fromNodeId === 'get-content' && c.toNodeId === 'output');
+      if (!exists) {
+        conns.push({
+          id: `conn-get-content-output`,
+          fromNodeId: 'get-content',
+          toNodeId: 'output',
+        });
+      }
+    }
+
+    // Image endpoints -> output
+    if (watermarkBoxes.length > 0) {
+      watermarkBoxes.forEach((wm) => {
+        const exists = conns.some((c) => c.fromNodeId === wm.id && c.toNodeId === 'output');
+        if (!exists) {
+          conns.push({
+            id: `conn-${wm.id}-output`,
+            fromNodeId: wm.id,
+            toNodeId: 'output',
+          });
+        }
+      });
+    } else if (enhanceBoxes.length > 0) {
+      enhanceBoxes.forEach((enh) => {
+        const exists = conns.some((c) => c.fromNodeId === enh.id && c.toNodeId === 'output');
+        if (!exists) {
+          conns.push({
+            id: `conn-${enh.id}-output`,
+            fromNodeId: enh.id,
+            toNodeId: 'output',
+          });
+        }
+      });
+    } else if (getImagesEnabled) {
+      const exists = conns.some((c) => c.fromNodeId === 'get-images' && c.toNodeId === 'output');
+      if (!exists) {
+        conns.push({
+          id: `conn-get-images-output`,
+          fromNodeId: 'get-images',
+          toNodeId: 'output',
+        });
+      }
+    }
+
+    // Output -> all active destinations (Remaining Posts Database & Facebook Pages)
+    if (destinationEnabled) {
+      const activeDests = (destinations || []).filter((d) => d && d.enabled !== false);
+      const targetList = activeDests.length > 0 ? activeDests : [{ id: 'destination', enabled: true }];
+      targetList.forEach((d) => {
+        const destId = d.id || 'destination';
+        const exists = conns.some((c) => c.fromNodeId === 'output' && c.toNodeId === destId);
+        if (!exists) {
+          conns.push({
+            id: `conn-output-${destId}`,
+            fromNodeId: 'output',
+            toNodeId: destId,
+          });
+        }
+      });
+
+      // Remove direct shortcuts from upstream nodes straight to destination (they now converge into output)
+      conns = conns.filter((c) => {
+        const isTargetingDest = targetList.some((d) => (d.id || 'destination') === c.toNodeId);
+        return !(isTargetingDest && c.fromNodeId !== 'output');
+      });
+    }
+  } else if (destinationEnabled) {
+    // 3C. Direct to Destination Fallback (neither Combine Box nor Output Node active)
+    const activeDests = (destinations || []).filter((d) => d && d.enabled !== false);
+    const targetDestId = activeDests[0]?.id || 'destination';
+    const textEndpoints = textFormatBoxes.length > 0 ? textFormatBoxes : textAIBoxes;
+    if (textEndpoints.length > 0) {
+      textEndpoints.forEach((cb) => {
+        const exists = conns.some(
+          (c) =>
+            c.fromNodeId === cb.id &&
+            (c.toNodeId === targetDestId || c.toNodeId === 'destination' || c.toNodeId.startsWith('dest-'))
+        );
+        if (!exists) {
+          conns.push({
+            id: `conn-${cb.id}-${targetDestId}`,
+            fromNodeId: cb.id,
+            toNodeId: targetDestId,
+          });
+        }
+      });
+    } else if (getContentEnabled) {
+      const exists = conns.some(
+        (c) =>
+          c.fromNodeId === 'get-content' &&
+          (c.toNodeId === targetDestId || c.toNodeId === 'destination' || c.toNodeId.startsWith('dest-'))
+      );
+      if (!exists) {
+        conns.push({
+          id: `conn-get-content-${targetDestId}`,
+          fromNodeId: 'get-content',
+          toNodeId: targetDestId,
+        });
+      }
+    }
+
+    const imgEndpoints = watermarkBoxes.length > 0 ? watermarkBoxes : enhanceBoxes.length > 0 ? enhanceBoxes : [];
+    if (imgEndpoints.length > 0) {
+      imgEndpoints.forEach((imgNode) => {
+        const exists = conns.some(
+          (c) =>
+            c.fromNodeId === imgNode.id &&
+            (c.toNodeId === targetDestId || c.toNodeId === 'destination' || c.toNodeId.startsWith('dest-'))
+        );
+        if (!exists) {
+          conns.push({
+            id: `conn-${imgNode.id}-${targetDestId}`,
+            fromNodeId: imgNode.id,
+            toNodeId: targetDestId,
+          });
+        }
+      });
+    } else if (getImagesEnabled) {
+      const exists = conns.some(
+        (c) =>
+          c.fromNodeId === 'get-images' &&
+          (c.toNodeId === targetDestId || c.toNodeId === 'destination' || c.toNodeId.startsWith('dest-'))
+      );
+      if (!exists) {
+        conns.push({
+          id: `conn-get-images-${targetDestId}`,
+          fromNodeId: 'get-images',
+          toNodeId: targetDestId,
+        });
+      }
+    }
+  }
+
+  return dedupeConnections(conns);
+};
+
+export const autoConnectImagePipeline = (
+  boxes: DynamicAIBoxConfig[],
+  existingConns: WorkflowWireConnection[] = [],
+  getContentEnabled: boolean = true,
+  getImagesEnabled: boolean = true,
+  destinationEnabled?: boolean,
+  outputEnabled?: boolean,
+  destinations?: DestinationNodeConfig[],
+  combineBoxes?: CombineBoxConfig[]
+): WorkflowWireConnection[] => {
+  return autoConnectWorkflow(
+    boxes,
+    existingConns,
+    getContentEnabled,
+    getImagesEnabled,
+    destinationEnabled !== false,
+    outputEnabled !== false,
+    destinations || [],
+    combineBoxes || []
+  );
+};
+
+/**
+ * Auto-layout: arranges nodes into a clean, hierarchical tree-branching layout (matching n8n style).
+ * - Root Trigger (Facebook Post) at X = 100, Y = 440
+ * - Upper Swimlane: Text / Content AI pipeline centered at Y = 220 (Get Content -> fanning out to AI models at Y = 110, 330)
+ * - Lower Swimlane: Image / Watermark pipeline centered at Y = 660 (Get Images -> Enhancers at Y = 660 -> fanning out to formats at Y = 530, 790)
+ * - Column spacing: X = 100 -> 340 -> 600 -> 860
+ */
+export const buildAlignedLayout = (
+  boxes: DynamicAIBoxConfig[],
+  connections: WorkflowWireConnection[] | undefined,
+  base: FacebookWorkflowConfig
+): FacebookWorkflowConfig => {
+  const conns = connections || [];
+  const fromContent = (id: string) => conns.some((c) => c.fromNodeId === 'get-content' && c.toNodeId === id);
+  const fromImages = (id: string) => conns.some((c) => c.fromNodeId === 'get-images' && c.toNodeId === id);
+
+  const watermarkBoxes = boxes.filter((b) => isWatermarkAIBox(b));
+  const enhanceBoxes = boxes.filter(
+    (b) => !isWatermarkAIBox(b) && (isEnhanceAIBox(b, conns) || fromImages(b.id))
+  );
+  const textFormatBoxes = boxes.filter((b) => isTextFormatAIBox(b));
+  const textAIBoxes = boxes.filter(
+    (b) => !isWatermarkAIBox(b) && !enhanceBoxes.includes(b) && !isTextFormatAIBox(b) && (fromContent(b.id) || !fromImages(b.id))
+  );
+  const otherBoxes = boxes.filter(
+    (b) => !textAIBoxes.includes(b) && !textFormatBoxes.includes(b) && !enhanceBoxes.includes(b) && !watermarkBoxes.includes(b)
+  );
+
+  // Compact Clean Tree Metrics
+  const NODE_V_STEP = 120;      // Compact vertical step - gives clean ~16px gap between label and card
+  const BRANCH_GAP = 36;        // Balanced separation gap between Content and Image branches
+  const TOP_MARGIN = 80;
+
+  // Horizontal column grid
+  const TRIGGER_X = 100;
+  const COL_BRANCH_X = 300;     // Column 1: Get Content & Get Images
+  const COL_AI_X = 520;         // Column 2: Content AI Models & Image Enhancers / Direct Formats
+  const COL_FORMAT_X = 740;     // Column 3: Formats & Watermark Nodes (when Enhancers exist)
+
+  const yById: Record<string, number> = {};
+  const xById: Record<string, number> = {};
+
+  // 1. Content AI Branch (Dynamic height, fanning out symmetrically)
+  const numTextAI = textAIBoxes.length;
+  const numTextFormat = textFormatBoxes.length;
+  const hasTextAI = numTextAI > 0;
+  const textFormatColX = hasTextAI ? COL_FORMAT_X : COL_AI_X;
+
+  const textSlots = Math.max(numTextAI, numTextFormat, 1);
+  const contentTopY = TOP_MARGIN;
+  const contentCenterY =
+    textSlots <= 1
+      ? contentTopY
+      : contentTopY + ((textSlots - 1) * NODE_V_STEP) / 2;
+
+  // Position Text AI Boxes (Column 2: 520)
+  if (numTextAI === 1) {
+    xById[textAIBoxes[0].id] = COL_AI_X;
+    yById[textAIBoxes[0].id] = contentCenterY;
+  } else if (numTextAI > 1) {
+    // Keep primary AI box (the one feeding format presets or first) at contentCenterY (140)
+    // so Get Content (140) -> Primary Gemini (140) stays 100% dead-straight!
+    // Additional text AI boxes stack cleanly below it (140 + idx * 120 = 260, exactly like Image 3)
+    const primaryAI = textAIBoxes.find((b) => conns.some((c) => c.fromNodeId === b.id && textFormatBoxes.some((f) => f.id === c.toNodeId))) || textAIBoxes[0];
+    const otherAIs = textAIBoxes.filter((b) => b.id !== primaryAI.id);
+    const orderedAIs = [primaryAI, ...otherAIs];
+
+    orderedAIs.forEach((b, idx) => {
+      xById[b.id] = COL_AI_X;
+      yById[b.id] = contentCenterY + idx * NODE_V_STEP;
+    });
+  }
+
+  // Optimize format box order to eliminate crossing wires:
+  // Sort boxes based on their downstream destination/combine box targets.
+  // Format presets connecting to higher targets (e.g. top combine box) are placed at the top.
+  // Format presets connecting to lower targets or branching to multiple combine boxes are placed lower.
+  const activeCbList = (base.combineBoxes || []).filter((cb) => cb && cb.enabled !== false);
+  const activeDestList = getNormalizedDestinations(base);
+
+  const sortedTextFormatBoxes = [...textFormatBoxes].sort((a, b) => {
+    const getTargetRank = (boxId: string) => {
+      const outConns = conns.filter((c) => c.fromNodeId === boxId);
+      if (outConns.length === 0) return 999;
+
+      const ranks = outConns.map((c) => {
+        const cbIdx = activeCbList.findIndex((cb) => cb.id === c.toNodeId);
+        if (cbIdx !== -1) return cbIdx * 10;
+
+        const destIdx = activeDestList.findIndex((d) => d.id === c.toNodeId);
+        if (destIdx !== -1) return destIdx * 10;
+
+        return 50;
+      });
+
+      return ranks.reduce((sum, r) => sum + r, 0) / ranks.length;
+    };
+
+    const rankDiff = getTargetRank(a.id) - getTargetRank(b.id);
+    if (rankDiff !== 0) return rankDiff;
+    return textFormatBoxes.indexOf(a) - textFormatBoxes.indexOf(b);
+  });
+
+  // Position Text Format Boxes (Column 3: 740, or 520 if no AI box)
+  if (numTextFormat === 1) {
+    xById[sortedTextFormatBoxes[0].id] = textFormatColX;
+    yById[sortedTextFormatBoxes[0].id] = contentCenterY;
+  } else if (numTextFormat > 1) {
+    const offset = ((textSlots - numTextFormat) * NODE_V_STEP) / 2;
+    sortedTextFormatBoxes.forEach((b, idx) => {
+      xById[b.id] = textFormatColX;
+      yById[b.id] = contentTopY + offset + idx * NODE_V_STEP;
+    });
+  }
+
+  // 2. Image Pipeline Branch (Isolated vertical band, completely collision-free)
+  const numEnhance = enhanceBoxes.length;
+  const numWatermark = watermarkBoxes.length;
+  const hasEnhancers = numEnhance > 0;
+  // If text AI, format presets, or enhancers exist, watermark format presets sit in Column 3 (740)
+  const hasAnyFormatsOrAI = numTextAI > 0 || numTextFormat > 0 || hasEnhancers;
+  const watermarkColX = hasAnyFormatsOrAI ? COL_FORMAT_X : COL_AI_X;
+
+  const imageSlots = Math.max(numEnhance, numWatermark, 1);
+  const contentSpan = (textSlots - 1) * NODE_V_STEP;
+  const naturalImageTopY = contentTopY + contentSpan + NODE_V_STEP + BRANCH_GAP;
+  // Ensure the image branch maintains clean separation and never collides with upper text format presets
+  const imageTopY = Math.max(320, naturalImageTopY);
+  const imageCenterY =
+    imageSlots <= 1
+      ? imageTopY
+      : imageTopY + ((imageSlots - 1) * NODE_V_STEP) / 2;
+
+  // Position Image Enhancers (Column 2: 520)
+  if (numEnhance === 1) {
+    xById[enhanceBoxes[0].id] = COL_AI_X;
+    yById[enhanceBoxes[0].id] = imageCenterY;
+  } else if (numEnhance > 1) {
+    const offset = ((imageSlots - numEnhance) * NODE_V_STEP) / 2;
+    enhanceBoxes.forEach((b, idx) => {
+      xById[b.id] = COL_AI_X;
+      yById[b.id] = imageTopY + offset + idx * NODE_V_STEP;
+    });
+  }
+
+  // Position Watermark / Format Boxes (Column 3: 740, or 520 if totally standalone)
+  if (numWatermark === 1) {
+    xById[watermarkBoxes[0].id] = watermarkColX;
+    yById[watermarkBoxes[0].id] = imageCenterY;
+  } else if (numWatermark > 1) {
+    const offset = ((imageSlots - numWatermark) * NODE_V_STEP) / 2;
+    watermarkBoxes.forEach((b, idx) => {
+      xById[b.id] = watermarkColX;
+      yById[b.id] = imageTopY + offset + idx * NODE_V_STEP;
+    });
+  }
+
+  // 3. Other boxes (if any)
+  const otherColX = (hasAnyFormatsOrAI && numWatermark > 0) ? (COL_FORMAT_X + 220) : (COL_AI_X + 220);
+  otherBoxes.forEach((b, idx) => {
+    xById[b.id] = otherColX;
+    yById[b.id] = contentTopY + idx * NODE_V_STEP;
+  });
+
+  const hasContent = base.getContent?.enabled !== false;
+  const hasImages = base.getImages?.enabled !== false;
+  const getContentY = contentCenterY;
+  const getImagesY = imageCenterY;
+  const triggerY = hasContent && hasImages
+    ? Math.round((getContentY + getImagesY) / 2)
+    : hasContent
+    ? getContentY
+    : hasImages
+    ? getImagesY
+    : 200;
+
+  const isOutputActive = base.outputNode?.enabled !== false;
+  const activeCombineBoxes = (base.combineBoxes || []).filter((cb) => cb && cb.enabled !== false);
+  const allXValues = Object.values(xById);
+  const maxNodeX = allXValues.length > 0 ? Math.max(...allXValues) : COL_FORMAT_X;
+  const mergerNodeX = Math.max(COL_FORMAT_X + 220, maxNodeX + 220); // Column 4: 960
+  const outputNodeX = isOutputActive ? mergerNodeX : maxNodeX;
+  const outputNodeY = triggerY;
+  const destinationX = mergerNodeX + 220; // Column 5: 1180
+
+  // Hierarchical Destination Layout:
+  // Primary destinations (connected from Combine Box / Output or root) sit at Column 5 (1180).
+  // Child destinations (connected from a platform hub) fan out into Column 6 (1400).
+  const rawDests = getNormalizedDestinations(base);
+  const isChildDest = (destId: string) =>
+    conns.some((c) => rawDests.some((p) => p.id === c.fromNodeId) && c.toNodeId === destId);
+
+  const primaryDests = rawDests.filter((d) => !isChildDest(d.id));
+  const childDests = rawDests.filter((d) => isChildDest(d.id));
+
+  const totalPrimary = primaryDests.length;
+  const PRIMARY_STEP = 150;
+  const destCoords: Record<string, { x: number; y: number }> = {};
+
+  // Helper to compute natural vertical center of inputs feeding a node
+  const getNodeInputCenterY = (nodeId: string): number => {
+    const inConns = conns.filter((c) => c.toNodeId === nodeId);
+    const inYs = inConns
+      .map((c) => {
+        if (yById[c.fromNodeId] !== undefined) return yById[c.fromNodeId];
+        if (c.fromNodeId === 'get-content') return getContentY;
+        if (c.fromNodeId === 'get-images') return getImagesY;
+        return undefined;
+      })
+      .filter((y): y is number => typeof y === 'number');
+
+    if (inYs.length > 0) {
+      return Math.round(inYs.reduce((a, b) => a + b, 0) / inYs.length);
+    }
+    return contentCenterY;
+  };
+
+  const isSingleCbMode = activeCombineBoxes.length <= 1;
+  const singleCb = activeCombineBoxes[0];
+  const singleCbCenterY = singleCb ? getNodeInputCenterY(singleCb.id) : contentCenterY;
+  const singleCbConnectedDestId = singleCb
+    ? conns.find((c) => c.fromNodeId === singleCb.id && primaryDests.some((p) => p.id === c.toNodeId))?.toNodeId
+    : undefined;
+
+  primaryDests.forEach((p, pIdx) => {
+    let py: number;
+
+    if (isSingleCbMode) {
+      // If there is only 1 combine box, align its connected destination directly to the center line!
+      if (singleCbConnectedDestId) {
+        if (p.id === singleCbConnectedDestId) {
+          py = singleCbCenterY;
+        } else {
+          const otherIdx = primaryDests.filter((d) => d.id !== singleCbConnectedDestId).findIndex((d) => d.id === p.id);
+          py = singleCbCenterY + (otherIdx + 1) * PRIMARY_STEP;
+        }
+      } else {
+        // Direct connection without combine box or fallback
+        const inConns = conns.filter((c) => c.toNodeId === p.id);
+        const inYs = inConns.map((c) => yById[c.fromNodeId]).filter((y): y is number => typeof y === 'number');
+        if (inYs.length > 0) {
+          py = Math.round(inYs.reduce((a, b) => a + b, 0) / inYs.length);
+        } else {
+          py = totalPrimary <= 1 ? singleCbCenterY : singleCbCenterY + pIdx * PRIMARY_STEP;
+        }
+      }
+    } else {
+      // Multiple combine boxes / lanes (e.g. Image 2 with top Remaining Posts DB & bottom Facebook Hub)
+      py = totalPrimary === 2
+        ? (pIdx === 0 ? contentCenterY : imageCenterY)
+        : (totalPrimary <= 1 ? triggerY : triggerY - Math.round(((totalPrimary - 1) * PRIMARY_STEP) / 2) + pIdx * PRIMARY_STEP);
+    }
+
+    destCoords[p.id] = { x: destinationX, y: py };
+
+    // Position children of this primary destination in Column 6 (destinationX + 220 = 1400)
+    const children = childDests.filter((c) => conns.some((w) => w.fromNodeId === p.id && w.toNodeId === c.id));
+    const numChildren = children.length;
+    const CHILD_STEP = 130;
+    const startChildY = numChildren <= 1 ? py : py - Math.round(((numChildren - 1) * CHILD_STEP) / 2);
+
+    children.forEach((c, cIdx) => {
+      destCoords[c.id] = {
+        x: destinationX + 220,
+        y: startChildY + cIdx * CHILD_STEP,
+      };
+    });
+  });
+
+  // Handle any orphan child destinations (if parent wire was cut or not found)
+  childDests.forEach((c, cIdx) => {
+    if (!destCoords[c.id]) {
+      destCoords[c.id] = {
+        x: destinationX + 220,
+        y: triggerY + cIdx * 130,
+      };
+    }
+  });
+
+  const updatedDestinations = rawDests.map((d) => ({
+    ...d,
+    x: destCoords[d.id]?.x ?? destinationX,
+    y: destCoords[d.id]?.y ?? triggerY,
+  }));
+
+  // Categorize Combine Boxes by upstream column:
+  // - Early combine boxes: directly connected from Column 1 (Get Content or Get Images)
+  //   -> Placed in Column 2 (x = 520, near Get Content / Get Images!)
+  //   -> If from Get Content: sits at y = 20 (contentCenterY - 120, above the primary Gemini in Image 3)
+  //   -> If from Get Images: sits at y = imageCenterY + 120
+  // - Late combine boxes: connected from Column 3 format presets or general destination mergers
+  //   -> Placed in Column 4 (x = mergerNodeX = 960)
+  //   -> Upper lane (connected to Remaining Posts DB or text branch): y = contentCenterY = 140
+  //   -> Lower lane (connected to Facebook Hub or image branch): y = imageCenterY = 323
+  const getUpstreamMaxX = (cbId: string): number => {
+    const inConns = conns.filter((c) => c.toNodeId === cbId);
+    if (inConns.length === 0) return COL_FORMAT_X;
+    let maxX = 0;
+    inConns.forEach((c) => {
+      if (c.fromNodeId === 'trigger') maxX = Math.max(maxX, TRIGGER_X);
+      else if (c.fromNodeId === 'get-content' || c.fromNodeId === 'get-images') maxX = Math.max(maxX, COL_BRANCH_X);
+      else if (xById[c.fromNodeId] !== undefined) maxX = Math.max(maxX, xById[c.fromNodeId]);
+      else maxX = Math.max(maxX, COL_BRANCH_X);
+    });
+    return maxX;
+  };
+
+  const earlyCbList: CombineBoxConfig[] = [];
+  const lateCbList: CombineBoxConfig[] = [];
+
+  (base.combineBoxes || []).filter((cb) => cb && cb.enabled !== false).forEach((cb) => {
+    const upstreamX = getUpstreamMaxX(cb.id);
+    if (upstreamX <= COL_BRANCH_X) {
+      earlyCbList.push(cb);
+    } else {
+      lateCbList.push(cb);
+    }
+  });
+
+  const cbCoords: Record<string, { x: number; y: number }> = {};
+
+  // Early combine boxes (Column 2: 520, near Get Content or Get Images):
+  earlyCbList.forEach((cb, idx) => {
+    const isFromImages = conns.some((c) => c.fromNodeId === 'get-images' && c.toNodeId === cb.id);
+    const cy = isFromImages
+      ? imageCenterY + (idx + 1) * NODE_V_STEP
+      : contentCenterY - (idx + 1) * NODE_V_STEP; // 140 - 120 = 20 (exactly like Image 3!)
+    cbCoords[cb.id] = { x: COL_AI_X, y: cy };
+  });
+
+  // Late combine boxes (Column 4: 960, merging format presets / endpoints into destinations):
+  lateCbList.forEach((cb, idx) => {
+    // If connects to a destination, match that destination's Y directly for a straight line:
+    const directDestConn = conns.find((c) => c.fromNodeId === cb.id && primaryDests.some((p) => p.id === c.toNodeId));
+    if (directDestConn && destCoords[directDestConn.toNodeId]) {
+      cbCoords[cb.id] = { x: mergerNodeX, y: destCoords[directDestConn.toNodeId].y };
+      return;
+    }
+
+    if (lateCbList.length <= 1) {
+      cbCoords[cb.id] = { x: mergerNodeX, y: singleCbCenterY };
+      return;
+    }
+
+    // Default lane positions for multiple late combine boxes:
+    const targetY = idx === 0 ? contentCenterY : idx === 1 ? imageCenterY : imageCenterY + (idx - 1) * 140;
+    cbCoords[cb.id] = { x: mergerNodeX, y: targetY };
+  });
+
+  const updatedCombineBoxes = (base.combineBoxes || []).map((cb) => {
+    const coords = cbCoords[cb.id];
+    return {
+      ...cb,
+      x: coords?.x ?? mergerNodeX,
+      y: coords?.y ?? triggerY,
+    };
+  });
+
+  return {
+    ...base,
+    aiBoxes: boxes.map((b) => ({
+      ...b,
+      x: xById[b.id] ?? COL_AI_X,
+      y: yById[b.id] ?? contentCenterY,
+    })),
+    trigger: { ...base.trigger, x: TRIGGER_X, y: triggerY },
+    getContent: { ...base.getContent, x: COL_BRANCH_X, y: getContentY },
+    getImages: { ...base.getImages, x: COL_BRANCH_X, y: getImagesY },
+    combineBoxes: updatedCombineBoxes,
+    outputNode: {
+      id: 'output',
+      enabled: isOutputActive,
+      x: outputNodeX,
+      y: outputNodeY,
+      title: base.outputNode?.title || 'Final Content & Images',
+    },
+    destination: updatedDestinations[0],
+    destinations: updatedDestinations,
+  };
 };
 
 /**
@@ -259,73 +1292,112 @@ export const sanitizeAndResolveCollisions = (
 ): FacebookWorkflowConfig => {
   if (!conf) return DEFAULT_FB_WORKFLOW_CONFIG;
 
-  const rawAiBoxes = Array.isArray(conf.aiBoxes) && conf.aiBoxes.length > 0
-    ? conf.aiBoxes
-    : DEFAULT_FB_WORKFLOW_CONFIG.aiBoxes;
-
-  const placed: Array<{ x: number; y: number }> = [];
-
-  const updatedAiBoxes = rawAiBoxes.map((b: any, idx: number) => {
-    let x = typeof b.x === 'number' && !isNaN(b.x) && b.x > 0 ? b.x : 640;
-    let y = typeof b.y === 'number' && !isNaN(b.y) && b.y > 0 ? b.y : (80 + idx * 150);
-
-    // Check collision against all already placed AI nodes.
-    // Circle size is 72px diameter and labels extend ~45px downwards.
-    // Consider colliding if horizontal overlap < 100px and vertical overlap < 110px.
-    const hasCollision = (currX: number, currY: number) =>
-      placed.some(
-        (p) => Math.abs(currX - p.x) < 100 && Math.abs(currY - p.y) < 110
-      );
-
-    while (hasCollision(x, y)) {
-      y += 150;
+  const rawAiBoxes = Array.isArray(conf.aiBoxes) ? conf.aiBoxes : [];
+  const updatedAiBoxes = rawAiBoxes.map((b) => {
+    // If it's a watermark or image box, preserve it
+    if (
+      b.processType === 'watermark' ||
+      b.provider === 'watermark' ||
+      b.processType === 'image_enhance' ||
+      b.provider === 'runware_ai'
+    ) {
+      return b;
     }
-
-    placed.push({ x, y });
-    return { ...b, x, y };
+    // If text AI box uses an inactive provider without credits (openai or laozhang_ai), migrate to active google_ai
+    if (b.provider === 'openai' || b.provider === 'laozhang_ai') {
+      return {
+        ...b,
+        provider: 'google_ai' as const,
+        model: 'gemini-flash-latest',
+      };
+    }
+    return b;
   });
 
-  const updatedGetImages =
-    !conf.getImages?.y || conf.getImages.y <= 350
-      ? { ...conf.getImages, y: 390 }
-      : conf.getImages;
-  const updatedGetContent =
-    !conf.getContent?.y || conf.getContent.y >= 120
-      ? { ...conf.getContent, y: 110 }
-      : conf.getContent;
+  const rawDests = getNormalizedDestinations(conf);
+  const activeDests = rawDests.filter((d) => d.enabled !== false);
+  const isDestEnabled = activeDests.length > 0;
+  const activeDestIds = activeDests.map((d) => d.id);
+  const activeCombineBoxes = (conf.combineBoxes || []).filter((cb) => cb.enabled !== false);
+  const activeCombineBoxIds = activeCombineBoxes.map((cb) => cb.id);
+  const hasCombineBoxes = activeCombineBoxIds.length > 0;
+  const isOutputEnabled = !hasCombineBoxes && conf.outputNode?.enabled !== false;
 
   const validNodeIds = new Set([
     'trigger',
-    'get-content',
-    'get-images',
-    'destination',
-    ...updatedAiBoxes.map((b: any) => b.id),
+    ...(conf.getContent?.enabled !== false ? ['get-content'] : []),
+    ...(conf.getImages?.enabled !== false ? ['get-images'] : []),
+    ...(isOutputEnabled ? ['output'] : []),
+    ...activeDestIds,
+    ...activeCombineBoxIds,
+    ...updatedAiBoxes.filter((b: any) => b.enabled !== false).map((b: any) => b.id),
   ]);
 
   let connections = Array.isArray(conf.connections)
-    ? conf.connections.filter(
-        (c: any) => c && validNodeIds.has(c.fromNodeId) && validNodeIds.has(c.toNodeId)
-      )
-    : undefined;
+    ? conf.connections
+        .map((c: any) => {
+          if (!c) return null;
+          // Auto-migrate connections from 'output' to the primary combine box if combine boxes are present
+          if (hasCombineBoxes) {
+            const primaryCombineId = activeCombineBoxIds[0];
+            return {
+              ...c,
+              fromNodeId: c.fromNodeId === 'output' ? primaryCombineId : c.fromNodeId,
+              toNodeId: c.toNodeId === 'output' ? primaryCombineId : c.toNodeId,
+            };
+          }
+          return c;
+        })
+        .filter(
+          (c: any) =>
+            c &&
+            validNodeIds.has(c.fromNodeId) &&
+            validNodeIds.has(c.toNodeId) &&
+            c.fromNodeId !== c.toNodeId
+        )
+    : [];
 
-  if (!connections || connections.length === 0) {
-    connections = [];
-    updatedAiBoxes.forEach((b: any) => {
-      connections!.push({ id: `conn-content-${b.id}`, fromNodeId: 'get-content', toNodeId: b.id });
-      connections!.push({ id: `conn-${b.id}-dest`, fromNodeId: b.id, toNodeId: 'destination' });
-    });
-  }
+  connections = dedupeConnections(connections);
 
-  return {
+  // Auto-connect image & content pipeline -> output (Final Content & Images) -> destinations
+  const nextConnections = dedupeConnections(
+    isDestEnabled
+      ? autoConnectWorkflow(
+          updatedAiBoxes,
+          connections,
+          conf.getContent?.enabled !== false,
+          conf.getImages?.enabled !== false,
+          isDestEnabled,
+          isOutputEnabled,
+          rawDests,
+          conf.combineBoxes || []
+        )
+      : connections.filter(
+          (c) => c.toNodeId !== 'destination' && !c.toNodeId.startsWith('dest-')
+        )
+  );
+
+  const baseConfig: FacebookWorkflowConfig = {
     ...DEFAULT_FB_WORKFLOW_CONFIG,
     ...conf,
-    getContent: { ...DEFAULT_FB_WORKFLOW_CONFIG.getContent, ...updatedGetContent },
-    getImages: { ...DEFAULT_FB_WORKFLOW_CONFIG.getImages, ...updatedGetImages },
+    getContent: { ...DEFAULT_FB_WORKFLOW_CONFIG.getContent, ...conf.getContent },
+    getImages: { ...DEFAULT_FB_WORKFLOW_CONFIG.getImages, ...conf.getImages },
     trigger: { ...DEFAULT_FB_WORKFLOW_CONFIG.trigger, ...conf.trigger },
-    destination: { ...DEFAULT_FB_WORKFLOW_CONFIG.destination, ...conf.destination },
+    outputNode: {
+      id: 'output',
+      enabled: isOutputEnabled,
+      title: conf.outputNode?.title || 'Final Content & Images',
+      x: conf.outputNode?.x,
+      y: conf.outputNode?.y,
+    },
+    combineBoxes: conf.combineBoxes || [],
+    destination: activeDests[0] || { ...DEFAULT_FB_WORKFLOW_CONFIG.destination, enabled: false },
+    destinations: rawDests,
     aiBoxes: updatedAiBoxes,
-    connections,
+    connections: nextConnections,
   };
+
+  return buildAlignedLayout(updatedAiBoxes, nextConnections, baseConfig);
 };
 
 export const loadSavedFacebookWorkflowConfig = (): FacebookWorkflowConfig => {
@@ -334,14 +1406,7 @@ export const loadSavedFacebookWorkflowConfig = (): FacebookWorkflowConfig => {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && parsed.getContent && parsed.getImages && Array.isArray(parsed.aiBoxes)) {
-        let connections = Array.isArray(parsed.connections) ? parsed.connections : undefined;
-        if (!connections) {
-          connections = [];
-          parsed.aiBoxes.forEach((b: any) => {
-            connections.push({ id: `conn-content-${b.id}`, fromNodeId: 'get-content', toNodeId: b.id });
-            connections.push({ id: `conn-${b.id}-dest`, fromNodeId: b.id, toNodeId: 'destination' });
-          });
-        }
+        let connections = Array.isArray(parsed.connections) ? parsed.connections : [];
         return sanitizeAndResolveCollisions({
           ...DEFAULT_FB_WORKFLOW_CONFIG,
           ...parsed,
@@ -374,6 +1439,10 @@ export interface MergedNodeShapeProps {
   isConnectedOutput?: boolean;
   hasReceiver?: boolean; // Can connect NEXT (downstream)
   hasSource?: boolean;   // Can connect BACK (upstream)
+  isTrigger?: boolean;   // First trigger node
+  isCircle?: boolean;    // Circular account/end node
+  showAddButton?: boolean;
+  onAddClick?: (e: React.MouseEvent) => void;
   onSocketMouseDown?: (type: 'input' | 'output', e: React.MouseEvent) => void;
   onSocketMouseUp?: (type: 'input' | 'output', e: React.MouseEvent) => void;
   onSocketMouseEnter?: (type: 'input' | 'output') => void;
@@ -384,13 +1453,33 @@ const CANVAS_NODE_ACTION_CSS = `
 .canvas-node::before {
   content: '';
   position: absolute;
-  inset: -6px;
-  border-radius: 50%;
+  inset: -5px;
+  border-radius: 21px;
   border: 1.5px dashed var(--ring, #388BFD);
   opacity: 0;
-  transform: scale(0.92);
+  transform: scale(0.94);
   transition: opacity 0.2s ease, transform 0.2s ease;
   pointer-events: none;
+}
+.canvas-node.is-circle::before {
+  border-radius: 50% !important;
+}
+.canvas-node.is-trigger::before {
+  border-radius: 41px 20px 20px 41px !important;
+}
+.canvas-node.is-selected::before {
+  opacity: 1 !important;
+  border-color: #388BFD !important;
+  border-style: dashed !important;
+  border-width: 1.5px !important;
+  transform: scale(1) !important;
+  box-shadow: 0 0 12px rgba(56, 139, 253, 0.45) !important;
+}
+.canvas-node.is-circle.is-selected::before {
+  border-radius: 50% !important;
+}
+.canvas-node.is-trigger.is-selected::before {
+  border-radius: 41px 20px 20px 41px !important;
 }
 .canvas-node:hover::before,
 .canvas-node.is-hovered::before {
@@ -405,13 +1494,15 @@ const CANVAS_NODE_ACTION_CSS = `
 .canvas-node.is-running::before {
   content: '' !important;
   position: absolute !important;
-  inset: -5px !important;
-  border-radius: 50% !important;
-  border: 2px dashed #0284C7 !important;
-  animation: nodeRingSpin 6s linear infinite !important;
+  inset: -4px !important;
+  border-radius: 20px !important;
+  border: 2px solid #0284C7 !important;
   opacity: 0.85 !important;
   transform: scale(1) !important;
-  box-shadow: none !important;
+  box-shadow: 0 0 12px rgba(2, 132, 199, 0.45) !important;
+}
+.canvas-node.is-trigger.is-running::before {
+  border-radius: 40px 19px 19px 40px !important;
 }
 .canvas-node.is-running::after {
   display: none !important;
@@ -420,12 +1511,15 @@ const CANVAS_NODE_ACTION_CSS = `
   content: '' !important;
   position: absolute !important;
   inset: -4px !important;
-  border-radius: 50% !important;
+  border-radius: 20px !important;
   border: 1.5px solid #10B981 !important;
   opacity: 0.75 !important;
   transform: scale(1) !important;
   animation: none !important;
   box-shadow: none !important;
+}
+.canvas-node.is-trigger.is-completed::before {
+  border-radius: 40px 19px 19px 40px !important;
 }
 .canvas-node.is-completed {
   filter: none !important;
@@ -437,6 +1531,14 @@ const CANVAS_NODE_ACTION_CSS = `
 @keyframes badgePopIn {
   0% { transform: scale(0); opacity: 0; }
   100% { transform: scale(1); opacity: 1; }
+}
+@keyframes sidebarSlideIn {
+  from { transform: translateX(100%); opacity: 0.8; }
+  to { transform: translateX(0); opacity: 1; }
+}
+@keyframes sidebarFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 .node-hit{position:absolute;display:flex;align-items:center;pointer-events:none !important;z-index:45}
 .node-action{width:28px;height:28px;border-radius:50%;background:var(--na-bg);border:1.5px solid var(--na-color);color:var(--na-color);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;opacity:0;transform:scale(.3) translateX(-6px);box-shadow:0 2px 8px rgba(0,0,0,.18);transition:opacity .18s ease,transform .25s cubic-bezier(.34,1.56,.64,1),background-color .15s ease,color .15s ease;pointer-events:none}
@@ -588,7 +1690,7 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
   sockets,
   strokeColor,
   fillColor,
-  strokeWidth = 2,
+  strokeWidth = 1.75,
   strokeDasharray = 'none',
   socketDotColor,
   highlightInput = false,
@@ -596,7 +1698,11 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
   isConnectedInput: _isConnectedInput = false,
   isConnectedOutput: _isConnectedOutput = false,
   hasReceiver = true,
-  hasSource = false,
+  hasSource: _hasSource = false,
+  isTrigger = false,
+  isCircle = false,
+  showAddButton = false,
+  onAddClick,
   onSocketMouseDown,
   onSocketMouseUp,
   onSocketMouseEnter,
@@ -604,34 +1710,29 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
 }) => {
   const { actualTheme } = useTheme();
   const isDark = actualTheme === 'dark';
-  const resolvedFillColor = fillColor || (isDark ? '#161B22' : '#FFFFFF');
+  const resolvedFillColor = fillColor || (isDark ? '#1C2128' : '#FFFFFF');
   const [hoveredSocket, setHoveredSocket] = useState<'input' | 'output' | null>(null);
 
   const isReceptiveInput = Boolean(highlightInput);
   const isReceptiveOutput = Boolean(highlightOutput);
   const isReceptive = isReceptiveInput || isReceptiveOutput;
 
-  // An output socket displays an interactive NEXT arrow (→) whenever it can connect to downstream nodes
-  const showNextArrow = Boolean(hasReceiver);
-
-  // An input socket displays an interactive BACK arrow (←) whenever it can connect back to upstream nodes
-  const showBackArrow = Boolean(hasSource);
-
-  // Soft refined warm gold representing receptive connect state (reduced glow, gentle tint)
+  // Soft refined warm gold representing receptive connect state
   const RECEPTIVE_COLOR = isDark ? '#EAB308' : '#D97706';
-  const effectiveStrokeColor = isReceptive ? RECEPTIVE_COLOR : strokeColor;
+  const defaultBorder = isDark ? '#475569' : '#94A3B8';
+  const effectiveStrokeColor = isReceptive ? RECEPTIVE_COLOR : (strokeColor || defaultBorder);
 
-  // Center is (36, 36), radius R = 35
-  // Outer socket lobes have radius r = 11 (22px diameter), seamlessly merged with the 72px main circle
-  let pathD = '';
-  if (sockets === 'right') {
-    pathD = 'M 69.27 25.14 A 11 11 0 1 1 69.27 46.86 A 35 35 0 1 1 69.27 25.14 Z';
-  } else if (sockets === 'left') {
-    pathD = 'M 2.73 46.86 A 11 11 0 1 1 2.73 25.14 A 35 35 0 1 1 2.73 46.86 Z';
-  } else {
-    // both left and right
-    pathD = 'M 69.27 25.14 A 11 11 0 1 1 69.27 46.86 A 35 35 0 0 1 2.73 46.86 A 11 11 0 1 1 2.73 25.14 A 35 35 0 0 1 69.27 25.14 Z';
-  }
+  const outputDotColor = isReceptiveOutput
+    ? RECEPTIVE_COLOR
+    : hoveredSocket === 'output'
+    ? (isDark ? '#38BDF8' : '#0284C7')
+    : (socketDotColor || (isDark ? '#94A3B8' : '#64748B'));
+
+  const inputDotColor = isReceptiveInput
+    ? RECEPTIVE_COLOR
+    : hoveredSocket === 'input'
+    ? (isDark ? '#38BDF8' : '#0284C7')
+    : (socketDotColor || (isDark ? '#94A3B8' : '#64748B'));
 
   return (
     <div
@@ -652,105 +1753,119 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
           width: '72px',
           height: '72px',
           overflow: 'visible',
-          filter: isDark ? 'drop-shadow(0 4px 12px rgba(0, 0, 0, 0.45))' : 'drop-shadow(0 2px 8px rgba(0, 0, 0, 0.1))',
+          filter: isDark ? 'drop-shadow(0 4px 14px rgba(0, 0, 0, 0.45))' : 'drop-shadow(0 2px 8px rgba(0, 0, 0, 0.08))',
         }}
         viewBox="0 0 72 72"
       >
-        <path
-          d={pathD}
-          fill={resolvedFillColor}
-          stroke={effectiveStrokeColor}
-          strokeWidth={isReceptive ? 2.5 : strokeWidth}
-          strokeDasharray={strokeDasharray}
-          strokeLinejoin="round"
-          strokeLinecap="round"
-          style={{
-            transition: 'stroke 0.2s ease, stroke-width 0.2s ease',
-          }}
-        />
-
-        {/* ======================================================== */}
-        {/* RIGHT OUTPUT SOCKET: NEXT ARROW (→) OR STATIC DOT (•)     */}
-        {/* ======================================================== */}
-        {(sockets === 'right' || sockets === 'both') && (
-          <g>
-            {isReceptiveOutput && (
-              <circle
-                cx="75"
-                cy="36"
-                r="8.5"
-                fill={RECEPTIVE_COLOR}
-                opacity="0.35"
-              />
-            )}
-            {showNextArrow ? (
-              <path
-                d="M 70 36 L 78 36 M 74.5 32.5 L 78 36 L 74.5 39.5"
-                fill="none"
-                stroke={isReceptiveOutput ? RECEPTIVE_COLOR : (hoveredSocket === 'output' ? (isDark ? '#58A6FF' : '#0969DA') : strokeColor)}
-                strokeWidth={isReceptiveOutput || hoveredSocket === 'output' ? 2.5 : 2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                style={{
-                  transition: 'stroke 0.15s ease, stroke-width 0.15s ease',
-                }}
-              />
-            ) : (
-              <circle
-                cx="75"
-                cy="36"
-                r={isReceptiveOutput ? 6 : (hoveredSocket === 'output' ? 5.5 : 4.5)}
-                fill={isReceptiveOutput ? RECEPTIVE_COLOR : (socketDotColor || strokeColor)}
-                style={{
-                  transition: 'r 0.15s ease, fill 0.15s ease',
-                }}
-              />
-            )}
-          </g>
+        {/* n8n Node Card */}
+        {isTrigger ? (
+          // n8n Trigger Node: Distinct D-Shape with curved left side (matching Image 3)
+          <path
+            d="M 36 1 L 56 1 A 15 15 0 0 1 71 16 L 71 56 A 15 15 0 0 1 56 71 L 36 71 A 35 35 0 0 1 36 1 Z"
+            fill={resolvedFillColor}
+            stroke={effectiveStrokeColor}
+            strokeWidth={isReceptive ? 2.5 : strokeWidth}
+            strokeDasharray={strokeDasharray}
+            style={{
+              transition: 'stroke 0.2s ease, stroke-width 0.2s ease, fill 0.2s ease',
+            }}
+          />
+        ) : isCircle ? (
+          <circle
+            cx="36"
+            cy="36"
+            r="35"
+            fill={resolvedFillColor}
+            stroke={effectiveStrokeColor}
+            strokeWidth={isReceptive ? 2.5 : strokeWidth}
+            strokeDasharray={strokeDasharray}
+            style={{
+              transition: 'stroke 0.2s ease, stroke-width 0.2s ease, fill 0.2s ease',
+            }}
+          />
+        ) : (
+          <rect
+            x="1"
+            y="1"
+            width="70"
+            height="70"
+            rx="16"
+            ry="16"
+            fill={resolvedFillColor}
+            stroke={effectiveStrokeColor}
+            strokeWidth={isReceptive ? 2.5 : strokeWidth}
+            strokeDasharray={strokeDasharray}
+            style={{
+              transition: 'stroke 0.2s ease, stroke-width 0.2s ease, fill 0.2s ease',
+            }}
+          />
         )}
 
-        {/* ======================================================== */}
-        {/* LEFT INPUT SOCKET: BACK ARROW (←) OR RECEPTIVE DOT (•)    */}
-        {/* ======================================================== */}
+        {/* LEFT INPUT PORT (n8n grey notch/tab on left border at x = 1, y = 36) */}
         {(sockets === 'left' || sockets === 'both') && (
           <g>
             {isReceptiveInput && (
               <circle
-                cx="-3"
+                cx="1"
                 cy="36"
-                r="8.5"
+                r="9"
                 fill={RECEPTIVE_COLOR}
                 opacity="0.35"
               />
             )}
-            {showBackArrow ? (
-              <path
-                d="M 1 36 L -7 36 M -3.5 32.5 L -7 36 L -3.5 39.5"
-                fill="none"
-                stroke={isReceptiveInput ? RECEPTIVE_COLOR : (hoveredSocket === 'input' ? (isDark ? '#58A6FF' : '#0969DA') : strokeColor)}
-                strokeWidth={isReceptiveInput || hoveredSocket === 'input' ? 2.5 : 2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                style={{
-                  transition: 'stroke 0.15s ease, stroke-width 0.15s ease',
-                }}
-              />
-            ) : (
+            <rect
+              x="-4"
+              y="28"
+              width="8"
+              height="16"
+              rx="2.5"
+              fill={inputDotColor}
+              stroke={inputDotColor}
+              strokeWidth="1.5"
+              style={{
+                transition: 'all 0.15s ease',
+              }}
+            />
+            <polygon
+              points="-1,32 3,36 -1,40"
+              fill={isDark ? '#1C2128' : '#FFFFFF'}
+            />
+          </g>
+        )}
+
+        {/* n8n line connecting right edge/dot to [+] button */}
+        {showAddButton && (
+          <line x1="71" y1="36" x2="87" y2="36" stroke={isDark ? '#4B5563' : '#94A3B8'} strokeWidth="1.75" />
+        )}
+
+        {/* RIGHT OUTPUT PORT (n8n solid circle on right border at x = 71, y = 36) */}
+        {(sockets === 'right' || sockets === 'both') && (
+          <g>
+            {isReceptiveOutput && (
               <circle
-                cx="-3"
+                cx="71"
                 cy="36"
-                r={isReceptiveInput ? 6 : (hoveredSocket === 'input' ? 5.5 : 4.5)}
-                fill={isReceptiveInput ? RECEPTIVE_COLOR : (socketDotColor || strokeColor)}
-                style={{
-                  transition: 'r 0.15s ease, fill 0.15s ease',
-                }}
+                r="9"
+                fill={RECEPTIVE_COLOR}
+                opacity="0.35"
               />
             )}
+            <circle
+              cx="71"
+              cy="36"
+              r={isReceptiveOutput || hoveredSocket === 'output' ? 6.5 : 5}
+              fill={outputDotColor}
+              stroke={outputDotColor}
+              strokeWidth="1.5"
+              style={{
+                transition: 'all 0.15s ease',
+              }}
+            />
           </g>
         )}
       </svg>
 
-      {/* Right Output Socket Hitbox for drag-to-connect NEXT */}
+      {/* Right Output Socket Hitbox for drag-to-connect NEXT (strictly covers ONLY the socket dot at x=71, NEVER the [+] button) */}
       {(sockets === 'right' || sockets === 'both') && (
         <div
           className="socket-handle socket-handle-output"
@@ -764,7 +1879,6 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
           }}
           onMouseDown={(e) => {
             e.stopPropagation();
-            if (!showNextArrow) return;
             onSocketMouseDown?.('output', e);
           }}
           onMouseUp={(e) => {
@@ -773,49 +1887,84 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
           }}
           style={{
             position: 'absolute',
-            right: '-16px',
-            top: '18px',
-            width: '32px',
-            height: '36px',
-            cursor: showNextArrow ? 'grab' : (isReceptiveOutput ? 'pointer' : 'default'),
+            right: '-8px',
+            top: '24px',
+            width: '16px',
+            height: '24px',
+            cursor: hasReceiver ? 'grab' : (isReceptiveOutput ? 'pointer' : 'default'),
             pointerEvents: 'auto',
-            zIndex: 50,
-            borderRadius: '0 16px 16px 0',
+            zIndex: 25,
+            borderRadius: '50%',
           }}
         />
       )}
 
-      {/* Left Input Socket Hitbox for drag-to-connect BACK */}
-      {(sockets === 'left' || sockets === 'both') && (
-        <div
-          className="socket-handle socket-handle-input"
-          onMouseEnter={() => {
-            setHoveredSocket('input');
-            onSocketMouseEnter?.('input');
-          }}
-          onMouseLeave={() => {
-            setHoveredSocket(null);
-            onSocketMouseLeave?.('input');
-          }}
+      {/* [+] ADD STEP BUTTON on right - Dedicated HTML button with high zIndex so it NEVER triggers wire dragging */}
+      {showAddButton && (
+        <button
+          type="button"
+          className="merged-node-add-btn"
+          title="Connect Next Step"
           onMouseDown={(e) => {
             e.stopPropagation();
-            if (!showBackArrow) return;
-            onSocketMouseDown?.('input', e);
+            e.preventDefault();
           }}
-          onMouseUp={(e) => {
+          onClick={(e) => {
             e.stopPropagation();
-            onSocketMouseUp?.('input', e);
+            e.preventDefault();
+            onAddClick?.(e);
           }}
           style={{
             position: 'absolute',
-            left: '-16px',
-            top: '18px',
-            width: '32px',
-            height: '36px',
-            cursor: showBackArrow ? 'grab' : (isReceptiveInput ? 'pointer' : 'default'),
+            left: '87px',
+            top: '25px',
+            width: '22px',
+            height: '22px',
+            borderRadius: '6px',
+            border: isDark ? '1.5px solid #4B5563' : '1.5px solid #94A3B8',
+            backgroundColor: isDark ? '#1F2937' : '#FFFFFF',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 0,
+            cursor: 'pointer',
             pointerEvents: 'auto',
-            zIndex: 50,
-            borderRadius: '16px 0 0 16px',
+            zIndex: 40,
+            boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+            transition: 'all 0.15s ease',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.borderColor = isDark ? '#60A5FA' : '#2563EB';
+            e.currentTarget.style.backgroundColor = isDark ? '#263342' : '#EFF6FF';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.borderColor = isDark ? '#4B5563' : '#94A3B8';
+            e.currentTarget.style.backgroundColor = isDark ? '#1F2937' : '#FFFFFF';
+          }}
+        >
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+            <path
+              d="M 6 2 L 6 10 M 2 6 L 10 6"
+              stroke={isDark ? '#9CA3AF' : '#64748B'}
+              strokeWidth="1.75"
+              strokeLinecap="round"
+            />
+          </svg>
+        </button>
+      )}
+
+      {/* Left Input Socket (Static port notch - does not initiate dragging wires) */}
+      {(sockets === 'left' || sockets === 'both') && (
+        <div
+          className="socket-handle socket-handle-input"
+          style={{
+            position: 'absolute',
+            left: '-8px',
+            top: '24px',
+            width: '16px',
+            height: '24px',
+            pointerEvents: 'none',
+            zIndex: 10,
           }}
         />
       )}
@@ -825,10 +1974,13 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
 
 export type ActiveModalNode =
   | { type: 'trigger' }
+  | { type: 'add-trigger' }
   | { type: 'get-content' }
   | { type: 'get-images' }
   | { type: 'ai-box'; boxId: string }
-  | { type: 'destination' }
+  | { type: 'destination'; destinationId?: string }
+  | { type: 'output' }
+  | { type: 'combine'; combineId: string; id?: string }
   | null;
 
 export interface DeletedAIBoxRecord {
@@ -854,6 +2006,8 @@ export interface FacebookWorkflowCanvasRef {
   addAIBox: (templateOverride?: CanvasPromptOption) => void;
   resetLayout: () => void;
   openRecoverModal: () => void;
+  openGeneralSettings: () => void;
+  toggleGeneralSettings: () => void;
   getDeletedBoxesCount: () => number;
 }
 
@@ -877,6 +2031,20 @@ export interface FacebookWorkflowCanvasProps {
   allowEditPrompt?: boolean;
   onDeletedCountChange?: (count: number) => void;
   rawContent?: string;
+  images?: Array<{
+    index: number;
+    facebook_photo_id?: string;
+    source_url: string;
+    stored_url?: string;
+    width?: number;
+    height?: number;
+    status?: string;
+  }>;
+  watermarkedPhotos?: Record<number, string>;
+  enhancedPhotos?: Record<number, string>;
+  aiGeneratedOutputs?: Record<string, string>;
+  aiGeneratedCopy?: string;
+  projectName?: string;
   autoFormatBoxes?: Record<string, boolean>;
   onToggleBoxAutoFormat?: (boxId: string, checked: boolean) => void;
   autoEnhance?: boolean;
@@ -884,7 +2052,136 @@ export interface FacebookWorkflowCanvasProps {
   executionState?: WorkflowExecutionState;
   onCloseCanvas?: () => void;
   onViewLogs?: () => void;
+  // General Settings integrations
+  onSaveFormat?: () => void;
+  isSaveSuccess?: boolean;
+  autoSave?: boolean;
+  onToggleAutoSave?: (enabled: boolean) => void;
+  onUndo?: () => void;
+  canUndo?: boolean;
+  onUseInFacebookImport?: () => void;
+  isGeneralSettingsOpen?: boolean;
+  onToggleGeneralSettings?: (open: boolean) => void;
+  formatName?: string;
 }
+
+/**
+ * Calculates pan offset (x, y) so that all active nodes or initial trigger
+ * are centered in the viewport.
+ */
+export const calculateCenteredPanOffset = (
+  cfg: FacebookWorkflowConfig,
+  viewportWidth: number,
+  viewportHeight: number,
+  zoom?: number
+): { x: number; y: number } => {
+  if (!viewportWidth || !viewportHeight || viewportWidth <= 0 || viewportHeight <= 0) {
+    return cfg.panOffset || { x: 500, y: 180 };
+  }
+
+  const effectiveZoom = zoom ?? cfg.zoom ?? 0.9;
+  const CIRCLE_SIZE = 72;
+  const LABEL_EXTRA = 32;
+
+  const isTriggerEnabled = cfg.trigger?.enabled === true;
+  const isContentEnabled = cfg.getContent?.enabled !== false;
+  const isImagesEnabled = cfg.getImages?.enabled !== false;
+  const activeBoxes = (cfg.aiBoxes || []).filter((b) => b.enabled !== false);
+
+  const points: { x: number; y: number; width: number; height: number }[] = [];
+
+  // If trigger is enabled, or if in initial state (neither trigger nor other nodes enabled)
+  if (isTriggerEnabled || (!isContentEnabled && !isImagesEnabled && activeBoxes.length === 0)) {
+    points.push({
+      x: cfg.trigger?.x ?? 100,
+      y: cfg.trigger?.y ?? 200,
+      width: CIRCLE_SIZE,
+      height: CIRCLE_SIZE + LABEL_EXTRA,
+    });
+  }
+
+  if (isContentEnabled) {
+    points.push({
+      x: cfg.getContent?.x ?? 300,
+      y: cfg.getContent?.y ?? 140,
+      width: CIRCLE_SIZE,
+      height: CIRCLE_SIZE + LABEL_EXTRA,
+    });
+  }
+
+  if (isImagesEnabled) {
+    points.push({
+      x: cfg.getImages?.x ?? 300,
+      y: cfg.getImages?.y ?? 356,
+      width: CIRCLE_SIZE,
+      height: CIRCLE_SIZE + LABEL_EXTRA,
+    });
+  }
+
+  activeBoxes.forEach((b) => {
+    points.push({
+      x: b.x,
+      y: b.y,
+      width: CIRCLE_SIZE,
+      height: CIRCLE_SIZE + LABEL_EXTRA,
+    });
+  });
+
+  // Combine Boxes
+  (cfg.combineBoxes || [])
+    .filter((cb) => cb && cb.enabled !== false)
+    .forEach((cb) => {
+      points.push({
+        x: cb.x ?? 960,
+        y: cb.y ?? 200,
+        width: CIRCLE_SIZE,
+        height: CIRCLE_SIZE + LABEL_EXTRA,
+      });
+    });
+
+  // Post Output Node (id: 'output')
+  if (cfg.outputNode && cfg.outputNode.enabled !== false) {
+    points.push({
+      x: cfg.outputNode.x ?? 740,
+      y: cfg.outputNode.y ?? 200,
+      width: CIRCLE_SIZE,
+      height: CIRCLE_SIZE + LABEL_EXTRA,
+    });
+  }
+
+  // All Destination Nodes (e.g. Dot BKK Living, Remaining Posts Database)
+  const allDestinations = getNormalizedDestinations(cfg).filter((d) => d && d.enabled !== false);
+  allDestinations.forEach((d) => {
+    points.push({
+      x: d.x ?? 960,
+      y: d.y ?? 200,
+      width: CIRCLE_SIZE,
+      height: CIRCLE_SIZE + LABEL_EXTRA,
+    });
+  });
+
+  if (points.length === 0) {
+    points.push({
+      x: cfg.trigger?.x ?? 100,
+      y: cfg.trigger?.y ?? 200,
+      width: CIRCLE_SIZE,
+      height: CIRCLE_SIZE + LABEL_EXTRA,
+    });
+  }
+
+  const minX = Math.min(...points.map((p) => p.x));
+  const maxX = Math.max(...points.map((p) => p.x + p.width));
+  const minY = Math.min(...points.map((p) => p.y));
+  const maxY = Math.max(...points.map((p) => p.y + p.height));
+
+  const contentMidX = (minX + maxX) / 2;
+  const contentMidY = (minY + maxY) / 2;
+
+  const targetPanX = Math.round(viewportWidth / 2 - contentMidX * effectiveZoom);
+  const targetPanY = Math.round(viewportHeight / 2 - contentMidY * effectiveZoom);
+
+  return { x: targetPanX, y: targetPanY };
+};
 
 export const FacebookWorkflowCanvas = forwardRef<
   FacebookWorkflowCanvasRef,
@@ -893,16 +2190,32 @@ export const FacebookWorkflowCanvas = forwardRef<
   {
     initialConfig,
     onConfigChange,
-    allowEditPrompt = false,
+    allowEditPrompt: _allowEditPrompt = false,
     onDeletedCountChange,
     rawContent,
-    autoFormatBoxes: propsAutoFormatBoxes,
-    onToggleBoxAutoFormat: propsOnToggleBoxAutoFormat,
-    autoEnhance: propsAutoEnhance,
-    onToggleAutoEnhance: propsOnToggleAutoEnhance,
+    images = [],
+    watermarkedPhotos = {},
+    enhancedPhotos = {},
+    aiGeneratedOutputs = {},
+    aiGeneratedCopy = '',
+    projectName: _projectName = '',
+    autoFormatBoxes: _propsAutoFormatBoxes,
+    onToggleBoxAutoFormat: _propsOnToggleBoxAutoFormat,
+    autoEnhance: _propsAutoEnhance,
+    onToggleAutoEnhance: _propsOnToggleAutoEnhance,
     executionState,
     onCloseCanvas: _onCloseCanvas,
     onViewLogs: _onViewLogs,
+    onSaveFormat,
+    isSaveSuccess = false,
+    autoSave = true,
+    onToggleAutoSave,
+    onUndo,
+    canUndo = false,
+    onUseInFacebookImport,
+    isGeneralSettingsOpen,
+    onToggleGeneralSettings,
+    formatName,
   },
   ref
 ) {
@@ -913,6 +2226,12 @@ export const FacebookWorkflowCanvas = forwardRef<
     sanitizeAndResolveCollisions(initialConfig || loadSavedFacebookWorkflowConfig())
   );
 
+  useEffect(() => {
+    if (initialConfig) {
+      setConfig(sanitizeAndResolveCollisions(initialConfig));
+    }
+  }, [initialConfig]);
+
   const getNodeExecutionStatus = (nodeId: string): 'idle' | 'running' | 'success' | 'error' => {
     if (!executionState) return 'idle';
     if (executionState.failedNodeIds?.includes(nodeId)) return 'error';
@@ -921,91 +2240,69 @@ export const FacebookWorkflowCanvas = forwardRef<
     return 'idle';
   };
 
-  // Auto format state per box (synced with localStorage & parent)
-  const [internalAutoFormat, setInternalAutoFormat] = useState<Record<string, boolean>>(() => {
-    try {
-      const saved = localStorage.getItem('estate_fb_auto_format_boxes');
-      return saved ? JSON.parse(saved) : {};
-    } catch {
-      return {};
-    }
-  });
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const hasAutoCenteredRef = useRef(false);
 
-  // Auto enhance state for photos (synced with localStorage & parent)
-  const [internalAutoEnhance, setInternalAutoEnhance] = useState<boolean>(() => {
-    try {
-      const saved = localStorage.getItem('estate_fb_auto_enhance');
-      return saved !== null ? saved === 'true' : false;
-    } catch {
-      return false;
-    }
-  });
-
-  // Cross-component synchronizer
+  // Auto-center workflow nodes in viewport on mount as soon as canvas is measured
   useEffect(() => {
-    const handleSync = () => {
-      try {
-        const savedFmt = localStorage.getItem('estate_fb_auto_format_boxes');
-        if (savedFmt) setInternalAutoFormat(JSON.parse(savedFmt));
-      } catch {}
-      try {
-        const savedEnh = localStorage.getItem('estate_fb_auto_enhance');
-        if (savedEnh !== null) setInternalAutoEnhance(savedEnh === 'true');
-      } catch {}
+    const el = canvasRef.current;
+    if (!el) return;
+
+    const performCenter = (width: number, height: number) => {
+      if (width <= 50 || height <= 50) return;
+      hasAutoCenteredRef.current = true;
+      setConfig((prev) => {
+        const nextPan = calculateCenteredPanOffset(prev, width, height, prev.zoom);
+        if (prev.panOffset.x === nextPan.x && prev.panOffset.y === nextPan.y) {
+          return prev;
+        }
+        return { ...prev, panOffset: nextPan };
+      });
     };
 
-    window.addEventListener('storage', handleSync);
-    window.addEventListener('estate_fb_auto_settings_sync', handleSync);
+    if (el.clientWidth > 50 && el.clientHeight > 50 && !hasAutoCenteredRef.current) {
+      performCenter(el.clientWidth, el.clientHeight);
+    }
+
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        if (width > 50 && height > 50 && !hasAutoCenteredRef.current) {
+          performCenter(width, height);
+        }
+      }
+    });
+
+    observer.observe(el);
     return () => {
-      window.removeEventListener('storage', handleSync);
-      window.removeEventListener('estate_fb_auto_settings_sync', handleSync);
+      observer.disconnect();
     };
   }, []);
 
-  const autoFormatState = propsAutoFormatBoxes ?? internalAutoFormat;
-  const autoEnhanceState = propsAutoEnhance ?? internalAutoEnhance;
-
-  const handleToggleBoxAutoFormat = (boxId: string, checked: boolean) => {
-    const next = { ...autoFormatState, [boxId]: checked };
-    setInternalAutoFormat(next);
-    try {
-      localStorage.setItem('estate_fb_auto_format_boxes', JSON.stringify(next));
-      window.dispatchEvent(new CustomEvent('estate_fb_auto_settings_sync'));
-    } catch {}
-    propsOnToggleBoxAutoFormat?.(boxId, checked);
-  };
-
-  const handleToggleAutoEnhance = (checked: boolean) => {
-    setInternalAutoEnhance(checked);
-    try {
-      localStorage.setItem('estate_fb_auto_enhance', String(checked));
-      window.dispatchEvent(new CustomEvent('estate_fb_auto_settings_sync'));
-    } catch {}
-    propsOnToggleAutoEnhance?.(checked);
-  };
-
-  const hasAnyAutoFormatActive = Object.values(autoFormatState).some(Boolean);
-
-  const handleToggleAllAutoFormat = (checked: boolean) => {
-    const next: Record<string, boolean> = { ...autoFormatState };
-    config.aiBoxes.forEach((b) => {
-      if (!isImageAIBox(b, config.connections)) {
-        next[b.id] = checked;
-        propsOnToggleBoxAutoFormat?.(b.id, checked);
-      }
-    });
-    setInternalAutoFormat(next);
-    try {
-      localStorage.setItem('estate_fb_auto_format_boxes', JSON.stringify(next));
-      window.dispatchEvent(new CustomEvent('estate_fb_auto_settings_sync'));
-    } catch {}
-  };
-
   useEffect(() => {
     if (initialConfig) {
-      setConfig(sanitizeAndResolveCollisions(initialConfig));
+      const sanitized = sanitizeAndResolveCollisions(initialConfig);
+      if (canvasRef.current && canvasRef.current.clientWidth > 50 && canvasRef.current.clientHeight > 50) {
+        const centeredPan = calculateCenteredPanOffset(
+          sanitized,
+          canvasRef.current.clientWidth,
+          canvasRef.current.clientHeight,
+          sanitized.zoom
+        );
+        setConfig({ ...sanitized, panOffset: centeredPan });
+      } else {
+        hasAutoCenteredRef.current = false;
+        setConfig(sanitized);
+      }
     }
   }, [initialConfig]);
+
+  // Ensure sanitized, deduplicated config is persisted on mount to immediately repair any legacy corrupted/duplicate connections
+  useEffect(() => {
+    try {
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(config));
+    } catch (e) {}
+  }, []);
 
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
@@ -1013,16 +2310,70 @@ export const FacebookWorkflowCanvas = forwardRef<
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [selectedBoxId, setSelectedBoxId] = useState<string | null>(null);
+  const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
   const [isSimulating, setIsSimulating] = useState(false);
   const [simulationStep, setSimulationStep] = useState<number>(-1);
   const [simulationMessage, setSimulationMessage] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
+  // Managed Facebook Pages from Auth Manager
+  const [managedPages, setManagedPages] = useState<ManagedPageMeta[]>(() => {
+    const stored = getStoredManagedPages();
+    return stored.length > 0 ? stored : DEFAULT_MANAGED_FB_PAGES;
+  });
+  const selectedPageId = config.destination?.selectedPageId || managedPages[0]?.page_id || '1287202894475973';
+  const selectedPage = managedPages.find((p) => p.page_id === selectedPageId) || managedPages[0];
+
+  // Destination inline Add Page Form state
+  const [isAddPageOpen, setIsAddPageOpen] = useState(false);
+  const [newPageName, setNewPageName] = useState('');
+  const [newPageId, setNewPageId] = useState('');
+  const [newPageCategory, setNewPageCategory] = useState('Real Estate Agency');
+  const [newPagePicture, setNewPagePicture] = useState('');
+
+  // Managed Instagram & TikTok accounts
+  const [managedIgAccounts, setManagedIgAccounts] = useState<ManagedSocialAccountMeta[]>(DEFAULT_MANAGED_IG_ACCOUNTS);
+  const [managedTiktokAccounts, setManagedTiktokAccounts] = useState<ManagedSocialAccountMeta[]>(DEFAULT_MANAGED_TIKTOK_ACCOUNTS);
+  const [isAddIgOpen, setIsAddIgOpen] = useState(false);
+  const [isAddTiktokOpen, setIsAddTiktokOpen] = useState(false);
+  const [newIgUsername, setNewIgUsername] = useState('');
+  const [newIgName, setNewIgName] = useState('');
+  const [newTiktokUsername, setNewTiktokUsername] = useState('');
+  const [newTiktokName, setNewTiktokName] = useState('');
+
   // Recovery and Deletion Confirmation State
   const [deletedBoxes, setDeletedBoxes] = useState<DeletedAIBoxRecord[]>(() => loadSavedDeletedBoxes());
   const [isRecoverModalOpen, setIsRecoverModalOpen] = useState(false);
+  const [isSocialConnectDrawerExpanded, setIsSocialConnectDrawerExpanded] = useState<boolean>(false);
+  const [activeSocialPlatformFilter, setActiveSocialPlatformFilter] = useState<'facebook' | 'instagram' | 'tiktok'>('facebook');
+  const [quickAddPopover, setQuickAddPopover] = useState<{
+    nodeId: string;
+    nodeType: 'ai-box' | 'get-content' | 'get-images' | 'combine';
+    x: number;
+    y: number;
+    socialExpanded?: boolean;
+    activePlatform?: 'facebook' | 'instagram' | 'tiktok';
+  } | null>(null);
+
+  useEffect(() => {
+    if (isGeneralSettingsOpen !== undefined) {
+      setIsRecoverModalOpen(isGeneralSettingsOpen);
+      if (isGeneralSettingsOpen) {
+        setActiveModalNode(null);
+        setIsAISettingsDrawerOpen(false);
+      }
+    }
+  }, [isGeneralSettingsOpen]);
+
+  const handleToggleGeneralSettings = (open: boolean) => {
+    setIsRecoverModalOpen(open);
+    onToggleGeneralSettings?.(open);
+    if (open) {
+      setActiveModalNode(null);
+      setIsAISettingsDrawerOpen(false);
+    }
+  };
   const [selectRecoverIds, setSelectRecoverIds] = useState<Set<string>>(new Set());
-  const [pendingDeleteBox, setPendingDeleteBox] = useState<DynamicAIBoxConfig | null>(null);
   const [dontAskDeleteAgain, setDontAskDeleteAgain] = useState<boolean>(() => {
     try {
       return localStorage.getItem('ea_workflow_skip_delete_confirm') === 'true';
@@ -1050,7 +2401,7 @@ export const FacebookWorkflowCanvas = forwardRef<
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [hoveredOutputNodeId, setHoveredOutputNodeId] = useState<string | null>(null);
   const [hoveredInputNodeId, setHoveredInputNodeId] = useState<string | null>(null);
-  const hoverLeaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const hoverLeaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Canvas Node Title Editing State
   const [editingCanvasBoxId, setEditingCanvasBoxId] = useState<string | null>(null);
@@ -1084,13 +2435,210 @@ export const FacebookWorkflowCanvas = forwardRef<
   // Node Modal State
   const [activeModalNode, setActiveModalNode] = useState<ActiveModalNode>(null);
   const [isAISettingsDrawerOpen, setIsAISettingsDrawerOpen] = useState(false);
+
+  // Dedicated Connect Items Drawer (opened via [+] node button)
+  const [connectDrawerNode, setConnectDrawerNode] = useState<{
+    nodeId: string;
+    nodeType: string;
+    title: string;
+    platform?: 'facebook' | 'instagram' | 'tiktok' | 'database';
+  } | null>(null);
+
+  const [isAddFromTriggerOpen, setIsAddFromTriggerOpen] = useState(false);
+  const [pendingDeleteBox, setPendingDeleteBox] = useState<DynamicAIBoxConfig | null>(null);
+  const [pendingDeleteConnection, setPendingDeleteConnection] = useState<{ id: string; fromTitle: string; toTitle: string } | null>(null);
+  const confirmDeleteConnection = () => {
+    if (pendingDeleteConnection) {
+      updateConfig({ ...config, connections: (config.connections || []).filter((c) => c.id !== pendingDeleteConnection.id) });
+      setPendingDeleteConnection(null);
+    }
+  };
+
+  // Lightbox & image compiled preview
+  const [lightboxImageIndex, setLightboxImageIndex] = useState<number | null>(null);
+  const [zoomScale, setZoomScale] = useState<number>(1);
+
+  // Output & Combine Copy / Media states
+  const [outputSelectedCopyKey, setOutputSelectedCopyKey] = useState<string>('primary');
+  const [copiedTextSuccess, setCopiedTextSuccess] = useState<boolean>(false);
+  const [postCardExpanded, setPostCardExpanded] = useState<boolean>(false);
+  const [selectedCombineFormatId, setSelectedCombineFormatId] = useState<string>('all');
+  const [copiedCombineSuccess, setCopiedCombineSuccess] = useState<boolean>(false);
+
+  const activeCopy: string = useMemo(() => {
+    if (outputSelectedCopyKey === 'original') return rawContent || '';
+    if (outputSelectedCopyKey === 'primary') return aiGeneratedCopy || rawContent || '';
+    if (aiGeneratedOutputs[outputSelectedCopyKey]) return aiGeneratedOutputs[outputSelectedCopyKey];
+    return aiGeneratedCopy || rawContent || '';
+  }, [outputSelectedCopyKey, aiGeneratedCopy, rawContent, aiGeneratedOutputs]);
+
+  interface CompiledImageItem {
+    index: number;
+    facebook_photo_id?: string;
+    source_url: string;
+    stored_url?: string;
+    width?: number;
+    height?: number;
+    status?: string;
+    finalUrl: string;
+    isWatermarked: boolean;
+    isEnhanced: boolean;
+  }
+
+  const compiledImages: CompiledImageItem[] = useMemo(() => {
+    return (images || []).map((img) => {
+      const isWatermarked = Boolean(watermarkedPhotos[img.index]);
+      const isEnhanced = Boolean(enhancedPhotos[img.index]);
+      const finalUrl =
+        watermarkedPhotos[img.index] ||
+        enhancedPhotos[img.index] ||
+        (img.stored_url
+          ? img.stored_url.startsWith('http')
+            ? img.stored_url
+            : `http://localhost:8085${img.stored_url}`
+          : img.source_url);
+      return {
+        ...img,
+        finalUrl,
+        isWatermarked,
+        isEnhanced,
+      };
+    });
+  }, [images, watermarkedPhotos, enhancedPhotos]);
+
+  const handleOpenLightbox = (indexOrUrl: number | string) => {
+    if (typeof indexOrUrl === 'number') {
+      setLightboxImageIndex(indexOrUrl);
+    } else {
+      const foundIdx = compiledImages.findIndex((img) => img.finalUrl === indexOrUrl || img.source_url === indexOrUrl);
+      setLightboxImageIndex(foundIdx >= 0 ? foundIdx : 0);
+    }
+    setZoomScale(1);
+  };
+
+  const handleDownloadImage = async (imgUrl: string, index?: number, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    try {
+      const fullUrl = imgUrl.startsWith('/storage') ? `http://localhost:8085${imgUrl}` : imgUrl;
+      const response = await fetch(fullUrl, { mode: 'cors' });
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = `property-photo-${index !== undefined ? index + 1 : Date.now()}.jpg`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(blobUrl);
+    } catch (err: any) {
+      console.warn('Direct blob download failed, falling back to window download:', err);
+      const fullUrl = imgUrl.startsWith('/storage') ? `http://localhost:8085${imgUrl}` : imgUrl;
+      const a = document.createElement('a');
+      a.href = fullUrl;
+      a.target = '_blank';
+      a.download = `property-photo-${index !== undefined ? index + 1 : Date.now()}.jpg`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+  };
+
+  const handleOpenConnectDrawer = (nodeId: string, nodeType: string, title: string) => {
+    setActiveModalNode(null);
+    setSelectedBoxId(null);
+    setQuickAddPopover(null);
+    setIsRecoverModalOpen(false);
+    onToggleGeneralSettings?.(false);
+    setConnectDrawerNode({ nodeId, nodeType, title });
+  };
+
+  const renderCenteredConnectButton = (nodeId: string, nodeType: string, nodeTitle?: string) => (
+    <button
+      type="button"
+      onClick={() => handleOpenConnectDrawer(nodeId, nodeType, nodeTitle || nodeId)}
+      aria-label="Connect Next Step"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '0.45rem',
+        width: '100%',
+        height: '38px',
+        marginBottom: '0.875rem',
+        padding: '0 1rem',
+        borderRadius: '8px',
+        border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+        backgroundColor: isDark ? '#21262D' : '#F1F5F9',
+        color: 'var(--text-primary)',
+        fontSize: '0.8125rem',
+        fontWeight: 600,
+        cursor: 'pointer',
+        transition: 'all 0.15s ease',
+        boxShadow: isDark ? '0 1px 2px rgba(0, 0, 0, 0.25)' : '0 1px 2px rgba(0, 0, 0, 0.05)',
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.backgroundColor = isDark ? '#282E33' : '#E2E8F0';
+        e.currentTarget.style.borderColor = isDark ? '#484F58' : '#94A3B8';
+        const arrow = e.currentTarget.querySelector('.next-step-arrow') as HTMLElement | null;
+        if (arrow) arrow.style.transform = 'translateX(3px)';
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.backgroundColor = isDark ? '#21262D' : '#F1F5F9';
+        e.currentTarget.style.borderColor = isDark ? '#30363D' : '#CBD5E1';
+        const arrow = e.currentTarget.querySelector('.next-step-arrow') as HTMLElement | null;
+        if (arrow) arrow.style.transform = 'translateX(0)';
+      }}
+    >
+      <span>Connect Next Step</span>
+      <span
+        className="next-step-arrow"
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          transition: 'transform 0.15s ease',
+          color: 'var(--text-secondary)',
+        }}
+      >
+        <FiArrowRight size={14} />
+      </span>
+    </button>
+  );
   const dragStartCoord = useRef({ x: 0, y: 0 });
   const hasMoved = useRef(false);
 
+  // Deletion Confirmation Modal State
+  interface DeleteConfirmTarget {
+    type: 'connection' | 'node';
+    title: string;
+    description: string;
+    confirmText?: string;
+    onConfirm: () => void;
+  }
+  const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<DeleteConfirmTarget | null>(null);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && deleteConfirmTarget) {
+        setDeleteConfirmTarget(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [deleteConfirmTarget]);
+
   const handleCloseModal = () => {
     setActiveModalNode(null);
+    setConnectDrawerNode(null);
     setIsAISettingsDrawerOpen(false);
   };
+
+  // Mutually exclusive sidebars: when node inspector or connect drawer opens, close General Settings
+  useEffect(() => {
+    if (activeModalNode || connectDrawerNode) {
+      setIsRecoverModalOpen(false);
+      onToggleGeneralSettings?.(false);
+    }
+  }, [activeModalNode, connectDrawerNode]);
 
   // Available prompt templates from library (synced with PromptTemplatesView)
   const [availablePrompts, setAvailablePrompts] = useState<CanvasPromptOption[]>(() => loadAvailablePromptTemplates());
@@ -1104,15 +2652,39 @@ export const FacebookWorkflowCanvas = forwardRef<
     return () => window.removeEventListener('storage', syncPrompts);
   }, [activeModalNode]);
 
-  const canvasRef = useRef<HTMLDivElement>(null);
-
   // Sync to parent and localStorage
   const updateConfig = (newConfig: FacebookWorkflowConfig) => {
-    setConfig(newConfig);
+    const hasCombineBoxes = (newConfig.combineBoxes || []).some((b) => b && b.enabled !== false);
+    const primaryCombineId = hasCombineBoxes
+      ? (newConfig.combineBoxes || []).find((b) => b && b.enabled !== false)?.id
+      : null;
+
+    let conns = Array.isArray(newConfig.connections)
+      ? newConfig.connections
+          .map((c) => {
+            if (!c) return null;
+            if (hasCombineBoxes && primaryCombineId) {
+              return {
+                ...c,
+                fromNodeId: c.fromNodeId === 'output' ? primaryCombineId : c.fromNodeId,
+                toNodeId: c.toNodeId === 'output' ? primaryCombineId : c.toNodeId,
+              };
+            }
+            return c;
+          })
+          .filter((c) => c && c.fromNodeId !== c.toNodeId)
+      : [];
+
+    const sanitizedConfig = {
+      ...newConfig,
+      connections: dedupeConnections(conns as WorkflowWireConnection[]),
+    };
+
+    setConfig(sanitizedConfig);
     try {
-      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(newConfig));
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(sanitizedConfig));
     } catch (e) {}
-    if (onConfigChange) onConfigChange(newConfig);
+    if (onConfigChange) onConfigChange(sanitizedConfig);
   };
 
   const handleSaveConfig = async () => {
@@ -1142,25 +2714,57 @@ export const FacebookWorkflowCanvas = forwardRef<
       return { x: config.trigger.x + 75, y: config.trigger.y + HALF_CIRCLE };
     }
     if (nodeId === 'get-content') {
+      if (config.getContent?.enabled === false) return null;
+      const hasAddBtn = Boolean(config.getContent.enabled);
       return socketType === 'output'
-        ? { x: config.getContent.x + 75, y: config.getContent.y + HALF_CIRCLE }
-        : { x: config.getContent.x - 3, y: config.getContent.y + HALF_CIRCLE };
+        ? { x: config.getContent.x + (hasAddBtn ? 109 : 71), y: config.getContent.y + HALF_CIRCLE }
+        : { x: config.getContent.x + 1, y: config.getContent.y + HALF_CIRCLE };
     }
     if (nodeId === 'get-images') {
+      if (config.getImages?.enabled === false) return null;
+      const hasAddBtn = Boolean(config.getImages.enabled);
       return socketType === 'output'
-        ? { x: config.getImages.x + 75, y: config.getImages.y + HALF_CIRCLE }
-        : { x: config.getImages.x - 3, y: config.getImages.y + HALF_CIRCLE };
+        ? { x: config.getImages.x + (hasAddBtn ? 109 : 71), y: config.getImages.y + HALF_CIRCLE }
+        : { x: config.getImages.x + 1, y: config.getImages.y + HALF_CIRCLE };
     }
-    if (nodeId === 'destination') {
-      return { x: config.destination.x - 3, y: config.destination.y + HALF_CIRCLE };
+    if (nodeId === 'output') {
+      const hasCombineBoxes = (config.combineBoxes || []).some((b) => b && b.enabled !== false);
+      if (hasCombineBoxes) return null;
+      const outNode = config.outputNode;
+      if (!outNode || outNode.enabled === false) return null;
+      const outX = outNode.x ?? 620;
+      const outY = outNode.y ?? 248;
+      const hasAddBtn = isNodeEffectivelyEnabled('output');
+      return socketType === 'output'
+        ? { x: outX + (hasAddBtn ? 109 : 71), y: outY + HALF_CIRCLE }
+        : { x: outX + 1, y: outY + HALF_CIRCLE };
     }
-    const box = config.aiBoxes.find((b) => b.id === nodeId);
+    if (nodeId === 'destination' || nodeId.startsWith('dest-')) {
+      const allDests = getNormalizedDestinations(config);
+      const dest = allDests.find((d) => d.id === nodeId && d.enabled !== false);
+      if (!dest) {
+        return null;
+      }
+      const destX = dest.x ?? 740;
+      const destY = dest.y ?? 248;
+      return socketType === 'output'
+        ? { x: destX + 71, y: destY + HALF_CIRCLE }
+        : { x: destX + 1, y: destY + HALF_CIRCLE };
+    }
+    const cb = (config.combineBoxes || []).find((b) => b.id === nodeId && b.enabled !== false);
+    if (cb) {
+      return socketType === 'output'
+        ? { x: cb.x + 109, y: cb.y + HALF_CIRCLE }
+        : { x: cb.x + 1, y: cb.y + HALF_CIRCLE };
+    }
+    const box = config.aiBoxes.find((b) => b.id === nodeId && b.enabled !== false);
     if (box) {
+      const hasAddBtn = isNodeEffectivelyEnabled(box.id);
       return socketType === 'output'
-        ? { x: box.x + 75, y: box.y + HALF_CIRCLE }
-        : { x: box.x - 3, y: box.y + HALF_CIRCLE };
+        ? { x: box.x + (hasAddBtn ? 109 : 71), y: box.y + HALF_CIRCLE }
+        : { x: box.x + 1, y: box.y + HALF_CIRCLE };
     }
-    return { x: 0, y: 0 };
+    return null;
   };
 
   const dragWireStartTime = useRef(0);
@@ -1181,7 +2785,6 @@ export const FacebookWorkflowCanvas = forwardRef<
     // Hardcoded static wires
     if ((nodeA === 'trigger' && nodeB === 'get-content') || (nodeA === 'get-content' && nodeB === 'trigger')) return true;
     if ((nodeA === 'trigger' && nodeB === 'get-images') || (nodeA === 'get-images' && nodeB === 'trigger')) return true;
-    if ((nodeA === 'get-images' && nodeB === 'destination') || (nodeA === 'destination' && nodeB === 'get-images')) return true;
     return false;
   };
 
@@ -1208,9 +2811,33 @@ export const FacebookWorkflowCanvas = forwardRef<
     visited.add(nodeId);
 
     if (nodeId === 'trigger') return true;
-    if (nodeId === 'destination') return true; // endpoint stays ready
+    if (nodeId === 'output') {
+      if (config.outputNode?.enabled === false) return false;
+      const conns = config.connections || [];
+      const incoming = conns.filter((c) => c.toNodeId === 'output');
+      if (incoming.length > 0) {
+        return incoming.some((c) => isNodeEffectivelyEnabled(c.fromNodeId, new Set(visited)));
+      }
+      return true;
+    }
+    if (nodeId === 'destination' || nodeId.startsWith('dest-')) {
+      const allDests = getNormalizedDestinations(config);
+      const dest = allDests.find((d) => d.id === nodeId);
+      return Boolean(dest ? dest.enabled !== false : config.destination?.enabled !== false);
+    }
     if (nodeId === 'get-content') return Boolean(config.getContent.enabled);
     if (nodeId === 'get-images') return Boolean(config.getImages.enabled);
+
+    const cb = (config.combineBoxes || []).find((b) => b.id === nodeId);
+    if (cb) {
+      if (cb.enabled === false) return false;
+      const conns = config.connections || [];
+      const incoming = conns.filter((c) => c.toNodeId === nodeId);
+      if (incoming.length > 0) {
+        return incoming.some((c) => isNodeEffectivelyEnabled(c.fromNodeId, new Set(visited)));
+      }
+      return true;
+    }
 
     const box = config.aiBoxes.find((b) => b.id === nodeId);
     if (!box) return false;
@@ -1235,13 +2862,29 @@ export const FacebookWorkflowCanvas = forwardRef<
   const isValidConnection = (fromId: string, toId: string): boolean => {
     if (!fromId || !toId || fromId === toId) return false;
 
-    // Disallow connections originating from disabled nodes
-    if (!isNodeEffectivelyEnabled(fromId)) {
+    // Reject if already connected in either direction
+    if (isAlreadyConnected(fromId, toId)) {
       return false;
     }
 
-    // Reject if already connected in either direction
-    if (isAlreadyConnected(fromId, toId)) {
+    const isTargetCombine = toId.startsWith('combine-box') || (config.combineBoxes || []).some((b) => b.id === toId);
+    const isSourceCombine = fromId.startsWith('combine-box') || (config.combineBoxes || []).some((b) => b.id === fromId);
+
+    // Target is a Combine Box: can receive from content, images, any AI box, or another Combine Box
+    if (isTargetCombine) {
+      if (fromId === 'trigger' || fromId === toId) return false;
+      return true;
+    }
+
+    // Source is a Combine Box: can connect to destinations or another Combine Box
+    if (isSourceCombine) {
+      if (toId === 'destination' || toId.startsWith('dest-')) return true;
+      if (isTargetCombine && toId !== fromId) return true;
+      return false;
+    }
+
+    // Disallow connections originating from disabled nodes
+    if (!isNodeEffectivelyEnabled(fromId)) {
       return false;
     }
 
@@ -1252,8 +2895,9 @@ export const FacebookWorkflowCanvas = forwardRef<
       return false;
     }
 
-    // Step 2: get-content -> dynamic AI copywriting nodes
+    // Step 2: get-content -> dynamic AI copywriting nodes OR combine box OR output OR destination
     if (fromId === 'get-content') {
+      if (toId === 'output' || toId === 'destination' || toId.startsWith('dest-') || isTargetCombine) return true;
       if (!toId.startsWith('ai-box-')) return false;
       const targetBox = config.aiBoxes.find((b) => b.id === toId);
       if (!targetBox) return false;
@@ -1264,8 +2908,9 @@ export const FacebookWorkflowCanvas = forwardRef<
       return !alreadyHasInput;
     }
 
-    // Step 2b: get-images -> dynamic AI image enhancer OR watermark nodes
+    // Step 2b: get-images -> dynamic AI image enhancer OR watermark nodes OR combine box OR output OR destination
     if (fromId === 'get-images') {
+      if (toId === 'output' || toId === 'destination' || toId.startsWith('dest-') || isTargetCombine) return true;
       if (!toId.startsWith('ai-box-')) return false;
       const targetBox = config.aiBoxes.find((b) => b.id === toId);
       if (!targetBox) return false;
@@ -1283,12 +2928,15 @@ export const FacebookWorkflowCanvas = forwardRef<
       const sourceBox = config.aiBoxes.find((b) => b.id === fromId);
       const targetBox = config.aiBoxes.find((b) => b.id === toId);
 
-      // A) Can connect to final Property Inbox destination
-      if (toId === 'destination') {
-        const alreadyConnectedToDest = conns.some(
-          (c) => c.fromNodeId === fromId && c.toNodeId === 'destination'
-        );
-        return !alreadyConnectedToDest;
+      // Connect to combine box, output or destination (Remaining Posts / Social Media Output)
+      if (toId === 'output' || toId === 'destination' || toId.startsWith('dest-') || isTargetCombine) {
+        return true;
+      }
+
+      // A) Text AI Model Box -> Text Format Preset Box (1-to-many fanout)
+      if (sourceBox && isTextAIBox(sourceBox, conns) && targetBox && isTextFormatAIBox(targetBox)) {
+        const alreadyConnected = conns.some((c) => c.fromNodeId === fromId && c.toNodeId === toId);
+        return !alreadyConnected;
       }
 
       // B) Image Enhancer -> Watermark node
@@ -1305,6 +2953,21 @@ export const FacebookWorkflowCanvas = forwardRef<
       }
 
       return false;
+    }
+
+    // Step 4: output node -> destination
+    if (fromId === 'output') {
+      if (toId === 'destination' || toId.startsWith('dest-')) {
+        return true;
+      }
+      return false;
+    }
+
+    // Step 5: platform destination hub -> child account destination
+    const isFromDest = fromId === 'destination' || fromId.startsWith('dest-');
+    const isToDest = toId === 'destination' || toId.startsWith('dest-');
+    if (isFromDest && isToDest && fromId !== toId) {
+      return true;
     }
 
     return false;
@@ -1381,13 +3044,14 @@ export const FacebookWorkflowCanvas = forwardRef<
       return;
     }
 
-    // Trigger has static connections and cannot initiate dragging
-    if (nodeId === 'trigger') return;
+    // Trigger and input sockets (the arrow notch) cannot initiate dragging
+    if (nodeId === 'trigger' || socketType === 'input') return;
 
     // Start dragging a new wire from this socket
     setHoveredOutputNodeId(null);
     dragWireStartTime.current = Date.now();
     const pos = getNodeSocketPos(nodeId, socketType);
+    if (!pos) return;
     setDragWire({
       fromNodeId: nodeId,
       fromType: socketType,
@@ -1483,56 +3147,1267 @@ export const FacebookWorkflowCanvas = forwardRef<
           return b;
         });
       }
-      updateConfig({
+      const nextConns = [...currentConnections, newConn];
+      const nextConfig = buildAlignedLayout(updatedBoxes, nextConns, {
         ...config,
         aiBoxes: updatedBoxes,
-        connections: [...currentConnections, newConn],
+        connections: nextConns,
       });
+      updateConfig(nextConfig);
     }
     setDragWire(null);
   };
 
-  const handleRemoveConnection = (connId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    const newConnections = (config.connections || []).filter((c) => c.id !== connId);
+  const getNodeDisplayName = (nodeId: string): string => {
+    if (nodeId === 'trigger') return 'Extract Link Trigger';
+    if (nodeId === 'get-content') return 'Get Content';
+    if (nodeId === 'get-images') return 'Get Images';
+    if (nodeId === 'output') return config.outputNode?.title || 'Final Content & Images';
+    if (nodeId === 'destination') return 'Saved Properties';
+    if (nodeId.startsWith('dest-')) {
+      const dest = getNormalizedDestinations(config).find((d) => d.id === nodeId);
+      return dest?.title || 'Destination';
+    }
+    const cb = (config.combineBoxes || []).find((b) => b.id === nodeId);
+    if (cb) return cb.title || 'Combine Box';
+    const box = config.aiBoxes.find((b) => b.id === nodeId);
+    return box?.title || nodeId;
+  };
+
+  const handlePromptDeleteConnection = (conn: WorkflowWireConnection, e?: React.SyntheticEvent) => {
+    handleRemoveConnection(conn.id, conn.fromNodeId, conn.toNodeId, e);
+  };
+
+  const executeDeleteGetContent = () => {
+    setHoveredWireId(null);
+    setHoveredXId(null);
+
+    const removedConns = (config.connections || []).filter(
+      (c) => c.fromNodeId === 'get-content' || c.toNodeId === 'get-content'
+    );
+    const remainingConns = (config.connections || []).filter(
+      (c) => c.fromNodeId !== 'get-content' && c.toNodeId !== 'get-content'
+    );
+
+    const record: DeletedAIBoxRecord = {
+      box: {
+        id: 'get-content',
+        title: 'Get Content (Text & Specs)',
+        processType: 'rental',
+        provider: 'google_ai',
+        model: 'gemini-flash-latest',
+        templateId: 'content',
+        templateText: '',
+        customPrompt: '',
+        enabled: true,
+        x: config.getContent.x || 300,
+        y: config.getContent.y || 140,
+      },
+      connections: removedConns,
+      deletedAt: Date.now(),
+    };
+
+    const nextDeleted = [record, ...deletedBoxes.filter((d) => d.box.id !== 'get-content')];
+    setDeletedBoxes(nextDeleted);
+    try {
+      localStorage.setItem(LOCAL_STORAGE_DELETED_KEY, JSON.stringify(nextDeleted));
+    } catch {}
+
+    const newConf: FacebookWorkflowConfig = {
+      ...config,
+      getContent: {
+        ...config.getContent,
+        enabled: false,
+      },
+      connections: remainingConns,
+    };
+
+    updateConfig(newConf);
+    if (activeModalNode?.type === 'get-content') {
+      setActiveModalNode(null);
+    }
+  };
+
+  const handleDeleteGetContent = (e?: React.SyntheticEvent) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+    setDeleteConfirmTarget({
+      type: 'node',
+      title: 'Delete "Get Content" Node?',
+      description: 'Are you sure you want to remove the Get Content node? You can recover it anytime from General Settings.',
+      confirmText: 'Confirm Delete',
+      onConfirm: () => {
+        executeDeleteGetContent();
+        setDeleteConfirmTarget(null);
+      },
+    });
+  };
+
+  const executeDeleteGetImages = () => {
+    setHoveredWireId(null);
+    setHoveredXId(null);
+
+    const removedConns = (config.connections || []).filter(
+      (c) => c.fromNodeId === 'get-images' || c.toNodeId === 'get-images'
+    );
+    const remainingConns = (config.connections || []).filter(
+      (c) => c.fromNodeId !== 'get-images' && c.toNodeId !== 'get-images'
+    );
+
+    const record: DeletedAIBoxRecord = {
+      box: {
+        id: 'get-images',
+        title: 'Get Images (HD Media)',
+        processType: 'image_upscale',
+        provider: 'runware_ai',
+        model: 'runware:upscale',
+        templateId: 'images',
+        templateText: '',
+        customPrompt: '',
+        enabled: true,
+        x: config.getImages.x || 300,
+        y: config.getImages.y || 356,
+      },
+      connections: removedConns,
+      deletedAt: Date.now(),
+    };
+
+    const nextDeleted = [record, ...deletedBoxes.filter((d) => d.box.id !== 'get-images')];
+    setDeletedBoxes(nextDeleted);
+    try {
+      localStorage.setItem(LOCAL_STORAGE_DELETED_KEY, JSON.stringify(nextDeleted));
+    } catch {}
+
+    const newConf: FacebookWorkflowConfig = {
+      ...config,
+      getImages: {
+        ...config.getImages,
+        enabled: false,
+      },
+      connections: remainingConns,
+    };
+
+    updateConfig(newConf);
+    if (activeModalNode?.type === 'get-images') {
+      setActiveModalNode(null);
+    }
+  };
+
+  const handleDeleteGetImages = (e?: React.SyntheticEvent) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+    setDeleteConfirmTarget({
+      type: 'node',
+      title: 'Delete "Get Images" Node?',
+      description: 'Are you sure you want to remove the Get Images node? You can recover it anytime from General Settings.',
+      confirmText: 'Confirm Delete',
+      onConfirm: () => {
+        executeDeleteGetImages();
+        setDeleteConfirmTarget(null);
+      },
+    });
+  };
+
+  const executeDeleteTrigger = () => {
+    setHoveredWireId(null);
+    setHoveredXId(null);
+
+    const remainingConns = (config.connections || []).filter(
+      (c) => c.fromNodeId !== 'trigger' && c.toNodeId !== 'trigger'
+    );
+    const newConf: FacebookWorkflowConfig = {
+      ...config,
+      trigger: {
+        ...config.trigger,
+        enabled: false,
+      },
+      connections: remainingConns,
+    };
+    let targetPan = config.panOffset;
+    if (canvasRef.current && canvasRef.current.clientWidth > 0 && canvasRef.current.clientHeight > 0) {
+      targetPan = calculateCenteredPanOffset(
+        newConf,
+        canvasRef.current.clientWidth,
+        canvasRef.current.clientHeight,
+        config.zoom
+      );
+    }
+    updateConfig({
+      ...newConf,
+      panOffset: targetPan,
+    });
+    if (activeModalNode?.type === 'trigger') {
+      setActiveModalNode(null);
+    }
+  };
+
+  const handleDeleteTrigger = (e?: React.SyntheticEvent) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+    setDeleteConfirmTarget({
+      type: 'node',
+      title: 'Delete "Extract Link" Node?',
+      description: 'Are you sure you want to delete this trigger node? The workflow will return to the initial state.',
+      confirmText: 'Confirm Delete',
+      onConfirm: () => {
+        executeDeleteTrigger();
+        setDeleteConfirmTarget(null);
+      },
+    });
+  };
+
+  const handleEnableGetContent = () => {
+    updateConfig({
+      ...config,
+      getContent: {
+        ...config.getContent,
+        enabled: true,
+        x: config.getContent.x || 300,
+        y: config.getContent.y || 140,
+      },
+    });
+    setDeletedBoxes((prev) => prev.filter((d) => d.box.id !== 'get-content'));
+  };
+
+  const handleEnableGetImages = () => {
+    updateConfig({
+      ...config,
+      getImages: {
+        ...config.getImages,
+        enabled: true,
+        x: config.getImages.x || 300,
+        y: config.getImages.y || 356,
+      },
+    });
+    setDeletedBoxes((prev) => prev.filter((d) => d.box.id !== 'get-images'));
+  };
+
+  const executeDeleteDestination = () => {
+    setHoveredWireId(null);
+    setHoveredXId(null);
+
+    const removedConns = (config.connections || []).filter(
+      (c) => c.fromNodeId === 'destination' || c.toNodeId === 'destination'
+    );
+    const remainingConns = (config.connections || []).filter(
+      (c) => c.fromNodeId !== 'destination' && c.toNodeId !== 'destination'
+    );
+
+    const isSocialMedia = config.destination?.targetMode === 'social_media';
+    const record: DeletedAIBoxRecord = {
+      box: {
+        id: 'destination',
+        title: config.destination?.title || (isSocialMedia ? (selectedPage?.name || 'Facebook Post') : 'Remaining Posts'),
+        processType: 'custom',
+        provider: (isSocialMedia ? 'facebook' : 'remaining_posts') as any,
+        model: isSocialMedia ? 'Direct Publish' : 'Remaining Posts Queue',
+        templateId: 'destination',
+        templateText: '',
+        customPrompt: '',
+        enabled: true,
+        x: config.destination?.x || 740,
+        y: config.destination?.y || 248,
+      },
+      connections: removedConns,
+      deletedAt: Date.now(),
+    };
+
+    const nextDeleted = [record, ...deletedBoxes.filter((d) => d.box.id !== 'destination')];
+    setDeletedBoxes(nextDeleted);
+    try {
+      localStorage.setItem(LOCAL_STORAGE_DELETED_KEY, JSON.stringify(nextDeleted));
+    } catch {}
+
+    const newConf: FacebookWorkflowConfig = {
+      ...config,
+      destination: {
+        ...config.destination,
+        enabled: false,
+      },
+      connections: remainingConns,
+    };
+
+    updateConfig(newConf);
+    if (activeModalNode?.type === 'destination') {
+      setActiveModalNode(null);
+    }
+  };
+
+  const handleDeleteDestination = (e?: React.SyntheticEvent, destId?: string) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+    const targetId = destId || (activeModalNode?.type === 'destination' ? activeModalNode.destinationId : null) || 'destination';
+    handleDeleteDestinationNode(targetId, e);
+  };
+
+  const handleConnectInputToOutput = (sourceNodeId: string) => {
+    const conns = config.connections || [];
+    if (!conns.some((c) => c.fromNodeId === sourceNodeId && c.toNodeId === 'output')) {
+      updateConfig({
+        ...config,
+        connections: [
+          ...conns,
+          {
+            id: `conn-${sourceNodeId}-output-${Date.now()}`,
+            fromNodeId: sourceNodeId,
+            toNodeId: 'output',
+          },
+        ],
+      });
+    }
+  };
+
+  const handleDisconnectInputFromOutput = (sourceNodeId: string) => {
+    const conns = (config.connections || []).filter(
+      (c) => !(c.fromNodeId === sourceNodeId && c.toNodeId === 'output')
+    );
+    updateConfig({
+      ...config,
+      connections: conns,
+    });
+  };
+
+  const handleToggleTerminalConnection = (destId: string) => {
+    const conns = config.connections || [];
+    const isConnected = conns.some((c) => c.fromNodeId === 'output' && c.toNodeId === destId);
+    if (isConnected) {
+      updateConfig({
+        ...config,
+        connections: conns.filter((c) => !(c.fromNodeId === 'output' && c.toNodeId === destId)),
+      });
+    } else {
+      updateConfig({
+        ...config,
+        connections: [
+          ...conns,
+          {
+            id: `conn-output-${destId}-${Date.now()}`,
+            fromNodeId: 'output',
+            toNodeId: destId,
+          },
+        ],
+      });
+    }
+  };
+
+  const handleUpdateDestinationPage = (destId: string, pageId: string) => {
+    const currentDests = getNormalizedDestinations(config);
+    const targetPage = managedPages.find((p) => p.page_id === pageId);
+    const updatedDests = currentDests.map((d) => {
+      if (d.id === destId) {
+        return {
+          ...d,
+          selectedPageId: pageId,
+          selectedPageIds: [pageId],
+          title: targetPage?.name || d.title,
+        };
+      }
+      return d;
+    });
+    updateConfig({
+      ...config,
+      destination: updatedDests[0],
+      destinations: updatedDests,
+    });
+  };
+
+  const handleToggleDestinationNode = (destId: string) => {
+    const currentDests = getNormalizedDestinations(config);
+    const updatedDests = currentDests.map((d) => {
+      if (d.id === destId) {
+        return {
+          ...d,
+          enabled: d.enabled === false ? true : false,
+        };
+      }
+      return d;
+    });
+    updateConfig({
+      ...config,
+      destination: updatedDests[0],
+      destinations: updatedDests,
+    });
+  };
+
+  const handleAddDestinationNode = (
+    targetMode: 'remaining_posts' | 'social_media' | 'hybrid' = 'social_media',
+    specificPageId?: string
+  ) => {
+    const currentDests = getNormalizedDestinations(config);
+    const newId = `dest-${Date.now()}`;
+    const targetPage = specificPageId
+      ? managedPages.find((p) => p.page_id === specificPageId) || managedPages[0]
+      : managedPages[currentDests.length % Math.max(1, managedPages.length)] || managedPages[0];
+    const isDb = targetMode === 'remaining_posts' || targetMode === 'hybrid';
+    const isSoc = targetMode === 'social_media' || targetMode === 'hybrid';
+    const title = targetMode === 'remaining_posts'
+      ? 'Remaining Posts Database'
+      : targetMode === 'social_media'
+      ? (targetPage?.name || 'Facebook Post')
+      : 'Social & Database Storage';
+
+    const newDest: DestinationNodeConfig = {
+      id: newId,
+      enabled: true,
+      x: (currentDests[0]?.x || 740),
+      y: (currentDests[currentDests.length - 1]?.y || 248) + 140,
+      targetMode,
+      storeInDatabase: isDb,
+      postToSocialMedia: isSoc,
+      selectedPageId: targetPage?.page_id || '1287202894475973',
+      selectedPageIds: [targetPage?.page_id || '1287202894475973'],
+      publishDirectly: true,
+      includeHashtags: true,
+      includeFirstComment: false,
+      title,
+    };
+
+    const updatedDests = [...currentDests, newDest];
+    const isOutputEnabled = config.outputNode?.enabled !== false;
+    const newConns = [...(config.connections || [])];
+    if (isOutputEnabled && !newConns.some((c) => c.fromNodeId === 'output' && c.toNodeId === newId)) {
+      newConns.push({
+        id: `conn-output-${newId}`,
+        fromNodeId: 'output',
+        toNodeId: newId,
+      });
+    }
+
+    updateConfig({
+      ...config,
+      destination: updatedDests[0],
+      destinations: updatedDests,
+      connections: newConns,
+    });
+    if (activeModalNode?.type !== 'output') {
+      setConnectDrawerNode(null);
+      setActiveModalNode({ type: 'destination', destinationId: newId });
+    }
+  };
+
+  const handleDeleteDestinationNode = (destId: string, e?: React.SyntheticEvent) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+    const currentDests = getNormalizedDestinations(config);
+    const target = currentDests.find((d) => d.id === destId);
+    const nodeLabel = target?.title || 'Destination';
+
+    setDeleteConfirmTarget({
+      type: 'node',
+      title: `Delete "${nodeLabel}"?`,
+      description: 'Are you sure you want to remove this output destination? You can restore it anytime.',
+      confirmText: 'Confirm Delete',
+      onConfirm: () => {
+        const remainingDests = currentDests.filter((d) => d.id !== destId);
+        const remainingConns = (config.connections || []).filter((c) => {
+          if (c.fromNodeId === destId || c.toNodeId === destId) return false;
+          if (remainingDests.length === 0) {
+            if (c.fromNodeId === 'destination' || c.toNodeId === 'destination') return false;
+            if (c.fromNodeId.startsWith('dest-') || c.toNodeId.startsWith('dest-')) return false;
+          }
+          return true;
+        });
+        if (remainingDests.length === 0) {
+          updateConfig({
+            ...config,
+            destination: {
+              ...config.destination,
+              enabled: false,
+            },
+            destinations: [],
+            connections: remainingConns,
+          });
+        } else {
+          updateConfig({
+            ...config,
+            destination: remainingDests[0],
+            destinations: remainingDests,
+            connections: remainingConns,
+          });
+        }
+        if (activeModalNode?.type === 'destination') {
+          setActiveModalNode(null);
+        }
+        setDeleteConfirmTarget(null);
+      },
+    });
+  };
+
+  const handleEnableDestination = () => {
+    const hasCombine = (config.combineBoxes || []).some((b) => b && b.enabled !== false);
+    const isOutputActive = !hasCombine && config.outputNode?.enabled !== false;
+    const updatedConns = autoConnectWorkflow(
+      config.aiBoxes,
+      config.connections,
+      config.getContent.enabled,
+      config.getImages.enabled,
+      true,
+      isOutputActive,
+      getNormalizedDestinations(config),
+      config.combineBoxes || []
+    );
+    updateConfig({
+      ...config,
+      destination: {
+        ...config.destination,
+        enabled: true,
+        x: config.destination?.x || 740,
+        y: config.destination?.y || 248,
+      },
+      connections: updatedConns,
+    });
+    setDeletedBoxes((prev) => prev.filter((d) => d.box.id !== 'destination'));
+  };
+
+  const handleConnectOrCreateDestination = (
+    fromNodeId: string,
+    targetMode: 'remaining_posts' | 'social_media' | 'hybrid',
+    platform?: 'facebook' | 'instagram' | 'tiktok' | 'database',
+    account?: { id: string; name: string; username?: string; picture_url?: string }
+  ) => {
+    const rawDests = getNormalizedDestinations(config);
+    const activeDests = rawDests.filter((d) => d.enabled !== false);
+
+    // 1. If platform and account are explicitly given, create or connect to a dedicated node for this specific account
+    if (platform && account) {
+      let targetDest = activeDests.find(
+        (d) =>
+          d.platform === platform &&
+          (d.accountId === account.id || d.selectedPageId === account.id || d.title === account.name)
+      );
+
+      let destId = targetDest?.id;
+      let updatedDests = [...rawDests];
+
+      if (!destId) {
+        destId = `dest-${platform}-${account.id.replace(/[^a-zA-Z0-9_-]/g, '')}-${Date.now()}`;
+        const sourceDest = activeDests.find((d) => d.id === fromNodeId);
+        const sourceCb = (config.combineBoxes || []).find((b) => b.id === fromNodeId);
+        const lastDest = activeDests[activeDests.length - 1];
+        let newX = 980;
+        let newY = 248;
+        if (sourceDest) {
+          const siblingCount = (config.connections || []).filter((c) => c.fromNodeId === fromNodeId).length;
+          newX = sourceDest.x + 180;
+          newY = sourceDest.y + siblingCount * 115;
+        } else if (sourceCb) {
+          const siblingCount = (config.connections || []).filter((c) => c.fromNodeId === fromNodeId).length;
+          newX = sourceCb.x + 180;
+          newY = sourceCb.y + siblingCount * 115;
+        } else if (lastDest) {
+          newX = lastDest.x;
+          newY = lastDest.y + 140;
+        }
+
+        const newDest: DestinationNodeConfig = {
+          id: destId,
+          enabled: true,
+          x: newX,
+          y: newY,
+          targetMode: 'social_media',
+          platform: platform,
+          accountId: account.id,
+          accountName: account.name,
+          accountUsername: account.username,
+          accountAvatar: account.picture_url,
+          storeInDatabase: false,
+          postToSocialMedia: true,
+          selectedPageId: platform === 'facebook' ? account.id : undefined,
+          selectedPageIds: platform === 'facebook' ? [account.id] : undefined,
+          selectedIgAccountIds: platform === 'instagram' ? [account.id] : undefined,
+          selectedTiktokAccountIds: platform === 'tiktok' ? [account.id] : undefined,
+          publishDirectly: true,
+          includeHashtags: true,
+          includeFirstComment: false,
+          includeContent: true,
+          includeImages: true,
+          title: account.name,
+        };
+
+        updatedDests = [...updatedDests.filter((d) => d.enabled !== false), newDest];
+      }
+
+      const existingConn = (config.connections || []).some(
+        (c) => c.fromNodeId === fromNodeId && c.toNodeId === destId
+      );
+
+      const newConnections = existingConn
+        ? config.connections || []
+        : [
+            ...(config.connections || []),
+            {
+              id: `conn-${fromNodeId}-${destId}-${Date.now()}`,
+              fromNodeId,
+              toNodeId: destId,
+            },
+          ];
+
+      updateConfig({
+        ...config,
+        destination: updatedDests[0],
+        destinations: updatedDests,
+        connections: newConnections,
+      });
+      setQuickAddPopover(null);
+      setConnectDrawerNode(null);
+      return;
+    }
+
+    // 1b. If platform is specified without a specific account, create or connect to a platform hub node (e.g. Facebook box)
+    if (platform && !account) {
+      let targetDest = activeDests.find((d) => d.platform === platform && !d.accountId);
+      let destId = targetDest?.id;
+      let updatedDests = [...rawDests];
+
+      if (!destId) {
+        destId = `dest-platform-${platform}-${Date.now()}`;
+        const sourceDest = activeDests.find((d) => d.id === fromNodeId);
+        const sourceCb = (config.combineBoxes || []).find((b) => b.id === fromNodeId);
+        const lastDest = activeDests[activeDests.length - 1];
+        let newX = 980;
+        let newY = 248;
+        if (sourceCb) {
+          const siblingCount = (config.connections || []).filter((c) => c.fromNodeId === fromNodeId).length;
+          newX = sourceCb.x + 180;
+          newY = sourceCb.y + siblingCount * 120;
+        } else if (sourceDest) {
+          const siblingCount = (config.connections || []).filter((c) => c.fromNodeId === fromNodeId).length;
+          newX = sourceDest.x + 180;
+          newY = sourceDest.y + siblingCount * 120;
+        } else if (lastDest) {
+          newX = lastDest.x;
+          newY = lastDest.y + 140;
+        }
+        const platformTitle =
+          platform === 'facebook'
+            ? 'Facebook'
+            : platform === 'instagram'
+            ? 'Instagram'
+            : platform === 'tiktok'
+            ? 'TikTok'
+            : 'Social Media';
+
+        const newDest: DestinationNodeConfig = {
+          id: destId,
+          enabled: true,
+          x: newX,
+          y: newY,
+          targetMode: 'social_media',
+          platform: platform,
+          title: platformTitle,
+          storeInDatabase: false,
+          postToSocialMedia: true,
+          publishDirectly: true,
+          includeContent: true,
+          includeImages: true,
+        };
+        updatedDests = [...updatedDests.filter((d) => d.enabled !== false), newDest];
+      }
+
+      const existingConn = (config.connections || []).some(
+        (c) => c.fromNodeId === fromNodeId && c.toNodeId === destId
+      );
+
+      const newConnections = existingConn
+        ? config.connections || []
+        : [
+            ...(config.connections || []),
+            {
+              id: `conn-${fromNodeId}-${destId}-${Date.now()}`,
+              fromNodeId,
+              toNodeId: destId,
+            },
+          ];
+
+      updateConfig({
+        ...config,
+        destination: updatedDests[0],
+        destinations: updatedDests,
+        connections: newConnections,
+      });
+      setQuickAddPopover(null);
+      setConnectDrawerNode(null);
+      return;
+    }
+
+    // 2. Look for an existing destination that matches this targetMode
+    let targetDest = activeDests.find((d) => {
+      const isDb = d.storeInDatabase ?? (d.targetMode !== 'social_media');
+      const isSoc = d.postToSocialMedia ?? (d.targetMode !== 'remaining_posts');
+      if (targetMode === 'remaining_posts') return isDb && !isSoc;
+      if (targetMode === 'social_media') return isSoc && !isDb && !d.platform;
+      return isDb && isSoc;
+    });
+
+    let destId = targetDest?.id;
+    let updatedDests = [...rawDests];
+
+    if (!destId) {
+      destId = `dest-${Date.now()}`;
+      const defaultPage = managedPages[0];
+      const isDb = targetMode === 'remaining_posts' || targetMode === 'hybrid';
+      const isSoc = targetMode === 'social_media' || targetMode === 'hybrid';
+      const title =
+        targetMode === 'remaining_posts'
+          ? 'Remaining Posts Database'
+          : targetMode === 'social_media'
+          ? 'Social Media'
+          : 'Social & Database Storage';
+
+      const newDest: DestinationNodeConfig = {
+        id: destId,
+        enabled: true,
+        x: updatedDests[0]?.x || 740,
+        y: (updatedDests[updatedDests.length - 1]?.y || 248) + 140,
+        targetMode,
+        platform: targetMode === 'remaining_posts' ? 'database' : undefined,
+        storeInDatabase: isDb,
+        postToSocialMedia: isSoc,
+        selectedPageId: defaultPage?.page_id || '1287202894475973',
+        selectedPageIds: [defaultPage?.page_id || '1287202894475973'],
+        selectedIgAccountIds: [managedIgAccounts[0]?.account_id || 'ig-1'],
+        selectedTiktokAccountIds: [managedTiktokAccounts[0]?.account_id || 'tt-1'],
+        publishDirectly: true,
+        includeHashtags: true,
+        includeFirstComment: false,
+        includeContent: true,
+        includeImages: true,
+        title,
+      };
+
+      updatedDests = [...updatedDests.filter((d) => d.enabled !== false), newDest];
+    }
+
+    // Connect fromNodeId -> destId
+    const existingConn = (config.connections || []).some(
+      (c) => c.fromNodeId === fromNodeId && c.toNodeId === destId
+    );
+
+    const newConnections = existingConn
+      ? config.connections || []
+      : [
+          ...(config.connections || []),
+          {
+            id: `conn-${fromNodeId}-${destId}-${Date.now()}`,
+            fromNodeId,
+            toNodeId: destId,
+          },
+        ];
+
+    const nextConfig = buildAlignedLayout(config.aiBoxes, newConnections, {
+      ...config,
+      destination: updatedDests[0],
+      destinations: updatedDests,
+      connections: newConnections,
+    });
+    updateConfig(nextConfig);
+    setQuickAddPopover(null);
+    setConnectDrawerNode(null);
+  };
+
+  const handleAddOutputNode = (e?: React.SyntheticEvent) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+    const currentDests = getNormalizedDestinations(config);
+    const destX = currentDests[0]?.x ?? 740;
+    const destY = currentDests[0]?.y ?? 248;
+    const outX = Math.max(320, destX - 160);
+    const outY = destY;
+
+    const newOutputNode: OutputNodeConfig = {
+      id: 'output',
+      enabled: true,
+      x: config.outputNode?.x ?? outX,
+      y: config.outputNode?.y ?? outY,
+      title: config.outputNode?.title || 'Final Content & Images',
+    };
+
+    let conns = [...(config.connections || [])];
+    
+    // Auto-connect content and image nodes to output
+    const contentBoxes = config.aiBoxes.filter((b) => !isWatermarkAIBox(b) && !isEnhanceAIBox(b, conns));
+    const imageBoxes = config.aiBoxes.filter((b) => isWatermarkAIBox(b) || isEnhanceAIBox(b, conns));
+
+    const sourceIds: string[] = [];
+    if (contentBoxes.length > 0) {
+      contentBoxes.forEach((b) => sourceIds.push(b.id));
+    } else if (config.getContent.enabled) {
+      sourceIds.push('get-content');
+    }
+
+    if (imageBoxes.length > 0) {
+      imageBoxes.forEach((b) => sourceIds.push(b.id));
+    } else if (config.getImages.enabled) {
+      sourceIds.push('get-images');
+    }
+
+    sourceIds.forEach((srcId) => {
+      if (!conns.some((c) => c.fromNodeId === srcId && c.toNodeId === 'output')) {
+        conns.push({
+          id: `conn-${srcId}-output-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          fromNodeId: srcId,
+          toNodeId: 'output',
+        });
+      }
+    });
+
+    // Auto-connect output to destination nodes
+    currentDests.forEach((dest) => {
+      if (dest.enabled !== false && !conns.some((c) => c.fromNodeId === 'output' && c.toNodeId === dest.id)) {
+        conns.push({
+          id: `conn-output-${dest.id}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          fromNodeId: 'output',
+          toNodeId: dest.id,
+        });
+      }
+    });
+
+    updateConfig({
+      ...config,
+      outputNode: newOutputNode,
+      connections: conns,
+    });
+    setConnectDrawerNode(null);
+    setActiveModalNode({ type: 'output' });
+  };
+
+  const handleConnectOrCreateOutputNode = (fromNodeId: string) => {
+    const currentDests = getNormalizedDestinations(config);
+    const destX = currentDests[0]?.x ?? 740;
+    const destY = currentDests[0]?.y ?? 248;
+    const outX = Math.max(320, destX - 160);
+    const outY = destY;
+
+    const newOutputNode: OutputNodeConfig = {
+      id: 'output',
+      enabled: true,
+      x: config.outputNode?.x ?? outX,
+      y: config.outputNode?.y ?? outY,
+      title: config.outputNode?.title || 'Final Content & Images',
+    };
+
+    let conns = [...(config.connections || [])];
+    if (!conns.some((c) => c.fromNodeId === fromNodeId && c.toNodeId === 'output')) {
+      conns.push({
+        id: `conn-${fromNodeId}-output-${Date.now()}`,
+        fromNodeId,
+        toNodeId: 'output',
+      });
+    }
+
+    // Connect output -> destination if destination exists
+    currentDests.forEach((dest) => {
+      if (dest.enabled !== false && !conns.some((c) => c.fromNodeId === 'output' && c.toNodeId === dest.id)) {
+        conns.push({
+          id: `conn-output-${dest.id}-${Date.now()}`,
+          fromNodeId: 'output',
+          toNodeId: dest.id,
+        });
+      }
+    });
+
+    updateConfig({
+      ...config,
+      outputNode: newOutputNode,
+      connections: conns,
+    });
+    setQuickAddPopover(null);
+    setConnectDrawerNode(null);
+    setActiveModalNode({ type: 'output' });
+  };
+
+  const handleDeleteOutputNode = (e?: React.SyntheticEvent) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+    setDeleteConfirmTarget({
+      type: 'node',
+      title: 'Remove "Post Output" Node?',
+      description: 'Are you sure you want to remove the Output box? Your upstream content and media nodes will remain intact.',
+      confirmText: 'Confirm Remove',
+      onConfirm: () => {
+        const remainingConns = (config.connections || []).filter(
+          (c) => c.fromNodeId !== 'output' && c.toNodeId !== 'output'
+        );
+        updateConfig({
+          ...config,
+          outputNode: {
+            ...config.outputNode,
+            id: 'output',
+            enabled: false,
+          },
+          connections: remainingConns,
+        });
+        if (activeModalNode?.type === 'output') {
+          setActiveModalNode(null);
+        }
+        setDeleteConfirmTarget(null);
+      },
+     });
+  };
+
+  const handleConnectOrCreateGetContent = (fromNodeId: string) => {
+    const conns = [...(config.connections || [])];
+    if (!conns.some((c) => c.fromNodeId === fromNodeId && c.toNodeId === 'get-content')) {
+      conns.push({
+        id: `conn-${fromNodeId}-get-content-${Date.now()}`,
+        fromNodeId,
+        toNodeId: 'get-content',
+      });
+    }
+    updateConfig({
+      ...config,
+      getContent: {
+        ...config.getContent,
+        enabled: true,
+        x: config.getContent.x ?? ((config.trigger.x ?? 80) + 220),
+        y: config.getContent.y ?? 140,
+      },
+      connections: conns,
+    });
+    setConnectDrawerNode(null);
+    setActiveModalNode({ type: 'get-content' });
+  };
+
+  const handleConnectOrCreateGetImages = (fromNodeId: string) => {
+    const conns = [...(config.connections || [])];
+    if (!conns.some((c) => c.fromNodeId === fromNodeId && c.toNodeId === 'get-images')) {
+      conns.push({
+        id: `conn-${fromNodeId}-get-images-${Date.now()}`,
+        fromNodeId,
+        toNodeId: 'get-images',
+      });
+    }
+    updateConfig({
+      ...config,
+      getImages: {
+        ...config.getImages,
+        enabled: true,
+        x: config.getImages.x ?? ((config.trigger.x ?? 80) + 220),
+        y: config.getImages.y ?? 356,
+      },
+      connections: conns,
+    });
+    setConnectDrawerNode(null);
+    setActiveModalNode({ type: 'get-images' });
+  };
+
+  // ── Combine Box handlers ─────────────────────────────────────────────────
+  const handleAddCombineBox = (fromNodeId: string): string => {
+    const id = `combine-box-${Date.now()}`;
+    const fromNode = (function () {
+      if (fromNodeId === 'trigger') return { x: config.trigger.x ?? 80, y: config.trigger.y ?? 248 };
+      if (fromNodeId === 'get-content') return { x: config.getContent.x ?? 300, y: config.getContent.y ?? 140 };
+      if (fromNodeId === 'get-images') return { x: config.getImages.x ?? 300, y: config.getImages.y ?? 356 };
+      const box = config.aiBoxes.find((b) => b.id === fromNodeId);
+      if (box) return { x: box.x, y: box.y };
+      const existingCb = (config.combineBoxes || []).find((b) => b.id === fromNodeId);
+      if (existingCb) return { x: existingCb.x, y: existingCb.y };
+      return { x: 500, y: 248 };
+    })();
+
+    const newBox: CombineBoxConfig = {
+      id,
+      title: 'Combine Box',
+      enabled: true,
+      x: fromNode.x + 220,
+      y: fromNode.y,
+    };
+
+    const newConn: WorkflowWireConnection = {
+      id: `conn-${fromNodeId}-${id}`,
+      fromNodeId,
+      toNodeId: id,
+    };
+
+    const nextCombineBoxes = [...(config.combineBoxes || []), newBox];
+    const nextConns = [...(config.connections || []), newConn];
+    const nextConfig = buildAlignedLayout(config.aiBoxes, nextConns, {
+      ...config,
+      combineBoxes: nextCombineBoxes,
+      connections: nextConns,
+    });
+    updateConfig(nextConfig);
+    return id;
+  };
+
+  const handleConnectOrCreateCombineBox = (fromNodeId: string): string => {
+    const existingCb = (config.combineBoxes || []).find((b) => b.enabled !== false);
+    if (existingCb) {
+      if (!(config.connections || []).some((c) => c.fromNodeId === fromNodeId && c.toNodeId === existingCb.id)) {
+        const newConn: WorkflowWireConnection = {
+          id: `conn-${fromNodeId}-${existingCb.id}-${Date.now()}`,
+          fromNodeId,
+          toNodeId: existingCb.id,
+        };
+        const nextConns = [...(config.connections || []), newConn];
+        updateConfig(buildAlignedLayout(config.aiBoxes, nextConns, { ...config, connections: nextConns }));
+      }
+      return existingCb.id;
+    }
+    return handleAddCombineBox(fromNodeId);
+  };
+
+  const handleDeleteCombineBox = (boxId: string, e?: React.SyntheticEvent) => {
+    if (e) { e.stopPropagation(); e.preventDefault(); }
+    setDeleteConfirmTarget({
+      type: 'node',
+      title: 'Delete Combine Box?',
+      description: 'Remove this Combine Box and all its wires. Upstream nodes stay intact.',
+      confirmText: 'Delete',
+      onConfirm: () => {
+        const remainingBoxes = (config.combineBoxes || []).filter((b) => b.id !== boxId);
+        const remainingConns = (config.connections || []).filter((c) => c.fromNodeId !== boxId && c.toNodeId !== boxId);
+        const nextConfig = buildAlignedLayout(config.aiBoxes, remainingConns, {
+          ...config,
+          combineBoxes: remainingBoxes,
+          connections: remainingConns,
+        });
+        updateConfig(nextConfig);
+        if (activeModalNode?.type === 'combine' && (activeModalNode.combineId === boxId || (activeModalNode as any).id === boxId)) {
+          setActiveModalNode(null);
+        }
+        setDeleteConfirmTarget(null);
+      },
+    });
+  };
+  // ────────────────────────────────────────────────────────────────────────
+
+  const handleAddNewPage = () => {
+    if (!newPageName.trim() || !newPageId.trim()) return;
+    const nextSlot = managedPages.length + 1;
+    const newPage: ManagedPageMeta = {
+      id: Date.now(),
+      slot: nextSlot,
+      page_id: newPageId.trim(),
+      name: newPageName.trim(),
+      label: `Page Slot ${nextSlot}`,
+      page_url: `https://www.facebook.com/profile.php?id=${newPageId.trim()}`,
+      picture_url: newPagePicture.trim() || undefined,
+      category: newPageCategory.trim() || 'Real Estate Agency',
+      has_token: true,
+      token_hint: '••••mock',
+      token_status: 'VALID',
+      permissions: ['CREATE_CONTENT', 'pages_manage_posts', 'pages_read_engagement'],
+      can_create_content: true,
+      test_passed: true,
+      is_connected: true,
+      auto_publish_enabled: true,
+      ready_to_publish: true,
+      last_tested_at: 'Just now',
+    };
+    saveStoredManagedPage(newPage);
+    const updated = getStoredManagedPages();
+    setManagedPages(updated.length > 0 ? updated : [...managedPages, newPage]);
+    updateConfig({
+      ...config,
+      destination: {
+        ...config.destination,
+        targetMode: 'social_media',
+        selectedPageId: newPage.page_id,
+        title: config.destination?.title || 'Social Media',
+      },
+    });
+    setIsAddPageOpen(false);
+    setNewPageName('');
+    setNewPageId('');
+    setNewPageCategory('Real Estate Agency');
+    setNewPagePicture('');
+  };
+
+  const handleAddNewIgAccount = () => {
+    if (!newIgUsername.trim()) return;
+    const cleanUsername = newIgUsername.trim().startsWith('@') ? newIgUsername.trim() : `@${newIgUsername.trim()}`;
+    const newAcct: ManagedSocialAccountMeta = {
+      account_id: `ig-${Date.now()}`,
+      username: cleanUsername,
+      name: newIgName.trim() || cleanUsername,
+      platform: 'instagram',
+      category: 'Real Estate',
+    };
+    setManagedIgAccounts((prev) => [...prev, newAcct]);
+    setIsAddIgOpen(false);
+    setNewIgUsername('');
+    setNewIgName('');
+  };
+
+  const handleAddNewTiktokAccount = () => {
+    if (!newTiktokUsername.trim()) return;
+    const cleanUsername = newTiktokUsername.trim().startsWith('@') ? newTiktokUsername.trim() : `@${newTiktokUsername.trim()}`;
+    const newAcct: ManagedSocialAccountMeta = {
+      account_id: `tt-${Date.now()}`,
+      username: cleanUsername,
+      name: newTiktokName.trim() || cleanUsername,
+      platform: 'tiktok',
+      category: 'Video Tours',
+    };
+    setManagedTiktokAccounts((prev) => [...prev, newAcct]);
+    setIsAddTiktokOpen(false);
+    setNewTiktokUsername('');
+    setNewTiktokName('');
+  };
+
+  const handleTogglePageActive = (pageId: string) => {
+    const page = managedPages.find((p) => p.page_id === pageId);
+    if (!page) return;
+    const updatedPage: ManagedPageMeta = {
+      ...page,
+      auto_publish_enabled: !page.auto_publish_enabled,
+      ready_to_publish: !page.auto_publish_enabled && page.has_token,
+    };
+    saveStoredManagedPage(updatedPage);
+    const updated = getStoredManagedPages();
+    setManagedPages(updated.length > 0 ? updated : managedPages.map((p) => (p.page_id === pageId ? updatedPage : p)));
+  };
+
+  const handleWireDelete = (conn: WorkflowWireConnection, e?: React.SyntheticEvent) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+    setHoveredWireId(null);
+    setHoveredXId(null);
+
+    if (conn.fromNodeId === 'trigger' && conn.toNodeId === 'get-content') {
+      setDeleteConfirmTarget({
+        type: 'connection',
+        title: 'Disconnect "Get Content"?',
+        description: 'Are you sure you want to disconnect and remove the Get Content step from this workflow?',
+        confirmText: 'Confirm Disconnect',
+        onConfirm: () => {
+          executeDeleteGetContent();
+          setDeleteConfirmTarget(null);
+        },
+      });
+      return;
+    }
+    if (conn.fromNodeId === 'trigger' && conn.toNodeId === 'get-images') {
+      setDeleteConfirmTarget({
+        type: 'connection',
+        title: 'Disconnect "Get Images"?',
+        description: 'Are you sure you want to disconnect and remove the Get Images step from this workflow?',
+        confirmText: 'Confirm Disconnect',
+        onConfirm: () => {
+          executeDeleteGetImages();
+          setDeleteConfirmTarget(null);
+        },
+      });
+      return;
+    }
+    // For all node-to-node wires (AI models, format presets, watermark/cut presets, combine boxes, destinations):
+    // Clicking (X) purely disconnects the wire. It NEVER deletes the source or target box!
+    handleRemoveConnection(conn.id, conn.fromNodeId, conn.toNodeId, e);
+  };
+
+  const handleRemoveConnection = (
+    connId: string,
+    fromNodeId?: string,
+    toNodeId?: string,
+    e?: React.SyntheticEvent
+  ) => {
+    if (e) {
+      e.stopPropagation();
+    }
+    setHoveredWireId(null);
+    setHoveredXId(null);
+    const newConnections = (config.connections || []).filter((c) => {
+      if (c.id === connId) return false;
+      if (fromNodeId && toNodeId && c.fromNodeId === fromNodeId && c.toNodeId === toNodeId) return false;
+      return true;
+    });
     updateConfig({
       ...config,
       connections: newConnections,
     });
   };
 
-  // Add Dynamic AI Box directly connected from Get Content ("for text modified and that connect with that")
-  const handleAddAIBoxConnectedFromContent = (templateOverride?: CanvasPromptOption) => {
-    const prompts = loadAvailablePromptTemplates();
-    const boxCount = config.aiBoxes.length;
-    const maxY = config.aiBoxes.reduce((max, b) => Math.max(max, b.y), 0);
-    const newY = boxCount === 0 ? 120 : Math.max(maxY + 150, 80 + boxCount * 150);
-
-    // Pick next prompt template from library
-    const chosenTemplate =
-      templateOverride ||
-      (prompts.length > 0 ? prompts[boxCount % prompts.length] : undefined);
-
+  // Add Dynamic Text AI Model Box (Gemini, OpenAI, Claude, LaoZhang)
+  const handleAddTextAIBox = (fromNodeId: string = 'get-content'): string => {
+    const textAIBoxes = config.aiBoxes.filter((b) => isTextAIBox(b, config.connections));
+    const newCount = textAIBoxes.length + 1;
     const newId = `ai-box-${Date.now()}`;
     const newBox: DynamicAIBoxConfig = {
       id: newId,
-      title: chosenTemplate ? chosenTemplate.name : `AI Text Modifier #${boxCount + 1}`,
-      provider: boxCount % 2 === 0 ? 'google_ai' : 'openai',
-      model: boxCount % 2 === 0 ? 'gemini-flash-latest' : 'gpt-4o',
+      title: 'Gemini 2.5 Flash',
+      processType: 'text_ai',
+      provider: 'google_ai',
+      model: 'gemini-flash-latest',
+      templateId: '',
+      templateText: '',
+      customPrompt: '',
+      enabled: true,
+      x: 520,
+      y: 80 + (newCount - 1) * 120,
+    };
+
+    const newConn: WorkflowWireConnection = {
+      id: `conn-${fromNodeId}-${newId}`,
+      fromNodeId: fromNodeId,
+      toNodeId: newId,
+    };
+
+    const nextBoxes = [...config.aiBoxes, newBox];
+    const nextConns = autoConnectWorkflow(
+      nextBoxes,
+      [...(config.connections || []), newConn],
+      config.getContent.enabled,
+      config.getImages.enabled,
+      config.destination?.enabled !== false,
+      config.outputNode?.enabled !== false,
+      getNormalizedDestinations(config),
+      config.combineBoxes || []
+    );
+    updateConfig(buildAlignedLayout(nextBoxes, nextConns, { ...config, aiBoxes: nextBoxes, connections: nextConns }));
+    setSelectedBoxId(newId);
+    return newId;
+  };
+
+  // Add Dynamic Text Format Preset Box (connects from a Text AI Model Box or fromNodeId)
+  const handleAddTextFormatBox = (sourceAIBoxId?: string, templateOverride?: CanvasPromptOption): string => {
+    const prompts = loadAvailablePromptTemplates();
+    const formatBoxes = config.aiBoxes.filter((b) => isTextFormatAIBox(b));
+    const newCount = formatBoxes.length + 1;
+
+    const chosenTemplate =
+      templateOverride ||
+      (prompts.length > 0 ? prompts[(newCount - 1) % prompts.length] : undefined);
+
+    const sourceBox = sourceAIBoxId ? config.aiBoxes.find((b) => b.id === sourceAIBoxId) : undefined;
+    const fromId = sourceAIBoxId || config.aiBoxes.find((b) => isTextAIBox(b, config.connections))?.id || 'get-content';
+
+    const newId = `ai-box-format-${Date.now()}`;
+    const newBox: DynamicAIBoxConfig = {
+      id: newId,
+      title: chosenTemplate ? `Format: ${chosenTemplate.name}` : `Format Preset #${newCount}`,
+      processType: 'text_format',
+      provider: sourceBox?.provider || 'google_ai',
+      model: sourceBox?.model || 'gemini-flash-latest',
       templateId: chosenTemplate ? String(chosenTemplate.id) : 'custom',
       templateText: chosenTemplate
         ? chosenTemplate.templateText
         : 'Generate optimized marketing copy for this property listing.\nHighlight rent/sale price, transit access, and clear call-to-action.',
       customPrompt: '',
       enabled: true,
-      x: 640,
-      y: newY,
+      x: 740,
+      y: 80 + (newCount - 1) * 120,
     };
 
-    // Automatically connect Get Content -> this new AI node
     const newConn: WorkflowWireConnection = {
-      id: `conn-content-${newId}`,
-      fromNodeId: 'get-content',
+      id: `conn-${fromId}-${newId}`,
+      fromNodeId: fromId,
       toNodeId: newId,
     };
 
@@ -1540,10 +4415,22 @@ export const FacebookWorkflowCanvas = forwardRef<
     const nextConns = [...(config.connections || []), newConn];
     updateConfig(buildAlignedLayout(nextBoxes, nextConns, { ...config, aiBoxes: nextBoxes, connections: nextConns }));
     setSelectedBoxId(newId);
+    return newId;
+  };
+
+  const handleAddAIBoxConnectedFromContent = (_templateOverride?: CanvasPromptOption): string => {
+    return handleAddTextAIBox('get-content');
+  };
+
+  const handleAddAIBoxConnectedFrom = (fromNodeId: string, templateOverride?: CanvasPromptOption): string => {
+    if (fromNodeId === 'get-content') {
+      return handleAddTextAIBox(fromNodeId);
+    }
+    return handleAddTextFormatBox(fromNodeId, templateOverride);
   };
 
   // Add Dynamic Image AI Box connected from Get Images (Enhance Images)
-  const handleAddAIBoxConnectedFromImages = () => {
+  const handleAddAIBoxConnectedFromImages = (): string => {
     const enhanceBoxes = config.aiBoxes.filter((b) => isEnhanceAIBox(b));
     const newCount = enhanceBoxes.length + 1;
     const newId = `ai-box-${Date.now()}`;
@@ -1562,67 +4449,21 @@ export const FacebookWorkflowCanvas = forwardRef<
       y: 360 + (newCount - 1) * 140,
     };
 
-    let conns = [...(config.connections || [])];
-
-    // Check if there is already a watermark node directly connected from get-images
-    // User requirement: "if that enhance have that watermark must be have after that enhance if not that after image"
-    const directWatermarkConn = conns.find(
-      (c) => c.fromNodeId === 'get-images' && config.aiBoxes.some((b) => b.id === c.toNodeId && isWatermarkAIBox(b))
-    );
-
-    if (directWatermarkConn) {
-      // Rewire: get-images -> new Enhancer -> Watermark
-      const watermarkId = directWatermarkConn.toNodeId;
-      conns = conns.filter((c) => c.id !== directWatermarkConn.id);
-      conns.push({
-        id: `conn-images-${newId}`,
-        fromNodeId: 'get-images',
-        toNodeId: newId,
-      });
-      conns.push({
-        id: `conn-${newId}-${watermarkId}`,
-        fromNodeId: newId,
-        toNodeId: watermarkId,
-      });
-    } else {
-      // Connect get-images -> new Enhancer -> destination
-      conns.push({
-        id: `conn-images-${newId}`,
-        fromNodeId: 'get-images',
-        toNodeId: newId,
-      });
-      conns.push({
-        id: `conn-${newId}-dest`,
-        fromNodeId: newId,
-        toNodeId: 'destination',
-      });
-    }
-
     const nextBoxes = [...config.aiBoxes, newBox];
-    updateConfig(buildAlignedLayout(nextBoxes, conns, { ...config, aiBoxes: nextBoxes, connections: conns }));
+    const nextConns = autoConnectImagePipeline(nextBoxes, config.connections);
+    updateConfig(buildAlignedLayout(nextBoxes, nextConns, { ...config, aiBoxes: nextBoxes, connections: nextConns }));
     setSelectedBoxId(newId);
+    return newId;
   };
 
   // Add Dynamic Studio Format Node (using saved formats from Crop & Cut Studio)
-  const handleAddWatermarkNodeConnectedFromImages = (sourceId?: string) => {
+  const handleAddWatermarkNodeConnectedFromImages = (_sourceId?: string, formatOverride?: CropStudioFormat): string => {
     const savedCropFormats = getSavedCropFormats();
-    const defaultFormat = savedCropFormats.find((f) => f.isDefault) || savedCropFormats[0];
+    const defaultFormat = formatOverride || savedCropFormats.find((f) => f.isDefault) || savedCropFormats[0];
 
     const watermarkBoxes = config.aiBoxes.filter((b) => isWatermarkAIBox(b));
     const newCount = watermarkBoxes.length + 1;
     const newId = `ai-box-watermark-${Date.now()}`;
-
-    let conns = [...(config.connections || [])];
-
-    // Find upstream source node:
-    const enhanceBoxes = config.aiBoxes.filter((b) => isEnhanceAIBox(b) && isAIBoxConnected(b, conns));
-    let fromNodeId = 'get-images';
-
-    if (sourceId && (sourceId.startsWith('ai-box-') || sourceId === 'get-images')) {
-      fromNodeId = sourceId;
-    } else if (enhanceBoxes.length > 0) {
-      fromNodeId = enhanceBoxes[enhanceBoxes.length - 1].id;
-    }
 
     const newBox: DynamicAIBoxConfig = {
       id: newId,
@@ -1634,32 +4475,18 @@ export const FacebookWorkflowCanvas = forwardRef<
       templateId: defaultFormat?.id || '',
       templateText: defaultFormat?.name || '',
       cropFormatId: defaultFormat?.id || '',
+      watermarkPresetId: defaultFormat?.id || '',
       customPrompt: '',
       enabled: true,
-      x: fromNodeId === 'get-images' ? 640 : 800,
+      x: 820,
       y: 390 + (newCount - 1) * 140,
     };
 
-    // If upstream node was previously connected directly to destination, rewire through watermark!
-    conns = conns.filter((c) => !(c.fromNodeId === fromNodeId && c.toNodeId === 'destination'));
-
-    // 1. Upstream -> Watermark
-    conns.push({
-      id: `conn-${fromNodeId}-${newId}`,
-      fromNodeId,
-      toNodeId: newId,
-    });
-
-    // 2. Watermark -> Destination
-    conns.push({
-      id: `conn-${newId}-dest`,
-      fromNodeId: newId,
-      toNodeId: 'destination',
-    });
-
     const nextBoxes = [...config.aiBoxes, newBox];
-    updateConfig(buildAlignedLayout(nextBoxes, conns, { ...config, aiBoxes: nextBoxes, connections: conns }));
+    const nextConns = autoConnectImagePipeline(nextBoxes, config.connections);
+    updateConfig(buildAlignedLayout(nextBoxes, nextConns, { ...config, aiBoxes: nextBoxes, connections: nextConns }));
     setSelectedBoxId(newId);
+    return newId;
   };
 
   // Add Dynamic AI Box (appears on canvas first, not connected to another until user creates what it is used for and drags string)
@@ -1678,8 +4505,8 @@ export const FacebookWorkflowCanvas = forwardRef<
     const newBox: DynamicAIBoxConfig = {
       id: newId,
       title: chosenTemplate ? chosenTemplate.name : `AI Process #${boxCount + 1}`,
-      provider: boxCount % 2 === 0 ? 'google_ai' : 'openai',
-      model: boxCount % 2 === 0 ? 'gemini-flash-latest' : 'gpt-4o',
+      provider: 'google_ai',
+      model: 'gemini-flash-latest',
       templateId: chosenTemplate ? String(chosenTemplate.id) : 'custom',
       templateText: chosenTemplate
         ? chosenTemplate.templateText
@@ -1702,6 +4529,10 @@ export const FacebookWorkflowCanvas = forwardRef<
 
   // Helper for rendering AI Box icon in recover & delete modals
   const renderAIBoxIcon = (b: DynamicAIBoxConfig, size = 22) => {
+    if (b.id === 'get-content') return <FiFileText style={{ fontSize: `${size}px`, color: '#3B82F6' }} />;
+    if (b.id === 'get-images') return <FiImage style={{ fontSize: `${size}px`, color: '#10B981' }} />;
+    const isWatermark = isWatermarkAIBox(b);
+    if (isWatermark) return <FiScissors style={{ fontSize: `${size}px`, color: '#8B5CF6' }} />;
     const isImageNode = isImageAIBox(b, config.connections);
     const isGoogle = !isImageNode && (b.provider === 'google_ai' || isImageModel(b.model, b.provider) || (!b.provider && !b.model?.startsWith('runware:')));
     const isLaoZhang = !isImageNode && b.provider === 'laozhang_ai';
@@ -1727,7 +4558,6 @@ export const FacebookWorkflowCanvas = forwardRef<
   const confirmDeleteAIBox = (id: string) => {
     const box = config.aiBoxes.find((b) => b.id === id);
     if (!box) {
-      setPendingDeleteBox(null);
       return;
     }
 
@@ -1748,53 +4578,75 @@ export const FacebookWorkflowCanvas = forwardRef<
     } catch {}
 
     const newBoxes = config.aiBoxes.filter((b) => b.id !== id);
-    const newConnections = (config.connections || []).filter(
+    const unassociatedConnections = (config.connections || []).filter(
       (c) => c.fromNodeId !== id && c.toNodeId !== id
     );
-    const newConfig = {
+    const newConnections = autoConnectImagePipeline(newBoxes, unassociatedConnections);
+    const newConfig = buildAlignedLayout(newBoxes, newConnections, {
       ...config,
       aiBoxes: newBoxes,
       connections: newConnections,
-    };
+    });
     updateConfig(newConfig);
 
     if (selectedBoxId === id) setSelectedBoxId(null);
     if (activeModalNode?.type === 'ai-box' && activeModalNode.boxId === id) {
       setActiveModalNode(null);
     }
-    setPendingDeleteBox(null);
   };
 
-  // Delete Dynamic AI Box - asks confirmation dialog with checkbox unless remembered
-  const handleDeleteAIBox = (id: string, e?: React.MouseEvent) => {
+  // Delete Dynamic AI Box - asks confirmation before putting into Deleted Nodes
+  const handleDeleteAIBox = (id: string, e?: React.SyntheticEvent) => {
     if (e) e.stopPropagation();
-    if (config.aiBoxes.length <= 1) {
-      alert('You must have at least one AI process box in the workflow.');
-      return;
-    }
     const box = config.aiBoxes.find((b) => b.id === id);
-    if (!box) return;
-
-    if (dontAskDeleteAgain) {
-      confirmDeleteAIBox(id);
-    } else {
-      setPendingDeleteBox(box);
-    }
+    const title = box?.title || (isWatermarkAIBox(box) ? 'Format Preset' : 'AI Node');
+    setDeleteConfirmTarget({
+      type: 'node',
+      title: `Delete "${title}"?`,
+      description: `Are you sure you want to delete "${title}"? You can recover it anytime from General Settings.`,
+      confirmText: 'Confirm Delete',
+      onConfirm: () => {
+        confirmDeleteAIBox(id);
+        setDeleteConfirmTarget(null);
+      },
+    });
   };
 
   // Recover selected deleted boxes back onto canvas
-  const handleRecoverSelected = () => {
-    if (selectRecoverIds.size === 0) return;
+  const handleRecoverSelected = (targetIds?: Set<string>) => {
+    const ids = targetIds || selectRecoverIds;
+    if (ids.size === 0) return;
 
-    const recordsToRestore = deletedBoxes.filter((r) => selectRecoverIds.has(r.box.id));
+    const recordsToRestore = deletedBoxes.filter((r) => ids.has(r.box.id));
     if (recordsToRestore.length === 0) return;
 
+    let enableContent = false;
+    let enableImages = false;
     let maxY = config.aiBoxes.reduce((max, b) => Math.max(max, b.y), 60);
     const restoredBoxes: DynamicAIBoxConfig[] = [];
     const restoredConns: WorkflowWireConnection[] = [];
     const existingIds = new Set(config.aiBoxes.map((b) => b.id));
 
     recordsToRestore.forEach((record) => {
+      if (record.box.id === 'get-content') {
+        enableContent = true;
+        record.connections.forEach((conn) => {
+          if (!restoredConns.some((c) => c.fromNodeId === conn.fromNodeId && c.toNodeId === conn.toNodeId)) {
+            restoredConns.push(conn);
+          }
+        });
+        return;
+      }
+      if (record.box.id === 'get-images') {
+        enableImages = true;
+        record.connections.forEach((conn) => {
+          if (!restoredConns.some((c) => c.fromNodeId === conn.fromNodeId && c.toNodeId === conn.toNodeId)) {
+            restoredConns.push(conn);
+          }
+        });
+        return;
+      }
+
       let b = { ...record.box };
       if (existingIds.has(b.id)) {
         b.id = `ai-box-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`;
@@ -1840,17 +4692,230 @@ export const FacebookWorkflowCanvas = forwardRef<
 
     const nextBoxes = [...config.aiBoxes, ...restoredBoxes];
     const nextConns = [...(config.connections || []), ...restoredConns];
-    updateConfig(buildAlignedLayout(nextBoxes, nextConns, { ...config, aiBoxes: nextBoxes, connections: nextConns }));
+    const nextConfig = {
+      ...config,
+      getContent: enableContent ? { ...config.getContent, enabled: true } : config.getContent,
+      getImages: enableImages ? { ...config.getImages, enabled: true } : config.getImages,
+      aiBoxes: nextBoxes,
+      connections: nextConns,
+    };
+    updateConfig(buildAlignedLayout(nextBoxes, nextConns, nextConfig));
 
-    const remaining = deletedBoxes.filter((r) => !selectRecoverIds.has(r.box.id));
+    const remaining = deletedBoxes.filter((r) => !ids.has(r.box.id));
     setDeletedBoxes(remaining);
     try {
       localStorage.setItem(LOCAL_STORAGE_DELETED_KEY, JSON.stringify(remaining));
     } catch {}
 
     setSelectRecoverIds(new Set());
-    setIsRecoverModalOpen(false);
   };
+
+  // Multi-node deletion execution
+  const executeDeleteMultipleNodes = (idsToDelete: Set<string>) => {
+    if (idsToDelete.size === 0) return;
+
+    setHoveredWireId(null);
+    setHoveredXId(null);
+
+    const boxesToDelete = config.aiBoxes.filter((b) => idsToDelete.has(b.id));
+    const newRecords: DeletedAIBoxRecord[] = [];
+
+    boxesToDelete.forEach((box) => {
+      const associatedConns = (config.connections || []).filter(
+        (c) => c.fromNodeId === box.id || c.toNodeId === box.id
+      );
+      newRecords.push({
+        box,
+        connections: associatedConns,
+        deletedAt: Date.now(),
+      });
+    });
+
+    if (idsToDelete.has('get-content')) {
+      const associatedConns = (config.connections || []).filter(
+        (c) => c.fromNodeId === 'get-content' || c.toNodeId === 'get-content'
+      );
+      newRecords.push({
+        box: {
+          id: 'get-content',
+          title: 'Get Content (Real Estate Text)',
+          processType: 'text_extract',
+          provider: 'openai',
+          model: 'gpt-4o-mini',
+          templateId: 'content',
+          templateText: '',
+          customPrompt: '',
+          enabled: true,
+          x: config.getContent.x || 300,
+          y: config.getContent.y || 140,
+        },
+        connections: associatedConns,
+        deletedAt: Date.now(),
+      });
+    }
+
+    if (idsToDelete.has('get-images')) {
+      const associatedConns = (config.connections || []).filter(
+        (c) => c.fromNodeId === 'get-images' || c.toNodeId === 'get-images'
+      );
+      newRecords.push({
+        box: {
+          id: 'get-images',
+          title: 'Get Images (HD Media)',
+          processType: 'image_upscale',
+          provider: 'runware_ai',
+          model: 'runware:upscale',
+          templateId: 'images',
+          templateText: '',
+          customPrompt: '',
+          enabled: true,
+          x: config.getImages.x || 300,
+          y: config.getImages.y || 356,
+        },
+        connections: associatedConns,
+        deletedAt: Date.now(),
+      });
+    }
+
+    if (newRecords.length > 0) {
+      const nextDeleted = [
+        ...newRecords,
+        ...deletedBoxes.filter((d) => !idsToDelete.has(d.box.id)),
+      ];
+      setDeletedBoxes(nextDeleted);
+      try {
+        localStorage.setItem(LOCAL_STORAGE_DELETED_KEY, JSON.stringify(nextDeleted));
+      } catch {}
+    }
+
+    const remainingAiBoxes = config.aiBoxes.filter((b) => !idsToDelete.has(b.id));
+    const remainingCombineBoxes = (config.combineBoxes || []).filter((b) => !idsToDelete.has(b.id));
+
+    const currentDests = getNormalizedDestinations(config);
+    const remainingDests = currentDests.filter(
+      (d) => !idsToDelete.has(d.id) && (d.id !== 'destination' || !idsToDelete.has('destination'))
+    );
+
+    const isConnRemoved = (c: WorkflowWireConnection) => {
+      if (idsToDelete.has(c.fromNodeId) || idsToDelete.has(c.toNodeId)) return true;
+      if (remainingDests.length === 0) {
+        if (c.fromNodeId === 'destination' || c.toNodeId === 'destination') return true;
+        if (c.fromNodeId.startsWith('dest-') || c.toNodeId.startsWith('dest-')) return true;
+      }
+      return false;
+    };
+    const remainingConnections = (config.connections || []).filter((c) => !isConnRemoved(c));
+
+    const newConfig: FacebookWorkflowConfig = {
+      ...config,
+      trigger: idsToDelete.has('trigger') ? { ...config.trigger, enabled: false } : config.trigger,
+      getContent: idsToDelete.has('get-content') ? { ...config.getContent, enabled: false } : config.getContent,
+      getImages: idsToDelete.has('get-images') ? { ...config.getImages, enabled: false } : config.getImages,
+      outputNode: idsToDelete.has('output') ? { ...config.outputNode, enabled: false } : config.outputNode,
+      destination: idsToDelete.has('destination') || remainingDests.length === 0
+        ? { ...config.destination, enabled: false }
+        : remainingDests[0],
+      destinations: remainingDests,
+      aiBoxes: remainingAiBoxes,
+      combineBoxes: remainingCombineBoxes,
+      connections: remainingConnections,
+    };
+
+    updateConfig(newConfig);
+
+    if (selectedBoxId && idsToDelete.has(selectedBoxId)) {
+      setSelectedBoxId(null);
+    }
+    if (activeModalNode) {
+      if (
+        (activeModalNode.type === 'trigger' && idsToDelete.has('trigger')) ||
+        (activeModalNode.type === 'get-content' && idsToDelete.has('get-content')) ||
+        (activeModalNode.type === 'get-images' && idsToDelete.has('get-images')) ||
+        (activeModalNode.type === 'output' && idsToDelete.has('output')) ||
+        (activeModalNode.type === 'ai-box' && idsToDelete.has(activeModalNode.boxId)) ||
+        (activeModalNode.type === 'combine' && idsToDelete.has(activeModalNode.combineId || (activeModalNode as any).id)) ||
+        (activeModalNode.type === 'destination' && idsToDelete.has(activeModalNode.destinationId || 'destination'))
+      ) {
+        setActiveModalNode(null);
+      }
+    }
+
+    setSelectedNodeIds(new Set());
+  };
+
+  const handleDeleteMultipleNodes = (idsToDelete: Set<string>) => {
+    if (idsToDelete.size === 0) return;
+    if (idsToDelete.size === 1) {
+      const singleId = Array.from(idsToDelete)[0];
+      if (singleId === 'trigger') {
+        handleDeleteTrigger();
+        return;
+      }
+      if (singleId === 'get-content') {
+        handleDeleteGetContent();
+        return;
+      }
+      if (singleId === 'get-images') {
+        handleDeleteGetImages();
+        return;
+      }
+      if (singleId === 'output') {
+        handleDeleteOutputNode();
+        return;
+      }
+      if (singleId.startsWith('combine-box') || (config.combineBoxes || []).some((cb) => cb.id === singleId)) {
+        handleDeleteCombineBox(singleId);
+        return;
+      }
+      if (singleId.startsWith('dest-') || singleId === 'destination') {
+        handleDeleteDestinationNode(singleId);
+        return;
+      }
+      const aiBox = config.aiBoxes.find((b) => b.id === singleId);
+      if (aiBox) {
+        handleDeleteAIBox(singleId);
+        return;
+      }
+    }
+
+    setDeleteConfirmTarget({
+      type: 'node',
+      title: `Delete ${idsToDelete.size} selected nodes?`,
+      description: `Are you sure you want to delete these ${idsToDelete.size} selected nodes? You can restore content and AI nodes anytime from General Settings.`,
+      confirmText: `Delete ${idsToDelete.size} Nodes`,
+      onConfirm: () => {
+        executeDeleteMultipleNodes(idsToDelete);
+        setDeleteConfirmTarget(null);
+      },
+    });
+  };
+
+  // Keyboard shortcut listener for multi-selection deletion (Delete / Backspace / Escape)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        const activeElement = document.activeElement;
+        const isInput =
+          activeElement instanceof HTMLInputElement ||
+          activeElement instanceof HTMLTextAreaElement ||
+          activeElement?.getAttribute('contenteditable') === 'true' ||
+          Boolean(activeElement?.closest('input, textarea, [contenteditable="true"]'));
+        if (isInput) return;
+
+        if (selectedNodeIds.size > 0) {
+          e.preventDefault();
+          handleDeleteMultipleNodes(selectedNodeIds);
+        }
+      } else if (e.key === 'Escape') {
+        if (selectedNodeIds.size > 0) {
+          setSelectedNodeIds(new Set());
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedNodeIds, config, deletedBoxes]);
 
   // Duplicate Dynamic AI Box
   const handleDuplicateAIBox = (box: DynamicAIBoxConfig, e?: React.MouseEvent) => {
@@ -1863,11 +4928,14 @@ export const FacebookWorkflowCanvas = forwardRef<
       y: box.y + 60,
       x: box.x + 30,
     };
-    const newConfig = {
+    const nextBoxes = [...config.aiBoxes, duplicated];
+    const nextConns = autoConnectImagePipeline(nextBoxes, config.connections);
+    const nextConfig = buildAlignedLayout(nextBoxes, nextConns, {
       ...config,
-      aiBoxes: [...config.aiBoxes, duplicated],
-    };
-    updateConfig(newConfig);
+      aiBoxes: nextBoxes,
+      connections: nextConns,
+    });
+    updateConfig(nextConfig);
     setSelectedBoxId(newId);
   };
 
@@ -1881,100 +4949,63 @@ export const FacebookWorkflowCanvas = forwardRef<
   // Update AI Box Details
   const handleUpdateAIBox = (id: string, partial: Partial<DynamicAIBoxConfig>) => {
     const newBoxes = config.aiBoxes.map((b) => (b.id === id ? { ...b, ...partial } : b));
-    updateConfig({ ...config, aiBoxes: newBoxes });
+    const hasCombine = (config.combineBoxes || []).some((b) => b && b.enabled !== false);
+    const isOutputActive = !hasCombine && config.outputNode?.enabled !== false;
+    const nextConns = autoConnectImagePipeline(
+      newBoxes,
+      config.connections,
+      config.getContent.enabled,
+      config.getImages.enabled,
+      getNormalizedDestinations(config).some((d) => d.enabled !== false),
+      isOutputActive,
+      getNormalizedDestinations(config),
+      config.combineBoxes || []
+    );
+    const nextConfig = buildAlignedLayout(newBoxes, nextConns, {
+      ...config,
+      aiBoxes: newBoxes,
+      connections: nextConns,
+    });
+    updateConfig(nextConfig);
   };
 
-  // Auto-layout: stacks AI nodes in clean columns grouped by their processing type and source
-  // If both Enhancers and Watermarks exist: Enhancers at x: 580, Watermarks at x: 820, Destination at x: 1060
-  // Vertically centers source/trigger/destination nodes on their groups.
-  const buildAlignedLayout = (
-    boxes: DynamicAIBoxConfig[],
-    connections: WorkflowWireConnection[] | undefined,
-    base: FacebookWorkflowConfig
-  ): FacebookWorkflowConfig => {
-    const conns = connections || [];
-    const fromContent = (id: string) => conns.some((c) => c.fromNodeId === 'get-content' && c.toNodeId === id);
-    const fromImages = (id: string) => conns.some((c) => c.fromNodeId === 'get-images' && c.toNodeId === id);
-
-    const watermarkBoxes = boxes.filter((b) => isWatermarkAIBox(b));
-    const enhanceBoxes = boxes.filter(
-      (b) => !isWatermarkAIBox(b) && (isEnhanceAIBox(b) || fromImages(b.id))
-    );
-    const contentBoxes = boxes.filter(
-      (b) => !isWatermarkAIBox(b) && !enhanceBoxes.includes(b) && (fromContent(b.id) || !fromImages(b.id))
-    );
-    const otherBoxes = boxes.filter(
-      (b) => !contentBoxes.includes(b) && !enhanceBoxes.includes(b) && !watermarkBoxes.includes(b)
-    );
-
-    const hasBothEnhanceAndWatermark = enhanceBoxes.length > 0 && watermarkBoxes.length > 0;
-    const enhanceColX = hasBothEnhanceAndWatermark ? 580 : 640;
-    const watermarkColX = hasBothEnhanceAndWatermark ? 820 : 640;
-    const contentColX = hasBothEnhanceAndWatermark ? 580 : 640;
-
-    const ROW_GAP = 150;
-    const TOP = 80;
-    const yById: Record<string, number> = {};
-    const xById: Record<string, number> = {};
-
-    let row = 0;
-    // 1. Content boxes stack first
-    contentBoxes.forEach((b) => {
-      yById[b.id] = TOP + row * ROW_GAP;
-      xById[b.id] = contentColX;
-      row += 1;
-    });
-
-    const imageStartRow = row;
-    // 2. Enhance boxes
-    enhanceBoxes.forEach((b, idx) => {
-      yById[b.id] = TOP + (imageStartRow + idx) * ROW_GAP;
-      xById[b.id] = enhanceColX;
-    });
-
-    // 3. Watermark boxes
-    watermarkBoxes.forEach((b, idx) => {
-      yById[b.id] = TOP + (imageStartRow + idx) * ROW_GAP;
-      xById[b.id] = watermarkColX;
-    });
-
-    const imageRowsCount = Math.max(enhanceBoxes.length, watermarkBoxes.length);
-    row = imageStartRow + Math.max(imageRowsCount, 1);
-
-    // 4. Other boxes
-    otherBoxes.forEach((b) => {
-      yById[b.id] = TOP + row * ROW_GAP;
-      xById[b.id] = 640;
-      row += 1;
-    });
-
-    const mean = (list: DynamicAIBoxConfig[], fallback: number) =>
-      list.length ? list.reduce((sum, b) => sum + (yById[b.id] ?? fallback), 0) / list.length : fallback;
-
-    const contentMid = mean(contentBoxes, TOP);
-    const imageMid = mean([...enhanceBoxes, ...watermarkBoxes], TOP + Math.max(contentBoxes.length, 1) * ROW_GAP);
-    const centerMid = (contentMid + imageMid) / 2;
-
-    const destX = hasBothEnhanceAndWatermark ? 1060 : 960;
-
-    return {
-      ...base,
-      aiBoxes: boxes.map((b) => ({
-        ...b,
-        x: xById[b.id] ?? 640,
-        y: yById[b.id] ?? TOP,
-      })),
-      trigger: { ...base.trigger, x: 80, y: Math.round(centerMid) },
-      getContent: { ...base.getContent, x: 340, y: Math.round(contentMid) },
-      getImages: { ...base.getImages, x: 340, y: Math.round(imageMid) },
-      destination: { x: destX, y: Math.round(centerMid) },
-    };
-  };
-
-  // Reset Layout to pristine aligned grid with clean base and gaps
+  // Reset Layout to compact aligned grid with clean gaps (75% zoom)
   const handleResetLayout = () => {
-    const resetConfig = buildAlignedLayout(config.aiBoxes, config.connections, config);
-    updateConfig({ ...resetConfig, zoom: 0.95, panOffset: { x: 30, y: 30 } });
+    const isDestEnabled = getNormalizedDestinations(config).some((d) => d.enabled !== false);
+    const hasCombine = (config.combineBoxes || []).some((b) => b && b.enabled !== false);
+    const isOutputActive = !hasCombine && config.outputNode?.enabled !== false;
+    const nextConns = autoConnectWorkflow(
+      config.aiBoxes,
+      config.connections,
+      config.getContent.enabled,
+      config.getImages.enabled,
+      isDestEnabled,
+      isOutputActive,
+      getNormalizedDestinations(config),
+      config.combineBoxes || []
+    );
+    const resetConfig = buildAlignedLayout(config.aiBoxes, nextConns, {
+      ...config,
+      connections: nextConns,
+    });
+
+    const vWidth = (canvasRef.current && canvasRef.current.clientWidth > 0)
+      ? canvasRef.current.clientWidth
+      : (typeof window !== 'undefined' ? window.innerWidth - 56 : 1200);
+    const vHeight = (canvasRef.current && canvasRef.current.clientHeight > 0)
+      ? canvasRef.current.clientHeight
+      : (typeof window !== 'undefined' ? window.innerHeight - 56 : 800);
+
+    // Dynamic zoom to ensure whole flow is focused and centered with balanced margins
+    const contentWidth = 1420;
+    const contentHeight = 440;
+    const fitZoomX = (vWidth - 140) / contentWidth;
+    const fitZoomY = (vHeight - 120) / contentHeight;
+    const zoom = Math.min(Math.max(Math.min(fitZoomX, fitZoomY), 0.72), 0.88);
+
+    const panOffset = calculateCenteredPanOffset(resetConfig, vWidth, vHeight, zoom);
+
+    updateConfig({ ...resetConfig, zoom, panOffset });
   };
 
   useImperativeHandle(
@@ -1983,11 +5014,17 @@ export const FacebookWorkflowCanvas = forwardRef<
       addAIBox: (templateOverride) => handleAddAIBox(templateOverride),
       resetLayout: () => handleResetLayout(),
       openRecoverModal: () => {
-        setIsRecoverModalOpen(true);
+        handleToggleGeneralSettings(true);
+      },
+      openGeneralSettings: () => {
+        handleToggleGeneralSettings(true);
+      },
+      toggleGeneralSettings: () => {
+        handleToggleGeneralSettings(!isRecoverModalOpen);
       },
       getDeletedBoxesCount: () => deletedBoxes.length,
     }),
-    [config, deletedBoxes]
+    [config, deletedBoxes, isRecoverModalOpen, onToggleGeneralSettings]
   );
 
   // Run Test Simulation
@@ -2026,10 +5063,17 @@ export const FacebookWorkflowCanvas = forwardRef<
     }, 1200);
   };
 
-  // Canvas Mouse & Drag Handlers
   const handleCanvasMouseDown = (e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest('.canvas-node') || (e.target as HTMLElement).closest('.canvas-control')) {
+    if (
+      (e.target as HTMLElement).closest('.canvas-node') ||
+      (e.target as HTMLElement).closest('.canvas-control') ||
+      (e.target as HTMLElement).closest('.quick-add-popover')
+    ) {
       return;
+    }
+    setQuickAddPopover(null);
+    if (!e.shiftKey) {
+      setSelectedNodeIds(new Set());
     }
     if (dragWire) {
       setDragWire(null);
@@ -2064,33 +5108,122 @@ export const FacebookWorkflowCanvas = forwardRef<
       const deltaX = (e.clientX - dragStart.x) / config.zoom;
       const deltaY = (e.clientY - dragStart.y) / config.zoom;
 
-      if (draggedNodeId === 'trigger') {
-        setConfig((prev) => ({
-          ...prev,
-          trigger: { ...prev.trigger, x: prev.trigger.x + deltaX, y: prev.trigger.y + deltaY },
-        }));
-      } else if (draggedNodeId === 'get-content') {
-        setConfig((prev) => ({
-          ...prev,
-          getContent: { ...prev.getContent, x: prev.getContent.x + deltaX, y: prev.getContent.y + deltaY },
-        }));
-      } else if (draggedNodeId === 'get-images') {
-        setConfig((prev) => ({
-          ...prev,
-          getImages: { ...prev.getImages, x: prev.getImages.x + deltaX, y: prev.getImages.y + deltaY },
-        }));
-      } else if (draggedNodeId === 'destination') {
-        setConfig((prev) => ({
-          ...prev,
-          destination: { ...prev.destination, x: prev.destination.x + deltaX, y: prev.destination.y + deltaY },
-        }));
-      } else if (draggedNodeId.startsWith('ai-box-')) {
-        setConfig((prev) => ({
-          ...prev,
-          aiBoxes: prev.aiBoxes.map((b) =>
-            b.id === draggedNodeId ? { ...b, x: b.x + deltaX, y: b.y + deltaY } : b
-          ),
-        }));
+      if (selectedNodeIds.has(draggedNodeId) && selectedNodeIds.size > 1) {
+        // Move all selected nodes simultaneously
+        setConfig((prev) => {
+          let newTrigger = prev.trigger;
+          if (selectedNodeIds.has('trigger')) {
+            newTrigger = { ...newTrigger, x: newTrigger.x + deltaX, y: newTrigger.y + deltaY };
+          }
+
+          let newGetContent = prev.getContent;
+          if (selectedNodeIds.has('get-content')) {
+            newGetContent = { ...newGetContent, x: newGetContent.x + deltaX, y: newGetContent.y + deltaY };
+          }
+
+          let newGetImages = prev.getImages;
+          if (selectedNodeIds.has('get-images')) {
+            newGetImages = { ...newGetImages, x: newGetImages.x + deltaX, y: newGetImages.y + deltaY };
+          }
+
+          let newOutputNode = prev.outputNode;
+          if (selectedNodeIds.has('output')) {
+            newOutputNode = {
+              ...newOutputNode,
+              id: 'output',
+              enabled: prev.outputNode?.enabled !== false,
+              x: (prev.outputNode?.x ?? 620) + deltaX,
+              y: (prev.outputNode?.y ?? 248) + deltaY,
+            };
+          }
+
+          const allDests = getNormalizedDestinations(prev);
+          const updatedDests = allDests.map((d) =>
+            selectedNodeIds.has(d.id) || (d.id === 'destination' && selectedNodeIds.has('destination'))
+              ? { ...d, x: d.x + deltaX, y: d.y + deltaY }
+              : d
+          );
+          const newDestination =
+            (selectedNodeIds.has('destination') || selectedNodeIds.has(updatedDests[0]?.id))
+              ? { ...prev.destination, x: prev.destination.x + deltaX, y: prev.destination.y + deltaY }
+              : prev.destination;
+
+          const newAiBoxes = prev.aiBoxes.map((b) =>
+            selectedNodeIds.has(b.id) ? { ...b, x: b.x + deltaX, y: b.y + deltaY } : b
+          );
+
+          const newCombineBoxes = (prev.combineBoxes || []).map((b) =>
+            selectedNodeIds.has(b.id) ? { ...b, x: b.x + deltaX, y: b.y + deltaY } : b
+          );
+
+          return {
+            ...prev,
+            trigger: newTrigger,
+            getContent: newGetContent,
+            getImages: newGetImages,
+            outputNode: newOutputNode,
+            destination: newDestination,
+            destinations: updatedDests,
+            aiBoxes: newAiBoxes,
+            combineBoxes: newCombineBoxes,
+          };
+        });
+      } else {
+        if (draggedNodeId === 'trigger') {
+          setConfig((prev) => ({
+            ...prev,
+            trigger: { ...prev.trigger, x: prev.trigger.x + deltaX, y: prev.trigger.y + deltaY },
+          }));
+        } else if (draggedNodeId === 'get-content') {
+          setConfig((prev) => ({
+            ...prev,
+            getContent: { ...prev.getContent, x: prev.getContent.x + deltaX, y: prev.getContent.y + deltaY },
+          }));
+        } else if (draggedNodeId === 'get-images') {
+          setConfig((prev) => ({
+            ...prev,
+            getImages: { ...prev.getImages, x: prev.getImages.x + deltaX, y: prev.getImages.y + deltaY },
+          }));
+        } else if (draggedNodeId === 'output') {
+          setConfig((prev) => ({
+            ...prev,
+            outputNode: {
+              ...prev.outputNode,
+              id: 'output',
+              enabled: prev.outputNode?.enabled !== false,
+              x: (prev.outputNode?.x ?? 620) + deltaX,
+              y: (prev.outputNode?.y ?? 248) + deltaY,
+            },
+          }));
+        } else if (draggedNodeId === 'destination' || draggedNodeId.startsWith('dest-')) {
+          setConfig((prev) => {
+            const allDests = getNormalizedDestinations(prev);
+            const updatedDests = allDests.map((d) =>
+              d.id === draggedNodeId ? { ...d, x: d.x + deltaX, y: d.y + deltaY } : d
+            );
+            return {
+              ...prev,
+              destination: (draggedNodeId === 'destination' || draggedNodeId === updatedDests[0]?.id)
+                ? { ...prev.destination, x: prev.destination.x + deltaX, y: prev.destination.y + deltaY }
+                : prev.destination,
+              destinations: updatedDests,
+            };
+          });
+        } else if (draggedNodeId.startsWith('ai-box-')) {
+          setConfig((prev) => ({
+            ...prev,
+            aiBoxes: prev.aiBoxes.map((b) =>
+              b.id === draggedNodeId ? { ...b, x: b.x + deltaX, y: b.y + deltaY } : b
+            ),
+          }));
+        } else if (draggedNodeId.startsWith('combine-box') || (config.combineBoxes || []).some((b) => b.id === draggedNodeId)) {
+          setConfig((prev) => ({
+            ...prev,
+            combineBoxes: (prev.combineBoxes || []).map((b) =>
+              b.id === draggedNodeId ? { ...b, x: b.x + deltaX, y: b.y + deltaY } : b
+            ),
+          }));
+        }
       }
 
       setDragStart({ x: e.clientX, y: e.clientY });
@@ -2121,6 +5254,24 @@ export const FacebookWorkflowCanvas = forwardRef<
 
   const startDragNode = (nodeId: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    if (e.shiftKey) {
+      setSelectedNodeIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(nodeId)) {
+          next.delete(nodeId);
+        } else {
+          next.add(nodeId);
+        }
+        return next;
+      });
+    } else {
+      setSelectedNodeIds((prev) => {
+        if (prev.has(nodeId)) {
+          return prev;
+        }
+        return new Set([nodeId]);
+      });
+    }
     setDraggedNodeId(nodeId);
     setDragStart({ x: e.clientX, y: e.clientY });
     dragStartCoord.current = { x: e.clientX, y: e.clientY };
@@ -2129,15 +5280,46 @@ export const FacebookWorkflowCanvas = forwardRef<
 
   const handleNodeClick = (node: ActiveModalNode, e: React.MouseEvent) => {
     e.stopPropagation();
+    if (e.shiftKey) {
+      return;
+    }
     if (!hasMoved.current) {
+      handleToggleGeneralSettings(false);
+      setConnectDrawerNode(null);
+      setQuickAddPopover(null);
       setActiveModalNode(node);
     }
   };
 
-  // Bezier curve generator
+  // Bezier curve generator with bounded control points to prevent backwards loops and sharp kinks
   const createBezierPath = (start: { x: number; y: number }, end: { x: number; y: number }) => {
-    const dx = Math.abs(end.x - start.x);
-    const controlOffset = Math.max(dx * 0.45, 40);
+    const rawDx = end.x - start.x;
+    const rawDy = end.y - start.y;
+
+    if (rawDx < 0) {
+      // Loop outward gracefully if connecting backwards
+      const vertOffset = Math.min(Math.max(Math.abs(rawDy) * 0.35, 40), 90);
+      const c1x = start.x + 40;
+      const c1y = start.y + (rawDy >= 0 ? vertOffset : -vertOffset);
+      const c2x = end.x - 40;
+      const c2y = end.y - (rawDy >= 0 ? vertOffset : -vertOffset);
+      return `M ${start.x} ${start.y} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${end.x} ${end.y}`;
+    }
+
+    // Forward straight line check:
+    // If the vertical difference between start and end is minor (<= 14px),
+    // drawing a cubic Bézier creates an awkward S-bend sag/kink in what should be a clean horizontal line.
+    // Instead, draw a crisp, clean straight line directly between sockets!
+    if (Math.abs(rawDy) <= 14) {
+      return `M ${start.x} ${start.y} L ${end.x} ${end.y}`;
+    }
+
+    // Forward curve: control offset is strictly bounded by rawDx * 0.5 so c1x <= c2x always
+    const controlOffset = Math.min(
+      Math.max(rawDx * 0.45, 20),
+      rawDx * 0.5,
+      85
+    );
     const c1x = start.x + controlOffset;
     const c1y = start.y;
     const c2x = end.x - controlOffset;
@@ -2161,17 +5343,16 @@ export const FacebookWorkflowCanvas = forwardRef<
   // Circular Node Dimensions (all canvas nodes are uniform 72px circles)
   const CIRCLE_SIZE = 72;
   const HALF_CIRCLE = CIRCLE_SIZE / 2; // 36
+  const PRIMARY_NODE_COLOR = isDark ? '#3B82F6' : '#2563EB';
 
-  // Unified Single Sockets for wires (anchoring at the center of the protruding socket tabs)
-  const triggerOut = { x: config.trigger.x + 75, y: config.trigger.y + HALF_CIRCLE };
+  // Unified Sockets for wires (anchoring at card edge ports or plus button)
+  const triggerOut = { x: config.trigger.x + 108.5, y: config.trigger.y + HALF_CIRCLE };
 
-  const contentIn = { x: config.getContent.x - 3, y: config.getContent.y + HALF_CIRCLE };
-  const contentOut = { x: config.getContent.x + 75, y: config.getContent.y + HALF_CIRCLE };
+  const contentIn = { x: config.getContent.x + 1, y: config.getContent.y + HALF_CIRCLE };
+  const contentOut = { x: config.getContent.x + 71, y: config.getContent.y + HALF_CIRCLE };
 
-  const imagesIn = { x: config.getImages.x - 3, y: config.getImages.y + HALF_CIRCLE };
-  const imagesOut = { x: config.getImages.x + 75, y: config.getImages.y + HALF_CIRCLE };
-
-  const destIn = { x: config.destination.x - 3, y: config.destination.y + HALF_CIRCLE };
+  const imagesIn = { x: config.getImages.x + 1, y: config.getImages.y + HALF_CIRCLE };
+  const imagesOut = { x: config.getImages.x + 71, y: config.getImages.y + HALF_CIRCLE };
 
   // Currently active AI Box in modal (if applicable)
   const currentModalAIBox = activeModalNode?.type === 'ai-box'
@@ -2259,95 +5440,6 @@ export const FacebookWorkflowCanvas = forwardRef<
 
 
 
-        {/* Floating Automations Control Bar (Auto Format & Auto Enhance) */}
-        <div
-          className="canvas-control"
-          style={{
-            position: 'absolute',
-            top: '16px',
-            left: '16px',
-            zIndex: 30,
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.75rem',
-            backgroundColor: isDark ? 'rgba(22, 27, 34, 0.9)' : 'rgba(255, 255, 255, 0.95)',
-            backdropFilter: 'blur(10px)',
-            padding: '5px 12px',
-            borderRadius: '0.5rem',
-            border: '1px solid var(--border-color)',
-            boxShadow: isDark ? '0 4px 16px rgba(0, 0, 0, 0.45)' : '0 4px 16px rgba(0, 0, 0, 0.08)',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-            <FiZap style={{ color: '#F59E0B', fontSize: '13px' }} />
-            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-              Auto Actions:
-            </span>
-          </div>
-
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '2px 8px',
-              borderRadius: '6px',
-              backgroundColor: hasAnyAutoFormatActive
-                ? (isDark ? 'rgba(56, 139, 253, 0.15)' : 'rgba(56, 139, 253, 0.08)')
-                : 'transparent',
-              transition: 'background-color 0.2s ease',
-            }}
-          >
-            <span
-              style={{
-                fontSize: '0.75rem',
-                fontWeight: 500,
-                color: hasAnyAutoFormatActive ? '#388BFD' : 'var(--text-muted)',
-              }}
-            >
-              Auto Format
-            </span>
-            <ToggleSwitch
-              checked={hasAnyAutoFormatActive}
-              onChange={handleToggleAllAutoFormat}
-              size="sm"
-              activeColor="#388BFD"
-            />
-          </div>
-
-          <div style={{ width: '1px', height: '16px', backgroundColor: 'var(--border-color)' }} />
-
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '2px 8px',
-              borderRadius: '6px',
-              backgroundColor: autoEnhanceState
-                ? (isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.08)')
-                : 'transparent',
-              transition: 'background-color 0.2s ease',
-            }}
-          >
-            <span
-              style={{
-                fontSize: '0.75rem',
-                fontWeight: 500,
-                color: autoEnhanceState ? '#10B981' : 'var(--text-muted)',
-              }}
-            >
-              Auto Enhance
-            </span>
-            <ToggleSwitch
-              checked={autoEnhanceState}
-              onChange={handleToggleAutoEnhance}
-              size="sm"
-              activeColor="#10B981"
-            />
-          </div>
-        </div>
-
         {/* Floating Zoom Controls Bar */}
         <div
           className="canvas-control"
@@ -2406,7 +5498,38 @@ export const FacebookWorkflowCanvas = forwardRef<
           </button>
           <button
             type="button"
-            onClick={() => setConfig((prev) => ({ ...prev, zoom: 0.95, panOffset: { x: 30, y: 30 } }))}
+            onClick={handleResetLayout}
+            title="Auto-Align Layout (n8n Style)"
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--text-secondary)',
+              cursor: 'pointer',
+              padding: '4px',
+              borderRadius: '4px',
+              display: 'flex',
+              alignItems: 'center',
+            }}
+          >
+            <FiGrid style={{ fontSize: '14px' }} />
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const vWidth = (canvasRef.current && canvasRef.current.clientWidth > 0)
+                ? canvasRef.current.clientWidth
+                : (typeof window !== 'undefined' ? window.innerWidth - 56 : 1200);
+              const vHeight = (canvasRef.current && canvasRef.current.clientHeight > 0)
+                ? canvasRef.current.clientHeight
+                : (typeof window !== 'undefined' ? window.innerHeight - 56 : 800);
+              const contentWidth = 1420;
+              const contentHeight = 440;
+              const fitZoomX = (vWidth - 140) / contentWidth;
+              const fitZoomY = (vHeight - 120) / contentHeight;
+              const zoom = Math.min(Math.max(Math.min(fitZoomX, fitZoomY), 0.72), 0.88);
+              const panOffset = calculateCenteredPanOffset(config, vWidth, vHeight, zoom);
+              setConfig((prev) => ({ ...prev, zoom, panOffset }));
+            }}
             title="Reset Pan & Zoom"
             style={{
               background: 'transparent',
@@ -2465,102 +5588,265 @@ export const FacebookWorkflowCanvas = forwardRef<
             }}
           >
             {/* 1. Trigger -> Get Content Line */}
-            {(() => {
+            {Boolean(config.trigger?.enabled === true && config.getContent.enabled) && (() => {
               const path = createBezierPath(triggerOut, contentIn);
+              const connId = 'conn-trigger-content';
+              const isRunning = Boolean(executionState?.isRunning);
               const isExec = Boolean(executionState?.isRunning || executionState?.isComplete);
               const isWireActive = isExec
                 ? Boolean(executionState?.completedNodeIds?.includes('trigger') || executionState?.activeNodeIds?.includes('get-content'))
                 : config.getContent.enabled;
               const isCompleted = isExec && Boolean(executionState?.completedNodeIds?.includes('get-content'));
-              const strokeColor = isCompleted
+              const isFastFlow = isRunning && Boolean(executionState?.activeNodeIds?.includes('get-content'));
+              const isRunningFlow = isRunning && isWireActive;
+
+              const isWireHovered = hoveredWireId === connId;
+              const isXHovered = hoveredXId === connId;
+
+              const strokeColor = isXHovered
+                ? '#F85149'
+                : isCompleted
                 ? '#10B981'
-                : isWireActive
-                ? '#388BFD'
-                : (isDark ? '#30363D' : '#CBD5E1');
-              const isFastFlow = isExec && Boolean(executionState?.activeNodeIds?.includes('get-content'));
+                : isRunningFlow
+                ? (isDark ? '#60A5FA' : '#2563EB')
+                : (isDark ? '#4B5563' : '#8B949E');
+
+              const midX = (triggerOut.x + contentIn.x) / 2;
+              const midY = (triggerOut.y + contentIn.y) / 2;
+
               return (
-                <path
+                <g
                   key="wire-trigger-content"
-                  d={path}
-                  fill="none"
-                  stroke={strokeColor}
-                  strokeWidth={isFastFlow ? '2.5' : isWireActive ? '2.2' : '2'}
-                  strokeDasharray={isCompleted ? 'none' : isWireActive ? '8, 6' : 'none'}
-                  strokeLinecap="round"
-                  style={{
-                    animation: isFastFlow ? 'n8nFlow 0.8s linear infinite' : isWireActive ? 'n8nFlow 1.4s linear infinite' : 'none',
-                    transition: 'stroke 0.25s ease',
+                  className="workflow-wire-group"
+                  onMouseEnter={() => setHoveredWireId(connId)}
+                  onMouseLeave={() => {
+                    setHoveredWireId(null);
+                    setHoveredXId(null);
                   }}
-                />
+                  style={{ pointerEvents: 'auto', cursor: 'default' }}
+                >
+                  <path
+                    d={path}
+                    fill="none"
+                    stroke="transparent"
+                    strokeWidth="16"
+                    style={{ cursor: 'default' }}
+                  />
+                  <path
+                    d={path}
+                    fill="none"
+                    stroke={strokeColor}
+                    strokeWidth={isXHovered ? '2.5' : isRunningFlow ? '2.5' : isWireHovered ? '2.2' : '2'}
+                    strokeDasharray={isRunningFlow ? '4, 4' : 'none'}
+                    strokeLinecap="round"
+                    style={{
+                      animation: isRunningFlow ? (isFastFlow ? 'n8nFlow 0.8s linear infinite' : 'n8nFlow 1.2s linear infinite') : 'none',
+                      transition: 'stroke 0.25s ease',
+                    }}
+                  />
+                  {isWireHovered && (
+                    <g
+                      className="canvas-control workflow-wire-disconnect-btn"
+                      transform={`translate(${midX}, ${midY})`}
+                      style={{ cursor: 'pointer', pointerEvents: 'auto' }}
+                      onMouseEnter={() => setHoveredXId(connId)}
+                      onMouseLeave={() => setHoveredXId(null)}
+                      onMouseDown={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                      }}
+                      onMouseUp={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                      }}
+                      onClick={(e) => {
+                        if (e) {
+                          e.stopPropagation();
+                          e.preventDefault();
+                        }
+                        setDeleteConfirmTarget({
+                          type: 'connection',
+                          title: 'Disconnect "Get Content"?',
+                          description: 'Are you sure you want to disconnect and remove the Get Content step from this workflow?',
+                          confirmText: 'Confirm Disconnect',
+                          onConfirm: () => {
+                            executeDeleteGetContent();
+                            setDeleteConfirmTarget(null);
+                          },
+                        });
+                      }}
+                    >
+                      <circle r="18" fill="rgba(0, 0, 0, 0.001)" pointerEvents="all" />
+                      <circle
+                        r={isXHovered ? 12 : 10}
+                        fill="#F85149"
+                        stroke={isDark ? '#161B22' : '#FFFFFF'}
+                        strokeWidth="2"
+                        pointerEvents="none"
+                        style={{
+                          transition: 'all 0.15s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                          filter: 'drop-shadow(0 1px 3px rgba(0, 0, 0, 0.2))',
+                        }}
+                      />
+                      <line
+                        x1={isXHovered ? -4 : -3.5}
+                        y1={isXHovered ? -4 : -3.5}
+                        x2={isXHovered ? 4 : 3.5}
+                        y2={isXHovered ? 4 : 3.5}
+                        stroke="#FFFFFF"
+                        strokeWidth={isXHovered ? 2.2 : 1.8}
+                        strokeLinecap="round"
+                        pointerEvents="none"
+                        style={{ transition: 'all 0.15s ease' }}
+                      />
+                      <line
+                        x1={isXHovered ? 4 : 3.5}
+                        y1={isXHovered ? -4 : -3.5}
+                        x2={isXHovered ? -4 : -3.5}
+                        y2={isXHovered ? 4 : 3.5}
+                        stroke="#FFFFFF"
+                        strokeWidth={isXHovered ? 2.2 : 1.8}
+                        strokeLinecap="round"
+                        pointerEvents="none"
+                        style={{ transition: 'all 0.15s ease' }}
+                      />
+                    </g>
+                  )}
+                </g>
               );
             })()}
 
             {/* 2. Trigger -> Get Images Line */}
-            {(() => {
+            {Boolean(config.trigger?.enabled === true && config.getImages.enabled) && (() => {
               const path = createBezierPath(triggerOut, imagesIn);
+              const connId = 'conn-trigger-images';
+              const isRunning = Boolean(executionState?.isRunning);
               const isExec = Boolean(executionState?.isRunning || executionState?.isComplete);
               const isWireActive = isExec
                 ? Boolean(executionState?.completedNodeIds?.includes('trigger') || executionState?.activeNodeIds?.includes('get-images'))
                 : config.getImages.enabled;
               const isCompleted = isExec && Boolean(executionState?.completedNodeIds?.includes('get-images'));
-              const strokeColor = isCompleted
-                ? '#10B981'
-                : isWireActive
-                ? '#10B981'
-                : (isDark ? '#30363D' : '#CBD5E1');
-              const isFastFlow = isExec && Boolean(executionState?.activeNodeIds?.includes('get-images'));
-              return (
-                <path
-                  key="wire-trigger-images"
-                  d={path}
-                  fill="none"
-                  stroke={strokeColor}
-                  strokeWidth={isFastFlow ? '2.5' : isWireActive ? '2.2' : '2'}
-                  strokeDasharray={isCompleted ? 'none' : isWireActive ? '8, 6' : 'none'}
-                  strokeLinecap="round"
-                  style={{
-                    animation: isFastFlow ? 'n8nFlow 0.8s linear infinite' : isWireActive ? 'n8nFlow 1.4s linear infinite' : 'none',
-                    transition: 'stroke 0.25s ease',
-                  }}
-                />
-              );
-            })()}
+              const isFastFlow = isRunning && Boolean(executionState?.activeNodeIds?.includes('get-images'));
+              const isRunningFlow = isRunning && isWireActive;
 
-            {/* 3. Get Images -> Destination Line (only when not branching through AI Image nodes) */}
-            {(() => {
-              const hasImageAIBranch = (config.connections || []).some((c) => c.fromNodeId === 'get-images');
-              if (hasImageAIBranch) return null;
-              const path = createBaseChannelPath(imagesOut, destIn);
-              const isExec = Boolean(executionState?.isRunning || executionState?.isComplete);
-              const isWireActive = isExec
-                ? Boolean(executionState?.completedNodeIds?.includes('get-images') || executionState?.activeNodeIds?.includes('destination'))
-                : config.getImages.enabled;
-              const isCompleted = isExec && Boolean(executionState?.completedNodeIds?.includes('destination'));
-              const strokeColor = isCompleted
+              const isWireHovered = hoveredWireId === connId;
+              const isXHovered = hoveredXId === connId;
+
+              const strokeColor = isXHovered
+                ? '#F85149'
+                : isCompleted
                 ? '#10B981'
-                : isWireActive
-                ? '#10B981'
-                : (isDark ? '#30363D' : '#CBD5E1');
-              const isFastFlow = isExec && Boolean(executionState?.activeNodeIds?.includes('destination'));
+                : isRunningFlow
+                ? (isDark ? '#60A5FA' : '#2563EB')
+                : (isDark ? '#4B5563' : '#94A3B8');
+
+              const midX = (triggerOut.x + imagesIn.x) / 2;
+              const midY = (triggerOut.y + imagesIn.y) / 2;
+
               return (
-                <path
-                  key="wire-images-dest"
-                  d={path}
-                  fill="none"
-                  stroke={strokeColor}
-                  strokeWidth={isFastFlow ? '2.5' : isWireActive ? '2.2' : '2'}
-                  strokeDasharray={isCompleted ? 'none' : isWireActive ? '8, 6' : 'none'}
-                  strokeLinecap="round"
-                  style={{
-                    animation: isFastFlow ? 'n8nFlow 0.8s linear infinite' : isWireActive ? 'n8nFlow 1.4s linear infinite' : 'none',
-                    transition: 'stroke 0.25s ease',
+                <g
+                  key="wire-trigger-images"
+                  className="workflow-wire-group"
+                  onMouseEnter={() => setHoveredWireId(connId)}
+                  onMouseLeave={() => {
+                    setHoveredWireId(null);
+                    setHoveredXId(null);
                   }}
-                />
+                  style={{ pointerEvents: 'auto', cursor: 'default' }}
+                >
+                  <path
+                    d={path}
+                    fill="none"
+                    stroke="transparent"
+                    strokeWidth="16"
+                    style={{ cursor: 'default' }}
+                  />
+                  <path
+                    d={path}
+                    fill="none"
+                    stroke={strokeColor}
+                    strokeWidth={isXHovered ? '2.5' : isRunningFlow ? '2.5' : isWireHovered ? '2.2' : '2'}
+                    strokeDasharray={isRunningFlow ? '4, 4' : 'none'}
+                    strokeLinecap="round"
+                    style={{
+                      animation: isRunningFlow ? (isFastFlow ? 'n8nFlow 0.8s linear infinite' : 'n8nFlow 1.2s linear infinite') : 'none',
+                      transition: 'stroke 0.25s ease',
+                    }}
+                  />
+                  {isWireHovered && (
+                    <g
+                      className="canvas-control workflow-wire-disconnect-btn"
+                      transform={`translate(${midX}, ${midY})`}
+                      style={{ cursor: 'pointer', pointerEvents: 'auto' }}
+                      onMouseEnter={() => setHoveredXId(connId)}
+                      onMouseLeave={() => setHoveredXId(null)}
+                      onMouseDown={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                      }}
+                      onMouseUp={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                      }}
+                      onClick={(e) => {
+                        if (e) {
+                          e.stopPropagation();
+                          e.preventDefault();
+                        }
+                        setDeleteConfirmTarget({
+                          type: 'connection',
+                          title: 'Disconnect "Get Images"?',
+                          description: 'Are you sure you want to disconnect and remove the Get Images step from this workflow?',
+                          confirmText: 'Confirm Disconnect',
+                          onConfirm: () => {
+                            executeDeleteGetImages();
+                            setDeleteConfirmTarget(null);
+                          },
+                        });
+                      }}
+                    >
+                      <circle r="18" fill="rgba(0, 0, 0, 0.001)" pointerEvents="all" />
+                      <circle
+                        r={isXHovered ? 12 : 10}
+                        fill="#F85149"
+                        stroke={isDark ? '#161B22' : '#FFFFFF'}
+                        strokeWidth="2"
+                        pointerEvents="none"
+                        style={{
+                          transition: 'all 0.15s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                          filter: 'drop-shadow(0 1px 3px rgba(0, 0, 0, 0.2))',
+                        }}
+                      />
+                      <line
+                        x1={isXHovered ? -4 : -3.5}
+                        y1={isXHovered ? -4 : -3.5}
+                        x2={isXHovered ? 4 : 3.5}
+                        y2={isXHovered ? 4 : 3.5}
+                        stroke="#FFFFFF"
+                        strokeWidth={isXHovered ? 2.2 : 1.8}
+                        strokeLinecap="round"
+                        pointerEvents="none"
+                        style={{ transition: 'all 0.15s ease' }}
+                      />
+                      <line
+                        x1={isXHovered ? 4 : 3.5}
+                        y1={isXHovered ? -4 : -3.5}
+                        x2={isXHovered ? -4 : -3.5}
+                        y2={isXHovered ? 4 : 3.5}
+                        stroke="#FFFFFF"
+                        strokeWidth={isXHovered ? 2.2 : 1.8}
+                        strokeLinecap="round"
+                        pointerEvents="none"
+                        style={{ transition: 'all 0.15s ease' }}
+                      />
+                    </g>
+                  )}
+                </g>
               );
             })()}
 
             {/* Dynamic AI / Workflow Connections from config.connections */}
-            {(config.connections || []).map((conn) => {
+            {dedupeConnections(config.connections || []).map((conn) => {
               const fromPos = getNodeSocketPos(conn.fromNodeId, 'output');
               const toPos = getNodeSocketPos(conn.toNodeId, 'input');
               // Safety check: skip any wire with unresolved coordinates to prevent broken loops to (0, 0)
@@ -2573,37 +5859,34 @@ export const FacebookWorkflowCanvas = forwardRef<
                 return null;
               }
               const path =
-                conn.fromNodeId === 'get-images' && conn.toNodeId === 'destination'
+                conn.fromNodeId === 'get-images' && (conn.toNodeId === 'destination' || conn.toNodeId.startsWith('dest-'))
                   ? createBaseChannelPath(fromPos, toPos)
                   : createBezierPath(fromPos, toPos);
 
               const fromEnabled = isNodeEffectivelyEnabled(conn.fromNodeId);
               const toEnabled = isNodeEffectivelyEnabled(conn.toNodeId);
+              const isConnectedAndEnabled = fromEnabled && toEnabled;
 
+              const isRunning = Boolean(executionState?.isRunning);
               const isExec = Boolean(executionState?.isRunning || executionState?.isComplete);
               const fromCompleted = Boolean(executionState?.completedNodeIds?.includes(conn.fromNodeId));
               const toActive = Boolean(executionState?.activeNodeIds?.includes(conn.toNodeId));
               const toCompleted = Boolean(executionState?.completedNodeIds?.includes(conn.toNodeId));
 
-              const isExecActive = isExec && (fromCompleted || toActive);
+              const isExecActive = isRunning && (fromCompleted || toActive);
               const isExecDone = isExec && toCompleted;
-
-              const isFlowing = isExec ? isExecActive : (fromEnabled && toEnabled);
-              const isFastFlow = isExec && toActive;
+              const isFastFlow = isRunning && toActive;
 
               const isWireHovered = hoveredWireId === conn.id;
               const isXHovered = hoveredXId === conn.id;
 
-              const isFromImages = conn.fromNodeId === 'get-images' || (
-                (config.connections || []).some((c) => c.fromNodeId === 'get-images' && c.toNodeId === conn.fromNodeId)
-              );
               const wireStrokeColor = isXHovered
                 ? '#F85149'
                 : isExecDone
                 ? '#10B981'
-                : isFlowing
-                ? (isFromImages ? '#10B981' : '#A371F7')
-                : (isDark ? '#30363D' : '#CBD5E1');
+                : isExecActive
+                ? (isDark ? '#60A5FA' : '#2563EB')
+                : (isDark ? '#4B5563' : '#94A3B8');
 
               const midX = (fromPos.x + toPos.x) / 2;
               const midY = (fromPos.y + toPos.y) / 2;
@@ -2627,38 +5910,47 @@ export const FacebookWorkflowCanvas = forwardRef<
                     strokeWidth="16"
                     style={{ cursor: 'default' }}
                   />
-                  {/* Visual dashed flowing wire */}
+                  {/* Visual straight/flowing wire */}
                   <path
                     d={path}
                     fill="none"
                     stroke={wireStrokeColor}
-                    strokeWidth={isXHovered ? '2.5' : isFastFlow ? '2.5' : isFlowing ? '2.2' : isWireHovered ? '2.2' : '2'}
-                    strokeDasharray={isExecDone ? 'none' : isFlowing ? '8, 6' : 'none'}
+                    strokeWidth={isXHovered ? '2.5' : isExecActive ? '2.5' : isConnectedAndEnabled ? '2.2' : isWireHovered ? '2.2' : '2'}
+                    strokeDasharray={isExecActive ? '4, 4' : 'none'}
                     strokeLinecap="round"
                     style={{
-                      animation: isFastFlow ? 'n8nFlow 0.8s linear infinite' : isFlowing ? 'n8nFlow 1.4s linear infinite' : 'none',
+                      animation: isExecActive ? (isFastFlow ? 'n8nFlow 0.8s linear infinite' : 'n8nFlow 1.2s linear infinite') : 'none',
                       transition: 'stroke 0.18s ease, stroke-width 0.18s ease',
                     }}
                   />
-                  {/* Disconnect indicator on hover - only active when connection is enabled ("if that disabled these action are not work too") */}
-                  {isWireHovered && isFlowing && (
+                  {/* Disconnect indicator on hover */}
+                  {isWireHovered && (
                     <g
+                      className="canvas-control workflow-wire-disconnect-btn"
                       transform={`translate(${midX}, ${midY})`}
-                      style={{ cursor: 'pointer' }}
+                      style={{ cursor: 'pointer', pointerEvents: 'auto' }}
                       onMouseEnter={() => setHoveredXId(conn.id)}
                       onMouseLeave={() => setHoveredXId(null)}
-                      onClick={(e) => {
+                      onMouseDown={(e) => {
                         e.stopPropagation();
-                        handleRemoveConnection(conn.id, e);
+                        e.preventDefault();
+                      }}
+                      onMouseUp={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                      }}
+                      onClick={(e) => {
+                        handleWireDelete(conn, e);
                       }}
                     >
                       {/* Generous hit area circle for easy, accurate clicking */}
-                      <circle r="16" fill="transparent" />
+                      <circle r="18" fill="rgba(0, 0, 0, 0.001)" pointerEvents="all" />
                       <circle
                         r={isXHovered ? 12 : 10}
                         fill="#F85149"
                         stroke={isDark ? "#161B22" : "#FFFFFF"}
                         strokeWidth="2"
+                        pointerEvents="none"
                         style={{
                           transition: 'all 0.15s cubic-bezier(0.34, 1.56, 0.64, 1)',
                           filter: 'drop-shadow(0 1px 3px rgba(0, 0, 0, 0.2))',
@@ -2672,6 +5964,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                         stroke="#FFFFFF"
                         strokeWidth={isXHovered ? 2.2 : 1.8}
                         strokeLinecap="round"
+                        pointerEvents="none"
                         style={{ transition: 'all 0.15s ease' }}
                       />
                       <line
@@ -2682,6 +5975,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                         stroke="#FFFFFF"
                         strokeWidth={isXHovered ? 2.2 : 1.8}
                         strokeLinecap="round"
+                        pointerEvents="none"
                         style={{ transition: 'all 0.15s ease' }}
                       />
                     </g>
@@ -2704,13 +5998,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   ? createBaseChannelPath(start, end)
                   : createBezierPath(start, end);
 
-              let wireColor = '#A371F7';
-              if (dragWire.fromNodeId === 'get-content') wireColor = '#388BFD';
-              else if (dragWire.fromNodeId === 'get-images') wireColor = '#2EA043';
-              else if (dragWire.fromNodeId.startsWith('ai-box-')) {
-                const box = config.aiBoxes.find((b) => b.id === dragWire.fromNodeId);
-                wireColor = box?.provider === 'runware_ai' ? '#10B981' : box?.provider === 'laozhang_ai' ? '#3B82F6' : box?.provider === 'google_ai' ? '#388BFD' : '#2EA043';
-              }
+              const wireColor = PRIMARY_NODE_COLOR;
 
               return (
                 <g style={{ pointerEvents: 'none' }}>
@@ -2741,13 +6029,96 @@ export const FacebookWorkflowCanvas = forwardRef<
           <style>{CANVAS_NODE_ACTION_CSS}</style>
 
           {/* ======================================================== */}
-          {/* NODE 1: FACEBOOK URL IMPORTER (TRIGGER CIRCLE)           */}
+          {/* NODE 1: TRIGGER NODE OR INITIAL PLUS BOX                 */}
           {/* ======================================================== */}
           {(() => {
+            const isTriggerEnabled = config.trigger?.enabled === true;
+
+            if (!isTriggerEnabled) {
+              return (
+                <div
+                  className={`canvas-node is-initial-plus-box ${selectedNodeIds.has('trigger') ? 'is-selected' : ''}`}
+                  onMouseDown={(e) => startDragNode('trigger', e)}
+                  style={{
+                    position: 'absolute',
+                    left: `${config.trigger?.x || 100}px`,
+                    top: `${config.trigger?.y || 200}px`,
+                    width: `${CIRCLE_SIZE}px`,
+                    height: `${CIRCLE_SIZE}px`,
+                    zIndex: 15,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (!hasMoved.current) {
+                      setConnectDrawerNode(null);
+                      setActiveModalNode({ type: 'add-trigger' });
+                    }
+                  }}
+                >
+                  <div
+                    style={{
+                      width: '68px',
+                      height: '68px',
+                      borderRadius: '20px',
+                      border: isDark ? '2px dashed rgba(59, 130, 246, 0.6)' : '2px dashed #3B82F6',
+                      backgroundColor: isDark ? 'rgba(59, 130, 246, 0.08)' : 'rgba(59, 130, 246, 0.05)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: '#3B82F6',
+                      transition: 'all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                      boxShadow: '0 2px 8px rgba(59, 130, 246, 0.15)',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.transform = 'scale(1.06)';
+                      e.currentTarget.style.borderColor = '#2563EB';
+                      e.currentTarget.style.backgroundColor = isDark ? 'rgba(59, 130, 246, 0.16)' : 'rgba(59, 130, 246, 0.12)';
+                      e.currentTarget.style.boxShadow = '0 4px 14px rgba(37, 99, 235, 0.25)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = 'scale(1)';
+                      e.currentTarget.style.borderColor = isDark ? 'rgba(59, 130, 246, 0.6)' : '#3B82F6';
+                      e.currentTarget.style.backgroundColor = isDark ? 'rgba(59, 130, 246, 0.08)' : 'rgba(59, 130, 246, 0.05)';
+                      e.currentTarget.style.boxShadow = '0 2px 8px rgba(59, 130, 246, 0.15)';
+                    }}
+                  >
+                    <FiPlus size={28} strokeWidth={2.5} />
+                  </div>
+
+                  {/* Label below plus box */}
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: `${CIRCLE_SIZE + 8}px`,
+                      left: '50%',
+                      transform: 'translateX(-50%)',
+                      whiteSpace: 'nowrap',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '2px',
+                      pointerEvents: 'none',
+                    }}
+                  >
+                    <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                      Add Trigger
+                    </span>
+                    <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                      Click to start
+                    </span>
+                  </div>
+                </div>
+              );
+            }
+
             const triggerStatus = getNodeExecutionStatus('trigger');
             return (
               <div
-                className={`canvas-node ${hoveredNodeId === 'trigger' ? 'is-hovered' : ''} ${triggerStatus === 'running' ? 'is-running' : ''} ${triggerStatus === 'success' ? 'is-completed' : ''}`}
+                className={`canvas-node is-trigger ${selectedNodeIds.has('trigger') ? 'is-selected' : ''} ${hoveredNodeId === 'trigger' ? 'is-hovered' : ''} ${triggerStatus === 'running' ? 'is-running' : ''} ${triggerStatus === 'success' ? 'is-completed' : ''}`}
                 onMouseEnter={() => handleNodeMouseEnter('trigger')}
                 onMouseLeave={() => handleNodeMouseLeave('trigger')}
                 onMouseDown={(e) => startDragNode('trigger', e)}
@@ -2767,15 +6138,38 @@ export const FacebookWorkflowCanvas = forwardRef<
               >
                 <MergedNodeShape
                   sockets="right"
-                  strokeColor={triggerStatus === 'running' ? '#0284C7' : triggerStatus === 'success' ? '#10B981' : '#388BFD'}
-                  socketDotColor={triggerStatus === 'running' ? '#0284C7' : triggerStatus === 'success' ? '#10B981' : '#388BFD'}
-                  isConnectedOutput={true}
+                  isTrigger={true}
+                  strokeColor={
+                    triggerStatus === 'running'
+                      ? '#0284C7'
+                      : triggerStatus === 'success'
+                      ? '#10B981'
+                      : activeModalNode?.type === 'trigger'
+                      ? PRIMARY_NODE_COLOR
+                      : (isDark ? '#30363D' : '#D0D7DE')
+                  }
+                  socketDotColor={
+                    triggerStatus === 'running'
+                      ? '#0284C7'
+                      : triggerStatus === 'success'
+                      ? '#10B981'
+                      : activeModalNode?.type === 'trigger'
+                      ? PRIMARY_NODE_COLOR
+                      : (isDark ? '#8B949E' : '#64748B')
+                  }
+                  isConnectedOutput={Boolean(config.getContent.enabled || config.getImages.enabled)}
                   highlightOutput={false}
                   hasReceiver={false}
+                  showAddButton={true}
+                  onAddClick={(e) => {
+                    e.stopPropagation();
+                    setDragWire(null);
+                    handleOpenConnectDrawer('trigger', 'trigger', config.trigger.monitoredPageName || 'Extract Link');
+                  }}
                   onSocketMouseDown={(type, e) => handleSocketMouseDown('trigger', type, e)}
                   onSocketMouseUp={(type, e) => handleSocketMouseUp('trigger', type, e)}
                 />
-                <FaFacebook style={{ fontSize: '30px', color: '#1877F2', position: 'relative', zIndex: 2 }} />
+                <FiLink style={{ fontSize: '28px', color: '#1877F2', position: 'relative', zIndex: 2, pointerEvents: 'none' }} />
                 <NodeExecutionBadge status={triggerStatus} />
 
                 {/* Label below circle */}
@@ -2794,9 +6188,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                   }}
                 >
                   <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                    Facebook Post
+                    {config.trigger.monitoredPageName || 'Extract Link'}
                   </span>
-                  {triggerStatus === 'running' ? (
+                  {triggerStatus === 'running' && (
                     <span
                       style={{
                         fontSize: '0.6875rem',
@@ -2815,17 +6209,18 @@ export const FacebookWorkflowCanvas = forwardRef<
                           backgroundColor: isDark ? '#38BDF8' : '#0284C7',
                         }}
                       />
-                      <span>Fetching Post...</span>
+                      <span>Ingesting Link...</span>
                     </span>
-                  ) : (
+                  )}
+                  {triggerStatus === 'success' && (
                     <span
                       style={{
                         fontSize: '0.6875rem',
-                        color: triggerStatus === 'success' ? '#10B981' : 'var(--text-muted)',
-                        fontWeight: triggerStatus === 'success' ? 600 : 400,
+                        color: '#10B981',
+                        fontWeight: 600,
                       }}
                     >
-                      {triggerStatus === 'success' ? '✓ Post Located' : 'Trigger · Auto'}
+                      ✓ Link Located
                     </span>
                   )}
                 </div>
@@ -2836,7 +6231,7 @@ export const FacebookWorkflowCanvas = forwardRef<
           {/* ======================================================== */}
           {/* NODE 2A: GET CONTENT BRANCH (CIRCLE)                     */}
           {/* ======================================================== */}
-          {(() => {
+          {Boolean(config.getContent.enabled) && (() => {
             const isContentReceptive = Boolean(
               activeConnectingTargetId && isValidConnection('get-content', activeConnectingTargetId)
             );
@@ -2844,7 +6239,7 @@ export const FacebookWorkflowCanvas = forwardRef<
 
             return (
               <div
-                className={`canvas-node ${hoveredNodeId === 'get-content' ? 'is-hovered' : ''} ${isContentReceptive ? 'is-receptive' : ''} ${contentStatus === 'running' ? 'is-running' : ''} ${contentStatus === 'success' ? 'is-completed' : ''}`}
+                className={`canvas-node ${selectedNodeIds.has('get-content') ? 'is-selected' : ''} ${hoveredNodeId === 'get-content' ? 'is-hovered' : ''} ${isContentReceptive ? 'is-receptive' : ''} ${contentStatus === 'running' ? 'is-running' : ''} ${contentStatus === 'success' ? 'is-completed' : ''}`}
                 onMouseEnter={() => handleNodeMouseEnter('get-content')}
                 onMouseLeave={() => handleNodeMouseLeave('get-content')}
                 onMouseDown={(e) => startDragNode('get-content', e)}
@@ -2878,22 +6273,22 @@ export const FacebookWorkflowCanvas = forwardRef<
                       ? '#0284C7'
                       : contentStatus === 'success'
                       ? '#10B981'
+                      : activeModalNode?.type === 'get-content'
+                      ? PRIMARY_NODE_COLOR
                       : isContentReceptive
                       ? RECEPTIVE_COLOR
-                      : config.getContent.enabled
-                      ? '#388BFD'
-                      : '#30363D'
+                      : (isDark ? '#30363D' : '#D0D7DE')
                   }
                   socketDotColor={
                     contentStatus === 'running'
                       ? '#0284C7'
                       : contentStatus === 'success'
                       ? '#10B981'
+                      : activeModalNode?.type === 'get-content'
+                      ? PRIMARY_NODE_COLOR
                       : isContentReceptive
                       ? RECEPTIVE_COLOR
-                      : config.getContent.enabled
-                      ? '#388BFD'
-                      : '#484F58'
+                      : (isDark ? '#8B949E' : '#64748B')
                   }
                   isConnectedInput={true}
                   isConnectedOutput={isContentOutputConnected}
@@ -2901,6 +6296,12 @@ export const FacebookWorkflowCanvas = forwardRef<
                   highlightOutput={isContentReceptive}
                   hasReceiver={contentHasReceiver}
                   hasSource={false}
+                  showAddButton={Boolean(config.getContent.enabled)}
+                  onAddClick={(e) => {
+                    e.stopPropagation();
+                    setDragWire(null);
+                    handleOpenConnectDrawer('get-content', 'get-content', 'Get Content');
+                  }}
                   onSocketMouseDown={(type, e) => handleSocketMouseDown('get-content', type, e)}
                   onSocketMouseUp={(type, e) => handleSocketMouseUp('get-content', type, e)}
                   onSocketMouseEnter={(type) => {
@@ -2916,36 +6317,14 @@ export const FacebookWorkflowCanvas = forwardRef<
                 />
                 <FiFileText
                   style={{
-                    fontSize: '28px',
-                    color: contentStatus === 'success' ? '#10B981' : config.getContent.enabled ? '#58A6FF' : '#8B949E',
+                    fontSize: '30px',
+                    color: contentStatus === 'success' ? '#10B981' : config.getContent.enabled ? '#0284C7' : '#8B949E',
                     position: 'relative',
                     zIndex: 2,
+                    pointerEvents: 'none',
                   }}
                 />
                 <NodeExecutionBadge status={contentStatus} />
-
-                {/* Hover: animated plus to add + connect a node with seamless hover bridge */}
-                {config.getContent.enabled && (
-                  <div
-                    className="node-hit"
-                    onMouseEnter={() => handleNodeMouseEnter('get-content')}
-                    onMouseLeave={() => handleNodeMouseLeave('get-content')}
-                    style={{
-                      left: '36px',
-                      top: '-12px',
-                      bottom: '-12px',
-                      paddingLeft: '58px',
-                      paddingRight: '16px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      boxSizing: 'border-box',
-                    }}
-                  >
-                    <NodeActionButton title="Add AI node" color="#388BFD" isDark={isDark} onClick={() => handleAddAIBoxConnectedFromContent()}>
-                      <FiPlus style={{ fontSize: '14px' }} />
-                    </NodeActionButton>
-                  </div>
-                )}
 
                 {/* Label below circle */}
                 <div
@@ -3010,46 +6389,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                         : 'Disabled'}
                     </span>
                   )}
-                  {config.getContent.enabled && (
-                    <div
-                      style={{
-                        marginTop: '3px',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '5px',
-                        padding: '2px 7px',
-                        borderRadius: '10px',
-                        backgroundColor: isDark ? 'rgba(22, 27, 34, 0.85)' : 'rgba(255, 255, 255, 0.95)',
-                        border: `1px solid ${hasAnyAutoFormatActive ? '#388BFD' : (isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.12)')}`,
-                        boxShadow: hasAnyAutoFormatActive
-                          ? (isDark ? '0 0 8px rgba(56, 139, 253, 0.3)' : '0 1px 4px rgba(56, 139, 253, 0.2)')
-                          : '0 1px 3px rgba(0,0,0,0.06)',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s ease',
-                      }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleToggleAllAutoFormat(!hasAnyAutoFormatActive);
-                      }}
-                      onMouseDown={(e) => e.stopPropagation()}
-                    >
-                      <span
-                        style={{
-                          fontSize: '0.6875rem',
-                          fontWeight: 600,
-                          color: hasAnyAutoFormatActive ? '#388BFD' : 'var(--text-muted)',
-                        }}
-                      >
-                        Auto Format
-                      </span>
-                      <ToggleSwitch
-                        checked={hasAnyAutoFormatActive}
-                        onChange={handleToggleAllAutoFormat}
-                        size="sm"
-                        activeColor="#388BFD"
-                      />
-                    </div>
-                  )}
                 </div>
               </div>
             );
@@ -3058,7 +6397,7 @@ export const FacebookWorkflowCanvas = forwardRef<
           {/* ======================================================== */}
           {/* NODE 2B: GET IMAGES BRANCH (CIRCLE)                      */}
           {/* ======================================================== */}
-          {(() => {
+          {Boolean(config.getImages.enabled) && (() => {
             const isImagesReceptive = Boolean(
               activeConnectingTargetId && isValidConnection('get-images', activeConnectingTargetId)
             );
@@ -3066,7 +6405,7 @@ export const FacebookWorkflowCanvas = forwardRef<
 
             return (
               <div
-                className={`canvas-node ${hoveredNodeId === 'get-images' ? 'is-hovered' : ''} ${isImagesReceptive ? 'is-receptive' : ''} ${imagesStatus === 'running' ? 'is-running' : ''} ${imagesStatus === 'success' ? 'is-completed' : ''}`}
+                className={`canvas-node ${selectedNodeIds.has('get-images') ? 'is-selected' : ''} ${hoveredNodeId === 'get-images' ? 'is-hovered' : ''} ${isImagesReceptive ? 'is-receptive' : ''} ${imagesStatus === 'running' ? 'is-running' : ''} ${imagesStatus === 'success' ? 'is-completed' : ''}`}
                 onMouseEnter={() => handleNodeMouseEnter('get-images')}
                 onMouseLeave={() => handleNodeMouseLeave('get-images')}
                 onMouseDown={(e) => startDragNode('get-images', e)}
@@ -3097,25 +6436,25 @@ export const FacebookWorkflowCanvas = forwardRef<
                   sockets="both"
                   strokeColor={
                     imagesStatus === 'running'
-                      ? '#10B981'
+                      ? '#0284C7'
                       : imagesStatus === 'success'
                       ? '#10B981'
+                      : activeModalNode?.type === 'get-images'
+                      ? PRIMARY_NODE_COLOR
                       : isImagesReceptive
                       ? RECEPTIVE_COLOR
-                      : config.getImages.enabled
-                      ? '#2EA043'
-                      : '#30363D'
+                      : (isDark ? '#30363D' : '#D0D7DE')
                   }
                   socketDotColor={
                     imagesStatus === 'running'
-                      ? '#10B981'
+                      ? '#0284C7'
                       : imagesStatus === 'success'
                       ? '#10B981'
+                      : activeModalNode?.type === 'get-images'
+                      ? PRIMARY_NODE_COLOR
                       : isImagesReceptive
                       ? RECEPTIVE_COLOR
-                      : config.getImages.enabled
-                      ? '#2EA043'
-                      : '#484F58'
+                      : (isDark ? '#8B949E' : '#64748B')
                   }
                   isConnectedInput={true}
                   isConnectedOutput={isImagesOutputConnected}
@@ -3123,6 +6462,12 @@ export const FacebookWorkflowCanvas = forwardRef<
                   highlightOutput={isImagesReceptive}
                   hasReceiver={imagesHasReceiver}
                   hasSource={false}
+                  showAddButton={Boolean(config.getImages.enabled)}
+                  onAddClick={(e) => {
+                    e.stopPropagation();
+                    setDragWire(null);
+                    handleOpenConnectDrawer('get-images', 'get-images', 'Get Images');
+                  }}
                   onSocketMouseDown={(type, e) => handleSocketMouseDown('get-images', type, e)}
                   onSocketMouseUp={(type, e) => handleSocketMouseUp('get-images', type, e)}
                   onSocketMouseEnter={(type) => {
@@ -3138,52 +6483,14 @@ export const FacebookWorkflowCanvas = forwardRef<
                 />
                 <FiImage
                   style={{
-                    fontSize: '28px',
-                    color: imagesStatus === 'success' ? '#10B981' : config.getImages.enabled ? '#3FB950' : '#8B949E',
+                    fontSize: '30px',
+                    color: imagesStatus === 'success' ? '#10B981' : config.getImages.enabled ? '#10B981' : '#8B949E',
                     position: 'relative',
                     zIndex: 2,
+                    pointerEvents: 'none',
                   }}
                 />
                 <NodeExecutionBadge status={imagesStatus} />
-
-            {/* Hover: 2 choices to add downstream image node (Enhance Images OR Watermark) */}
-            {config.getImages.enabled && (
-              <div
-                className="node-hit"
-                onMouseEnter={() => handleNodeMouseEnter('get-images')}
-                onMouseLeave={() => handleNodeMouseLeave('get-images')}
-                style={{
-                  left: '36px',
-                  top: '-12px',
-                  bottom: '-12px',
-                  paddingLeft: '58px',
-                  paddingRight: '16px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  boxSizing: 'border-box',
-                }}
-              >
-                <NodeActionButton
-                  title="Enhance Images (AI HDR / Upscale)"
-                  color="#10B981"
-                  isDark={isDark}
-                  delay={0}
-                  onClick={() => handleAddAIBoxConnectedFromImages()}
-                >
-                  <FiImage style={{ fontSize: '13px' }} />
-                </NodeActionButton>
-                <NodeActionButton
-                  title="Add Crop & Format (Saved Studio Formats)"
-                  color="#8B5CF6"
-                  isDark={isDark}
-                  delay={40}
-                  onClick={() => handleAddWatermarkNodeConnectedFromImages()}
-                >
-                  <FiScissors style={{ fontSize: '13px' }} />
-                </NodeActionButton>
-              </div>
-            )}
 
             {/* Label below circle */}
             <div
@@ -3248,46 +6555,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                     : 'Disabled'}
                 </span>
               )}
-              {config.getImages.enabled && (
-                <div
-                  style={{
-                    marginTop: '3px',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '5px',
-                    padding: '2px 7px',
-                    borderRadius: '10px',
-                    backgroundColor: isDark ? 'rgba(22, 27, 34, 0.85)' : 'rgba(255, 255, 255, 0.95)',
-                    border: `1px solid ${autoEnhanceState ? '#10B981' : (isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.12)')}`,
-                    boxShadow: autoEnhanceState
-                      ? (isDark ? '0 0 8px rgba(16, 185, 129, 0.3)' : '0 1px 4px rgba(16, 185, 129, 0.2)')
-                      : '0 1px 3px rgba(0,0,0,0.06)',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease',
-                  }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleToggleAutoEnhance(!autoEnhanceState);
-                  }}
-                  onMouseDown={(e) => e.stopPropagation()}
-                >
-                  <span
-                    style={{
-                      fontSize: '0.6875rem',
-                      fontWeight: 600,
-                      color: autoEnhanceState ? '#10B981' : 'var(--text-muted)',
-                    }}
-                  >
-                    Auto Enhance
-                  </span>
-                  <ToggleSwitch
-                    checked={autoEnhanceState}
-                    onChange={handleToggleAutoEnhance}
-                    size="sm"
-                    activeColor="#10B981"
-                  />
-                </div>
-              )}
             </div>
           </div>
         );
@@ -3304,7 +6571,7 @@ export const FacebookWorkflowCanvas = forwardRef<
             const isGoogle = !isImageNode && (box.provider === 'google_ai' || isImageModel(box.model, box.provider) || (!box.provider && !box.model?.startsWith('runware:')));
             const isLaoZhang = !isImageNode && box.provider === 'laozhang_ai';
             const isRunware = isImageNode && !isWatermark;
-            const themeColor = isWatermark ? '#F59E0B' : isRunware ? '#10B981' : isLaoZhang ? '#2563EB' : isGoogle ? '#388BFD' : '#2EA043';
+            const themeColor = PRIMARY_NODE_COLOR;
             const isBoxReceptive = Boolean(
               (activeConnectingNodeId && isValidConnection(activeConnectingNodeId, box.id)) ||
               (activeConnectingTargetId && isValidConnection(box.id, activeConnectingTargetId))
@@ -3312,28 +6579,26 @@ export const FacebookWorkflowCanvas = forwardRef<
             const boxStatus = getNodeExecutionStatus(box.id);
             const strokeColor =
               boxStatus === 'running'
-                ? (isWatermark ? '#F59E0B' : '#A855F7')
+                ? '#0284C7'
                 : boxStatus === 'success'
                 ? '#10B981'
                 : isSelected
-                ? '#A371F7'
+                ? PRIMARY_NODE_COLOR
                 : isBoxReceptive
                 ? RECEPTIVE_COLOR
-                : isEffectiveEnabled
-                ? themeColor
-                : '#30363D';
+                : (isDark ? '#30363D' : '#D0D7DE');
             const strokeDasharray = !isSelected && !isEffectiveEnabled && boxStatus === 'idle' ? '4, 4' : 'none';
+            const isEnhance = (isEnhanceAIBox(box) || isImageAIBox(box, config.connections)) && !isWatermark;
             const isBoxInputConnected = (config.connections || []).some((c) => c.toNodeId === box.id);
             const isBoxOutputConnected = (config.connections || []).some((c) => c.fromNodeId === box.id);
-            const boxCanConnectToDest = isValidConnection(box.id, 'destination');
-            const boxHasReceiver = isEffectiveEnabled && boxCanConnectToDest;
+            const boxHasReceiver = isEffectiveEnabled && isEnhance;
             const boxCanConnectBack = !isBoxInputConnected && (isValidConnection('get-content', box.id) || isValidConnection('get-images', box.id));
             const boxHasSource = isEffectiveEnabled && boxCanConnectBack;
 
             return (
               <div
                 key={box.id}
-                className={`canvas-node ${hoveredNodeId === box.id ? 'is-hovered' : ''} ${isBoxReceptive ? 'is-receptive' : ''} ${boxStatus === 'running' ? 'is-running' : ''} ${boxStatus === 'success' ? 'is-completed' : ''}`}
+                className={`canvas-node ${selectedNodeIds.has(box.id) ? 'is-selected' : ''} ${hoveredNodeId === box.id ? 'is-hovered' : ''} ${isBoxReceptive ? 'is-receptive' : ''} ${boxStatus === 'running' ? 'is-running' : ''} ${boxStatus === 'success' ? 'is-completed' : ''}`}
                 onMouseEnter={() => handleNodeMouseEnter(box.id)}
                 onMouseLeave={() => handleNodeMouseLeave(box.id)}
                 onMouseDown={(e) => startDragNode(box.id, e)}
@@ -3351,7 +6616,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   top: `${box.y}px`,
                   width: `${CIRCLE_SIZE}px`,
                   height: `${CIRCLE_SIZE}px`,
-                  ['--ring' as any]: isBoxReceptive ? RECEPTIVE_COLOR : boxStatus === 'running' ? '#A855F7' : isEffectiveEnabled ? themeColor : '#30363D',
+                  ['--ring' as any]: isBoxReceptive ? RECEPTIVE_COLOR : boxStatus === 'running' ? '#0284C7' : (isDark ? '#30363D' : '#D0D7DE'),
                   ['--receptive-color' as any]: RECEPTIVE_COLOR,
                   opacity: isEffectiveEnabled ? 1 : 0.6,
                   zIndex: isSelected ? 30 : isBoxReceptive ? 35 : hoveredNodeId === box.id ? 25 : 15,
@@ -3366,13 +6631,20 @@ export const FacebookWorkflowCanvas = forwardRef<
                   sockets="both"
                   strokeColor={strokeColor}
                   strokeDasharray={strokeDasharray}
-                  socketDotColor={isBoxReceptive ? RECEPTIVE_COLOR : strokeColor}
+                  socketDotColor={isBoxReceptive ? RECEPTIVE_COLOR : (isDark ? '#8B949E' : '#64748B')}
                   isConnectedInput={isBoxInputConnected}
                   isConnectedOutput={isBoxOutputConnected}
                   highlightInput={isBoxReceptive}
                   highlightOutput={dragWire?.fromType === 'input' && isValidConnection(box.id, dragWire.fromNodeId)}
                   hasReceiver={boxHasReceiver}
                   hasSource={boxHasSource}
+                  showAddButton={Boolean(isEffectiveEnabled)}
+                  onAddClick={(e) => {
+                    e.stopPropagation();
+                    setDragWire(null);
+                    setDragWire(null);
+                    handleOpenConnectDrawer(box.id, 'ai-box', box.title || 'AI Processor');
+                  }}
                   onSocketMouseDown={(type, e) => handleSocketMouseDown(box.id, type, e)}
                   onSocketMouseUp={(type, e) => handleSocketMouseUp(box.id, type, e)}
                   onSocketMouseEnter={(type) => {
@@ -3391,7 +6663,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   }}
                 />
 
-                {/* Center Icon - preserves natural brand colors with clear visibility */}
+                {/* Center Icon - preserves natural brand colors like in n8n (Image 2) */}
                 <div
                   style={{
                     position: 'relative',
@@ -3399,75 +6671,25 @@ export const FacebookWorkflowCanvas = forwardRef<
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
+                    pointerEvents: 'none',
+                    userSelect: 'none',
                   }}
                 >
                   {isWatermark ? (
-                    <FiScissors style={{ fontSize: '24px', color: boxStatus === 'success' ? '#10B981' : isEffectiveEnabled ? '#8B5CF6' : '#8B949E', transition: 'color 0.2s ease' }} />
+                    <FiScissors style={{ fontSize: '28px', color: boxStatus === 'success' ? '#10B981' : isEffectiveEnabled ? '#8B5CF6' : '#8B949E', transition: 'color 0.2s ease' }} />
                   ) : isRunware ? (
-                    <RunwareIcon size={26} color={boxStatus === 'success' ? '#10B981' : isEffectiveEnabled ? '#10B981' : '#8B949E'} />
+                    <RunwareIcon size={28} color={boxStatus === 'success' ? '#10B981' : isEffectiveEnabled ? '#10B981' : '#8B949E'} />
+                  ) : isTextFormatAIBox(box) ? (
+                    <FiFileText style={{ fontSize: '28px', color: boxStatus === 'success' ? '#10B981' : isEffectiveEnabled ? '#6366F1' : '#8B949E', transition: 'color 0.2s ease' }} />
                   ) : isLaoZhang ? (
-                    <LaoZhangIcon size={28} />
+                    <LaoZhangIcon size={30} color={boxStatus === 'success' ? '#10B981' : isEffectiveEnabled ? '#2563EB' : '#8B949E'} />
                   ) : isGoogle ? (
-                    <SiGooglegemini style={{ fontSize: '28px', color: boxStatus === 'success' ? '#10B981' : isEffectiveEnabled ? '#58A6FF' : '#8B949E', transition: 'color 0.2s ease' }} />
+                    <SiGooglegemini style={{ fontSize: '30px', color: boxStatus === 'success' ? '#10B981' : isEffectiveEnabled ? '#4285F4' : '#8B949E', transition: 'color 0.2s ease' }} />
                   ) : (
-                    <OpenAIIcon size={28} color={boxStatus === 'success' ? '#10B981' : isEffectiveEnabled ? '#3FB950' : '#8B949E'} />
+                    <OpenAIIcon size={30} color={boxStatus === 'success' ? '#10B981' : isEffectiveEnabled ? '#10A37F' : '#8B949E'} />
                   )}
                 </div>
                 <NodeExecutionBadge status={boxStatus} />
-
-                {/* Hover: animated duplicate + delete actions (+ add watermark for image processors) */}
-                {isEffectiveEnabled && (
-                  <div
-                    className="node-hit"
-                    onMouseEnter={() => handleNodeMouseEnter(box.id)}
-                    onMouseLeave={() => handleNodeMouseLeave(box.id)}
-                    style={{
-                      left: '36px',
-                      top: isRunware || isWatermark ? '-18px' : '-12px',
-                      bottom: isRunware || isWatermark ? '-18px' : '-12px',
-                      paddingLeft: '58px',
-                      paddingRight: '16px',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      boxSizing: 'border-box',
-                    }}
-                  >
-                    {(isRunware || isWatermark) && (
-                      <NodeActionButton
-                        title={isRunware ? 'Add Format after Enhance' : 'Add another Format'}
-                        color="#8B5CF6"
-                        isDark={isDark}
-                        delay={0}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleAddWatermarkNodeConnectedFromImages(box.id);
-                        }}
-                      >
-                        <FiScissors style={{ fontSize: '13px' }} />
-                      </NodeActionButton>
-                    )}
-                    <NodeActionButton
-                      title="Duplicate node"
-                      color={themeColor}
-                      isDark={isDark}
-                      delay={isRunware || isWatermark ? 25 : 0}
-                      onClick={(e) => handleDuplicateAIBox(box, e)}
-                    >
-                      <FiPlus style={{ fontSize: '14px' }} />
-                    </NodeActionButton>
-                    <NodeActionButton
-                      title="Delete node"
-                      color="#EF4444"
-                      isDark={isDark}
-                      delay={isRunware || isWatermark ? 50 : 40}
-                      onClick={(e) => handleDeleteAIBox(box.id, e)}
-                    >
-                      <FiTrash2 style={{ fontSize: '13px' }} />
-                    </NodeActionButton>
-                  </div>
-                )}
 
                 {/* Label below circle */}
                 <div
@@ -3520,8 +6742,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                         padding: '1px 6px',
                         outline: 'none',
                         textAlign: 'center',
-                        minWidth: '110px',
-                        maxWidth: '220px',
+                        width: '120px',
+                        maxWidth: '120px',
                         boxShadow: '0 2px 8px rgba(0,0,0,0.18)',
                       }}
                     />
@@ -3532,6 +6754,15 @@ export const FacebookWorkflowCanvas = forwardRef<
                         fontWeight: 600,
                         color: 'var(--text-primary)',
                         transition: 'color 0.2s ease',
+                        maxWidth: '130px',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        display: '-webkit-box',
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: 'vertical',
+                        textAlign: 'center',
+                        lineHeight: '1.25',
+                        wordBreak: 'break-word',
                       }}
                       onDoubleClick={(e) => {
                         e.stopPropagation();
@@ -3551,6 +6782,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                         display: 'inline-flex',
                         alignItems: 'center',
                         gap: '4px',
+                        whiteSpace: 'nowrap',
                       }}
                     >
                       <span
@@ -3561,155 +6793,218 @@ export const FacebookWorkflowCanvas = forwardRef<
                           backgroundColor: isDark ? (isWatermark ? '#FBBF24' : '#C084FC') : (isWatermark ? '#D97706' : '#7C3AED'),
                         }}
                       />
-                      <span>{isWatermark ? 'Stamping Watermark...' : isRunware ? 'Enhancing Photos...' : 'Generating AI Copy...'}</span>
+                      <span>{isWatermark ? 'Processing...' : isRunware ? 'Enhancing...' : isTextFormatAIBox(box) ? 'Formatting...' : 'Generating...'}</span>
                     </span>
                   ) : (
                     <span
                       style={{
                         fontSize: '0.6875rem',
-                        color:
-                          boxStatus === 'success'
-                            ? '#10B981'
-                            : isBoxReceptive
-                            ? RECEPTIVE_COLOR
-                            : 'var(--text-muted)',
-                        fontWeight: boxStatus === 'success' || isBoxReceptive ? 600 : 400,
+                        color: isDark ? '#8B949E' : '#64748B',
+                        textAlign: 'center',
+                        lineHeight: '1.2',
                       }}
                     >
-                      {boxStatus === 'success'
-                        ? (isWatermark ? '✓ Watermarked' : isRunware ? '✓ Enhanced' : '✓ Generated')
-                        : isBoxReceptive
-                        ? 'Ready to Connect'
-                        : isWatermark
-                        ? `${box.subtitle || 'Saved Studio Format'} · ${isEffectiveEnabled ? 'Active' : 'Disabled'}`
-                        : `${!isImageNode && isImageModel(box.model, box.provider) ? 'Gemini Flash' : getAIModelDisplayName(box.provider, box.model)} · ${isEffectiveEnabled ? 'Active' : 'Disabled'}`}
+                      {isWatermark ? (box.subtitle || 'Crop & Watermark') : (isRunware || isEnhance) ? 'Image Enhancer' : isTextFormatAIBox(box) ? 'Format Preset' : isTextAIBox(box, config.connections) ? 'AI Model' : 'Copywriter'}
                     </span>
-                  )}
-
-                  {/* Switch button for Auto Format, Auto Enhance, or Auto Watermark */}
-                  {isEffectiveEnabled && (
-                    <div
-                      style={{
-                        marginTop: '3px',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '5px',
-                        padding: '2px 7px',
-                        borderRadius: '10px',
-                        backgroundColor: isDark ? 'rgba(22, 27, 34, 0.85)' : 'rgba(255, 255, 255, 0.95)',
-                        border: `1px solid ${
-                          isWatermark
-                            ? (box.watermarkConfig?.enabled ?? true)
-                              ? '#F59E0B'
-                              : (isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.12)')
-                            : (isRunware ? autoEnhanceState : Boolean(autoFormatState[box.id]))
-                            ? (isRunware ? '#10B981' : '#388BFD')
-                            : (isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.12)')
-                        }`,
-                        boxShadow: isWatermark
-                          ? (box.watermarkConfig?.enabled ?? true)
-                            ? (isDark ? '0 0 8px rgba(245, 158, 11, 0.3)' : '0 1px 4px rgba(245, 158, 11, 0.2)')
-                            : '0 1px 3px rgba(0,0,0,0.06)'
-                          : (isRunware ? autoEnhanceState : Boolean(autoFormatState[box.id]))
-                          ? (isDark
-                            ? `0 0 8px ${isRunware ? 'rgba(16, 185, 129, 0.3)' : 'rgba(56, 139, 253, 0.3)'}`
-                            : `0 1px 4px ${isRunware ? 'rgba(16, 185, 129, 0.2)' : 'rgba(56, 139, 253, 0.2)'}`)
-                          : '0 1px 3px rgba(0,0,0,0.06)',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s ease',
-                      }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (isWatermark) {
-                          const currentEnabled = box.watermarkConfig?.enabled ?? true;
-                          const currentCfg = box.watermarkConfig || DEFAULT_WATERMARK_CONFIG;
-                          handleUpdateAIBox(box.id, {
-                            watermarkConfig: { ...currentCfg, enabled: !currentEnabled },
-                          });
-                        } else if (isRunware) {
-                          handleToggleAutoEnhance(!autoEnhanceState);
-                        } else {
-                          handleToggleBoxAutoFormat(box.id, !Boolean(autoFormatState[box.id]));
-                        }
-                      }}
-                      onMouseDown={(e) => e.stopPropagation()}
-                    >
-                      <span
-                        style={{
-                          fontSize: '0.6875rem',
-                          fontWeight: 600,
-                          color: isWatermark
-                            ? (box.watermarkConfig?.enabled ?? true)
-                              ? '#F59E0B'
-                              : 'var(--text-muted)'
-                            : (isRunware ? autoEnhanceState : Boolean(autoFormatState[box.id]))
-                            ? (isRunware ? '#10B981' : '#388BFD')
-                            : 'var(--text-muted)',
-                        }}
-                      >
-                        {isWatermark ? 'Auto Format' : isRunware ? 'Auto Enhance' : 'Auto Format'}
-                      </span>
-                      <ToggleSwitch
-                        checked={
-                          isWatermark
-                            ? (box.watermarkConfig?.enabled ?? true)
-                            : isRunware
-                            ? autoEnhanceState
-                            : Boolean(autoFormatState[box.id])
-                        }
-                        onChange={(checked) => {
-                          if (isWatermark) {
-                            const currentCfg = box.watermarkConfig || DEFAULT_WATERMARK_CONFIG;
-                            handleUpdateAIBox(box.id, {
-                              watermarkConfig: { ...currentCfg, enabled: checked },
-                            });
-                          } else if (isRunware) {
-                            handleToggleAutoEnhance(checked);
-                          } else {
-                            handleToggleBoxAutoFormat(box.id, checked);
-                          }
-                        }}
-                        size="sm"
-                        activeColor={isWatermark ? '#8B5CF6' : isRunware ? '#10B981' : '#388BFD'}
-                      />
-                    </div>
                   )}
                 </div>
               </div>
             );
           })}
 
-          {/* ======================================================== */}
-          {/* NODE 4: PROPERTY INBOX (DESTINATION CIRCLE)               */}
-          {/* ======================================================== */}
-          {(() => {
-            const isDestReceptive = Boolean(
-              activeConnectingNodeId && isValidConnection(activeConnectingNodeId, 'destination')
+          {/* DESTINATION / OUTPUT NODES (Supports Multiple Independent Nodes: Database, Social Media, or Hybrid) */}
+          {/* COMBINE BOX NODES */}
+          {(config.combineBoxes || []).filter((cb) => cb.enabled !== false).map((cb) => {
+            const cbIsSelected = activeModalNode?.type === 'combine' && (activeModalNode.combineId === cb.id || (activeModalNode as any).id === cb.id);
+            const cbConnsIn = dedupeConnections(config.connections || []).filter((c) => c.toNodeId === cb.id);
+            const cbConnsOut = dedupeConnections(config.connections || []).filter((c) => c.fromNodeId === cb.id);
+            const uniqueCbInputs = Array.from(new Set(cbConnsIn.map((c) => c.fromNodeId)));
+            const isCbReceptive = Boolean(
+              dragWire && dragWire.fromType === 'output' && isValidConnection(dragWire.fromNodeId, cb.id)
             );
-            const destHasSource = config.aiBoxes.some((b) => isValidConnection(b.id, 'destination'));
-            const destStatus = getNodeExecutionStatus('destination');
+            return (
+              <div
+                key={`node-combine-${cb.id}`}
+                className={`canvas-node ${selectedNodeIds.has(cb.id) ? 'is-selected' : ''} ${hoveredNodeId === cb.id ? 'is-hovered' : ''} ${isCbReceptive ? 'is-receptive' : ''}`}
+                onMouseEnter={() => handleNodeMouseEnter(cb.id)}
+                onMouseLeave={() => handleNodeMouseLeave(cb.id)}
+                onMouseDown={(e) => startDragNode(cb.id, e)}
+                onMouseUp={(e) => {
+                  if (dragWire && dragWire.fromType === 'output' && isValidConnection(dragWire.fromNodeId, cb.id)) {
+                    handleSocketMouseUp(cb.id, 'input', e);
+                  } else if (dragWire && dragWire.fromType === 'input' && isValidConnection(cb.id, dragWire.fromNodeId)) {
+                    handleSocketMouseUp(cb.id, 'output', e);
+                  }
+                }}
+                onClick={(e) => handleNodeClick({ type: 'combine', combineId: cb.id, id: cb.id }, e)}
+                style={{
+                  position: 'absolute',
+                  left: `${cb.x}px`,
+                  top: `${cb.y}px`,
+                  width: `${CIRCLE_SIZE}px`,
+                  height: `${CIRCLE_SIZE}px`,
+                  ['--ring' as any]: isCbReceptive ? RECEPTIVE_COLOR : cbIsSelected ? '#F59E0B' : isDark ? '#30363D' : '#D0D7DE',
+                  ['--receptive-color' as any]: RECEPTIVE_COLOR,
+                  zIndex: cbIsSelected ? 30 : isCbReceptive ? 35 : hoveredNodeId === cb.id ? 25 : 15,
+                  cursor: isCbReceptive ? 'crosshair' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'transform 0.2s ease',
+                }}
+              >
+                <MergedNodeShape
+                  sockets="both"
+                  strokeColor={cbIsSelected ? '#F59E0B' : isDark ? '#30363D' : '#D0D7DE'}
+                  socketDotColor={isCbReceptive ? RECEPTIVE_COLOR : isDark ? '#8B949E' : '#64748B'}
+                  isConnectedInput={cbConnsIn.length > 0}
+                  isConnectedOutput={cbConnsOut.length > 0}
+                  highlightInput={isCbReceptive}
+                  highlightOutput={dragWire?.fromType === 'input' && isValidConnection(cb.id, dragWire.fromNodeId)}
+                  hasReceiver={true}
+                  hasSource={true}
+                  onSocketMouseDown={(type, e) => handleSocketMouseDown(cb.id, type, e)}
+                  onSocketMouseUp={(type, e) => handleSocketMouseUp(cb.id, type, e)}
+                  onSocketMouseEnter={(type) => {
+                    if (type === 'input') setHoveredInputNodeId(cb.id);
+                    if (type === 'output') setHoveredOutputNodeId(cb.id);
+                  }}
+                  onSocketMouseLeave={(type) => {
+                    if (type === 'input') setHoveredInputNodeId(null);
+                    if (type === 'output') setHoveredOutputNodeId(null);
+                  }}
+                  showAddButton={true}
+                  onAddClick={(e) => {
+                    e.stopPropagation();
+                    setDragWire(null);
+                    handleOpenConnectDrawer(cb.id, 'combine', cb.title || 'Combine Box');
+                  }}
+                />
+                {/* Center icon */}
+                <div style={{ position: 'relative', zIndex: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none', userSelect: 'none' }}>
+                  <FiGitMerge style={{ fontSize: '30px', color: '#F59E0B', filter: 'drop-shadow(0 2px 6px rgba(245, 158, 11, 0.4))' }} />
+                </div>
+                {/* Label */}
+                <div style={{ position: 'absolute', top: `${CIRCLE_SIZE + 8}px`, left: '50%', transform: 'translateX(-50%)', whiteSpace: 'nowrap', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', pointerEvents: 'none' }}>
+                  <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>{cb.title || 'Combine Box'}</span>
+                  <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>Merged Output · {uniqueCbInputs.length} input{uniqueCbInputs.length !== 1 ? 's' : ''}</span>
+                </div>
+              </div>
+            );
+          })}
+
+          {getNormalizedDestinations(config).map((destNode, destIdx) => {
+            if (destNode.enabled === false) return null;
+            const destId = destNode.id || 'destination';
+            const destX = destNode.x ?? 740;
+            const destY = destNode.y ?? (248 + destIdx * 140);
+            const isSelected =
+              activeModalNode?.type === 'destination' &&
+              (activeModalNode.destinationId ? activeModalNode.destinationId === destId : destIdx === 0);
+            const isDestReceptive = Boolean(
+              dragWire && dragWire.fromType === 'output' && isValidConnection(dragWire.fromNodeId, destId)
+            );
+            const isDestRunning = Boolean(
+              executionState?.isRunning &&
+                (executionState?.activeNodeIds?.includes(destId) ||
+                  executionState?.activeNodeIds?.includes('destination'))
+            );
+            const isDestSuccess = Boolean(
+              executionState?.isComplete ||
+                executionState?.completedNodeIds?.includes(destId) ||
+                executionState?.completedNodeIds?.includes('destination')
+            );
+            const isDbNode = destNode.targetMode === 'remaining_posts' || destNode.platform === 'database';
+            const isHybrid = (destNode.storeInDatabase && destNode.postToSocialMedia) || destNode.targetMode === 'hybrid';
+            const platform = destNode.platform || (isDbNode ? 'database' : (destNode.selectedPageId ? 'facebook' : undefined));
+            const isFb = platform === 'facebook' && !isHybrid && !isDbNode;
+            const isIg = platform === 'instagram' && !isHybrid && !isDbNode;
+            const isTiktok = platform === 'tiktok' && !isHybrid && !isDbNode;
+            const isPostSocial = !isDbNode;
+
+            const isAccountNode = Boolean(destNode.accountId);
+            const isPlatformHub = !isAccountNode && (destNode.targetMode === 'social_media' || Boolean(destNode.platform) || destId.includes('platform'));
+
+            const targetPage = isAccountNode
+              ? (managedPages.find((p) => p.page_id === (destNode.accountId || destNode.selectedPageId || destNode.selectedPageIds?.[0])) ||
+                 (destNode.accountName ? { page_id: destNode.accountId || '', name: destNode.accountName, picture_url: destNode.accountAvatar, slot: 1 } : undefined))
+              : undefined;
+
+            const targetTitle =
+              destNode.accountName ||
+              (isPlatformHub
+                ? (isFb ? 'Facebook' : isIg ? 'Instagram' : isTiktok ? 'TikTok' : destNode.title || 'Social Media')
+                : destNode.title ||
+                  (isFb ? targetPage?.name || 'Facebook Page' : isIg ? 'Instagram' : isTiktok ? 'TikTok' : isDbNode ? 'Remaining Posts' : 'Social Media'));
+
+            const targetSubtitle =
+              isPlatformHub
+                ? (isFb ? 'Pages Hub' : isIg ? 'Accounts Hub' : isTiktok ? 'Accounts Hub' : 'Platform')
+                : destNode.accountUsername
+                ? (destNode.accountUsername.startsWith('@') ? destNode.accountUsername : `@${destNode.accountUsername}`)
+                : isFb
+                ? targetPage?.name ? `Page · Slot ${targetPage.slot || 1}` : 'Facebook Page'
+                : isIg
+                ? 'Feed & Reels'
+                : isTiktok
+                ? 'Video & Slides'
+                : isDbNode
+                ? 'Database Queue'
+                : 'Active';
+
+            const strokeThemeColor =
+              isDestSuccess
+                ? '#10B981'
+                : isDestRunning
+                ? '#0284C7'
+                : isSelected
+                ? isFb
+                  ? '#1877F2'
+                  : isIg
+                  ? '#E1306C'
+                  : isTiktok
+                  ? '#06B6D4'
+                  : isDbNode
+                  ? '#0EA5E9'
+                  : '#8B5CF6'
+                : isDark
+                ? '#30363D'
+                : '#D0D7DE';
+
+            const isEffectiveEnabled = isNodeEffectivelyEnabled(destId);
 
             return (
               <div
-                className={`canvas-node ${hoveredNodeId === 'destination' ? 'is-hovered' : ''} ${isDestReceptive ? 'is-receptive' : ''} ${destStatus === 'running' ? 'is-running' : ''} ${destStatus === 'success' ? 'is-completed' : ''}`}
-                onMouseEnter={() => handleNodeMouseEnter('destination')}
-                onMouseLeave={() => handleNodeMouseLeave('destination')}
-                onMouseDown={(e) => startDragNode('destination', e)}
+                key={`node-dest-${destId}`}
+                className={`canvas-node ${isAccountNode ? 'is-circle' : ''} ${hoveredNodeId === destId ? 'is-hovered' : ''} ${
+                  isDestReceptive ? 'is-receptive' : ''
+                } ${isDestRunning ? 'is-running' : ''} ${isDestSuccess ? 'is-completed' : ''}`}
+                onMouseEnter={() => handleNodeMouseEnter(destId)}
+                onMouseLeave={() => handleNodeMouseLeave(destId)}
+                onMouseDown={(e) => startDragNode(destId, e)}
                 onMouseUp={(e) => {
-                  if (dragWire && dragWire.fromType === 'output' && isValidConnection(dragWire.fromNodeId, 'destination')) {
-                    handleSocketMouseUp('destination', 'input', e);
+                  if (dragWire && dragWire.fromType === 'output' && isValidConnection(dragWire.fromNodeId, destId)) {
+                    handleSocketMouseUp(destId, 'input', e);
                   }
                 }}
-                onClick={(e) => handleNodeClick({ type: 'destination' }, e)}
+                onClick={(e) => handleNodeClick({ type: 'destination', destinationId: destId }, e)}
                 style={{
                   position: 'absolute',
-                  left: `${config.destination.x}px`,
-                  top: `${config.destination.y}px`,
+                  left: `${destX}px`,
+                  top: `${destY}px`,
                   width: `${CIRCLE_SIZE}px`,
                   height: `${CIRCLE_SIZE}px`,
-                  ['--ring' as any]: destStatus === 'running' ? '#10B981' : destStatus === 'success' ? '#10B981' : isDestReceptive ? RECEPTIVE_COLOR : '#2EA043',
+                  borderRadius: isAccountNode ? '50%' : '18px',
+                  ['--ring' as any]: isDestReceptive
+                    ? RECEPTIVE_COLOR
+                    : isDestRunning
+                    ? '#0284C7'
+                    : isDark
+                    ? '#30363D'
+                    : '#D0D7DE',
                   ['--receptive-color' as any]: RECEPTIVE_COLOR,
-                  zIndex: isDestReceptive ? 35 : 15,
+                  opacity: isEffectiveEnabled ? 1 : 0.6,
+                  zIndex: isSelected ? 30 : isDestReceptive ? 35 : hoveredNodeId === destId ? 25 : 15,
                   cursor: isDestReceptive ? 'crosshair' : 'pointer',
                   display: 'flex',
                   alignItems: 'center',
@@ -3718,38 +7013,203 @@ export const FacebookWorkflowCanvas = forwardRef<
                 }}
               >
                 <MergedNodeShape
-                  sockets="left"
-                  strokeColor={destStatus === 'running' || destStatus === 'success' ? '#10B981' : isDestReceptive ? RECEPTIVE_COLOR : '#2EA043'}
-                  socketDotColor={destStatus === 'running' || destStatus === 'success' ? '#10B981' : isDestReceptive ? RECEPTIVE_COLOR : '#2EA043'}
-                  isConnectedInput={(config.connections || []).some((c) => c.toNodeId === 'destination')}
+                  isCircle={isAccountNode}
+                  sockets={isAccountNode ? 'left' : (isFb || isIg || isTiktok || destNode.targetMode === 'social_media' ? 'both' : 'left')}
+                  strokeColor={strokeThemeColor}
+                  socketDotColor={isDestReceptive ? RECEPTIVE_COLOR : isDark ? '#8B949E' : '#64748B'}
+                  isConnectedInput={true}
+                  isConnectedOutput={false}
                   highlightInput={isDestReceptive}
-                  hasReceiver={false}
-                  hasSource={destHasSource}
-                  onSocketMouseDown={(type, e) => handleSocketMouseDown('destination', type, e)}
-                  onSocketMouseUp={(type, e) => handleSocketMouseUp('destination', type, e)}
+                  hasReceiver={!isAccountNode}
+                  hasSource={true}
+                  showAddButton={!isAccountNode && (isFb || isIg || isTiktok || destNode.targetMode === 'social_media')}
+                  onAddClick={(e) => {
+                    e.stopPropagation();
+                    setConnectDrawerNode({
+                      nodeId: destId,
+                      nodeType: 'destination',
+                      title: targetTitle,
+                      platform: destNode.platform || (isFb ? 'facebook' : isIg ? 'instagram' : isTiktok ? 'tiktok' : undefined),
+                    });
+                  }}
+                  onSocketMouseDown={(type, e) => handleSocketMouseDown(destId, type, e)}
+                  onSocketMouseUp={(type, e) => handleSocketMouseUp(destId, type, e)}
                   onSocketMouseEnter={(type) => {
-                    if (type === 'input' && destHasSource) {
-                      setHoveredInputNodeId('destination');
-                    }
+                    if (type === 'input') setHoveredInputNodeId(destId);
                   }}
-                  onSocketMouseLeave={(type) => {
-                    if (type === 'input') {
-                      setHoveredInputNodeId((curr) => (curr === 'destination' ? null : curr));
-                    }
-                  }}
+                  onSocketMouseLeave={() => setHoveredInputNodeId(null)}
                 />
-                <FiCheckCircle
+
+                {/* Center Icon */}
+                <div
                   style={{
-                    fontSize: '30px',
-                    color: destStatus === 'running' || destStatus === 'success' ? '#10B981' : '#2EA043',
                     position: 'relative',
                     zIndex: 2,
-                    transition: 'color 0.2s ease',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    pointerEvents: 'none',
+                    userSelect: 'none',
                   }}
-                />
-                <NodeExecutionBadge status={destStatus} />
+                >
+                  {isAccountNode ? (
+                    // 🌟 DEDICATED ACCOUNT / PAGE NODE: Prominent Profile Picture of Facebook Page in Center
+                    (() => {
+                      const pageAvatar = destNode.accountAvatar || targetPage?.picture_url;
+                      const pageInitials = (targetTitle || 'FB').slice(0, 2).toUpperCase();
+                      const platColor = isFb ? '#1877F2' : isIg ? '#E1306C' : '#06B6D4';
 
-                {/* Label below circle */}
+                      return (
+                        <div
+                          style={{
+                            width: '48px',
+                            height: '48px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            pointerEvents: 'none',
+                            userSelect: 'none',
+                          }}
+                        >
+                          {pageAvatar ? (
+                            <img
+                              src={pageAvatar}
+                              alt={targetTitle}
+                              style={{
+                                width: '48px',
+                                height: '48px',
+                                borderRadius: '50%',
+                                objectFit: 'cover',
+                              }}
+                            />
+                          ) : (
+                            <div
+                              style={{
+                                width: '48px',
+                                height: '48px',
+                                borderRadius: '50%',
+                                backgroundColor: isDark ? '#1C2128' : '#EFF6FF',
+                                color: platColor,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontSize: '0.9375rem',
+                                fontWeight: 700,
+                              }}
+                            >
+                              {pageInitials}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()
+                  ) : isFb ? (
+                    // 📘 FACEBOOK PLATFORM HUB: ONLY Facebook "F" Icon without background
+                    <div
+                      style={{
+                        width: '38px',
+                        height: '38px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        pointerEvents: 'none',
+                        userSelect: 'none',
+                      }}
+                    >
+                      <FaFacebookF size={28} color="#1877F2" />
+                    </div>
+                  ) : isIg ? (
+                    // 📸 INSTAGRAM PLATFORM HUB: ONLY Instagram Icon
+                    <div
+                      style={{
+                        width: '38px',
+                        height: '38px',
+                        borderRadius: '8px',
+                        background: 'linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: '#FFFFFF',
+                        boxShadow: '0 2px 8px rgba(225, 48, 108, 0.4)',
+                      }}
+                    >
+                      <FaInstagram size={22} />
+                    </div>
+                  ) : isTiktok ? (
+                    // 🎵 TIKTOK PLATFORM HUB: ONLY TikTok Icon
+                    <div
+                      style={{
+                        width: '38px',
+                        height: '38px',
+                        borderRadius: '8px',
+                        backgroundColor: '#000000',
+                        border: '1px solid #333333',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: '#25F4EE',
+                        boxShadow: '0 2px 8px rgba(37, 244, 238, 0.4)',
+                      }}
+                    >
+                      <FaTiktok size={20} />
+                    </div>
+                  ) : isDbNode ? (
+                    <FiLayers style={{ fontSize: '30px', color: '#0EA5E9', filter: 'drop-shadow(0 2px 6px rgba(14, 165, 233, 0.4))' }} />
+                  ) : (
+                    <div
+                      style={{
+                        position: 'relative',
+                        width: '38px',
+                        height: '38px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        pointerEvents: 'none',
+                        userSelect: 'none',
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: '36px',
+                          height: '36px',
+                          borderRadius: '8px',
+                          background: 'linear-gradient(135deg, #1877F2 0%, #E1306C 50%, #000000 100%)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: '#FFFFFF',
+                          boxShadow: '0 2px 6px rgba(225, 48, 108, 0.35)',
+                        }}
+                      >
+                        <FiShare2 size={19} />
+                      </div>
+                      {isHybrid && (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            bottom: -3,
+                            right: -3,
+                            width: '18px',
+                            height: '18px',
+                            borderRadius: '50%',
+                            backgroundColor: '#0284C7',
+                            border: isDark ? '2px solid #161B22' : '2px solid #FFFFFF',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: '#FFFFFF',
+                          }}
+                        >
+                          <FiLayers size={10} />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <NodeExecutionBadge status={isDestSuccess ? 'success' : isDestRunning ? 'running' : 'idle'} />
+
+                {/* Label below node */}
                 <div
                   style={{
                     position: 'absolute',
@@ -3764,623 +7224,3921 @@ export const FacebookWorkflowCanvas = forwardRef<
                     pointerEvents: 'none',
                   }}
                 >
-                  <span
-                    style={{
-                      fontSize: '0.8125rem',
-                      fontWeight: 600,
-                      color: 'var(--text-primary)',
-                      transition: 'color 0.2s ease',
-                    }}
-                  >
-                    Property Inbox
+                  <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                    {targetTitle}
                   </span>
-                  {destStatus === 'running' ? (
-                    <span
-                      style={{
-                        fontSize: '0.6875rem',
-                        fontWeight: 500,
-                        color: isDark ? '#34D399' : '#059669',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                      }}
-                    >
-                      <span
-                        style={{
-                          width: '5px',
-                          height: '5px',
-                          borderRadius: '50%',
-                          backgroundColor: isDark ? '#34D399' : '#059669',
-                        }}
-                      />
-                      <span>Finalizing Import...</span>
-                    </span>
-                  ) : (
-                    <span
-                      style={{
-                        fontSize: '0.6875rem',
-                        color:
-                          destStatus === 'success'
-                            ? '#10B981'
-                            : isDestReceptive
-                            ? RECEPTIVE_COLOR
-                            : 'var(--text-muted)',
-                        fontWeight: destStatus === 'success' || isDestReceptive ? 600 : 400,
-                      }}
-                    >
-                      {destStatus === 'success'
-                        ? '✓ Ready in Inbox'
-                        : isDestReceptive
-                        ? 'Ready to Connect'
-                        : 'Destination · Ready'}
-                    </span>
-                  )}
+                  <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
+                    {targetSubtitle}
+                  </span>
                 </div>
               </div>
             );
+          })}
+
+          {/* Quick Add Output Node Button on Canvas */}
+          {(() => {
+            const allDests = getNormalizedDestinations(config).filter((d) => d.enabled !== false);
+            if (allDests.length === 0) return null;
+            const lastDest = allDests[allDests.length - 1];
+            const btnX = lastDest.x ?? 740;
+            const btnY = (lastDest.y ?? 248) + 120;
+            return (
+              <button
+                type="button"
+                onClick={() => handleAddDestinationNode('social_media')}
+                style={{
+                  position: 'absolute',
+                  left: `${btnX}px`,
+                  top: `${btnY}px`,
+                  width: `${CIRCLE_SIZE}px`,
+                  height: '30px',
+                  borderRadius: '15px',
+                  border: isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1',
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#F8FAFC',
+                  color: 'var(--text-secondary)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '4px',
+                  fontSize: '0.6875rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  zIndex: 10,
+                  transition: 'all 0.15s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = '#2563EB';
+                  e.currentTarget.style.color = '#2563EB';
+                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(37, 99, 235, 0.08)' : '#EFF6FF';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = isDark ? '#30363D' : '#CBD5E1';
+                  e.currentTarget.style.color = 'var(--text-secondary)';
+                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.03)' : '#F8FAFC';
+                }}
+              >
+                <FiPlus size={12} />
+                <span>+ Output</span>
+              </button>
+            );
           })()}
+
+
+
+          {/* QUICK ADD POPOVER (Store in Database / Post to Social Media) */}
+          {quickAddPopover && (() => {
+            const isDarkTheme = isDark;
+            const targetBox = config.aiBoxes.find((b) => b.id === quickAddPopover.nodeId);
+            const isImageNode =
+              quickAddPopover.nodeType === 'get-images' ||
+              (targetBox && (isWatermarkAIBox(targetBox) || isImageAIBox(targetBox, config.connections)));
+
+            return (
+              <div
+                className="canvas-control quick-add-popover"
+                style={{
+                  position: 'absolute',
+                  left: `${quickAddPopover.x}px`,
+                  top: `${quickAddPopover.y - 20}px`,
+                  width: '240px',
+                  borderRadius: '10px',
+                  backgroundColor: isDarkTheme ? '#1A1F26' : '#FFFFFF',
+                  border: isDarkTheme ? '1px solid #30363D' : '1px solid #E2E8F0',
+                  boxShadow: isDarkTheme
+                    ? '0 12px 30px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.06)'
+                    : '0 10px 25px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.05)',
+                  zIndex: 100,
+                  padding: '0.5rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.35rem',
+                }}
+                onClick={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.15rem 0.25rem 0.35rem', borderBottom: isDarkTheme ? '1px solid #30363D' : '1px solid #E2E8F0' }}>
+                  <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    Connect Next Step
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setQuickAddPopover(null)}
+                    style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px', display: 'flex' }}
+                  >
+                    <FiX size={12} />
+                  </button>
+                </div>
+
+                {/* Option 1: Store in Remaining Posts Database */}
+                <button
+                  type="button"
+                  onClick={() => handleConnectOrCreateDestination(quickAddPopover.nodeId, 'remaining_posts')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.45rem',
+                    padding: '0.45rem 0.5rem',
+                    borderRadius: '6px',
+                    border: '1px solid transparent',
+                    backgroundColor: isDarkTheme ? 'rgba(2, 132, 199, 0.12)' : '#F0F9FF',
+                    color: isDarkTheme ? '#38BDF8' : '#0284C7',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = '#0284C7';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = 'transparent';
+                  }}
+                >
+                  <div style={{ width: '26px', height: '26px', borderRadius: '5px', backgroundColor: '#0284C7', color: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <FiLayers size={13} />
+                  </div>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: '0.71875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                      Store in Database
+                    </div>
+                    <div style={{ fontSize: '0.5625rem', color: 'var(--text-muted)' }}>
+                      Queue in Remaining Posts
+                    </div>
+                  </div>
+                </button>
+
+                {/* Option 2: Post to Social Media (Expandable File-System List) */}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setQuickAddPopover({
+                      ...quickAddPopover,
+                      socialExpanded: !quickAddPopover.socialExpanded,
+                    })
+                  }
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '0.45rem',
+                    padding: '0.45rem 0.5rem',
+                    borderRadius: '6px',
+                    border: quickAddPopover.socialExpanded ? '1px solid #E1306C' : '1px solid transparent',
+                    backgroundColor: quickAddPopover.socialExpanded
+                      ? (isDarkTheme ? 'rgba(225, 48, 108, 0.15)' : '#FFF1F5')
+                      : (isDarkTheme ? 'rgba(37, 99, 235, 0.12)' : '#EFF6FF'),
+                    color: isDarkTheme ? '#60A5FA' : '#2563EB',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', minWidth: 0 }}>
+                    <div style={{ width: '26px', height: '26px', borderRadius: '5px', background: 'linear-gradient(135deg, #1877F2 0%, #E1306C 50%, #000000 100%)', color: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <FiShare2 size={13} />
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: '0.71875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                        Post to Social Media
+                      </div>
+                      <div style={{ fontSize: '0.5625rem', color: 'var(--text-muted)' }}>
+                        {quickAddPopover.socialExpanded ? 'Choose platform below' : 'Choose Facebook, Instagram, or TikTok'}
+                      </div>
+                    </div>
+                  </div>
+                  <FiChevronDown
+                    size={13}
+                    style={{
+                      transform: quickAddPopover.socialExpanded ? 'rotate(180deg)' : 'none',
+                      transition: 'transform 0.15s ease',
+                      color: 'var(--text-muted)',
+                      flexShrink: 0,
+                    }}
+                  />
+                </button>
+
+                {quickAddPopover.socialExpanded && (
+                  <div
+                    style={{
+                      marginLeft: '0.5rem',
+                      paddingLeft: '0.55rem',
+                      borderLeft: `2px solid ${isDarkTheme ? '#30363D' : '#CBD5E1'}`,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.35rem',
+                      maxHeight: '180px',
+                      overflowY: 'auto',
+                    }}
+                  >
+                    {/* Facebook Platform */}
+                    <div
+                      onClick={() =>
+                        handleConnectOrCreateDestination(quickAddPopover.nodeId, 'social_media', 'facebook')
+                      }
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '0.35rem 0.45rem',
+                        borderRadius: '4px',
+                        border: isDarkTheme ? '1px solid #30363D' : '1px solid #E2E8F0',
+                        backgroundColor: isDarkTheme ? '#161B22' : '#FFFFFF',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', minWidth: 0 }}>
+                        <FaFacebook size={12} color="#1877F2" style={{ flexShrink: 0 }} />
+                        <span style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                          Facebook
+                        </span>
+                      </div>
+                      <span style={{ fontSize: '0.5rem', color: '#1877F2', fontWeight: 600 }}>+ Facebook Box</span>
+                    </div>
+
+                    {/* Instagram Platform */}
+                    <div
+                      onClick={() =>
+                        handleConnectOrCreateDestination(quickAddPopover.nodeId, 'social_media', 'instagram')
+                      }
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '0.35rem 0.45rem',
+                        borderRadius: '4px',
+                        border: isDarkTheme ? '1px solid #30363D' : '1px solid #E2E8F0',
+                        backgroundColor: isDarkTheme ? '#161B22' : '#FFFFFF',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', minWidth: 0 }}>
+                        <FaInstagram size={12} color="#E1306C" style={{ flexShrink: 0 }} />
+                        <span style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                          Instagram
+                        </span>
+                      </div>
+                      <span style={{ fontSize: '0.5rem', color: '#E1306C', fontWeight: 600 }}>+ Instagram Box</span>
+                    </div>
+
+                    {/* TikTok Platform */}
+                    <div
+                      onClick={() =>
+                        handleConnectOrCreateDestination(quickAddPopover.nodeId, 'social_media', 'tiktok')
+                      }
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '0.35rem 0.45rem',
+                        borderRadius: '4px',
+                        border: isDarkTheme ? '1px solid #30363D' : '1px solid #E2E8F0',
+                        backgroundColor: isDarkTheme ? '#161B22' : '#FFFFFF',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', minWidth: 0 }}>
+                        <FaTiktok size={11} color="#25F4EE" style={{ flexShrink: 0 }} />
+                        <span style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                          TikTok
+                        </span>
+                      </div>
+                      <span style={{ fontSize: '0.5rem', color: '#06B6D4', fontWeight: 600 }}>+ TikTok Box</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Option 3: Dual (Hybrid) */}
+                <button
+                  type="button"
+                  onClick={() => handleConnectOrCreateDestination(quickAddPopover.nodeId, 'hybrid')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.45rem',
+                    padding: '0.45rem 0.5rem',
+                    borderRadius: '6px',
+                    border: '1px solid transparent',
+                    backgroundColor: isDarkTheme ? 'rgba(139, 92, 246, 0.12)' : '#F5F3FF',
+                    color: isDarkTheme ? '#A78BFA' : '#7C3AED',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = '#8B5CF6';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = 'transparent';
+                  }}
+                >
+                  <div style={{ position: 'relative', width: '26px', height: '26px', borderRadius: '5px', backgroundColor: '#8B5CF6', color: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <FiLayers size={11} />
+                    <div style={{ position: 'absolute', bottom: -2, right: -2, backgroundColor: '#FFFFFF', borderRadius: '50%', padding: '1px', display: 'flex' }}>
+                      <FaFacebook size={7} color="#1877F2" />
+                    </div>
+                  </div>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: '0.71875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                      Social & Database
+                    </div>
+                    <div style={{ fontSize: '0.5625rem', color: 'var(--text-muted)' }}>
+                      Store & publish simultaneously
+                    </div>
+                  </div>
+                </button>
+
+                {/* Contextual Pipeline Step: Add Format Preset if Image node */}
+                {isImageNode && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleAddWatermarkNodeConnectedFromImages(quickAddPopover.nodeId);
+                      setQuickAddPopover(null);
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.45rem',
+                      padding: '0.45rem 0.5rem',
+                      borderRadius: '6px',
+                      border: isDarkTheme ? '1px dashed #30363D' : '1px dashed #CBD5E1',
+                      backgroundColor: 'transparent',
+                      color: 'var(--text-secondary)',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      transition: 'all 0.15s ease',
+                      marginTop: '0.1rem',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = '#8B5CF6';
+                      e.currentTarget.style.color = '#8B5CF6';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = isDarkTheme ? '#30363D' : '#CBD5E1';
+                      e.currentTarget.style.color = 'var(--text-secondary)';
+                    }}
+                  >
+                    <div style={{ width: '26px', height: '26px', borderRadius: '5px', backgroundColor: isDarkTheme ? 'rgba(139, 92, 246, 0.2)' : '#EDE9FE', color: '#8B5CF6', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <FiScissors size={13} />
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: '0.71875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                        Add Format Preset
+                      </div>
+                      <div style={{ fontSize: '0.5625rem', color: 'var(--text-muted)' }}>
+                        Aspect ratio & watermark
+                      </div>
+                    </div>
+                  </button>
+                )}
+              </div>
+            );
+          })()}
+
         </div>
       </div>
 
       {/* ======================================================== */}
-      {/* NODE CONFIGURATION MODAL BOX                             */}
+      {/* NODE CONFIGURATION SLIDE-OVER SIDEBAR                    */}
+      {/* (Trigger, Get Content, Get Images, Combine, AI Process)   */}
       {/* ======================================================== */}
-      {activeModalNode && (() => {
-        const isModalWatermark = Boolean(
-          activeModalNode.type === 'ai-box' &&
-          currentModalAIBox &&
-          isWatermarkAIBox(currentModalAIBox)
+      {activeModalNode &&
+        activeModalNode.type !== 'destination' &&
+        !(activeModalNode.type === 'ai-box' && currentModalAIBox && isWatermarkAIBox(currentModalAIBox)) &&
+        !connectDrawerNode && (() => {
+          const isTrigger = activeModalNode.type === 'trigger';
+          const isContent = activeModalNode.type === 'get-content';
+          const isImages = activeModalNode.type === 'get-images';
+          const isCombine = activeModalNode.type === 'combine';
+          const isAIBox = activeModalNode.type === 'ai-box' && Boolean(currentModalAIBox);
+
+          // Combine Box metadata
+          const combineId = isCombine ? (activeModalNode.combineId || (activeModalNode as any).id) : null;
+          const currentCombineBox = isCombine
+            ? (config.combineBoxes || []).find((b) => b.id === combineId) || config.combineBoxes?.[0]
+            : null;
+          const combineInputs = isCombine && currentCombineBox
+            ? (config.connections || []).filter((c) => c.toNodeId === currentCombineBox.id)
+            : [];
+
+          return (
+            <aside
+              className="workflow-sidebar"
+              style={{
+                position: 'absolute',
+                top: 0,
+                right: 0,
+                bottom: 0,
+                width: '380px',
+                maxWidth: '100%',
+                backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                borderLeft: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                boxShadow: isDark
+                  ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
+                  : '-3px 0 16px rgba(0, 0, 0, 0.06)',
+                zIndex: 170,
+                display: 'flex',
+                flexDirection: 'column',
+                animation: 'sidebarSlideIn 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
+              }}
+            >
+              {/* Header */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '0.875rem 1rem',
+                  borderBottom: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#F8FAFC',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', minWidth: 0, flex: 1 }}>
+                  {/* Icon */}
+                  <div
+                    style={{
+                      width: '32px',
+                      height: '32px',
+                      borderRadius: '8px',
+                      backgroundColor: isTrigger
+                        ? 'rgba(24, 119, 242, 0.12)'
+                        : isContent
+                        ? 'rgba(59, 130, 246, 0.12)'
+                        : isImages
+                        ? 'rgba(16, 185, 129, 0.12)'
+                        : isCombine
+                        ? 'rgba(245, 158, 11, 0.12)'
+                        : currentModalAIBox?.provider === 'google_ai'
+                        ? 'rgba(96, 165, 250, 0.15)'
+                        : 'rgba(16, 185, 129, 0.15)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    {isTrigger && <FaFacebook size={18} color="#1877F2" />}
+                    {isContent && <FiFileText size={18} color="#3B82F6" />}
+                    {isImages && <FiImage size={18} color="#10B981" />}
+                    {isCombine && <FiGitMerge size={18} color="#F59E0B" />}
+                    {isAIBox && currentModalAIBox && (
+                      currentModalAIBox.provider === 'google_ai' ? (
+                        <SiGooglegemini size={18} color="#60A5FA" />
+                      ) : currentModalAIBox.provider === 'openai' ? (
+                        <OpenAIIcon size={18} />
+                      ) : currentModalAIBox.provider === 'laozhang_ai' ? (
+                        <LaoZhangIcon size={18} />
+                      ) : (
+                        <RunwareIcon size={18} color="#10B981" />
+                      )
+                    )}
+                  </div>
+
+                  {/* Title & Subtitle */}
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    {isAIBox && currentModalAIBox ? (
+                      <input
+                        type="text"
+                        value={currentModalAIBox.title}
+                        onChange={(e) => handleUpdateAIBox(currentModalAIBox.id, { title: e.target.value })}
+                        placeholder="Node Name"
+                        title="Click to rename node"
+                        style={{
+                          fontSize: '0.875rem',
+                          fontWeight: 700,
+                          color: 'var(--text-primary)',
+                          backgroundColor: 'transparent',
+                          border: 'none',
+                          borderBottom: isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1',
+                          outline: 'none',
+                          width: '100%',
+                          padding: '1px 0',
+                          lineHeight: 1.2,
+                        }}
+                      />
+                    ) : isCombine && currentCombineBox ? (
+                      <input
+                        type="text"
+                        value={currentCombineBox.title || 'Combine Box'}
+                        onChange={(e) => {
+                          const updatedBoxes = (config.combineBoxes || []).map((b) =>
+                            b.id === currentCombineBox.id ? { ...b, title: e.target.value } : b
+                          );
+                          updateConfig({ ...config, combineBoxes: updatedBoxes });
+                        }}
+                        placeholder="Combine Box Name"
+                        style={{
+                          fontSize: '0.875rem',
+                          fontWeight: 700,
+                          color: 'var(--text-primary)',
+                          backgroundColor: 'transparent',
+                          border: 'none',
+                          borderBottom: isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1',
+                          outline: 'none',
+                          width: '100%',
+                          padding: '1px 0',
+                          lineHeight: 1.2,
+                        }}
+                      />
+                    ) : (
+                      <div style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.2 }}>
+                        {isTrigger && 'Facebook URL Importer'}
+                        {isContent && 'Get Content Branch'}
+                        {isImages && 'Get Images Branch'}
+                      </div>
+                    )}
+                    <div style={{ fontSize: '0.6875rem', color: isDark ? '#8B949E' : '#64748B', marginTop: '2px' }}>
+                      {isTrigger && 'Trigger Node · OpenClaw'}
+                      {isContent && '100% Full Content Extraction'}
+                      {isImages && 'High-Res Media Downloader'}
+                      {isCombine && `${combineInputs.length} inputs merged`}
+                      {isAIBox && currentModalAIBox && `${currentModalAIBox.provider === 'google_ai' ? 'Google Gemini' : 'OpenAI'} · ${currentModalAIBox.model || 'Model'}`}
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleCloseModal}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: '28px',
+                    height: '28px',
+                    borderRadius: '6px',
+                    border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+                    color: 'var(--text-secondary)',
+                    cursor: 'pointer',
+                    flexShrink: 0,
+                  }}
+                >
+                  <FiX size={15} />
+                </button>
+              </div>
+
+              {/* Scrollable Body */}
+              <div
+                style={{
+                  flex: 1,
+                  overflowY: 'auto',
+                  padding: '1rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '1rem',
+                }}
+              >
+                {/* TRIGGER SIDEBAR CONTENT */}
+                {isTrigger && (
+                  <>
+                    {/* Connect Next Step Quick Button (top) */}
+                    {renderCenteredConnectButton('trigger', 'trigger', 'Trigger')}
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: '0.875rem',
+                        backgroundColor: isDark ? '#1C2128' : '#F8FAFC',
+                        borderRadius: '0.5rem',
+                        border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                          Auto-Import on Paste
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                          Triggers extraction when a Facebook URL is entered
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateConfig({
+                            ...config,
+                            trigger: { ...config.trigger, autoImport: !config.trigger.autoImport },
+                          })
+                        }
+                        style={{
+                          width: '40px',
+                          height: '22px',
+                          backgroundColor: config.trigger.autoImport ? '#1877F2' : (isDark ? '#374151' : '#CBD5E1'),
+                          borderRadius: '11px',
+                          border: 'none',
+                          cursor: 'pointer',
+                          position: 'relative',
+                          padding: 0,
+                          transition: 'background-color 0.2s ease',
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: '18px',
+                            height: '18px',
+                            backgroundColor: '#FFFFFF',
+                            borderRadius: '50%',
+                            position: 'absolute',
+                            top: '2px',
+                            left: config.trigger.autoImport ? '20px' : '2px',
+                            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.25)',
+                            transition: 'left 0.2s ease',
+                          }}
+                        />
+                      </button>
+                    </div>
+
+                    <div style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                      Connects incoming Facebook URLs from Groups, Pages, and Marketplace directly to the Get Content and Get Images branches.
+                    </div>
+                  </>
+                )}
+
+                {/* GET CONTENT SIDEBAR CONTENT */}
+                {isContent && (() => {
+                  const contentStatus = getNodeExecutionStatus('get-content');
+                  return (
+                    <>
+                      {/* Connect Next Step Quick Button (top) */}
+                      {renderCenteredConnectButton('get-content', 'get-content', 'Get Content')}
+
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          padding: '0.875rem',
+                          backgroundColor: isDark ? '#1C2128' : '#F8FAFC',
+                          borderRadius: '0.5rem',
+                          border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                            Enable Content Extraction
+                          </div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                            Extracts 100% full original post content & caption
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateConfig({
+                              ...config,
+                              getContent: { ...config.getContent, enabled: !config.getContent.enabled },
+                            })
+                          }
+                          style={{
+                            width: '40px',
+                            height: '22px',
+                            backgroundColor: config.getContent.enabled ? '#388BFD' : (isDark ? '#374151' : '#CBD5E1'),
+                            borderRadius: '11px',
+                            border: 'none',
+                            cursor: 'pointer',
+                            position: 'relative',
+                            padding: 0,
+                            transition: 'background-color 0.2s ease',
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: '18px',
+                              height: '18px',
+                              backgroundColor: '#FFFFFF',
+                              borderRadius: '50%',
+                              position: 'absolute',
+                              top: '2px',
+                              left: config.getContent.enabled ? '20px' : '2px',
+                              boxShadow: '0 1px 3px rgba(0, 0, 0, 0.25)',
+                              transition: 'left 0.2s ease',
+                            }}
+                          />
+                        </button>
+                      </div>
+
+                      {/* Execution Result Box */}
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '0.45rem',
+                          padding: '0.625rem',
+                          borderRadius: '8px',
+                          border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#F8FAFC',
+                          marginTop: '0.25rem',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                              Extracted Post Content
+                            </span>
+                            {rawContent ? (
+                              <span style={{ fontSize: '0.625rem', fontWeight: 600, color: '#10B981', backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#DCFCE7', padding: '1px 5px', borderRadius: '4px' }}>
+                                ✓ Ready
+                              </span>
+                            ) : contentStatus === 'running' ? (
+                              <span style={{ fontSize: '0.625rem', fontWeight: 600, color: '#0284C7', backgroundColor: isDark ? 'rgba(2, 132, 199, 0.15)' : '#E0F2FE', padding: '1px 5px', borderRadius: '4px' }}>
+                                ● Extracting...
+                              </span>
+                            ) : (
+                              <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
+                                (Idle)
+                              </span>
+                            )}
+                          </div>
+
+                          {rawContent && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(rawContent);
+                                setCopiedTextSuccess(true);
+                                setTimeout(() => setCopiedTextSuccess(false), 2000);
+                              }}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '3px',
+                                background: 'none',
+                                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                borderRadius: '4px',
+                                padding: '2px 6px',
+                                fontSize: '0.625rem',
+                                color: copiedTextSuccess ? '#10B981' : 'var(--text-secondary)',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              {copiedTextSuccess ? <FiCheck size={11} /> : <FiCopy size={11} />}
+                              <span>{copiedTextSuccess ? 'Copied' : 'Copy'}</span>
+                            </button>
+                          )}
+                        </div>
+
+                        {rawContent ? (
+                          <>
+                            <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', display: 'flex', gap: '8px' }}>
+                              <span>{rawContent.length} characters</span>
+                              <span>•</span>
+                              <span>{rawContent.trim().split(/\s+/).filter(Boolean).length} words</span>
+                            </div>
+                            <div
+                              style={{
+                                maxHeight: '180px',
+                                overflowY: 'auto',
+                                padding: '0.5rem',
+                                borderRadius: '6px',
+                                backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
+                                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                fontSize: '0.75rem',
+                                lineHeight: 1.5,
+                                color: 'var(--text-primary)',
+                                whiteSpace: 'pre-wrap',
+                                wordBreak: 'break-word',
+                              }}
+                            >
+                              {rawContent}
+                            </div>
+                          </>
+                        ) : contentStatus === 'running' ? (
+                          <div style={{ padding: '1rem', textAlign: 'center', fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                            Extracting post text and caption from link...
+                          </div>
+                        ) : (
+                          <div style={{ padding: '0.875rem 0.5rem', textAlign: 'center', fontSize: '0.6875rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                            No content extracted yet. Run workflow with a Facebook URL to view live result here.
+                          </div>
+                        )}
+                      </div>
+
+                      <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.5 }}>
+                        When enabled, the full raw text caption and specifications are extracted directly from the post and piped simultaneously into all active AI copywriter nodes.
+                      </p>
+                    </>
+                  );
+                })()}
+
+                {/* GET IMAGES SIDEBAR CONTENT */}
+                {isImages && (() => {
+                  const imagesStatus = getNodeExecutionStatus('get-images');
+                  return (
+                    <>
+                      {/* Connect Next Step Quick Button (top) */}
+                      {renderCenteredConnectButton('get-images', 'get-images', 'Get Images')}
+
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          padding: '0.875rem',
+                          backgroundColor: isDark ? '#1C2128' : '#F8FAFC',
+                          borderRadius: '0.5rem',
+                          border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                            Enable Images Download
+                          </div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                            Downloads all original photos & media from the post
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateConfig({
+                              ...config,
+                              getImages: { ...config.getImages, enabled: !config.getImages.enabled },
+                            })
+                          }
+                          style={{
+                            width: '40px',
+                            height: '22px',
+                            backgroundColor: config.getImages.enabled ? '#10B981' : (isDark ? '#374151' : '#CBD5E1'),
+                            borderRadius: '11px',
+                            border: 'none',
+                            cursor: 'pointer',
+                            position: 'relative',
+                            padding: 0,
+                            transition: 'background-color 0.2s ease',
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: '18px',
+                              height: '18px',
+                              backgroundColor: '#FFFFFF',
+                              borderRadius: '50%',
+                              position: 'absolute',
+                              top: '2px',
+                              left: config.getImages.enabled ? '20px' : '2px',
+                              boxShadow: '0 1px 3px rgba(0, 0, 0, 0.25)',
+                              transition: 'left 0.2s ease',
+                            }}
+                          />
+                        </button>
+                      </div>
+
+                      {/* Media Gallery Execution Result Box */}
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '0.45rem',
+                          padding: '0.625rem',
+                          borderRadius: '8px',
+                          border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#F8FAFC',
+                          marginTop: '0.25rem',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                            Extracted Media ({compiledImages.length})
+                          </span>
+                          {compiledImages.length > 0 ? (
+                            <span style={{ fontSize: '0.625rem', fontWeight: 600, color: '#10B981', backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#DCFCE7', padding: '1px 5px', borderRadius: '4px' }}>
+                              ✓ Photos Ready
+                            </span>
+                          ) : imagesStatus === 'running' ? (
+                            <span style={{ fontSize: '0.625rem', fontWeight: 600, color: '#0284C7', backgroundColor: isDark ? 'rgba(2, 132, 199, 0.15)' : '#E0F2FE', padding: '1px 5px', borderRadius: '4px' }}>
+                              ● Downloading...
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
+                              (Idle)
+                            </span>
+                          )}
+                        </div>
+
+                        {compiledImages.length > 0 ? (
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.35rem', maxHeight: '200px', overflowY: 'auto' }}>
+                            {compiledImages.map((img, i) => (
+                              <div
+                                key={img.index ?? i}
+                                onClick={() => handleOpenLightbox(i)}
+                                style={{
+                                  position: 'relative',
+                                  aspectRatio: '1',
+                                  borderRadius: '6px',
+                                  overflow: 'hidden',
+                                  cursor: 'pointer',
+                                  border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                }}
+                                title="Click to preview full photo"
+                              >
+                                <img
+                                  src={img.finalUrl}
+                                  alt={`Photo ${i + 1}`}
+                                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                />
+                                {img.isEnhanced && (
+                                  <span style={{ position: 'absolute', top: 2, left: 2, fontSize: '0.5rem', fontWeight: 700, backgroundColor: '#EC4899', color: '#FFFFFF', padding: '1px 3px', borderRadius: '2px' }}>
+                                    HD
+                                  </span>
+                                )}
+                                {img.isWatermarked && (
+                                  <span style={{ position: 'absolute', bottom: 2, right: 2, width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10B981' }} />
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        ) : imagesStatus === 'running' ? (
+                          <div style={{ padding: '1rem', textAlign: 'center', fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                            Downloading high-resolution photos...
+                          </div>
+                        ) : (
+                          <div style={{ padding: '0.875rem 0.5rem', textAlign: 'center', fontSize: '0.6875rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                            No photos downloaded yet. Run workflow with Facebook URL to fetch media gallery.
+                          </div>
+                        )}
+                      </div>
+
+                      <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.5 }}>
+                        When enabled, the entire gallery of photos attached to the Facebook post is retrieved in high quality and sent to active photo formats and destinations.
+                      </p>
+                    </>
+                  );
+                })()}
+
+                {/* COMBINE BOX SIDEBAR CONTENT */}
+                {isCombine && currentCombineBox && (
+                  <>
+                    {/* Connect Next Step Quick Button (top) */}
+                    {renderCenteredConnectButton(currentCombineBox.id, 'combine', currentCombineBox.title || 'Combine Box')}
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '0.875rem',
+                        borderRadius: '8px',
+                        border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                        backgroundColor: isDark ? '#1C2128' : '#F8FAFC',
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                          Status
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                          Merges parallel inputs into a unified output
+                        </div>
+                      </div>
+                      <Badge variant="warning">{combineInputs.length} Inputs Merged</Badge>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                      <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                        Incoming Connected Nodes
+                      </label>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                        {combineInputs.map((c) => {
+                          const fromBox = config.aiBoxes.find((b) => b.id === c.fromNodeId);
+                          const fromTitle =
+                            c.fromNodeId === 'get-content'
+                              ? 'Get Content'
+                              : c.fromNodeId === 'get-images'
+                              ? 'Get Images'
+                              : fromBox?.title || c.fromNodeId;
+                          return (
+                            <div
+                              key={c.id}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                padding: '6px 10px',
+                                borderRadius: '6px',
+                                border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF',
+                                fontSize: '0.75rem',
+                              }}
+                            >
+                              <span style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{fromTitle}</span>
+                              <span style={{ color: '#F59E0B', fontSize: '0.7rem' }}>Connected</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: 'auto', paddingTop: '1rem' }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newId = `combine-box-${Date.now()}`;
+                          updateConfig({
+                            ...config,
+                            combineBoxes: [
+                              ...(config.combineBoxes || []),
+                              { id: newId, title: 'Combine Box', enabled: true, x: (currentCombineBox.x ?? 740), y: (currentCombineBox.y ?? 160) + 140 },
+                            ],
+                          });
+                          setActiveModalNode({ type: 'combine', combineId: newId, id: newId });
+                        }}
+                        style={{
+                          height: '32px',
+                          borderRadius: '6px',
+                          border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                          backgroundColor: isDark ? 'rgba(245, 158, 11, 0.1)' : '#FFFBEB',
+                          color: '#D97706',
+                          fontSize: '0.75rem',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                        }}
+                      >
+                        <FiPlus size={13} />
+                        <span>Add Another Combine Box</span>
+                      </button>
+                    </div>
+                  </>
+                )}
+
+                {/* AI PROCESS / AI MODEL SIDEBAR CONTENT (Restored Design) */}
+                {isAIBox && currentModalAIBox && (
+                  <>
+                    {/* Connect Next Step Quick Button (top) */}
+                    {renderCenteredConnectButton(currentModalAIBox.id, 'ai-box', currentModalAIBox.title || 'AI Processor')}
+
+                    {/* Node Status Toggle Card */}
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: '0.75rem 0.875rem',
+                        borderRadius: '8px',
+                        border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                        backgroundColor: isDark ? '#1C2128' : '#F8FAFC',
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                          Node Status
+                        </div>
+                        <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                          {currentModalAIBox.enabled ? 'Executing during workflow run' : 'Node is bypassed'}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleAIBox(currentModalAIBox.id)}
+                        style={{
+                          height: '28px',
+                          padding: '0 0.625rem',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.375rem',
+                          borderRadius: '6px',
+                          border: `1px solid ${currentModalAIBox.enabled ? 'rgba(16, 185, 129, 0.4)' : isDark ? '#30363D' : '#CBD5E1'}`,
+                          backgroundColor: currentModalAIBox.enabled ? 'rgba(16, 185, 129, 0.12)' : 'transparent',
+                          color: currentModalAIBox.enabled ? '#34D399' : 'var(--text-muted)',
+                          fontSize: '0.75rem',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <span
+                          style={{
+                            width: '6px',
+                            height: '6px',
+                            borderRadius: '50%',
+                            backgroundColor: currentModalAIBox.enabled ? '#10B981' : '#6B7280',
+                          }}
+                        />
+                        <span>{currentModalAIBox.enabled ? 'Active' : 'Disabled'}</span>
+                      </button>
+                    </div>
+
+                    {/* Select Prompt Template */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                          <FiFileText style={{ fontSize: '12px', color: 'var(--accent-primary, #3B82F6)' }} />
+                          Select Prompt Template
+                        </label>
+                        {currentModalAIBox.templateId && currentModalAIBox.templateId !== 'custom' && (
+                          <span style={{ fontSize: '0.625rem', color: '#10B981', fontWeight: 500 }}>
+                            ● Linked to Template
+                          </span>
+                        )}
+                      </div>
+                      <Select
+                        options={[
+                          ...availablePrompts.map((p) => ({
+                            value: String(p.id),
+                            label: p.name,
+                          })),
+                          { value: 'custom', label: '✨ Custom Prompt (Manual Input)' },
+                        ]}
+                        value={
+                          availablePrompts.some((p) => String(p.id) === String(currentModalAIBox.templateId))
+                            ? String(currentModalAIBox.templateId)
+                            : availablePrompts.some((p) => p.name === currentModalAIBox.title)
+                            ? String(availablePrompts.find((p) => p.name === currentModalAIBox.title)!.id)
+                            : currentModalAIBox.templateId === 'custom'
+                            ? 'custom'
+                            : availablePrompts[0]?.id ? String(availablePrompts[0].id) : 'custom'
+                        }
+                        onChange={(val) => {
+                          if (val === 'custom') {
+                            handleUpdateAIBox(currentModalAIBox.id, {
+                              templateId: 'custom',
+                            });
+                            return;
+                          }
+                          const matched = availablePrompts.find((p) => String(p.id) === String(val));
+                          if (matched) {
+                            const isGenericTitle =
+                              !currentModalAIBox.title ||
+                              /^AI Process #\d+/i.test(currentModalAIBox.title) ||
+                              availablePrompts.some(
+                                (p) =>
+                                  currentModalAIBox.title === p.name ||
+                                  currentModalAIBox.title === `${p.name} - Prompt` ||
+                                  currentModalAIBox.title === `${p.name} - Content - Prompt`
+                              );
+
+                            handleUpdateAIBox(currentModalAIBox.id, {
+                              templateId: String(matched.id),
+                              templateText: matched.templateText,
+                              title: isGenericTitle ? matched.name : currentModalAIBox.title,
+                            });
+                          }
+                        }}
+                        height="34px"
+                        placeholder="Select prompt template..."
+                      />
+                    </div>
+
+                    {/* AI Engine & Model */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                      <label style={{ display: 'block', fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                        AI Engine & Model
+                      </label>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleUpdateAIBox(currentModalAIBox.id, {
+                              provider: 'google_ai',
+                              model: 'gemini-2.5-flash',
+                            })
+                          }
+                          style={{
+                            height: '34px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '0.5rem',
+                            borderRadius: '0.375rem',
+                            border: `1.5px solid ${currentModalAIBox.provider === 'google_ai' ? '#3B82F6' : isDark ? '#30363D' : '#CBD5E1'}`,
+                            backgroundColor: currentModalAIBox.provider === 'google_ai' ? 'rgba(59, 130, 246, 0.12)' : 'transparent',
+                            color: currentModalAIBox.provider === 'google_ai' ? '#60A5FA' : 'var(--text-secondary)',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <SiGooglegemini style={{ fontSize: '15px' }} />
+                          <span>Google Gemini</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleUpdateAIBox(currentModalAIBox.id, {
+                              provider: 'openai',
+                              model: 'gpt-4o',
+                            })
+                          }
+                          style={{
+                            height: '34px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '0.5rem',
+                            borderRadius: '0.375rem',
+                            border: `1.5px solid ${currentModalAIBox.provider === 'openai' ? '#10B981' : isDark ? '#30363D' : '#CBD5E1'}`,
+                            backgroundColor: currentModalAIBox.provider === 'openai' ? 'rgba(16, 185, 129, 0.12)' : 'transparent',
+                            color: currentModalAIBox.provider === 'openai' ? '#34D399' : 'var(--text-secondary)',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <OpenAIIcon size={15} />
+                          <span>OpenAI</span>
+                        </button>
+                      </div>
+
+                      <Select
+                        options={
+                          currentModalAIBox.provider === 'google_ai'
+                            ? [
+                                { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (Ultra Fast & Precise)' },
+                                { value: 'gemini-flash-latest', label: 'Gemini Flash Latest' },
+                                { value: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro (Deep Reasoning)' },
+                              ]
+                            : [
+                                { value: 'gpt-4o', label: 'GPT-4o (High Precision)' },
+                                { value: 'gpt-4o-mini', label: 'GPT-4o-mini (Lightweight & Fast)' },
+                              ]
+                        }
+                        value={currentModalAIBox.model || (currentModalAIBox.provider === 'google_ai' ? 'gemini-2.5-flash' : 'gpt-4o')}
+                        onChange={(val) => handleUpdateAIBox(currentModalAIBox.id, { model: val })}
+                        height="34px"
+                      />
+                    </div>
+
+                    {/* Prompt Template Instructions (Editable!) */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                      <label style={{ display: 'block', fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                        Prompt Template Instructions
+                      </label>
+                      <textarea
+                        value={currentModalAIBox.templateText || ''}
+                        onChange={(e) => handleUpdateAIBox(currentModalAIBox.id, { templateText: e.target.value })}
+                        rows={6}
+                        placeholder="Enter prompt instructions for this AI process..."
+                        style={{
+                          width: '100%',
+                          backgroundColor: isDark ? '#0D1117' : '#F8FAFC',
+                          border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                          borderRadius: '0.375rem',
+                          padding: '0.625rem',
+                          color: 'var(--text-primary)',
+                          fontSize: '0.75rem',
+                          lineHeight: 1.5,
+                          outline: 'none',
+                          fontFamily: `'SF Mono', 'Fira Code', monospace`,
+                          resize: 'vertical',
+                          boxSizing: 'border-box',
+                        }}
+                      />
+                    </div>
+
+                    {/* Generated Output Preview Box (if available) */}
+                    {(() => {
+                      const boxOutput = aiGeneratedOutputs?.[currentModalAIBox.id] || (currentModalAIBox.id === config.aiBoxes[0]?.id ? aiGeneratedCopy : undefined);
+                      if (!boxOutput) return null;
+                      return (
+                        <div
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.45rem',
+                            padding: '0.625rem',
+                            borderRadius: '8px',
+                            border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#F8FAFC',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                Generated Output Copy
+                              </span>
+                              <span style={{ fontSize: '0.625rem', fontWeight: 600, color: '#10B981', backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#DCFCE7', padding: '1px 5px', borderRadius: '4px' }}>
+                                ✓ Ready
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(boxOutput);
+                                setCopiedTextSuccess(true);
+                                setTimeout(() => setCopiedTextSuccess(false), 2000);
+                              }}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '3px',
+                                background: 'none',
+                                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                borderRadius: '4px',
+                                padding: '2px 6px',
+                                fontSize: '0.625rem',
+                                color: copiedTextSuccess ? '#10B981' : 'var(--text-secondary)',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              {copiedTextSuccess ? <FiCheck size={11} /> : <FiCopy size={11} />}
+                              <span>{copiedTextSuccess ? 'Copied' : 'Copy'}</span>
+                            </button>
+                          </div>
+                          <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', display: 'flex', gap: '8px' }}>
+                            <span>{boxOutput.length} characters</span>
+                            <span>•</span>
+                            <span>{boxOutput.trim().split(/\s+/).filter(Boolean).length} words</span>
+                          </div>
+                          <div
+                            style={{
+                              maxHeight: '160px',
+                              overflowY: 'auto',
+                              padding: '0.5rem',
+                              borderRadius: '6px',
+                              backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
+                              border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                              fontSize: '0.75rem',
+                              lineHeight: 1.5,
+                              color: 'var(--text-primary)',
+                              whiteSpace: 'pre-wrap',
+                              wordBreak: 'break-word',
+                            }}
+                          >
+                            {boxOutput}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </>
+                )}
+              </div>
+
+              {/* Bottom Pinned Footer: Full Width Delete Button */}
+              <div
+                style={{
+                  padding: '0.875rem 1rem',
+                  borderTop: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#F8FAFC',
+                }}
+              >
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={(e) => {
+                    if (isTrigger) handleDeleteTrigger(e);
+                    else if (isContent) handleDeleteGetContent(e);
+                    else if (isImages) handleDeleteGetImages(e);
+                    else if (isCombine && currentCombineBox) handleDeleteCombineBox(currentCombineBox.id, e);
+                    else if (isAIBox && currentModalAIBox) handleDeleteAIBox(currentModalAIBox.id, e);
+                    handleCloseModal();
+                  }}
+                  leftIcon={<FiTrash2 size={13} style={{ color: 'var(--text-secondary)' }} />}
+                  style={{
+                    width: '100%',
+                    height: '34px',
+                    fontSize: '0.75rem',
+                    fontWeight: 500,
+                    color: 'var(--text-primary)',
+                    backgroundColor: isDark ? '#21262D' : '#F1F5F9',
+                    borderColor: isDark ? '#30363D' : '#CBD5E1',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  Delete
+                </Button>
+              </div>
+            </aside>
+          );
+        })()}
+
+      {/* ======================================================== */}
+      {/* PHOTO FORMAT & WATERMARK SLIDE-OVER SIDEBOX              */}
+      {/* ======================================================== */}
+      {activeModalNode &&
+        activeModalNode.type === 'ai-box' &&
+        currentModalAIBox &&
+        isWatermarkAIBox(currentModalAIBox) &&
+        !connectDrawerNode && (() => {
+          return (
+            <aside
+              className="workflow-sidebar"
+              style={{
+                position: 'absolute',
+                top: 0,
+                right: 0,
+                bottom: 0,
+                width: '400px',
+                maxWidth: '100%',
+                backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                borderLeft: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                boxShadow: isDark
+                  ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
+                  : '-3px 0 16px rgba(0, 0, 0, 0.06)',
+                zIndex: 170,
+                display: 'flex',
+                flexDirection: 'column',
+                animation: 'sidebarSlideIn 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
+              }}
+            >
+              {/* Top Navigation Bar with Title & Close [X] */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '0.875rem 1rem',
+                  borderBottom: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#F8FAFC',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', minWidth: 0 }}>
+                  <div
+                    style={{
+                      width: '30px',
+                      height: '30px',
+                      borderRadius: '8px',
+                      backgroundColor: 'var(--accent-primary-alpha, rgba(37, 99, 235, 0.1))',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: 'var(--accent-primary, #3B82F6)',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <FiScissors size={16} />
+                  </div>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.2 }}>
+                      Photo Format & Crop
+                    </div>
+                    <div style={{ fontSize: '0.6875rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                      Crop & Cut Studio
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCloseModal}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: '28px',
+                    height: '28px',
+                    borderRadius: '6px',
+                    border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+                    color: 'var(--text-secondary)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <FiX size={15} />
+                </button>
+              </div>
+
+              {/* Scrollable Body with WatermarkNodeModal */}
+              <div
+                style={{
+                  flex: 1,
+                  overflowY: 'auto',
+                  padding: '1.25rem',
+                }}
+              >
+                {/* Connect Next Step Quick Button (top) */}
+                {renderCenteredConnectButton(currentModalAIBox.id, 'ai-box', currentModalAIBox.title || 'Format Preset')}
+
+                <WatermarkNodeModal
+                  box={currentModalAIBox}
+                  isDark={isDark}
+                  onUpdateBox={(id, updates) => handleUpdateAIBox(id, updates)}
+                  onDeleteBox={(id) => {
+                    handleDeleteAIBox(id);
+                    handleCloseModal();
+                  }}
+                  onClose={handleCloseModal}
+                />
+              </div>
+
+              {/* Bottom Pinned Footer: Full Width Delete Button */}
+              <div
+                style={{
+                  padding: '0.875rem 1rem',
+                  borderTop: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#F8FAFC',
+                }}
+              >
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={(e) => {
+                    handleDeleteAIBox(currentModalAIBox.id, e);
+                    handleCloseModal();
+                  }}
+                  leftIcon={<FiTrash2 size={13} style={{ color: 'var(--text-secondary)' }} />}
+                  style={{
+                    width: '100%',
+                    height: '34px',
+                    fontSize: '0.75rem',
+                    fontWeight: 500,
+                    color: 'var(--text-primary)',
+                    backgroundColor: isDark ? '#21262D' : '#F1F5F9',
+                    borderColor: isDark ? '#30363D' : '#CBD5E1',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  Delete
+                </Button>
+              </div>
+            </aside>
+          );
+        })()}
+
+      {/* ======================================================== */}
+      {/* DESTINATION SLIDE-OVER SIDEBOX (Anchor Right Drawer)      */}
+      {/* ======================================================== */}
+      {activeModalNode && activeModalNode.type === 'destination' && !connectDrawerNode && (() => {
+        const allDests = getNormalizedDestinations(config);
+        const activeDestId = activeModalNode.destinationId || allDests[0]?.id || 'destination';
+        const currentDest = allDests.find((d) => d.id === activeDestId) || allDests[0];
+        const destIdx = allDests.findIndex((d) => d.id === activeDestId);
+        const isPlatformHub = currentDest.id.startsWith('dest-platform-');
+        const isPageAccount = Boolean(currentDest.accountId);
+        const isDatabaseQueue = currentDest.id.includes('database') || currentDest.title?.includes('Database');
+
+        // Upstream connection detection via reverse graph BFS
+        const upstreamIds = new Set<string>();
+        const queue = [activeDestId];
+        while (queue.length > 0) {
+          const curr = queue.shift()!;
+          (config.connections || []).forEach((c) => {
+            if (c.toNodeId === curr && !upstreamIds.has(c.fromNodeId)) {
+              upstreamIds.add(c.fromNodeId);
+              queue.push(c.fromNodeId);
+            }
+          });
+        }
+
+        // Check if text/copy is upstream
+        const hasIncomingContent =
+          upstreamIds.has('get-content') ||
+          config.aiBoxes.some((b) => upstreamIds.has(b.id) && !isWatermarkAIBox(b)) ||
+          (config.combineBoxes || []).some((cb) => {
+            if (!upstreamIds.has(cb.id)) return false;
+            const cbInputs = (config.connections || []).filter((c) => c.toNodeId === cb.id).map((c) => c.fromNodeId);
+            return cbInputs.some((id) => id === 'get-content' || config.aiBoxes.some((b) => b.id === id && !isWatermarkAIBox(b)));
+          });
+
+        // Check if photos/media is upstream
+        const hasIncomingImages =
+          upstreamIds.has('get-images') ||
+          config.aiBoxes.some((b) => upstreamIds.has(b.id) && isWatermarkAIBox(b)) ||
+          (config.combineBoxes || []).some((cb) => {
+            if (!upstreamIds.has(cb.id)) return false;
+            const cbInputs = (config.connections || []).filter((c) => c.toNodeId === cb.id).map((c) => c.fromNodeId);
+            return cbInputs.some((id) => id === 'get-images' || config.aiBoxes.some((b) => b.id === id && isWatermarkAIBox(b)));
+          });
+
+        const previewCopy =
+          activeCopy ||
+          rawContent ||
+          Object.values(aiGeneratedOutputs)[0] ||
+          `✨ ${currentDest.accountName || currentDest.title || 'Luxury Condo'} — 2BR/2BA Modern High-Rise • ฿8,500,000 • Freehold • Contact: 081-234-5678`;
+
+        const updateCurrentDest = (updates: Partial<DestinationNodeConfig>) => {
+          const updatedDests = allDests.map((d) => (d.id === activeDestId ? { ...d, ...updates } : d));
+          updateConfig({
+            ...config,
+            destinations: updatedDests,
+            destination: updatedDests[0] ? { ...config.destination, ...updatedDests[0] } : config.destination,
+          });
+        };
+
+        return (
+          <aside
+            className="workflow-sidebar"
+            style={{
+              position: 'absolute',
+              top: 0,
+              right: 0,
+              bottom: 0,
+              width: '380px',
+              maxWidth: '100%',
+              backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+              borderLeft: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+              boxShadow: isDark
+                ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
+                : '-3px 0 16px rgba(0, 0, 0, 0.06)',
+              zIndex: 170,
+              display: 'flex',
+              flexDirection: 'column',
+              animation: 'sidebarSlideIn 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
+            }}
+          >
+            {/* Top Navigation Bar with Title & Close [X] */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '0.875rem 1rem',
+                borderBottom: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#F8FAFC',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', minWidth: 0 }}>
+                <div
+                  style={{
+                    width: '30px',
+                    height: '30px',
+                    borderRadius: '8px',
+                    backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#DCFCE7',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#10B981',
+                    flexShrink: 0,
+                  }}
+                >
+                  <FiCheckCircle size={17} />
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.2 }}>
+                    Destination Settings
+                  </div>
+                  <div style={{ fontSize: '0.6875rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                    {currentDest.accountName || currentDest.title || 'Destination Node'}
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleCloseModal}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: '28px',
+                  height: '28px',
+                  borderRadius: '6px',
+                  border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+                  color: 'var(--text-secondary)',
+                  cursor: 'pointer',
+                }}
+              >
+                <FiX size={15} />
+              </button>
+            </div>
+
+            {/* Scrollable Body */}
+            <div
+              style={{
+                flex: 1,
+                overflowY: 'auto',
+                padding: '1rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '1rem',
+              }}
+            >
+              {/* Profile Card */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '0.875rem',
+                  borderRadius: '10px',
+                  border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                  backgroundColor: isDark ? '#1C2128' : '#F8FAFC',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0 }}>
+                  {currentDest.accountAvatar ? (
+                    <img
+                      src={currentDest.accountAvatar}
+                      alt={currentDest.accountName || currentDest.title}
+                      style={{ width: '42px', height: '42px', borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }}
+                    />
+                  ) : (
+                    <div
+                      style={{
+                        width: '42px',
+                        height: '42px',
+                        borderRadius: '50%',
+                        backgroundColor: '#1877F2',
+                        color: '#FFFFFF',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontWeight: 700,
+                        fontSize: '1.1rem',
+                        flexShrink: 0,
+                      }}
+                    >
+                      {(currentDest.accountName || currentDest.title || 'FB').charAt(0)}
+                    </div>
+                  )}
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {currentDest.accountName || currentDest.title}
+                    </div>
+                    <div style={{ fontSize: '0.7rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                      {isPageAccount ? `Facebook Page · Slot ${destIdx + 1}` : isDatabaseQueue ? 'Database Queue' : 'Pages Hub'}
+                    </div>
+                  </div>
+                </div>
+                <Badge variant="success">Active Target</Badge>
+              </div>
+
+              {/* CONTENT SESSION: Show only if upstream content is connected */}
+              {hasIncomingContent && (
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.5rem',
+                    padding: '0.875rem',
+                    borderRadius: '8px',
+                    border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <FiFileText size={16} color="#3B82F6" />
+                      <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        Content Session
+                      </span>
+                    </div>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer', fontSize: '0.7rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                      <span>Include</span>
+                      <input
+                        type="checkbox"
+                        checked={currentDest.includeContent !== false}
+                        onChange={(e) => updateCurrentDest({ includeContent: e.target.checked })}
+                        style={{ cursor: 'pointer' }}
+                      />
+                    </label>
+                  </div>
+
+                  <div
+                    style={{
+                      padding: '0.65rem 0.75rem',
+                      borderRadius: '6px',
+                      backgroundColor: isDark ? '#161B22' : '#F8FAFC',
+                      border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                      fontSize: '0.7rem',
+                      lineHeight: 1.5,
+                      color: 'var(--text-primary)',
+                      maxHeight: '110px',
+                      overflowY: 'auto',
+                      whiteSpace: 'pre-wrap',
+                    }}
+                  >
+                    {previewCopy}
+                  </div>
+                </div>
+              )}
+
+              {/* IMAGES SESSION: Show only if upstream images are connected */}
+              {hasIncomingImages && (
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.5rem',
+                    padding: '0.875rem',
+                    borderRadius: '8px',
+                    border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <FiImage size={16} color="#10B981" />
+                      <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        Images Session ({compiledImages.length} photos)
+                      </span>
+                    </div>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer', fontSize: '0.7rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                      <span>Include</span>
+                      <input
+                        type="checkbox"
+                        checked={currentDest.includeImages !== false}
+                        onChange={(e) => updateCurrentDest({ includeImages: e.target.checked })}
+                        style={{ cursor: 'pointer' }}
+                      />
+                    </label>
+                  </div>
+
+                  {compiledImages.length > 0 ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', overflowX: 'auto', paddingBottom: '3px' }}>
+                      {compiledImages.slice(0, 8).map((img, i) => (
+                        <div
+                          key={img.index || i}
+                          onClick={() => handleOpenLightbox(i)}
+                          title="Click to preview"
+                          style={{
+                            position: 'relative',
+                            width: '48px',
+                            height: '48px',
+                            flexShrink: 0,
+                            borderRadius: '6px',
+                            overflow: 'hidden',
+                            border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <img src={img.finalUrl} alt={`Photo ${i + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: '0.7rem', color: isDark ? '#8B949E' : '#64748B', fontStyle: 'italic', padding: '0.4rem 0' }}>
+                      Photos will be delivered upon workflow execution.
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* If neither content nor images connected */}
+              {!hasIncomingContent && !hasIncomingImages && (
+                <div
+                  style={{
+                    padding: '1.25rem',
+                    textAlign: 'center',
+                    borderRadius: '8px',
+                    border: isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1',
+                    color: isDark ? '#8B949E' : '#64748B',
+                    fontSize: '0.75rem',
+                  }}
+                >
+                  No Content or Media Connected Yet. Connect wires from Combine Box or Branches to feed this page.
+                </div>
+              )}
+
+              {/* PUBLISHING STRATEGY */}
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.625rem',
+                  padding: '0.875rem',
+                  borderRadius: '8px',
+                  border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF',
+                }}
+              >
+                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Publishing Strategy
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.75rem' }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>Publish Status</span>
+                  <button
+                    type="button"
+                    onClick={() => updateCurrentDest({ publishDirectly: !(currentDest.publishDirectly !== false) })}
+                    style={{
+                      padding: '4px 10px',
+                      borderRadius: '5px',
+                      border: 'none',
+                      backgroundColor: currentDest.publishDirectly !== false ? '#10B981' : isDark ? '#30363D' : '#E2E8F0',
+                      color: '#FFFFFF',
+                      fontSize: '0.7rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {currentDest.publishDirectly !== false ? 'Direct Publish' : 'Save as Draft'}
+                  </button>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.75rem' }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>Include AI Hashtags</span>
+                  <input
+                    type="checkbox"
+                    checked={currentDest.includeHashtags !== false}
+                    onChange={(e) => updateCurrentDest({ includeHashtags: e.target.checked })}
+                    style={{ cursor: 'pointer' }}
+                  />
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.75rem' }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>Post First Comment with Contact</span>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(currentDest.includeFirstComment)}
+                    onChange={(e) => updateCurrentDest({ includeFirstComment: e.target.checked })}
+                    style={{ cursor: 'pointer' }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Bottom Footer Actions: Only Delete button with full width */}
+            <div
+              style={{
+                padding: '0.875rem 1rem',
+                borderTop: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#F8FAFC',
+              }}
+            >
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={(e) => {
+                  handleDeleteDestination(e, activeDestId);
+                  handleCloseModal();
+                }}
+                leftIcon={<FiTrash2 size={13} style={{ color: 'var(--text-secondary)' }} />}
+                style={{
+                  width: '100%',
+                  height: '34px',
+                  fontSize: '0.75rem',
+                  fontWeight: 500,
+                  color: 'var(--text-primary)',
+                  backgroundColor: isDark ? '#21262D' : '#F1F5F9',
+                  borderColor: isDark ? '#30363D' : '#CBD5E1',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                Delete
+              </Button>
+            </div>
+          </aside>
         );
-        const isModalImageBox = Boolean(
+      })()}
+
+      {/* CONNECT ITEMS DRAWER (Opened via clicking "+" socket button on ANY workflow node) */}
+      {connectDrawerNode && (() => {
+        const fromNodeId = connectDrawerNode.nodeId;
+        const fromNodeType = connectDrawerNode.nodeType;
+        const fromTitle = connectDrawerNode.title;
+
+        // Context booleans
+        const isTrigger = fromNodeType === 'trigger' || fromNodeId === 'trigger';
+        const isContent = fromNodeType === 'get-content' || fromNodeId === 'get-content';
+        const isImages = fromNodeType === 'get-images' || fromNodeId === 'get-images';
+        const isAI = fromNodeType === 'ai-box' || fromNodeId.startsWith('ai-box');
+        const isOutput = fromNodeType === 'output' || fromNodeId === 'output';
+        const fromBox = config.aiBoxes.find((b) => b.id === fromNodeId);
+        const isFromTextAI = fromBox ? isTextAIBox(fromBox, config.connections) : false;
+        const isFromTextFormat = fromBox ? isTextFormatAIBox(fromBox) : false;
+        const isFromEnhance = fromBox ? (isEnhanceAIBox(fromBox, config.connections) || isImageAIBox(fromBox, config.connections)) && !isWatermarkAIBox(fromBox) : false;
+        const isFromWatermark = fromBox ? isWatermarkAIBox(fromBox) : false;
+
+        // Outgoing wires from this node
+        const outgoingConnections = (config.connections || []).filter((c) => c.fromNodeId === fromNodeId);
+        const connectedTargetIds = new Set(outgoingConnections.map((c) => c.toNodeId));
+
+        // Available existing nodes that can be connected
+        const fromDestNode = getNormalizedDestinations(config).find((d) => d.id === fromNodeId);
+        const resolvedTitle = (fromTitle || fromDestNode?.title || connectDrawerNode.title || '').toLowerCase();
+        const resolvedId = (fromNodeId || '').toLowerCase();
+        const destinationPlatform: string | undefined =
+          fromDestNode?.platform ||
+          (connectDrawerNode.platform === 'database' ? undefined : connectDrawerNode.platform) ||
+          (fromDestNode?.selectedPageId || fromDestNode?.selectedPageIds?.length ? 'facebook' : undefined) ||
+          (fromDestNode?.selectedIgAccountIds?.length ? 'instagram' : undefined) ||
+          (fromDestNode?.selectedTiktokAccountIds?.length ? 'tiktok' : undefined) ||
+          (resolvedTitle.includes('facebook') || resolvedId.includes('facebook') ? 'facebook' : undefined) ||
+          (resolvedTitle.includes('instagram') || resolvedId.includes('instagram') ? 'instagram' : undefined) ||
+          (resolvedTitle.includes('tiktok') || resolvedId.includes('tiktok') ? 'tiktok' : undefined) ||
+          (resolvedTitle.includes('database') || resolvedId.includes('database') || fromDestNode?.targetMode === 'remaining_posts' ? 'database' : undefined);
+        const isDestination = fromNodeType === 'destination' || fromNodeId.startsWith('dest-') || Boolean(fromDestNode) || destinationPlatform !== undefined;
+
+        // If clicking [+] from a specific Social Media node (Facebook, Instagram, TikTok):
+        // Show ONLY the accounts relative to that specific social media platform!
+        if (isDestination && destinationPlatform && destinationPlatform !== 'database') {
+          const isFb = destinationPlatform === 'facebook';
+          const isIg = destinationPlatform === 'instagram';
+          const isTiktok = destinationPlatform === 'tiktok';
+          const platColor = isFb ? '#1877F2' : isIg ? '#E1306C' : '#06B6D4';
+          const platName = isFb ? 'Facebook' : isIg ? 'Instagram' : 'TikTok';
+
+          return (
+            <aside
+              style={{
+                position: 'absolute',
+                top: 0,
+                right: 0,
+                bottom: 0,
+                width: '360px',
+                maxWidth: '100%',
+                backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                borderLeft: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                boxShadow: isDark
+                  ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
+                  : '-3px 0 16px rgba(0, 0, 0, 0.06)',
+                zIndex: 170,
+                display: 'flex',
+                flexDirection: 'column',
+                animation: 'sidebarSlideIn 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
+              }}
+            >
+              {/* Header */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '0.75rem',
+                  borderBottom: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', minWidth: 0 }}>
+                  <div
+                    style={{
+                      width: '28px',
+                      height: '28px',
+                      borderRadius: '6px',
+                      backgroundColor: isFb ? '#1877F2' : isTiktok ? '#000000' : undefined,
+                      background: isIg ? 'linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%)' : undefined,
+                      border: isTiktok ? '1px solid #333333' : undefined,
+                      color: isTiktok ? '#25F4EE' : '#FFFFFF',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    {isFb ? <FaFacebook size={16} /> : isIg ? <FaInstagram size={16} /> : <FaTiktok size={14} />}
+                  </div>
+                  <div style={{ minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: '0.8125rem',
+                        fontWeight: 700,
+                        color: isDark ? '#F0F6FC' : '#0F172A',
+                        lineHeight: 1.2,
+                      }}
+                    >
+                      Connect {platName} Account
+                    </div>
+                    <div
+                      style={{
+                        fontSize: '0.625rem',
+                        color: platColor,
+                        fontWeight: 600,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      From: {fromTitle}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConnectDrawerNode(null);
+                    setActiveModalNode(null);
+                  }}
+                  aria-label="Close"
+                  style={{
+                    width: '24px',
+                    height: '24px',
+                    borderRadius: '6px',
+                    border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                    backgroundColor: 'transparent',
+                    color: isDark ? '#8B949E' : '#64748B',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    flexShrink: 0,
+                  }}
+                >
+                  <FiX size={14} />
+                </button>
+              </div>
+
+              {/* Scrollable Content Body */}
+              <div
+                style={{
+                  flex: 1,
+                  overflowY: 'auto',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.75rem',
+                  padding: '0.75rem',
+                }}
+              >
+                {/* Source Node Indicator Pill */}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '0.5rem 0.625rem',
+                    borderRadius: '7px',
+                    backgroundColor: isDark ? '#0D1117' : '#F8FAFC',
+                    border: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                    <div
+                      style={{
+                        width: '6px',
+                        height: '6px',
+                        borderRadius: '50%',
+                        backgroundColor: platColor,
+                        boxShadow: `0 0 6px ${platColor}`,
+                      }}
+                    />
+                    <span
+                      style={{
+                        fontSize: '0.6875rem',
+                        fontWeight: 600,
+                        color: isDark ? '#C9D1D9' : '#334155',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      Source: {fromTitle}
+                    </span>
+                  </div>
+                  <span
+                    style={{
+                      fontSize: '0.5625rem',
+                      color: platColor,
+                      fontWeight: 600,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.04em',
+                    }}
+                  >
+                    Platform Active
+                  </span>
+                </div>
+
+                {/* Section Header */}
+                <div>
+                  <div
+                    style={{
+                      fontSize: '0.625rem',
+                      fontWeight: 700,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.06em',
+                      color: isDark ? '#8B949E' : '#64748B',
+                      marginBottom: '0.35rem',
+                    }}
+                  >
+                    Choose {platName} Account
+                  </div>
+                  <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', marginBottom: '0.65rem' }}>
+                    Select an account or page to add as a dedicated circular box connected to {fromTitle}:
+                  </div>
+
+                  {/* ONLY show accounts relative to this platform! */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                    {isFb &&
+                      managedPages.map((page) => (
+                        <div
+                          key={page.page_id}
+                          onClick={() => {
+                            handleConnectOrCreateDestination(fromNodeId, 'social_media', 'facebook', {
+                              id: page.page_id,
+                              name: page.name,
+                              picture_url: page.picture_url,
+                            });
+                            setConnectDrawerNode(null);
+                            setActiveModalNode(null);
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '0.55rem 0.65rem',
+                            borderRadius: '7px',
+                            border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                            backgroundColor: isDark ? '#1C2128' : '#F8FAFC',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.borderColor = '#1877F2';
+                            e.currentTarget.style.backgroundColor = isDark ? 'rgba(24, 119, 242, 0.12)' : '#EFF6FF';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
+                            e.currentTarget.style.backgroundColor = isDark ? '#1C2128' : '#F8FAFC';
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0 }}>
+                            <div
+                              style={{
+                                width: '28px',
+                                height: '28px',
+                                borderRadius: '6px',
+                                backgroundColor: '#1877F2',
+                                color: '#FFFFFF',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontSize: '0.625rem',
+                                fontWeight: 700,
+                                flexShrink: 0,
+                              }}
+                            >
+                              {page.name.slice(0, 2).toUpperCase()}
+                            </div>
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontSize: '0.71875rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {page.name}
+                              </div>
+                              <div style={{ fontSize: '0.5625rem', color: 'var(--text-muted)' }}>
+                                Page • Slot {page.slot || 1} • ID: {page.page_id}
+                              </div>
+                            </div>
+                          </div>
+                          <span
+                            style={{
+                              fontSize: '0.5625rem',
+                              padding: '3px 8px',
+                              borderRadius: '4px',
+                              backgroundColor: '#1877F2',
+                              color: '#FFFFFF',
+                              fontWeight: 700,
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '3px',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <FiPlus size={10} /> Add Box
+                          </span>
+                        </div>
+                      ))}
+
+                    {isIg &&
+                      managedIgAccounts.map((acct) => (
+                        <div
+                          key={acct.account_id}
+                          onClick={() => {
+                            handleConnectOrCreateDestination(fromNodeId, 'social_media', 'instagram', {
+                              id: acct.account_id,
+                              name: acct.name,
+                              username: acct.username,
+                            });
+                            setConnectDrawerNode(null);
+                            setActiveModalNode(null);
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '0.55rem 0.65rem',
+                            borderRadius: '7px',
+                            border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                            backgroundColor: isDark ? '#1C2128' : '#F8FAFC',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.borderColor = '#E1306C';
+                            e.currentTarget.style.backgroundColor = isDark ? 'rgba(225, 48, 108, 0.12)' : '#FFF1F5';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
+                            e.currentTarget.style.backgroundColor = isDark ? '#1C2128' : '#F8FAFC';
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0 }}>
+                            <div
+                              style={{
+                                width: '28px',
+                                height: '28px',
+                                borderRadius: '6px',
+                                background: 'linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%)',
+                                color: '#FFFFFF',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                flexShrink: 0,
+                              }}
+                            >
+                              <FaInstagram size={14} />
+                            </div>
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontSize: '0.71875rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {acct.name}
+                              </div>
+                              <div style={{ fontSize: '0.5625rem', color: 'var(--text-muted)' }}>
+                                {acct.username} • Feed &amp; Reels
+                              </div>
+                            </div>
+                          </div>
+                          <span
+                            style={{
+                              fontSize: '0.5625rem',
+                              padding: '3px 8px',
+                              borderRadius: '4px',
+                              backgroundColor: '#E1306C',
+                              color: '#FFFFFF',
+                              fontWeight: 700,
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '3px',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <FiPlus size={10} /> Add Box
+                          </span>
+                        </div>
+                      ))}
+
+                    {isTiktok &&
+                      managedTiktokAccounts.map((acct) => (
+                        <div
+                          key={acct.account_id}
+                          onClick={() => {
+                            handleConnectOrCreateDestination(fromNodeId, 'social_media', 'tiktok', {
+                              id: acct.account_id,
+                              name: acct.name,
+                              username: acct.username,
+                            });
+                            setConnectDrawerNode(null);
+                            setActiveModalNode(null);
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '0.55rem 0.65rem',
+                            borderRadius: '7px',
+                            border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                            backgroundColor: isDark ? '#1C2128' : '#F8FAFC',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.borderColor = '#06B6D4';
+                            e.currentTarget.style.backgroundColor = isDark ? 'rgba(6, 182, 212, 0.12)' : '#ECFEFF';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
+                            e.currentTarget.style.backgroundColor = isDark ? '#1C2128' : '#F8FAFC';
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0 }}>
+                            <div
+                              style={{
+                                width: '28px',
+                                height: '28px',
+                                borderRadius: '6px',
+                                backgroundColor: '#000000',
+                                border: '1px solid #333333',
+                                color: '#25F4EE',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                flexShrink: 0,
+                              }}
+                            >
+                              <FaTiktok size={13} />
+                            </div>
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontSize: '0.71875rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {acct.name}
+                              </div>
+                              <div style={{ fontSize: '0.5625rem', color: 'var(--text-muted)' }}>
+                                {acct.username} • Video &amp; Slides
+                              </div>
+                            </div>
+                          </div>
+                          <span
+                            style={{
+                              fontSize: '0.5625rem',
+                              padding: '3px 8px',
+                              borderRadius: '4px',
+                              backgroundColor: '#06B6D4',
+                              color: '#FFFFFF',
+                              fontWeight: 700,
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '3px',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <FiPlus size={10} /> Add Box
+                          </span>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              </div>
+            </aside>
+          );
+        }
+
+        const availableExistingNodes: Array<{ id: string; title: string; subtitle: string; icon: any; color: string }> = [];
+        if (!isContent && !connectedTargetIds.has('get-content') && config.getContent.enabled) {
+          availableExistingNodes.push({ id: 'get-content', title: 'Get Content', subtitle: 'Extract text & raw caption', icon: FiFileText, color: '#10B981' });
+        }
+        if (!isImages && !connectedTargetIds.has('get-images') && config.getImages.enabled) {
+          availableExistingNodes.push({ id: 'get-images', title: 'Get Images', subtitle: 'Media & photo pipeline', icon: FiImage, color: '#06B6D4' });
+        }
+        config.aiBoxes.forEach((box) => {
+          if (box.id !== fromNodeId && !connectedTargetIds.has(box.id)) {
+            const isCrop = isWatermarkAIBox(box);
+            const isEnh = isEnhanceAIBox(box, config.connections || []);
+            const isTxtAI = isTextAIBox(box, config.connections);
+            const isTxtFmt = isTextFormatAIBox(box);
+            availableExistingNodes.push({
+              id: box.id,
+              title: box.title || 'AI Processor',
+              subtitle: isCrop ? 'Format & watermark' : isEnh ? 'Photo enhancement' : isTxtAI ? 'AI Engine (Text Model)' : isTxtFmt ? 'Text Format Preset' : 'Text / copywriting',
+              icon: isCrop ? FiScissors : isEnh ? FiCpu : isTxtFmt ? FiFileText : FiCpu,
+              color: isCrop ? '#8B5CF6' : isEnh ? '#EC4899' : isTxtFmt ? '#6366F1' : '#3B82F6',
+            });
+          }
+        });
+
+        (config.combineBoxes || []).forEach((cb) => {
+          if (cb.id !== fromNodeId && cb.enabled !== false && !connectedTargetIds.has(cb.id)) {
+            availableExistingNodes.push({
+              id: cb.id,
+              title: cb.title || 'Combine Box',
+              subtitle: 'Merge inputs into unified view',
+              icon: FiGitMerge,
+              color: '#F59E0B',
+            });
+          }
+        });
+
+        getNormalizedDestinations(config).forEach((dest) => {
+          if (dest.enabled !== false && !connectedTargetIds.has(dest.id)) {
+            const isDb = dest.storeInDatabase ?? (dest.targetMode !== 'social_media');
+            const isSoc = dest.postToSocialMedia ?? (dest.targetMode !== 'remaining_posts');
+            availableExistingNodes.push({
+              id: dest.id,
+              title: dest.title || (isSoc ? 'Facebook Post' : 'Remaining Posts Database'),
+              subtitle: isSoc && isDb ? 'Social Media & Database' : isSoc ? 'Publish directly to Facebook Page' : 'Store in database queue',
+              icon: isSoc ? FaFacebook : FiLayers,
+              color: isSoc ? '#1877F2' : '#0EA5E9',
+            });
+          }
+        });
+
+        // Helper to connect wire to existing node
+        const handleConnectToTarget = (targetId: string) => {
+          const existing = (config.connections || []).some(
+            (c) => c.fromNodeId === fromNodeId && c.toNodeId === targetId
+          );
+          if (!existing) {
+            const newConn: WorkflowWireConnection = {
+              id: `conn-${fromNodeId}-${targetId}`,
+              fromNodeId: fromNodeId,
+              toNodeId: targetId,
+            };
+            updateConfig({
+              ...config,
+              connections: [...(config.connections || []), newConn],
+            });
+          }
+          setConnectDrawerNode(null);
+          setActiveModalNode(null);
+        };
+
+        // Helper to disconnect wire
+        const handleDisconnectWire = (connId: string) => {
+          updateConfig({
+            ...config,
+            connections: (config.connections || []).filter((c) => c.id !== connId),
+          });
+        };
+
+        const isModalWatermark = fromBox ? isWatermarkAIBox(fromBox) : false;
+        const isModalImageBox = fromBox ? isImageAIBox(fromBox, config.connections) && !isModalWatermark : false;
+        const currentModalAIBox = fromBox;
+        const activeModalNode = { type: fromNodeType as any, id: fromNodeId, destinationId: fromNodeId };
+        const isModalTextFormat = Boolean(
           activeModalNode.type === 'ai-box' &&
           currentModalAIBox &&
           !isModalWatermark &&
-          isImageAIBox(currentModalAIBox, config.connections)
+          !isModalImageBox &&
+          isTextFormatAIBox(currentModalAIBox)
         );
-        return (
-          <Modal
-            isOpen={Boolean(activeModalNode)}
-            onClose={handleCloseModal}
-            maxWidth={isModalWatermark ? '580px' : activeModalNode.type === 'ai-box' ? '96vw' : '560px'}
-            height={isModalWatermark ? undefined : activeModalNode.type === 'ai-box' ? '92vh' : undefined}
-            bodyPadding={isModalWatermark ? '1.25rem 1.5rem' : activeModalNode.type === 'ai-box' ? '0' : undefined}
-            headerExtra={
-              isModalWatermark ? (
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 500, marginRight: '0.25rem' }}>
-                  Crop & Cut Studio
-                </span>
-              ) : isModalImageBox && currentModalAIBox ? (
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 500, marginRight: '0.25rem' }}>
-                  Strength: {Math.round((currentModalAIBox.strength ?? 0.25) * 100)}%
-                </span>
-              ) : undefined
-            }
+        const isModalTextAI = Boolean(
+          activeModalNode.type === 'ai-box' &&
+          currentModalAIBox &&
+          !isModalWatermark &&
+          !isModalImageBox &&
+          !isModalTextFormat
+        );
 
-          title={
-            activeModalNode.type === 'trigger' ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
-                <FaFacebook style={{ fontSize: '20px', color: '#1877F2' }} />
-                <span>Facebook URL Importer (Trigger)</span>
+        const getBaseDeleteConfig = (): { label: string; onClick: (e?: any) => void } | null => {
+          if (!activeModalNode) return null;
+          if (activeModalNode.type === 'trigger') {
+            return {
+              label: 'Delete Trigger Node',
+              onClick: (e) => handleDeleteTrigger(e),
+            };
+          }
+          if (activeModalNode.type === 'ai-box' && currentModalAIBox) {
+            return {
+              label: isModalWatermark
+                ? 'Delete Watermark Node'
+                : isModalImageBox
+                ? 'Delete Image AI Node'
+                : `Delete "${currentModalAIBox.title || 'AI'}" Node`,
+              onClick: (e) => handleDeleteAIBox(currentModalAIBox.id, e),
+            };
+          }
+          if (activeModalNode.type === 'get-content') {
+            return {
+              label: 'Delete "Get Content" Node',
+              onClick: (e) => handleDeleteGetContent(e),
+            };
+          }
+          if (activeModalNode.type === 'get-images') {
+            return {
+              label: 'Delete "Get Images" Node',
+              onClick: (e) => handleDeleteGetImages(e),
+            };
+          }
+          if (activeModalNode.type === 'destination') {
+            const allDests = getNormalizedDestinations(config);
+            const activeDestId = activeModalNode.destinationId || allDests[0]?.id || 'destination';
+            const currentDest = allDests.find((d) => d.id === activeDestId) || allDests[0];
+            return {
+              label: `Delete "${currentDest?.title || 'Destination'}" Node`,
+              onClick: (e) => handleDeleteDestination(e, activeDestId),
+            };
+          }
+          if (activeModalNode.type === 'output') {
+            return {
+              label: 'Delete Output Node',
+              onClick: (e) => handleDeleteOutputNode(e),
+            };
+          }
+          if (activeModalNode.type === 'combine') {
+            const cbId = (activeModalNode as any).combineId || (activeModalNode as any).id;
+            const cb = (config.combineBoxes || []).find((b) => b.id === cbId);
+            return {
+              label: `Delete "${cb?.title || 'Combine Box'}" Node`,
+              onClick: (e) => handleDeleteCombineBox(cbId, e),
+            };
+          }
+          return null;
+        };
+
+        const baseDeleteConfig = getBaseDeleteConfig();
+
+        return (
+          <aside
+            style={{
+              position: 'absolute',
+              top: 0,
+              right: 0,
+              bottom: 0,
+              width: '360px',
+              maxWidth: '100%',
+              backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+              borderLeft: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+              boxShadow: isDark
+                ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
+                : '-3px 0 16px rgba(0, 0, 0, 0.06)',
+              zIndex: 170,
+              display: 'flex',
+              flexDirection: 'column',
+              animation: 'sidebarSlideIn 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
+            }}
+          >
+            {/* Header */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '0.75rem',
+                borderBottom: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', minWidth: 0 }}>
+                <FiPlus size={20} color="#10B981" strokeWidth={2.5} style={{ flexShrink: 0 }} />
+                <div style={{ minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontSize: '0.8125rem',
+                      fontWeight: 700,
+                      color: isDark ? '#F0F6FC' : '#0F172A',
+                      lineHeight: 1.2,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                    }}
+                  >
+                    <span>Connect Next Step</span>
+                  </div>
+                  <div
+                    style={{
+                      fontSize: '0.625rem',
+                      color: '#10B981',
+                      fontWeight: 600,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    From: {fromTitle}
+                  </div>
+                </div>
               </div>
-            ) : activeModalNode.type === 'get-content' ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
-                <FiFileText style={{ fontSize: '20px', color: '#3B82F6' }} />
-                <span>Get Content Branch</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setConnectDrawerNode(null);
+                  setActiveModalNode(null);
+                }}
+                aria-label="Close"
+                style={{
+                  width: '24px',
+                  height: '24px',
+                  borderRadius: '6px',
+                  border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                  backgroundColor: 'transparent',
+                  color: isDark ? '#8B949E' : '#64748B',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                }}
+              >
+                <FiX size={14} />
+              </button>
+            </div>
+
+            {/* Scrollable Content Body */}
+            <div
+              style={{
+                flex: 1,
+                overflowY: 'auto',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.875rem',
+                padding: '0.75rem',
+              }}
+            >
+              {/* Source Node Indicator Pill */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '0.5rem 0.625rem',
+                  borderRadius: '7px',
+                  backgroundColor: isDark ? '#0D1117' : '#F8FAFC',
+                  border: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                  <div
+                    style={{
+                      width: '6px',
+                      height: '6px',
+                      borderRadius: '50%',
+                      backgroundColor: '#10B981',
+                      boxShadow: '0 0 6px #10B981',
+                    }}
+                  />
+                  <span
+                    style={{
+                      fontSize: '0.6875rem',
+                      fontWeight: 600,
+                      color: isDark ? '#C9D1D9' : '#334155',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    Source: {fromTitle}
+                  </span>
+                </div>
+                <span
+                  style={{
+                    fontSize: '0.5625rem',
+                    color: '#10B981',
+                    fontWeight: 600,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.04em',
+                  }}
+                >
+                  Socket Active
+                </span>
               </div>
-            ) : activeModalNode.type === 'get-images' ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
-                <FiImage style={{ fontSize: '20px', color: '#10B981' }} />
-                <span>Get Images Branch</span>
-              </div>
-            ) : activeModalNode.type === 'destination' ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
-                <FiCheckCircle style={{ fontSize: '20px', color: '#10B981' }} />
-                <span>Property Inbox Destination</span>
-              </div>
-            ) : currentModalAIBox ? (
-              (() => {
-                const isBoxWatermark = isWatermarkAIBox(currentModalAIBox);
-                const isBoxImage = !isBoxWatermark && isImageAIBox(currentModalAIBox, config.connections);
-                if (isBoxWatermark) {
-                  return (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+
+              {/* SECTION: Create & Connect New Processing Step */}
+              <div>
+                <div
+                  style={{
+                    fontSize: '0.625rem',
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.06em',
+                    color: isDark ? '#8B949E' : '#64748B',
+                    marginBottom: '0.45rem',
+                  }}
+                >
+                  Create & Wire New Step
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                  {/* Get Content / Get Images (restore missing ingestion nodes from the trigger) */}
+                  {isTrigger &&
+                    [
+                      {
+                        key: 'get-content',
+                        show: !config.getContent.enabled,
+                        title: '+ Get Content',
+                        desc: 'Extract full text, specs & raw caption',
+                        color: '#0EA5E9',
+                        Icon: FiFileText,
+                        onAdd: handleEnableGetContent,
+                      },
+                      {
+                        key: 'get-images',
+                        show: !config.getImages.enabled,
+                        title: '+ Get Images',
+                        desc: 'Extract all media & listing photos',
+                        color: '#10B981',
+                        Icon: FiImage,
+                        onAdd: handleEnableGetImages,
+                      },
+                    ]
+                      .filter((o) => o.show)
+                      .map((o) => (
+                        <button
+                          key={o.key}
+                          type="button"
+                          onClick={() => {
+                            o.onAdd();
+                            setConnectDrawerNode(null);
+                            setActiveModalNode(null);
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.5rem',
+                            padding: '0.55rem 0.65rem',
+                            borderRadius: '7px',
+                            border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                            backgroundColor: isDark ? '#1C2128' : '#F8FAFC',
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                            transition: 'all 0.15s ease',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.borderColor = o.color;
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: '28px',
+                              height: '28px',
+                              borderRadius: '6px',
+                              backgroundColor: o.color,
+                              color: '#FFFFFF',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <o.Icon size={14} />
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: '0.71875rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
+                              {o.title}
+                            </div>
+                            <div style={{ fontSize: '0.5625rem', color: isDark ? '#8B949E' : '#64748B' }}>{o.desc}</div>
+                          </div>
+                          <FiArrowRight size={13} style={{ color: isDark ? '#8B949E' : '#94A3B8' }} />
+                        </button>
+                      ))}
+
+                  {/* Get Content (Raw text extraction) */}
+                  {(isTrigger || (!isContent && !connectedTargetIds.has('get-content'))) && (
+                    <button
+                      type="button"
+                      onClick={() => handleConnectOrCreateGetContent(fromNodeId)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        padding: '0.55rem 0.65rem',
+                        borderRadius: '7px',
+                        border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                        backgroundColor: isDark ? '#1C2128' : '#F8FAFC',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        transition: 'all 0.15s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.borderColor = '#10B981';
+                        e.currentTarget.style.backgroundColor = isDark ? '#162820' : '#F0FDF4';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
+                        e.currentTarget.style.backgroundColor = isDark ? '#1C2128' : '#F8FAFC';
+                      }}
+                    >
                       <div
                         style={{
                           width: '28px',
                           height: '28px',
                           borderRadius: '6px',
-                          backgroundColor: 'var(--accent-primary-alpha, rgba(37, 99, 235, 0.1))',
-                          color: 'var(--accent-primary, #3B82F6)',
+                          backgroundColor: '#EC4899',
+                          color: '#FFFFFF',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
+                          flexShrink: 0,
                         }}
                       >
-                        <FiScissors size={15} />
+                        <FiImage size={14} />
                       </div>
-                      <div>
-                        <div style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.2 }}>
-                          Photo Format & Crop
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: '0.71875rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
+                          + Image Enhancer
                         </div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400, marginTop: '2px' }}>
-                          Select a format preset saved in Crop & Cut Studio
+                        <div style={{ fontSize: '0.5625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                          AI HDR lighting, clarity & color restoration
                         </div>
+                      </div>
+                      <FiArrowRight size={13} style={{ color: isDark ? '#8B949E' : '#94A3B8' }} />
+                    </button>
+                  )}
+
+                  {/* Studio Format / Watermark */}
+                  {(isImages || isTrigger || isFromEnhance) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleAddWatermarkNodeConnectedFromImages(fromNodeId);
+                        setConnectDrawerNode(null);
+                        setActiveModalNode(null);
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        padding: '0.55rem 0.65rem',
+                        borderRadius: '7px',
+                        border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                        backgroundColor: isDark ? '#1C2128' : '#F8FAFC',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        transition: 'all 0.15s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.borderColor = '#8B5CF6';
+                        e.currentTarget.style.backgroundColor = isDark ? '#271F36' : '#F5F3FF';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
+                        e.currentTarget.style.backgroundColor = isDark ? '#1C2128' : '#F8FAFC';
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: '28px',
+                          height: '28px',
+                          borderRadius: '6px',
+                          backgroundColor: '#8B5CF6',
+                          color: '#FFFFFF',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                        }}
+                      >
+                        <FiScissors size={14} />
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: '0.71875rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
+                          + Crop & Format Preset
+                        </div>
+                        <div style={{ fontSize: '0.5625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                          Apply saved aspect ratio and agency logo
+                        </div>
+                      </div>
+                      <FiArrowRight size={13} style={{ color: isDark ? '#8B949E' : '#94A3B8' }} />
+                    </button>
+                  )}
+
+                  {/* Post Output Box retired: Combine Box replaces it */}
+                  {false && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleConnectOrCreateDestination(fromNodeId, 'hybrid');
+                        setConnectDrawerNode(null);
+                        setActiveModalNode(null);
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        padding: '0.55rem 0.65rem',
+                        borderRadius: '7px',
+                        border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                        backgroundColor: isDark ? '#1C2128' : '#F8FAFC',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        transition: 'all 0.15s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.borderColor = '#3B82F6';
+                        e.currentTarget.style.backgroundColor = isDark ? '#1E293B' : '#EFF6FF';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
+                        e.currentTarget.style.backgroundColor = isDark ? '#1C2128' : '#F8FAFC';
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: '28px',
+                          height: '28px',
+                          borderRadius: '6px',
+                          backgroundColor: '#3B82F6',
+                          color: '#FFFFFF',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                        }}
+                      >
+                        <FiLayout size={14} />
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: '0.71875rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
+                          + Post Output Box
+                        </div>
+                        <div style={{ fontSize: '0.5625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                          Preview studio & multi-destination router
+                        </div>
+                      </div>
+                      <FiArrowRight size={13} style={{ color: isDark ? '#8B949E' : '#94A3B8' }} />
+                    </button>
+                  )}
+
+                  {/* Combine Box (merge any inputs into one view) */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newCbId = handleAddCombineBox(fromNodeId);
+                      setConnectDrawerNode(null);
+                      setActiveModalNode({ type: 'combine', combineId: newCbId, id: newCbId });
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                      padding: '0.55rem 0.65rem',
+                      borderRadius: '7px',
+                      border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                      backgroundColor: isDark ? '#1C2128' : '#F8FAFC',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      transition: 'all 0.15s ease',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = '#F59E0B';
+                      e.currentTarget.style.backgroundColor = isDark ? '#2A1F0D' : '#FFFBEB';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
+                      e.currentTarget.style.backgroundColor = isDark ? '#1C2128' : '#F8FAFC';
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: '28px',
+                        height: '28px',
+                        borderRadius: '6px',
+                        background: 'linear-gradient(135deg, #F59E0B, #D97706)',
+                        color: '#FFFFFF',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <FiGitMerge size={14} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '0.71875rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
+                        + Combine Box
+                      </div>
+                      <div style={{ fontSize: '0.5625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                        Merge content, images & AI results into one view
                       </div>
                     </div>
-                  );
-                }
-                return (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0, minHeight: '32px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
-                      {isBoxImage ? (
-                        <RunwareIcon size={18} color="#10B981" />
-                      ) : currentModalAIBox.provider === 'laozhang_ai' ? (
-                        <LaoZhangIcon size={18} />
-                      ) : currentModalAIBox.provider === 'openai' ? (
-                        <OpenAIIcon size={18} />
-                      ) : (
-                        <SiGooglegemini style={{ fontSize: '18px', color: '#60A5FA' }} />
-                      )}
+                    <FiArrowRight size={13} style={{ color: isDark ? '#8B949E' : '#94A3B8' }} />
+                  </button>
+                </div>
+              </div>
 
-                      {/* Directly Editable Node Name in Modal Header */}
+              {/* SECTION: Connect to Existing Canvas Nodes */}
+              {availableExistingNodes.length > 0 && (
+                <div>
+                  <div
+                    style={{
+                      fontSize: '0.625rem',
+                      fontWeight: 700,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.06em',
+                      color: isDark ? '#8B949E' : '#64748B',
+                      marginBottom: '0.45rem',
+                    }}
+                  >
+                    Wire to Existing Canvas Nodes
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                    {availableExistingNodes.map((node) => {
+                      const NodeIcon = node.icon;
+                      return (
+                        <button
+                          key={node.id}
+                          type="button"
+                          onClick={() => handleConnectToTarget(node.id)}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '0.45rem 0.55rem',
+                            borderRadius: '6px',
+                            border: isDark ? '1px solid #282E33' : '1px solid #E2E8F0',
+                            backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                            transition: 'all 0.15s ease',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.borderColor = node.color;
+                            e.currentTarget.style.transform = 'translateX(2px)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.borderColor = isDark ? '#282E33' : '#E2E8F0';
+                            e.currentTarget.style.transform = 'none';
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                            <div
+                              style={{
+                                width: '22px',
+                                height: '22px',
+                                borderRadius: '5px',
+                                backgroundColor: node.color,
+                                color: '#FFFFFF',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                flexShrink: 0,
+                              }}
+                            >
+                              <NodeIcon size={12} />
+                            </div>
+                            <div style={{ minWidth: 0 }}>
+                              <div
+                                style={{
+                                  fontSize: '0.6875rem',
+                                  fontWeight: 600,
+                                  color: isDark ? '#F0F6FC' : '#0F172A',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                {node.title}
+                              </div>
+                              <div
+                                style={{
+                                  fontSize: '0.5625rem',
+                                  color: isDark ? '#8B949E' : '#64748B',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                {node.subtitle}
+                              </div>
+                            </div>
+                          </div>
+                          <span
+                            style={{
+                              fontSize: '0.625rem',
+                              fontWeight: 600,
+                              color: node.color,
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#F1F5F9',
+                              flexShrink: 0,
+                            }}
+                          >
+                            + Connect
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* SECTION: Connected Next Steps (With Disconnect Option) */}
+              {outgoingConnections.length > 0 && (
+                <div>
+                  <div
+                    style={{
+                      fontSize: '0.625rem',
+                      fontWeight: 700,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.06em',
+                      color: isDark ? '#8B949E' : '#64748B',
+                      marginBottom: '0.45rem',
+                    }}
+                  >
+                    Active Outgoing Connections ({outgoingConnections.length})
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                    {outgoingConnections.map((conn) => {
+                      const targetBox = config.aiBoxes.find((b) => b.id === conn.toNodeId);
+                      const allDests = getNormalizedDestinations(config);
+                      const targetDest = allDests.find((d) => d.id === conn.toNodeId);
+                      const targetCb = (config.combineBoxes || []).find((b) => b.id === conn.toNodeId);
+                      const targetPage = targetDest ? managedPages.find((p) => p.page_id === (targetDest.selectedPageId || targetDest.selectedPageIds?.[0])) : null;
+                      const targetName =
+                        conn.toNodeId === 'get-content'
+                          ? 'Get Content'
+                          : conn.toNodeId === 'get-images'
+                          ? 'Get Images'
+                          : conn.toNodeId === 'output'
+                          ? 'Post Output'
+                          : targetDest
+                          ? (targetDest.targetMode === 'remaining_posts'
+                              ? 'Database (Remaining Posts)'
+                              : targetDest.targetMode === 'hybrid'
+                              ? 'Social & Database Storage'
+                              : `Social Media${targetPage ? ` (${targetPage.name})` : ''}`)
+                          : targetCb
+                          ? (targetCb.title || 'Combine Box')
+                          : targetBox?.title || conn.toNodeId;
+
+                      return (
+                        <div
+                          key={conn.id}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '0.45rem 0.55rem',
+                            borderRadius: '6px',
+                            backgroundColor: isDark ? 'rgba(16, 185, 129, 0.08)' : '#ECFDF5',
+                            border: '1px solid rgba(16, 185, 129, 0.25)',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                            <FiCheck size={12} style={{ color: '#10B981', flexShrink: 0 }} />
+                            <span
+                              style={{
+                                fontSize: '0.6875rem',
+                                fontWeight: 600,
+                                color: isDark ? '#E6EDF3' : '#0F172A',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              Connected to {targetName}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleDisconnectWire(conn.id)}
+                            title="Disconnect wire"
+                            style={{
+                              border: 'none',
+                              backgroundColor: 'transparent',
+                              color: '#EF4444',
+                              cursor: 'pointer',
+                              padding: '2px 4px',
+                              borderRadius: '4px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <FiTrash2 size={12} />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* SECTION: Direct Destination Endpoints */}
+              <div>
+                <div
+                  style={{
+                    fontSize: '0.625rem',
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.06em',
+                    color: isDark ? '#8B949E' : '#64748B',
+                    marginBottom: '0.45rem',
+                  }}
+                >
+                  Direct Destination Routing
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                  {/* Store in DB */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleConnectOrCreateDestination(fromNodeId, 'remaining_posts');
+                      setConnectDrawerNode(null);
+                      setActiveModalNode(null);
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                      padding: '0.55rem 0.65rem',
+                      borderRadius: '7px',
+                      border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                      backgroundColor: isDark ? '#1C2128' : '#F8FAFC',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      transition: 'all 0.15s ease',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = '#0284C7';
+                      e.currentTarget.style.backgroundColor = isDark ? '#0C2A40' : '#F0F9FF';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
+                      e.currentTarget.style.backgroundColor = isDark ? '#1C2128' : '#F8FAFC';
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: '28px',
+                        height: '28px',
+                        borderRadius: '6px',
+                        backgroundColor: '#0284C7',
+                        color: '#FFFFFF',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <FiLayers size={14} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '0.71875rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
+                        Store in Database
+                      </div>
+                      <div style={{ fontSize: '0.5625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                        Queue into Remaining Posts Database
+                      </div>
+                    </div>
+                    <FiArrowRight size={13} style={{ color: isDark ? '#8B949E' : '#94A3B8' }} />
+                  </button>
+                    {/* POST OUTPUT PAYLOAD PREVIEW CARD (Displays contents and images payload inside destination sidebar) */}
+                    <div
+                      style={{
+                        borderRadius: '8px',
+                        border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                        backgroundColor: isDark ? 'rgba(99, 102, 241, 0.07)' : '#F5F3FF',
+                        padding: '0.55rem 0.625rem',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '0.4rem',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                          <FiLayout size={12} color="#6366F1" />
+                          <span style={{ fontSize: '0.71875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                            Output Payload Preview
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!config.outputNode || config.outputNode.enabled === false) {
+                              handleAddOutputNode();
+                            }
+                            setConnectDrawerNode(null);
+                            setActiveModalNode({ type: 'output' });
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.25rem',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            border: 'none',
+                            backgroundColor: '#6366F1',
+                            color: '#FFFFFF',
+                            fontSize: '0.59375rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <FiEye size={10} />
+                          <span>Open Full Studio</span>
+                        </button>
+                      </div>
+
+                      {/* Text Excerpt */}
                       <div
+                        style={{
+                          fontSize: '0.625rem',
+                          color: 'var(--text-secondary)',
+                          lineHeight: '1.35',
+                          backgroundColor: isDark ? 'rgba(0,0,0,0.25)' : '#FFFFFF',
+                          borderRadius: '5px',
+                          padding: '0.35rem 0.45rem',
+                          maxHeight: '44px',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          display: '-webkit-box',
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: 'vertical',
+                          border: isDark ? '1px solid rgba(255,255,255,0.04)' : '1px solid #E2E8F0',
+                        }}
+                      >
+                        {activeCopy || rawContent || 'No copy generated yet. Connect an AI content box.'}
+                      </div>
+
+                      {/* Image Strip */}
+                      {compiledImages.length > 0 ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', overflowX: 'auto', paddingBottom: '2px' }}>
+                          {compiledImages.slice(0, 5).map((img, i) => (
+                            <div
+                              key={img.index || i}
+                              onClick={() => handleOpenLightbox(i)}
+                              title="Click to preview full photo"
+                              style={{
+                                position: 'relative',
+                                width: '34px',
+                                height: '34px',
+                                flexShrink: 0,
+                                borderRadius: '4px',
+                                overflow: 'hidden',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              <img src={img.finalUrl} alt={`Thumb ${i + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                              {img.isWatermarked && (
+                                <div style={{ position: 'absolute', bottom: 1, right: 1, width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10B981' }} />
+                              )}
+                            </div>
+                          ))}
+                          {compiledImages.length > 5 && (
+                            <div
+                              onClick={() => handleOpenLightbox(5)}
+                              title="Click to preview photo gallery"
+                              style={{
+                                width: '34px',
+                                height: '34px',
+                                flexShrink: 0,
+                                borderRadius: '4px',
+                                backgroundColor: isDark ? '#1E293B' : '#E2E8F0',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontSize: '0.59375rem',
+                                fontWeight: 600,
+                                color: 'var(--text-secondary)',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              +{compiledImages.length - 5}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: '0.5625rem', color: 'var(--text-muted)' }}>
+                          No images connected.
+                        </div>
+                      )}
+                    </div>
+                  {/* Post to Social Media (Expandable File-System Drawer) */}
+                  <button
+                    type="button"
+                    onClick={() => setIsSocialConnectDrawerExpanded(!isSocialConnectDrawerExpanded)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                      padding: '0.55rem 0.65rem',
+                      borderRadius: '7px',
+                      border: isSocialConnectDrawerExpanded
+                        ? '1.5px solid #E1306C'
+                        : isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                      backgroundColor: isSocialConnectDrawerExpanded
+                        ? (isDark ? 'rgba(225, 48, 108, 0.1)' : '#FFF1F5')
+                        : (isDark ? '#1C2128' : '#F8FAFC'),
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      transition: 'all 0.15s ease',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = '#E1306C';
+                      e.currentTarget.style.backgroundColor = isDark ? '#1F192E' : '#FFF1F5';
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isSocialConnectDrawerExpanded) {
+                        e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
+                        e.currentTarget.style.backgroundColor = isDark ? '#1C2128' : '#F8FAFC';
+                      }
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: '28px',
+                        height: '28px',
+                        borderRadius: '6px',
+                        background: 'linear-gradient(135deg, #1877F2 0%, #E1306C 50%, #000000 100%)',
+                        color: '#FFFFFF',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <FiShare2 size={14} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '0.71875rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
+                        Post Directly to Social Media
+                      </div>
+                      <div style={{ fontSize: '0.5625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                        {isSocialConnectDrawerExpanded ? 'Select a platform below' : 'Choose Facebook, Instagram, or TikTok'}
+                      </div>
+                    </div>
+                    <FiChevronDown
+                      size={14}
+                      style={{
+                        color: isDark ? '#8B949E' : '#94A3B8',
+                        transform: isSocialConnectDrawerExpanded ? 'rotate(180deg)' : 'none',
+                        transition: 'transform 0.2s ease',
+                      }}
+                    />
+                  </button>
+
+                  {/* Under are file open: Choose Social Media Platform */}
+                  {isSocialConnectDrawerExpanded && (
+                    <div
+                      style={{
+                        marginLeft: '0.65rem',
+                        paddingLeft: '0.75rem',
+                        borderLeft: `2px solid ${isDark ? '#30363D' : '#CBD5E1'}`,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '0.45rem',
+                        marginTop: '0.2rem',
+                        marginBottom: '0.4rem',
+                      }}
+                    >
+                      {/* 📘 FACEBOOK PLATFORM */}
+                      <div
+                        onClick={() => {
+                          handleConnectOrCreateDestination(fromNodeId, 'social_media', 'facebook');
+                          setConnectDrawerNode(null);
+                          setActiveModalNode(null);
+                        }}
                         style={{
                           display: 'flex',
                           alignItems: 'center',
-                          gap: '4px',
-                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
+                          justifyContent: 'space-between',
+                          padding: '0.5rem 0.6rem',
                           borderRadius: '6px',
-                          padding: '2px 6px',
-                          border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
+                          border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                          backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                          cursor: 'pointer',
                           transition: 'all 0.15s ease',
                         }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = '#1877F2';
+                          e.currentTarget.style.backgroundColor = isDark ? 'rgba(24, 119, 242, 0.12)' : '#EFF6FF';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
+                          e.currentTarget.style.backgroundColor = isDark ? '#161B22' : '#FFFFFF';
+                        }}
                       >
-                        <input
-                          type="text"
-                          value={currentModalAIBox.title}
-                          onChange={(e) => handleUpdateAIBox(currentModalAIBox.id, { title: e.target.value })}
-                          placeholder="Node Name"
-                          title="Click to rename node"
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', minWidth: 0 }}>
+                          <div
+                            style={{
+                              width: '24px',
+                              height: '24px',
+                              borderRadius: '5px',
+                              backgroundColor: '#1877F2',
+                              color: '#FFFFFF',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <FaFacebook size={13} />
+                          </div>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                              Facebook
+                            </div>
+                            <div style={{ fontSize: '0.53125rem', color: 'var(--text-muted)' }}>
+                              {managedPages.length} {managedPages.length === 1 ? 'page' : 'pages'} available
+                            </div>
+                          </div>
+                        </div>
+                        <span
                           style={{
-                            fontSize: '0.875rem',
-                            fontWeight: 600,
-                            color: 'var(--text-primary)',
-                            backgroundColor: 'transparent',
-                            border: 'none',
-                            outline: 'none',
-                            width: `${Math.max(120, Math.min(260, (currentModalAIBox.title?.length || 8) * 9 + 16))}px`,
-                            cursor: 'text',
+                            fontSize: '0.5625rem',
+                            padding: '3px 8px',
+                            borderRadius: '4px',
+                            border: '1px solid #1877F2',
+                            backgroundColor: isDark ? 'rgba(24, 119, 242, 0.15)' : '#EFF6FF',
+                            color: '#1877F2',
+                            fontWeight: 700,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '3px',
+                            flexShrink: 0,
                           }}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') e.currentTarget.blur();
+                        >
+                          <FiPlus size={10} /> Facebook Box
+                        </span>
+                      </div>
+
+                      {/* 📸 INSTAGRAM PLATFORM */}
+                      <div
+                        onClick={() => {
+                          handleConnectOrCreateDestination(fromNodeId, 'social_media', 'instagram');
+                          setConnectDrawerNode(null);
+                          setActiveModalNode(null);
+                        }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '0.5rem 0.6rem',
+                          borderRadius: '6px',
+                          border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                          backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = '#E1306C';
+                          e.currentTarget.style.backgroundColor = isDark ? 'rgba(225, 48, 108, 0.12)' : '#FFF1F5';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
+                          e.currentTarget.style.backgroundColor = isDark ? '#161B22' : '#FFFFFF';
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', minWidth: 0 }}>
+                          <div
+                            style={{
+                              width: '24px',
+                              height: '24px',
+                              borderRadius: '5px',
+                              background: 'linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%)',
+                              color: '#FFFFFF',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <FaInstagram size={13} />
+                          </div>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                              Instagram
+                            </div>
+                            <div style={{ fontSize: '0.53125rem', color: 'var(--text-muted)' }}>
+                              {managedIgAccounts.length} {managedIgAccounts.length === 1 ? 'account' : 'accounts'} available
+                            </div>
+                          </div>
+                        </div>
+                        <span
+                          style={{
+                            fontSize: '0.5625rem',
+                            padding: '3px 8px',
+                            borderRadius: '4px',
+                            border: '1px solid #E1306C',
+                            backgroundColor: isDark ? 'rgba(225, 48, 108, 0.15)' : '#FFF1F5',
+                            color: '#E1306C',
+                            fontWeight: 700,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '3px',
+                            flexShrink: 0,
                           }}
-                        />
+                        >
+                          <FiPlus size={10} /> Instagram Box
+                        </span>
+                      </div>
+
+                      {/* 🎵 TIKTOK PLATFORM */}
+                      <div
+                        onClick={() => {
+                          handleConnectOrCreateDestination(fromNodeId, 'social_media', 'tiktok');
+                          setConnectDrawerNode(null);
+                          setActiveModalNode(null);
+                        }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '0.5rem 0.6rem',
+                          borderRadius: '6px',
+                          border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                          backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = '#06B6D4';
+                          e.currentTarget.style.backgroundColor = isDark ? 'rgba(6, 182, 212, 0.12)' : '#ECFEFF';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
+                          e.currentTarget.style.backgroundColor = isDark ? '#161B22' : '#FFFFFF';
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', minWidth: 0 }}>
+                          <div
+                            style={{
+                              width: '24px',
+                              height: '24px',
+                              borderRadius: '5px',
+                              backgroundColor: '#000000',
+                              border: '1px solid #333333',
+                              color: '#25F4EE',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <FaTiktok size={12} />
+                          </div>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                              TikTok
+                            </div>
+                            <div style={{ fontSize: '0.53125rem', color: 'var(--text-muted)' }}>
+                              {managedTiktokAccounts.length} {managedTiktokAccounts.length === 1 ? 'account' : 'accounts'} available
+                            </div>
+                          </div>
+                        </div>
+                        <span
+                          style={{
+                            fontSize: '0.5625rem',
+                            padding: '3px 8px',
+                            borderRadius: '4px',
+                            border: '1px solid #06B6D4',
+                            backgroundColor: isDark ? 'rgba(6, 182, 212, 0.15)' : '#ECFEFF',
+                            color: '#06B6D4',
+                            fontWeight: 700,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '3px',
+                            flexShrink: 0,
+                          }}
+                        >
+                          <FiPlus size={10} /> TikTok Box
+                        </span>
                       </div>
                     </div>
-                  </div>
-                );
-              })()
-            ) : null
-          }
-        >
-          {/* TRIGGER MODAL CONTENT */}
-          {activeModalNode.type === 'trigger' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  padding: '0.875rem',
-                  backgroundColor: 'var(--bg-main)',
-                  borderRadius: '0.5rem',
-                  border: '1px solid var(--border-color)',
-                }}
-              >
-                <div>
-                  <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                    Auto-Import on Paste
-                  </div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                    Automatically triggers extraction when a valid Facebook URL is detected
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    updateConfig({
-                      ...config,
-                      trigger: { ...config.trigger, autoImport: !config.trigger.autoImport },
-                    })
-                  }
-                  style={{
-                    width: '40px',
-                    height: '22px',
-                    backgroundColor: config.trigger.autoImport ? '#1877F2' : (isDark ? '#374151' : '#CBD5E1'),
-                    borderRadius: '11px',
-                    border: 'none',
-                    cursor: 'pointer',
-                    position: 'relative',
-                    padding: 0,
-                    transition: 'background-color 0.2s ease',
-                  }}
-                >
-                  <div
-                    style={{
-                      width: '18px',
-                      height: '18px',
-                      backgroundColor: '#FFFFFF',
-                      borderRadius: '50%',
-                      position: 'absolute',
-                      top: '2px',
-                      left: config.trigger.autoImport ? '20px' : '2px',
-                      boxShadow: '0 1px 3px rgba(0, 0, 0, 0.25)',
-                      transition: 'left 0.2s ease',
+                  )}
+
+                  {/* Dual Mode (DB + Social) */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleConnectOrCreateDestination(fromNodeId, 'hybrid');
+                      setConnectDrawerNode(null);
+                      setActiveModalNode(null);
                     }}
-                  />
-                </button>
-              </div>
-
-              <div style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                Connects incoming Facebook URLs from Groups, Pages, and Marketplace directly to the Get Content and Get Images branches.
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
-                <Button variant="primary" size="sm" onClick={() => setActiveModalNode(null)}>
-                  Done
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {/* GET CONTENT MODAL CONTENT */}
-          {activeModalNode.type === 'get-content' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  padding: '0.875rem',
-                  backgroundColor: 'var(--bg-main)',
-                  borderRadius: '0.5rem',
-                  border: '1px solid var(--border-color)',
-                }}
-              >
-                <div>
-                  <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                    Enable Content Extraction
-                  </div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                    Extracts 100% full original post content & caption
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    updateConfig({
-                      ...config,
-                      getContent: { ...config.getContent, enabled: !config.getContent.enabled },
-                    })
-                  }
-                  style={{
-                    width: '40px',
-                    height: '22px',
-                    backgroundColor: config.getContent.enabled ? '#388BFD' : (isDark ? '#374151' : '#CBD5E1'),
-                    borderRadius: '11px',
-                    border: 'none',
-                    cursor: 'pointer',
-                    position: 'relative',
-                    padding: 0,
-                    transition: 'background-color 0.2s ease',
-                  }}
-                >
-                  <div
                     style={{
-                      width: '18px',
-                      height: '18px',
-                      backgroundColor: '#FFFFFF',
-                      borderRadius: '50%',
-                      position: 'absolute',
-                      top: '2px',
-                      left: config.getContent.enabled ? '20px' : '2px',
-                      boxShadow: '0 1px 3px rgba(0, 0, 0, 0.25)',
-                      transition: 'left 0.2s ease',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                      padding: '0.55rem 0.65rem',
+                      borderRadius: '7px',
+                      border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                      backgroundColor: isDark ? '#1C2128' : '#F8FAFC',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      transition: 'all 0.15s ease',
                     }}
-                  />
-                </button>
-              </div>
-
-              <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.5 }}>
-                When enabled, the full raw text caption and specifications are extracted directly from the post and piped simultaneously into all active AI copywriter nodes.
-              </p>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
-                <Button variant="primary" size="sm" onClick={() => setActiveModalNode(null)}>
-                  Done
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {/* GET IMAGES MODAL CONTENT */}
-          {activeModalNode.type === 'get-images' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  padding: '0.875rem',
-                  backgroundColor: 'var(--bg-main)',
-                  borderRadius: '0.5rem',
-                  border: '1px solid var(--border-color)',
-                }}
-              >
-                <div>
-                  <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                    Enable Images Download
-                  </div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                    Downloads all original photos & media from the post
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    updateConfig({
-                      ...config,
-                      getImages: { ...config.getImages, enabled: !config.getImages.enabled },
-                    })
-                  }
-                  style={{
-                    width: '40px',
-                    height: '22px',
-                    backgroundColor: config.getImages.enabled ? '#10B981' : (isDark ? '#374151' : '#CBD5E1'),
-                    borderRadius: '11px',
-                    border: 'none',
-                    cursor: 'pointer',
-                    position: 'relative',
-                    padding: 0,
-                    transition: 'background-color 0.2s ease',
-                  }}
-                >
-                  <div
-                    style={{
-                      width: '18px',
-                      height: '18px',
-                      backgroundColor: '#FFFFFF',
-                      borderRadius: '50%',
-                      position: 'absolute',
-                      top: '2px',
-                      left: config.getImages.enabled ? '20px' : '2px',
-                      boxShadow: '0 1px 3px rgba(0, 0, 0, 0.25)',
-                      transition: 'left 0.2s ease',
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = '#2563EB';
+                      e.currentTarget.style.backgroundColor = isDark ? '#172554' : '#EFF6FF';
                     }}
-                  />
-                </button>
-              </div>
-
-              <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.5 }}>
-                When enabled, the entire gallery of photos attached to the Facebook post is retrieved in high quality and sent to the Property Inbox.
-              </p>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
-                <Button variant="primary" size="sm" onClick={() => setActiveModalNode(null)}>
-                  Done
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {/* DYNAMIC AI BOX MODAL CONTENT (Interactive AI Training, Testing Studio, or Watermark Preset Manager) */}
-          {activeModalNode.type === 'ai-box' && currentModalAIBox && (
-            isWatermarkAIBox(currentModalAIBox) ? (
-              <WatermarkNodeModal
-                box={currentModalAIBox}
-                isDark={isDark}
-                onUpdateBox={(id, updates) => handleUpdateAIBox(id, updates)}
-                onDeleteBox={(id) => {
-                  handleDeleteAIBox(id);
-                  handleCloseModal();
-                }}
-                onClose={handleCloseModal}
-              />
-            ) : isImageAIBox(currentModalAIBox, config.connections) ? (
-              <AIImageStudio
-                box={currentModalAIBox}
-                availablePrompts={availablePrompts}
-                isSettingsOpen={isAISettingsDrawerOpen}
-                onCloseSettings={() => setIsAISettingsDrawerOpen(false)}
-                onUpdateBox={(id, updates) => handleUpdateAIBox(id, updates)}
-                onToggleBox={(id) => handleToggleAIBox(id)}
-                onDeleteBox={(id) => handleDeleteAIBox(id)}
-                onClose={handleCloseModal}
-              />
-            ) : (
-              <AITrainingChatbot
-                box={currentModalAIBox}
-                availablePrompts={availablePrompts}
-                allowEditPrompt={allowEditPrompt}
-                initialRawData={rawContent}
-                isSettingsOpen={isAISettingsDrawerOpen}
-                onCloseSettings={() => setIsAISettingsDrawerOpen(false)}
-                onUpdateBox={(id, updates) => handleUpdateAIBox(id, updates)}
-                onToggleBox={(id) => handleToggleAIBox(id)}
-                onDuplicateBox={(boxToDup) => handleDuplicateAIBox(boxToDup)}
-                onDeleteBox={(id) => handleDeleteAIBox(id)}
-                onClose={handleCloseModal}
-              />
-            )
-          )}
-
-          {/* DESTINATION MODAL CONTENT */}
-          {activeModalNode.type === 'destination' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  padding: '0.875rem',
-                  backgroundColor: 'var(--bg-main)',
-                  borderRadius: '0.5rem',
-                  border: '1px solid var(--border-color)',
-                }}
-              >
-                <div>
-                  <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                    Property Inbox Target
-                  </div>
-                  <div style={{ fontSize: '0.75rem', color: '#10B981', marginTop: '2px', fontWeight: 500 }}>
-                    Active & Ready to Receive Data
-                  </div>
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
+                      e.currentTarget.style.backgroundColor = isDark ? '#1C2128' : '#F8FAFC';
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: '28px',
+                        height: '28px',
+                        borderRadius: '6px',
+                        background: 'linear-gradient(135deg, #0284C7, #1877F2)',
+                        color: '#FFFFFF',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <FiShare2 size={14} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '0.71875rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
+                        Dual Target (Social & Database)
+                      </div>
+                      <div style={{ fontSize: '0.5625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                        Save to database and post to Facebook
+                      </div>
+                    </div>
+                    <FiArrowRight size={13} style={{ color: isDark ? '#8B949E' : '#94A3B8' }} />
+                  </button>
                 </div>
-                <Badge variant="success">Ready</Badge>
-              </div>
-
-              <div style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                Aggregates:
-                <ul style={{ margin: '0.5rem 0 0 1rem', padding: 0 }}>
-                  <li>{config.aiBoxes.filter((b) => b.enabled).length} Dynamic AI listing copies</li>
-                  <li>{config.getImages.enabled ? 'All original photos & media' : 'Media branch disabled'}</li>
-                  <li>Extracted price, bed/bath specs, contact info, and canonical Facebook URL</li>
-                </ul>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
-                <Button variant="primary" size="sm" onClick={() => setActiveModalNode(null)}>
-                  Done
-                </Button>
               </div>
             </div>
-          )}
-        </Modal>
+
+          </aside>
         );
       })()}
 
-      {/* Vertical Edge Sidebar Toggle Tab (Sleek rail along right edge) */}
-      {(deletedBoxes.length > 0 || isRecoverModalOpen) && (
-        <button
-          type="button"
-          data-no-tooltip="true"
-          onClick={() => {
-            setIsRecoverModalOpen((prev) => !prev);
-          }}
-          style={{
-            position: 'absolute',
-            top: '50%',
-            transform: 'translateY(-50%)',
-            right: isRecoverModalOpen ? '310px' : '0px',
-            zIndex: 160,
-            width: '28px',
-            minHeight: '100px',
-            padding: '8px 2px',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '6px',
-            backgroundColor: 'var(--accent-primary)',
-            color: '#FFFFFF',
-            border: '1px solid var(--accent-primary)',
-            borderRight: 'none',
-            borderTopLeftRadius: '8px',
-            borderBottomLeftRadius: '8px',
-            borderTopRightRadius: '0px',
-            borderBottomRightRadius: '0px',
-            boxShadow: isDark
-              ? '-4px 0 20px rgba(59, 130, 246, 0.45)'
-              : '-3px 0 14px rgba(37, 99, 235, 0.35)',
-            cursor: 'pointer',
-            transition:
-              'right 0.28s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.backgroundColor = 'var(--accent-hover)';
-            e.currentTarget.style.borderColor = 'var(--accent-hover)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.backgroundColor = 'var(--accent-primary)';
-            e.currentTarget.style.borderColor = 'var(--accent-primary)';
-          }}
-        >
-          {/* Top Recover Icon */}
-          <div
-            style={{
-              width: '20px',
-              height: '20px',
-              borderRadius: '4px',
-              backgroundColor: 'rgba(255, 255, 255, 0.22)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#FFFFFF',
-              flexShrink: 0,
-            }}
-          >
-            <FiRotateCcw
-              size={12}
-              style={{
-                transform: isRecoverModalOpen ? 'rotate(-90deg)' : 'none',
-                transition: 'transform 0.28s ease',
-              }}
-            />
-          </div>
 
-          {/* Vertical Text Label */}
-          <span
-            style={{
-              writingMode: 'vertical-rl',
-              transform: 'rotate(180deg)',
-              fontSize: '0.5625rem',
-              fontWeight: 700,
-              letterSpacing: '0.14em',
-              color: '#FFFFFF',
-              textTransform: 'uppercase',
-              userSelect: 'none',
-              margin: '2px 0',
-              opacity: 0.95,
-            }}
-          >
-            Recover
-          </span>
-
-          {/* Count Badge */}
-          <span
-            style={{
-              fontSize: '0.625rem',
-              fontWeight: 700,
-              minWidth: '17px',
-              height: '17px',
-              borderRadius: '9999px',
-              backgroundColor: 'rgba(255, 255, 255, 0.28)',
-              color: '#FFFFFF',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: '0 3px',
-              lineHeight: 1,
-              flexShrink: 0,
-            }}
-          >
-            {deletedBoxes.length}
-          </span>
-
-          {/* Toggle Chevron Arrow */}
-          <div style={{ color: 'rgba(255, 255, 255, 0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            {isRecoverModalOpen ? <FiChevronRight size={11} /> : <FiChevronLeft size={11} />}
-          </div>
-        </button>
-      )}
 
       {/* ======================================================== */}
       {/* DELETE CONFIRMATION MODAL                                */}
       {/* ======================================================== */}
-      {pendingDeleteBox && (
+      {/* NODE DELETE CONFIRMATION MODAL                            */}
+      {/* ======================================================== */}
+      {pendingDeleteBox && (() => {
+        const isWatermark = isWatermarkAIBox(pendingDeleteBox);
+        const isImage = isImageAIBox(pendingDeleteBox, config.connections) && !isWatermark;
+        const modalTitle = isWatermark ? 'Delete Format Node' : isImage ? 'Delete Image Enhancer' : 'Delete AI Node';
+        const modalSubtitle = isWatermark
+          ? `${pendingDeleteBox.subtitle || '1200×1200 (1:1)'} · ${pendingDeleteBox.enabled !== false ? 'Active' : 'Disabled'}`
+          : isImage
+          ? `${pendingDeleteBox.model || 'Runware AI'} · ${pendingDeleteBox.enabled !== false ? 'Active' : 'Disabled'}`
+          : `${getAIModelDisplayName(pendingDeleteBox.provider, pendingDeleteBox.model)} · ${pendingDeleteBox.enabled !== false ? 'Active' : 'Disabled'}`;
+
+        
+
+        return (
+          <Modal
+            isOpen={Boolean(pendingDeleteBox)}
+            onClose={() => setPendingDeleteBox(null)}
+            maxWidth="460px"
+            zIndex={100200}
+            title={
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', color: '#EF4444' }}>
+                <div
+                  style={{
+                    width: '28px',
+                    height: '28px',
+                    borderRadius: '50%',
+                    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <FiAlertTriangle size={16} />
+                </div>
+                <span style={{ fontWeight: 600, fontSize: '0.9375rem', color: 'var(--text-primary)' }}>
+                  {modalTitle}
+                </span>
+              </div>
+            }
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <p style={{ margin: 0, fontSize: '0.875rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                {isWatermark
+                  ? 'Are you sure you want to delete this format preset node? It will be removed from your workflow pipeline.'
+                  : 'Are you sure you want to delete this AI node? It will be removed from your workflow pipeline.'}
+              </p>
+
+              {/* Target Node Preview */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.75rem',
+                  padding: '0.875rem',
+                  backgroundColor: 'var(--bg-main)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '0.5rem',
+                }}
+              >
+                <div
+                  style={{
+                    width: '36px',
+                    height: '36px',
+                    borderRadius: '8px',
+                    backgroundColor: isWatermark
+                      ? 'rgba(139, 92, 246, 0.15)'
+                      : isImage
+                      ? 'rgba(16, 185, 129, 0.15)'
+                      : isDark
+                      ? '#1F2937'
+                      : '#F1F5F9',
+                    border: '1px solid var(--border-color)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  {renderAIBoxIcon(pendingDeleteBox, 20)}
+                </div>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div
+                    style={{
+                      fontWeight: 600,
+                      fontSize: '0.875rem',
+                      color: 'var(--text-primary)',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}
+                  >
+                    {pendingDeleteBox.title || (isWatermark ? 'Format Preset' : 'Dynamic AI Box')}
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                    {modalSubtitle}
+                  </div>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  fontSize: '0.75rem',
+                  color: isDark ? '#60A5FA' : '#2563EB',
+                  backgroundColor: isDark ? 'rgba(59, 130, 246, 0.1)' : 'rgba(59, 130, 246, 0.08)',
+                  padding: '0.5rem 0.75rem',
+                  borderRadius: '0.375rem',
+                  border: '1px solid rgba(59, 130, 246, 0.2)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}
+              >
+                <FiRotateCcw size={13} />
+                <span>You can restore this node anytime using the <strong>Recover</strong> button.</span>
+              </div>
+
+              {/* Modal Actions */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '0.5rem' }}>
+                <Button variant="outline" size="sm" onClick={() => setPendingDeleteBox(null)}>
+                  Cancel
+                </Button>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  onClick={() => confirmDeleteAIBox(pendingDeleteBox.id)}
+                  style={{
+                    backgroundColor: '#EF4444',
+                    borderColor: '#EF4444',
+                    color: '#FFFFFF',
+                  }}
+                >
+                  Delete Node
+                </Button>
+              </div>
+            </div>
+          </Modal>
+        );
+      })()}
+
+      {/* ======================================================== */}
+      {/* CONNECTION DELETE CONFIRMATION MODAL                      */}
+      {/* ======================================================== */}
+      {pendingDeleteConnection && (
         <Modal
-          isOpen={Boolean(pendingDeleteBox)}
-          onClose={() => setPendingDeleteBox(null)}
+          isOpen={Boolean(pendingDeleteConnection)}
+          onClose={() => setPendingDeleteConnection(null)}
           maxWidth="460px"
           zIndex={100200}
           title={
@@ -4399,128 +11157,80 @@ export const FacebookWorkflowCanvas = forwardRef<
                 <FiAlertTriangle size={16} />
               </div>
               <span style={{ fontWeight: 600, fontSize: '0.9375rem', color: 'var(--text-primary)' }}>
-                Delete AI Node
+                Delete Connection
               </span>
             </div>
           }
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             <p style={{ margin: 0, fontSize: '0.875rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-              Are you sure you want to delete this AI node? It will be removed from your workflow pipeline.
+              Are you sure you want to delete this connection wire? The nodes will be disconnected.
             </p>
 
-            {/* Target Node Preview */}
+            {/* Target Connection Preview */}
             <div
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '0.75rem',
+                justifyContent: 'space-between',
                 padding: '0.875rem',
                 backgroundColor: 'var(--bg-main)',
                 border: '1px solid var(--border-color)',
                 borderRadius: '0.5rem',
+                gap: '0.75rem',
               }}
             >
-              <div
-                style={{
-                  width: '36px',
-                  height: '36px',
-                  borderRadius: '50%',
-                  backgroundColor: isDark ? '#1F2937' : '#F1F5F9',
-                  border: '1px solid var(--border-color)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
-                }}
-              >
-                {renderAIBoxIcon(pendingDeleteBox, 20)}
-              </div>
               <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>From</div>
                 <div
                   style={{
                     fontWeight: 600,
-                    fontSize: '0.875rem',
+                    fontSize: '0.8125rem',
                     color: 'var(--text-primary)',
                     whiteSpace: 'nowrap',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
                   }}
                 >
-                  {pendingDeleteBox.title || 'Dynamic AI Box'}
+                  {pendingDeleteConnection.fromTitle}
                 </div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                  {pendingDeleteBox.model || 'Gemini Flash'} · {pendingDeleteBox.processType || 'AI Copywriter'}
+              </div>
+              <div style={{ color: '#EF4444', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <FiArrowRight size={16} />
+              </div>
+              <div style={{ minWidth: 0, flex: 1, textAlign: 'right' }}>
+                <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>To</div>
+                <div
+                  style={{
+                    fontWeight: 600,
+                    fontSize: '0.8125rem',
+                    color: 'var(--text-primary)',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
+                  {pendingDeleteConnection.toTitle}
                 </div>
               </div>
             </div>
 
-            <div
-              style={{
-                fontSize: '0.75rem',
-                color: isDark ? '#60A5FA' : '#2563EB',
-                backgroundColor: isDark ? 'rgba(59, 130, 246, 0.1)' : 'rgba(59, 130, 246, 0.08)',
-                padding: '0.5rem 0.75rem',
-                borderRadius: '0.375rem',
-                border: '1px solid rgba(59, 130, 246, 0.2)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-              }}
-            >
-              <FiRotateCcw size={13} />
-              <span>You can restore this node anytime using the <strong>Recover</strong> button.</span>
-            </div>
-
-            {/* Checkbox: Don't ask confirmation again */}
-            <label
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem',
-                cursor: 'pointer',
-                fontSize: '0.8125rem',
-                color: 'var(--text-secondary)',
-                userSelect: 'none',
-                marginTop: '0.25rem',
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={dontAskDeleteAgain}
-                onChange={(e) => {
-                  const val = e.target.checked;
-                  setDontAskDeleteAgain(val);
-                  try {
-                    localStorage.setItem('ea_workflow_skip_delete_confirm', String(val));
-                  } catch {}
-                }}
-                style={{
-                  width: '15px',
-                  height: '15px',
-                  accentColor: '#1877F2',
-                  cursor: 'pointer',
-                }}
-              />
-              <span>Don't ask confirmation again</span>
-            </label>
-
             {/* Modal Actions */}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '0.5rem' }}>
-              <Button variant="outline" size="sm" onClick={() => setPendingDeleteBox(null)}>
+              <Button variant="outline" size="sm" onClick={() => setPendingDeleteConnection(null)}>
                 Cancel
               </Button>
               <Button
                 variant="danger"
                 size="sm"
-                onClick={() => confirmDeleteAIBox(pendingDeleteBox.id)}
+                onClick={confirmDeleteConnection}
                 style={{
                   backgroundColor: '#EF4444',
                   borderColor: '#EF4444',
                   color: '#FFFFFF',
                 }}
               >
-                Delete Node
+                Delete Connection
               </Button>
             </div>
           </div>
@@ -4528,6 +11238,526 @@ export const FacebookWorkflowCanvas = forwardRef<
       )}
 
       {/* ======================================================== */}
+      {/* ADD STEP FROM TRIGGER MODAL                              */}
+      {/* ======================================================== */}
+      {isAddFromTriggerOpen && (
+        <Modal
+          isOpen={isAddFromTriggerOpen}
+          onClose={() => setIsAddFromTriggerOpen(false)}
+          maxWidth="440px"
+          zIndex={100200}
+          title={
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+              <div
+                style={{
+                  width: '30px',
+                  height: '30px',
+                  borderRadius: '8px',
+                  backgroundColor: '#1877F2',
+                  color: '#FFFFFF',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: '0 2px 6px rgba(24, 119, 242, 0.35)',
+                }}
+              >
+                <FaFacebook size={16} />
+              </div>
+              <div>
+                <div style={{ fontWeight: 600, fontSize: '0.9375rem', color: 'var(--text-primary)' }}>
+                  Connect Next Step
+                </div>
+                <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                  Choose which process to connect from Facebook Post
+                </div>
+              </div>
+            </div>
+          }
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '0.25rem 0' }}>
+            {/* Option 1: Get Content */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '0.75rem',
+                borderRadius: '8px',
+                border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#F8FAFC',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', flex: 1, minWidth: 0 }}>
+                <div
+                  style={{
+                    width: '34px',
+                    height: '34px',
+                    borderRadius: '8px',
+                    backgroundColor: '#3B82F6',
+                    color: '#FFFFFF',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  <FiFileText size={16} />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                    Get Content
+                  </div>
+                  <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', lineHeight: 1.3 }}>
+                    Extract text, price, specs, phone numbers & LINE ID
+                  </div>
+                </div>
+              </div>
+              {config.getContent.enabled ? (
+                <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: '#10B981', padding: '4px 8px' }}>
+                  ✓ Active
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleEnableGetContent();
+                    setIsAddFromTriggerOpen(false);
+                  }}
+                  style={{
+                    padding: '5px 10px',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    borderRadius: '6px',
+                    border: 'none',
+                    backgroundColor: '#3B82F6',
+                    color: '#FFFFFF',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                  }}
+                >
+                  <FiPlus size={13} /> Connect
+                </button>
+              )}
+            </div>
+                    {/* Step 3: Multi-Destination Node Management (Hybrid Power) */}
+                    {(() => {
+                      const allDests = getNormalizedDestinations(config);
+                      const destId = activeModalNode && activeModalNode.type === 'destination' ? activeModalNode.destinationId : '';
+                      return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', marginTop: '0.1rem' }}>
+                      <div style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                        All Destination Nodes ({allDests.length})
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
+                        {allDests.map((d, dIdx) => {
+                          const isCur = d.id === destId;
+                          return (
+                            <button
+                              key={d.id || dIdx}
+                              type="button"
+                              onClick={() => {
+                                setConnectDrawerNode(null);
+                                setActiveModalNode({ type: 'destination', destinationId: d.id });
+                              }}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.3rem',
+                                padding: '3px 8px',
+                                borderRadius: '4px',
+                                border: isCur ? '1.5px solid #2563EB' : isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                backgroundColor: isCur ? (isDark ? 'rgba(37, 99, 235, 0.15)' : '#EFF6FF') : 'transparent',
+                                color: isCur ? '#3B82F6' : 'var(--text-secondary)',
+                                fontSize: '0.625rem',
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                              }}
+                            >
+                              <span>{d.title || `Node ${dIdx + 1}`}</span>
+                              {isCur && <span style={{ width: '4px', height: '4px', borderRadius: '50%', backgroundColor: '#2563EB' }} />}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Add Another Destination Button */}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.3rem', marginTop: '0.2rem' }}>
+                        <button
+                          type="button"
+                          onClick={() => handleAddDestinationNode('remaining_posts')}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '0.3rem',
+                            height: '26px',
+                            borderRadius: '5px',
+                            border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                            backgroundColor: isDark ? 'rgba(2, 132, 199, 0.1)' : '#F0F9FF',
+                            color: '#0284C7',
+                            fontSize: '0.625rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <FiPlus size={11} />
+                          <span>+ Database Node</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleAddDestinationNode('social_media')}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '0.3rem',
+                            height: '26px',
+                            borderRadius: '5px',
+                            border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                            backgroundColor: isDark ? 'rgba(37, 99, 235, 0.1)' : '#EFF6FF',
+                            color: '#2563EB',
+                            fontSize: '0.625rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <FiPlus size={11} />
+                          <span>+ Social Media Node</span>
+                        </button>
+
+                        {(!config.outputNode || config.outputNode.enabled === false) && (
+                          <button
+                            type="button"
+                            onClick={() => handleAddOutputNode()}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '0.3rem',
+                              height: '26px',
+                              borderRadius: '5px',
+                              border: '1px solid #6366F1',
+                              backgroundColor: isDark ? 'rgba(99, 102, 241, 0.12)' : '#EEF2FF',
+                              color: isDark ? '#A5B4FC' : '#4F46E5',
+                              fontSize: '0.625rem',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              gridColumn: '1 / -1',
+                              marginTop: '0.15rem',
+                            }}
+                          >
+                            <FiLayout size={11} />
+                            <span>+ Add Output Box (Preview Studio)</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+            {/* Option 2: Get Images */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '0.75rem',
+                borderRadius: '8px',
+                border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#F8FAFC',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', flex: 1, minWidth: 0 }}>
+                <div
+                  style={{
+                    width: '34px',
+                    height: '34px',
+                    borderRadius: '8px',
+                    backgroundColor: '#10B981',
+                    color: '#FFFFFF',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  <FiImage size={16} />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                    Get Images
+                  </div>
+                  <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', lineHeight: 1.3 }}>
+                    Download HD photos, preserve photo order for enhancer
+                  </div>
+                </div>
+              </div>
+              {config.getImages.enabled ? (
+                <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: '#10B981', padding: '4px 8px' }}>
+                  ✓ Active
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleEnableGetImages();
+                    setIsAddFromTriggerOpen(false);
+                  }}
+                  style={{
+                    padding: '5px 10px',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    borderRadius: '6px',
+                    border: 'none',
+                    backgroundColor: '#10B981',
+                    color: '#FFFFFF',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                  }}
+                >
+                  <FiPlus size={13} /> Connect
+                </button>
+              )}
+            </div>
+
+            {/* Option 3: Direct AI Model */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '0.75rem',
+                borderRadius: '8px',
+                border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#F8FAFC',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', flex: 1, minWidth: 0 }}>
+                <div
+                  style={{
+                    width: '34px',
+                    height: '34px',
+                    borderRadius: '8px',
+                    backgroundColor: '#8B5CF6',
+                    color: '#FFFFFF',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  <SiGooglegemini size={16} />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                    AI Copywriter Model
+                  </div>
+                  <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', lineHeight: 1.3 }}>
+                    Generate rental copy, TikTok script or FB ad
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  handleAddAIBoxConnectedFromContent();
+                  setIsAddFromTriggerOpen(false);
+                }}
+                style={{
+                  padding: '5px 10px',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  borderRadius: '6px',
+                  border: 'none',
+                  backgroundColor: '#8B5CF6',
+                  color: '#FFFFFF',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                }}
+              >
+                <FiPlus size={13} /> Add
+              </button>
+            </div>
+
+            {/* Option 4: Image Enhancer */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '0.75rem',
+                borderRadius: '8px',
+                border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#F8FAFC',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', flex: 1, minWidth: 0 }}>
+                <div
+                  style={{
+                    width: '34px',
+                    height: '34px',
+                    borderRadius: '8px',
+                    backgroundColor: '#EC4899',
+                    color: '#FFFFFF',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  <FiSliders size={16} />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                    Image Studio & Enhancer
+                  </div>
+                  <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', lineHeight: 1.3 }}>
+                    Upscale, auto-crop formats or add watermarks
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  handleAddAIBoxConnectedFromImages();
+                  setIsAddFromTriggerOpen(false);
+                }}
+                style={{
+                  padding: '5px 10px',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  borderRadius: '6px',
+                  border: 'none',
+                  backgroundColor: '#EC4899',
+                  color: '#FFFFFF',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                }}
+              >
+                <FiPlus size={13} /> Add
+              </button>
+            </div>
+
+            {/* Direct Link to Facebook Drawer */}
+            <div style={{ display: 'flex', justifyContent: 'center', marginTop: '0.25rem' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsAddFromTriggerOpen(false);
+                  setActiveModalNode({ type: 'trigger' });
+                }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#1877F2',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  padding: '4px 8px',
+                }}
+              >
+                Configure Facebook Page & Webhook Trigger →
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* ======================================================== */}
+      {/* Vertical Edge Sidebar Toggle Tab (Sleek rail along right edge - Exact Match to User Image 2) */}
+      <button
+        type="button"
+        data-no-tooltip="true"
+        onClick={() => {
+          handleToggleGeneralSettings(!isRecoverModalOpen);
+        }}
+        style={{
+          position: 'absolute',
+          top: '50%',
+          transform: 'translateY(-50%)',
+          right: isRecoverModalOpen ? '320px' : '0px',
+          zIndex: 160,
+          width: '28px',
+          minHeight: '92px',
+          padding: '10px 2px',
+          display: activeModalNode ? 'none' : 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '8px',
+          backgroundColor: isDark ? '#161B22' : '#1E293B',
+          color: isDark ? '#E6EDF3' : '#F8FAFC',
+          border: isDark ? '1px solid #30363D' : '1px solid #334155',
+          borderRight: 'none',
+          borderTopLeftRadius: '8px',
+          borderBottomLeftRadius: '8px',
+          borderTopRightRadius: '0px',
+          borderBottomRightRadius: '0px',
+          boxShadow: 'none',
+          cursor: 'pointer',
+          transition:
+            'right 0.28s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.15s ease, border-color 0.15s ease',
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.backgroundColor = isDark ? '#21262D' : '#334155';
+          e.currentTarget.style.borderColor = isDark ? '#484F58' : '#475569';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.backgroundColor = isDark ? '#161B22' : '#1E293B';
+          e.currentTarget.style.borderColor = isDark ? '#30363D' : '#334155';
+        }}
+        title={isRecoverModalOpen ? 'Close General Settings' : 'Open General Settings'}
+      >
+        {/* Top Settings Icon - No background */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: isDark ? '#E6EDF3' : '#F8FAFC',
+            flexShrink: 0,
+          }}
+        >
+          <FiSliders
+            size={13}
+            style={{
+              transform: isRecoverModalOpen ? 'rotate(90deg)' : 'none',
+              transition: 'transform 0.28s ease',
+            }}
+          />
+        </div>
+
+        {/* Vertical Text Label - Title case, not all capital letters */}
+        <span
+          style={{
+            writingMode: 'vertical-rl',
+            transform: 'rotate(180deg)',
+            fontSize: '0.6875rem',
+            fontWeight: 600,
+            letterSpacing: '0.04em',
+            color: isDark ? '#E6EDF3' : '#F8FAFC',
+            textTransform: 'none',
+            userSelect: 'none',
+            margin: '4px 0',
+          }}
+        >
+          General
+        </span>
+
+        {/* Toggle Chevron Arrow */}
+        <div style={{ color: isDark ? '#8B949E' : '#94A3B8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {isRecoverModalOpen ? <FiChevronRight size={11} /> : <FiChevronLeft size={11} />}
+        </div>
+      </button>
+
       {/* RECOVER DELETED NODES SLIDE-OVER RIGHT SIDEBAR           */}
       {/* ======================================================== */}
       <div
@@ -4536,15 +11766,15 @@ export const FacebookWorkflowCanvas = forwardRef<
           top: 0,
           right: 0,
           bottom: 0,
-          width: '310px',
+          width: '320px',
           maxWidth: '100%',
-          backgroundColor: 'var(--bg-surface)',
+          backgroundColor: 'var(--bg-main)',
           borderLeft: '1px solid var(--border-color)',
           boxShadow: isDark
             ? '-8px 0 30px rgba(0, 0, 0, 0.7)'
             : '-4px 0 20px rgba(0, 0, 0, 0.08)',
           zIndex: 150,
-          display: 'flex',
+          display: (activeModalNode || connectDrawerNode) ? 'none' : 'flex',
           flexDirection: 'column',
           transform: isRecoverModalOpen ? 'translateX(0)' : 'translateX(100%)',
           transition: 'transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease',
@@ -4552,325 +11782,961 @@ export const FacebookWorkflowCanvas = forwardRef<
           pointerEvents: isRecoverModalOpen ? 'auto' : 'none',
         }}
       >
-        {/* Drawer Header (Clean, minimal 1-line top bar) */}
+        {/* Simple Clean Header with Top-Right Close Button */}
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '0.5rem',
-            padding: '0.75rem 0.875rem',
+            justifyContent: 'space-between',
+            padding: '0.75rem 1rem',
             borderBottom: '1px solid var(--border-color)',
-            backgroundColor: 'var(--bg-surface)',
             flexShrink: 0,
             height: '46px',
           }}
         >
-          <FiRotateCcw size={14} style={{ color: 'var(--accent-primary)' }} />
-          <span style={{ fontWeight: 600, fontSize: '0.8125rem', color: 'var(--text-primary)' }}>
-            Recover Nodes
+          <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+            {formatName || 'Workflow Settings'}
           </span>
-          <span
+          <button
+            type="button"
+            onClick={() => handleToggleGeneralSettings(false)}
+            title="Close"
+            aria-label="Close"
             style={{
-              fontSize: '0.6875rem',
-              fontWeight: 600,
-              padding: '1px 6px',
-              borderRadius: '9999px',
-              backgroundColor: 'var(--accent-primary-alpha)',
-              color: 'var(--accent-primary)',
-            }}
-          >
-            {deletedBoxes.length}
-          </span>
-        </div>
-
-        {/* Select All & Clear History Bar */}
-        {deletedBoxes.length > 0 && (
-          <div
-            style={{
+              width: '24px',
+              height: '24px',
+              borderRadius: '6px',
+              border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+              backgroundColor: 'transparent',
+              color: isDark ? '#8B949E' : '#64748B',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '0.45rem 0.875rem',
-              borderBottom: '1px solid var(--border-color)',
-              backgroundColor: 'var(--bg-secondary)',
-              fontSize: '0.75rem',
+              justifyContent: 'center',
+              cursor: 'pointer',
               flexShrink: 0,
+              transition: 'all 0.15s ease',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)';
+              e.currentTarget.style.color = 'var(--text-primary)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = 'transparent';
+              e.currentTarget.style.color = isDark ? '#8B949E' : '#64748B';
             }}
           >
-            <label
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem',
-                cursor: 'pointer',
-                fontWeight: 500,
-                color: 'var(--text-secondary)',
-                userSelect: 'none',
-                fontSize: '0.6875rem',
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={selectRecoverIds.size === deletedBoxes.length && deletedBoxes.length > 0}
-                onChange={(e) => {
-                  if (e.target.checked) {
-                    setSelectRecoverIds(new Set(deletedBoxes.map((d) => d.box.id)));
-                  } else {
-                    setSelectRecoverIds(new Set());
-                  }
-                }}
-                style={{
-                  width: '13px',
-                  height: '13px',
-                  accentColor: 'var(--accent-primary)',
-                  cursor: 'pointer',
-                }}
-              />
-              <span>Select All ({selectRecoverIds.size}/{deletedBoxes.length})</span>
-            </label>
-
-            <button
-              type="button"
-              onClick={() => {
-                if (window.confirm('Clear all deleted node history?')) {
-                  setDeletedBoxes([]);
-                  setSelectRecoverIds(new Set());
-                  try {
-                    localStorage.removeItem(LOCAL_STORAGE_DELETED_KEY);
-                  } catch {}
-                }
-              }}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: 'var(--text-muted)',
-                fontSize: '0.6875rem',
-                cursor: 'pointer',
-                padding: '2px 4px',
-                borderRadius: '3px',
-                transition: 'color 0.15s ease',
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--status-danger)')}
-              onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
-            >
-              Clear history
-            </button>
-          </div>
-        )}
+            <FiX size={14} />
+          </button>
+        </div>
 
         {/* Drawer Body */}
         <div
           style={{
             flex: 1,
             overflowY: 'auto',
-            padding: '0.625rem',
+            padding: '1rem',
             display: 'flex',
             flexDirection: 'column',
-            gap: '0.5rem',
+            gap: '1.25rem',
           }}
         >
-          {deletedBoxes.length === 0 ? (
-            <div
-              style={{
-                textAlign: 'center',
-                padding: '2.5rem 1rem',
-                color: 'var(--text-muted)',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                gap: '0.75rem',
-                margin: 'auto 0',
-              }}
-            >
-              <div
+          {/* Section 1: Workflow Actions */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
+            {onUseInFacebookImport && (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={onUseInFacebookImport}
+                leftIcon={<FiArrowRight />}
                 style={{
-                  width: '42px',
-                  height: '42px',
-                  borderRadius: '50%',
-                  backgroundColor: 'var(--bg-secondary)',
-                  border: '1px solid var(--border-color)',
+                  width: '100%',
+                  height: '36px',
+                  fontSize: '0.8125rem',
+                  fontWeight: 600,
+                  backgroundColor: '#1877F2',
+                  borderColor: '#1877F2',
+                  color: '#FFFFFF',
+                  borderRadius: '6px',
+                  boxShadow: 'none',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  color: 'var(--text-muted)',
                 }}
               >
-                <FiRotateCcw size={18} />
-              </div>
-              <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                No deleted nodes
-              </div>
-              <div style={{ fontSize: '0.6875rem', maxWidth: '220px', lineHeight: 1.4 }}>
-                Deleted nodes will appear here to restore anytime.
-              </div>
+                Use in Facebook Import
+              </Button>
+            )}
+
+            <button
+              type="button"
+              onClick={onSaveFormat}
+              style={{
+                width: '100%',
+                height: '34px',
+                padding: '0 12px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                fontSize: '0.75rem',
+                fontWeight: 500,
+                borderRadius: '6px',
+                backgroundColor: isSaveSuccess
+                  ? 'var(--status-success-bg, rgba(34, 197, 94, 0.12))'
+                  : 'var(--bg-surface)',
+                color: isSaveSuccess ? 'var(--status-success, #16a34a)' : 'var(--text-primary)',
+                border: isSaveSuccess
+                  ? '1px solid var(--status-success, #16a34a)'
+                  : '1px solid var(--border-color)',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+                outline: 'none',
+              }}
+              onMouseEnter={(e) => {
+                if (!isSaveSuccess) {
+                  e.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)';
+                  e.currentTarget.style.borderColor = 'var(--border-color-hover)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!isSaveSuccess) {
+                  e.currentTarget.style.backgroundColor = 'var(--bg-surface)';
+                  e.currentTarget.style.borderColor = 'var(--border-color)';
+                }
+              }}
+            >
+              {isSaveSuccess ? (
+                <FiCheck size={13} style={{ color: 'var(--status-success, #16a34a)' }} />
+              ) : (
+                <FiSave size={13} style={{ color: 'var(--accent-primary)' }} />
+              )}
+              <span>{isSaveSuccess ? 'Format Saved!' : 'Save Format'}</span>
+            </button>
+
+            {/* Auto Save Toggle - Clean inline row */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '0.25rem 0.25rem 0',
+              }}
+            >
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                Auto-save changes
+              </span>
+              <ToggleSwitch
+                checked={autoSave ?? true}
+                onChange={(checked) => onToggleAutoSave?.(checked)}
+                size="sm"
+              />
             </div>
-          ) : (
-            deletedBoxes.map((record) => {
-              const isSelected = selectRecoverIds.has(record.box.id);
-              return (
-                <div
-                  key={record.box.id}
-                  onClick={() => {
-                    const next = new Set(selectRecoverIds);
-                    if (isSelected) {
-                      next.delete(record.box.id);
-                    } else {
-                      next.add(record.box.id);
-                    }
-                    setSelectRecoverIds(next);
-                  }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.625rem',
-                    padding: '0.625rem',
-                    backgroundColor: isSelected
-                      ? 'var(--accent-primary-alpha)'
-                      : 'var(--bg-surface)',
-                    border: isSelected
-                      ? '1px solid var(--accent-primary)'
-                      : '1px solid var(--border-color)',
-                    borderRadius: '0.5rem',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!isSelected) {
-                      e.currentTarget.style.borderColor = 'var(--border-color-hover)';
-                      e.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!isSelected) {
-                      e.currentTarget.style.borderColor = 'var(--border-color)';
-                      e.currentTarget.style.backgroundColor = 'var(--bg-surface)';
-                    }
-                  }}
-                >
-                  {/* Checkbox */}
-                  <input
-                    type="checkbox"
-                    checked={isSelected}
-                    onChange={(e) => {
-                      e.stopPropagation();
-                      const next = new Set(selectRecoverIds);
-                      if (e.target.checked) {
-                        next.add(record.box.id);
-                      } else {
-                        next.delete(record.box.id);
-                      }
-                      setSelectRecoverIds(next);
-                    }}
-                    style={{
-                      width: '14px',
-                      height: '14px',
-                      accentColor: 'var(--accent-primary)',
-                      cursor: 'pointer',
-                      flexShrink: 0,
-                    }}
-                  />
+          </div>
 
-                  {/* Node Provider Icon */}
-                  <div
-                    style={{
-                      width: '28px',
-                      height: '28px',
-                      borderRadius: '6px',
-                      backgroundColor: 'var(--bg-secondary)',
-                      border: '1px solid var(--border-color)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
-                    }}
-                  >
-                    {renderAIBoxIcon(record.box, 15)}
-                  </div>
-
-                  {/* Title & Metadata */}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div
-                      style={{
-                        fontSize: '0.75rem',
-                        fontWeight: 600,
-                        color: 'var(--text-primary)',
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                      }}
-                    >
-                      {record.box.title || 'Dynamic AI Box'}
-                    </div>
-                    <div
-                      style={{
-                        fontSize: '0.625rem',
-                        color: 'var(--text-muted)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                        marginTop: '2px',
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                      }}
-                    >
-                      <span>{record.box.model || 'Gemini'}</span>
-                      <span>•</span>
-                      <span>{timeAgo(record.deletedAt)}</span>
-                      {record.connections && record.connections.length > 0 && (
-                        <>
-                          <span>•</span>
-                          <span>{record.connections.length}w</span>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
-
-        {/* Drawer Footer */}
-        {deletedBoxes.length > 0 && (
+          {/* Section 2: Canvas Tools (Undo & Reset Layout) */}
           <div
             style={{
               display: 'flex',
-              alignItems: 'center',
+              flexDirection: 'column',
               gap: '0.5rem',
-              padding: '0.75rem 0.875rem',
+              paddingTop: '0.75rem',
               borderTop: '1px solid var(--border-color)',
-              backgroundColor: 'var(--bg-surface)',
-              flexShrink: 0,
             }}
           >
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setIsRecoverModalOpen(false)}
-              style={{ flex: 1, height: '32px', fontSize: '0.75rem' }}
-            >
-              Close
-            </Button>
+            <div style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              Canvas Tools
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+              <button
+                type="button"
+                onClick={onUndo}
+                disabled={!canUndo}
+                style={{
+                  height: '32px',
+                  padding: '0 8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  fontSize: '0.75rem',
+                  fontWeight: 500,
+                  borderRadius: '6px',
+                  backgroundColor: 'var(--bg-surface)',
+                  color: !canUndo ? 'var(--text-muted)' : 'var(--text-secondary)',
+                  border: '1px solid var(--border-color)',
+                  cursor: !canUndo ? 'not-allowed' : 'pointer',
+                  opacity: !canUndo ? 0.45 : 1,
+                  transition: 'all 0.15s ease',
+                  outline: 'none',
+                }}
+                onMouseEnter={(e) => {
+                  if (canUndo) {
+                    e.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)';
+                    e.currentTarget.style.color = 'var(--text-primary)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (canUndo) {
+                    e.currentTarget.style.backgroundColor = 'var(--bg-surface)';
+                    e.currentTarget.style.color = 'var(--text-secondary)';
+                  }
+                }}
+              >
+                <FiRotateCcw size={13} />
+                <span>Undo</span>
+              </button>
 
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={handleRecoverSelected}
-              disabled={selectRecoverIds.size === 0}
-              leftIcon={<FiRotateCcw style={{ fontSize: '12px' }} />}
+              <button
+                type="button"
+                onClick={handleResetLayout}
+                style={{
+                  height: '32px',
+                  padding: '0 8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  fontSize: '0.75rem',
+                  fontWeight: 500,
+                  borderRadius: '6px',
+                  backgroundColor: 'var(--bg-surface)',
+                  color: 'var(--text-secondary)',
+                  border: '1px solid var(--border-color)',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                  outline: 'none',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)';
+                  e.currentTarget.style.color = 'var(--text-primary)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'var(--bg-surface)';
+                  e.currentTarget.style.color = 'var(--text-secondary)';
+                }}
+              >
+                <FiCrosshair size={13} style={{ color: 'var(--accent-primary)' }} />
+                <span>Reset Layout</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Section 3: Deleted Nodes (Trash & Direct Restore) */}
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.625rem',
+              paddingTop: '0.75rem',
+              borderTop: '1px solid var(--border-color)',
+            }}
+          >
+            <div
               style={{
-                flex: 2,
-                height: '32px',
-                fontSize: '0.75rem',
-                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
               }}
             >
-              Recover ({selectRecoverIds.size})
-            </Button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                  Deleted Nodes
+                </span>
+                {deletedBoxes.length > 0 && (
+                  <span
+                    style={{
+                      fontSize: '0.6875rem',
+                      fontWeight: 600,
+                      padding: '1px 6px',
+                      borderRadius: '9999px',
+                      backgroundColor: 'var(--accent-primary-alpha)',
+                      color: 'var(--accent-primary)',
+                    }}
+                  >
+                    {deletedBoxes.length}
+                  </span>
+                )}
+              </div>
+
+              {deletedBoxes.length > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  {deletedBoxes.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => handleRecoverSelected(new Set(deletedBoxes.map((d) => d.box.id)))}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--accent-primary)',
+                        fontSize: '0.6875rem',
+                        fontWeight: 500,
+                        cursor: 'pointer',
+                        padding: '2px 4px',
+                      }}
+                    >
+                      Restore All
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.confirm('Clear all deleted node history?')) {
+                        setDeletedBoxes([]);
+                        setSelectRecoverIds(new Set());
+                        try {
+                          localStorage.removeItem(LOCAL_STORAGE_DELETED_KEY);
+                        } catch {}
+                      }
+                    }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--text-muted)',
+                      fontSize: '0.6875rem',
+                      cursor: 'pointer',
+                      padding: '2px 4px',
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--status-danger)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
+                  >
+                    Clear
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Deleted Nodes List */}
+            {deletedBoxes.length === 0 ? (
+              <div
+                style={{
+                  padding: '1.25rem 0.5rem',
+                  textAlign: 'center',
+                  color: 'var(--text-muted)',
+                  fontSize: '0.75rem',
+                }}
+              >
+                No deleted nodes
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '320px', overflowY: 'auto' }}>
+                {deletedBoxes.map((record) => (
+                  <div
+                    key={record.box.id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                      padding: '0.5rem 0.625rem',
+                      backgroundColor: 'var(--bg-surface)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: '6px',
+                      transition: 'border-color 0.15s ease',
+                    }}
+                  >
+                    {/* Node Icon */}
+                    <div
+                      style={{
+                        width: '26px',
+                        height: '26px',
+                        borderRadius: '6px',
+                        backgroundColor: isWatermarkAIBox(record.box)
+                          ? 'rgba(139, 92, 246, 0.15)'
+                          : isImageAIBox(record.box, record.connections)
+                          ? 'rgba(16, 185, 129, 0.15)'
+                          : 'var(--bg-secondary)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                      }}
+                    >
+                      {renderAIBoxIcon(record.box, 14)}
+                    </div>
+
+                    {/* Title & Subtitle */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div
+                        style={{
+                          fontSize: '0.75rem',
+                          fontWeight: 500,
+                          color: 'var(--text-primary)',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                      >
+                        {record.box.title || (isWatermarkAIBox(record.box) ? 'Format Preset' : 'Dynamic AI Box')}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: '0.625rem',
+                          color: 'var(--text-muted)',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                      >
+                        {timeAgo(record.deletedAt)}
+                      </div>
+                    </div>
+
+                    {/* Direct 1-Click Restore Button */}
+                    <button
+                      type="button"
+                      onClick={() => handleRecoverSelected(new Set([record.box.id]))}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        height: '26px',
+                        padding: '0 8px',
+                        borderRadius: '5px',
+                        border: '1px solid var(--border-color)',
+                        backgroundColor: 'var(--bg-surface)',
+                        color: 'var(--text-primary)',
+                        fontSize: '0.6875rem',
+                        fontWeight: 500,
+                        cursor: 'pointer',
+                        flexShrink: 0,
+                        transition: 'all 0.15s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = 'var(--accent-primary-alpha)';
+                        e.currentTarget.style.borderColor = 'var(--accent-primary)';
+                        e.currentTarget.style.color = 'var(--accent-primary)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = 'var(--bg-surface)';
+                        e.currentTarget.style.borderColor = 'var(--border-color)';
+                        e.currentTarget.style.color = 'var(--text-primary)';
+                      }}
+                      title="Restore to canvas"
+                    >
+                      <FiRotateCcw size={11} />
+                      <span>Restore</span>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-        )}
+        </div>
+
+
       </div>
+
+      {/* CONFIRMATION DIALOG / BOX FOR DELETIONS */}
+      {deleteConfirmTarget && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 400,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: 'rgba(0, 0, 0, 0.65)',
+            backdropFilter: 'blur(3px)',
+            animation: 'fadeIn 0.15s ease-out',
+          }}
+          onClick={() => setDeleteConfirmTarget(null)}
+        >
+          <div
+            style={{
+              width: '90%',
+              maxWidth: '380px',
+              padding: '1.25rem',
+              borderRadius: '12px',
+              backgroundColor: isDark ? '#1C2128' : '#FFFFFF',
+              border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+              boxShadow: isDark
+                ? '0 20px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.05)'
+                : '0 20px 40px rgba(0, 0, 0, 0.18)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.875rem',
+              animation: 'scaleIn 0.15s cubic-bezier(0.16, 1, 0.3, 1)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <div
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '10px',
+                  backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                  border: '1px solid rgba(239, 68, 68, 0.25)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#EF4444',
+                  flexShrink: 0,
+                }}
+              >
+                <FiTrash2 size={18} />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                  {deleteConfirmTarget.title}
+                </div>
+                <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  Confirmation required
+                </div>
+              </div>
+            </div>
+
+            <p style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+              {deleteConfirmTarget.description}
+            </p>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '0.25rem' }}>
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmTarget(null)}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: '6px',
+                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#E2E8F0';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC';
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  deleteConfirmTarget.onConfirm();
+                }}
+                style={{
+                  padding: '6px 16px',
+                  borderRadius: '6px',
+                  border: 'none',
+                  backgroundColor: '#EF4444',
+                  color: '#FFFFFF',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 6px rgba(239, 68, 68, 0.35)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  transition: 'all 0.15s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#DC2626';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = '#EF4444';
+                }}
+              >
+                <FiTrash2 size={12} />
+                <span>{deleteConfirmTarget.confirmText || 'Confirm Delete'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Lightbox Image Preview Modal - Exact Match to Second Image */}
+      {lightboxImageIndex !== null && compiledImages.length > 0 && compiledImages[lightboxImageIndex] && (() => {
+        const activeIdx = lightboxImageIndex;
+        const activeImg = compiledImages[activeIdx];
+        const activeImgUrl = activeImg.finalUrl;
+        const totalImages = compiledImages.length;
+
+        return createPortal(
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Image Preview"
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 999999,
+              backgroundColor: 'rgba(0, 0, 0, 0.95)',
+              backdropFilter: 'blur(10px)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              overflow: 'hidden',
+              userSelect: 'none',
+              animation: 'fadeIn 0.15s ease',
+            }}
+            onClick={() => setLightboxImageIndex(null)}
+          >
+            {/* Top-Left: Image Counter Pill & Enhanced / Watermarked Badges */}
+            <div
+              style={{
+                position: 'absolute',
+                top: '20px',
+                left: '24px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                zIndex: 10,
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <span
+                style={{
+                  fontSize: '0.8125rem',
+                  fontWeight: 600,
+                  color: '#FFFFFF',
+                  backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                  backdropFilter: 'blur(6px)',
+                  padding: '4px 12px',
+                  borderRadius: '16px',
+                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                  letterSpacing: '0.3px',
+                }}
+              >
+                {activeIdx + 1} / {totalImages}
+              </span>
+
+              {activeImg.isEnhanced && (
+                <span
+                  style={{
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    color: '#FFFFFF',
+                    backgroundColor: 'rgba(0, 0, 0, 0.72)',
+                    backdropFilter: 'blur(6px)',
+                    padding: '4px 10px',
+                    borderRadius: '16px',
+                    border: '1px solid rgba(255, 255, 255, 0.18)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                  }}
+                >
+                  <HiSparkles style={{ fontSize: '11px', color: '#FFFFFF' }} />
+                  Enhanced
+                </span>
+              )}
+
+              {activeImg.isWatermarked && (
+                <span
+                  style={{
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    color: '#10B981',
+                    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                    backdropFilter: 'blur(6px)',
+                    padding: '4px 10px',
+                    borderRadius: '16px',
+                    border: '1px solid rgba(16, 185, 129, 0.3)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                  }}
+                >
+                  Watermarked
+                </span>
+              )}
+            </div>
+
+            {/* Top-Right: Close Button (Circle with X) */}
+            <button
+              type="button"
+              onClick={() => setLightboxImageIndex(null)}
+              aria-label="Close preview"
+              title="Close (ESC)"
+              style={{
+                position: 'absolute',
+                top: '20px',
+                right: '24px',
+                width: '38px',
+                height: '38px',
+                borderRadius: '50%',
+                backgroundColor: 'rgba(255, 255, 255, 0.12)',
+                border: '1px solid rgba(255, 255, 255, 0.15)',
+                color: '#FFFFFF',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                zIndex: 10,
+                transition: 'background-color 0.15s ease',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.22)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.12)'; }}
+            >
+              <FiX style={{ fontSize: '18px' }} />
+            </button>
+
+            {/* Previous Navigation Arrow (Left side) */}
+            {totalImages > 1 && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setZoomScale(1);
+                  setLightboxImageIndex((prev) => (prev! - 1 + totalImages) % totalImages);
+                }}
+                title="Previous photo (Left arrow)"
+                aria-label="Previous photo"
+                style={{
+                  position: 'absolute',
+                  left: '24px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  width: '44px',
+                  height: '44px',
+                  borderRadius: '50%',
+                  backgroundColor: 'rgba(0, 0, 0, 0.55)',
+                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                  color: '#FFFFFF',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  zIndex: 10,
+                  backdropFilter: 'blur(4px)',
+                  transition: 'all 0.15s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)';
+                  e.currentTarget.style.transform = 'translateY(-50%) scale(1.05)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.55)';
+                  e.currentTarget.style.transform = 'translateY(-50%) scale(1)';
+                }}
+              >
+                <FiChevronLeft style={{ fontSize: '24px' }} />
+              </button>
+            )}
+
+            {/* Next Navigation Arrow (Right side) */}
+            {totalImages > 1 && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setZoomScale(1);
+                  setLightboxImageIndex((prev) => (prev! + 1) % totalImages);
+                }}
+                title="Next photo (Right arrow)"
+                aria-label="Next photo"
+                style={{
+                  position: 'absolute',
+                  right: '24px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  width: '44px',
+                  height: '44px',
+                  borderRadius: '50%',
+                  backgroundColor: 'rgba(0, 0, 0, 0.55)',
+                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                  color: '#FFFFFF',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  zIndex: 10,
+                  backdropFilter: 'blur(4px)',
+                  transition: 'all 0.15s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)';
+                  e.currentTarget.style.transform = 'translateY(-50%) scale(1.05)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.55)';
+                  e.currentTarget.style.transform = 'translateY(-50%) scale(1)';
+                }}
+              >
+                <FiChevronRight style={{ fontSize: '24px' }} />
+              </button>
+            )}
+
+            {/* Center Main Image Canvas */}
+            <div
+              style={{
+                position: 'relative',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                maxWidth: '85vw',
+                maxHeight: '78vh',
+                overflow: 'visible',
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <img
+                src={activeImgUrl}
+                alt={`Photo ${activeIdx + 1}`}
+                style={{
+                  maxWidth: '85vw',
+                  maxHeight: '78vh',
+                  objectFit: 'contain',
+                  borderRadius: '16px',
+                  boxShadow: '0 20px 60px rgba(0, 0, 0, 0.85)',
+                  transform: `scale(${zoomScale})`,
+                  transition: 'transform 0.12s ease-out',
+                  display: 'block',
+                }}
+                draggable={false}
+              />
+            </div>
+
+            {/* Bottom Controls Area (Floating Pill + Hint text) */}
+            <div
+              style={{
+                position: 'absolute',
+                bottom: '24px',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '8px',
+                zIndex: 10,
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Hint Text */}
+              <span
+                style={{
+                  fontSize: '0.6875rem',
+                  color: 'rgba(255, 255, 255, 0.5)',
+                  fontWeight: 400,
+                  letterSpacing: '0.3px',
+                }}
+              >
+                Scroll to zoom · Arrow keys · ESC to close
+              </span>
+
+              {/* Floating Toolbar Pill */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.375rem',
+                  backgroundColor: 'rgba(24, 25, 28, 0.88)',
+                  border: '1px solid rgba(255, 255, 255, 0.12)',
+                  borderRadius: '24px',
+                  padding: '5px 12px',
+                  backdropFilter: 'blur(12px)',
+                  boxShadow: '0 8px 32px rgba(0, 0, 0, 0.6)',
+                }}
+              >
+                {/* Zoom Out */}
+                <button
+                  type="button"
+                  onClick={() => setZoomScale((s) => Math.max(s - 0.25, 0.5))}
+                  title="Zoom Out (-)"
+                  aria-label="Zoom Out"
+                  style={{
+                    width: '30px',
+                    height: '30px',
+                    borderRadius: '50%',
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    color: '#FFFFFF',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    transition: 'background-color 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.12)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                >
+                  <FiZoomOut style={{ fontSize: '15px' }} />
+                </button>
+
+                {/* Percentage / Reset Button */}
+                <button
+                  type="button"
+                  onClick={() => setZoomScale(1)}
+                  title="Reset Zoom (0)"
+                  style={{
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    color: '#FFFFFF',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    minWidth: '46px',
+                    textAlign: 'center',
+                  }}
+                >
+                  {Math.round(zoomScale * 100)}%
+                </button>
+
+                {/* Zoom In */}
+                <button
+                  type="button"
+                  onClick={() => setZoomScale((s) => Math.min(s + 0.25, 3))}
+                  title="Zoom In (+)"
+                  aria-label="Zoom In"
+                  style={{
+                    width: '30px',
+                    height: '30px',
+                    borderRadius: '50%',
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    color: '#FFFFFF',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    transition: 'background-color 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.12)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                >
+                  <FiZoomIn style={{ fontSize: '15px' }} />
+                </button>
+
+                {/* Divider */}
+                <div style={{ width: '1px', height: '18px', backgroundColor: 'rgba(255, 255, 255, 0.15)', margin: '0 4px' }} />
+
+                {/* Download Image Button */}
+                <button
+                  type="button"
+                  onClick={(e) => handleDownloadImage(activeImgUrl, activeIdx, e)}
+                  title="Download photo"
+                  aria-label="Download photo"
+                  style={{
+                    width: '30px',
+                    height: '30px',
+                    borderRadius: '50%',
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    color: '#FFFFFF',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    transition: 'background-color 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.12)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                >
+                  <FiDownload style={{ fontSize: '15px' }} />
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        );
+      })()}
     </div>
   );
 });

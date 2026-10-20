@@ -59,7 +59,11 @@ export const SwitchToggle: React.FC<SwitchToggleProps> = ({
           backgroundColor: checked ? activeColor : (isDark ? 'rgba(255, 255, 255, 0.18)' : 'rgba(0, 0, 0, 0.18)'),
           position: 'relative',
           transition: 'all 0.22s cubic-bezier(0.4, 0, 0.2, 1)',
-          boxShadow: checked ? `0 2px 8px ${activeColor}55` : 'inset 0 1px 2px rgba(0, 0, 0, 0.1)',
+          boxShadow: checked
+            ? (activeColor.startsWith('#')
+                ? `0 2px 8px ${activeColor}55`
+                : `0 2px 8px rgba(37, 99, 235, 0.35)`)
+            : 'inset 0 1px 2px rgba(0, 0, 0, 0.1)',
         }}
       >
         <div

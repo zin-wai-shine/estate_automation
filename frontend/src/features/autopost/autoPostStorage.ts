@@ -59,7 +59,7 @@ export interface TikTokChannelConfig {
 }
 
 export interface PlatformPublishResult {
-  status: 'success' | 'failed' | 'scheduled' | 'skipped';
+  status: 'success' | 'failed' | 'scheduled' | 'skipped' | 'processing';
   postId?: string;
   postUrl?: string;
   error?: string;
@@ -67,6 +67,7 @@ export interface PlatformPublishResult {
   pageId?: string;
   pageSlot?: number;
   pageName?: string;
+  pictureUrl?: string;
 }
 
 export interface AutoPostItem {
@@ -76,6 +77,7 @@ export interface AutoPostItem {
   price: string;
   specs: string;
   images: AutoPostImage[];
+  originalUrl?: string;
   facebook: FacebookChannelConfig;
   instagram: InstagramChannelConfig;
   tiktok: TikTokChannelConfig;
@@ -87,6 +89,7 @@ export interface AutoPostItem {
     facebook: PlatformPublishResult;
     facebookPage1?: PlatformPublishResult;
     facebookPage2?: PlatformPublishResult;
+    facebookPages?: PlatformPublishResult[];
     instagram: PlatformPublishResult;
     tiktok: PlatformPublishResult;
   };
@@ -188,13 +191,14 @@ export function getStoredManagedPages(): ManagedPageMeta[] {
         baseList = merged;
       }
     }
-    // Overlay explicit persisted user toggle preferences
+    // Overlay explicit persisted user toggle preferences and fallback picture URL
     return baseList.map(p => {
       const explicit = localStorage.getItem(`autopost_fb_page_${p.slot}_enabled`) ?? localStorage.getItem(`autopost_fb_page_${p.page_id}_enabled`);
+      const pic = p.picture_url || (p.page_id ? `https://graph.facebook.com/${p.page_id}/picture?type=large` : undefined);
       if (explicit !== null) {
-        return { ...p, auto_publish_enabled: explicit === 'true' };
+        return { ...p, auto_publish_enabled: explicit === 'true', picture_url: pic };
       }
-      return p;
+      return { ...p, picture_url: pic };
     });
   } catch (e) {
     return DEFAULT_MANAGED_FB_PAGES;
@@ -206,16 +210,20 @@ export function saveStoredManagedPage(page: ManagedPageMeta): ManagedPageMeta[] 
     if (page.slot) localStorage.setItem(`autopost_fb_page_${page.slot}_enabled`, String(page.auto_publish_enabled));
     if (page.page_id) localStorage.setItem(`autopost_fb_page_${page.page_id}_enabled`, String(page.auto_publish_enabled));
   }
+  const pageWithPic: ManagedPageMeta = {
+    ...page,
+    picture_url: page.picture_url || (page.page_id ? `https://graph.facebook.com/${page.page_id}/picture?type=large` : undefined),
+  };
   const current = getStoredManagedPages();
-  const index = current.findIndex(p => p.page_id === page.page_id || (page.slot && p.slot === page.slot));
+  const index = current.findIndex(p => p.page_id === pageWithPic.page_id || (pageWithPic.slot && p.slot === pageWithPic.slot));
   let updated: ManagedPageMeta[];
   if (index >= 0) {
     updated = [...current];
-    updated[index] = { ...updated[index], ...page };
+    updated[index] = { ...updated[index], ...pageWithPic };
   } else {
     const maxSlot = current.reduce((max, p) => Math.max(max, p.slot || 0), 0);
-    const newSlot = page.slot || (maxSlot + 1);
-    updated = [...current, { ...page, slot: newSlot }];
+    const newSlot = pageWithPic.slot || (maxSlot + 1);
+    updated = [...current, { ...pageWithPic, slot: newSlot }];
   }
   try {
     localStorage.setItem(MANAGED_FB_PAGES_STORAGE_KEY, JSON.stringify(updated));
@@ -579,187 +587,67 @@ export const CONNECTED_TIKTOK_ACCOUNTS: ConnectedAccount[] = [
 const STORAGE_KEY = 'estate_social_autopost_history_v1';
 const UPDATE_EVENT_NAME = 'estate_social_autopost_history_updated';
 
-// Realistic sample initial history
-const INITIAL_HISTORY: AutoPostItem[] = [
-  {
-    id: 'PUB-202610-001',
-    projectName: 'Ideo Sukhumvit 93',
-    listingType: 'RENT',
-    price: '฿18,000 / mo',
-    specs: 'Studio · 28 Sqm · 28th Fl · BTS Bang Chak 15m',
-    images: [
-      {
-        id: 'img-1',
-        url: 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=800&q=80',
-        name: 'Living & Bedroom.jpg',
-        isCover: true,
-      },
-      {
-        id: 'img-2',
-        url: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=800&q=80',
-        name: 'Kitchen & Dining.jpg',
-        isCover: false,
-      },
-      {
-        id: 'img-3',
-        url: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=800&q=80',
-        name: 'Balcony City View.jpg',
-        isCover: false,
-      },
-    ],
-    facebook: {
-      enabled: true,
-      pageId: 'fb-page-1',
-      pageName: 'Bangkok Luxury Condos & Living',
-      headline: '✨ High-Floor Modern Studio at Ideo Sukhumvit 93 for Rent!',
-      caption: `🏙️ Ideo Sukhumvit 93 | Studio 28 ตร.ม. ชั้น 28 แต่งครบพร้อมอยู่!
-ราคาเพียง 18,000 บาท/เดือน (สัญญา 1 ปี)
-ติด BTS บางจาก เพียง 15 เมตร เดินทางสะดวกมาก วิวเมืองโล่งสวย เฟอร์นิเจอร์และเครื่องใช้ไฟฟ้าครบครัน หิ้วกระเป๋าเข้าอยู่ได้ทันที`,
-      cta: '📲 สอบถาม/นัดชมห้อง Line ID: @estatebangkok | โทร 081-234-5678',
-      hashtags: '#IdeoSukhumvit93 #CondoForRent #BTSBangChak #BangkokCondo #RealEstateBangkok',
-    },
-    instagram: {
-      enabled: true,
-      accountId: 'ig-acc-1',
-      accountName: '@bangkok_luxury_realestate',
-      caption: `Elevated city living next to BTS Bang Chak 🏙️✨
-
-Ideo Sukhumvit 93 · 28 Sq.m. Studio on the 28th floor with uninterrupted skyline views. Fully furnished with premium appliances, walk-in layout, and turnkey readiness.
-
-📍 Ideo Sukhumvit 93 (BTS Bang Chak 15m)
-💰 ฿18,000 / month
-📩 DM or contact Line: @estatebangkok for private viewings`,
-      firstCommentHashtags: '#BangkokCondo #BangkokRealEstate #CondoForRent #SukhumvitCondo #IdeoSukhumvit93 #BTSBangChak #BangkokLiving #InteriorInspo',
-      locationTag: 'Ideo Sukhumvit 93, Sukhumvit Road, Bangkok',
-    },
-    tiktok: {
-      enabled: true,
-      accountId: 'tt-acc-1',
-      accountName: '@bkk_condo_tours',
-      hook: 'Is this the best condo value under 20k in Sukhumvit? 😱✨',
-      caption: `Only 15 meters from BTS Bang Chak! High floor 28 sqm studio with insane city skyline views for 18,000 THB/month. Would you live here? 👇 Comment below!`,
-      sound: 'Trending Luxury Real Estate Beat (Original Sound)',
-      privacy: 'public',
-      allowComments: true,
-      allowDuet: true,
-    },
-    scheduleType: 'NOW',
-    status: 'PUBLISHED',
-    createdAt: Date.now() - 3600000 * 3,
-    platformResults: {
-      facebook: {
-        status: 'success',
-        postId: 'fb_102948572019',
-        postUrl: 'https://facebook.com/bangkokluxliving/posts/102948572019',
-        timestamp: Date.now() - 3600000 * 3,
-      },
-      instagram: {
-        status: 'success',
-        postId: 'ig_CpQ93kaLz91',
-        postUrl: 'https://instagram.com/p/CpQ93kaLz91',
-        timestamp: Date.now() - 3600000 * 3,
-      },
-      tiktok: {
-        status: 'success',
-        postId: 'tt_738291048591029',
-        postUrl: 'https://tiktok.com/@bkk_condo_tours/video/738291048591029',
-        timestamp: Date.now() - 3600000 * 3,
-      },
-    },
-  },
-  {
-    id: 'PUB-202610-002',
-    projectName: 'Ashton Asoke',
-    listingType: 'RENT',
-    price: '฿35,000 / mo',
-    specs: '1 Bed · 1 Bath · 35 Sqm · 32nd Fl · MRT Sukhumvit 20m',
-    images: [
-      {
-        id: 'img-4',
-        url: 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=800&q=80',
-        name: 'Ashton Master Bedroom.jpg',
-        isCover: true,
-      },
-      {
-        id: 'img-5',
-        url: 'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=800&q=80',
-        name: 'Living Room.jpg',
-        isCover: false,
-      },
-    ],
-    facebook: {
-      enabled: true,
-      pageId: 'fb-page-1',
-      pageName: 'Bangkok Luxury Condos & Living',
-      headline: '💎 Super Prime Ashton Asoke 1-Bedroom 32nd Floor',
-      caption: `Condo For Rent: Ashton Asoke
-ขนาด 35 ตร.ม. 1 ห้องนอน ชั้น 32 วิวเมืองอโศกสวยสะกดตา
-ติด MRT สุขุมวิท 20 ม. และ BTS อโศก 230 ม.
-ราคา 35,000 บาท/เดือน`,
-      cta: 'นัดหมายชมห้องจริงได้ทุกวัน Line: @estatebangkok',
-      hashtags: '#AshtonAsoke #LuxuryCondo #Asoke #MRTSukhumvit',
-    },
-    instagram: {
-      enabled: true,
-      accountId: 'ig-acc-1',
-      accountName: '@bangkok_luxury_realestate',
-      caption: `Unrivaled luxury at the epicenter of Asoke 💎
-1 Bedroom | 35 Sq.m. | 32nd Floor | ฿35,000/mo
-Direct access to MRT Sukhumvit & BTS Asoke.`,
-      firstCommentHashtags: '#AshtonAsoke #LuxuryLivingBangkok #AsokeIntersection #BangkokLuxuryCondo',
-      locationTag: 'Ashton Asoke, Sukhumvit 21, Bangkok',
-    },
-    tiktok: {
-      enabled: false,
-      accountId: 'tt-acc-1',
-      accountName: '@bkk_condo_tours',
-      hook: 'POV: Waking up on the 32nd floor of Ashton Asoke',
-      caption: 'The most iconic intersection in Bangkok! Would you rent this for 35k/mo? #AshtonAsoke #BangkokCondo',
-      sound: 'Luxury Lo-Fi Chill',
-      privacy: 'public',
-      allowComments: true,
-      allowDuet: true,
-    },
-    scheduleType: 'SCHEDULED',
-    scheduledAt: '2026-10-16T18:00',
-    status: 'SCHEDULED',
-    createdAt: Date.now() - 3600000 * 20,
-    platformResults: {
-      facebook: { status: 'scheduled', postUrl: '#' },
-      instagram: { status: 'scheduled', postUrl: '#' },
-      tiktok: { status: 'skipped' },
-    },
-  },
-];
+// No default sample history - post history starts clean
+const INITIAL_HISTORY: AutoPostItem[] = [];
 
 export const getAutoPostHistory = (): AutoPostItem[] => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(INITIAL_HISTORY));
-      return INITIAL_HISTORY;
+      return [];
     }
     const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      return parsed;
+    if (Array.isArray(parsed)) {
+      // Filter out any legacy dummy records or corrupted items
+      const clean: AutoPostItem[] = [];
+      for (const item of parsed) {
+        if (!item || typeof item !== 'object') continue;
+        const idStr = String(item.id || '');
+        if (!idStr || idStr === 'PUB-202610-001' || idStr === 'PUB-202610-002') continue;
+
+        clean.push({
+          ...item,
+          id: idStr,
+          projectName: item.projectName != null ? String(item.projectName) : '',
+          price: item.price != null ? String(item.price) : '',
+          specs: item.specs != null ? String(item.specs) : '',
+          status: item.status || 'PUBLISHED',
+          createdAt: typeof item.createdAt === 'number' && !isNaN(item.createdAt) ? item.createdAt : Date.now(),
+          images: [], // Never store images in history
+        });
+      }
+      return clean;
     }
-    return INITIAL_HISTORY;
+    return [];
   } catch (err) {
     console.warn('Failed to parse auto post history:', err);
-    return INITIAL_HISTORY;
+    return [];
   }
 };
 
 export const saveAutoPostItem = (item: AutoPostItem): AutoPostItem[] => {
+  // Never store images/photos in post history
+  const cleanItem: AutoPostItem = {
+    ...item,
+    images: [],
+    facebook: item.facebook
+      ? {
+          ...item.facebook,
+          page1: item.facebook.page1 ? { ...item.facebook.page1, images: [] } : undefined,
+          page2: item.facebook.page2 ? { ...item.facebook.page2, images: [] } : undefined,
+        }
+      : item.facebook,
+  };
+
   const current = getAutoPostHistory();
-  const existingIdx = current.findIndex((p) => p.id === item.id);
+  const existingIdx = current.findIndex((p) => p.id === cleanItem.id);
   let updated: AutoPostItem[];
 
   if (existingIdx >= 0) {
     updated = [...current];
-    updated[existingIdx] = item;
+    updated[existingIdx] = cleanItem;
   } else {
-    updated = [item, ...current];
+    updated = [cleanItem, ...current];
   }
 
   try {

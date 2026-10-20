@@ -60,8 +60,8 @@ export const INITIAL_DEFAULT_FORMATS: WorkflowFormat[] = [
           id: 'ai-box-tiktok',
           title: 'TikTok Viral Hook & Video Script',
           processType: 'tiktok',
-          provider: 'openai',
-          model: 'gpt-4o',
+          provider: 'google_ai',
+          model: 'gemini-flash-latest',
           templateId: '2',
           templateText:
             'Create a viral 15-second TikTok script for this property.\nHook in the first 3 seconds, 3 quick visual highlights, and clear urgent call-to-action.',
@@ -104,8 +104,8 @@ export const INITIAL_DEFAULT_FORMATS: WorkflowFormat[] = [
           id: 'ai-box-sale',
           title: 'Facebook Sale & Investment Pitch',
           processType: 'sale',
-          provider: 'openai',
-          model: 'gpt-4o',
+          provider: 'google_ai',
+          model: 'gemini-1.5-pro',
           templateId: '3',
           templateText:
             'Write a professional sales copy for property sale.\nHighlight investment rental yield %, capital appreciation, BTS access, and sale price.\nAdd professional Line ID CTA.',
@@ -205,8 +205,8 @@ export const INITIAL_DEFAULT_FORMATS: WorkflowFormat[] = [
           id: 'ai-box-translation',
           title: 'Thai to English Translation',
           processType: 'rental',
-          provider: 'openai',
-          model: 'gpt-4o',
+          provider: 'google_ai',
+          model: 'gemini-flash-latest',
           templateId: '1',
           templateText:
             'Translate and polish the Thai listing into fluent, professional English for foreign expats.\nFormat with clean emojis, price in THB, and near BTS/MRT.',

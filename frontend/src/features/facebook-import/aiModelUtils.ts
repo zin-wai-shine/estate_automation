@@ -26,6 +26,9 @@ export const getAIModelDisplayName = (provider?: string, model?: string): string
       : 'Runware AI';
   }
   if (provider === 'laozhang_ai') {
+    if (model?.includes('claude-3-7-sonnet') || model?.includes('claude-3.7-sonnet')) return 'Claude 3.7 Sonnet';
+    if (model?.includes('claude-3-5-sonnet') || model?.includes('claude-3.5-sonnet')) return 'Claude 3.5 Sonnet';
+    if (model?.includes('claude-3-5-haiku') || model?.includes('claude-3.5-haiku')) return 'Claude 3.5 Haiku';
     if (model === 'deepseek-v3') return 'DeepSeek V3';
     if (model === 'deepseek-r1') return 'DeepSeek R1';
     if (model === 'gpt-4.1') return 'GPT-4.1';
@@ -34,16 +37,22 @@ export const getAIModelDisplayName = (provider?: string, model?: string): string
     return model || 'LaoZhang AI';
   }
   if (provider === 'google_ai' || model?.includes('gemini')) {
+    if (model?.includes('2.5')) return 'Gemini 2.5 Flash';
+    if (model?.includes('2.0') || model?.includes('2-flash')) return 'Gemini 2.0 Flash';
     if (model?.includes('flash')) return 'Gemini Flash';
     if (model?.includes('pro')) return 'Gemini 1.5 Pro';
     return 'Gemini';
   }
   if (model === 'gpt-4o') return 'GPT-4o';
   if (model === 'gpt-4o-mini') return 'GPT-4o-mini';
+  if (model === 'gpt-4.1') return 'GPT-4.1';
+  if (model === 'gpt-4-turbo') return 'GPT-4 Turbo';
+  if (model === 'o3-mini') return 'o3-mini';
+  if (model === 'o1') return 'o1';
+  if (model === 'deepseek-v3') return 'DeepSeek V3';
+  if (model === 'deepseek-r1') return 'DeepSeek R1';
   if (model === 'gpt-image-2.5-sunburst') return 'Image 2.5 Sunburst';
   if (model === 'gpt-image-2.5-flare') return 'Image 2.5 Flare';
-  if (model === 'gpt-4.1') return 'GPT-4.1';
-  if (model === 'deepseek-v3') return 'DeepSeek V3';
   return model || 'GPT-4o';
 };
 
@@ -70,10 +79,47 @@ export const isImageModel = (model?: string, provider?: string): boolean => {
  * Determines whether an AI Box is specifically a Watermark node.
  */
 export const isWatermarkAIBox = (
-  box?: { id?: string; provider?: string; model?: string; processType?: string }
+  box?: { id?: string; provider?: string; model?: string; processType?: string; title?: string; cropFormatId?: string; watermarkPresetId?: string; subtitle?: string }
 ): boolean => {
   if (!box) return false;
-  return box.processType === 'watermark' || box.provider === 'watermark' || Boolean(box.id?.includes('watermark'));
+  if (box.processType === 'text_format' || box.processType === 'text_ai') return false;
+  return (
+    box.processType === 'watermark' ||
+    box.provider === 'watermark' ||
+    Boolean(box.id?.includes('watermark')) ||
+    Boolean(box.cropFormatId) ||
+    Boolean(box.watermarkPresetId) ||
+    Boolean(box.subtitle?.includes('×'))
+  );
+};
+
+/**
+ * Determines whether an AI Box is specifically a Text Format Preset node (holding prompt template).
+ */
+export const isTextFormatAIBox = (
+  box?: { id?: string; provider?: string; model?: string; processType?: string; title?: string; cropFormatId?: string; watermarkPresetId?: string; subtitle?: string; templateId?: string; templateText?: string }
+): boolean => {
+  if (!box) return false;
+  if (isWatermarkAIBox(box)) return false;
+  if (box.processType === 'image_enhance' || box.provider === 'runware_ai' || box.processType === 'text_ai') return false;
+  return (
+    box.processType === 'text_format' ||
+    Boolean(box.title?.toLowerCase().startsWith('format:'))
+  );
+};
+
+/**
+ * Determines whether an AI Box is a Text AI Model Selector node.
+ */
+export const isTextAIBox = (
+  box?: { id?: string; provider?: string; model?: string; processType?: string; title?: string; cropFormatId?: string; watermarkPresetId?: string; subtitle?: string; templateId?: string; templateText?: string },
+  connections: { fromNodeId: string; toNodeId: string }[] = []
+): boolean => {
+  if (!box) return false;
+  if (isWatermarkAIBox(box)) return false;
+  if (isTextFormatAIBox(box)) return false;
+  if (isImageAIBox(box, connections)) return false;
+  return true;
 };
 
 /**

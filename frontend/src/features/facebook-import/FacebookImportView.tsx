@@ -74,6 +74,8 @@ import {
   isContentConnectedAIBox,
   isImageConnectedAIBox,
   isWatermarkAIBox,
+  isTextFormatAIBox,
+  isTextAIBox,
 } from './aiModelUtils';
 import { renderWatermarkedImage } from '../autopost/watermarkCanvas';
 import { DEFAULT_WATERMARK_CONFIG } from '../autopost/watermarkStorage';
@@ -321,6 +323,18 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
   useEffect(() => {
     setHeaderActionEl(document.getElementById('header-action-portal'));
     setHeaderCenterEl(document.getElementById('header-center-portal'));
+
+    // Check for auto-run URL triggered from CreateWorkflowView "Run" button
+    try {
+      const autoRunUrl = sessionStorage.getItem('estate_fb_auto_run_url');
+      if (autoRunUrl && autoRunUrl.trim()) {
+        sessionStorage.removeItem('estate_fb_auto_run_url');
+        setUrl(autoRunUrl.trim());
+        setTimeout(() => {
+          handleStartImport(autoRunUrl.trim());
+        }, 350);
+      }
+    } catch {}
   }, []);
 
   // Listen for post load events from Remaining Posts view
@@ -596,9 +610,10 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
   };
 
   // Differentiate text/copy generation AI boxes from image enhancement AI boxes (only showing connected nodes)
-  const contentAIBoxes = workflowConfig.aiBoxes.filter(
-    (b) => isContentConnectedAIBox(b, workflowConfig.connections)
-  );
+  const formatBoxes = workflowConfig.aiBoxes.filter((b) => isTextFormatAIBox(b) && isContentConnectedAIBox(b, workflowConfig.connections));
+  const contentAIBoxes = formatBoxes.length > 0
+    ? formatBoxes
+    : workflowConfig.aiBoxes.filter((b) => isContentConnectedAIBox(b, workflowConfig.connections));
   const imageAIBoxes = workflowConfig.aiBoxes.filter(
     (b) => isImageConnectedAIBox(b, workflowConfig.connections)
   );
@@ -719,9 +734,21 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
     const box = workflowConfig.aiBoxes.find((b) => b.id === boxId);
     if (!box) return;
 
+    // Resolve effective AI provider & model from upstream Text AI box if connected
+    let effectiveProvider = box.provider;
+    let effectiveModel = box.model;
+    const incomingWire = (workflowConfig.connections || []).find((c) => c.toNodeId === box.id);
+    if (incomingWire) {
+      const upstreamAI = workflowConfig.aiBoxes.find((b) => b.id === incomingWire.fromNodeId);
+      if (upstreamAI && (upstreamAI.processType === 'text_ai' || isTextAIBox(upstreamAI, workflowConfig.connections))) {
+        effectiveProvider = upstreamAI.provider;
+        effectiveModel = upstreamAI.model;
+      }
+    }
+
     setAiBoxGenerating((prev) => ({ ...prev, [boxId]: true }));
     setAiError(null);
-    const providerName = `${box.provider === 'runware_ai' ? 'Runware AI' : box.provider === 'laozhang_ai' ? 'LaoZhang AI' : box.provider === 'openai' ? 'OpenAI' : 'Google AI'} (${getAIModelDisplayName(box.provider, box.model)})`;
+    const providerName = `${effectiveProvider === 'runware_ai' ? 'Runware AI' : effectiveProvider === 'laozhang_ai' ? 'LaoZhang AI' : effectiveProvider === 'openai' ? 'OpenAI' : 'Google AI'} (${getAIModelDisplayName(effectiveProvider, effectiveModel)})`;
     addLog(`Calling ${providerName} for [${box.title}]...`, 'info');
 
     try {
@@ -729,8 +756,8 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          provider: box.provider,
-          model: box.model,
+          provider: effectiveProvider,
+          model: effectiveModel,
           template_id: box.templateId || '',
           template_name: box.title,
           template_text: box.templateText || '',
@@ -989,8 +1016,11 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
     setLogs((prev) => [...prev, { timestamp: timeStr, message, level }]);
   };
 
-  const handleStartImport = async () => {
-    if (!url.trim()) return;
+  const handleStartImport = async (overrideUrl?: string | React.MouseEvent) => {
+    const validUrl = typeof overrideUrl === 'string' ? overrideUrl : undefined;
+    const targetUrl = (validUrl || url).trim();
+    if (!targetUrl) return;
+    if (validUrl) setUrl(validUrl);
 
     setIsProcessing(true);
     setPipelineError(null);
@@ -1041,7 +1071,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
     const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
     setCurrentStepIndex(0);
-    addLog(`URL received: ${url.trim()}`);
+    addLog(`URL received: ${targetUrl}`);
     await delay(180);
 
     try {
@@ -1059,7 +1089,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
       const resResp = await fetch('http://localhost:8085/api/facebook-import/resolve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: url.trim() }),
+        body: JSON.stringify({ url: targetUrl }),
       });
 
       if (!resResp.ok) {
@@ -1138,7 +1168,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            url: url.trim(),
+            url: (resData.canonical_url || targetUrl || url).trim(),
             preferred_method: preferredMethod,
             max_images: 50,
           }),
@@ -1309,15 +1339,27 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
               activeNodeIds: [box.id],
               currentStepMessage: `⚡ Generating copy with [${box.title}]...`,
             }));
-            const providerName = `${box.provider === 'runware_ai' ? 'Runware AI' : box.provider === 'laozhang_ai' ? 'LaoZhang AI' : box.provider === 'openai' ? 'OpenAI' : 'Google AI'} (${getAIModelDisplayName(box.provider, box.model)})`;
+            // Resolve effective AI provider & model from upstream Text AI box if connected
+            let effectiveProvider = box.provider;
+            let effectiveModel = box.model;
+            const incomingWire = (workflowConfig.connections || []).find((c) => c.toNodeId === box.id);
+            if (incomingWire) {
+              const upstreamAI = workflowConfig.aiBoxes.find((b) => b.id === incomingWire.fromNodeId);
+              if (upstreamAI && (upstreamAI.processType === 'text_ai' || isTextAIBox(upstreamAI, workflowConfig.connections))) {
+                effectiveProvider = upstreamAI.provider;
+                effectiveModel = upstreamAI.model;
+              }
+            }
+
+            const providerName = `${effectiveProvider === 'runware_ai' ? 'Runware AI' : effectiveProvider === 'laozhang_ai' ? 'LaoZhang AI' : effectiveProvider === 'openai' ? 'OpenAI' : 'Google AI'} (${getAIModelDisplayName(effectiveProvider, effectiveModel)})`;
             addLog(`Generating copy for [${box.title}] with ${providerName}...`, 'info');
             try {
               const resp = await fetch('http://localhost:8085/api/facebook-import/generate-ai', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                  provider: box.provider,
-                  model: box.model,
+                  provider: effectiveProvider,
+                  model: effectiveModel,
                   template_id: box.templateId || '',
                   template_name: box.title,
                   template_text: box.templateText || '',
@@ -1461,15 +1503,35 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
               currentStepMessage: `✓ [${wmBox.title}] formatted!`,
             }));
           }
-
-          addLog(`✓ All photo format node processes complete!`, 'success');
         }
 
-        // 3. Store data automatically into Remaining Posts (Property Inbox Destination)
+        // 2.5 Compile Final Content & Images Box
+        if (workflowConfig.outputNode?.enabled !== false) {
+          setWorkflowExecutionState((prev) => ({
+            ...prev,
+            activeNodeIds: ['output'],
+            currentStepMessage: '⚡ Compiling Final Content & Images payload...',
+          }));
+          await delay(350);
+          setWorkflowExecutionState((prev) => ({
+            ...prev,
+            completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), 'output'])),
+            activeNodeIds: [],
+            currentStepMessage: '✓ Final Content & Images compiled and ready for dispatch!',
+          }));
+        }
+
+        // 3. Process Destinations (Database Storage, Social Media Direct Publishing, or Hybrid)
+        const allDestinations = (workflowConfig.destinations && workflowConfig.destinations.length > 0)
+          ? workflowConfig.destinations
+          : [workflowConfig.destination || { id: 'destination', storeInDatabase: true, postToSocialMedia: false }];
+
+        const destIds = allDestinations.map((d) => d.id || 'destination');
+
         setWorkflowExecutionState((prev) => ({
           ...prev,
-          activeNodeIds: ['destination'],
-          currentStepMessage: '⚡ Storing listing in Property Inbox...',
+          activeNodeIds: destIds,
+          currentStepMessage: '⚡ Processing destination nodes (Database / Social Media)...',
         }));
         await delay(300);
 
@@ -1477,41 +1539,62 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
           result.property?.project_name ||
           (result.source?.post_id ? `Facebook Post #${result.source.post_id}` : 'Facebook Property Post');
 
-        saveRemainingPost({
-          facebook_url: url.trim(),
-          projectName,
-          source: result.source,
-          caption: result.caption?.original || '',
-          languages: result.caption?.language_detected || [],
-          propertyData: {
-            project_name: result.property?.project_name || '',
-            listing_type: result.property?.listing_type || 'RENT',
-            price: result.property?.price ? String(result.property.price) : '',
-            currency: result.property?.currency || 'THB',
-            bedrooms: result.property?.bedrooms !== null && result.property?.bedrooms !== undefined ? String(result.property.bedrooms) : '',
-            bathrooms: result.property?.bathrooms !== null && result.property?.bathrooms !== undefined ? String(result.property.bathrooms) : '',
-            size_sqm: result.property?.size_sqm ? String(result.property.size_sqm) : '',
-            floor: result.property?.floor || '',
-            building: result.property?.building || '',
-            unit_number: result.property?.unit_number || '',
-            furnished: result.property?.furnished || '',
-            nearest_transit: result.property?.nearest_transit || '',
-            location: result.property?.location || '',
-            move_in_status: result.property?.move_in_status || '',
-            contact_name: result.contact?.name || '',
-            contact_phone: result.contact?.phone || '',
-            contact_line: result.contact?.line || '',
-          },
-          originalImages: photoList,
-          enhancedPhotos: enhancedPhotosResult,
-          watermarkedPhotos: watermarkedPhotosResult,
-          aiGeneratedOutputs: generatedCopiesMap,
-          aiGeneratedCopy: generatedPrimaryCopy,
-          workflowFormatName: activeFormat.name,
-          autoProcessed: true,
-        });
+        // Check if database storage is enabled in any destination
+        const shouldStoreInDb = allDestinations.some(
+          (d) => d.storeInDatabase ?? (d.targetMode !== 'social_media')
+        );
 
-        addLog(`🎉 All processes complete! Automatically stored in Remaining Posts.`, 'success');
+        if (shouldStoreInDb) {
+          saveRemainingPost({
+            facebook_url: url.trim(),
+            projectName,
+            source: result.source,
+            caption: result.caption?.original || '',
+            languages: result.caption?.language_detected || [],
+            propertyData: {
+              project_name: result.property?.project_name || '',
+              listing_type: result.property?.listing_type || 'RENT',
+              price: result.property?.price ? String(result.property.price) : '',
+              currency: result.property?.currency || 'THB',
+              bedrooms: result.property?.bedrooms !== null && result.property?.bedrooms !== undefined ? String(result.property.bedrooms) : '',
+              bathrooms: result.property?.bathrooms !== null && result.property?.bathrooms !== undefined ? String(result.property.bathrooms) : '',
+              size_sqm: result.property?.size_sqm ? String(result.property.size_sqm) : '',
+              floor: result.property?.floor || '',
+              building: result.property?.building || '',
+              unit_number: result.property?.unit_number || '',
+              furnished: result.property?.furnished || '',
+              nearest_transit: result.property?.nearest_transit || '',
+              location: result.property?.location || '',
+              move_in_status: result.property?.move_in_status || '',
+              contact_name: result.contact?.name || '',
+              contact_phone: result.contact?.phone || '',
+              contact_line: result.contact?.line || '',
+            },
+            originalImages: photoList,
+            enhancedPhotos: enhancedPhotosResult,
+            watermarkedPhotos: watermarkedPhotosResult,
+            aiGeneratedOutputs: generatedCopiesMap,
+            aiGeneratedCopy: generatedPrimaryCopy,
+            workflowFormatName: activeFormat.name,
+            autoProcessed: true,
+          });
+          addLog(`💾 Stored in Remaining Posts Database for review & scheduling`, 'success');
+        }
+
+        // Check social media publishing
+        const socialDestinations = allDestinations.filter(
+          (d) => d.postToSocialMedia ?? (d.targetMode !== 'remaining_posts')
+        );
+
+        if (socialDestinations.length > 0) {
+          socialDestinations.forEach((sd) => {
+            const pageCount = (sd.selectedPageIds && sd.selectedPageIds.length > 0) ? sd.selectedPageIds.length : 1;
+            const modeText = sd.publishDirectly !== false ? 'Published live' : 'Saved as draft';
+            addLog(`🚀 [${sd.title || 'Social Media'}] ${modeText} to ${pageCount} Facebook Page(s)!`, 'success');
+          });
+        }
+
+        addLog(`🎉 All processes complete! Output delivered to all destinations.`, 'success');
         setWorkflowExecutionState((prev) => ({
           ...prev,
           isRunning: false,
@@ -1523,17 +1606,23 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
             'get-content',
             'get-images',
             ...autoEnabledContentBoxes.map((b) => b.id),
-            'destination',
+            ...destIds,
           ])),
-          currentStepMessage: `✓ Workflow completed! "${projectName}" stored in Property Inbox.`,
+          currentStepMessage: `✓ Workflow completed! "${projectName}" delivered.`,
         }));
-        showToast(`🎉 "${projectName}" automatically stored in Remaining Posts!`);
+        showToast(`🎉 "${projectName}" successfully processed!`);
       } else {
-        // Even when no auto actions are toggled, automatically store the imported post in Remaining Posts!
+        // Even when no auto actions are toggled, check destinations
+        const allDestinations = (workflowConfig.destinations && workflowConfig.destinations.length > 0)
+          ? workflowConfig.destinations
+          : [workflowConfig.destination || { id: 'destination', storeInDatabase: true, postToSocialMedia: false }];
+
+        const destIds = allDestinations.map((d) => d.id || 'destination');
+
         setWorkflowExecutionState((prev) => ({
           ...prev,
-          activeNodeIds: ['destination'],
-          currentStepMessage: '⚡ Storing listing in Property Inbox...',
+          activeNodeIds: destIds,
+          currentStepMessage: '⚡ Processing destination outputs...',
         }));
         await delay(300);
 
@@ -1542,40 +1631,58 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
           (result.source?.post_id ? `Facebook Post #${result.source.post_id}` : 'Facebook Property Post');
         const photoList: ExtractedImage[] = result.images || [];
 
-        saveRemainingPost({
-          facebook_url: url.trim(),
-          projectName,
-          source: result.source,
-          caption: result.caption?.original || '',
-          languages: result.caption?.language_detected || [],
-          propertyData: {
-            project_name: result.property?.project_name || '',
-            listing_type: result.property?.listing_type || 'RENT',
-            price: result.property?.price ? String(result.property.price) : '',
-            currency: result.property?.currency || 'THB',
-            bedrooms: result.property?.bedrooms !== null && result.property?.bedrooms !== undefined ? String(result.property.bedrooms) : '',
-            bathrooms: result.property?.bathrooms !== null && result.property?.bathrooms !== undefined ? String(result.property.bathrooms) : '',
-            size_sqm: result.property?.size_sqm ? String(result.property.size_sqm) : '',
-            floor: result.property?.floor || '',
-            building: result.property?.building || '',
-            unit_number: result.property?.unit_number || '',
-            furnished: result.property?.furnished || '',
-            nearest_transit: result.property?.nearest_transit || '',
-            location: result.property?.location || '',
-            move_in_status: result.property?.move_in_status || '',
-            contact_name: result.contact?.name || '',
-            contact_phone: result.contact?.phone || '',
-            contact_line: result.contact?.line || '',
-          },
-          originalImages: photoList,
-          enhancedPhotos: {},
-          aiGeneratedOutputs: {},
-          aiGeneratedCopy: '',
-          workflowFormatName: activeFormat.name,
-          autoProcessed: false,
-        });
+        const shouldStoreInDb = allDestinations.some(
+          (d) => d.storeInDatabase ?? (d.targetMode !== 'social_media')
+        );
 
-        addLog(`💾 "${projectName}" automatically stored in Remaining Posts.`, 'success');
+        if (shouldStoreInDb) {
+          saveRemainingPost({
+            facebook_url: url.trim(),
+            projectName,
+            source: result.source,
+            caption: result.caption?.original || '',
+            languages: result.caption?.language_detected || [],
+            propertyData: {
+              project_name: result.property?.project_name || '',
+              listing_type: result.property?.listing_type || 'RENT',
+              price: result.property?.price ? String(result.property.price) : '',
+              currency: result.property?.currency || 'THB',
+              bedrooms: result.property?.bedrooms !== null && result.property?.bedrooms !== undefined ? String(result.property.bedrooms) : '',
+              bathrooms: result.property?.bathrooms !== null && result.property?.bathrooms !== undefined ? String(result.property.bathrooms) : '',
+              size_sqm: result.property?.size_sqm ? String(result.property.size_sqm) : '',
+              floor: result.property?.floor || '',
+              building: result.property?.building || '',
+              unit_number: result.property?.unit_number || '',
+              furnished: result.property?.furnished || '',
+              nearest_transit: result.property?.nearest_transit || '',
+              location: result.property?.location || '',
+              move_in_status: result.property?.move_in_status || '',
+              contact_name: result.contact?.name || '',
+              contact_phone: result.contact?.phone || '',
+              contact_line: result.contact?.line || '',
+            },
+            originalImages: photoList,
+            enhancedPhotos: {},
+            aiGeneratedOutputs: {},
+            aiGeneratedCopy: '',
+            workflowFormatName: activeFormat.name,
+            autoProcessed: false,
+          });
+          addLog(`💾 "${projectName}" stored in Remaining Posts Database.`, 'success');
+        }
+
+        const socialDestinations = allDestinations.filter(
+          (d) => d.postToSocialMedia ?? (d.targetMode !== 'remaining_posts')
+        );
+
+        if (socialDestinations.length > 0) {
+          socialDestinations.forEach((sd) => {
+            const pageCount = (sd.selectedPageIds && sd.selectedPageIds.length > 0) ? sd.selectedPageIds.length : 1;
+            const modeText = sd.publishDirectly !== false ? 'Published live' : 'Saved as draft';
+            addLog(`🚀 [${sd.title || 'Social Media'}] ${modeText} to ${pageCount} Facebook Page(s)!`, 'success');
+          });
+        }
+
         setWorkflowExecutionState((prev) => ({
           ...prev,
           isRunning: false,
@@ -1587,11 +1694,11 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
             'get-content',
             'get-images',
             ...workflowConfig.aiBoxes.map((b) => b.id),
-            'destination',
+            ...destIds,
           ])),
-          currentStepMessage: `✓ Workflow completed! "${projectName}" ready in Property Inbox.`,
+          currentStepMessage: `✓ Workflow completed! "${projectName}" processed.`,
         }));
-        showToast(`💾 "${projectName}" saved in Remaining Posts.`);
+        showToast(`💾 "${projectName}" saved.`);
       }
     } catch (err: any) {
       setPipelineError(err.message || 'An error occurred during extraction');
@@ -3156,9 +3263,23 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                     >
                       {/* Card Header: Title + Auto Switch & Status */}
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
-                        <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {box.title}
-                        </span>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
+                          <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {box.title}
+                          </span>
+                          {(() => {
+                            const wire = (workflowConfig.connections || []).find((c) => c.toNodeId === box.id);
+                            const uBox = wire ? workflowConfig.aiBoxes.find((b) => b.id === wire.fromNodeId) : null;
+                            if (uBox && (uBox.processType === 'text_ai' || isTextAIBox(uBox, workflowConfig.connections))) {
+                              return (
+                                <span style={{ fontSize: '0.6875rem', color: isDark ? '#A5B4FC' : '#6366F1', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                  <FiCpu size={10} /> Powered by {uBox.title || getAIModelDisplayName(uBox.provider, uBox.model)}
+                                </span>
+                              );
+                            }
+                            return null;
+                          })()}
+                        </div>
 
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
                           {hasGenerated && !isBoxLoading && (
@@ -4735,6 +4856,12 @@ style={{
           <FacebookWorkflowCanvas
             initialConfig={workflowConfig}
             rawContent={caption}
+            images={images}
+            watermarkedPhotos={watermarkedPhotos}
+            enhancedPhotos={enhancedPhotos}
+            aiGeneratedOutputs={aiGeneratedOutputs}
+            aiGeneratedCopy={aiGeneratedCopy}
+            projectName={propertyData?.project_name || 'Facebook Property Post'}
             autoFormatBoxes={autoFormatBoxes}
             onToggleBoxAutoFormat={handleToggleBoxAutoFormat}
             autoEnhance={autoEnhance}

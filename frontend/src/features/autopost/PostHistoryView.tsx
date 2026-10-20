@@ -8,197 +8,298 @@ import {
   FiEye,
   FiCheckCircle,
   FiShare2,
-  FiImage,
-  FiCalendar,
   FiCopy,
   FiCheck,
   FiLayers,
-  FiAlertCircle,
+  FiCalendar,
+  FiCode,
 } from 'react-icons/fi';
-import {
-  FaFacebook,
-  FaInstagram,
-  FaTiktok,
-} from 'react-icons/fa6';
+import { FaFacebook, FaTiktok } from 'react-icons/fa6';
 import {
   getAutoPostHistory,
   deleteAutoPostItem,
   clearAutoPostHistory,
   subscribeAutoPostHistory,
   type AutoPostItem,
-  type AutoPostImage,
 } from './autoPostStorage';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
 import { apiUrl } from '../../services/apiClient';
-import { fetchTikTokPosts, type TikTokPublishPost } from '../../services/tiktokService';
+import { fetchTikTokPosts } from '../../services/tiktokService';
 
 interface PostHistoryViewProps {
   onNavigateTab?: (tab: string) => void;
 }
 
-export const PostHistoryView: React.FC<PostHistoryViewProps> = ({ onNavigateTab }) => {
+// Helper to extract listing/property code from formatted content/caption (safe against any type)
+export function extractListingCode(caption?: unknown, fallbackId?: unknown): string {
+  const capStr = typeof caption === 'string' ? caption : '';
+  const idStr = fallbackId != null ? String(fallbackId) : '';
+
+  if (!capStr) {
+    return idStr ? idStr.replace(/^(FB-DB-|TT-DB-|autopost_)/, '').slice(0, 12) : '-';
+  }
+
+  // 1. Matches: "Code : C240101", "Listing Code: #1234", "รหัส : ABC", "Code: C-1234"
+  const codeRegex = /(?:code|listing\s*code|property\s*code|รหัส(?:ทรัพย์)?|ref(?:\s*no\.?)?|id)\s*[:：#\-]?\s*([A-Za-z0-9\-_#]+)/i;
+  const match = capStr.match(codeRegex);
+  if (match && match[1] && match[1].length >= 2) {
+    return match[1].trim();
+  }
+
+  // 2. Look for [CODE] bracket pattern like [C12345] or [BK-102]
+  const bracketMatch = capStr.match(/\[([A-Za-z0-9\-_]{2,15})\]/);
+  if (bracketMatch && bracketMatch[1]) {
+    return bracketMatch[1].trim();
+  }
+
+  // 3. Look for explicit hashtag like #C12345 or #BK102
+  const hashMatch = capStr.match(/#([A-Za-z]+[0-9]{3,})/);
+  if (hashMatch && hashMatch[1]) {
+    return hashMatch[1].trim();
+  }
+
+  return idStr ? idStr.replace(/^(FB-DB-|TT-DB-|autopost_)/, '').slice(0, 12) : '-';
+}
+
+// Helper to extract bedrooms from specs, caption, or projectName
+export function extractBedrooms(specs?: unknown, caption?: unknown, projectName?: unknown): string {
+  const specsStr = typeof specs === 'string' ? specs : '';
+  const capStr = typeof caption === 'string' ? caption : '';
+  const projStr = typeof projectName === 'string' ? projectName : '';
+  const combined = `${specsStr} ${capStr} ${projStr}`;
+
+  if (/studio/i.test(combined)) {
+    return 'Studio';
+  }
+
+  const match = combined.match(/(\d+)\s*(?:bed(?:room)?|br|ห้องนอน)/i);
+  if (match && match[1]) {
+    return `${match[1]} Bed`;
+  }
+
+  return specsStr ? specsStr.split('·')[0].trim() : '-';
+}
+
+// Helper to extract price
+export function extractPrice(price?: unknown, caption?: unknown): string {
+  if (price != null && price !== '') {
+    const p = typeof price === 'number' ? `฿${price.toLocaleString()}` : String(price).trim();
+    if (p) {
+      return p.startsWith('฿') || p.toLowerCase().includes('baht') || p.toLowerCase().includes('thb') ? p : `฿${p}`;
+    }
+  }
+
+  const capStr = typeof caption === 'string' ? caption : '';
+  if (!capStr) return '-';
+
+  const match = capStr.match(/(?:฿|THB|ราคา|price[:\s]*)\s*([0-9,]+(?:\.\d+)?)\s*(?:บาท|\/month|\/mo|\/เดือน|thb)?/i);
+  if (match && match[1]) {
+    return `฿${match[1]}`;
+  }
+
+  const numMatch = capStr.match(/([0-9]{1,3}(?:,[0-9]{3})+)\s*(?:บาท|\/mo|\/month|\/เดือน|thb|THB)/i);
+  if (numMatch && numMatch[1]) {
+    return `฿${numMatch[1]}`;
+  }
+
+  return '-';
+}
+
+// Helper to extract condo / project name
+export function extractCondoName(projectName?: unknown, headline?: unknown, caption?: unknown): string {
+  const pName = typeof projectName === 'string' ? projectName.trim() : (projectName != null ? String(projectName).trim() : '');
+  if (pName) return pName;
+
+  const hLine = typeof headline === 'string' ? headline.trim() : (headline != null ? String(headline).trim() : '');
+  if (hLine) return hLine;
+
+  const capStr = typeof caption === 'string' ? caption : '';
+  if (!capStr) return '—';
+
+  const firstLine = capStr.split('\n')[0].trim().replace(/^[🏙️✨💎🏠🏢📍\s*#]+/, '');
+  if (firstLine.length > 0 && firstLine.length < 50) {
+    return firstLine.split('|')[0].trim();
+  }
+  return '—';
+}
+
+import { ErrorBoundary } from '../../components/ui/ErrorBoundary';
+
+const PostHistoryViewContent: React.FC<PostHistoryViewProps> = ({ onNavigateTab }) => {
   const { actualTheme } = useTheme();
   const isDark = actualTheme === 'dark';
 
-  const [history, setHistory] = useState<AutoPostItem[]>(() => getAutoPostHistory());
-  const [historyFilter, setHistoryFilter] = useState<'all' | 'facebook' | 'page1' | 'page2' | 'instagram' | 'tiktok' | 'scheduled'>('all');
+  const [history, setHistory] = useState<AutoPostItem[]>(() => {
+    // Purge any legacy sample items from localStorage and normalize
+    try {
+      const raw = localStorage.getItem('estate_social_autopost_history_v1');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          const cleaned: AutoPostItem[] = [];
+          for (const p of parsed) {
+            if (!p || typeof p !== 'object') continue;
+            const idStr = String(p.id || '');
+            if (!idStr || idStr === 'PUB-202610-001' || idStr === 'PUB-202610-002') continue;
+            cleaned.push({
+              ...p,
+              id: idStr,
+              projectName: p.projectName != null ? String(p.projectName) : '',
+              price: p.price != null ? String(p.price) : '',
+              specs: p.specs != null ? String(p.specs) : '',
+              status: p.status || 'PUBLISHED',
+              createdAt: typeof p.createdAt === 'number' && !isNaN(p.createdAt) ? p.createdAt : Date.now(),
+              images: [],
+            });
+          }
+          if (cleaned.length !== parsed.length) {
+            localStorage.setItem('estate_social_autopost_history_v1', JSON.stringify(cleaned));
+          }
+          return cleaned;
+        }
+      }
+    } catch {}
+    return getAutoPostHistory();
+  });
+
+  const [historyFilter, setHistoryFilter] = useState<'all' | 'published' | 'scheduled' | 'failed'>('all');
   const [historySearch, setHistorySearch] = useState('');
   const [historyDetailItem, setHistoryDetailItem] = useState<AutoPostItem | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
-  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [isRetryingPostId, setIsRetryingPostId] = useState<string | null>(null);
+  const [isDeletingAll, setIsDeletingAll] = useState(false);
 
   useEffect(() => {
     const unsub = subscribeAutoPostHistory((items) => {
-      setHistory(items);
+      setHistory(Array.isArray(items) ? items : []);
     });
 
-    // Also fetch DB posts from backend (Facebook + TikTok)
+    // Fetch DB posts from backend (Facebook + TikTok)
     const fetchDbPosts = async () => {
       try {
-        const res = await fetch(apiUrl('/api/facebook/posts?limit=50'));
+        const res = await fetch(apiUrl('/api/facebook/posts?limit=100'));
         let mappedFbItems: AutoPostItem[] = [];
         if (res.ok) {
           const data = await res.json();
           if (Array.isArray(data.posts) && data.posts.length > 0) {
-            mappedFbItems = data.posts.map((p: any) => {
-              let parsedImgs: string[] = [];
-              try {
-                parsedImgs = JSON.parse(p.image_urls || '[]');
-              } catch (e) {}
+            mappedFbItems = data.posts
+              .filter((p: any) => p && (p.id != null || p.facebook_post_id))
+              .map((p: any) => {
+                const slot = p.page_slot || (p.page_id === '494870343703559' || p.page_id === '61593000699921' ? 2 : 1);
+                const captionStr = typeof p.caption === 'string' ? p.caption : '';
+                const bedroomMatch = captionStr.match(/(\d+)\s*(bed|bedroom|ห้องนอน)/i);
+                const bedroomVal = bedroomMatch ? bedroomMatch[1] : '';
+                const pId = String(p.id != null ? p.id : Date.now());
 
-              const autoPostImgs: AutoPostImage[] = parsedImgs.map((url, i) => ({
-                id: `db-img-${p.id}-${i}`,
-                url,
-                name: `photo_${i + 1}.jpg`,
-                isCover: i === 0,
-              }));
-
-              const slot = p.page_slot || (p.page_id === '494870343703559' || p.page_id === '61593000699921' ? 2 : 1);
-
-              return {
-                id: `FB-DB-${p.id}`,
-                projectName: p.headline || `Facebook Post (Page ${slot})`,
-                listingType: 'RENT',
-                price: '',
-                specs: '',
-                images: autoPostImgs,
-                facebook: {
-                  enabled: true,
-                  pageId: p.page_id,
-                  pageName: p.page_name || (slot === 2 ? 'Facebook Page 2' : 'Facebook Page 1'),
-                  headline: p.headline,
-                  caption: p.caption,
-                  cta: '',
-                  hashtags: p.hashtags || '',
-                },
-                instagram: { enabled: false, accountId: '', accountName: '', caption: '', firstCommentHashtags: '', locationTag: '' },
-                tiktok: { enabled: false, accountId: '', accountName: '', hook: '', caption: '', sound: '', privacy: 'public', allowComments: true, allowDuet: true },
-                scheduleType: p.status === 'SCHEDULED' ? 'SCHEDULED' : 'NOW',
-                scheduledAt: p.scheduled_at,
-                status: p.status === 'PUBLISHED' ? 'PUBLISHED' : p.status === 'SCHEDULED' ? 'SCHEDULED' : 'FAILED',
-                createdAt: new Date(p.created_at).getTime() || Date.now(),
-                platformResults: {
+                return {
+                  id: `FB-DB-${pId}`,
+                  projectName: p.headline ? String(p.headline) : '',
+                  listingType: 'RENT' as const,
+                  price: '',
+                  specs: bedroomVal ? `${bedroomVal} Bed` : '',
+                  images: [], // Never store images in history
+                  originalUrl: p.original_url || undefined,
                   facebook: {
-                    status: p.status === 'PUBLISHED' ? 'success' : p.status === 'SCHEDULED' ? 'scheduled' : 'failed',
-                    postId: p.facebook_post_id,
-                    postUrl: p.permalink_url,
-                    error: p.error_message,
-                    pageId: p.page_id,
-                    pageSlot: slot,
-                    timestamp: p.published_at ? new Date(p.published_at).getTime() : Date.now(),
+                    enabled: true,
+                    pageId: p.page_id || '',
+                    pageName: p.page_name || (slot === 2 ? 'Facebook Page 2' : 'Facebook Page 1'),
+                    headline: p.headline || '',
+                    caption: captionStr,
+                    cta: '',
+                    hashtags: p.hashtags || '',
                   },
-                  instagram: { status: 'skipped' },
-                  tiktok: { status: 'skipped' },
-                },
-              };
-            });
+                  instagram: { enabled: false, accountId: '', accountName: '', caption: '', firstCommentHashtags: '', locationTag: '' },
+                  tiktok: { enabled: false, accountId: '', accountName: '', hook: '', caption: '', sound: '', privacy: 'public' as const, allowComments: true, allowDuet: true },
+                  scheduleType: p.status === 'SCHEDULED' ? 'SCHEDULED' as const : 'NOW' as const,
+                  scheduledAt: p.scheduled_at,
+                  status: p.status === 'PUBLISHED' ? 'PUBLISHED' as const : p.status === 'SCHEDULED' ? 'SCHEDULED' as const : 'FAILED' as const,
+                  createdAt: p.created_at ? (new Date(p.created_at).getTime() || Date.now()) : Date.now(),
+                  platformResults: {
+                    facebook: {
+                      status: p.status === 'PUBLISHED' ? 'success' as const : p.status === 'SCHEDULED' ? 'scheduled' as const : 'failed' as const,
+                      postId: p.facebook_post_id,
+                      postUrl: p.permalink_url,
+                      error: p.error_message,
+                      pageId: p.page_id,
+                      pageSlot: slot,
+                      timestamp: p.published_at ? (new Date(p.published_at).getTime() || Date.now()) : Date.now(),
+                    },
+                    instagram: { status: 'skipped' as const },
+                    tiktok: { status: 'skipped' as const },
+                  },
+                };
+              });
           }
         }
 
-        // Fetch real TikTok posts
+        // Fetch TikTok posts
         let mappedTikTokItems: AutoPostItem[] = [];
         try {
           const ttPosts = await fetchTikTokPosts();
           if (Array.isArray(ttPosts) && ttPosts.length > 0) {
-            mappedTikTokItems = ttPosts.map((tp) => {
-              let photoList: string[] = [];
-              try {
-                photoList = JSON.parse(tp.photo_images || '[]');
-              } catch (e) {}
-
-              const autoPostImgs: AutoPostImage[] = photoList.map((url, i) => ({
-                id: `tt-img-${tp.id}-${i}`,
-                url,
-                name: `tiktok_photo_${i + 1}.jpg`,
-                isCover: i === 0,
-              }));
-
-              const isSuccess = tp.status === 'SUCCESS';
-              const isFailed = tp.status === 'FAILED';
-
-              return {
-                id: `TT-DB-${tp.id}`,
-                projectName: tp.title ? tp.title.slice(0, 40) + '...' : `TikTok Photo Mode (${tp.username})`,
-                listingType: 'RENT',
-                price: '',
-                specs: '',
-                images: autoPostImgs,
-                facebook: {
-                  enabled: false,
-                  pageId: '',
-                  pageName: '',
-                  headline: '',
-                  caption: '',
-                  cta: '',
-                  hashtags: '',
-                },
-                instagram: { enabled: false, accountId: '', accountName: '', caption: '', firstCommentHashtags: '', locationTag: '' },
-                tiktok: {
-                  enabled: true,
-                  accountId: String(tp.tiktok_account_id),
-                  accountName: `@${tp.username}`,
-                  hook: '',
-                  caption: tp.title,
-                  sound: tp.auto_add_music ? 'Auto Recommended Sound' : 'None',
-                  privacy: tp.privacy_level as any,
-                  allowComments: !tp.disable_comment,
-                  allowDuet: true,
-                },
-                scheduleType: 'NOW',
-                status: isSuccess ? 'PUBLISHED' : isFailed ? 'FAILED' : 'PARTIAL',
-                createdAt: tp.created_at ? new Date(tp.created_at).getTime() : Date.now(),
-                platformResults: {
-                  facebook: { status: 'skipped' },
-                  instagram: { status: 'skipped' },
+            mappedTikTokItems = ttPosts
+              .filter((tp: any) => tp && tp.id != null)
+              .map((tp) => {
+                const isSuccess = tp.status === 'SUCCESS';
+                const isFailed = tp.status === 'FAILED';
+                const tpId = String(tp.id);
+                return {
+                  id: `TT-DB-${tpId}`,
+                  projectName: tp.title ? String(tp.title).slice(0, 60) : `TikTok (${tp.username || 'User'})`,
+                  listingType: 'RENT' as const,
+                  price: '',
+                  specs: '',
+                  images: [], // Never store images in history
+                  originalUrl: undefined,
+                  facebook: { enabled: false, pageId: '', pageName: '', headline: '', caption: '', cta: '', hashtags: '' },
+                  instagram: { enabled: false, accountId: '', accountName: '', caption: '', firstCommentHashtags: '', locationTag: '' },
                   tiktok: {
-                    status: isSuccess ? 'success' : isFailed ? 'failed' : 'scheduled',
-                    postId: tp.tiktok_post_id || tp.publish_id,
-                    postUrl: tp.share_url || (tp.publish_id ? `https://tiktok.com/publish/${tp.publish_id}` : undefined),
-                    error: tp.error_message,
-                    timestamp: tp.published_at ? new Date(tp.published_at).getTime() : Date.now(),
+                    enabled: true,
+                    accountId: String(tp.tiktok_account_id || ''),
+                    accountName: tp.username ? `@${tp.username}` : '',
+                    hook: '',
+                    caption: tp.title || '',
+                    sound: tp.auto_add_music ? 'Auto Sound' : 'None',
+                    privacy: (tp.privacy_level as any) || 'public',
+                    allowComments: !tp.disable_comment,
+                    allowDuet: true,
                   },
-                },
-              };
-            });
+                  scheduleType: 'NOW' as const,
+                  status: isSuccess ? 'PUBLISHED' as const : isFailed ? 'FAILED' as const : 'PARTIAL' as const,
+                  createdAt: tp.created_at ? (new Date(tp.created_at).getTime() || Date.now()) : Date.now(),
+                  platformResults: {
+                    facebook: { status: 'skipped' as const },
+                    instagram: { status: 'skipped' as const },
+                    tiktok: {
+                      status: isSuccess ? 'success' as const : isFailed ? 'failed' as const : 'scheduled' as const,
+                      postId: tp.tiktok_post_id || tp.publish_id,
+                      postUrl: tp.share_url || (tp.publish_id ? `https://tiktok.com/publish/${tp.publish_id}` : undefined),
+                      error: tp.error_message,
+                      timestamp: tp.published_at ? (new Date(tp.published_at).getTime() || Date.now()) : Date.now(),
+                    },
+                  },
+                };
+              });
           }
         } catch (e) {
           console.error('Failed to fetch TikTok posts:', e);
         }
 
         const allBackendItems = [...mappedFbItems, ...mappedTikTokItems];
-
-        // Merge with local storage without duplicates
         setHistory((prev) => {
-          const combined = [...prev];
+          const combined = Array.isArray(prev) ? [...prev] : [];
           for (const item of allBackendItems) {
-            if (!combined.some((c) => c.id === item.id)) {
+            if (!combined.some((c) => c && String(c.id) === String(item.id))) {
               combined.unshift(item);
             }
           }
-          return combined.sort((a, b) => b.createdAt - a.createdAt);
+          return combined.sort((a, b) => {
+            const timeA = typeof a?.createdAt === 'number' && !isNaN(a.createdAt) ? a.createdAt : 0;
+            const timeB = typeof b?.createdAt === 'number' && !isNaN(b.createdAt) ? b.createdAt : 0;
+            return timeB - timeA;
+          });
         });
       } catch (e) {
         console.error('Failed to fetch DB posts:', e);
@@ -211,9 +312,7 @@ export const PostHistoryView: React.FC<PostHistoryViewProps> = ({ onNavigateTab 
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
-    setTimeout(() => {
-      setToastMessage(null);
-    }, 3000);
+    setTimeout(() => setToastMessage(null), 3000);
   };
 
   const handleCopy = (text: string, key: string) => {
@@ -226,26 +325,19 @@ export const PostHistoryView: React.FC<PostHistoryViewProps> = ({ onNavigateTab 
   const handleRetryPost = async (dbId: string) => {
     setIsRetryingPostId(`FB-DB-${dbId}`);
     try {
-      const res = await fetch(`http://localhost:8085/api/facebook/posts/${dbId}/retry`, {
-        method: 'POST',
-      });
+      const res = await fetch(apiUrl(`/api/facebook/posts/${dbId}/retry`), { method: 'POST' });
       const data = await res.json();
       if (res.ok && data.status === 'success') {
-        showToast('✅ Post retried and published successfully!');
+        showToast('✅ Post retried and published!');
         setHistory((prev) =>
           prev.map((item) => {
-            if (item.id === `FB-DB-${dbId}`) {
+            if (String(item?.id) === `FB-DB-${dbId}`) {
               return {
                 ...item,
                 status: 'PUBLISHED',
                 platformResults: {
                   ...item.platformResults,
-                  facebook: {
-                    status: 'success',
-                    postId: data.facebook_post_id,
-                    postUrl: data.permalink_url,
-                    timestamp: Date.now(),
-                  },
+                  facebook: { status: 'success', postId: data.facebook_post_id, postUrl: data.permalink_url, timestamp: Date.now() },
                 },
               };
             }
@@ -255,782 +347,356 @@ export const PostHistoryView: React.FC<PostHistoryViewProps> = ({ onNavigateTab 
       } else {
         showToast(`❌ Retry failed: ${data.message || 'Error'}`);
       }
-    } catch (err: any) {
+    } catch {
       showToast('❌ Network error retrying post');
     } finally {
       setIsRetryingPostId(null);
     }
   };
 
-  const handleDeleteHistoryItem = (id: string, e: React.MouseEvent) => {
+  const handleDeleteItem = (id: string | number, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (confirm('Delete this posting record from history?')) {
-      deleteAutoPostItem(id);
-      showToast('Record deleted.');
-      if (historyDetailItem?.id === id) {
-        setHistoryDetailItem(null);
+    const idStr = String(id || '');
+    if (!idStr) return;
+    if (confirm('Delete this record from history?')) {
+      if (idStr.startsWith('FB-DB-')) {
+        const dbId = idStr.replace('FB-DB-', '');
+        fetch(apiUrl(`/api/facebook/posts/${dbId}`), { method: 'DELETE' }).catch(() => {});
       }
+      deleteAutoPostItem(idStr);
+      setHistory((prev) => prev.filter((i) => i && String(i.id) !== idStr));
+      showToast('Record deleted.');
+      if (historyDetailItem && String(historyDetailItem.id) === idStr) setHistoryDetailItem(null);
     }
+  };
+
+  const handleDeleteAll = async () => {
+    if (!confirm('Delete ALL posting records and clean all history? This will delete all database records and local storage.')) return;
+    setIsDeletingAll(true);
+    try {
+      // Call backend DELETE /api/facebook/posts to delete all DB records
+      await fetch(apiUrl('/api/facebook/posts'), { method: 'DELETE' }).catch(() => {});
+
+      // Clear localStorage
+      clearAutoPostHistory();
+      setHistory([]);
+      showToast('✅ All history data removed and cleaned.');
+    } catch {
+      showToast('❌ Error clearing records.');
+    } finally {
+      setIsDeletingAll(false);
+    }
+  };
+
+  const getCaption = (item?: AutoPostItem | null): string => {
+    if (!item) return '';
+    return item.facebook?.caption || item.tiktok?.caption || item.instagram?.caption || '';
+  };
+
+  const getPostUrl = (item?: AutoPostItem | null): string | undefined => {
+    if (!item) return undefined;
+    return (
+      item.platformResults?.facebook?.postUrl ||
+      item.platformResults?.facebookPage1?.postUrl ||
+      item.platformResults?.facebookPage2?.postUrl ||
+      item.platformResults?.tiktok?.postUrl ||
+      item.platformResults?.instagram?.postUrl
+    );
   };
 
   // Filter history
   const filteredHistory = useMemo(() => {
+    if (!Array.isArray(history)) return [];
     return history.filter((item) => {
-      // Platform filter
-      if (historyFilter === 'facebook' && !item.facebook?.enabled && !item.platformResults?.facebookPage1 && !item.platformResults?.facebookPage2) {
-        return false;
-      }
-      if (historyFilter === 'page1') {
-        const isP1 =
-          item.facebook?.pageSlot === 1 ||
-          item.facebook?.pageId === '1287202894475973' ||
-          item.facebook?.pageId === '61568058604134' ||
-          item.platformResults?.facebook?.pageId === '1287202894475973' ||
-          item.platformResults?.facebook?.pageId === '61568058604134' ||
-          item.platformResults?.facebookPage1?.status === 'success' ||
-          item.platformResults?.facebookPage1?.status === 'scheduled';
-        if (!isP1) return false;
-      }
-      if (historyFilter === 'page2') {
-        const isP2 =
-          item.facebook?.pageSlot === 2 ||
-          item.facebook?.pageId === '494870343703559' ||
-          item.facebook?.pageId === '61593000699921' ||
-          item.platformResults?.facebook?.pageId === '494870343703559' ||
-          item.platformResults?.facebook?.pageId === '61593000699921' ||
-          item.platformResults?.facebookPage2?.status === 'success' ||
-          item.platformResults?.facebookPage2?.status === 'scheduled';
-        if (!isP2) return false;
-      }
-      if (historyFilter === 'instagram' && !item.instagram?.enabled) return false;
-      if (historyFilter === 'tiktok' && !item.tiktok?.enabled) return false;
-      if (historyFilter === 'scheduled' && item.status !== 'SCHEDULED') return false;
+      if (!item || item.id == null) return false;
+      const itemId = String(item.id);
+      const status = item.status || 'PUBLISHED';
+      if (historyFilter === 'published' && status !== 'PUBLISHED') return false;
+      if (historyFilter === 'scheduled' && status !== 'SCHEDULED') return false;
+      if (historyFilter === 'failed' && status !== 'FAILED') return false;
 
-      // Search query
       if (historySearch.trim()) {
         const q = historySearch.toLowerCase();
-        const matchTitle = item.projectName.toLowerCase().includes(q);
-        const matchId = item.id.toLowerCase().includes(q);
-        const matchFb = (item.facebook?.caption || '').toLowerCase().includes(q);
-        const matchIg = (item.instagram?.caption || '').toLowerCase().includes(q);
-        const matchTt = (item.tiktok?.caption || '').toLowerCase().includes(q);
-        if (!matchTitle && !matchId && !matchFb && !matchIg && !matchTt) return false;
+        const caption = getCaption(item);
+        const code = extractListingCode(caption, itemId).toLowerCase();
+        const matchTitle = (item.projectName || '').toLowerCase().includes(q);
+        const matchId = itemId.toLowerCase().includes(q);
+        const matchCode = code.includes(q);
+        const matchCaption = caption.toLowerCase().includes(q);
+        const matchUrl = (item.originalUrl || '').toLowerCase().includes(q);
+        if (!matchTitle && !matchId && !matchCode && !matchCaption && !matchUrl) return false;
       }
-
       return true;
     });
   }, [history, historyFilter, historySearch]);
 
   // Statistics
   const stats = useMemo(() => {
-    const total = history.length;
-    const published = history.filter((i) => i.status === 'PUBLISHED').length;
-    const scheduled = history.filter((i) => i.status === 'SCHEDULED').length;
-    const totalImages = history.reduce((acc, curr) => acc + (curr.images?.length || 0), 0);
-    return { total, published, scheduled, totalImages };
+    const valid = Array.isArray(history) ? history.filter((i): i is AutoPostItem => Boolean(i && i.id != null)) : [];
+    return {
+      total: valid.length,
+      published: valid.filter((i) => i.status === 'PUBLISHED').length,
+      scheduled: valid.filter((i) => i.status === 'SCHEDULED').length,
+      failed: valid.filter((i) => i.status === 'FAILED').length,
+    };
   }, [history]);
+
+
+  const statusColors: Record<string, { bg: string; color: string; border: string }> = {
+    PUBLISHED: { bg: 'rgba(34,197,94,0.1)', color: '#22C55E', border: 'rgba(34,197,94,0.25)' },
+    SCHEDULED: { bg: 'rgba(59,130,246,0.1)', color: '#3B82F6', border: 'rgba(59,130,246,0.25)' },
+    FAILED:    { bg: 'rgba(239,68,68,0.1)',  color: '#EF4444', border: 'rgba(239,68,68,0.25)' },
+    PARTIAL:   { bg: 'rgba(245,158,11,0.1)', color: '#F59E0B', border: 'rgba(245,158,11,0.25)' },
+  };
 
   return (
     <div style={{ maxWidth: '1440px', margin: '0 auto', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-      {/* Toast Alert */}
+
+      {/* Toast */}
       {toastMessage && (
-        <div
-          style={{
-            position: 'fixed',
-            bottom: '24px',
-            right: '24px',
-            backgroundColor: '#1E293B',
-            color: '#FFFFFF',
-            padding: '10px 18px',
-            borderRadius: '10px',
-            boxShadow: '0 10px 25px rgba(0,0,0,0.3)',
-            zIndex: 9999,
-            fontSize: '0.875rem',
-            fontWeight: 500,
-            border: '1px solid rgba(255,255,255,0.1)',
-          }}
-        >
+        <div style={{
+          position: 'fixed', bottom: '24px', right: '24px',
+          backgroundColor: '#1E293B', color: '#FFFFFF',
+          padding: '10px 18px', borderRadius: '10px',
+          boxShadow: '0 10px 25px rgba(0,0,0,0.3)', zIndex: 9999,
+          fontSize: '0.875rem', fontWeight: 500,
+          border: '1px solid rgba(255,255,255,0.1)',
+        }}>
           {toastMessage}
         </div>
       )}
 
-      {/* Top Header Title with Quick Navigation to Create Auto Post */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: '1rem',
-          paddingBottom: '0.5rem',
-          borderBottom: '1px solid var(--border-color)',
-        }}
-      >
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', paddingBottom: '0.5rem', borderBottom: '1px solid var(--border-color)' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div
-              style={{
-                width: '32px',
-                height: '32px',
-                borderRadius: '8px',
-                backgroundColor: isDark ? 'rgba(59, 130, 246, 0.15)' : 'rgba(37, 99, 235, 0.1)',
-                color: 'var(--accent-primary)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '1.125rem',
-              }}
-            >
+            <div style={{ width: '32px', height: '32px', borderRadius: '8px', backgroundColor: isDark ? 'rgba(59,130,246,0.15)' : 'rgba(37,99,235,0.1)', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.125rem' }}>
               <FiClock />
             </div>
-            <h1 style={{ fontSize: '1.375rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0, letterSpacing: '-0.01em' }}>
-              Post History
-            </h1>
+            <h1 style={{ fontSize: '1.375rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>Post History</h1>
           </div>
           <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', margin: '4px 0 0 40px' }}>
-            Review, monitor, and manage your multi-channel published and scheduled listings across Facebook, Instagram, and TikTok
+            Clean listing post records — Code, Condo Name, Price, Bedroom, Original Link, Status, Post Link
           </p>
         </div>
-
-        {/* Action Button: Navigate to New Auto Post */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <Button
-            variant="primary"
-            onClick={() => onNavigateTab ? onNavigateTab('auto-post') : window.location.assign('/auto-post')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              fontSize: '0.8125rem',
-              fontWeight: 600,
-              padding: '8px 16px',
-            }}
-          >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {history.length > 0 && (
+            <button
+              type="button"
+              onClick={handleDeleteAll}
+              disabled={isDeletingAll}
+              style={{
+                padding: '8px 14px',
+                borderRadius: '8px',
+                border: '1px solid rgba(239,68,68,0.3)',
+                backgroundColor: 'rgba(239,68,68,0.08)',
+                color: '#EF4444',
+                fontSize: '0.8125rem',
+                fontWeight: 600,
+                cursor: isDeletingAll ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              <FiTrash2 style={{ fontSize: '0.875rem' }} />
+              <span>{isDeletingAll ? 'Cleaning...' : 'Clean All Data'}</span>
+            </button>
+          )}
+          <Button variant="primary" onClick={() => onNavigateTab ? onNavigateTab('auto-post') : window.location.assign('/auto-post')} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8125rem', fontWeight: 600, padding: '8px 16px' }}>
             <FiShare2 />
             <span>Create Auto Post</span>
           </Button>
         </div>
       </div>
 
-      {/* Stats Summary Cards */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-          gap: '0.875rem',
-        }}
-      >
-        <div
-          style={{
-            backgroundColor: 'var(--bg-secondary)',
-            border: '1px solid var(--border-color)',
-            borderRadius: '12px',
-            padding: '1rem',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '12px',
-          }}
-        >
-          <div
-            style={{
-              width: '42px',
-              height: '42px',
-              borderRadius: '10px',
-              backgroundColor: isDark ? 'rgba(59, 130, 246, 0.12)' : 'rgba(37, 99, 235, 0.08)',
-              color: 'var(--accent-primary)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '1.25rem',
-            }}
-          >
-            <FiLayers />
+      {/* Stats */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.875rem' }}>
+        {[
+          { label: 'Total Posts', value: stats.total, icon: <FiLayers />, bg: isDark ? 'rgba(59,130,246,0.12)' : 'rgba(37,99,235,0.08)', color: 'var(--accent-primary)' },
+          { label: 'Published', value: stats.published, icon: <FiCheckCircle />, bg: 'rgba(34,197,94,0.12)', color: '#22C55E' },
+          { label: 'Scheduled', value: stats.scheduled, icon: <FiCalendar />, bg: 'rgba(245,158,11,0.12)', color: '#F59E0B' },
+        ].map((s) => (
+          <div key={s.label} style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '1rem', display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ width: '42px', height: '42px', borderRadius: '10px', backgroundColor: s.bg, color: s.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.25rem' }}>
+              {s.icon}
+            </div>
+            <div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>{s.label}</div>
+              <div style={{ fontSize: '1.375rem', fontWeight: 700, color: 'var(--text-primary)' }}>{s.value}</div>
+            </div>
           </div>
-          <div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Total Posts</div>
-            <div style={{ fontSize: '1.375rem', fontWeight: 700, color: 'var(--text-primary)' }}>{stats.total}</div>
-          </div>
-        </div>
-
-        <div
-          style={{
-            backgroundColor: 'var(--bg-secondary)',
-            border: '1px solid var(--border-color)',
-            borderRadius: '12px',
-            padding: '1rem',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '12px',
-          }}
-        >
-          <div
-            style={{
-              width: '42px',
-              height: '42px',
-              borderRadius: '10px',
-              backgroundColor: 'rgba(34, 197, 94, 0.12)',
-              color: '#22C55E',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '1.25rem',
-            }}
-          >
-            <FiCheckCircle />
-          </div>
-          <div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Published Live</div>
-            <div style={{ fontSize: '1.375rem', fontWeight: 700, color: 'var(--text-primary)' }}>{stats.published}</div>
-          </div>
-        </div>
-
-        <div
-          style={{
-            backgroundColor: 'var(--bg-secondary)',
-            border: '1px solid var(--border-color)',
-            borderRadius: '12px',
-            padding: '1rem',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '12px',
-          }}
-        >
-          <div
-            style={{
-              width: '42px',
-              height: '42px',
-              borderRadius: '10px',
-              backgroundColor: 'rgba(245, 158, 11, 0.12)',
-              color: '#F59E0B',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '1.25rem',
-            }}
-          >
-            <FiCalendar />
-          </div>
-          <div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Scheduled Posts</div>
-            <div style={{ fontSize: '1.375rem', fontWeight: 700, color: 'var(--text-primary)' }}>{stats.scheduled}</div>
-          </div>
-        </div>
-
-        <div
-          style={{
-            backgroundColor: 'var(--bg-secondary)',
-            border: '1px solid var(--border-color)',
-            borderRadius: '12px',
-            padding: '1rem',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '12px',
-          }}
-        >
-          <div
-            style={{
-              width: '42px',
-              height: '42px',
-              borderRadius: '10px',
-              backgroundColor: isDark ? 'rgba(168, 85, 247, 0.12)' : 'rgba(147, 51, 234, 0.08)',
-              color: '#A855F7',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '1.25rem',
-            }}
-          >
-            <FiImage />
-          </div>
-          <div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Photos Published</div>
-            <div style={{ fontSize: '1.375rem', fontWeight: 700, color: 'var(--text-primary)' }}>{stats.totalImages}</div>
-          </div>
-        </div>
+        ))}
       </div>
 
-      {/* Main History Table Card */}
-      <div
-        style={{
-          backgroundColor: 'var(--bg-secondary)',
-          border: '1px solid var(--border-color)',
-          borderRadius: '14px',
-          padding: '1.25rem',
-        }}
-      >
+      {/* Table Card */}
+      <div style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '14px', padding: '1.25rem' }}>
+
+        {/* Controls */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '1rem' }}>
           <div>
-            <h2 style={{ fontSize: '1.125rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-              Posting History
-            </h2>
+            <h2 style={{ fontSize: '1.125rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>Posting Records</h2>
             <span style={{ fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
-              Post ID · Platform · Status · Errors · Published URL
+              Code · Condo Name · Price · Bed Room · Original Link · Status · Post Link
             </span>
           </div>
-
-          {/* Search & Filter Controls */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+            {/* Search */}
             <div style={{ position: 'relative' }}>
               <FiSearch style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: '0.875rem' }} />
               <input
                 type="text"
                 value={historySearch}
                 onChange={(e) => setHistorySearch(e.target.value)}
-                placeholder="Search history by title, ID, caption..."
-                style={{
-                  padding: '7px 12px 7px 32px',
-                  borderRadius: '8px',
-                  border: '1px solid var(--border-color)',
-                  backgroundColor: 'var(--bg-main)',
-                  color: 'var(--text-primary)',
-                  fontSize: '0.8125rem',
-                  outline: 'none',
-                  minWidth: '240px',
-                }}
+                placeholder="Search by code, condo, link..."
+                style={{ padding: '7px 12px 7px 32px', borderRadius: '8px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-main)', color: 'var(--text-primary)', fontSize: '0.8125rem', outline: 'none', minWidth: '220px' }}
               />
             </div>
 
-            {/* Platform Filter Tabs */}
-            <div style={{ display: 'flex', gap: '4px', backgroundColor: 'var(--bg-main)', padding: '3px', borderRadius: '8px', border: '1px solid var(--border-color)', flexWrap: 'wrap' }}>
+            {/* Status Filter */}
+            <div style={{ display: 'flex', gap: '4px', backgroundColor: 'var(--bg-main)', padding: '3px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
               {[
                 { id: 'all', label: 'All' },
-                { id: 'facebook', label: 'Facebook (All)' },
-                { id: 'page1', label: 'FB Page 1' },
-                { id: 'page2', label: 'FB Page 2' },
-                { id: 'instagram', label: 'Instagram' },
-                { id: 'tiktok', label: 'TikTok' },
+                { id: 'published', label: 'Published' },
                 { id: 'scheduled', label: 'Scheduled' },
+                { id: 'failed', label: 'Failed' },
               ].map((tab) => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setHistoryFilter(tab.id as any)}
-                  style={{
-                    padding: '5px 10px',
-                    borderRadius: '6px',
-                    border: 'none',
-                    backgroundColor: historyFilter === tab.id ? 'var(--accent-primary)' : 'transparent',
-                    color: historyFilter === tab.id ? '#FFFFFF' : 'var(--text-secondary)',
-                    fontSize: '0.75rem',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                  }}
-                >
+                <button key={tab.id} type="button" onClick={() => setHistoryFilter(tab.id as any)}
+                  style={{ padding: '5px 10px', borderRadius: '6px', border: 'none', backgroundColor: historyFilter === tab.id ? 'var(--accent-primary)' : 'transparent', color: historyFilter === tab.id ? '#FFFFFF' : 'var(--text-secondary)', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s ease' }}>
                   {tab.label}
                 </button>
               ))}
             </div>
-
-            {history.length > 0 && (
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  if (confirm('Clear all posting history records? This cannot be undone.')) {
-                    clearAutoPostHistory();
-                    showToast('Cleared posting history');
-                  }
-                }}
-                style={{ padding: '6px 12px', fontSize: '0.75rem', color: '#EF4444' }}
-              >
-                Clear
-              </Button>
-            )}
           </div>
         </div>
 
-        {/* History Table */}
+        {/* Clean Table: Code | Condo Name | Price | Bed Room | Original Link | Status | Post Link | Actions */}
         {filteredHistory.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '4rem 1rem', color: 'var(--text-muted)' }}>
             <FiClock style={{ fontSize: '3rem', marginBottom: '0.75rem', opacity: 0.35 }} />
-            <h3 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)', margin: '0 0 0.25rem' }}>
-              No posting records found
-            </h3>
+            <h3 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)', margin: '0 0 0.25rem' }}>No records found</h3>
             <p style={{ margin: '0 0 1rem', fontSize: '0.8125rem' }}>
-              {history.length === 0
-                ? 'You have not published any listings through Auto Post yet.'
-                : 'No records match your active search and filter criteria.'}
+              {history.length === 0 ? 'No posts published yet. Post history is clean.' : 'No records match your search filter.'}
             </p>
-            {history.length === 0 && (
-              <Button
-                variant="primary"
-                onClick={() => onNavigateTab ? onNavigateTab('auto-post') : window.location.assign('/auto-post')}
-                style={{ fontSize: '0.8125rem' }}
-              >
-                Create Your First Post
-              </Button>
-            )}
           </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.8125rem' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
-                  <th style={{ padding: '10px 12px', fontWeight: 600 }}>Post ID</th>
-                  <th style={{ padding: '10px 12px', fontWeight: 600 }}>Property & Cover</th>
-                  <th style={{ padding: '10px 12px', fontWeight: 600 }}>Platforms</th>
+                  <th style={{ padding: '10px 12px', fontWeight: 600, whiteSpace: 'nowrap' }}>Code</th>
+                  <th style={{ padding: '10px 12px', fontWeight: 600 }}>Condo Name</th>
+                  <th style={{ padding: '10px 12px', fontWeight: 600 }}>Price</th>
+                  <th style={{ padding: '10px 12px', fontWeight: 600 }}>Bed Room</th>
+                  <th style={{ padding: '10px 12px', fontWeight: 600 }}>Original Link</th>
                   <th style={{ padding: '10px 12px', fontWeight: 600 }}>Status</th>
-                  <th style={{ padding: '10px 12px', fontWeight: 600 }}>Errors</th>
-                  <th style={{ padding: '10px 12px', fontWeight: 600 }}>Published URLs</th>
-                  <th style={{ padding: '10px 12px', fontWeight: 600 }}>Date</th>
+                  <th style={{ padding: '10px 12px', fontWeight: 600 }}>Post Link</th>
                   <th style={{ padding: '10px 12px', fontWeight: 600, textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredHistory.map((item) => {
-                  const cover = item.images?.find((i) => i.isCover) || item.images?.[0];
+                  const itemId = String(item?.id || '');
+                  const caption = getCaption(item);
+                  const postUrl = getPostUrl(item);
+                  const sc = (item?.status && statusColors[item.status]) || statusColors['FAILED'];
+                  const isFbDb = itemId.startsWith('FB-DB-');
+                  const isTt = itemId.startsWith('TT-DB-');
+
+                  // Derived clean fields
+                  const code = extractListingCode(caption, itemId);
+                  const condoName = extractCondoName(item?.projectName, item?.facebook?.headline, caption);
+                  const price = extractPrice(item?.price, caption);
+                  const bedrooms = extractBedrooms(item?.specs, caption, item?.projectName);
 
                   return (
                     <tr
-                      key={item.id}
+                      key={itemId}
                       onClick={() => setHistoryDetailItem(item)}
-                      style={{
-                        borderBottom: '1px solid var(--border-color)',
-                        cursor: 'pointer',
-                        transition: 'background-color 0.15s ease',
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.02)';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.backgroundColor = 'transparent';
-                      }}
+                      style={{ borderBottom: '1px solid var(--border-color)', cursor: 'pointer', transition: 'background-color 0.15s ease' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
                     >
-                      {/* Post ID */}
-                      <td style={{ padding: '12px', fontFamily: 'monospace', fontWeight: 600, color: 'var(--accent-primary)' }}>
-                        {item.id}
-                      </td>
-
-                      {/* Property & Cover */}
-                      <td style={{ padding: '12px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          {cover ? (
-                            <img
-                              src={cover.url}
-                              alt={item.projectName}
-                              style={{ width: '42px', height: '42px', borderRadius: '6px', objectFit: 'cover' }}
-                            />
-                          ) : (
-                            <div style={{ width: '42px', height: '42px', borderRadius: '6px', backgroundColor: 'var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                              <FiImage style={{ color: 'var(--text-muted)' }} />
-                            </div>
-                          )}
-                          <div>
-                            <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{item.projectName}</div>
-                            <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-                              {item.price} · {item.images?.length || 0} photos
-                            </div>
-                          </div>
+                      {/* Code from formatted content code */}
+                      <td style={{ padding: '12px', whiteSpace: 'nowrap' }}>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '3px 8px', borderRadius: '6px', backgroundColor: isDark ? 'rgba(59,130,246,0.12)' : 'rgba(37,99,235,0.08)', color: 'var(--accent-primary)', fontFamily: 'monospace', fontWeight: 700, fontSize: '0.75rem', border: '1px solid rgba(59,130,246,0.2)' }}>
+                          <FiCode style={{ fontSize: '0.75rem' }} />
+                          <span>{code}</span>
                         </div>
                       </td>
 
-                      {/* Platforms */}
-                      <td style={{ padding: '12px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                          {item.platformResults?.facebookPage1?.status === 'success' && (
-                            <span
-                              title={`Facebook Page 1: ${item.platformResults.facebookPage1.pageName || 'Slot 1'}`}
-                              style={{
-                                padding: '2px 6px',
-                                borderRadius: '4px',
-                                backgroundColor: '#1877F2',
-                                color: '#FFFFFF',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '3px',
-                                fontSize: '0.6875rem',
-                                fontWeight: 700,
-                              }}
-                            >
-                              <FaFacebook style={{ fontSize: '0.6875rem' }} />
-                              <span>P1</span>
-                            </span>
-                          )}
-                          {item.platformResults?.facebookPage2?.status === 'success' && (
-                            <span
-                              title={`Facebook Page 2: ${item.platformResults.facebookPage2.pageName || 'Slot 2'}`}
-                              style={{
-                                padding: '2px 6px',
-                                borderRadius: '4px',
-                                backgroundColor: '#8B5CF6',
-                                color: '#FFFFFF',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '3px',
-                                fontSize: '0.6875rem',
-                                fontWeight: 700,
-                              }}
-                            >
-                              <FaFacebook style={{ fontSize: '0.6875rem' }} />
-                              <span>P2</span>
-                            </span>
-                          )}
-                          {(!item.platformResults?.facebookPage1 && !item.platformResults?.facebookPage2 && item.facebook?.enabled) && (
-                            (() => {
-                              const slot = item.facebook?.pageSlot || (item.facebook?.pageId === '494870343703559' || item.facebook?.pageId === '61593000699921' ? 2 : 1);
-                              return (
-                                <span
-                                  title={`Facebook Page ${slot}: ${item.facebook.pageName || item.facebook.pageId}`}
-                                  style={{
-                                    padding: '2px 6px',
-                                    borderRadius: '4px',
-                                    backgroundColor: slot === 2 ? '#8B5CF6' : '#1877F2',
-                                    color: '#FFFFFF',
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '3px',
-                                    fontSize: '0.6875rem',
-                                    fontWeight: 700,
-                                  }}
-                                >
-                                  <FaFacebook style={{ fontSize: '0.6875rem' }} />
-                                  <span>P{slot}</span>
-                                </span>
-                              );
-                            })()
-                          )}
-                          {item.instagram?.enabled && (
-                            <span
-                              title={`Instagram: ${item.instagram.accountName}`}
-                              style={{
-                                width: '22px',
-                                height: '22px',
-                                borderRadius: '4px',
-                                background: 'linear-gradient(45deg, #F58529, #D62976, #962FBF)',
-                                color: '#FFFFFF',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                fontSize: '0.6875rem',
-                              }}
-                            >
-                              <FaInstagram />
-                            </span>
-                          )}
-                          {item.tiktok?.enabled && (
-                            <span
-                              title={`TikTok: ${item.tiktok.accountName}`}
-                              style={{
-                                width: '22px',
-                                height: '22px',
-                                borderRadius: '4px',
-                                backgroundColor: '#000000',
-                                color: '#00F2FE',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                fontSize: '0.6875rem',
-                                border: '1px solid rgba(254, 44, 85, 0.4)',
-                              }}
-                            >
-                              <FaTiktok />
-                            </span>
-                          )}
+                      {/* Condo Name */}
+                      <td style={{ padding: '12px', maxWidth: '240px' }}>
+                        <div style={{ fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={condoName}>
+                          {condoName}
                         </div>
+                      </td>
+
+                      {/* Price */}
+                      <td style={{ padding: '12px', color: price !== '-' ? 'var(--text-primary)' : 'var(--text-muted)', whiteSpace: 'nowrap', fontWeight: 600 }}>
+                        {price}
+                      </td>
+
+                      {/* Bed Room */}
+                      <td style={{ padding: '12px', color: bedrooms !== '-' ? 'var(--text-primary)' : 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                        {bedrooms}
+                      </td>
+
+                      {/* Original Link */}
+                      <td style={{ padding: '12px' }} onClick={(e) => e.stopPropagation()}>
+                        {item.originalUrl ? (
+                          <a
+                            href={item.originalUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title={item.originalUrl}
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#1877F2', textDecoration: 'none', fontSize: '0.75rem', fontWeight: 600, padding: '3px 8px', borderRadius: '6px', backgroundColor: 'rgba(24,119,242,0.08)' }}
+                          >
+                            <FaFacebook style={{ fontSize: '0.75rem' }} />
+                            <span>Original Link</span>
+                            <FiExternalLink style={{ fontSize: '0.625rem' }} />
+                          </a>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>—</span>
+                        )}
                       </td>
 
                       {/* Status */}
                       <td style={{ padding: '12px' }}>
-                        <span
-                          style={{
-                            padding: '3px 8px',
-                            borderRadius: '12px',
-                            fontSize: '0.6875rem',
-                            fontWeight: 700,
-                            backgroundColor:
-                              item.status === 'PUBLISHED'
-                                ? 'rgba(34, 197, 94, 0.12)'
-                                : item.status === 'SCHEDULED'
-                                ? 'rgba(59, 130, 246, 0.12)'
-                                : 'rgba(239, 68, 68, 0.12)',
-                            color:
-                              item.status === 'PUBLISHED'
-                                ? '#22C55E'
-                                : item.status === 'SCHEDULED'
-                                ? '#3B82F6'
-                                : '#EF4444',
-                            border: `1px solid ${
-                              item.status === 'PUBLISHED'
-                                ? 'rgba(34, 197, 94, 0.25)'
-                                : item.status === 'SCHEDULED'
-                                ? 'rgba(59, 130, 246, 0.25)'
-                                : 'rgba(239, 68, 68, 0.25)'
-                            }`,
-                          }}
-                        >
-                          {item.status}
-                        </span>
-                      </td>
-
-                      {/* Errors */}
-                      <td style={{ padding: '12px' }}>
-                        {item.platformResults?.facebook?.error || item.status === 'FAILED' ? (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                            <span style={{ color: '#EF4444', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', fontWeight: 600 }}>
-                              <FiAlertCircle style={{ flexShrink: 0 }} />
-                              <span style={{ maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.platformResults?.facebook?.error || 'Publishing failed'}>
-                                {item.platformResults?.facebook?.error || 'Publishing failed'}
-                              </span>
-                            </span>
-                            {item.id.startsWith('FB-DB-') && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleRetryPost(item.id.replace('FB-DB-', ''));
-                                }}
-                                disabled={isRetryingPostId === item.id}
-                                style={{
-                                  alignSelf: 'flex-start',
-                                  padding: '2px 8px',
-                                  fontSize: '0.6875rem',
-                                  borderRadius: '4px',
-                                  border: '1px solid #1877F2',
-                                  backgroundColor: 'rgba(24, 119, 242, 0.1)',
-                                  color: '#1877F2',
-                                  cursor: 'pointer',
-                                  fontWeight: 600,
-                                }}
-                              >
-                                {isRetryingPostId === item.id ? 'Retrying...' : '↻ Retry'}
-                              </button>
-                            )}
-                          </div>
-                        ) : (
-                          <span style={{ color: '#22C55E', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem' }}>
-                            <FiCheckCircle />
-                            <span>None (0 errors)</span>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <span style={{ padding: '3px 8px', borderRadius: '12px', fontSize: '0.6875rem', fontWeight: 700, backgroundColor: sc.bg, color: sc.color, border: `1px solid ${sc.border}`, display: 'inline-block' }}>
+                            {item.status || 'PUBLISHED'}
                           </span>
-                        )}
-                      </td>
-
-                      {/* Published URLs */}
-                      <td style={{ padding: '12px' }} onClick={(e) => e.stopPropagation()}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                          {item.platformResults?.facebookPage1?.postUrl && (
-                            <a
-                              href={item.platformResults.facebookPage1.postUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              style={{
-                                color: '#1877F2',
-                                textDecoration: 'none',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '3px',
-                                fontSize: '0.75rem',
-                                padding: '2px 6px',
-                                borderRadius: '4px',
-                                backgroundColor: 'rgba(24, 119, 242, 0.08)',
-                                fontWeight: 600,
-                              }}
+                          {item.status === 'FAILED' && isFbDb && (
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); handleRetryPost(itemId.replace('FB-DB-', '')); }}
+                              disabled={isRetryingPostId === itemId}
+                              style={{ alignSelf: 'flex-start', padding: '2px 8px', fontSize: '0.625rem', borderRadius: '4px', border: '1px solid #1877F2', backgroundColor: 'rgba(24,119,242,0.1)', color: '#1877F2', cursor: 'pointer', fontWeight: 600 }}
                             >
-                              <FaFacebook style={{ fontSize: '0.6875rem' }} />
-                              <span>View Page 1</span>
-                              <FiExternalLink style={{ fontSize: '0.625rem' }} />
-                            </a>
-                          )}
-                          {item.platformResults?.facebookPage2?.postUrl && (
-                            <a
-                              href={item.platformResults.facebookPage2.postUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              style={{
-                                color: '#8B5CF6',
-                                textDecoration: 'none',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '3px',
-                                fontSize: '0.75rem',
-                                padding: '2px 6px',
-                                borderRadius: '4px',
-                                backgroundColor: 'rgba(139, 92, 246, 0.08)',
-                                fontWeight: 600,
-                              }}
-                            >
-                              <FaFacebook style={{ fontSize: '0.6875rem' }} />
-                              <span>View Page 2</span>
-                              <FiExternalLink style={{ fontSize: '0.625rem' }} />
-                            </a>
-                          )}
-                          {!item.platformResults?.facebookPage1 && !item.platformResults?.facebookPage2 && item.platformResults?.facebook?.postUrl && item.facebook?.enabled && (
-                            (() => {
-                              const slot = item.facebook?.pageSlot || (item.facebook?.pageId === '494870343703559' || item.facebook?.pageId === '61593000699921' ? 2 : 1);
-                              return (
-                                <a
-                                  href={item.platformResults.facebook.postUrl}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  style={{
-                                    color: slot === 2 ? '#8B5CF6' : '#1877F2',
-                                    textDecoration: 'none',
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '3px',
-                                    fontSize: '0.75rem',
-                                    padding: '2px 6px',
-                                    borderRadius: '4px',
-                                    backgroundColor: slot === 2 ? 'rgba(139, 92, 246, 0.08)' : 'rgba(24, 119, 242, 0.08)',
-                                    fontWeight: 600,
-                                  }}
-                                >
-                                  <FaFacebook style={{ fontSize: '0.6875rem' }} />
-                                  <span>View P{slot}</span>
-                                  <FiExternalLink style={{ fontSize: '0.625rem' }} />
-                                </a>
-                              );
-                            })()
-                          )}
-                          {item.platformResults?.instagram?.postUrl && item.instagram?.enabled && (
-                            <a
-                              href={item.platformResults.instagram.postUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              style={{
-                                color: '#E4405F',
-                                textDecoration: 'none',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '3px',
-                                fontSize: '0.75rem',
-                                padding: '2px 6px',
-                                borderRadius: '4px',
-                                backgroundColor: 'rgba(228, 64, 95, 0.08)',
-                              }}
-                            >
-                              <FaInstagram style={{ fontSize: '0.6875rem' }} />
-                              <span>View IG</span>
-                              <FiExternalLink style={{ fontSize: '0.625rem' }} />
-                            </a>
-                          )}
-                          {item.platformResults?.tiktok?.postUrl && item.tiktok?.enabled && (
-                            <a
-                              href={item.platformResults.tiktok.postUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              style={{
-                                color: isDark ? '#00F2FE' : '#0891B2',
-                                textDecoration: 'none',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '3px',
-                                fontSize: '0.75rem',
-                                padding: '2px 6px',
-                                borderRadius: '4px',
-                                backgroundColor: 'rgba(0, 242, 254, 0.08)',
-                              }}
-                            >
-                              <FaTiktok style={{ fontSize: '0.6875rem' }} />
-                              <span>View TT</span>
-                              <FiExternalLink style={{ fontSize: '0.625rem' }} />
-                            </a>
+                              {isRetryingPostId === itemId ? 'Retrying...' : '↻ Retry'}
+                            </button>
                           )}
                         </div>
                       </td>
 
-                      {/* Date */}
-                      <td style={{ padding: '12px', color: 'var(--text-muted)', fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
-                        {new Date(item.createdAt).toLocaleDateString()}
+                      {/* Post Link */}
+                      <td style={{ padding: '12px' }} onClick={(e) => e.stopPropagation()}>
+                        {postUrl ? (
+                          <a
+                            href={postUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: isTt ? (isDark ? '#00F2FE' : '#0891B2') : '#1877F2', textDecoration: 'none', fontSize: '0.75rem', fontWeight: 600, padding: '3px 8px', borderRadius: '6px', backgroundColor: isTt ? 'rgba(0,242,254,0.08)' : 'rgba(24,119,242,0.08)' }}
+                          >
+                            {isTt ? <FaTiktok style={{ fontSize: '0.75rem' }} /> : <FaFacebook style={{ fontSize: '0.75rem' }} />}
+                            <span>Post Link</span>
+                            <FiExternalLink style={{ fontSize: '0.625rem' }} />
+                          </a>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>—</span>
+                        )}
                       </td>
 
                       {/* Actions */}
@@ -1039,38 +705,16 @@ export const PostHistoryView: React.FC<PostHistoryViewProps> = ({ onNavigateTab 
                           <button
                             type="button"
                             onClick={() => setHistoryDetailItem(item)}
-                            title="View published copies and photos"
-                            style={{
-                              width: '28px',
-                              height: '28px',
-                              borderRadius: '6px',
-                              border: '1px solid var(--border-color)',
-                              backgroundColor: 'transparent',
-                              color: 'var(--text-primary)',
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                            }}
+                            title="View details"
+                            style={{ width: '28px', height: '28px', borderRadius: '6px', border: '1px solid var(--border-color)', backgroundColor: 'transparent', color: 'var(--text-primary)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                           >
                             <FiEye />
                           </button>
                           <button
                             type="button"
-                            onClick={(e) => handleDeleteHistoryItem(item.id, e)}
+                            onClick={(e) => handleDeleteItem(itemId, e)}
                             title="Delete record"
-                            style={{
-                              width: '28px',
-                              height: '28px',
-                              borderRadius: '6px',
-                              border: '1px solid rgba(239, 68, 68, 0.2)',
-                              backgroundColor: 'transparent',
-                              color: '#EF4444',
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                            }}
+                            style={{ width: '28px', height: '28px', borderRadius: '6px', border: '1px solid rgba(239,68,68,0.2)', backgroundColor: 'transparent', color: '#EF4444', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                           >
                             <FiTrash2 />
                           </button>
@@ -1085,152 +729,102 @@ export const PostHistoryView: React.FC<PostHistoryViewProps> = ({ onNavigateTab 
         )}
       </div>
 
-      {/* MODAL: Detailed Record Inspection */}
+      {/* Detail Modal (No photo/image storage) */}
       {historyDetailItem && (
         <Modal
           isOpen={Boolean(historyDetailItem)}
           onClose={() => setHistoryDetailItem(null)}
-          title={`Published Record: ${historyDetailItem.projectName} (${historyDetailItem.id})`}
+          title={`Listing Record: ${extractCondoName(historyDetailItem.projectName, historyDetailItem.facebook?.headline, getCaption(historyDetailItem))}`}
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', padding: '0.5rem 0' }}>
-            {/* Photos Strip */}
-            <div>
-              <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.5rem' }}>
-                Photos ({historyDetailItem.images?.length || 0})
-              </div>
-              <div style={{ display: 'flex', gap: '0.5rem', overflowX: 'auto', paddingBottom: '0.5rem' }}>
-                {historyDetailItem.images?.map((img, i) => (
-                  <div
-                    key={img.id || i}
-                    onClick={() => setLightboxUrl(img.url)}
-                    style={{
-                      width: '70px',
-                      height: '70px',
-                      borderRadius: '8px',
-                      overflow: 'hidden',
-                      flexShrink: 0,
-                      cursor: 'pointer',
-                      border: img.isCover ? '2px solid #F59E0B' : '1px solid var(--border-color)',
-                      position: 'relative',
-                    }}
-                    title={`${img.name} (Click to zoom)`}
-                  >
-                    <img src={img.url} alt={img.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  </div>
-                ))}
-              </div>
+
+            {/* Key fields */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.75rem' }}>
+              {[
+                { label: 'Code', value: extractListingCode(getCaption(historyDetailItem), historyDetailItem.id) },
+                { label: 'Condo Name', value: extractCondoName(historyDetailItem.projectName, historyDetailItem.facebook?.headline, getCaption(historyDetailItem)) },
+                { label: 'Price', value: extractPrice(historyDetailItem.price, getCaption(historyDetailItem)) },
+                { label: 'Bed Room', value: extractBedrooms(historyDetailItem.specs, getCaption(historyDetailItem), historyDetailItem.projectName) },
+                { label: 'Status', value: historyDetailItem.status || 'PUBLISHED' },
+                {
+                  label: 'Created At',
+                  value: (() => {
+                    try {
+                      const d = new Date(historyDetailItem.createdAt);
+                      return isNaN(d.getTime()) ? '-' : d.toLocaleString();
+                    } catch {
+                      return '-';
+                    }
+                  })(),
+                },
+              ].map((f) => (
+                <div key={f.label} style={{ backgroundColor: 'var(--bg-main)', borderRadius: '8px', padding: '0.625rem 0.75rem', border: '1px solid var(--border-color)' }}>
+                  <div style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '3px' }}>{f.label}</div>
+                  <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>{f.value}</div>
+                </div>
+              ))}
             </div>
 
-            {/* Copies Per Platform */}
-            {historyDetailItem.facebook?.enabled && (
-              <div style={{ backgroundColor: 'var(--bg-main)', borderRadius: '8px', padding: '0.75rem', border: '1px solid var(--border-color)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.375rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#1877F2', fontWeight: 600, fontSize: '0.8125rem' }}>
-                    <FaFacebook />
-                    <span>Facebook Page ({historyDetailItem.facebook.pageName})</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleCopy(historyDetailItem.facebook.caption, 'fb')}
-                    style={{ border: 'none', background: 'transparent', color: 'var(--accent-primary)', cursor: 'pointer', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px' }}
-                  >
-                    {copiedKey === 'fb' ? <FiCheck /> : <FiCopy />}
-                    <span>Copy</span>
-                  </button>
-                </div>
-                <div style={{ fontSize: '0.75rem', whiteSpace: 'pre-wrap', color: 'var(--text-secondary)' }}>
-                  {historyDetailItem.facebook.caption}
+            {/* Original Input Link */}
+            {historyDetailItem.originalUrl && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '0.5rem 0.75rem', backgroundColor: 'var(--bg-main)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                <FiExternalLink style={{ color: 'var(--accent-primary)', flexShrink: 0, fontSize: '0.875rem' }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '2px' }}>Original Link</div>
+                  <a href={historyDetailItem.originalUrl} target="_blank" rel="noopener noreferrer"
+                    style={{ fontSize: '0.75rem', color: 'var(--accent-primary)', textDecoration: 'none', wordBreak: 'break-all' }}>
+                    {historyDetailItem.originalUrl}
+                  </a>
                 </div>
               </div>
             )}
 
-            {historyDetailItem.instagram?.enabled && (
-              <div style={{ backgroundColor: 'var(--bg-main)', borderRadius: '8px', padding: '0.75rem', border: '1px solid var(--border-color)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.375rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#E4405F', fontWeight: 600, fontSize: '0.8125rem' }}>
-                    <FaInstagram />
-                    <span>Instagram ({historyDetailItem.instagram.accountName})</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleCopy(historyDetailItem.instagram.caption, 'ig')}
-                    style={{ border: 'none', background: 'transparent', color: 'var(--accent-primary)', cursor: 'pointer', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px' }}
-                  >
-                    {copiedKey === 'ig' ? <FiCheck /> : <FiCopy />}
-                    <span>Copy</span>
-                  </button>
-                </div>
-                <div style={{ fontSize: '0.75rem', whiteSpace: 'pre-wrap', color: 'var(--text-secondary)' }}>
-                  {historyDetailItem.instagram.caption}
+            {/* Post Link */}
+            {getPostUrl(historyDetailItem) && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '0.5rem 0.75rem', backgroundColor: 'var(--bg-main)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                <FaFacebook style={{ color: '#1877F2', flexShrink: 0, fontSize: '0.875rem' }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '2px' }}>Published Post Link</div>
+                  <a href={getPostUrl(historyDetailItem)!} target="_blank" rel="noopener noreferrer"
+                    style={{ fontSize: '0.75rem', color: '#1877F2', textDecoration: 'none', wordBreak: 'break-all' }}>
+                    {getPostUrl(historyDetailItem)}
+                  </a>
                 </div>
               </div>
             )}
 
-            {historyDetailItem.tiktok?.enabled && (
+            {/* Formatted Content */}
+            {getCaption(historyDetailItem) && (
               <div style={{ backgroundColor: 'var(--bg-main)', borderRadius: '8px', padding: '0.75rem', border: '1px solid var(--border-color)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.375rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: isDark ? '#00F2FE' : '#0891B2', fontWeight: 600, fontSize: '0.8125rem' }}>
-                    <FaTiktok />
-                    <span>TikTok ({historyDetailItem.tiktok.accountName})</span>
-                  </div>
+                  <div style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>Formatted Content (Caption)</div>
                   <button
                     type="button"
-                    onClick={() => handleCopy(historyDetailItem.tiktok.caption, 'tt')}
+                    onClick={() => handleCopy(getCaption(historyDetailItem), 'modal')}
                     style={{ border: 'none', background: 'transparent', color: 'var(--accent-primary)', cursor: 'pointer', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px' }}
                   >
-                    {copiedKey === 'tt' ? <FiCheck /> : <FiCopy />}
+                    {copiedKey === 'modal' ? <FiCheck /> : <FiCopy />}
                     <span>Copy</span>
                   </button>
                 </div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                  <div style={{ marginBottom: '4px' }}><strong>Hook: </strong>{historyDetailItem.tiktok.hook}</div>
-                  <div style={{ whiteSpace: 'pre-wrap' }}>{historyDetailItem.tiktok.caption}</div>
+                <div style={{ fontSize: '0.75rem', whiteSpace: 'pre-wrap', color: 'var(--text-secondary)', maxHeight: '240px', overflowY: 'auto', lineHeight: 1.6 }}>
+                  {getCaption(historyDetailItem)}
                 </div>
               </div>
             )}
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
-              <Button variant="secondary" onClick={() => setHistoryDetailItem(null)}>
-                Close
-              </Button>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.25rem' }}>
+              <Button variant="secondary" onClick={() => setHistoryDetailItem(null)}>Close</Button>
             </div>
           </div>
         </Modal>
       )}
-
-      {/* Lightbox Modal */}
-      {lightboxUrl && (
-        <div
-          onClick={() => setLightboxUrl(null)}
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.85)',
-            backdropFilter: 'blur(5px)',
-            zIndex: 10000,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '2rem',
-            cursor: 'zoom-out',
-          }}
-        >
-          <img
-            src={lightboxUrl}
-            alt="Preview"
-            style={{
-              maxWidth: '90vw',
-              maxHeight: '90vh',
-              objectFit: 'contain',
-              borderRadius: '8px',
-              boxShadow: '0 10px 40px rgba(0,0,0,0.5)',
-            }}
-          />
-        </div>
-      )}
     </div>
   );
 };
+
+export const PostHistoryView: React.FC<PostHistoryViewProps> = (props) => (
+  <ErrorBoundary fallbackTitle="Post History View Error">
+    <PostHistoryViewContent {...props} />
+  </ErrorBoundary>
+);

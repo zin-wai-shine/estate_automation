@@ -168,6 +168,7 @@ export const ModelSelectorMenu: React.FC<{
                 Google Gemini
               </div>
 
+              {/* Gemini Flash (Fast & Active) */}
               <button
                 type="button"
                 onClick={() => {
@@ -201,9 +202,47 @@ export const ModelSelectorMenu: React.FC<{
                 }}
               >
                 <SiGooglegemini style={{ fontSize: '13px', color: '#60A5FA' }} />
-                <span>Gemini Flash (Fast)</span>
+                <span>Gemini Flash (Fast & Active)</span>
               </button>
 
+              {/* Gemini 1.5 Flash */}
+              <button
+                type="button"
+                onClick={() => {
+                  onSelectModel('google_ai', 'gemini-1.5-flash');
+                  setIsOpen(false);
+                }}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '6px 8px',
+                  borderRadius: '4px',
+                  border: 'none',
+                  backgroundColor: isGoogle && model === 'gemini-1.5-flash' ? (isDark ? 'rgba(59, 130, 246, 0.15)' : 'rgba(59, 130, 246, 0.1)') : 'transparent',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.75rem',
+                  fontWeight: 400,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+                onMouseEnter={(e) => {
+                  if (!(isGoogle && model === 'gemini-1.5-flash')) {
+                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!(isGoogle && model === 'gemini-1.5-flash')) {
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                  }
+                }}
+              >
+                <SiGooglegemini style={{ fontSize: '13px', color: '#60A5FA' }} />
+                <span>Gemini 1.5 Flash (Balanced)</span>
+              </button>
+
+              {/* Gemini 1.5 Pro */}
               <button
                 type="button"
                 onClick={() => {
@@ -240,21 +279,11 @@ export const ModelSelectorMenu: React.FC<{
                 <span>Gemini 1.5 Pro (Deep Reasoning)</span>
               </button>
 
-              <div style={{ height: '1px', backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'var(--border-color)', margin: '4px 0' }} />
-            </>
-          )}
-
-          {/* OPENAI CHATGPT (Text Models) */}
-          {filterType !== 'image' && (
-            <>
-              <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', padding: '4px 8px', fontWeight: 500, letterSpacing: '0.3px' }}>
-                OpenAI ChatGPT
-              </div>
-
+              {/* Gemini 2.0 Flash */}
               <button
                 type="button"
                 onClick={() => {
-                  onSelectModel('openai', 'gpt-4o');
+                  onSelectModel('google_ai', 'gemini-2.0-flash');
                   setIsOpen(false);
                 }}
                 style={{
@@ -265,7 +294,7 @@ export const ModelSelectorMenu: React.FC<{
                   padding: '6px 8px',
                   borderRadius: '4px',
                   border: 'none',
-                  backgroundColor: !isGoogle && !isLaoZhang && model === 'gpt-4o' ? (isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.1)') : 'transparent',
+                  backgroundColor: isGoogle && model === 'gemini-2.0-flash' ? (isDark ? 'rgba(59, 130, 246, 0.15)' : 'rgba(59, 130, 246, 0.1)') : 'transparent',
                   color: 'var(--text-primary)',
                   fontSize: '0.75rem',
                   fontWeight: 400,
@@ -273,24 +302,25 @@ export const ModelSelectorMenu: React.FC<{
                   textAlign: 'left',
                 }}
                 onMouseEnter={(e) => {
-                  if (!(!isGoogle && !isLaoZhang && model === 'gpt-4o')) {
+                  if (!(isGoogle && model === 'gemini-2.0-flash')) {
                     e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
                   }
                 }}
                 onMouseLeave={(e) => {
-                  if (!(!isGoogle && !isLaoZhang && model === 'gpt-4o')) {
+                  if (!(isGoogle && model === 'gemini-2.0-flash')) {
                     e.currentTarget.style.backgroundColor = 'transparent';
                   }
                 }}
               >
-                <OpenAIIcon size={13} color="#34D399" />
-                <span>GPT-4o (High Precision)</span>
+                <SiGooglegemini style={{ fontSize: '13px', color: '#60A5FA' }} />
+                <span>Gemini 2.0 Flash (Next Gen)</span>
               </button>
 
+              {/* Gemini 2.5 Flash */}
               <button
                 type="button"
                 onClick={() => {
-                  onSelectModel('openai', 'gpt-4o-mini');
+                  onSelectModel('google_ai', 'gemini-2.5-flash');
                   setIsOpen(false);
                 }}
                 style={{
@@ -301,7 +331,7 @@ export const ModelSelectorMenu: React.FC<{
                   padding: '6px 8px',
                   borderRadius: '4px',
                   border: 'none',
-                  backgroundColor: !isGoogle && !isLaoZhang && model === 'gpt-4o-mini' ? (isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.1)') : 'transparent',
+                  backgroundColor: isGoogle && model === 'gemini-2.5-flash' ? (isDark ? 'rgba(59, 130, 246, 0.15)' : 'rgba(59, 130, 246, 0.1)') : 'transparent',
                   color: 'var(--text-primary)',
                   fontSize: '0.75rem',
                   fontWeight: 400,
@@ -309,23 +339,62 @@ export const ModelSelectorMenu: React.FC<{
                   textAlign: 'left',
                 }}
                 onMouseEnter={(e) => {
-                  if (!(!isGoogle && !isLaoZhang && model === 'gpt-4o-mini')) {
+                  if (!(isGoogle && model === 'gemini-2.5-flash')) {
                     e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
                   }
                 }}
                 onMouseLeave={(e) => {
-                  if (!(!isGoogle && !isLaoZhang && model === 'gpt-4o-mini')) {
+                  if (!(isGoogle && model === 'gemini-2.5-flash')) {
                     e.currentTarget.style.backgroundColor = 'transparent';
                   }
                 }}
               >
-                <OpenAIIcon size={13} color="#34D399" />
-                <span>GPT-4o-mini (Lightweight)</span>
+                <SiGooglegemini style={{ fontSize: '13px', color: '#60A5FA' }} />
+                <span>Gemini 2.5 Flash (Ultra Fast)</span>
+              </button>
+
+              {/* Gemini Pro */}
+              <button
+                type="button"
+                onClick={() => {
+                  onSelectModel('google_ai', 'gemini-pro-latest');
+                  setIsOpen(false);
+                }}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '6px 8px',
+                  borderRadius: '4px',
+                  border: 'none',
+                  backgroundColor: isGoogle && model === 'gemini-pro-latest' ? (isDark ? 'rgba(59, 130, 246, 0.15)' : 'rgba(59, 130, 246, 0.1)') : 'transparent',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.75rem',
+                  fontWeight: 400,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+                onMouseEnter={(e) => {
+                  if (!(isGoogle && model === 'gemini-pro-latest')) {
+                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!(isGoogle && model === 'gemini-pro-latest')) {
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                  }
+                }}
+              >
+                <SiGooglegemini style={{ fontSize: '13px', color: '#60A5FA' }} />
+                <span>Gemini Pro (High Precision)</span>
               </button>
 
               <div style={{ height: '1px', backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'var(--border-color)', margin: '4px 0' }} />
             </>
           )}
+
+
 
           {/* OPENAI IMAGE GENERATION (Image Models Only) */}
           {filterType !== 'text' && (
@@ -410,161 +479,7 @@ export const ModelSelectorMenu: React.FC<{
             </>
           )}
 
-          {/* LAOZHANG AI (Text Models) */}
-          {filterType !== 'image' && (
-            <>
-              <div style={{ fontSize: '0.6875rem', color: '#60A5FA', padding: '4px 8px', fontWeight: 600, letterSpacing: '0.3px', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                <LaoZhangIcon size={12} />
-                <span>LaoZhang API Models</span>
-              </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  onSelectModel('laozhang_ai', 'gpt-4o');
-                  setIsOpen(false);
-                }}
-                style={{
-                  width: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.5rem',
-                  padding: '6px 8px',
-                  borderRadius: '4px',
-                  border: 'none',
-                  backgroundColor: isLaoZhang && model === 'gpt-4o' ? (isDark ? 'rgba(37, 99, 235, 0.18)' : 'rgba(37, 99, 235, 0.12)') : 'transparent',
-                  color: 'var(--text-primary)',
-                  fontSize: '0.75rem',
-                  fontWeight: 400,
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                }}
-                onMouseEnter={(e) => {
-                  if (!(isLaoZhang && model === 'gpt-4o')) {
-                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!(isLaoZhang && model === 'gpt-4o')) {
-                    e.currentTarget.style.backgroundColor = 'transparent';
-                  }
-                }}
-              >
-                <LaoZhangIcon size={13} color="#2563EB" />
-                <span>GPT-4o (LaoZhang Relay)</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  onSelectModel('laozhang_ai', 'gpt-4.1');
-                  setIsOpen(false);
-                }}
-                style={{
-                  width: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.5rem',
-                  padding: '6px 8px',
-                  borderRadius: '4px',
-                  border: 'none',
-                  backgroundColor: isLaoZhang && model === 'gpt-4.1' ? (isDark ? 'rgba(37, 99, 235, 0.18)' : 'rgba(37, 99, 235, 0.12)') : 'transparent',
-                  color: 'var(--text-primary)',
-                  fontSize: '0.75rem',
-                  fontWeight: 400,
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                }}
-                onMouseEnter={(e) => {
-                  if (!(isLaoZhang && model === 'gpt-4.1')) {
-                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!(isLaoZhang && model === 'gpt-4.1')) {
-                    e.currentTarget.style.backgroundColor = 'transparent';
-                  }
-                }}
-              >
-                <LaoZhangIcon size={13} color="#3B82F6" />
-                <span>GPT-4.1 (Next Gen)</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  onSelectModel('laozhang_ai', 'gpt-4o-mini');
-                  setIsOpen(false);
-                }}
-                style={{
-                  width: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.5rem',
-                  padding: '6px 8px',
-                  borderRadius: '4px',
-                  border: 'none',
-                  backgroundColor: isLaoZhang && model === 'gpt-4o-mini' ? (isDark ? 'rgba(37, 99, 235, 0.18)' : 'rgba(37, 99, 235, 0.12)') : 'transparent',
-                  color: 'var(--text-primary)',
-                  fontSize: '0.75rem',
-                  fontWeight: 400,
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                }}
-                onMouseEnter={(e) => {
-                  if (!(isLaoZhang && model === 'gpt-4o-mini')) {
-                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!(isLaoZhang && model === 'gpt-4o-mini')) {
-                    e.currentTarget.style.backgroundColor = 'transparent';
-                  }
-                }}
-              >
-                <LaoZhangIcon size={13} color="#10B981" />
-                <span>GPT-4o-mini (Lightweight)</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  onSelectModel('laozhang_ai', 'deepseek-v3');
-                  setIsOpen(false);
-                }}
-                style={{
-                  width: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.5rem',
-                  padding: '6px 8px',
-                  borderRadius: '4px',
-                  border: 'none',
-                  backgroundColor: isLaoZhang && model === 'deepseek-v3' ? (isDark ? 'rgba(37, 99, 235, 0.18)' : 'rgba(37, 99, 235, 0.12)') : 'transparent',
-                  color: 'var(--text-primary)',
-                  fontSize: '0.75rem',
-                  fontWeight: 400,
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                }}
-                onMouseEnter={(e) => {
-                  if (!(isLaoZhang && model === 'deepseek-v3')) {
-                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!(isLaoZhang && model === 'deepseek-v3')) {
-                    e.currentTarget.style.backgroundColor = 'transparent';
-                  }
-                }}
-              >
-                <LaoZhangIcon size={13} color="#8B5CF6" />
-                <span>DeepSeek V3 (State of the Art)</span>
-              </button>
-
-              <div style={{ height: '1px', backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'var(--border-color)', margin: '4px 0' }} />
-            </>
-          )}
 
           {/* RUNWARE AI (Image Models Only) */}
           {filterType !== 'text' && (

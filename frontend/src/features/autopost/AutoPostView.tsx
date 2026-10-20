@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useTheme } from '../../context/ThemeContext';
 import {
@@ -354,27 +354,70 @@ export const AutoPostView: React.FC<AutoPostViewProps> = ({ onNavigateTab }) => 
   // ----------------------------------------------------
   // Form State: Platform Dedicated Content Boxes
   // ----------------------------------------------------
-  // Facebook Page Boxes: Page 1 (61568058604134) & Page 2 (61593000699921)
-  const [fbPage1Enabled, setFbPage1Enabled] = useState(() => {
-    const s = localStorage.getItem('autopost_fb_page_1_enabled') ?? localStorage.getItem('autopost_fb_page_1287202894475973_enabled');
-    if (s !== null) return s === 'true';
+  // Facebook Page Boxes: Supports all managed pages dynamically (Slot 1, Slot 2, Slot 3, etc.)
+  const [managedPages, setManagedPages] = useState<ManagedPageMeta[]>(() => getStoredManagedPages());
+  const [pageEnabledMap, setPageEnabledMap] = useState<Record<string, boolean>>(() => {
+    const map: Record<string, boolean> = {};
     const pages = getStoredManagedPages();
-    const p1 = pages.find((p) => p.slot === 1 || p.page_id === '1287202894475973');
-    return p1?.auto_publish_enabled ?? true;
+    pages.forEach((p) => {
+      const explicit =
+        localStorage.getItem(`autopost_fb_page_${p.slot}_enabled`) ??
+        localStorage.getItem(`autopost_fb_page_${p.page_id}_enabled`);
+      map[p.page_id] = explicit !== null ? explicit === 'true' : Boolean(p.auto_publish_enabled);
+      if (p.slot) map[`slot_${p.slot}`] = map[p.page_id];
+    });
+    return map;
   });
-  const [fbPage2Enabled, setFbPage2Enabled] = useState(() => {
-    const s = localStorage.getItem('autopost_fb_page_2_enabled') ?? localStorage.getItem('autopost_fb_page_494870343703559_enabled');
-    if (s !== null) return s === 'true';
-    const pages = getStoredManagedPages();
-    const p2 = pages.find((p) => p.slot === 2 || p.page_id === '494870343703559');
-    return p2?.auto_publish_enabled ?? true;
-  });
-  const fbEnabled = fbPage1Enabled || fbPage2Enabled;
+
+  const isPageActive = useCallback(
+    (p: ManagedPageMeta) => {
+      if (pageEnabledMap[p.page_id] !== undefined) return pageEnabledMap[p.page_id];
+      if (p.slot && pageEnabledMap[`slot_${p.slot}`] !== undefined) return pageEnabledMap[`slot_${p.slot}`];
+      const explicit =
+        localStorage.getItem(`autopost_fb_page_${p.slot}_enabled`) ??
+        localStorage.getItem(`autopost_fb_page_${p.page_id}_enabled`);
+      if (explicit !== null) return explicit === 'true';
+      return Boolean(p.auto_publish_enabled);
+    },
+    [pageEnabledMap]
+  );
+
+  const activeManagedFbPages = useMemo(() => {
+    return managedPages.filter((p) => isPageActive(p));
+  }, [managedPages, isPageActive]);
+
+  const fbPage1Enabled = useMemo(() => {
+    const p1 = managedPages.find((p) => p.slot === 1 || p.page_id === '1287202894475973');
+    return p1 ? isPageActive(p1) : false;
+  }, [managedPages, isPageActive]);
+
+  const fbPage2Enabled = useMemo(() => {
+    const p2 = managedPages.find((p) => p.slot === 2 || p.page_id === '494870343703559');
+    return p2 ? isPageActive(p2) : false;
+  }, [managedPages, isPageActive]);
+
+  const setFbPage1Enabled = useCallback((val: boolean) => {
+    setPageEnabledMap((prev) => ({ ...prev, '1287202894475973': val, slot_1: val }));
+  }, []);
+
+  const setFbPage2Enabled = useCallback((val: boolean) => {
+    setPageEnabledMap((prev) => ({ ...prev, '494870343703559': val, slot_2: val }));
+  }, []);
+
+  const fbEnabled = activeManagedFbPages.length > 0;
   const fbTargetMode: 'both' | 'page1' | 'page2' =
-    fbPage1Enabled && fbPage2Enabled ? 'both' : fbPage2Enabled ? 'page2' : 'page1';
+    activeManagedFbPages.length > 1
+      ? 'both'
+      : activeManagedFbPages[0]?.slot === 2
+      ? 'page2'
+      : 'page1';
+
+  const [previewFbPageId, setPreviewFbPageId] = useState<string>('');
+  const [dynamicPageContents, setDynamicPageContents] = useState<
+    Record<string, { html: string; caption: string; headline: string; hashtags: string }>
+  >({});
   const [fbPagesList, setFbPagesList] = useState<ConnectedAccount[]>(getStoredFbPages());
   const [fbPageId, setFbPageId] = useState('1287202894475973');
-  const [managedPages, setManagedPages] = useState<ManagedPageMeta[]>(() => getStoredManagedPages());
   const [isTokenManagerModalOpen, setIsTokenManagerModalOpen] = useState(false);
   const [isPageSelectionModalOpen, setIsPageSelectionModalOpen] = useState(false);
   const [refreshingPageId, setRefreshingPageId] = useState<string | null>(null);
@@ -475,6 +518,49 @@ Line: @estatebangkok | โทร: 081-234-5678
     () =>
       `<b>Premium High-Floor City Living | Ideo Sukhumvit 93 Studio For Rent</b><br><br>คอนโดคุณภาพเยี่ยมติดบันได BTS บางจาก (15 เมตร)<br>ให้เช่า Ideo Sukhumvit 93 สตูดิโอขนาด 28 ตร.ม. ชั้น 28 แต่งสวยพร้อมเข้าอยู่ทันที<br>เพียง 18,000 บาท/เดือน (สัญญา 1 ปี / ประกัน 2 เดือน ล่วงหน้า 1 เดือน)<br><br>จุดเด่นห้อง:<br>• ชั้นสูง วิวพาโนรามา ไม่มีตึกบัง ลมพัดเย็นสบาย<br>• เครื่องใช้ไฟฟ้าและเฟอร์นิเจอร์ครบ (Smart TV, เครื่องซักผ้า, ตู้เย็น, ไมโครเวฟ)<br>• ส่วนกลางระดับโรงแรม สระว่ายน้ำ 2 สระ ฟิตเนส Co-working space<br><br>ติดต่อนัดชมห้องล่วงหน้า:<br>Line: @estatebangkok | โทร: 081-234-5678<br><br>#IdeoSukhumvit #BangkokCondoRental #BTSBangChak #BangkokProperty #CondoLiving`
   );
+
+  const getPageHtml = useCallback(
+    (page: ManagedPageMeta) => {
+      if (dynamicPageContents[page.page_id]?.html) {
+        return dynamicPageContents[page.page_id].html;
+      }
+      if (page.slot === 1) return fbPage1Html;
+      if (page.slot === 2) return fbPage2Html;
+      return `<b>${page.name} | Exclusive Condo For Rent</b><br><br>ให้เช่าคอนโด Ideo Sukhumvit 93 ขนาด 28 ตร.ม. ชั้น 28 แต่งครบพร้อมอยู่!<br>ราคาเพียง 18,000 บาท/เดือน (สัญญา 1 ปี)<br>ติด BTS บางจาก เพียง 15 เมตร เดินทางสะดวกมาก วิวเมืองโล่งสวย<br>เฟอร์นิเจอร์และเครื่องใช้ไฟฟ้าครบครัน: แอร์, ทีวี, ตู้เย็น, ไมโครเวฟ, เครื่องซักผ้า, ดิจิตอลดอร์ล็อก หิ้วกระเป๋าเข้าอยู่ได้ทันที<br><br>สอบถาม/นัดชมห้องจริง Line ID: @estatebangkok | โทร 081-234-5678<br><br>#${page.name.replace(/\s+/g, '')} #IdeoSukhumvit93 #CondoForRent #BTSBangChak #BangkokCondo`;
+    },
+    [dynamicPageContents, fbPage1Html, fbPage2Html]
+  );
+
+  const getPageCaption = useCallback(
+    (page: ManagedPageMeta) => {
+      if (dynamicPageContents[page.page_id]?.caption) {
+        return dynamicPageContents[page.page_id].caption;
+      }
+      if (page.slot === 1) return fbCaption;
+      if (page.slot === 2) return fbPage2Caption;
+      return `ให้เช่าคอนโด Ideo Sukhumvit 93 ขนาด 28 ตร.ม. ชั้น 28 แต่งครบพร้อมอยู่!\nราคาเพียง 18,000 บาท/เดือน (สัญญา 1 ปี)\nติด BTS บางจาก เพียง 15 เมตร เดินทางสะดวกมาก วิวเมืองโล่งสวย\n\nสอบถาม/นัดชมห้องจริง Line ID: @estatebangkok | โทร 081-234-5678\n\n#${page.name.replace(/\s+/g, '')} #IdeoSukhumvit93 #CondoForRent`;
+    },
+    [dynamicPageContents, fbCaption, fbPage2Caption]
+  );
+
+  const setPageContent = useCallback((page: ManagedPageMeta, text: string, html: string) => {
+    if (page.slot === 1) {
+      setFbCaption(text);
+      setFbPage1Html(html);
+    } else if (page.slot === 2) {
+      setFbPage2Caption(text);
+      setFbPage2Html(html);
+    }
+    setDynamicPageContents((prev) => ({
+      ...prev,
+      [page.page_id]: {
+        html,
+        caption: text,
+        headline: '',
+        hashtags: '',
+      },
+    }));
+  }, []);
 
   // Two Main Workspace Sessions: 'content' | 'images'
   const [activeWorkspaceSession, setActiveWorkspaceSession] = useState<'content' | 'images'>('content');
@@ -854,7 +940,7 @@ DM or contact Line: @estatebangkok for private viewings`
   const [ttEnabledOverride, setTtEnabledOverride] = useState<boolean | null>(null);
   const tt1Enabled = activeTikTokAccounts.length > 0;
   const tt2Enabled = activeTikTokAccounts.length > 1;
-  const ttEnabled = ttEnabledOverride !== null ? ttEnabledOverride : (activeTikTokAccounts.length > 0 || true);
+  const ttEnabled = ttEnabledOverride !== null ? ttEnabledOverride : activeTikTokAccounts.length > 0;
   const setTt1Enabled = (_val: boolean) => {};
   const setTt2Enabled = (_val: boolean) => {};
   const setTtEnabled = (val: boolean) => setTtEnabledOverride(val);
@@ -1007,6 +1093,7 @@ DM or contact Line: @estatebangkok for private viewings`
     text: string;
     completed: boolean;
     isSuccess?: boolean;
+    isPartial?: boolean;
     createdItem?: AutoPostItem;
   }>({
     step: 0,
@@ -1014,6 +1101,7 @@ DM or contact Line: @estatebangkok for private viewings`
     text: '',
     completed: false,
     isSuccess: false,
+    isPartial: false,
   });
 
   // Lightbox for photos
@@ -1390,25 +1478,20 @@ DM or contact Line: @estatebangkok for private viewings`
     }
   };
 
+  const syncEnabledFromPages = useCallback((pages: ManagedPageMeta[]) => {
+    const nextMap: Record<string, boolean> = {};
+    pages.forEach((p) => {
+      const explicit =
+        localStorage.getItem(`autopost_fb_page_${p.slot}_enabled`) ??
+        localStorage.getItem(`autopost_fb_page_${p.page_id}_enabled`);
+      const val = explicit !== null ? explicit === 'true' : Boolean(p.auto_publish_enabled);
+      nextMap[p.page_id] = val;
+      if (p.slot) nextMap[`slot_${p.slot}`] = val;
+    });
+    setPageEnabledMap(nextMap);
+  }, []);
+
   useEffect(() => {
-    const syncEnabledFromPages = (pages: ManagedPageMeta[]) => {
-      const p1 = pages.find((p) => p.slot === 1 || p.page_id === '1287202894475973');
-      if (p1 && p1.auto_publish_enabled !== undefined) {
-        setFbPage1Enabled(p1.auto_publish_enabled);
-      } else {
-        const s1 = localStorage.getItem('autopost_fb_page_1_enabled');
-        if (s1 !== null) setFbPage1Enabled(s1 === 'true');
-      }
-
-      const p2 = pages.find((p) => p.slot === 2 || p.page_id === '494870343703559');
-      if (p2 && p2.auto_publish_enabled !== undefined) {
-        setFbPage2Enabled(p2.auto_publish_enabled);
-      } else {
-        const s2 = localStorage.getItem('autopost_fb_page_2_enabled');
-        if (s2 !== null) setFbPage2Enabled(s2 === 'true');
-      }
-    };
-
     const unsub = subscribeManagedPages((pages) => {
       setManagedPages(pages);
       setFbPagesList(getStoredFbPages());
@@ -1416,10 +1499,9 @@ DM or contact Line: @estatebangkok for private viewings`
     });
 
     const handleStorage = () => {
-      const s1 = localStorage.getItem('autopost_fb_page_1_enabled');
-      if (s1 !== null) setFbPage1Enabled(s1 === 'true');
-      const s2 = localStorage.getItem('autopost_fb_page_2_enabled');
-      if (s2 !== null) setFbPage2Enabled(s2 === 'true');
+      const pages = getStoredManagedPages();
+      setManagedPages(pages);
+      syncEnabledFromPages(pages);
     };
     window.addEventListener('storage', handleStorage);
 
@@ -1427,7 +1509,7 @@ DM or contact Line: @estatebangkok for private viewings`
       unsub();
       window.removeEventListener('storage', handleStorage);
     };
-  }, []);
+  }, [syncEnabledFromPages]);
 
   const fetchManagedPages = async () => {
     try {
@@ -1435,25 +1517,19 @@ DM or contact Line: @estatebangkok for private viewings`
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data.pages)) {
-          setManagedPages(data.pages);
-          const synced = syncStoredFbPagesWithMeta(data.pages);
+          const mergedPages: ManagedPageMeta[] = data.pages.map((p: any) => {
+            const explicit =
+              localStorage.getItem(`autopost_fb_page_${p.slot}_enabled`) ??
+              localStorage.getItem(`autopost_fb_page_${p.page_id}_enabled`);
+            return {
+              ...p,
+              auto_publish_enabled: explicit !== null ? explicit === 'true' : Boolean(p.auto_publish_enabled),
+            };
+          });
+          setManagedPages(mergedPages);
+          const synced = syncStoredFbPagesWithMeta(mergedPages);
           setFbPagesList(synced);
-
-          const s1 = localStorage.getItem('autopost_fb_page_1_enabled');
-          const p1 = data.pages.find((p: any) => p.slot === 1 || p.page_id === '1287202894475973');
-          if (s1 !== null) {
-            setFbPage1Enabled(s1 === 'true');
-          } else if (p1 && p1.auto_publish_enabled !== undefined) {
-            setFbPage1Enabled(p1.auto_publish_enabled);
-          }
-
-          const s2 = localStorage.getItem('autopost_fb_page_2_enabled');
-          const p2 = data.pages.find((p: any) => p.slot === 2 || p.page_id === '494870343703559');
-          if (s2 !== null) {
-            setFbPage2Enabled(s2 === 'true');
-          } else if (p2 && p2.auto_publish_enabled !== undefined) {
-            setFbPage2Enabled(p2.auto_publish_enabled);
-          }
+          syncEnabledFromPages(mergedPages);
         }
       }
     } catch (e) {
@@ -1755,7 +1831,7 @@ DM or contact Line: @estatebangkok for private viewings`
   // ----------------------------------------------------
   // Publishing Workflow Execution
   // ----------------------------------------------------
-  const selectedChannelsCount = (fbPage1Enabled ? 1 : 0) + (fbPage2Enabled ? 1 : 0) + (isEffectiveIgEnabled ? 1 : 0) + activeTikTokAccounts.length;
+  const selectedChannelsCount = activeManagedFbPages.length + (isEffectiveIgEnabled ? 1 : 0) + activeTikTokAccounts.length;
 
   const handleStartPublish = () => {
     if (selectedChannelsCount === 0) {
@@ -1796,63 +1872,51 @@ DM or contact Line: @estatebangkok for private viewings`
     let fbScheduleErr: string | undefined;
     let fbP1Result: PlatformPublishResult | undefined;
     let fbP2Result: PlatformPublishResult | undefined;
+    let fbPagesResults: PlatformPublishResult[] = [];
 
-    if (fbEnabled) {
-      if (fbTargetMode === 'both') {
-        const p1Images = fbImages.length > 0 ? fbImages : images;
-        const p2Images = fbPage2Images.length > 0 ? fbPage2Images : images;
-        const p1Sched = fbScheduledAt ? new Date(fbScheduledAt).toISOString() : new Date(scheduledDateTime).toISOString();
-        const p2Sched = fbPage2ScheduledAt ? new Date(fbPage2ScheduledAt).toISOString() : new Date(scheduledDateTime).toISOString();
+    if (fbEnabled && activeManagedFbPages.length > 0) {
+      if (activeManagedFbPages.length > 1) {
+        const batchPages = activeManagedFbPages.map((p) => {
+          const pImages = p.slot === 2 && fbPage2Images.length > 0 ? fbPage2Images : (fbImages.length > 0 ? fbImages : images);
+          const pSched = p.slot === 2 && fbPage2ScheduledAt
+            ? new Date(fbPage2ScheduledAt).toISOString()
+            : (fbScheduledAt ? new Date(fbScheduledAt).toISOString() : new Date(scheduledDateTime).toISOString());
+          return {
+            page_id: p.page_id,
+            headline: (p.slot === 2 ? fbPage2Headline : fbHeadline).trim(),
+            caption: getPageCaption(p).trim(),
+            hashtags: (p.slot === 2 ? fbPage2Hashtags : fbHashtags).trim(),
+            image_urls: pImages.map((img) => img.url),
+            scheduled_at: pSched,
+          };
+        });
 
         try {
           const schedRes = await fetch('http://localhost:8085/api/facebook/publish-batch', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              pages: [
-                {
-                  page_id: page1PageId,
-                  headline: fbHeadline.trim(),
-                  caption: fbCaption.trim(),
-                  hashtags: fbHashtags.trim(),
-                  image_urls: p1Images.map((img) => img.url),
-                  scheduled_at: p1Sched,
-                },
-                {
-                  page_id: page2PageId,
-                  headline: fbPage2Headline.trim(),
-                  caption: fbPage2Caption.trim(),
-                  hashtags: fbPage2Hashtags.trim(),
-                  image_urls: p2Images.map((img) => img.url),
-                  scheduled_at: p2Sched,
-                },
-              ],
-            }),
+            body: JSON.stringify({ pages: batchPages }),
           });
           const schedData = await schedRes.json();
           if (schedRes.ok && Array.isArray(schedData.results)) {
-            const r1 = schedData.results.find((r: any) => r.page_id === page1PageId);
-            const r2 = schedData.results.find((r: any) => r.page_id === page2PageId);
-            if (r1) {
-              fbP1Result = {
-                status: r1.success ? 'scheduled' : 'failed',
-                error: r1.error,
+            fbPagesResults = schedData.results.map((r: any) => {
+              const matched = activeManagedFbPages.find((p) => p.page_id === r.page_id);
+              const itemRes: PlatformPublishResult = {
+                status: r.success ? 'scheduled' : 'failed',
+                error: r.error,
                 timestamp: Date.now(),
-                pageId: page1PageId,
-                pageSlot: 1,
+                pageId: r.page_id,
+                pageSlot: matched?.slot,
+                pageName: matched?.name || r.name,
+                pictureUrl: matched?.picture_url,
               };
-            }
-            if (r2) {
-              fbP2Result = {
-                status: r2.success ? 'scheduled' : 'failed',
-                error: r2.error,
-                timestamp: Date.now(),
-                pageId: page2PageId,
-                pageSlot: 2,
-              };
-            }
-            if (!r1?.success || !r2?.success) {
-              fbScheduleErr = `Partial Schedule: P1=${r1?.status || 'fail'}, P2=${r2?.status || 'fail'}`;
+              if (matched?.slot === 1) fbP1Result = itemRes;
+              if (matched?.slot === 2) fbP2Result = itemRes;
+              return itemRes;
+            });
+            const firstOk = schedData.results.find((r: any) => r.success);
+            if (!firstOk) {
+              fbScheduleErr = 'Failed to schedule batch on Facebook';
             }
           } else {
             fbScheduleErr = schedData.message || 'Failed to schedule batch on backend';
@@ -1861,16 +1925,16 @@ DM or contact Line: @estatebangkok for private viewings`
           fbScheduleErr = err.message || 'Network error while scheduling batch';
         }
       } else {
-        const isSlot2 = fbTargetMode === 'page2';
-        const targetPageId = isSlot2 ? page2PageId : page1PageId;
-        const targetHeadline = isSlot2 ? fbPage2Headline : fbHeadline;
-        const targetCaption = isSlot2 ? fbPage2Caption : fbCaption;
-        const targetHashtags = isSlot2 ? fbPage2Hashtags : fbHashtags;
-        const targetImages = isSlot2
-          ? (fbPage2Images.length > 0 ? fbPage2Images : images)
+        const targetPage = activeManagedFbPages[0];
+        const targetPageId = targetPage.page_id;
+        const targetHeadline = targetPage.slot === 2 ? fbPage2Headline : fbHeadline;
+        const targetCaption = getPageCaption(targetPage);
+        const targetHashtags = targetPage.slot === 2 ? fbPage2Hashtags : fbHashtags;
+        const targetImages = targetPage.slot === 2 && fbPage2Images.length > 0
+          ? fbPage2Images
           : (fbImages.length > 0 ? fbImages : images);
-        const targetSched = isSlot2
-          ? (fbPage2ScheduledAt ? new Date(fbPage2ScheduledAt).toISOString() : new Date(scheduledDateTime).toISOString())
+        const targetSched = targetPage.slot === 2 && fbPage2ScheduledAt
+          ? new Date(fbPage2ScheduledAt).toISOString()
           : (fbScheduledAt ? new Date(fbScheduledAt).toISOString() : new Date(scheduledDateTime).toISOString());
 
         try {
@@ -1894,11 +1958,14 @@ DM or contact Line: @estatebangkok for private viewings`
               status: 'scheduled',
               timestamp: Date.now(),
               pageId: targetPageId,
-              pageSlot: isSlot2 ? 2 : 1,
+              pageSlot: targetPage.slot || 1,
+              pageName: targetPage.name,
+              pictureUrl: targetPage.picture_url,
             };
-            if (isSlot2) {
+            fbPagesResults = [singleSchedResult];
+            if (targetPage.slot === 2) {
               fbP2Result = singleSchedResult;
-            } else {
+            } else if (targetPage.slot === 1) {
               fbP1Result = singleSchedResult;
             }
           }
@@ -1918,12 +1985,12 @@ DM or contact Line: @estatebangkok for private viewings`
       facebook: {
         enabled: fbEnabled,
         targetMode: fbTargetMode,
-        pageId: fbTargetMode === 'page2' ? page2PageId : page1PageId,
+        pageId: activeManagedFbPages[0]?.page_id || page1PageId,
         pageName:
-          fbTargetMode === 'both'
-            ? `Both Pages (${page1Name} & ${page2Name})`
-            : fbTargetMode === 'page2'
-            ? `${page2Name} (${page2PageId})`
+          activeManagedFbPages.length > 1
+            ? `Multiple Pages (${activeManagedFbPages.map((p) => p.name).join(' & ')})`
+            : activeManagedFbPages[0]
+            ? `${activeManagedFbPages[0].name} (${activeManagedFbPages[0].page_id})`
             : `${page1Name} (${page1PageId})`,
         headline: fbHeadline,
         caption: fbCaption,
@@ -1985,6 +2052,7 @@ DM or contact Line: @estatebangkok for private viewings`
         },
         facebookPage1: fbP1Result,
         facebookPage2: fbP2Result,
+        facebookPages: fbPagesResults,
         instagram: {
           status: isEffectiveIgEnabled ? 'scheduled' : 'skipped',
           timestamp: Date.now(),
@@ -2019,6 +2087,7 @@ DM or contact Line: @estatebangkok for private viewings`
     };
     let fbP1Result: PlatformPublishResult | undefined;
     let fbP2Result: PlatformPublishResult | undefined;
+    let fbPagesResults: PlatformPublishResult[] = [];
 
     setPublishProgress({
       step: 1,
@@ -2032,35 +2101,28 @@ DM or contact Line: @estatebangkok for private viewings`
       await new Promise((r) => setTimeout(r, 400));
 
       // Step 2: Official Meta Graph API v26.0 Facebook Publishing
-      if (fbEnabled) {
-        if (fbTargetMode === 'both') {
+      if (fbEnabled && activeManagedFbPages.length > 0) {
+        if (activeManagedFbPages.length > 1) {
+          const pageNames = activeManagedFbPages.map((p) => p.name).join(' and ');
           setPublishProgress({
             step: 2,
             total: 4,
-            text: `Publishing simultaneously to ${page1Name} and ${page2Name} via Meta Graph API v26.0...`,
+            text: `Publishing simultaneously to ${pageNames} via Meta Graph API v26.0...`,
             completed: false,
           });
 
-          const p1Images = fbImages.length > 0 ? fbImages : images;
-          const p2Images = fbPage2Images.length > 0 ? fbPage2Images : images;
-
           const batchPayload = {
-            pages: [
-              {
-                page_id: page1PageId,
-                headline: fbHeadline.trim(),
-                caption: fbCaption.trim(),
-                hashtags: fbHashtags.trim(),
-                image_urls: p1Images.map((img) => img.url),
-              },
-              {
-                page_id: page2PageId,
-                headline: fbPage2Headline.trim(),
-                caption: fbPage2Caption.trim(),
-                hashtags: fbPage2Hashtags.trim(),
-                image_urls: p2Images.map((img) => img.url),
-              },
-            ],
+            pages: activeManagedFbPages.map((p) => {
+              const pImages = p.slot === 2 && fbPage2Images.length > 0 ? fbPage2Images : (fbImages.length > 0 ? fbImages : images);
+              return {
+                page_id: p.page_id,
+                headline: (p.slot === 2 ? fbPage2Headline : fbHeadline).trim(),
+                caption: getPageCaption(p).trim(),
+                hashtags: (p.slot === 2 ? fbPage2Hashtags : fbHashtags).trim(),
+                image_urls: pImages.map((img) => img.url),
+                force: true,
+              };
+            }),
           };
 
           const res = await fetch('http://localhost:8085/api/facebook/publish-batch', {
@@ -2071,41 +2133,38 @@ DM or contact Line: @estatebangkok for private viewings`
 
           const data = await res.json();
           if (res.ok && Array.isArray(data.results)) {
-            const r1 = data.results.find((r: any) => r.page_id === page1PageId);
-            const r2 = data.results.find((r: any) => r.page_id === page2PageId);
-
-            if (r1) {
-              fbP1Result = {
-                status: r1.success ? 'success' : 'failed',
-                postId: r1.facebook_post_id,
-                postUrl: r1.permalink_url,
-                error: r1.error,
+            fbPagesResults = data.results.map((r: any) => {
+              const matched = activeManagedFbPages.find((p) => p.page_id === r.page_id);
+              const itemRes: PlatformPublishResult = {
+                status: r.success ? 'success' : 'failed',
+                postId: r.facebook_post_id,
+                postUrl: r.permalink_url,
+                error: r.error,
                 timestamp: Date.now(),
-                pageId: page1PageId,
-                pageSlot: 1,
+                pageId: r.page_id,
+                pageSlot: matched?.slot,
+                pageName: matched?.name || r.name,
+                pictureUrl: matched?.picture_url,
               };
-            }
-            if (r2) {
-              fbP2Result = {
-                status: r2.success ? 'success' : 'failed',
-                postId: r2.facebook_post_id,
-                postUrl: r2.permalink_url,
-                error: r2.error,
-                timestamp: Date.now(),
-                pageId: page2PageId,
-                pageSlot: 2,
-              };
-            }
+              if (matched?.slot === 1) fbP1Result = itemRes;
+              if (matched?.slot === 2) fbP2Result = itemRes;
+              return itemRes;
+            });
 
-            const p1Ok = fbP1Result?.status === 'success';
-            const p2Ok = fbP2Result?.status === 'success';
+            const allSuccess = data.results.every((r: any) => r.success);
+            const anySuccess = data.results.some((r: any) => r.success);
+            const firstSuccess = data.results.find((r: any) => r.success);
+            const firstResult = data.results[0];
 
             fbResult = {
-              status: p1Ok && p2Ok ? 'success' : p1Ok || p2Ok ? 'success' : 'failed',
-              postId: fbP1Result?.postId || fbP2Result?.postId,
-              postUrl: fbP1Result?.postUrl || fbP2Result?.postUrl,
-              error: (!p1Ok || !p2Ok) ? `P1: ${fbP1Result?.error || 'OK'}, P2: ${fbP2Result?.error || 'OK'}` : undefined,
+              status: allSuccess ? 'success' : anySuccess ? 'success' : 'failed',
+              postId: firstSuccess?.facebook_post_id || firstResult?.facebook_post_id,
+              postUrl: firstSuccess?.permalink_url || firstResult?.permalink_url,
+              error: !allSuccess
+                ? data.results.map((r: any) => `${r.name || r.page_id}: ${r.error || 'OK'}`).join(', ')
+                : undefined,
               timestamp: Date.now(),
+              pageName: activeManagedFbPages.map((p) => p.name).join(' & '),
             };
           } else {
             fbResult = {
@@ -2115,20 +2174,20 @@ DM or contact Line: @estatebangkok for private viewings`
             };
           }
         } else {
-          // Single Page Publishing (Page 1 or Page 2)
-          const isSlot2 = fbTargetMode === 'page2';
-          const targetPageId = isSlot2 ? page2PageId : page1PageId;
-          const targetHeadline = isSlot2 ? fbPage2Headline : fbHeadline;
-          const targetCaption = isSlot2 ? fbPage2Caption : fbCaption;
-          const targetHashtags = isSlot2 ? fbPage2Hashtags : fbHashtags;
-          const targetImages = isSlot2
-            ? (fbPage2Images.length > 0 ? fbPage2Images : images)
+          // Single Page Publishing (Page 1, Page 2, or any active managed page)
+          const targetPage = activeManagedFbPages[0];
+          const targetPageId = targetPage.page_id;
+          const targetHeadline = targetPage.slot === 2 ? fbPage2Headline : fbHeadline;
+          const targetCaption = getPageCaption(targetPage);
+          const targetHashtags = targetPage.slot === 2 ? fbPage2Hashtags : fbHashtags;
+          const targetImages = targetPage.slot === 2 && fbPage2Images.length > 0
+            ? fbPage2Images
             : (fbImages.length > 0 ? fbImages : images);
 
           setPublishProgress({
             step: 2,
             total: 4,
-            text: `Uploading ${targetImages.length} photos to Facebook Page (${targetPageId}) via Meta Graph API v26.0...`,
+            text: `Uploading ${targetImages.length} photos to Facebook Page (${targetPage.name}) via Meta Graph API v26.0...`,
             completed: false,
           });
 
@@ -2138,6 +2197,7 @@ DM or contact Line: @estatebangkok for private viewings`
             caption: targetCaption.trim(),
             hashtags: targetHashtags.trim(),
             image_urls: targetImages.map((img) => img.url),
+            force: true,
           };
 
           const res = await fetch('http://localhost:8085/api/facebook/publish', {
@@ -2154,28 +2214,28 @@ DM or contact Line: @estatebangkok for private viewings`
               postUrl: data.permalink_url,
               timestamp: Date.now(),
               pageId: targetPageId,
-              pageSlot: isSlot2 ? 2 : 1,
+              pageSlot: targetPage.slot,
+              pageName: targetPage.name,
+              pictureUrl: targetPage.picture_url,
             };
             fbResult = singleResult;
-            if (isSlot2) {
-              fbP2Result = singleResult;
-            } else {
-              fbP1Result = singleResult;
-            }
+            fbPagesResults = [singleResult];
+            if (targetPage.slot === 1) fbP1Result = singleResult;
+            if (targetPage.slot === 2) fbP2Result = singleResult;
           } else {
             const failResult: PlatformPublishResult = {
               status: 'failed',
               error: data.message || 'Meta Graph API error during publication',
               timestamp: Date.now(),
               pageId: targetPageId,
-              pageSlot: isSlot2 ? 2 : 1,
+              pageSlot: targetPage.slot,
+              pageName: targetPage.name,
+              pictureUrl: targetPage.picture_url,
             };
             fbResult = failResult;
-            if (isSlot2) {
-              fbP2Result = failResult;
-            } else {
-              fbP1Result = failResult;
-            }
+            fbPagesResults = [failResult];
+            if (targetPage.slot === 1) fbP1Result = failResult;
+            if (targetPage.slot === 2) fbP2Result = failResult;
           }
         }
       }
@@ -2248,7 +2308,46 @@ DM or contact Line: @estatebangkok for private viewings`
         }
       }
 
-      const isOverallSuccess = (!fbEnabled || fbResult.status === 'success') && (!ttEnabled || ttResult.status !== 'failed');
+      const isFbOk = !fbEnabled || fbResult.status === 'success';
+      const isIgOk = !isEffectiveIgEnabled;
+      const isTtOk = !ttEnabled || (ttResult.status === 'success' || ttResult.status === 'processing');
+      const isOverallSuccess = isFbOk && isIgOk && isTtOk;
+      const isPartialSuccess = !isOverallSuccess && (
+        (fbEnabled && fbResult.status === 'success') ||
+        (ttEnabled && (ttResult.status === 'success' || ttResult.status === 'processing'))
+      );
+
+      let completionText = '';
+      if (isOverallSuccess) {
+        if (fbEnabled && ttEnabled) {
+          completionText = `Published successfully to Facebook (${activeManagedFbPages.map((p) => p.name).join(' & ')}) and TikTok!`;
+        } else if (fbEnabled) {
+          completionText = activeManagedFbPages.length > 1
+            ? `Simultaneously published to ${activeManagedFbPages.map((p) => p.name).join(' and ')} via Meta Graph API!`
+            : `Published successfully to ${activeManagedFbPages[0]?.name || 'Facebook'} via Meta Graph API!`;
+        } else if (ttEnabled) {
+          completionText = 'Published successfully to TikTok!';
+        } else {
+          completionText = 'Publishing completed!';
+        }
+      } else if (isPartialSuccess) {
+        if (isFbOk && !isTtOk) {
+          completionText = `Facebook post published successfully to ${activeManagedFbPages.map((p) => p.name).join(' & ')}, but TikTok encountered an issue (${ttResult.error || 'Check account connection'}).`;
+        } else if (!isFbOk && isTtOk) {
+          completionText = `TikTok published successfully, but Facebook encountered an issue (${fbResult.error || 'Check access token or permissions'}).`;
+        } else {
+          completionText = 'Some channels published successfully, while others encountered issues.';
+        }
+      } else {
+        const errors: string[] = [];
+        if (fbEnabled && fbResult.status !== 'success') {
+          errors.push(`Facebook: ${fbResult.error || 'Check access token or permissions'}`);
+        }
+        if (ttEnabled && ttResult.status === 'failed') {
+          errors.push(`TikTok: ${ttResult.error || 'Check account'}`);
+        }
+        completionText = errors.length > 0 ? errors.join(' · ') : 'Publishing failed. Please check platform connection and try again.';
+      }
 
       const newItem: AutoPostItem = {
         id: postId,
@@ -2260,12 +2359,12 @@ DM or contact Line: @estatebangkok for private viewings`
         facebook: {
           enabled: fbEnabled,
           targetMode: fbTargetMode,
-          pageId: fbTargetMode === 'page2' ? page2PageId : page1PageId,
+          pageId: activeManagedFbPages[0]?.page_id || page1PageId,
           pageName:
-            fbTargetMode === 'both'
-              ? `Both Pages (${page1Name} & ${page2Name})`
-              : fbTargetMode === 'page2'
-              ? `${page2Name} (${page2PageId})`
+            activeManagedFbPages.length > 1
+              ? `Multiple Pages (${activeManagedFbPages.map((p) => p.name).join(' & ')})`
+              : activeManagedFbPages[0]
+              ? `${activeManagedFbPages[0].name} (${activeManagedFbPages[0].page_id})`
               : `${page1Name} (${page1PageId})`,
           headline: fbHeadline,
           caption: fbCaption,
@@ -2316,12 +2415,13 @@ DM or contact Line: @estatebangkok for private viewings`
           allowDuet: ttAllowDuet,
         },
         scheduleType: 'NOW',
-        status: isOverallSuccess ? 'PUBLISHED' : 'FAILED',
+        status: isOverallSuccess ? 'PUBLISHED' : isPartialSuccess ? 'PARTIAL' : 'FAILED',
         createdAt: Date.now(),
         platformResults: {
           facebook: fbResult,
           facebookPage1: fbP1Result,
           facebookPage2: fbP2Result,
+          facebookPages: fbPagesResults,
           instagram: {
             status: isEffectiveIgEnabled ? 'success' : 'skipped',
             postId: isEffectiveIgEnabled ? `ig_${randomSeed}` : undefined,
@@ -2337,13 +2437,10 @@ DM or contact Line: @estatebangkok for private viewings`
       setPublishProgress({
         step: 4,
         total: 4,
-        text: isOverallSuccess
-          ? (fbTargetMode === 'both'
-            ? 'Simultaneously published to both Facebook Page 1 and Page 2 via Meta Graph API!'
-            : 'Published successfully to Meta Graph API!')
-          : `Facebook publishing encountered an issue: ${fbResult.error || 'Check access token or permissions'}`,
+        text: completionText,
         completed: true,
         isSuccess: isOverallSuccess,
+        isPartial: isPartialSuccess,
         createdItem: newItem,
       });
     } catch (err: any) {
@@ -3155,306 +3252,177 @@ DM or contact Line: @estatebangkok for private viewings`
           {/* Social Media Boxes Stack (Facebook cards 2-in-1-row, Instagram & TikTok 2-in-1-row) */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', width: '100%' }}>
             {/* FACEBOOK PAGES (Page 1 & Page 2 Individual Cards - 2 in one row) */}
-            {(activePlatformTab === 'all' || activePlatformTab === 'facebook') && (fbPage1Enabled || fbPage2Enabled) && (
+            {/* FACEBOOK PAGES (Dynamic Cards for all active Facebook pages) */}
+            {(activePlatformTab === 'all' || activePlatformTab === 'facebook') && activeManagedFbPages.length > 0 && (
               <div
                 className="facebook-pages-row"
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                  gridTemplateColumns: activeManagedFbPages.length === 1 ? '1fr' : 'repeat(2, minmax(0, 1fr))',
                   gap: '1.25rem',
                   width: '100%',
                   alignItems: 'stretch',
                 }}
               >
-                {/* --- Facebook Card 1: Page 1 (Dot BKK Living) --- */}
-                {fbPage1Enabled && (
-                  <div
-                  style={{
-                    backgroundColor: 'var(--bg-secondary)',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: '12px',
-                    padding: '1.25rem',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    boxShadow: 'none',
-                  }}
-                >
-                  {/* Header: Page Logo, Name, Auth Manager, Active Toggle */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', paddingBottom: '0.75rem', borderBottom: '1px solid var(--border-color)', flexWrap: 'wrap', gap: '0.75rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                      <div
-                        style={{
-                          width: '36px',
-                          height: '36px',
-                          borderRadius: '8px',
-                          backgroundColor: '#1877F2',
-                          color: '#FFFFFF',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: '1.2rem',
-                          flexShrink: 0,
-                          overflow: 'hidden',
-                          border: '1px solid var(--border-color)',
-                          boxShadow: 'none',
-                        }}
-                      >
-                        {page1Picture ? (
-                          <img
-                            src={page1Picture}
-                            alt={page1Name}
-                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                            onError={(e) => {
-                              (e.currentTarget as HTMLImageElement).style.display = 'none';
-                            }}
-                          />
-                        ) : (
-                          <FaFacebook />
-                        )}
-                      </div>
-                      <div>
-                        <h3 style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
-                          {page1Name}
-                        </h3>
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <button
-                        type="button"
-                        onClick={() => (onNavigateTab ? onNavigateTab('auth-manager') : setIsTokenManagerModalOpen(true))}
-                        style={{
-                          background: 'var(--bg-main)',
-                          border: '1px solid var(--border-color)',
-                          borderRadius: '7px',
-                          padding: '5px 11px',
-                          color: 'var(--text-secondary)',
-                          fontSize: '0.75rem',
-                          fontWeight: 500,
-                          cursor: 'pointer',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '6px',
-                          boxShadow: 'none',
-                          transition: 'all 0.15s ease',
-                        }}
-                      >
-                        <FiSliders style={{ fontSize: '0.75rem' }} />
-                        <span>Auth Manager</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Single Content Box with Bold / Normal formatting */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', flex: 1 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                        Post Content
-                      </label>
-                      <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-                        Title, description & hashtags combined
-                      </span>
-                    </div>
-
-                    <RichPostEditor
-                      initialHtml={fbPage1Html}
-                      disabled={!fbPage1Enabled}
-                      height="420px"
-                      onChange={(socialText, rawHtml) => {
-                        setFbCaption(socialText);
-                        setFbPage1Html(rawHtml);
-                        setFbHeadline('');
-                        setFbHashtags('');
-                      }}
-                      placeholder={`Write complete post for ${page1Name}...`}
-                    />
-                  </div>
-
-                  {/* Preview Post Button (Aligned right, TikTok size, Facebook color) */}
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPreviewFbTab('page1');
-                        setPreviewPlatform('facebook');
-                      }}
-                      disabled={!fbPage1Enabled}
+                {activeManagedFbPages.map((page) => {
+                  const badgeColor = page.slot === 2 ? '#10B981' : page.slot === 3 ? '#8B5CF6' : '#1877F2';
+                  const pageHtml = getPageHtml(page);
+                  return (
+                    <div
+                      key={page.page_id}
                       style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '6px',
-                        height: '34px',
-                        padding: '0 20px',
-                        fontSize: '0.8125rem',
-                        fontWeight: 600,
-                        borderRadius: '8px',
-                        border: 'none',
-                        color: '#FFFFFF',
-                        backgroundColor: '#1877F2',
-                        cursor: fbPage1Enabled ? 'pointer' : 'not-allowed',
-                        opacity: fbPage1Enabled ? 1 : 0.6,
+                        backgroundColor: 'var(--bg-secondary)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '12px',
+                        padding: '1.25rem',
+                        display: 'flex',
+                        flexDirection: 'column',
                         boxShadow: 'none',
-                        transition: 'all 0.15s ease',
-                      }}
-                      onMouseEnter={(e) => {
-                        if (fbPage1Enabled) (e.currentTarget as HTMLElement).style.backgroundColor = '#166FE5';
-                      }}
-                      onMouseLeave={(e) => {
-                        if (fbPage1Enabled) (e.currentTarget as HTMLElement).style.backgroundColor = '#1877F2';
                       }}
                     >
-                      <FiEye style={{ fontSize: '0.875rem' }} />
-                      <span>Preview</span>
-                    </button>
-                  </div>
-                </div>
-                )}
-
-                {/* --- Facebook Card 2: Page 2 (Bolt Haven Realty) --- */}
-                {fbPage2Enabled && (
-                  <div
-                  style={{
-                    backgroundColor: 'var(--bg-secondary)',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: '12px',
-                    padding: '1.25rem',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    boxShadow: 'none',
-                  }}
-                >
-                  {/* Header: Page Logo, Name, Auth Manager, Active Toggle */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', paddingBottom: '0.75rem', borderBottom: '1px solid var(--border-color)', flexWrap: 'wrap', gap: '0.75rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                      <div
-                        style={{
-                          width: '36px',
-                          height: '36px',
-                          borderRadius: '8px',
-                          backgroundColor: '#10B981',
-                          color: '#FFFFFF',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: '1.2rem',
-                          flexShrink: 0,
-                          overflow: 'hidden',
-                          border: '1px solid var(--border-color)',
-                          boxShadow: 'none',
-                        }}
-                      >
-                        {page2Picture ? (
-                          <img
-                            src={page2Picture}
-                            alt={page2Name}
-                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                            onError={(e) => {
-                              (e.currentTarget as HTMLImageElement).style.display = 'none';
+                      {/* Header: Page Logo, Name, Auth Manager, Active Toggle */}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', paddingBottom: '0.75rem', borderBottom: '1px solid var(--border-color)', flexWrap: 'wrap', gap: '0.75rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                          <div
+                            style={{
+                              width: '36px',
+                              height: '36px',
+                              borderRadius: '8px',
+                              backgroundColor: badgeColor,
+                              color: '#FFFFFF',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: '1.2rem',
+                              flexShrink: 0,
+                              overflow: 'hidden',
+                              border: '1px solid var(--border-color)',
+                              boxShadow: 'none',
                             }}
-                          />
-                        ) : (
-                          <FaFacebook />
-                        )}
+                          >
+                            {page.picture_url ? (
+                              <img
+                                src={page.picture_url}
+                                alt={page.name}
+                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                onError={(e) => {
+                                  (e.currentTarget as HTMLImageElement).style.display = 'none';
+                                }}
+                              />
+                            ) : (
+                              <FaFacebook />
+                            )}
+                          </div>
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <h3 style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
+                                {page.name}
+                              </h3>
+                              <span
+                                style={{
+                                  fontSize: '0.6875rem',
+                                  padding: '2px 6px',
+                                  borderRadius: '4px',
+                                  background: `${badgeColor}18`,
+                                  color: badgeColor,
+                                  fontWeight: 600,
+                                }}
+                              >
+                                Slot {page.slot}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <button
+                            type="button"
+                            onClick={() => (onNavigateTab ? onNavigateTab('auth-manager') : setIsTokenManagerModalOpen(true))}
+                            style={{
+                              background: 'var(--bg-main)',
+                              border: '1px solid var(--border-color)',
+                              borderRadius: '7px',
+                              padding: '5px 11px',
+                              color: 'var(--text-secondary)',
+                              fontSize: '0.75rem',
+                              fontWeight: 500,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              boxShadow: 'none',
+                              transition: 'all 0.15s ease',
+                            }}
+                          >
+                            <FiSliders style={{ fontSize: '0.75rem' }} />
+                            <span>Auth Manager</span>
+                          </button>
+                        </div>
                       </div>
-                      <div>
-                        <h3 style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
-                          {page2Name}
-                        </h3>
+
+                      {/* Single Content Box with Bold / Normal formatting */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', flex: 1 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                            Post Content
+                          </label>
+                          <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                            Title, description & hashtags combined
+                          </span>
+                        </div>
+
+                        <RichPostEditor
+                          initialHtml={pageHtml}
+                          disabled={false}
+                          height="420px"
+                          onChange={(socialText, rawHtml) => {
+                            setPageContent(page, socialText, rawHtml);
+                          }}
+                          placeholder={`Write complete post for ${page.name}...`}
+                        />
+                      </div>
+
+                      {/* Preview Post Button */}
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPreviewFbTab(page.slot === 2 ? 'page2' : 'page1');
+                            setPreviewFbPageId(page.page_id);
+                            setPreviewPlatform('facebook');
+                          }}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px',
+                            height: '34px',
+                            padding: '0 20px',
+                            fontSize: '0.8125rem',
+                            fontWeight: 600,
+                            borderRadius: '8px',
+                            border: 'none',
+                            color: '#FFFFFF',
+                            backgroundColor: '#1877F2',
+                            cursor: 'pointer',
+                            opacity: 1,
+                            boxShadow: 'none',
+                            transition: 'all 0.15s ease',
+                          }}
+                          onMouseEnter={(e) => {
+                            (e.currentTarget as HTMLElement).style.backgroundColor = '#166FE5';
+                          }}
+                          onMouseLeave={(e) => {
+                            (e.currentTarget as HTMLElement).style.backgroundColor = '#1877F2';
+                          }}
+                        >
+                          <FiEye style={{ fontSize: '0.875rem' }} />
+                          <span>Preview</span>
+                        </button>
                       </div>
                     </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <button
-                        type="button"
-                        onClick={() => (onNavigateTab ? onNavigateTab('auth-manager') : setIsTokenManagerModalOpen(true))}
-                        style={{
-                          background: 'var(--bg-main)',
-                          border: '1px solid var(--border-color)',
-                          borderRadius: '7px',
-                          padding: '5px 11px',
-                          color: 'var(--text-secondary)',
-                          fontSize: '0.75rem',
-                          fontWeight: 500,
-                          cursor: 'pointer',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '6px',
-                          boxShadow: 'none',
-                          transition: 'all 0.15s ease',
-                        }}
-                      >
-                        <FiSliders style={{ fontSize: '0.75rem' }} />
-                        <span>Auth Manager</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Single Content Box with Bold / Normal formatting */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', flex: 1 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                        Post Content
-                      </label>
-                      <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-                        Title, description & hashtags combined
-                      </span>
-                    </div>
-
-                    <RichPostEditor
-                      initialHtml={fbPage2Html}
-                      disabled={!fbPage2Enabled}
-                      height="420px"
-                      onChange={(socialText, rawHtml) => {
-                        setFbPage2Caption(socialText);
-                        setFbPage2Html(rawHtml);
-                        setFbPage2Headline('');
-                        setFbPage2Hashtags('');
-                      }}
-                      placeholder={`Write complete post for ${page2Name}...`}
-                    />
-                  </div>
-
-                  {/* Preview Post Button (Aligned right, TikTok size, Facebook color) */}
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPreviewFbTab('page2');
-                        setPreviewPlatform('facebook');
-                      }}
-                      disabled={!fbPage2Enabled}
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '6px',
-                        height: '34px',
-                        padding: '0 20px',
-                        fontSize: '0.8125rem',
-                        fontWeight: 600,
-                        borderRadius: '8px',
-                        border: 'none',
-                        color: '#FFFFFF',
-                        backgroundColor: '#1877F2',
-                        cursor: fbPage2Enabled ? 'pointer' : 'not-allowed',
-                        opacity: fbPage2Enabled ? 1 : 0.6,
-                        boxShadow: 'none',
-                        transition: 'all 0.15s ease',
-                      }}
-                      onMouseEnter={(e) => {
-                        if (fbPage2Enabled) (e.currentTarget as HTMLElement).style.backgroundColor = '#166FE5';
-                      }}
-                      onMouseLeave={(e) => {
-                        if (fbPage2Enabled) (e.currentTarget as HTMLElement).style.backgroundColor = '#1877F2';
-                      }}
-                    >
-                      <FiEye style={{ fontSize: '0.875rem' }} />
-                      <span>Preview</span>
-                    </button>
-                  </div>
-                </div>
-                )}
+                  );
+                })}
               </div>
             )}
 
@@ -4181,7 +4149,11 @@ DM or contact Line: @estatebangkok for private viewings`
           }}
           title={
             publishProgress.completed
-              ? (publishProgress.isSuccess ? 'Publishing Completed' : 'Publishing Failed')
+              ? (publishProgress.isSuccess
+                  ? 'Publishing Completed'
+                  : publishProgress.isPartial
+                  ? 'Publishing Completed with Warnings'
+                  : 'Publishing Failed')
               : 'Publishing to Social Channels...'
           }
         >
@@ -4197,8 +4169,12 @@ DM or contact Line: @estatebangkok for private viewings`
                   style={{
                     height: '100%',
                     width: `${(publishProgress.step / publishProgress.total) * 100}%`,
-                    background: publishProgress.completed && !publishProgress.isSuccess
-                      ? '#EF4444'
+                    background: publishProgress.completed
+                      ? (publishProgress.isSuccess
+                          ? 'linear-gradient(90deg, #1877F2, #E4405F, #00F2FE)'
+                          : publishProgress.isPartial
+                          ? '#F59E0B'
+                          : '#EF4444')
                       : 'linear-gradient(90deg, #1877F2, #E4405F, #00F2FE)',
                     transition: 'width 0.3s ease',
                   }}
@@ -4215,15 +4191,27 @@ DM or contact Line: @estatebangkok for private viewings`
                 padding: '12px 14px',
                 borderRadius: '8px',
                 backgroundColor: publishProgress.completed
-                  ? (publishProgress.isSuccess ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)')
+                  ? (publishProgress.isSuccess
+                      ? 'rgba(34, 197, 94, 0.1)'
+                      : publishProgress.isPartial
+                      ? 'rgba(245, 158, 11, 0.1)'
+                      : 'rgba(239, 68, 68, 0.1)')
                   : 'var(--bg-main)',
                 border: `1px solid ${
                   publishProgress.completed
-                    ? (publishProgress.isSuccess ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)')
+                    ? (publishProgress.isSuccess
+                        ? 'rgba(34, 197, 94, 0.3)'
+                        : publishProgress.isPartial
+                        ? 'rgba(245, 158, 11, 0.3)'
+                        : 'rgba(239, 68, 68, 0.3)')
                     : 'var(--border-color)'
                 }`,
                 color: publishProgress.completed
-                  ? (publishProgress.isSuccess ? '#22C55E' : '#EF4444')
+                  ? (publishProgress.isSuccess
+                      ? '#22C55E'
+                      : publishProgress.isPartial
+                      ? '#D97706'
+                      : '#EF4444')
                   : 'var(--text-primary)',
                 fontSize: '0.875rem',
                 fontWeight: 500,
@@ -4232,6 +4220,8 @@ DM or contact Line: @estatebangkok for private viewings`
               {publishProgress.completed ? (
                 publishProgress.isSuccess ? (
                   <FiCheckCircle style={{ fontSize: '1.25rem', color: '#22C55E', flexShrink: 0 }} />
+                ) : publishProgress.isPartial ? (
+                  <FiAlertCircle style={{ fontSize: '1.25rem', color: '#D97706', flexShrink: 0 }} />
                 ) : (
                   <FiAlertCircle style={{ fontSize: '1.25rem', color: '#EF4444', flexShrink: 0 }} />
                 )
@@ -4250,183 +4240,146 @@ DM or contact Line: @estatebangkok for private viewings`
 
                 {publishProgress.createdItem.facebook.enabled && (
                   <>
-                    {/* Page 1 Result Row if targeted */}
-                    {(publishProgress.createdItem.platformResults.facebookPage1 || publishProgress.createdItem.facebook.targetMode === 'page1' || publishProgress.createdItem.facebook.targetMode === 'both') && (
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderRadius: '8px', backgroundColor: 'var(--bg-main)', border: '1px solid rgba(24, 119, 242, 0.3)', flexWrap: 'wrap', gap: '8px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <div style={{ width: '22px', height: '22px', borderRadius: '5px', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#1877F2', color: '#fff' }}>
-                            {page1Picture ? <img src={page1Picture} alt={page1Name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <FaFacebook style={{ fontSize: '0.875rem' }} />}
-                          </div>
-                          <div>
-                            <div style={{ fontSize: '0.8125rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <span>{page1Name}</span>
-                              <span style={{ fontSize: '0.625rem', padding: '1px 5px', borderRadius: '4px', backgroundColor: 'rgba(24, 119, 242, 0.1)', color: '#1877F2', fontFamily: 'monospace' }}>
-                                {page1PageId}
-                              </span>
-                            </div>
-                            {publishProgress.createdItem.platformResults.facebookPage1?.postId && (
-                              <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-                                Post ID: {publishProgress.createdItem.platformResults.facebookPage1.postId}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          {publishProgress.createdItem.platformResults.facebookPage1?.status === 'success' ? (
-                            <>
-                              <span style={{ fontSize: '0.75rem', color: '#22C55E', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                <FiCheck /> Published
-                              </span>
-                              {publishProgress.createdItem.platformResults.facebookPage1.postUrl && (
-                                <a
-                                  href={publishProgress.createdItem.platformResults.facebookPage1.postUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  style={{
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '4px',
-                                    fontSize: '0.75rem',
-                                    color: '#FFFFFF',
-                                    backgroundColor: '#1877F2',
-                                    fontWeight: 600,
-                                    textDecoration: 'none',
-                                    padding: '4px 10px',
-                                    borderRadius: '6px',
-                                  }}
-                                >
-                                  <span>View Page 1 Post</span>
-                                  <FiExternalLink />
-                                </a>
-                              )}
-                            </>
-                          ) : publishProgress.createdItem.platformResults.facebookPage1?.status === 'scheduled' ? (
-                            <span style={{ fontSize: '0.75rem', color: '#3B82F6', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                              <FiClock /> Scheduled
-                            </span>
-                          ) : (
-                            <span style={{ fontSize: '0.75rem', color: '#EF4444', fontWeight: 600 }}>
-                              Failed ({publishProgress.createdItem.platformResults.facebookPage1?.error || 'Error'})
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    )}
+                    {(publishProgress.createdItem.platformResults.facebookPages && publishProgress.createdItem.platformResults.facebookPages.length > 0
+                      ? publishProgress.createdItem.platformResults.facebookPages
+                      : [
+                          ...(publishProgress.createdItem.platformResults.facebookPage1 ? [publishProgress.createdItem.platformResults.facebookPage1] : []),
+                          ...(publishProgress.createdItem.platformResults.facebookPage2 ? [publishProgress.createdItem.platformResults.facebookPage2] : []),
+                          ...(!publishProgress.createdItem.platformResults.facebookPage1 && !publishProgress.createdItem.platformResults.facebookPage2 && publishProgress.createdItem.platformResults.facebook ? [publishProgress.createdItem.platformResults.facebook] : [])
+                        ]
+                    ).map((fbRes, idx) => {
+                      const matchedPage = managedPages.find(p => p.page_id === fbRes.pageId || (fbRes.pageSlot && p.slot === fbRes.pageSlot));
+                      const displayName = fbRes.pageName || matchedPage?.name || (fbRes.pageSlot === 2 ? page2Name : page1Name);
+                      const displayPageId = fbRes.pageId || matchedPage?.page_id || (fbRes.pageSlot === 2 ? page2PageId : page1PageId);
+                      const displayPic = fbRes.pictureUrl || matchedPage?.picture_url || (fbRes.pageSlot === 2 ? page2Picture : page1Picture);
+                      const slotNum = fbRes.pageSlot || matchedPage?.slot || (idx + 1);
+                      const badgeColor = slotNum === 2 ? '#10B981' : slotNum === 3 ? '#8B5CF6' : '#1877F2';
+                      const isOk = fbRes.status === 'success';
+                      const isSched = fbRes.status === 'scheduled';
 
-                    {/* Page 2 Result Row if targeted */}
-                    {(publishProgress.createdItem.platformResults.facebookPage2 || publishProgress.createdItem.facebook.targetMode === 'page2' || publishProgress.createdItem.facebook.targetMode === 'both') && (
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderRadius: '8px', backgroundColor: 'var(--bg-main)', border: '1px solid rgba(16, 185, 129, 0.3)', flexWrap: 'wrap', gap: '8px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <div style={{ width: '22px', height: '22px', borderRadius: '5px', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#10B981', color: '#fff' }}>
-                            {page2Picture ? <img src={page2Picture} alt={page2Name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <FaFacebook style={{ fontSize: '0.875rem' }} />}
-                          </div>
-                          <div>
-                            <div style={{ fontSize: '0.8125rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <span>{page2Name}</span>
-                              <span style={{ fontSize: '0.625rem', padding: '1px 5px', borderRadius: '4px', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: '#10B981', fontFamily: 'monospace' }}>
-                                {page2PageId}
-                              </span>
+                      return (
+                        <div
+                          key={displayPageId || idx}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '10px 12px',
+                            borderRadius: '8px',
+                            backgroundColor: 'var(--bg-main)',
+                            border: `1px solid ${badgeColor}4D`,
+                            flexWrap: 'wrap',
+                            gap: '8px',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <div
+                              style={{
+                                width: '28px',
+                                height: '28px',
+                                borderRadius: '6px',
+                                overflow: 'hidden',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                backgroundColor: badgeColor,
+                                color: '#fff',
+                                flexShrink: 0,
+                              }}
+                            >
+                              {displayPic ? (
+                                <img
+                                  src={displayPic}
+                                  alt={displayName}
+                                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                  onError={(e) => {
+                                    (e.currentTarget as HTMLImageElement).style.display = 'none';
+                                  }}
+                                />
+                              ) : (
+                                <FaFacebook style={{ fontSize: '1rem' }} />
+                              )}
                             </div>
-                            {publishProgress.createdItem.platformResults.facebookPage2?.postId && (
-                              <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-                                Post ID: {publishProgress.createdItem.platformResults.facebookPage2.postId}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          {publishProgress.createdItem.platformResults.facebookPage2?.status === 'success' ? (
-                            <>
-                              <span style={{ fontSize: '0.75rem', color: '#22C55E', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                <FiCheck /> Published
-                              </span>
-                              {publishProgress.createdItem.platformResults.facebookPage2.postUrl && (
-                                <a
-                                  href={publishProgress.createdItem.platformResults.facebookPage2.postUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
+                            <div>
+                              <div style={{ fontSize: '0.8125rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span>{displayName}</span>
+                                <span
                                   style={{
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '4px',
-                                    fontSize: '0.75rem',
-                                    color: '#FFFFFF',
-                                    backgroundColor: '#10B981',
+                                    fontSize: '0.625rem',
+                                    padding: '1px 5px',
+                                    borderRadius: '4px',
+                                    backgroundColor: `${badgeColor}1A`,
+                                    color: badgeColor,
+                                    fontFamily: 'monospace',
                                     fontWeight: 600,
-                                    textDecoration: 'none',
-                                    padding: '4px 10px',
-                                    borderRadius: '6px',
                                   }}
                                 >
-                                  <span>View Page 2 Post</span>
-                                  <FiExternalLink />
-                                </a>
+                                  {displayPageId}
+                                </span>
+                                <span
+                                  style={{
+                                    fontSize: '0.625rem',
+                                    padding: '1px 5px',
+                                    borderRadius: '4px',
+                                    backgroundColor: `${badgeColor}1A`,
+                                    color: badgeColor,
+                                    fontWeight: 600,
+                                  }}
+                                >
+                                  Slot {slotNum}
+                                </span>
+                              </div>
+                              {fbRes.postId && (
+                                <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                                  Post ID: {fbRes.postId}
+                                </div>
                               )}
-                            </>
-                          ) : publishProgress.createdItem.platformResults.facebookPage2?.status === 'scheduled' ? (
-                            <span style={{ fontSize: '0.75rem', color: '#3B82F6', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                              <FiClock /> Scheduled
-                            </span>
-                          ) : (
-                            <span style={{ fontSize: '0.75rem', color: '#EF4444', fontWeight: 600 }}>
-                              Failed ({publishProgress.createdItem.platformResults.facebookPage2?.error || 'Error'})
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    )}
+                            </div>
+                          </div>
 
-                    {/* Legacy Single Result Fallback if neither sub-result exists */}
-                    {!publishProgress.createdItem.platformResults.facebookPage1 && !publishProgress.createdItem.platformResults.facebookPage2 && (
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderRadius: '8px', backgroundColor: 'var(--bg-main)', border: '1px solid var(--border-color)', flexWrap: 'wrap', gap: '8px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <FaFacebook style={{ color: '#1877F2', fontSize: '1.125rem' }} />
-                          <div>
-                            <div style={{ fontSize: '0.8125rem', fontWeight: 600 }}>Facebook Page ({publishProgress.createdItem.facebook.pageName})</div>
-                            {publishProgress.createdItem.platformResults.facebook.postId && (
-                              <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-                                Post ID: {publishProgress.createdItem.platformResults.facebook.postId}
-                              </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {isOk ? (
+                              <>
+                                <span style={{ fontSize: '0.75rem', color: '#22C55E', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  <FiCheck /> Published
+                                </span>
+                                {fbRes.postUrl && (
+                                  <a
+                                    href={fbRes.postUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '4px',
+                                      fontSize: '0.75rem',
+                                      color: '#FFFFFF',
+                                      backgroundColor: '#1877F2',
+                                      fontWeight: 600,
+                                      textDecoration: 'none',
+                                      padding: '4px 10px',
+                                      borderRadius: '6px',
+                                      transition: 'opacity 0.15s ease',
+                                    }}
+                                  >
+                                    <span>View Post</span>
+                                    <FiExternalLink />
+                                  </a>
+                                )}
+                              </>
+                            ) : isSched ? (
+                              <span style={{ fontSize: '0.75rem', color: '#3B82F6', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <FiClock /> Scheduled
+                              </span>
+                            ) : (
+                              <span style={{ fontSize: '0.75rem', color: '#EF4444', fontWeight: 600 }}>
+                                Failed ({fbRes.error || 'Error'})
+                              </span>
                             )}
                           </div>
                         </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          {publishProgress.createdItem.platformResults.facebook.status === 'success' ? (
-                            <>
-                              <span style={{ fontSize: '0.75rem', color: '#22C55E', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                <FiCheck /> Published
-                              </span>
-                              {publishProgress.createdItem.platformResults.facebook.postUrl && (
-                                <a
-                                  href={publishProgress.createdItem.platformResults.facebook.postUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  style={{
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '4px',
-                                    fontSize: '0.75rem',
-                                    color: '#FFFFFF',
-                                    backgroundColor: '#1877F2',
-                                    fontWeight: 600,
-                                    textDecoration: 'none',
-                                    padding: '4px 10px',
-                                    borderRadius: '6px',
-                                  }}
-                                >
-                                  <span>View on Facebook</span>
-                                  <FiExternalLink />
-                                </a>
-                              )}
-                            </>
-                          ) : (
-                            <span style={{ fontSize: '0.75rem', color: '#EF4444', fontWeight: 600 }}>
-                              Failed ({publishProgress.createdItem.platformResults.facebook.error || 'Error'})
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    )}
+                      );
+                    })}
                   </>
                 )}
 
@@ -4448,9 +4401,18 @@ DM or contact Line: @estatebangkok for private viewings`
                       <FaTiktok style={{ color: isDark ? '#00F2FE' : '#0891B2' }} />
                       <span style={{ fontSize: '0.8125rem', fontWeight: 600 }}>TikTok ({publishProgress.createdItem.tiktok.accountName})</span>
                     </div>
-                    <span style={{ fontSize: '0.75rem', color: '#22C55E', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <FiCheck /> Photo Mode Posted
-                    </span>
+                    <div>
+                      {publishProgress.createdItem.platformResults.tiktok?.status === 'success' ||
+                      publishProgress.createdItem.platformResults.tiktok?.status === 'processing' ? (
+                        <span style={{ fontSize: '0.75rem', color: '#22C55E', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <FiCheck /> Photo Mode Posted
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: '0.75rem', color: '#EF4444', fontWeight: 600 }}>
+                          Failed ({publishProgress.createdItem.platformResults.tiktok?.error || 'Account Not Connected'})
+                        </span>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -4619,8 +4581,8 @@ DM or contact Line: @estatebangkok for private viewings`
             {/* Facebook Preview Card */}
             {previewPlatform === 'facebook' && (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', maxWidth: '520px' }}>
-                {/* Sub-tab toggle when Target is "Both" */}
-                {fbTargetMode === 'both' && (
+                {/* Sub-tab toggle when there are multiple active Facebook pages */}
+                {activeManagedFbPages.length > 1 && (
                   <div
                     style={{
                       display: 'flex',
@@ -4634,65 +4596,58 @@ DM or contact Line: @estatebangkok for private viewings`
                       boxSizing: 'border-box',
                     }}
                   >
-                    <button
-                      type="button"
-                      onClick={() => setPreviewFbTab('page1')}
-                      style={{
-                        flex: 1,
-                        padding: '8px 12px',
-                        borderRadius: '8px',
-                        border: 'none',
-                        backgroundColor: previewFbTab === 'page1' ? '#1877F2' : 'transparent',
-                        color: previewFbTab === 'page1' ? '#FFFFFF' : 'var(--text-secondary)',
-                        fontSize: '0.8125rem',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        transition: 'all 0.15s ease',
-                        boxShadow: previewFbTab === 'page1' ? '0 1px 3px rgba(24, 119, 242, 0.3)' : 'none',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '6px',
-                      }}
-                    >
-                      <FaFacebook style={{ color: previewFbTab === 'page1' ? '#FFFFFF' : '#1877F2', fontSize: '0.9375rem' }} />
-                      <span>{page1Name || 'Page 1'}</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPreviewFbTab('page2')}
-                      style={{
-                        flex: 1,
-                        padding: '8px 12px',
-                        borderRadius: '8px',
-                        border: 'none',
-                        backgroundColor: previewFbTab === 'page2' ? '#1877F2' : 'transparent',
-                        color: previewFbTab === 'page2' ? '#FFFFFF' : 'var(--text-secondary)',
-                        fontSize: '0.8125rem',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        transition: 'all 0.15s ease',
-                        boxShadow: previewFbTab === 'page2' ? '0 1px 3px rgba(24, 119, 242, 0.3)' : 'none',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '6px',
-                      }}
-                    >
-                      <FaFacebook style={{ color: previewFbTab === 'page2' ? '#FFFFFF' : '#1877F2', fontSize: '0.9375rem' }} />
-                      <span>{page2Name || 'Page 2'}</span>
-                    </button>
+                    {activeManagedFbPages.map((p) => {
+                      const isCurrent = previewFbPageId
+                        ? previewFbPageId === p.page_id
+                        : (previewFbTab === 'page2' ? p.slot === 2 : p.slot === 1 || activeManagedFbPages[0]?.page_id === p.page_id);
+                      return (
+                        <button
+                          key={p.page_id}
+                          type="button"
+                          onClick={() => {
+                            setPreviewFbPageId(p.page_id);
+                            setPreviewFbTab(p.slot === 2 ? 'page2' : 'page1');
+                          }}
+                          style={{
+                            flex: 1,
+                            padding: '8px 12px',
+                            borderRadius: '8px',
+                            border: 'none',
+                            backgroundColor: isCurrent ? '#1877F2' : 'transparent',
+                            color: isCurrent ? '#FFFFFF' : 'var(--text-secondary)',
+                            fontSize: '0.8125rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease',
+                            boxShadow: isCurrent ? '0 1px 3px rgba(24, 119, 242, 0.3)' : 'none',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px',
+                          }}
+                        >
+                          <FaFacebook style={{ color: isCurrent ? '#FFFFFF' : '#1877F2', fontSize: '0.9375rem' }} />
+                          <span>{p.name}</span>
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
 
                 {(() => {
-                  const isPreviewingPage2 = fbTargetMode === 'page2' || (fbTargetMode === 'both' && previewFbTab === 'page2');
-                  const targetPageName = isPreviewingPage2 ? page2Name : page1Name;
-                  const targetCaption = isPreviewingPage2 ? fbPage2Caption : fbCaption;
-                  const targetImgs = isPreviewingPage2
-                    ? (fbPage2Images.length > 0 ? fbPage2Images : images)
+                  const targetPage =
+                    activeManagedFbPages.find((p) => p.page_id === previewFbPageId) ||
+                    (previewFbTab === 'page2'
+                      ? activeManagedFbPages.find((p) => p.slot === 2)
+                      : activeManagedFbPages.find((p) => p.slot === 1)) ||
+                    activeManagedFbPages[0];
+
+                  const targetPageName = targetPage?.name || page1Name;
+                  const targetCaption = targetPage ? getPageCaption(targetPage) : fbCaption;
+                  const targetImgs = targetPage?.slot === 2 && fbPage2Images.length > 0
+                    ? fbPage2Images
                     : (fbImages.length > 0 ? fbImages : images);
-                  const targetProfilePic = isPreviewingPage2 ? page2Picture : page1Picture;
+                  const targetProfilePic = targetPage?.picture_url || (targetPage?.slot === 2 ? page2Picture : page1Picture);
 
                   return (
                     <div
@@ -6554,84 +6509,56 @@ DM or contact Line: @estatebangkok for private viewings`
                   Meta Graph API v26.0 Auto-Publishing
                 </h4>
                 <p style={{ margin: '2px 0 0', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                  App ID: <strong>967687235797751</strong> · Mode: <strong>{fbTargetMode === 'both' ? 'Simultaneous Dual-Page' : (fbTargetMode === 'page2' ? 'Single Page 2' : 'Single Page 1')}</strong>
+                  App ID: <strong>967687235797751</strong> · Mode: <strong>{activeManagedFbPages.length > 1 ? `Multi-Page Publishing (${activeManagedFbPages.length} Pages)` : (activeManagedFbPages[0]?.name || 'Single Page')}</strong>
                 </p>
               </div>
             </div>
 
             {/* Destinations Summary */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {(fbTargetMode === 'both' || fbTargetMode === 'page1') && (
-                <div
-                  style={{
-                    padding: '10px 14px',
-                    borderRadius: '8px',
-                    backgroundColor: 'var(--bg-main)',
-                    border: '1px solid rgba(24, 119, 242, 0.3)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '4px',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#1877F2', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <FaFacebook />
-                      <span>Destination 1: {page1Name} (ID: {page1PageId})</span>
-                    </span>
-                    <a
-                      href={`https://www.facebook.com/${page1PageId}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{ color: '#1877F2', fontSize: '0.6875rem', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '3px' }}
-                    >
-                      <span>View Page</span>
-                      <FiExternalLink />
-                    </a>
+              {activeManagedFbPages.map((page, index) => {
+                const color = page.slot === 2 ? '#10B981' : page.slot === 3 ? '#8B5CF6' : '#1877F2';
+                const pImages = page.slot === 2 && fbPage2Images.length > 0 ? fbPage2Images : (fbImages.length > 0 ? fbImages : images);
+                const pHeadline = page.slot === 2 ? fbPage2Headline : fbHeadline;
+                return (
+                  <div
+                    key={page.page_id}
+                    style={{
+                      padding: '10px 14px',
+                      borderRadius: '8px',
+                      backgroundColor: 'var(--bg-main)',
+                      border: `1px solid ${color}4D`,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '4px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '0.8125rem', fontWeight: 700, color, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <FaFacebook />
+                        <span>Destination {index + 1}: {page.name} (ID: {page.page_id})</span>
+                      </span>
+                      <a
+                        href={`https://www.facebook.com/${page.page_id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ color, fontSize: '0.6875rem', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '3px' }}
+                      >
+                        <span>View Page</span>
+                        <FiExternalLink />
+                      </a>
+                    </div>
+                    {pHeadline && (
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                        <strong>Headline:</strong> {pHeadline}
+                      </div>
+                    )}
+                    <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                      Photos: {pImages.length} items · Slot {page.slot}
+                    </div>
                   </div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                    <strong>Headline:</strong> {fbHeadline}
-                  </div>
-                  <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-                    Photos: {(fbImages.length > 0 ? fbImages : images).length} items · Separate Token Slot 1
-                  </div>
-                </div>
-              )}
-
-              {(fbTargetMode === 'both' || fbTargetMode === 'page2') && (
-                <div
-                  style={{
-                    padding: '10px 14px',
-                    borderRadius: '8px',
-                    backgroundColor: 'var(--bg-main)',
-                    border: '1px solid rgba(16, 185, 129, 0.3)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '4px',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#10B981', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <FaFacebook />
-                      <span>Destination 2: {page2Name} (ID: {page2PageId})</span>
-                    </span>
-                    <a
-                      href={`https://www.facebook.com/${page2PageId}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{ color: '#10B981', fontSize: '0.6875rem', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '3px' }}
-                    >
-                      <span>View Page</span>
-                      <FiExternalLink />
-                    </a>
-                  </div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                    <strong>Headline:</strong> {fbPage2Headline}
-                  </div>
-                  <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-                    Photos: {(fbPage2Images.length > 0 ? fbPage2Images : images).length} items · Separate Token Slot 2
-                  </div>
-                </div>
-              )}
+                );
+              })}
             </div>
 
             {/* Confirmation Note */}
@@ -6651,7 +6578,7 @@ DM or contact Line: @estatebangkok for private viewings`
             >
               <FiAlertCircle style={{ fontSize: '1rem', flexShrink: 0, marginTop: '2px' }} />
               <div>
-                <strong>Confirmation Required:</strong> Clicking confirm will immediately upload photos and create official Meta Feed Posts. Page 1 and Page 2 are published independently using their own encrypted tokens with zero content mixing.
+                <strong>Confirmation Required:</strong> Clicking confirm will immediately upload photos and create official Meta Feed Posts. All selected Facebook pages are published independently using their own encrypted tokens with zero content mixing.
               </div>
             </div>
 

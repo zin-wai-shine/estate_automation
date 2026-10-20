@@ -112,7 +112,7 @@ export const CustomDropdown: React.FC<CustomDropdownProps> = ({
             border: '1px solid var(--border-color)',
             borderRadius: '0.5rem',
             padding: '0.375rem',
-            boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.3)',
+            boxShadow: 'var(--shadow-md, 0 4px 12px rgba(0, 0, 0, 0.08))',
             backdropFilter: 'blur(12px)',
             display: 'flex',
             flexDirection: 'column',
