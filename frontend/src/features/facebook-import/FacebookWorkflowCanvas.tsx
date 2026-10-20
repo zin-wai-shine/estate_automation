@@ -8506,8 +8506,8 @@ export const FacebookWorkflowCanvas = forwardRef<
               <div
                 style={{
                   padding: '0.875rem 1rem',
-                  borderTop: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#F8FAFC',
+                  borderTop: 'none',
+                  backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
                 }}
               >
                 <Button
@@ -8528,8 +8528,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                     fontSize: '0.75rem',
                     fontWeight: 500,
                     color: 'var(--text-primary)',
-                    backgroundColor: isDark ? '#21262D' : '#F1F5F9',
-                    borderColor: isDark ? '#30363D' : '#CBD5E1',
+                    backgroundColor: isDark ? 'var(--bg-surface)' : '#F1F5F9',
+                    borderColor: 'var(--border-color)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
