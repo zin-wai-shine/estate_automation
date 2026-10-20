@@ -1042,9 +1042,10 @@ export const buildAlignedLayout = (
   const numEnhance = enhanceBoxes.length;
   const numWatermark = watermarkBoxes.length;
   const hasEnhancers = numEnhance > 0;
-  // If text AI, format presets, or enhancers exist, watermark format presets sit in Column 3 (740)
-  const hasAnyFormatsOrAI = numTextAI > 0 || numTextFormat > 0 || hasEnhancers;
-  const watermarkColX = hasAnyFormatsOrAI ? COL_FORMAT_X : COL_AI_X;
+  // Watermark format presets sit in Column 3 (740) only if enhancers exist before them or text format presets exist in Column 3
+  const hasCol3InTextLane = numTextFormat > 0;
+  const shouldWatermarkBeInColumn3 = hasEnhancers || hasCol3InTextLane;
+  const watermarkColX = shouldWatermarkBeInColumn3 ? COL_FORMAT_X : COL_AI_X;
 
   const imageSlots = Math.max(numEnhance, numWatermark, 1);
   const contentSpan = (textSlots - 1) * NODE_V_STEP;
@@ -1068,7 +1069,7 @@ export const buildAlignedLayout = (
     });
   }
 
-  // Position Watermark / Format Boxes (Column 3: 740, or 520 if totally standalone)
+  // Position Watermark / Format Boxes (Column 3: 740, or Column 2: 520 if directly from Get Images and no Column 3 text presets)
   if (numWatermark === 1) {
     xById[watermarkBoxes[0].id] = watermarkColX;
     yById[watermarkBoxes[0].id] = imageCenterY;
@@ -1081,7 +1082,7 @@ export const buildAlignedLayout = (
   }
 
   // 3. Other boxes (if any)
-  const otherColX = (hasAnyFormatsOrAI && numWatermark > 0) ? (COL_FORMAT_X + 220) : (COL_AI_X + 220);
+  const otherColX = shouldWatermarkBeInColumn3 ? (COL_FORMAT_X + 220) : (COL_AI_X + 220);
   otherBoxes.forEach((b, idx) => {
     xById[b.id] = otherColX;
     yById[b.id] = contentTopY + idx * NODE_V_STEP;
@@ -1102,11 +1103,12 @@ export const buildAlignedLayout = (
   const isOutputActive = base.outputNode?.enabled !== false;
   const activeCombineBoxes = (base.combineBoxes || []).filter((cb) => cb && cb.enabled !== false);
   const allXValues = Object.values(xById);
-  const maxNodeX = allXValues.length > 0 ? Math.max(...allXValues) : COL_FORMAT_X;
-  const mergerNodeX = Math.max(COL_FORMAT_X + 220, maxNodeX + 220); // Column 4: 960
+  const maxNodeX = allXValues.length > 0 ? Math.max(...allXValues) : COL_BRANCH_X;
+  const hasCol3Nodes = allXValues.some((x) => x >= COL_FORMAT_X);
+  const mergerNodeX = hasCol3Nodes ? (COL_FORMAT_X + 220) : (COL_AI_X + 220); // 740 when no Col 3 nodes, 960 when Col 3 exists
   const outputNodeX = isOutputActive ? mergerNodeX : maxNodeX;
   const outputNodeY = triggerY;
-  const destinationX = mergerNodeX + 220; // Column 5: 1180
+  const destinationX = mergerNodeX + 220; // 960 or 1180
 
   // Hierarchical Destination Layout:
   // Primary destinations (connected from Combine Box / Output or root) sit at Column 5 (1180).
