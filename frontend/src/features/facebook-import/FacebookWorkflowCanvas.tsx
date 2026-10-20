@@ -7776,64 +7776,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                   <>
                     {/* Connect Next Step Quick Button (top) */}
                     {renderCenteredConnectButton('trigger', 'trigger', 'Trigger')}
-                    <div
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        padding: '0.875rem',
-                        backgroundColor: isDark ? 'var(--bg-surface)' : '#F8FAFC',
-                        borderRadius: '0.5rem',
-                        border: '1px solid var(--border-color)',
-                      }}
-                    >
-                      <div>
-                        <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                          Auto-Import on Paste
-                        </div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                          Triggers extraction when a Facebook URL is entered
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          updateConfig({
-                            ...config,
-                            trigger: { ...config.trigger, autoImport: !config.trigger.autoImport },
-                          })
-                        }
-                        style={{
-                          width: '40px',
-                          height: '22px',
-                          backgroundColor: config.trigger.autoImport ? '#1877F2' : (isDark ? '#374151' : '#CBD5E1'),
-                          borderRadius: '11px',
-                          border: 'none',
-                          cursor: 'pointer',
-                          position: 'relative',
-                          padding: 0,
-                          transition: 'background-color 0.2s ease',
-                        }}
-                      >
-                        <div
-                          style={{
-                            width: '18px',
-                            height: '18px',
-                            backgroundColor: '#FFFFFF',
-                            borderRadius: '50%',
-                            position: 'absolute',
-                            top: '2px',
-                            left: config.trigger.autoImport ? '20px' : '2px',
-                            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.25)',
-                            transition: 'left 0.2s ease',
-                          }}
-                        />
-                      </button>
-                    </div>
-
-                    <div style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                      Connects incoming Facebook URLs from Groups, Pages, and Marketplace directly to the Get Content and Get Images branches.
-                    </div>
                   </>
                 )}
 
