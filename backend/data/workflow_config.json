@@ -1,5 +1,5 @@
 {
-  "timestamp": 1792510523019,
+  "timestamp": 1792512749041,
   "workflow_formats": [
     {
       "config": {
@@ -40,7 +40,14 @@
             "id": "combine-box-1792505377426",
             "title": "Combine Box",
             "x": 740,
-            "y": 200
+            "y": 80
+          },
+          {
+            "enabled": true,
+            "id": "combine-box-1792511220987",
+            "title": "Combine Box",
+            "x": 740,
+            "y": 320
           }
         ],
         "connections": [
@@ -83,6 +90,16 @@
             "fromNodeId": "dest-platform-facebook-1792507831808",
             "id": "conn-dest-platform-facebook-1792507831808-dest-facebook-1546086342286604-1792507854129-1792507854129",
             "toNodeId": "dest-facebook-1546086342286604-1792507854129"
+          },
+          {
+            "fromNodeId": "ai-box-1792505356250",
+            "id": "conn-ai-box-1792505356250-combine-box-1792511220987",
+            "toNodeId": "combine-box-1792511220987"
+          },
+          {
+            "fromNodeId": "combine-box-1792511220987",
+            "id": "conn-combine-box-1792511220987-dest-platform-instagram-1792511239089-1792511239089",
+            "toNodeId": "dest-platform-instagram-1792511239089"
           }
         ],
         "destination": {
@@ -188,6 +205,23 @@
             "title": "Page 1546086342286604",
             "x": 1180,
             "y": 210
+          },
+          {
+            "enabled": true,
+            "id": "dest-platform-instagram-1792511239089",
+            "includeContent": true,
+            "includeImages": true,
+            "platform": "instagram",
+            "postToSocialMedia": true,
+            "publishDirectly": true,
+            "selectedPageIds": [
+              "1287202894475973"
+            ],
+            "storeInDatabase": false,
+            "targetMode": "social_media",
+            "title": "Instagram",
+            "x": 960,
+            "y": 320
           }
         ],
         "getContent": {
@@ -238,7 +272,7 @@
       "description": "Custom Facebook import extraction with dynamic AI prompt generator",
       "id": "format-1792501906367",
       "name": "Custom Workflow #1",
-      "updatedAt": 1792509512593
+      "updatedAt": 1792512749040
     },
     {
       "config": {
@@ -247,9 +281,9 @@
             "customPrompt": "",
             "enabled": true,
             "id": "ai-box-1792509870904",
-            "model": "gpt-4o-mini",
+            "model": "gemini-flash-latest",
             "processType": "text_ai",
-            "provider": "openai",
+            "provider": "google_ai",
             "templateId": "",
             "templateText": "",
             "title": "Gemini 2.5 Flash",
@@ -365,8 +399,8 @@
           "y": 200
         },
         "panOffset": {
-          "x": 318,
-          "y": 248
+          "x": 327,
+          "y": 253
         },
         "trigger": {
           "autoClassifyProperty": true,
@@ -382,13 +416,13 @@
           "x": 100,
           "y": 200
         },
-        "zoom": 0.9
+        "zoom": 0.88
       },
       "createdAt": 1792509841171,
       "description": "Custom Facebook import extraction with dynamic AI prompt generator",
       "id": "format-1792509841171",
       "name": "Custom Workflow #2",
-      "updatedAt": 1792510523018
+      "updatedAt": 1792511200105
     }
   ]
 }

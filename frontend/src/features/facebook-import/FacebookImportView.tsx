@@ -4740,6 +4740,7 @@ style={{
         maxWidth="1480px"
         height="90vh"
         bodyPadding="0"
+        closeOnOverlayClick={false}
         title={
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
             <div

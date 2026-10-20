@@ -2632,6 +2632,7 @@ export const FacebookWorkflowCanvas = forwardRef<
   );
   const dragStartCoord = useRef({ x: 0, y: 0 });
   const hasMoved = useRef(false);
+  const canvasMouseDownCoord = useRef<{ x: number; y: number } | null>(null);
 
   // Deletion Confirmation Modal State
   interface DeleteConfirmTarget {
@@ -2643,21 +2644,110 @@ export const FacebookWorkflowCanvas = forwardRef<
   }
   const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<DeleteConfirmTarget | null>(null);
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && deleteConfirmTarget) {
-        setDeleteConfirmTarget(null);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [deleteConfirmTarget]);
-
   const handleCloseModal = () => {
     setActiveModalNode(null);
     setConnectDrawerNode(null);
     setIsAISettingsDrawerOpen(false);
   };
+
+  // Comprehensive Escape Key Listener to dismiss any active drawer, modal, or popover
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (deleteConfirmTarget) {
+          e.stopImmediatePropagation();
+          e.stopPropagation();
+          setDeleteConfirmTarget(null);
+          return;
+        }
+        if (pendingDeleteBox) {
+          e.stopImmediatePropagation();
+          e.stopPropagation();
+          setPendingDeleteBox(null);
+          return;
+        }
+        if (pendingDeleteConnection) {
+          e.stopImmediatePropagation();
+          e.stopPropagation();
+          setPendingDeleteConnection(null);
+          return;
+        }
+        if (isAddFromTriggerOpen) {
+          e.stopImmediatePropagation();
+          e.stopPropagation();
+          setIsAddFromTriggerOpen(false);
+          return;
+        }
+        if (lightboxImageIndex !== null) {
+          e.stopImmediatePropagation();
+          e.stopPropagation();
+          setLightboxImageIndex(null);
+          return;
+        }
+        if (quickAddPopover) {
+          e.stopImmediatePropagation();
+          e.stopPropagation();
+          setQuickAddPopover(null);
+          return;
+        }
+        if (connectDrawerNode) {
+          e.stopImmediatePropagation();
+          e.stopPropagation();
+          setConnectDrawerNode(null);
+          return;
+        }
+        if (activeModalNode) {
+          e.stopImmediatePropagation();
+          e.stopPropagation();
+          handleCloseModal();
+          return;
+        }
+        if (isRecoverModalOpen) {
+          e.stopImmediatePropagation();
+          e.stopPropagation();
+          handleToggleGeneralSettings(false);
+          return;
+        }
+        if (selectedNodeIds.size > 0) {
+          e.stopImmediatePropagation();
+          e.stopPropagation();
+          setSelectedNodeIds(new Set());
+          return;
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [
+    deleteConfirmTarget,
+    pendingDeleteBox,
+    pendingDeleteConnection,
+    isAddFromTriggerOpen,
+    lightboxImageIndex,
+    quickAddPopover,
+    connectDrawerNode,
+    activeModalNode,
+    isRecoverModalOpen,
+    selectedNodeIds,
+  ]);
+
+  // Validate activeModalNode against current config to prevent ghost drawers
+  useEffect(() => {
+    if (!activeModalNode) return;
+    if (activeModalNode.type === 'ai-box') {
+      const exists = config.aiBoxes.some((b) => b.id === activeModalNode.boxId);
+      if (!exists) setActiveModalNode(null);
+    } else if (activeModalNode.type === 'combine') {
+      const cbId = activeModalNode.combineId || (activeModalNode as any).id;
+      const exists = (config.combineBoxes || []).some((b) => b.id === cbId);
+      if (!exists && (config.combineBoxes || []).length === 0) setActiveModalNode(null);
+    } else if (activeModalNode.type === 'destination') {
+      const allDests = getNormalizedDestinations(config);
+      const destId = activeModalNode.destinationId || allDests[0]?.id;
+      const exists = allDests.some((d) => d.id === destId);
+      if (!exists) setActiveModalNode(null);
+    }
+  }, [config.aiBoxes, config.combineBoxes, config.destinations, activeModalNode]);
 
   // Mutually exclusive sidebars: when node inspector or connect drawer opens, close General Settings
   useEffect(() => {
@@ -5126,10 +5216,13 @@ export const FacebookWorkflowCanvas = forwardRef<
     if (
       (e.target as HTMLElement).closest('.canvas-node') ||
       (e.target as HTMLElement).closest('.canvas-control') ||
-      (e.target as HTMLElement).closest('.quick-add-popover')
+      (e.target as HTMLElement).closest('.quick-add-popover') ||
+      (e.target as HTMLElement).closest('.workflow-sidebar') ||
+      (e.target as HTMLElement).closest('aside')
     ) {
       return;
     }
+    canvasMouseDownCoord.current = { x: e.clientX, y: e.clientY };
     setQuickAddPopover(null);
     if (!e.shiftKey) {
       setSelectedNodeIds(new Set());
@@ -5140,6 +5233,38 @@ export const FacebookWorkflowCanvas = forwardRef<
     }
     setIsPanning(true);
     setPanStart({ x: e.clientX - config.panOffset.x, y: e.clientY - config.panOffset.y });
+  };
+
+  const handleCanvasClick = (e: React.MouseEvent) => {
+    if (
+      (e.target as HTMLElement).closest('.canvas-node') ||
+      (e.target as HTMLElement).closest('.canvas-control') ||
+      (e.target as HTMLElement).closest('.quick-add-popover') ||
+      (e.target as HTMLElement).closest('.workflow-sidebar') ||
+      (e.target as HTMLElement).closest('aside')
+    ) {
+      return;
+    }
+    if (canvasMouseDownCoord.current) {
+      const dist = Math.hypot(
+        e.clientX - canvasMouseDownCoord.current.x,
+        e.clientY - canvasMouseDownCoord.current.y
+      );
+      if (dist > 5) {
+        // User was panning/dragging the canvas, ignore
+        return;
+      }
+    }
+    // Stationary click on canvas background dismisses any open sidebar / drawer / popover
+    if (activeModalNode || connectDrawerNode) {
+      handleCloseModal();
+    }
+    if (quickAddPopover) {
+      setQuickAddPopover(null);
+    }
+    if (isRecoverModalOpen) {
+      handleToggleGeneralSettings(false);
+    }
   };
 
   const handleCanvasMouseMove = (e: React.MouseEvent) => {
@@ -5475,6 +5600,7 @@ export const FacebookWorkflowCanvas = forwardRef<
         onMouseDown={handleCanvasMouseDown}
         onMouseMove={handleCanvasMouseMove}
         onMouseUp={handleCanvasMouseUp}
+        onClick={handleCanvasClick}
         onWheel={handleWheel}
         style={{
           position: 'relative',
@@ -6719,7 +6845,13 @@ export const FacebookWorkflowCanvas = forwardRef<
                     pointerEvents: 'auto',
                     zIndex: 2,
                   }}
-                  onClick={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    if (editingCanvasBoxId === box.id) {
+                      e.stopPropagation();
+                    } else {
+                      handleNodeClick({ type: 'ai-box', boxId: box.id }, e);
+                    }
+                  }}
                 >
                   {editingCanvasBoxId === box.id ? (
                     <input
@@ -7588,6 +7720,7 @@ export const FacebookWorkflowCanvas = forwardRef<
           const isContent = activeModalNode.type === 'get-content';
           const isImages = activeModalNode.type === 'get-images';
           const isCombine = activeModalNode.type === 'combine';
+          const isOutput = activeModalNode.type === 'output';
           const isAIBox = activeModalNode.type === 'ai-box' && Boolean(currentModalAIBox);
 
           // Combine Box metadata
@@ -7602,6 +7735,8 @@ export const FacebookWorkflowCanvas = forwardRef<
           return (
             <aside
               className="workflow-sidebar"
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
               style={{
                 position: 'absolute',
                 top: 0,
@@ -7647,6 +7782,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                         ? 'rgba(16, 185, 129, 0.12)'
                         : isCombine
                         ? 'rgba(245, 158, 11, 0.12)'
+                        : isOutput
+                        ? 'rgba(16, 185, 129, 0.12)'
                         : currentModalAIBox?.provider === 'google_ai'
                         ? 'rgba(96, 165, 250, 0.15)'
                         : 'rgba(16, 185, 129, 0.15)',
@@ -7660,6 +7797,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                     {isContent && <FiFileText size={18} color="#3B82F6" />}
                     {isImages && <FiImage size={18} color="#10B981" />}
                     {isCombine && <FiGitMerge size={18} color="#F59E0B" />}
+                    {isOutput && <FiCheckCircle size={18} color="#10B981" />}
                     {isAIBox && currentModalAIBox && (() => {
                       const isWatermark = isWatermarkAIBox(currentModalAIBox);
                       const isEnhance = (isEnhanceAIBox(currentModalAIBox) || isImageAIBox(currentModalAIBox, config.connections)) && !isWatermark;
@@ -7720,6 +7858,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                         {isTrigger && 'Facebook URL Importer'}
                         {isContent && 'Get Content Branch'}
                         {isImages && 'Get Images Branch'}
+                        {isOutput && (config.outputNode?.title || 'Final Content & Images')}
                       </div>
                     )}
                     {!isAIBox && (
@@ -7728,6 +7867,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                         {isContent && '100% Full Content Extraction'}
                         {isImages && 'High-Res Media Downloader'}
                         {isCombine && `${combineInputs.length} inputs merged`}
+                        {isOutput && 'Post Output Convergence Node'}
                       </div>
                     )}
                   </div>
@@ -7735,7 +7875,13 @@ export const FacebookWorkflowCanvas = forwardRef<
 
                 <button
                   type="button"
-                  onClick={handleCloseModal}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleCloseModal();
+                  }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  title="Close Inspector (Esc)"
+                  aria-label="Close"
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -8548,6 +8694,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                     else if (isImages) handleDeleteGetImages(e);
                     else if (isCombine && currentCombineBox) handleDeleteCombineBox(currentCombineBox.id, e);
                     else if (isAIBox && currentModalAIBox) handleDeleteAIBox(currentModalAIBox.id, e);
+                    else if (isOutput) handleDeleteOutputNode(e);
                     handleCloseModal();
                   }}
                   leftIcon={<FiTrash2 size={13} style={{ color: 'var(--text-secondary)' }} />}
@@ -8582,6 +8729,8 @@ export const FacebookWorkflowCanvas = forwardRef<
           return (
             <aside
               className="workflow-sidebar"
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
               style={{
                 position: 'absolute',
                 top: 0,
@@ -8639,7 +8788,13 @@ export const FacebookWorkflowCanvas = forwardRef<
                 </div>
                 <button
                   type="button"
-                  onClick={handleCloseModal}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleCloseModal();
+                  }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  title="Close Inspector (Esc)"
+                  aria-label="Close"
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -8791,6 +8946,8 @@ export const FacebookWorkflowCanvas = forwardRef<
         return (
           <aside
             className="workflow-sidebar"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
             style={{
               position: 'absolute',
               top: 0,
@@ -8848,7 +9005,13 @@ export const FacebookWorkflowCanvas = forwardRef<
               </div>
               <button
                 type="button"
-                onClick={handleCloseModal}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleCloseModal();
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+                title="Close Inspector (Esc)"
+                aria-label="Close"
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -9205,6 +9368,8 @@ export const FacebookWorkflowCanvas = forwardRef<
 
           return (
             <aside
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
               style={{
                 position: 'absolute',
                 top: 0,
@@ -9279,10 +9444,13 @@ export const FacebookWorkflowCanvas = forwardRef<
                 </div>
                 <button
                   type="button"
-                  onClick={() => {
+                  onClick={(e) => {
+                    e.stopPropagation();
                     setConnectDrawerNode(null);
                     setActiveModalNode(null);
                   }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  title="Close (Esc)"
                   aria-label="Close"
                   style={{
                     width: '24px',
@@ -9733,6 +9901,8 @@ export const FacebookWorkflowCanvas = forwardRef<
 
         return (
           <aside
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
             style={{
               position: 'absolute',
               top: 0,
@@ -9794,10 +9964,13 @@ export const FacebookWorkflowCanvas = forwardRef<
               </div>
               <button
                 type="button"
-                onClick={() => {
+                onClick={(e) => {
+                  e.stopPropagation();
                   setConnectDrawerNode(null);
                   setActiveModalNode(null);
                 }}
+                onMouseDown={(e) => e.stopPropagation()}
+                title="Close (Esc)"
                 aria-label="Close"
                 style={{
                   width: '24px',
@@ -11774,6 +11947,8 @@ export const FacebookWorkflowCanvas = forwardRef<
       {/* RECOVER DELETED NODES SLIDE-OVER RIGHT SIDEBAR           */}
       {/* ======================================================== */}
       <div
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
         style={{
           position: 'absolute',
           top: 0,
@@ -11814,8 +11989,12 @@ export const FacebookWorkflowCanvas = forwardRef<
           </span>
           <button
             type="button"
-            onClick={() => handleToggleGeneralSettings(false)}
-            title="Close"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleToggleGeneralSettings(false);
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            title="Close (Esc)"
             aria-label="Close"
             style={{
               width: '24px',

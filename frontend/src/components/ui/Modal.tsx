@@ -30,7 +30,7 @@ export const Modal: React.FC<ModalProps> = ({
   maxWidth = '450px',
   height,
   bodyPadding,
-  closeOnOverlayClick = false,
+  closeOnOverlayClick = true,
   zIndex = 100000,
   headerCenter,
   headerExtra,
@@ -47,8 +47,7 @@ export const Modal: React.FC<ModalProps> = ({
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        // Only close on Escape if closeOnOverlayClick is enabled
-        if (closeOnOverlayClick) onClose();
+        onClose();
       }
     };
     if (isOpen) {
@@ -57,7 +56,7 @@ export const Modal: React.FC<ModalProps> = ({
         window.removeEventListener('keydown', handleKeyDown);
       };
     }
-  }, [isOpen, onClose, closeOnOverlayClick]);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
