@@ -7787,61 +7787,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                       {/* Connect Next Step Quick Button (top) */}
                       {renderCenteredConnectButton('get-content', 'get-content', 'Get Content')}
 
-                      <div
-                        style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          padding: '0.875rem',
-                          backgroundColor: isDark ? 'var(--bg-surface)' : '#F8FAFC',
-                          borderRadius: '0.5rem',
-                          border: '1px solid var(--border-color)',
-                        }}
-                      >
-                        <div>
-                          <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                            Enable Content Extraction
-                          </div>
-                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                            Extracts 100% full original post content & caption
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            updateConfig({
-                              ...config,
-                              getContent: { ...config.getContent, enabled: !config.getContent.enabled },
-                            })
-                          }
-                          style={{
-                            width: '40px',
-                            height: '22px',
-                            backgroundColor: config.getContent.enabled ? '#388BFD' : (isDark ? '#374151' : '#CBD5E1'),
-                            borderRadius: '11px',
-                            border: 'none',
-                            cursor: 'pointer',
-                            position: 'relative',
-                            padding: 0,
-                            transition: 'background-color 0.2s ease',
-                          }}
-                        >
-                          <div
-                            style={{
-                              width: '18px',
-                              height: '18px',
-                              backgroundColor: '#FFFFFF',
-                              borderRadius: '50%',
-                              position: 'absolute',
-                              top: '2px',
-                              left: config.getContent.enabled ? '20px' : '2px',
-                              boxShadow: '0 1px 3px rgba(0, 0, 0, 0.25)',
-                              transition: 'left 0.2s ease',
-                            }}
-                          />
-                        </button>
-                      </div>
-
                       {/* Execution Result Box */}
                       <div
                         style={{
@@ -7952,61 +7897,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                     <>
                       {/* Connect Next Step Quick Button (top) */}
                       {renderCenteredConnectButton('get-images', 'get-images', 'Get Images')}
-
-                      <div
-                        style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          padding: '0.875rem',
-                          backgroundColor: isDark ? 'var(--bg-surface)' : '#F8FAFC',
-                          borderRadius: '0.5rem',
-                          border: '1px solid var(--border-color)',
-                        }}
-                      >
-                        <div>
-                          <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                            Enable Images Download
-                          </div>
-                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                            Downloads all original photos & media from the post
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            updateConfig({
-                              ...config,
-                              getImages: { ...config.getImages, enabled: !config.getImages.enabled },
-                            })
-                          }
-                          style={{
-                            width: '40px',
-                            height: '22px',
-                            backgroundColor: config.getImages.enabled ? '#10B981' : (isDark ? '#374151' : '#CBD5E1'),
-                            borderRadius: '11px',
-                            border: 'none',
-                            cursor: 'pointer',
-                            position: 'relative',
-                            padding: 0,
-                            transition: 'background-color 0.2s ease',
-                          }}
-                        >
-                          <div
-                            style={{
-                              width: '18px',
-                              height: '18px',
-                              backgroundColor: '#FFFFFF',
-                              borderRadius: '50%',
-                              position: 'absolute',
-                              top: '2px',
-                              left: config.getImages.enabled ? '20px' : '2px',
-                              boxShadow: '0 1px 3px rgba(0, 0, 0, 0.25)',
-                              transition: 'left 0.2s ease',
-                            }}
-                          />
-                        </button>
-                      </div>
 
                       {/* Media Gallery Execution Result Box */}
                       <div
