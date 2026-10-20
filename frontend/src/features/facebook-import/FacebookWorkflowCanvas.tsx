@@ -495,8 +495,8 @@ export const autoConnectWorkflow = (
     }));
   }
 
-  // Remove self-connections
-  conns = conns.filter((c) => c.fromNodeId !== c.toNodeId);
+  // Remove self-connections and static trigger connections (trigger wires are drawn statically)
+  conns = conns.filter((c) => c.fromNodeId !== c.toNodeId && c.fromNodeId !== 'trigger');
 
   if (!getContentEnabled) {
     conns = conns.filter((c) => c.fromNodeId !== 'get-content' && c.toNodeId !== 'get-content');
@@ -2702,7 +2702,7 @@ export const FacebookWorkflowCanvas = forwardRef<
             }
             return c;
           })
-          .filter((c) => c && c.fromNodeId !== c.toNodeId)
+          .filter((c) => c && c.fromNodeId !== c.toNodeId && c.fromNodeId !== 'trigger')
       : [];
 
     const sanitizedConfig = {
@@ -4487,14 +4487,7 @@ export const FacebookWorkflowCanvas = forwardRef<
       y: config.getImages.y || 356,
     };
 
-    let nextConns = [...(config.connections || [])];
-    if (config.trigger.enabled && !nextConns.some((c) => c.fromNodeId === 'trigger' && c.toNodeId === 'get-images')) {
-      nextConns.push({
-        id: 'conn-trigger-images',
-        fromNodeId: 'trigger',
-        toNodeId: 'get-images',
-      });
-    }
+    let nextConns = [...(config.connections || [])].filter((c) => c.fromNodeId !== 'trigger');
     if (!nextConns.some((c) => c.fromNodeId === 'get-images' && c.toNodeId === newId)) {
       nextConns.push({
         id: `conn-images-${newId}`,
@@ -4549,14 +4542,7 @@ export const FacebookWorkflowCanvas = forwardRef<
       y: config.getImages.y || 356,
     };
 
-    let nextConns = [...(config.connections || [])];
-    if (config.trigger.enabled && !nextConns.some((c) => c.fromNodeId === 'trigger' && c.toNodeId === 'get-images')) {
-      nextConns.push({
-        id: 'conn-trigger-images',
-        fromNodeId: 'trigger',
-        toNodeId: 'get-images',
-      });
-    }
+    let nextConns = [...(config.connections || [])].filter((c) => c.fromNodeId !== 'trigger');
 
     nextConns = autoConnectImagePipeline(nextBoxes, nextConns, config.getContent.enabled, true);
     const nextConfig = {
@@ -5928,6 +5914,7 @@ export const FacebookWorkflowCanvas = forwardRef<
 
             {/* Dynamic AI / Workflow Connections from config.connections */}
             {dedupeConnections(config.connections || []).map((conn) => {
+              if (conn.fromNodeId === 'trigger') return null;
               const fromPos = getNodeSocketPos(conn.fromNodeId, 'output');
               const toPos = getNodeSocketPos(conn.toNodeId, 'input');
               // Safety check: skip any wire with unresolved coordinates to prevent broken loops to (0, 0)
