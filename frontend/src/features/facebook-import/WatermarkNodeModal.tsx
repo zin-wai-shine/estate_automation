@@ -13,12 +13,26 @@ interface WatermarkNodeModalProps {
   onUpdateBox: (id: string, updates: Partial<DynamicAIBoxConfig>) => void;
   onDeleteBox?: (id: string) => void;
   onClose?: () => void;
+  images?: Array<{
+    index: number;
+    facebook_photo_id?: string;
+    source_url: string;
+    stored_url?: string;
+    width?: number;
+    height?: number;
+    status?: string;
+  }>;
+  watermarkedPhotos?: Record<number, string>;
+  enhancedPhotos?: Record<number, string>;
 }
 
 export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
   box,
   isDark,
   onUpdateBox,
+  images,
+  watermarkedPhotos,
+  enhancedPhotos,
 }) => {
   const savedFormats = useMemo(() => getSavedCropFormats(), []);
 
@@ -196,6 +210,96 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
           }}
         />
       </div>
+
+      {/* Processed Photos Live Preview (when workflow has extracted images) */}
+      {images && images.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem', marginTop: '0.25rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+              Processed Photos Preview
+            </label>
+            <span
+              style={{
+                fontSize: '0.6875rem',
+                fontWeight: 600,
+                color: '#10B981',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+              }}
+            >
+              ✓ {images.length} Ready · {currentFormat?.aspect || '1:1'} ({currentFormat?.targetWidth || 1200}×{currentFormat?.targetHeight || 1200})
+            </span>
+          </div>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, 1fr)',
+              gap: '6px',
+              maxHeight: '260px',
+              overflowY: 'auto',
+              padding: '6px',
+              borderRadius: '8px',
+              border: '1px solid var(--border-color)',
+              backgroundColor: isDark ? 'var(--bg-surface)' : '#F8FAFC',
+            }}
+          >
+            {images.map((img) => {
+              const url =
+                watermarkedPhotos?.[img.index] ||
+                enhancedPhotos?.[img.index] ||
+                img.stored_url ||
+                img.source_url;
+              return (
+                <div
+                  key={`crop-preview-${img.index}`}
+                  style={{
+                    position: 'relative',
+                    aspectRatio:
+                      currentFormat?.aspect === '16:9'
+                        ? '16/9'
+                        : currentFormat?.aspect === '4:5'
+                        ? '4/5'
+                        : currentFormat?.aspect === '9:16'
+                        ? '9/16'
+                        : '1/1',
+                    borderRadius: '6px',
+                    overflow: 'hidden',
+                    border: '1px solid var(--border-color)',
+                    backgroundColor: '#000000',
+                  }}
+                >
+                  <img
+                    src={url}
+                    alt={`Photo #${img.index + 1}`}
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                      display: 'block',
+                    }}
+                  />
+                  <div
+                    style={{
+                      position: 'absolute',
+                      bottom: '2px',
+                      left: '2px',
+                      fontSize: '0.5625rem',
+                      fontWeight: 600,
+                      padding: '1px 4px',
+                      borderRadius: '3px',
+                      backgroundColor: 'rgba(0,0,0,0.7)',
+                      color: '#FFFFFF',
+                    }}
+                  >
+                    #{img.index + 1}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

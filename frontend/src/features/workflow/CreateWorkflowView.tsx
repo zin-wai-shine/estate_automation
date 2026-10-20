@@ -22,6 +22,8 @@ import {
   restoreDefaultWorkflowFormats,
   type WorkflowFormat,
 } from './workflowFormats';
+import { isWatermarkAIBox, isTextFormatAIBox } from '../facebook-import/aiModelUtils';
+import { getSavedCropFormats, formatImageWithCropFormat } from '../watermark/cropFormats';
 import {
   FiGitBranch,
   FiPlus,
@@ -575,28 +577,53 @@ export const CreateWorkflowView: React.FC = () => {
 
     for (const box of aiBoxes) {
       if (!box.enabled) continue;
-      const isWatermark =
-        box.processType === 'watermark' ||
-        box.provider === 'watermark' ||
-        box.id?.includes('watermark') ||
-        box.title?.toLowerCase().startsWith('format:');
+      const isWatermark = isWatermarkAIBox(box);
+      const isTextFormat = isTextFormatAIBox(box);
 
       setExecutionState((prev) => ({
         ...prev!,
         activeNodeIds: [box.id],
         currentStepMessage: isWatermark
-          ? `✂️ Applying format preset with [${box.title || 'Format'}]...`
-          : `⚡ Generating AI copy with [${box.title || 'AI Box'}] (${box.model || 'Claude 3.5 Sonnet'})...`,
+          ? `✂️ Applying photo crop & frame preset [${box.title || 'Format'}]...`
+          : isTextFormat
+          ? `📝 Formatting AI copy with [${box.title || 'Format Preset'}]...`
+          : `⚡ Generating AI copy with [${box.title || 'AI Model'}] (${box.model || 'Gemini 2.5 Flash'})...`,
         stepIndex: 4,
       }));
 
       if (isWatermark) {
-        await delay(500);
-        imageList.forEach((img, idx) => {
-          localWatermarkedMap[idx] = img.source_url;
-        });
+        const savedFormats = getSavedCropFormats();
+        const targetFormat =
+          savedFormats.find((f) => f.id === box.cropFormatId || f.id === box.templateId || f.id === box.watermarkPresetId) ||
+          savedFormats.find((f) => box.title?.toLowerCase().includes(f.name.toLowerCase())) ||
+          savedFormats[0];
+
+        for (let i = 0; i < imageList.length; i++) {
+          const img = imageList[i];
+          const rawUrl = img.stored_url
+            ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
+            : img.source_url;
+          try {
+            const formattedDataUrl = await formatImageWithCropFormat(rawUrl, targetFormat);
+            localWatermarkedMap[img.index] = formattedDataUrl;
+          } catch (err) {
+            console.warn('Failed to format image with crop format', err);
+            localWatermarkedMap[img.index] = rawUrl;
+          }
+        }
         setWatermarkedPhotos((prev) => ({ ...prev, ...localWatermarkedMap }));
+        setEnhancedPhotos((prev) => ({ ...prev, ...localWatermarkedMap }));
+        await delay(400);
       } else {
+        // Resolve upstream text for this text AI or format node
+        const inConns = (cfg.connections || []).filter((c) => c.toNodeId === box.id);
+        const upstreamBoxId = inConns[0]?.fromNodeId;
+        const upstreamText =
+          (upstreamBoxId && generatedOutputsMap[upstreamBoxId]) ||
+          (upstreamBoxId === 'get-content' ? rawCaption : '') ||
+          primaryCopy ||
+          rawCaption;
+
         let copyText = '';
         const aiProvider = box.provider || (box.model?.startsWith('gpt-') ? 'openai' : 'google_ai');
         const aiModel = box.model || (aiProvider === 'openai' ? 'gpt-4o' : 'gemini-2.5-flash');
@@ -611,8 +638,12 @@ export const CreateWorkflowView: React.FC = () => {
               template_id: box.templateId || '',
               template_name: box.title || 'Dynamic Real Estate Copywriter',
               template_text: box.templateText || '',
-              raw_content: rawCaption,
-              custom_prompt: box.customPrompt || '',
+              raw_content: upstreamText,
+              custom_prompt:
+                box.customPrompt ||
+                (isTextFormat
+                  ? `Format this real estate listing according to the ${box.title || 'preset'} style. Maintain all property details, price, contact numbers, and formatting clean and attractive.`
+                  : ''),
             }),
           });
           if (aiResp.ok) {
@@ -629,7 +660,7 @@ export const CreateWorkflowView: React.FC = () => {
           model: aiModel,
           taskType: 'text',
           prompt: box.title || 'AI Box',
-          inputPreview: String(rawCaption || '').slice(0, 200),
+          inputPreview: String(upstreamText || '').slice(0, 200),
           outputPreview: copyText || 'Generation failed (fallback copy used)',
           status: copyText ? 'success' : 'failed',
           durationMs: Date.now() - aiStart,
@@ -637,15 +668,14 @@ export const CreateWorkflowView: React.FC = () => {
         });
 
         if (!copyText) {
-          // AI generation produced no output — use original extracted caption
-          copyText = rawCaption;
+          copyText = upstreamText;
         }
 
         generatedOutputsMap[box.id] = copyText;
-        if (!primaryCopy) primaryCopy = copyText;
+        if (!primaryCopy || isTextFormat) primaryCopy = copyText;
         setAiGeneratedOutputs((prev) => ({ ...prev, [box.id]: copyText }));
         setAiGeneratedCopy(copyText);
-        await delay(600);
+        await delay(500);
       }
 
       setExecutionState((prev) => ({
@@ -657,7 +687,55 @@ export const CreateWorkflowView: React.FC = () => {
       await delay(250);
     }
 
-    // Phase 4: Post Output (Compile Assets)
+    // Phase 4: Combine Boxes (Merge Parallel Branches)
+    const activeCombineBoxes = (cfg.combineBoxes || []).filter((cb) => cb && cb.enabled !== false);
+    const combinedOutputsMap: Record<string, { text: string; images: string[] }> = {};
+
+    for (const cb of activeCombineBoxes) {
+      if (isCancelledRef.current) return;
+
+      setExecutionState((prev) => ({
+        ...prev!,
+        activeNodeIds: [cb.id],
+        currentStepMessage: `⚡ Merging content & formatted images in [${cb.title || 'Combine Box'}]...`,
+        stepIndex: 5,
+      }));
+      await delay(500);
+
+      const inConns = (cfg.connections || []).filter((c) => c.toNodeId === cb.id);
+      const inFromIds = inConns.map((c) => c.fromNodeId);
+
+      // Find incoming text from connected nodes
+      let cbText = '';
+      for (const fromId of inFromIds) {
+        if (generatedOutputsMap[fromId]) {
+          cbText = generatedOutputsMap[fromId];
+          break;
+        }
+      }
+      if (!cbText) {
+        cbText = inFromIds.includes('get-content') ? rawCaption : (primaryCopy || rawCaption);
+      }
+
+      // Find incoming images from connected nodes
+      const cbImages = imageList
+        .map((img: any, idx: number) => localWatermarkedMap[idx] || img.stored_url || img.source_url)
+        .filter(Boolean);
+
+      combinedOutputsMap[cb.id] = { text: cbText, images: cbImages };
+      primaryCopy = cbText;
+      setAiGeneratedCopy(cbText);
+
+      setExecutionState((prev) => ({
+        ...prev!,
+        completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), cb.id])),
+        activeNodeIds: [],
+        currentStepMessage: `✓ [${cb.title || 'Combine Box'}] merged ${inConns.length || 2} inputs successfully!`,
+      }));
+      await delay(300);
+    }
+
+    // Phase 5: Post Output (Compile Assets)
     if (cfg.outputNode?.enabled !== false) {
       setExecutionState((prev) => ({
         ...prev!,
@@ -676,27 +754,28 @@ export const CreateWorkflowView: React.FC = () => {
       await delay(300);
     }
 
-    // Phase 5: Destinations (Direct Social Channels & Remaining Posts Database)
+    // Phase 6: Destinations (Direct Social Channels & Remaining Posts Database)
     const allDestinations = (cfg.destinations && cfg.destinations.length > 0)
       ? cfg.destinations
       : [cfg.destination || { id: 'destination', storeInDatabase: true, postToSocialMedia: false }];
 
-    // Filter to destinations connected from output node (or all enabled destinations if no explicit wiring)
-    const outputConnectedDestIds = new Set(
+    // Destinations that have incoming wires:
+    const connDestIds = new Set(
       (cfg.connections || [])
-        .filter((c) => c.fromNodeId === 'output')
+        .filter((c) => allDestinations.some((d) => d.id === c.toNodeId))
         .map((c) => c.toNodeId)
     );
 
+    // Filter to destinations connected, or if no destination has incoming wires, all enabled destinations
     const activeDestList = allDestinations.filter((d) => {
       if (d.enabled === false) return false;
-      if (outputConnectedDestIds.size > 0) {
-        return outputConnectedDestIds.has(d.id);
+      if (connDestIds.size > 0) {
+        return connDestIds.has(d.id);
       }
       return true;
     });
 
-    const targetDestinations = activeDestList.length > 0 ? activeDestList : allDestinations;
+    const targetDestinations = activeDestList.length > 0 ? activeDestList : allDestinations.filter((d) => d.enabled !== false);
     const destIds = targetDestinations.map((d) => d.id || 'destination');
 
     // Separate into social media destinations and database storage destinations
@@ -735,13 +814,23 @@ export const CreateWorkflowView: React.FC = () => {
       }));
 
       const projectName = projName || propData?.project_name || '';
-      const caption = primaryCopy || rawCaption;
+
+      // Get the specific text and images feeding into this destination:
+      const destInConns = (cfg.connections || []).filter((c) => c.toNodeId === socialDest.id);
+      const upstreamId = destInConns[0]?.fromNodeId;
+      const caption =
+        (upstreamId && combinedOutputsMap[upstreamId]?.text) ||
+        (upstreamId && generatedOutputsMap[upstreamId]) ||
+        primaryCopy ||
+        rawCaption;
       const hashtags = socialDest.includeHashtags !== false
         ? ((socialDest as any).defaultHashtags || '')
         : '';
-      const imageUrls = imageList
-        .map((img: any, idx: number) => localWatermarkedMap[idx] || img.stored_url || img.source_url)
-        .filter(Boolean);
+      const imageUrls =
+        (upstreamId && combinedOutputsMap[upstreamId]?.images) ||
+        imageList
+          .map((img: any, idx: number) => localWatermarkedMap[idx] || img.stored_url || img.source_url)
+          .filter(Boolean);
 
       let publishedSuccess = false;
       let errorMsg = '';
@@ -839,6 +928,14 @@ export const CreateWorkflowView: React.FC = () => {
         currentStepMessage: `💾 Storing in [${dbDest.title || 'Remaining Posts Database'}]...`,
       }));
 
+      const destInConns = (cfg.connections || []).filter((c) => c.toNodeId === dbDest.id);
+      const upstreamId = destInConns[0]?.fromNodeId;
+      const dbCaption =
+        (upstreamId && combinedOutputsMap[upstreamId]?.text) ||
+        (upstreamId && generatedOutputsMap[upstreamId]) ||
+        primaryCopy ||
+        rawCaption;
+
       try {
         saveRemainingPost({
           facebook_url: targetUrl,
@@ -853,7 +950,7 @@ export const CreateWorkflowView: React.FC = () => {
             created_time: new Date().toISOString(),
             extraction_method: 'browser',
           },
-          caption: rawCaption,
+          caption: dbCaption,
           languages: ['th', 'en'],
           propertyData: {
             project_name: propData?.project_name || projName || '',
@@ -885,7 +982,7 @@ export const CreateWorkflowView: React.FC = () => {
           enhancedPhotos: {},
           watermarkedPhotos: localWatermarkedMap,
           aiGeneratedOutputs: generatedOutputsMap,
-          aiGeneratedCopy: primaryCopy || rawCaption,
+          aiGeneratedCopy: dbCaption,
           workflowFormatName: editingFormat.name,
           autoProcessed: true,
         });
@@ -917,6 +1014,7 @@ export const CreateWorkflowView: React.FC = () => {
           'get-content',
           'get-images',
           ...aiBoxes.map((b) => b.id),
+          ...activeCombineBoxes.map((cb) => cb.id),
           'output',
           ...destIds,
         ])

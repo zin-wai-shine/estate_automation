@@ -6887,6 +6887,17 @@ export const FacebookWorkflowCanvas = forwardRef<
             const isCbReceptive = Boolean(
               dragWire && dragWire.fromType === 'output' && isValidConnection(dragWire.fromNodeId, cb.id)
             );
+            const cbStatus = getNodeExecutionStatus(cb.id);
+            const cbStrokeColor =
+              cbStatus === 'running'
+                ? '#0284C7'
+                : cbStatus === 'success'
+                ? '#10B981'
+                : cbIsSelected
+                ? '#F59E0B'
+                : isCbReceptive
+                ? RECEPTIVE_COLOR
+                : (isDark ? '#30363D' : '#D0D7DE');
             return (
               <div
                 key={`node-combine-${cb.id}`}
@@ -6908,7 +6919,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   top: `${cb.y}px`,
                   width: `${CIRCLE_SIZE}px`,
                   height: `${CIRCLE_SIZE}px`,
-                  ['--ring' as any]: isCbReceptive ? RECEPTIVE_COLOR : cbIsSelected ? '#F59E0B' : isDark ? '#30363D' : '#D0D7DE',
+                  ['--ring' as any]: isCbReceptive ? RECEPTIVE_COLOR : cbStatus === 'success' ? '#10B981' : cbIsSelected ? '#F59E0B' : isDark ? '#30363D' : '#D0D7DE',
                   ['--receptive-color' as any]: RECEPTIVE_COLOR,
                   zIndex: cbIsSelected ? 30 : isCbReceptive ? 35 : hoveredNodeId === cb.id ? 25 : 15,
                   cursor: isCbReceptive ? 'crosshair' : 'pointer',
@@ -6918,9 +6929,12 @@ export const FacebookWorkflowCanvas = forwardRef<
                   transition: 'transform 0.2s ease',
                 }}
               >
+                <NodeExecutionBadge
+                  status={cbStatus === 'success' ? 'success' : cbStatus === 'running' ? 'running' : 'idle'}
+                />
                 <MergedNodeShape
                   sockets="both"
-                  strokeColor={cbIsSelected ? '#F59E0B' : isDark ? '#30363D' : '#D0D7DE'}
+                  strokeColor={cbStrokeColor}
                   socketDotColor={isCbReceptive ? RECEPTIVE_COLOR : isDark ? '#8B949E' : '#64748B'}
                   isConnectedInput={cbConnsIn.length > 0}
                   isConnectedOutput={cbConnsOut.length > 0}
@@ -6952,7 +6966,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                 {/* Label */}
                 <div style={{ position: 'absolute', top: `${CIRCLE_SIZE + 8}px`, left: '50%', transform: 'translateX(-50%)', whiteSpace: 'nowrap', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', pointerEvents: 'none' }}>
                   <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>{cb.title || 'Combine Box'}</span>
-                  <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>Merged Output · {uniqueCbInputs.length} input{uniqueCbInputs.length !== 1 ? 's' : ''}</span>
+                  <span style={{ fontSize: '0.625rem', color: cbStatus === 'success' ? '#10B981' : 'var(--text-muted)' }}>
+                    {cbStatus === 'success' ? `✓ Merged Output · ${uniqueCbInputs.length} ready` : `Merged Output · ${uniqueCbInputs.length} input${uniqueCbInputs.length !== 1 ? 's' : ''}`}
+                  </span>
                 </div>
               </div>
             );
@@ -8050,62 +8066,264 @@ export const FacebookWorkflowCanvas = forwardRef<
                   <>
                     {/* Connect Next Step Quick Button (top) */}
                     {renderCenteredConnectButton(currentCombineBox.id, 'combine', currentCombineBox.title || 'Combine Box')}
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        padding: '0.875rem',
-                        borderRadius: '8px',
-                        border: '1px solid var(--border-color)',
-                        backgroundColor: isDark ? 'var(--bg-surface)' : '#F8FAFC',
-                      }}
-                    >
-                      <div>
-                        <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                          Status
-                        </div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                          Merges parallel inputs into a unified output
-                        </div>
-                      </div>
-                      <Badge variant="warning">{combineInputs.length} Inputs Merged</Badge>
-                    </div>
+                    {(() => {
+                      const cbStatus = getNodeExecutionStatus(currentCombineBox.id);
+                      let mergedText = '';
+                      for (const c of combineInputs) {
+                        if (aiGeneratedOutputs && aiGeneratedOutputs[c.fromNodeId]) {
+                          mergedText = aiGeneratedOutputs[c.fromNodeId];
+                          break;
+                        }
+                      }
+                      if (!mergedText) {
+                        if (combineInputs.some((c) => c.fromNodeId === 'get-content')) {
+                          mergedText = rawContent || '';
+                        } else {
+                          mergedText = aiGeneratedCopy || rawContent || '';
+                        }
+                      }
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                      <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
-                        Incoming Connected Nodes
-                      </label>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                        {combineInputs.map((c) => {
-                          const fromBox = config.aiBoxes.find((b) => b.id === c.fromNodeId);
-                          const fromTitle =
-                            c.fromNodeId === 'get-content'
-                              ? 'Get Content'
-                              : c.fromNodeId === 'get-images'
-                              ? 'Get Images'
-                              : fromBox?.title || c.fromNodeId;
-                          return (
+                      const hasImagesIn = combineInputs.some(
+                        (c) =>
+                          c.fromNodeId === 'get-images' ||
+                          config.aiBoxes.some((b) => b.id === c.fromNodeId && (isWatermarkAIBox(b) || isEnhanceAIBox(b) || isImageAIBox(b, config.connections)))
+                      );
+
+                      return (
+                        <>
+                          <div
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              padding: '0.875rem',
+                              borderRadius: '8px',
+                              border: '1px solid var(--border-color)',
+                              backgroundColor: isDark ? 'var(--bg-surface)' : '#F8FAFC',
+                            }}
+                          >
+                            <div>
+                              <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                Status
+                              </div>
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                                Merges parallel inputs into a unified output
+                              </div>
+                            </div>
+                            <Badge variant={cbStatus === 'success' || Boolean(mergedText) ? 'success' : 'warning'}>
+                              {cbStatus === 'success' || Boolean(mergedText)
+                                ? '✓ Merged & Ready'
+                                : `${combineInputs.length} Inputs Merged`}
+                            </Badge>
+                          </div>
+
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                            <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                              Incoming Connected Nodes
+                            </label>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                              {combineInputs.map((c) => {
+                                const fromBox = config.aiBoxes.find((b) => b.id === c.fromNodeId);
+                                const fromTitle =
+                                  c.fromNodeId === 'get-content'
+                                    ? 'Get Content'
+                                    : c.fromNodeId === 'get-images'
+                                    ? 'Get Images'
+                                    : fromBox?.title || c.fromNodeId;
+                                return (
+                                  <div
+                                    key={c.id}
+                                    style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'space-between',
+                                      padding: '6px 10px',
+                                      borderRadius: '6px',
+                                      border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF',
+                                      fontSize: '0.75rem',
+                                    }}
+                                  >
+                                    <span style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{fromTitle}</span>
+                                    <span style={{ color: '#F59E0B', fontSize: '0.7rem' }}>Connected</span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {/* Merged Text Output (Copy Ready) */}
+                          {Boolean(mergedText) && (
                             <div
-                              key={c.id}
                               style={{
                                 display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between',
-                                padding: '6px 10px',
-                                borderRadius: '6px',
+                                flexDirection: 'column',
+                                gap: '0.4rem',
+                                padding: '0.625rem',
+                                borderRadius: '8px',
                                 border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF',
-                                fontSize: '0.75rem',
+                                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#F8FAFC',
                               }}
                             >
-                              <span style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{fromTitle}</span>
-                              <span style={{ color: '#F59E0B', fontSize: '0.7rem' }}>Connected</span>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                  <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                    Merged Output Copy
+                                  </span>
+                                  <span
+                                    style={{
+                                      fontSize: '0.625rem',
+                                      fontWeight: 600,
+                                      color: '#10B981',
+                                      backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#DCFCE7',
+                                      padding: '1px 5px',
+                                      borderRadius: '4px',
+                                    }}
+                                  >
+                                    ✓ Ready
+                                  </span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(mergedText);
+                                    setCopiedTextSuccess(true);
+                                    setTimeout(() => setCopiedTextSuccess(false), 2000);
+                                  }}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '3px',
+                                    background: 'none',
+                                    border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                    borderRadius: '4px',
+                                    padding: '2px 6px',
+                                    fontSize: '0.625rem',
+                                    color: copiedTextSuccess ? '#10B981' : 'var(--text-secondary)',
+                                    cursor: 'pointer',
+                                  }}
+                                >
+                                  {copiedTextSuccess ? <FiCheck size={11} /> : <FiCopy size={11} />}
+                                  <span>{copiedTextSuccess ? 'Copied' : 'Copy'}</span>
+                                </button>
+                              </div>
+                              <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', display: 'flex', gap: '8px' }}>
+                                <span>{mergedText.length} characters</span>
+                                <span>•</span>
+                                <span>{mergedText.trim().split(/\s+/).filter(Boolean).length} words</span>
+                              </div>
+                              <div
+                                style={{
+                                  maxHeight: '140px',
+                                  overflowY: 'auto',
+                                  padding: '0.5rem',
+                                  borderRadius: '6px',
+                                  backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
+                                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                  fontSize: '0.75rem',
+                                  lineHeight: 1.5,
+                                  color: 'var(--text-primary)',
+                                  whiteSpace: 'pre-wrap',
+                                  wordBreak: 'break-word',
+                                }}
+                              >
+                                {mergedText}
+                              </div>
                             </div>
-                          );
-                        })}
-                      </div>
-                    </div>
+                          )}
+
+                          {/* Merged Media Assets (Photos Ready) */}
+                          {hasImagesIn && images && images.length > 0 && (
+                            <div
+                              style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '0.4rem',
+                                padding: '0.625rem',
+                                borderRadius: '8px',
+                                border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#F8FAFC',
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                  <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                    Merged Media Assets
+                                  </span>
+                                  <span
+                                    style={{
+                                      fontSize: '0.625rem',
+                                      fontWeight: 600,
+                                      color: '#10B981',
+                                      backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#DCFCE7',
+                                      padding: '1px 5px',
+                                      borderRadius: '4px',
+                                    }}
+                                  >
+                                    ✓ {images.length} Photos Ready
+                                  </span>
+                                </div>
+                              </div>
+                              <div
+                                style={{
+                                  display: 'grid',
+                                  gridTemplateColumns: 'repeat(4, 1fr)',
+                                  gap: '4px',
+                                  maxHeight: '180px',
+                                  overflowY: 'auto',
+                                  padding: '4px',
+                                  borderRadius: '6px',
+                                  backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
+                                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                }}
+                              >
+                                {images.map((img) => {
+                                  const url =
+                                    watermarkedPhotos?.[img.index] ||
+                                    enhancedPhotos?.[img.index] ||
+                                    img.stored_url ||
+                                    img.source_url;
+                                  return (
+                                    <div
+                                      key={`combine-img-${img.index}`}
+                                      style={{
+                                        position: 'relative',
+                                        aspectRatio: '1/1',
+                                        borderRadius: '4px',
+                                        overflow: 'hidden',
+                                        backgroundColor: '#000000',
+                                        border: '1px solid var(--border-color)',
+                                      }}
+                                    >
+                                      <img
+                                        src={url}
+                                        alt={`Merged #${img.index + 1}`}
+                                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                                      />
+                                      <div
+                                        style={{
+                                          position: 'absolute',
+                                          bottom: '1px',
+                                          left: '1px',
+                                          fontSize: '0.5rem',
+                                          fontWeight: 600,
+                                          padding: '1px 3px',
+                                          borderRadius: '2px',
+                                          backgroundColor: 'rgba(0,0,0,0.7)',
+                                          color: '#FFFFFF',
+                                        }}
+                                      >
+                                        #{img.index + 1}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: 'auto', paddingTop: '1rem' }}>
                       <button
@@ -8506,6 +8724,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                     handleCloseModal();
                   }}
                   onClose={handleCloseModal}
+                  images={images}
+                  watermarkedPhotos={watermarkedPhotos}
+                  enhancedPhotos={enhancedPhotos}
                 />
               </div>
 
