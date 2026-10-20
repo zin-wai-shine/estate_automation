@@ -9758,6 +9758,120 @@ export const FacebookWorkflowCanvas = forwardRef<
                         </button>
                       ))}
 
+                  {/* AI Model (Content AI Copywriter & Text Formatter) */}
+                  {(isContent || isImages || isFromTextAI) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newId = handleAddTextAIBox(fromNodeId);
+                        setConnectDrawerNode(null);
+                        setActiveModalNode({ type: 'ai-box', boxId: newId });
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        padding: '0.55rem 0.65rem',
+                        borderRadius: '7px',
+                        border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                        backgroundColor: isDark ? '#1C2128' : '#F8FAFC',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        transition: 'all 0.15s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.borderColor = '#8B5CF6';
+                        e.currentTarget.style.backgroundColor = isDark ? '#271F36' : '#F5F3FF';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
+                        e.currentTarget.style.backgroundColor = isDark ? '#1C2128' : '#F8FAFC';
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: '28px',
+                          height: '28px',
+                          borderRadius: '6px',
+                          backgroundColor: '#8B5CF6',
+                          color: '#FFFFFF',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                        }}
+                      >
+                        <FiMessageSquare size={14} />
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: '0.71875rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
+                          + AI Model
+                        </div>
+                        <div style={{ fontSize: '0.5625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                          Format text with Gemini or OpenAI models
+                        </div>
+                      </div>
+                      <FiArrowRight size={13} style={{ color: isDark ? '#8B949E' : '#94A3B8' }} />
+                    </button>
+                  )}
+
+                  {/* Text Format Preset */}
+                  {(isContent || isFromTextAI) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newId = handleAddTextFormatBox(fromNodeId);
+                        setConnectDrawerNode(null);
+                        setActiveModalNode({ type: 'ai-box', boxId: newId });
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        padding: '0.55rem 0.65rem',
+                        borderRadius: '7px',
+                        border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                        backgroundColor: isDark ? '#1C2128' : '#F8FAFC',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        transition: 'all 0.15s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.borderColor = '#6366F1';
+                        e.currentTarget.style.backgroundColor = isDark ? '#1E1B4B' : '#EEF2FF';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
+                        e.currentTarget.style.backgroundColor = isDark ? '#1C2128' : '#F8FAFC';
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: '28px',
+                          height: '28px',
+                          borderRadius: '6px',
+                          backgroundColor: '#6366F1',
+                          color: '#FFFFFF',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                        }}
+                      >
+                        <FiFileText size={14} />
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: '0.71875rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
+                          + Format Preset
+                        </div>
+                        <div style={{ fontSize: '0.5625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                          Apply saved prompt template & format rule
+                        </div>
+                      </div>
+                      <FiArrowRight size={13} style={{ color: isDark ? '#8B949E' : '#94A3B8' }} />
+                    </button>
+                  )}
+
                   {/* Image Enhancer */}
                   {(isImages || isFromEnhance) && (
                     <button
