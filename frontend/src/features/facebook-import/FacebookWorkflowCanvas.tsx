@@ -7303,7 +7303,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 onMouseDown={(e) => e.stopPropagation()}
               >
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.15rem 0.25rem 0.35rem', borderBottom: isDarkTheme ? '1px solid #30363D' : '1px solid #E2E8F0' }}>
-                  <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                     Connect Next Step
                   </span>
                   <button
@@ -8748,7 +8748,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                       <FiFileText size={16} color="#3B82F6" />
-                      <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                         Content Session
                       </span>
                     </div>
@@ -8798,7 +8798,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                       <FiImage size={16} color="#10B981" />
-                      <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                         Images Session ({compiledImages.length} photos)
                       </span>
                     </div>
@@ -8871,7 +8871,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   backgroundColor: isDark ? 'var(--bg-surface)' : '#FFFFFF',
                 }}
               >
-                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                   Publishing Strategy
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.75rem' }}>
@@ -8976,7 +8976,8 @@ export const FacebookWorkflowCanvas = forwardRef<
         const fromDestNode = getNormalizedDestinations(config).find((d) => d.id === fromNodeId);
         const resolvedTitle = (fromTitle || fromDestNode?.title || connectDrawerNode.title || '').toLowerCase();
         const resolvedId = (fromNodeId || '').toLowerCase();
-        const destinationPlatform: string | undefined =
+        const isNonDestinationNode = isTrigger || isContent || isImages || isAI || isOutput || fromNodeType === 'combine';
+        const destinationPlatform: string | undefined = isNonDestinationNode ? undefined : (
           fromDestNode?.platform ||
           (connectDrawerNode.platform === 'database' ? undefined : connectDrawerNode.platform) ||
           (fromDestNode?.selectedPageId || fromDestNode?.selectedPageIds?.length ? 'facebook' : undefined) ||
@@ -8985,8 +8986,9 @@ export const FacebookWorkflowCanvas = forwardRef<
           (resolvedTitle.includes('facebook') || resolvedId.includes('facebook') ? 'facebook' : undefined) ||
           (resolvedTitle.includes('instagram') || resolvedId.includes('instagram') ? 'instagram' : undefined) ||
           (resolvedTitle.includes('tiktok') || resolvedId.includes('tiktok') ? 'tiktok' : undefined) ||
-          (resolvedTitle.includes('database') || resolvedId.includes('database') || fromDestNode?.targetMode === 'remaining_posts' ? 'database' : undefined);
-        const isDestination = fromNodeType === 'destination' || fromNodeId.startsWith('dest-') || Boolean(fromDestNode) || destinationPlatform !== undefined;
+          (resolvedTitle.includes('database') || resolvedId.includes('database') || fromDestNode?.targetMode === 'remaining_posts' ? 'database' : undefined)
+        );
+        const isDestination = !isNonDestinationNode && (fromNodeType === 'destination' || fromNodeId.startsWith('dest-') || Boolean(fromDestNode) || destinationPlatform !== undefined);
 
         // If clicking [+] from a specific Social Media node (Facebook, Instagram, TikTok):
         // Show ONLY the accounts relative to that specific social media platform!
@@ -9107,62 +9109,12 @@ export const FacebookWorkflowCanvas = forwardRef<
                   padding: '0.75rem',
                 }}
               >
-                {/* Source Node Indicator Pill */}
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '0.5rem 0.625rem',
-                    borderRadius: '7px',
-                    backgroundColor: isDark ? '#0D1117' : '#F8FAFC',
-                    border: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
-                    <div
-                      style={{
-                        width: '6px',
-                        height: '6px',
-                        borderRadius: '50%',
-                        backgroundColor: platColor,
-                        boxShadow: `0 0 6px ${platColor}`,
-                      }}
-                    />
-                    <span
-                      style={{
-                        fontSize: '0.6875rem',
-                        fontWeight: 600,
-                        color: isDark ? '#C9D1D9' : '#334155',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      Source: {fromTitle}
-                    </span>
-                  </div>
-                  <span
-                    style={{
-                      fontSize: '0.5625rem',
-                      color: platColor,
-                      fontWeight: 600,
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.04em',
-                    }}
-                  >
-                    Platform Active
-                  </span>
-                </div>
-
                 {/* Section Header */}
                 <div>
                   <div
                     style={{
-                      fontSize: '0.625rem',
-                      fontWeight: 700,
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.06em',
+                      fontSize: '0.6875rem',
+                      fontWeight: 600,
                       color: isDark ? '#8B949E' : '#64748B',
                       marginBottom: '0.35rem',
                     }}
@@ -9666,62 +9618,12 @@ export const FacebookWorkflowCanvas = forwardRef<
                 padding: '0.75rem',
               }}
             >
-              {/* Source Node Indicator Pill */}
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '0.5rem 0.625rem',
-                  borderRadius: '7px',
-                  backgroundColor: isDark ? '#0D1117' : '#F8FAFC',
-                  border: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
-                  <div
-                    style={{
-                      width: '6px',
-                      height: '6px',
-                      borderRadius: '50%',
-                      backgroundColor: '#10B981',
-                      boxShadow: '0 0 6px #10B981',
-                    }}
-                  />
-                  <span
-                    style={{
-                      fontSize: '0.6875rem',
-                      fontWeight: 600,
-                      color: isDark ? '#C9D1D9' : '#334155',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    Source: {fromTitle}
-                  </span>
-                </div>
-                <span
-                  style={{
-                    fontSize: '0.5625rem',
-                    color: '#10B981',
-                    fontWeight: 600,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.04em',
-                  }}
-                >
-                  Socket Active
-                </span>
-              </div>
-
               {/* SECTION: Create & Connect New Processing Step */}
               <div>
                 <div
                   style={{
-                    fontSize: '0.625rem',
-                    fontWeight: 700,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.06em',
+                    fontSize: '0.6875rem',
+                    fontWeight: 600,
                     color: isDark ? '#8B949E' : '#64748B',
                     marginBottom: '0.45rem',
                   }}
@@ -10034,10 +9936,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                 <div>
                   <div
                     style={{
-                      fontSize: '0.625rem',
-                      fontWeight: 700,
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.06em',
+                      fontSize: '0.6875rem',
+                      fontWeight: 600,
                       color: isDark ? '#8B949E' : '#64748B',
                       marginBottom: '0.45rem',
                     }}
@@ -10140,10 +10040,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                 <div>
                   <div
                     style={{
-                      fontSize: '0.625rem',
-                      fontWeight: 700,
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.06em',
+                      fontSize: '0.6875rem',
+                      fontWeight: 600,
                       color: isDark ? '#8B949E' : '#64748B',
                       marginBottom: '0.45rem',
                     }}
@@ -10232,10 +10130,8 @@ export const FacebookWorkflowCanvas = forwardRef<
               <div>
                 <div
                   style={{
-                    fontSize: '0.625rem',
-                    fontWeight: 700,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.06em',
+                    fontSize: '0.6875rem',
+                    fontWeight: 600,
                     color: isDark ? '#8B949E' : '#64748B',
                     marginBottom: '0.45rem',
                   }}
@@ -10297,7 +10193,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                     </div>
                     <FiArrowRight size={13} style={{ color: isDark ? '#8B949E' : '#94A3B8' }} />
                   </button>
-                    {/* POST OUTPUT PAYLOAD PREVIEW CARD (Displays contents and images payload inside destination sidebar) */}
+                  {/* POST OUTPUT PAYLOAD PREVIEW CARD (Displays contents and images payload inside destination sidebar) */}
+                  {!isTrigger && (
                     <div
                       style={{
                         borderRadius: '8px',
@@ -10418,6 +10315,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                         </div>
                       )}
                     </div>
+                  )}
                   {/* Post to Social Media (Expandable File-System Drawer) */}
                   <button
                     type="button"
@@ -11732,7 +11630,7 @@ export const FacebookWorkflowCanvas = forwardRef<
               borderTop: '1px solid var(--border-color)',
             }}
           >
-            <div style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            <div style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
               Canvas Tools
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
