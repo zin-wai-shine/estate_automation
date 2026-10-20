@@ -9759,7 +9759,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                       ))}
 
                   {/* Image Enhancer */}
-                  {(isImages || isTrigger || isFromEnhance) && (
+                  {(isImages || isFromEnhance) && (
                     <button
                       type="button"
                       onClick={() => {
@@ -9816,7 +9816,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   )}
 
                   {/* Studio Format / Watermark */}
-                  {(isImages || isTrigger || isFromEnhance) && (
+                  {(isImages || isFromEnhance) && (
                     <button
                       type="button"
                       onClick={() => {
