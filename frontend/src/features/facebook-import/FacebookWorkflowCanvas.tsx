@@ -727,13 +727,13 @@ export const autoConnectWorkflow = (
       const activeDests = (destinations || []).filter((d) => d && d.enabled !== false);
       const targetList = activeDests.length > 0 ? activeDests : [{ id: 'destination', enabled: true }];
 
-      // Connect Combine Box to destinations if it doesn't already connect to at least one destination
+      // Connect Combine Box to destinations only on initial workflow setup if no connections exist yet
       const hasAnyDestConnection = conns.some(
         (c) =>
           activeCombineBoxes.some((b) => b.id === c.fromNodeId) &&
           targetList.some((d) => (d.id || 'destination') === c.toNodeId)
       );
-      if (!hasAnyDestConnection) {
+      if (!hasAnyDestConnection && (!existingConns || existingConns.length === 0)) {
         const firstDestId = targetList[0].id || 'destination';
         conns.push({
           id: `conn-${primaryCombineId}-${firstDestId}`,
@@ -1381,23 +1381,26 @@ export const sanitizeAndResolveCollisions = (
 
   connections = dedupeConnections(connections);
 
-  // Auto-connect image & content pipeline -> output (Final Content & Images) -> destinations
-  const nextConnections = dedupeConnections(
-    isDestEnabled
-      ? autoConnectWorkflow(
-          updatedAiBoxes,
-          connections,
-          conf.getContent?.enabled !== false,
-          conf.getImages?.enabled !== false,
-          isDestEnabled,
-          isOutputEnabled,
-          rawDests,
-          conf.combineBoxes || []
-        )
-      : connections.filter(
-          (c) => c.toNodeId !== 'destination' && !c.toNodeId.startsWith('dest-')
-        )
-  );
+  // If user or workflow already has connections specified, preserve them exactly!
+  // Only run autoConnectWorkflow if connections were not provided at all (undefined)
+  const nextConnections = Array.isArray(conf.connections)
+    ? connections
+    : dedupeConnections(
+        isDestEnabled
+          ? autoConnectWorkflow(
+              updatedAiBoxes,
+              connections,
+              conf.getContent?.enabled !== false,
+              conf.getImages?.enabled !== false,
+              isDestEnabled,
+              isOutputEnabled,
+              rawDests,
+              conf.combineBoxes || []
+            )
+          : connections.filter(
+              (c) => c.toNodeId !== 'destination' && !c.toNodeId.startsWith('dest-')
+            )
+      );
 
   const baseConfig: FacebookWorkflowConfig = {
     ...DEFAULT_FB_WORKFLOW_CONFIG,
@@ -5710,16 +5713,13 @@ export const FacebookWorkflowCanvas = forwardRef<
                       onMouseLeave={() => setHoveredXId(null)}
                       onMouseDown={(e) => {
                         e.stopPropagation();
-                        e.preventDefault();
                       }}
                       onMouseUp={(e) => {
                         e.stopPropagation();
-                        e.preventDefault();
                       }}
                       onClick={(e) => {
                         if (e) {
                           e.stopPropagation();
-                          e.preventDefault();
                         }
                         setDeleteConfirmTarget({
                           type: 'connection',
@@ -5837,16 +5837,13 @@ export const FacebookWorkflowCanvas = forwardRef<
                       onMouseLeave={() => setHoveredXId(null)}
                       onMouseDown={(e) => {
                         e.stopPropagation();
-                        e.preventDefault();
                       }}
                       onMouseUp={(e) => {
                         e.stopPropagation();
-                        e.preventDefault();
                       }}
                       onClick={(e) => {
                         if (e) {
                           e.stopPropagation();
-                          e.preventDefault();
                         }
                         setDeleteConfirmTarget({
                           type: 'connection',
@@ -5987,13 +5984,12 @@ export const FacebookWorkflowCanvas = forwardRef<
                       onMouseLeave={() => setHoveredXId(null)}
                       onMouseDown={(e) => {
                         e.stopPropagation();
-                        e.preventDefault();
                       }}
                       onMouseUp={(e) => {
                         e.stopPropagation();
-                        e.preventDefault();
                       }}
                       onClick={(e) => {
+                        e.stopPropagation();
                         handleWireDelete(conn, e);
                       }}
                     >
