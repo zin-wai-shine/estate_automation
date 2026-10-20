@@ -2543,19 +2543,29 @@ export const FacebookWorkflowCanvas = forwardRef<
     }
   };
 
-  const handleOpenConnectDrawer = (nodeId: string, nodeType: string, title: string) => {
+  const handleOpenConnectDrawer = (
+    nodeId: string,
+    nodeType: string,
+    title: string,
+    platform?: 'facebook' | 'instagram' | 'tiktok' | 'database',
+  ) => {
     setActiveModalNode(null);
     setSelectedBoxId(null);
     setQuickAddPopover(null);
     setIsRecoverModalOpen(false);
     onToggleGeneralSettings?.(false);
-    setConnectDrawerNode({ nodeId, nodeType, title });
+    setConnectDrawerNode({ nodeId, nodeType, title, platform });
   };
 
-  const renderCenteredConnectButton = (nodeId: string, nodeType: string, nodeTitle?: string) => (
+  const renderCenteredConnectButton = (
+    nodeId: string,
+    nodeType: string,
+    nodeTitle?: string,
+    platform?: 'facebook' | 'instagram' | 'tiktok' | 'database',
+  ) => (
     <button
       type="button"
-      onClick={() => handleOpenConnectDrawer(nodeId, nodeType, nodeTitle || nodeId)}
+      onClick={() => handleOpenConnectDrawer(nodeId, nodeType, nodeTitle || nodeId, platform)}
       aria-label="Connect Next Step"
       style={{
         display: 'flex',
@@ -8684,9 +8694,17 @@ export const FacebookWorkflowCanvas = forwardRef<
         const activeDestId = activeModalNode.destinationId || allDests[0]?.id || 'destination';
         const currentDest = allDests.find((d) => d.id === activeDestId) || allDests[0];
         const destIdx = allDests.findIndex((d) => d.id === activeDestId);
-        const isPlatformHub = currentDest.id.startsWith('dest-platform-');
-        const isPageAccount = Boolean(currentDest.accountId);
-        const isDatabaseQueue = currentDest.id.includes('database') || currentDest.title?.includes('Database');
+        const isPlatformHub = currentDest.id.startsWith('dest-platform-') || (currentDest.targetMode === 'social_media' && !currentDest.accountId);
+        const isDatabaseQueue = currentDest.id.includes('database') || currentDest.title?.includes('Database') || currentDest.targetMode === 'remaining_posts';
+        const isDbNode = isDatabaseQueue || currentDest.platform === 'database';
+        const isHybrid = (currentDest.storeInDatabase && currentDest.postToSocialMedia) || currentDest.targetMode === 'hybrid';
+        const platform = currentDest.platform || (isDbNode ? 'database' : (currentDest.selectedPageId ? 'facebook' : undefined));
+        const isFb = (platform === 'facebook' || currentDest.id.includes('facebook') || currentDest.platform === 'facebook') && !isHybrid && !isDbNode;
+        const isIg = (platform === 'instagram' || currentDest.id.includes('instagram') || currentDest.platform === 'instagram') && !isHybrid && !isDbNode;
+        const isTiktok = (platform === 'tiktok' || currentDest.id.includes('tiktok') || currentDest.platform === 'tiktok') && !isHybrid && !isDbNode;
+        const isAccountNode = Boolean(currentDest.accountId);
+        const isPageAccount = isAccountNode;
+        const hasPlusButton = !isAccountNode && (isFb || isIg || isTiktok || currentDest.targetMode === 'social_media');
 
         // Upstream connection detection via reverse graph BFS
         const upstreamIds = new Set<string>();
@@ -8824,6 +8842,15 @@ export const FacebookWorkflowCanvas = forwardRef<
                 gap: '1rem',
               }}
             >
+              {/* Connect Next Step Quick Button (top) */}
+              {hasPlusButton &&
+                renderCenteredConnectButton(
+                  activeDestId,
+                  'destination',
+                  currentDest.accountName || currentDest.title || (isFb ? 'Facebook' : isIg ? 'Instagram' : isTiktok ? 'TikTok' : 'Social Media'),
+                  isFb ? 'facebook' : isIg ? 'instagram' : isTiktok ? 'tiktok' : undefined
+                )}
+
               {/* Profile Card */}
               <div
                 style={{
