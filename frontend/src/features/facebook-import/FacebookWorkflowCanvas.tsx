@@ -7001,9 +7001,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 : 'Active';
 
             const strokeThemeColor =
-              isDestSuccess
-                ? '#10B981'
-                : isDestRunning
+              isDestRunning
                 ? '#0284C7'
                 : isSelected
                 ? isFb
@@ -7117,6 +7115,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                             justifyContent: 'center',
                             pointerEvents: 'none',
                             userSelect: 'none',
+                            borderRadius: '50%',
+                            backgroundColor: isDark ? '#1C2128' : '#FFFFFF',
                           }}
                         >
                           {pageAvatar ? (
@@ -7128,6 +7128,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                 height: '48px',
                                 borderRadius: '50%',
                                 objectFit: 'cover',
+                                backgroundColor: isDark ? '#1C2128' : '#FFFFFF',
                               }}
                             />
                           ) : (
