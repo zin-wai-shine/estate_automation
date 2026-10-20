@@ -1144,7 +1144,7 @@ export const buildAlignedLayout = (
 
   const isSingleCbMode = activeCombineBoxes.length <= 1;
   const singleCb = activeCombineBoxes[0];
-  const singleCbCenterY = singleCb ? getNodeInputCenterY(singleCb.id) : contentCenterY;
+  const singleCbCenterY = triggerY;
   const singleCbConnectedDestId = singleCb
     ? conns.find((c) => c.fromNodeId === singleCb.id && primaryDests.some((p) => p.id === c.toNodeId))?.toNodeId
     : undefined;
