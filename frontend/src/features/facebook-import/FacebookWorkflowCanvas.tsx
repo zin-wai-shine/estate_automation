@@ -4460,7 +4460,7 @@ export const FacebookWorkflowCanvas = forwardRef<
   };
 
   // Add Dynamic Image AI Box connected from Get Images (Enhance Images)
-  const handleAddAIBoxConnectedFromImages = (): string => {
+  const handleAddAIBoxConnectedFromImages = (_sourceId?: string): string => {
     const enhanceBoxes = config.aiBoxes.filter((b) => isEnhanceAIBox(b));
     const newCount = enhanceBoxes.length + 1;
     const newId = `ai-box-${Date.now()}`;
@@ -4480,8 +4480,37 @@ export const FacebookWorkflowCanvas = forwardRef<
     };
 
     const nextBoxes = [...config.aiBoxes, newBox];
-    const nextConns = autoConnectImagePipeline(nextBoxes, config.connections);
-    updateConfig(buildAlignedLayout(nextBoxes, nextConns, { ...config, aiBoxes: nextBoxes, connections: nextConns }));
+    const updatedGetImages = {
+      ...config.getImages,
+      enabled: true,
+      x: config.getImages.x || 300,
+      y: config.getImages.y || 356,
+    };
+
+    let nextConns = [...(config.connections || [])];
+    if (config.trigger.enabled && !nextConns.some((c) => c.fromNodeId === 'trigger' && c.toNodeId === 'get-images')) {
+      nextConns.push({
+        id: 'conn-trigger-images',
+        fromNodeId: 'trigger',
+        toNodeId: 'get-images',
+      });
+    }
+    if (!nextConns.some((c) => c.fromNodeId === 'get-images' && c.toNodeId === newId)) {
+      nextConns.push({
+        id: `conn-images-${newId}`,
+        fromNodeId: 'get-images',
+        toNodeId: newId,
+      });
+    }
+
+    nextConns = autoConnectImagePipeline(nextBoxes, nextConns, config.getContent.enabled, true);
+    const nextConfig = {
+      ...config,
+      getImages: updatedGetImages,
+      aiBoxes: nextBoxes,
+      connections: nextConns,
+    };
+    updateConfig(buildAlignedLayout(nextBoxes, nextConns, nextConfig));
     setSelectedBoxId(newId);
     return newId;
   };
@@ -4513,8 +4542,30 @@ export const FacebookWorkflowCanvas = forwardRef<
     };
 
     const nextBoxes = [...config.aiBoxes, newBox];
-    const nextConns = autoConnectImagePipeline(nextBoxes, config.connections);
-    updateConfig(buildAlignedLayout(nextBoxes, nextConns, { ...config, aiBoxes: nextBoxes, connections: nextConns }));
+    const updatedGetImages = {
+      ...config.getImages,
+      enabled: true,
+      x: config.getImages.x || 300,
+      y: config.getImages.y || 356,
+    };
+
+    let nextConns = [...(config.connections || [])];
+    if (config.trigger.enabled && !nextConns.some((c) => c.fromNodeId === 'trigger' && c.toNodeId === 'get-images')) {
+      nextConns.push({
+        id: 'conn-trigger-images',
+        fromNodeId: 'trigger',
+        toNodeId: 'get-images',
+      });
+    }
+
+    nextConns = autoConnectImagePipeline(nextBoxes, nextConns, config.getContent.enabled, true);
+    const nextConfig = {
+      ...config,
+      getImages: updatedGetImages,
+      aiBoxes: nextBoxes,
+      connections: nextConns,
+    };
+    updateConfig(buildAlignedLayout(nextBoxes, nextConns, nextConfig));
     setSelectedBoxId(newId);
     return newId;
   };
@@ -9707,11 +9758,15 @@ export const FacebookWorkflowCanvas = forwardRef<
                         </button>
                       ))}
 
-                  {/* Get Content (Raw text extraction) */}
-                  {(isTrigger || (!isContent && !connectedTargetIds.has('get-content'))) && (
+                  {/* Image Enhancer */}
+                  {(isImages || isTrigger || isFromEnhance) && (
                     <button
                       type="button"
-                      onClick={() => handleConnectOrCreateGetContent(fromNodeId)}
+                      onClick={() => {
+                        handleAddAIBoxConnectedFromImages(fromNodeId);
+                        setConnectDrawerNode(null);
+                        setActiveModalNode(null);
+                      }}
                       style={{
                         display: 'flex',
                         alignItems: 'center',
@@ -9725,8 +9780,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                         transition: 'all 0.15s ease',
                       }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.borderColor = '#10B981';
-                        e.currentTarget.style.backgroundColor = isDark ? '#162820' : '#F0FDF4';
+                        e.currentTarget.style.borderColor = '#EC4899';
+                        e.currentTarget.style.backgroundColor = isDark ? '#2D1524' : '#FDF2F8';
                       }}
                       onMouseLeave={(e) => {
                         e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
