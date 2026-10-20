@@ -1530,18 +1530,10 @@ const CANVAS_NODE_ACTION_CSS = `
   display: none !important;
 }
 .canvas-node.is-completed::before {
-  content: '' !important;
-  position: absolute !important;
-  inset: -4px !important;
-  border-radius: 20px !important;
-  border: 1.5px solid #10B981 !important;
-  opacity: 0.75 !important;
-  transform: scale(1) !important;
-  animation: none !important;
-  box-shadow: none !important;
+  display: none !important;
 }
 .canvas-node.is-trigger.is-completed::before {
-  border-radius: 40px 19px 19px 40px !important;
+  display: none !important;
 }
 .canvas-node.is-completed {
   filter: none !important;
@@ -1602,6 +1594,9 @@ const NodeActionButton: React.FC<{
 export const NodeExecutionBadge: React.FC<{
   status?: 'idle' | 'running' | 'success' | 'error';
 }> = ({ status }) => {
+  const { actualTheme } = useTheme();
+  const isDark = actualTheme === 'dark';
+
   if (!status || status === 'idle') return null;
 
   if (status === 'running') {
@@ -1666,8 +1661,8 @@ export const NodeExecutionBadge: React.FC<{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.15)',
-          border: '1.5px solid #FFFFFF',
+          boxShadow: isDark ? '0 2px 6px rgba(0, 0, 0, 0.45)' : '0 1px 3px rgba(0, 0, 0, 0.15)',
+          border: isDark ? '2px solid #0D1117' : '2px solid #FFFFFF',
           zIndex: 25,
           pointerEvents: 'none',
         }}
@@ -5669,8 +5664,6 @@ export const FacebookWorkflowCanvas = forwardRef<
 
               const strokeColor = isXHovered
                 ? '#F85149'
-                : isCompleted
-                ? '#10B981'
                 : isRunningFlow
                 ? (isDark ? '#60A5FA' : '#2563EB')
                 : (isDark ? '#4B5563' : '#8B949E');
@@ -5798,8 +5791,6 @@ export const FacebookWorkflowCanvas = forwardRef<
 
               const strokeColor = isXHovered
                 ? '#F85149'
-                : isCompleted
-                ? '#10B981'
                 : isRunningFlow
                 ? (isDark ? '#60A5FA' : '#2563EB')
                 : (isDark ? '#4B5563' : '#94A3B8');
@@ -5947,8 +5938,6 @@ export const FacebookWorkflowCanvas = forwardRef<
 
               const wireStrokeColor = isXHovered
                 ? '#F85149'
-                : isExecDone
-                ? '#10B981'
                 : isExecActive
                 ? (isDark ? '#60A5FA' : '#2563EB')
                 : (isDark ? '#4B5563' : '#94A3B8');
@@ -6211,8 +6200,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                   strokeColor={
                     triggerStatus === 'running'
                       ? '#0284C7'
-                      : triggerStatus === 'success'
-                      ? '#10B981'
                       : activeModalNode?.type === 'trigger'
                       ? PRIMARY_NODE_COLOR
                       : (isDark ? '#30363D' : '#D0D7DE')
@@ -6220,8 +6207,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                   socketDotColor={
                     triggerStatus === 'running'
                       ? '#0284C7'
-                      : triggerStatus === 'success'
-                      ? '#10B981'
                       : activeModalNode?.type === 'trigger'
                       ? PRIMARY_NODE_COLOR
                       : (isDark ? '#8B949E' : '#64748B')
@@ -6285,8 +6270,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                     <span
                       style={{
                         fontSize: '0.6875rem',
-                        color: '#10B981',
-                        fontWeight: 600,
+                        color: 'var(--text-muted)',
+                        fontWeight: 500,
                       }}
                     >
                       ✓ Link Located
@@ -6340,8 +6325,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                   strokeColor={
                     contentStatus === 'running'
                       ? '#0284C7'
-                      : contentStatus === 'success'
-                      ? '#10B981'
                       : activeModalNode?.type === 'get-content'
                       ? PRIMARY_NODE_COLOR
                       : isContentReceptive
@@ -6351,8 +6334,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                   socketDotColor={
                     contentStatus === 'running'
                       ? '#0284C7'
-                      : contentStatus === 'success'
-                      ? '#10B981'
                       : activeModalNode?.type === 'get-content'
                       ? PRIMARY_NODE_COLOR
                       : isContentReceptive
@@ -6387,7 +6368,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 <FiFileText
                   style={{
                     fontSize: '30px',
-                    color: contentStatus === 'success' ? '#10B981' : config.getContent.enabled ? '#0284C7' : '#8B949E',
+                    color: config.getContent.enabled ? '#0284C7' : '#8B949E',
                     position: 'relative',
                     zIndex: 2,
                     pointerEvents: 'none',
@@ -6440,13 +6421,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                     <span
                       style={{
                         fontSize: '0.6875rem',
-                        color:
-                          contentStatus === 'success'
-                            ? '#10B981'
-                            : isContentReceptive
-                            ? RECEPTIVE_COLOR
-                            : 'var(--text-muted)',
-                        fontWeight: contentStatus === 'success' || isContentReceptive ? 600 : 400,
+                        color: isContentReceptive
+                          ? RECEPTIVE_COLOR
+                          : 'var(--text-muted)',
+                        fontWeight: isContentReceptive ? 600 : 400,
                       }}
                     >
                       {contentStatus === 'success'
@@ -6506,8 +6484,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                   strokeColor={
                     imagesStatus === 'running'
                       ? '#0284C7'
-                      : imagesStatus === 'success'
-                      ? '#10B981'
                       : activeModalNode?.type === 'get-images'
                       ? PRIMARY_NODE_COLOR
                       : isImagesReceptive
@@ -6517,8 +6493,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                   socketDotColor={
                     imagesStatus === 'running'
                       ? '#0284C7'
-                      : imagesStatus === 'success'
-                      ? '#10B981'
                       : activeModalNode?.type === 'get-images'
                       ? PRIMARY_NODE_COLOR
                       : isImagesReceptive
@@ -6553,7 +6527,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 <FiImage
                   style={{
                     fontSize: '30px',
-                    color: imagesStatus === 'success' ? '#10B981' : config.getImages.enabled ? '#10B981' : '#8B949E',
+                    color: config.getImages.enabled ? '#059669' : '#8B949E',
                     position: 'relative',
                     zIndex: 2,
                     pointerEvents: 'none',
@@ -6606,13 +6580,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                 <span
                   style={{
                     fontSize: '0.6875rem',
-                    color:
-                      imagesStatus === 'success'
-                        ? '#10B981'
-                        : isImagesReceptive
-                        ? RECEPTIVE_COLOR
-                        : 'var(--text-muted)',
-                    fontWeight: imagesStatus === 'success' || isImagesReceptive ? 600 : 400,
+                    color: isImagesReceptive
+                      ? RECEPTIVE_COLOR
+                      : 'var(--text-muted)',
+                    fontWeight: isImagesReceptive ? 600 : 400,
                   }}
                 >
                   {imagesStatus === 'success'
@@ -6649,8 +6620,6 @@ export const FacebookWorkflowCanvas = forwardRef<
             const strokeColor =
               boxStatus === 'running'
                 ? '#0284C7'
-                : boxStatus === 'success'
-                ? '#10B981'
                 : isSelected
                 ? PRIMARY_NODE_COLOR
                 : isBoxReceptive
@@ -6745,13 +6714,13 @@ export const FacebookWorkflowCanvas = forwardRef<
                   }}
                 >
                   {isWatermark ? (
-                    <FiScissors style={{ fontSize: '28px', color: boxStatus === 'success' ? '#10B981' : isEffectiveEnabled ? '#8B5CF6' : '#8B949E', transition: 'color 0.2s ease' }} />
+                    <FiScissors style={{ fontSize: '28px', color: isEffectiveEnabled ? '#8B5CF6' : '#8B949E', transition: 'color 0.2s ease' }} />
                   ) : isEnhance ? (
-                    <FiImage style={{ fontSize: '28px', color: boxStatus === 'success' ? '#10B981' : isEffectiveEnabled ? '#EC4899' : '#8B949E', transition: 'color 0.2s ease' }} />
+                    <FiImage style={{ fontSize: '28px', color: isEffectiveEnabled ? '#EC4899' : '#8B949E', transition: 'color 0.2s ease' }} />
                   ) : isTextFormatAIBox(box) ? (
-                    <FiFileText style={{ fontSize: '28px', color: boxStatus === 'success' ? '#10B981' : isEffectiveEnabled ? '#6366F1' : '#8B949E', transition: 'color 0.2s ease' }} />
+                    <FiFileText style={{ fontSize: '28px', color: isEffectiveEnabled ? '#6366F1' : '#8B949E', transition: 'color 0.2s ease' }} />
                   ) : (
-                    <FiMessageSquare style={{ fontSize: '28px', color: boxStatus === 'success' ? '#10B981' : isEffectiveEnabled ? '#8B5CF6' : '#8B949E', transition: 'color 0.2s ease' }} />
+                    <FiMessageSquare style={{ fontSize: '28px', color: isEffectiveEnabled ? '#8B5CF6' : '#8B949E', transition: 'color 0.2s ease' }} />
                   )}
                 </div>
                 <NodeExecutionBadge status={boxStatus} />
@@ -6891,8 +6860,6 @@ export const FacebookWorkflowCanvas = forwardRef<
             const cbStrokeColor =
               cbStatus === 'running'
                 ? '#0284C7'
-                : cbStatus === 'success'
-                ? '#10B981'
                 : cbIsSelected
                 ? '#F59E0B'
                 : isCbReceptive
@@ -6919,7 +6886,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   top: `${cb.y}px`,
                   width: `${CIRCLE_SIZE}px`,
                   height: `${CIRCLE_SIZE}px`,
-                  ['--ring' as any]: isCbReceptive ? RECEPTIVE_COLOR : cbStatus === 'success' ? '#10B981' : cbIsSelected ? '#F59E0B' : isDark ? '#30363D' : '#D0D7DE',
+                  ['--ring' as any]: isCbReceptive ? RECEPTIVE_COLOR : cbIsSelected ? '#F59E0B' : isDark ? '#30363D' : '#D0D7DE',
                   ['--receptive-color' as any]: RECEPTIVE_COLOR,
                   zIndex: cbIsSelected ? 30 : isCbReceptive ? 35 : hoveredNodeId === cb.id ? 25 : 15,
                   cursor: isCbReceptive ? 'crosshair' : 'pointer',
@@ -6966,7 +6933,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 {/* Label */}
                 <div style={{ position: 'absolute', top: `${CIRCLE_SIZE + 8}px`, left: '50%', transform: 'translateX(-50%)', whiteSpace: 'nowrap', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', pointerEvents: 'none' }}>
                   <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>{cb.title || 'Combine Box'}</span>
-                  <span style={{ fontSize: '0.625rem', color: cbStatus === 'success' ? '#10B981' : 'var(--text-muted)' }}>
+                  <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
                     {cbStatus === 'success' ? `✓ Merged Output · ${uniqueCbInputs.length} ready` : `Merged Output · ${uniqueCbInputs.length} input${uniqueCbInputs.length !== 1 ? 's' : ''}`}
                   </span>
                 </div>
