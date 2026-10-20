@@ -4600,15 +4600,10 @@ export const FacebookWorkflowCanvas = forwardRef<
     if (b.id === 'get-images') return <FiImage style={{ fontSize: `${size}px`, color: '#10B981' }} />;
     const isWatermark = isWatermarkAIBox(b);
     if (isWatermark) return <FiScissors style={{ fontSize: `${size}px`, color: '#8B5CF6' }} />;
-    const isImageNode = isImageAIBox(b, config.connections);
-    const isGoogle = !isImageNode && (b.provider === 'google_ai' || isImageModel(b.model, b.provider) || (!b.provider && !b.model?.startsWith('runware:')));
-    const isLaoZhang = !isImageNode && b.provider === 'laozhang_ai';
-    const isRunware = isImageNode;
-
-    if (isRunware) return <RunwareIcon size={size} color="#10B981" />;
-    if (isLaoZhang) return <LaoZhangIcon size={size} />;
-    if (isGoogle) return <SiGooglegemini style={{ fontSize: `${size}px`, color: '#58A6FF' }} />;
-    return <OpenAIIcon size={size} color="#3FB950" />;
+    const isEnhance = (isEnhanceAIBox(b) || isImageAIBox(b, config.connections)) && !isWatermark;
+    if (isEnhance) return <FiImage style={{ fontSize: `${size}px`, color: '#EC4899' }} />;
+    if (isTextFormatAIBox(b)) return <FiFileText style={{ fontSize: `${size}px`, color: '#6366F1' }} />;
+    return <FiMessageSquare style={{ fontSize: `${size}px`, color: '#8B5CF6' }} />;
   };
 
   const timeAgo = (timestamp: number): string => {
@@ -6749,16 +6744,12 @@ export const FacebookWorkflowCanvas = forwardRef<
                 >
                   {isWatermark ? (
                     <FiScissors style={{ fontSize: '28px', color: boxStatus === 'success' ? '#10B981' : isEffectiveEnabled ? '#8B5CF6' : '#8B949E', transition: 'color 0.2s ease' }} />
-                  ) : isRunware ? (
-                    <RunwareIcon size={28} color={boxStatus === 'success' ? '#10B981' : isEffectiveEnabled ? '#10B981' : '#8B949E'} />
+                  ) : isEnhance ? (
+                    <FiImage style={{ fontSize: '28px', color: boxStatus === 'success' ? '#10B981' : isEffectiveEnabled ? '#EC4899' : '#8B949E', transition: 'color 0.2s ease' }} />
                   ) : isTextFormatAIBox(box) ? (
                     <FiFileText style={{ fontSize: '28px', color: boxStatus === 'success' ? '#10B981' : isEffectiveEnabled ? '#6366F1' : '#8B949E', transition: 'color 0.2s ease' }} />
-                  ) : isLaoZhang ? (
-                    <LaoZhangIcon size={30} color={boxStatus === 'success' ? '#10B981' : isEffectiveEnabled ? '#2563EB' : '#8B949E'} />
-                  ) : isGoogle ? (
-                    <SiGooglegemini style={{ fontSize: '30px', color: boxStatus === 'success' ? '#10B981' : isEffectiveEnabled ? '#4285F4' : '#8B949E', transition: 'color 0.2s ease' }} />
                   ) : (
-                    <OpenAIIcon size={30} color={boxStatus === 'success' ? '#10B981' : isEffectiveEnabled ? '#10A37F' : '#8B949E'} />
+                    <FiMessageSquare style={{ fontSize: '28px', color: boxStatus === 'success' ? '#10B981' : isEffectiveEnabled ? '#8B5CF6' : '#8B949E', transition: 'color 0.2s ease' }} />
                   )}
                 </div>
                 <NodeExecutionBadge status={boxStatus} />
@@ -7705,17 +7696,15 @@ export const FacebookWorkflowCanvas = forwardRef<
                     {isContent && <FiFileText size={18} color="#3B82F6" />}
                     {isImages && <FiImage size={18} color="#10B981" />}
                     {isCombine && <FiGitMerge size={18} color="#F59E0B" />}
-                    {isAIBox && currentModalAIBox && (
-                      currentModalAIBox.provider === 'google_ai' ? (
-                        <SiGooglegemini size={18} color="#60A5FA" />
-                      ) : currentModalAIBox.provider === 'openai' ? (
-                        <OpenAIIcon size={18} />
-                      ) : currentModalAIBox.provider === 'laozhang_ai' ? (
-                        <LaoZhangIcon size={18} />
-                      ) : (
-                        <RunwareIcon size={18} color="#10B981" />
-                      )
-                    )}
+                    {isAIBox && currentModalAIBox && (() => {
+                      const isWatermark = isWatermarkAIBox(currentModalAIBox);
+                      const isEnhance = (isEnhanceAIBox(currentModalAIBox) || isImageAIBox(currentModalAIBox, config.connections)) && !isWatermark;
+                      const isFormat = isTextFormatAIBox(currentModalAIBox);
+                      if (isWatermark) return <FiScissors size={18} color="#8B5CF6" />;
+                      if (isEnhance) return <FiImage size={18} color="#EC4899" />;
+                      if (isFormat) return <FiFileText size={18} color="#6366F1" />;
+                      return <FiMessageSquare size={18} color="#8B5CF6" />;
+                    })()}
                   </div>
 
                   {/* Title & Subtitle */}
@@ -11397,7 +11386,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                     flexShrink: 0,
                   }}
                 >
-                  <SiGooglegemini size={16} />
+                  <FiMessageSquare size={16} />
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
