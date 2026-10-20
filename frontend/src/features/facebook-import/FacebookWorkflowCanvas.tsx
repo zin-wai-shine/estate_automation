@@ -1651,21 +1651,24 @@ export const NodeExecutionBadge: React.FC<{
       <div
         style={{
           position: 'absolute',
-          top: '-3px',
-          right: '-3px',
+          top: '-5px',
+          right: '-5px',
+          width: '20px',
+          height: '20px',
+          borderRadius: '50%',
+          backgroundColor: isDark ? '#1C2128' : '#FFFFFF',
+          border: isDark ? '1.5px solid #30363D' : '1.5px solid #D0D7DE',
           color: '#10B981',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          filter: isDark
-            ? 'drop-shadow(0 2px 4px rgba(0, 0, 0, 0.9))'
-            : 'drop-shadow(0 1px 2px rgba(0, 0, 0, 0.25))',
+          boxShadow: isDark ? '0 2px 6px rgba(0, 0, 0, 0.4)' : '0 1px 3px rgba(0, 0, 0, 0.12)',
           zIndex: 25,
           pointerEvents: 'none',
         }}
         title="Step completed"
       >
-        <FiCheck style={{ fontSize: '18px', strokeWidth: 3.5 }} />
+        <FiCheck style={{ fontSize: '12px', strokeWidth: 3.2 }} />
       </div>
     );
   }
