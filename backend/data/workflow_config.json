@@ -1,5 +1,5 @@
 {
-  "timestamp": 1792507339203,
+  "timestamp": 1792510523019,
   "workflow_formats": [
     {
       "config": {
@@ -50,51 +50,82 @@
             "toNodeId": "ai-box-1792505356250"
           },
           {
-            "fromNodeId": "ai-box-1792505356250",
-            "id": "conn-ai-box-1792505356250-combine-box-1792505377426",
-            "toNodeId": "combine-box-1792505377426"
-          },
-          {
             "fromNodeId": "get-images",
             "id": "conn-images-ai-box-watermark-1792505639760",
             "toNodeId": "ai-box-watermark-1792505639760"
           },
           {
-            "fromNodeId": "ai-box-watermark-1792505639760",
-            "id": "conn-ai-box-watermark-1792505639760-output",
+            "fromNodeId": "ai-box-1792505356250",
+            "id": "conn-ai-box-1792505356250-combine-box-1792505377426",
             "toNodeId": "combine-box-1792505377426"
+          },
+          {
+            "fromNodeId": "ai-box-watermark-1792505639760",
+            "id": "conn-ai-box-watermark-1792505639760-combine-box-1792505377426",
+            "toNodeId": "combine-box-1792505377426"
+          },
+          {
+            "fromNodeId": "combine-box-1792505377426",
+            "id": "conn-combine-box-1792505377426-dest-platform-facebook-1792507831808",
+            "toNodeId": "dest-platform-facebook-1792507831808"
+          },
+          {
+            "fromNodeId": "dest-platform-facebook-1792507831808",
+            "id": "conn-dest-platform-facebook-1792507831808-dest-facebook-494870343703559-1792507837169-1792507837170",
+            "toNodeId": "dest-facebook-494870343703559-1792507837169"
+          },
+          {
+            "fromNodeId": "dest-platform-facebook-1792507831808",
+            "id": "conn-dest-platform-facebook-1792507831808-dest-facebook-1287202894475973-1792507847856-1792507847856",
+            "toNodeId": "dest-facebook-1287202894475973-1792507847856"
+          },
+          {
+            "fromNodeId": "dest-platform-facebook-1792507831808",
+            "id": "conn-dest-platform-facebook-1792507831808-dest-facebook-1546086342286604-1792507854129-1792507854129",
+            "toNodeId": "dest-facebook-1546086342286604-1792507854129"
           }
         ],
         "destination": {
-          "accountAvatar": "https://scontent.fbkk29-7.fna.fbcdn.net/v/t39.30808-1/768969631_122211508982601953_1996946308477586960_n.jpg?stp=c112.165.1765.1765a_dst-jpg_s200x200_tt6\u0026_nc_cat=101\u0026_nc_map=urlgen_bucketless\u0026ccb=1-7\u0026_nc_sid=f907e8\u0026_nc_ohc=ddNQXpYcKPoQ7kNvwF5seyU\u0026_nc_oc=AdpOIcgx3PHMJUaTtn5qTVw6EJ3QUc7Ss-U7iLVb4pGaAh5n5sJko6V8UZZ1Sb85_yc\u0026_nc_zt=24\u0026_nc_ht=scontent.fbkk29-7.fna\u0026edm=AJdBtusEAAAA\u0026_nc_gid=Q8HOOAB7vmig8vIi34ciwg\u0026_nc_tpa=Q5bMBQI4fvG6GXljJgeLfgJz8pdno_EUzbR6u1pNxOTCH8ZNTYBejfyugp1bQX_yuh0kGy4-2dgl0WNt\u0026oh=00_AQOkBzFe8H_nPO9Hvm6KOZ7rajLgurfCElePmgy_mpR_fQ\u0026oe=6AD8034C",
-          "accountId": "494870343703559",
-          "accountName": "Bolt Haven Realty",
-          "enabled": false,
-          "id": "dest-facebook-494870343703559-1792502516409",
+          "enabled": true,
+          "id": "dest-platform-facebook-1792507831808",
           "includeContent": true,
-          "includeFirstComment": false,
-          "includeHashtags": true,
           "includeImages": true,
           "platform": "facebook",
           "postToSocialMedia": true,
           "publishDirectly": true,
-          "selectedPageId": "494870343703559",
           "selectedPageIds": [
-            "494870343703559"
+            "1287202894475973"
           ],
           "storeInDatabase": false,
           "targetMode": "social_media",
-          "title": "Bolt Haven Realty",
+          "title": "Facebook",
           "x": 960,
-          "y": 200
+          "y": 80
         },
         "destinations": [
+          {
+            "enabled": true,
+            "id": "dest-platform-facebook-1792507831808",
+            "includeContent": true,
+            "includeImages": true,
+            "platform": "facebook",
+            "postToSocialMedia": true,
+            "publishDirectly": true,
+            "selectedPageIds": [
+              "1287202894475973"
+            ],
+            "storeInDatabase": false,
+            "targetMode": "social_media",
+            "title": "Facebook",
+            "x": 960,
+            "y": 80
+          },
           {
             "accountAvatar": "https://scontent.fbkk29-7.fna.fbcdn.net/v/t39.30808-1/768969631_122211508982601953_1996946308477586960_n.jpg?stp=c112.165.1765.1765a_dst-jpg_s200x200_tt6\u0026_nc_cat=101\u0026_nc_map=urlgen_bucketless\u0026ccb=1-7\u0026_nc_sid=f907e8\u0026_nc_ohc=ddNQXpYcKPoQ7kNvwF5seyU\u0026_nc_oc=AdpOIcgx3PHMJUaTtn5qTVw6EJ3QUc7Ss-U7iLVb4pGaAh5n5sJko6V8UZZ1Sb85_yc\u0026_nc_zt=24\u0026_nc_ht=scontent.fbkk29-7.fna\u0026edm=AJdBtusEAAAA\u0026_nc_gid=Q8HOOAB7vmig8vIi34ciwg\u0026_nc_tpa=Q5bMBQI4fvG6GXljJgeLfgJz8pdno_EUzbR6u1pNxOTCH8ZNTYBejfyugp1bQX_yuh0kGy4-2dgl0WNt\u0026oh=00_AQOkBzFe8H_nPO9Hvm6KOZ7rajLgurfCElePmgy_mpR_fQ\u0026oe=6AD8034C",
             "accountId": "494870343703559",
             "accountName": "Bolt Haven Realty",
-            "enabled": false,
-            "id": "dest-facebook-494870343703559-1792502516409",
+            "enabled": true,
+            "id": "dest-facebook-494870343703559-1792507837169",
             "includeContent": true,
             "includeFirstComment": false,
             "includeHashtags": true,
@@ -109,6 +140,202 @@
             "storeInDatabase": false,
             "targetMode": "social_media",
             "title": "Bolt Haven Realty",
+            "x": 1180,
+            "y": -50
+          },
+          {
+            "accountAvatar": "https://scontent.fbkk29-4.fna.fbcdn.net/v/t39.30808-1/822639411_122120158017433356_8965577031838894759_n.jpg?stp=dst-jpg_s200x200_tt6\u0026_nc_cat=107\u0026_nc_map=urlgen_bucketless\u0026ccb=1-7\u0026_nc_sid=f907e8\u0026_nc_ohc=9mL1pV6NSzwQ7kNvwGqs_iz\u0026_nc_oc=AdrpMpoJhzIeTvfcUI68DUqIQ_8W-ZmshIsgb4q1MTQ4CJXqwZHhPJuK387KeDe9YU0\u0026_nc_zt=24\u0026_nc_ht=scontent.fbkk29-4.fna\u0026edm=AJdBtusEAAAA\u0026_nc_gid=0jnL_tvMN6YymG_sVWKTTQ\u0026_nc_tpa=Q5bMBQLiTTYCdq73x6cPztNAFW8SBP5UBEDdvY6ZKxos471-5vwupJGan2PDMzXPT58X2xhC8PWUw1XC\u0026oh=00_AQOU3VGBQCBmIwLcarHenHLYwO2Zzno_i0XQVcFk7xTkhw\u0026oe=6ADAFCC8",
+            "accountId": "1287202894475973",
+            "accountName": "Dot BKK Living",
+            "enabled": true,
+            "id": "dest-facebook-1287202894475973-1792507847856",
+            "includeContent": true,
+            "includeFirstComment": false,
+            "includeHashtags": true,
+            "includeImages": true,
+            "platform": "facebook",
+            "postToSocialMedia": true,
+            "publishDirectly": true,
+            "selectedPageId": "1287202894475973",
+            "selectedPageIds": [
+              "1287202894475973"
+            ],
+            "storeInDatabase": false,
+            "targetMode": "social_media",
+            "title": "Dot BKK Living",
+            "x": 1180,
+            "y": 80
+          },
+          {
+            "accountAvatar": "https://scontent.fbkk29-9.fna.fbcdn.net/v/t39.30808-1/825353234_1595802678905210_8033401886375480040_n.jpg?stp=dst-jpg_s200x200_tt6\u0026_nc_cat=111\u0026_nc_map=urlgen_bucketless\u0026ccb=1-7\u0026_nc_sid=f907e8\u0026_nc_ohc=4wEtItnefREQ7kNvwGDU8dq\u0026_nc_oc=AdqDjsSXKnI41w1oCbxPOyfkMAlVPv3oLMIu9BT1TEHOhmXm_3Fefv51QI9a5huHwII\u0026_nc_zt=24\u0026_nc_ht=scontent.fbkk29-9.fna\u0026edm=AJdBtusEAAAA\u0026_nc_gid=ytR5E7OZuiOTSkAgSlZxew\u0026_nc_tpa=Q5bMBQJM5qjcbR2npD4nr761jCwvWtr922DPszN_JWiW7U2D29H322mxWc9nCDrJpm_ZKEeRFEzGE6zx\u0026oh=00_AQPHtHVKTewDlmFfnE0cMazsUle3emb_NH2FZoklJaWNJw\u0026oe=6ADB240A",
+            "accountId": "1546086342286604",
+            "accountName": "Page 1546086342286604",
+            "enabled": true,
+            "id": "dest-facebook-1546086342286604-1792507854129",
+            "includeContent": true,
+            "includeFirstComment": false,
+            "includeHashtags": true,
+            "includeImages": true,
+            "platform": "facebook",
+            "postToSocialMedia": true,
+            "publishDirectly": true,
+            "selectedPageId": "1546086342286604",
+            "selectedPageIds": [
+              "1546086342286604"
+            ],
+            "storeInDatabase": false,
+            "targetMode": "social_media",
+            "title": "Page 1546086342286604",
+            "x": 1180,
+            "y": 210
+          }
+        ],
+        "getContent": {
+          "cleanThai": true,
+          "enabled": true,
+          "extractContacts": true,
+          "extractPrice": true,
+          "extractSpecs": true,
+          "x": 300,
+          "y": 80
+        },
+        "getImages": {
+          "downloadHD": true,
+          "enabled": true,
+          "preserveOrder": true,
+          "watermark": false,
+          "x": 300,
+          "y": 320
+        },
+        "outputNode": {
+          "enabled": false,
+          "id": "output",
+          "title": "Final Content \u0026 Images",
+          "x": 520,
+          "y": 200
+        },
+        "panOffset": {
+          "x": 133,
+          "y": 310
+        },
+        "trigger": {
+          "autoClassifyProperty": true,
+          "autoImport": true,
+          "cleanPromotionalText": true,
+          "enabled": true,
+          "extractAlbums": true,
+          "extractVideoClips": true,
+          "monitoredPageId": "fb-page-living-bkk",
+          "monitoredPageName": "Bangkok Real Estate \u0026 Condo Exchange",
+          "sourceMode": "paste",
+          "syncIntervalMinutes": 5,
+          "x": 100,
+          "y": 200
+        },
+        "zoom": 0.88
+      },
+      "createdAt": 1792501906367,
+      "description": "Custom Facebook import extraction with dynamic AI prompt generator",
+      "id": "format-1792501906367",
+      "name": "Custom Workflow #1",
+      "updatedAt": 1792509512593
+    },
+    {
+      "config": {
+        "aiBoxes": [
+          {
+            "customPrompt": "",
+            "enabled": true,
+            "id": "ai-box-1792509870904",
+            "model": "gpt-4o-mini",
+            "processType": "text_ai",
+            "provider": "openai",
+            "templateId": "",
+            "templateText": "",
+            "title": "Gemini 2.5 Flash",
+            "x": 520,
+            "y": 80
+          },
+          {
+            "cropFormatId": "format-ig-portrait",
+            "customPrompt": "",
+            "enabled": true,
+            "id": "ai-box-watermark-1792509885458",
+            "model": "watermark",
+            "processType": "watermark",
+            "provider": "watermark",
+            "subtitle": "1080×1350 (4:5)",
+            "templateId": "format-ig-portrait",
+            "templateText": "Instagram Portrait (4:5)",
+            "title": "Format: Instagram Portrait (4:5)",
+            "watermarkPresetId": "format-ig-portrait",
+            "x": 520,
+            "y": 320
+          }
+        ],
+        "combineBoxes": [
+          {
+            "enabled": true,
+            "id": "combine-box-1792509894271",
+            "title": "Combine Box",
+            "x": 740,
+            "y": 200
+          }
+        ],
+        "connections": [
+          {
+            "fromNodeId": "get-content",
+            "id": "conn-get-content-ai-box-1792509870904",
+            "toNodeId": "ai-box-1792509870904"
+          },
+          {
+            "fromNodeId": "get-images",
+            "id": "conn-images-ai-box-watermark-1792509885458",
+            "toNodeId": "ai-box-watermark-1792509885458"
+          },
+          {
+            "fromNodeId": "ai-box-watermark-1792509885458",
+            "id": "conn-ai-box-watermark-1792509885458-combine-box-1792509894271",
+            "toNodeId": "combine-box-1792509894271"
+          },
+          {
+            "fromNodeId": "ai-box-1792509870904",
+            "id": "conn-1792509896625-lej1",
+            "toNodeId": "combine-box-1792509894271"
+          }
+        ],
+        "destination": {
+          "enabled": false,
+          "id": "dest-platform-facebook-1792509918734",
+          "includeContent": true,
+          "includeImages": true,
+          "platform": "facebook",
+          "postToSocialMedia": true,
+          "publishDirectly": true,
+          "selectedPageIds": [
+            "1287202894475973"
+          ],
+          "storeInDatabase": false,
+          "targetMode": "social_media",
+          "title": "Facebook",
+          "x": 960,
+          "y": 200
+        },
+        "destinations": [
+          {
+            "enabled": false,
+            "id": "dest-platform-facebook-1792509918734",
+            "includeContent": true,
+            "includeImages": true,
+            "platform": "facebook",
+            "postToSocialMedia": true,
+            "publishDirectly": true,
+            "selectedPageIds": [
+              "1287202894475973"
+            ],
+            "storeInDatabase": false,
+            "targetMode": "social_media",
+            "title": "Facebook",
             "x": 960,
             "y": 200
           }
@@ -138,8 +365,8 @@
           "y": 200
         },
         "panOffset": {
-          "x": 327,
-          "y": 253
+          "x": 318,
+          "y": 248
         },
         "trigger": {
           "autoClassifyProperty": true,
@@ -155,13 +382,13 @@
           "x": 100,
           "y": 200
         },
-        "zoom": 0.88
+        "zoom": 0.9
       },
-      "createdAt": 1792501906367,
+      "createdAt": 1792509841171,
       "description": "Custom Facebook import extraction with dynamic AI prompt generator",
-      "id": "format-1792501906367",
-      "name": "Custom Workflow #1",
-      "updatedAt": 1792507339202
+      "id": "format-1792509841171",
+      "name": "Custom Workflow #2",
+      "updatedAt": 1792510523018
     }
   ]
 }

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
@@ -52,9 +52,13 @@ export const CreateWorkflowView: React.FC = () => {
   const { actualTheme } = useTheme();
   const isDark = actualTheme === 'dark';
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const canvasRef = useRef<FacebookWorkflowCanvasRef>(null);
   const [formats, setFormats] = useState<WorkflowFormat[]>(() => getSavedWorkflowFormats());
-  const [activeFormatId, setActiveId] = useState<string>(() => getActiveWorkflowFormatId());
+  const [activeFormatId, setActiveId] = useState<string>(() => {
+    const sp = new URLSearchParams(window.location.search);
+    return sp.get('id') || sp.get('format') || getActiveWorkflowFormatId();
+  });
   const [headerTitleEl, setHeaderTitleEl] = useState<HTMLElement | null>(null);
   const [headerCenterEl, setHeaderCenterEl] = useState<HTMLElement | null>(null);
   const [headerActionEl, setHeaderActionEl] = useState<HTMLElement | null>(null);
@@ -72,8 +76,11 @@ export const CreateWorkflowView: React.FC = () => {
           setFormats(data.workflow_formats);
           localStorage.setItem('estate_saved_workflow_formats_v2', JSON.stringify(data.workflow_formats));
           setEditingFormat((prev) => {
-            if (!prev) return data.workflow_formats[0];
-            return data.workflow_formats.find((f: WorkflowFormat) => f.id === prev.id) || data.workflow_formats[0];
+            const sp = new URLSearchParams(window.location.search);
+            const urlId = sp.get('id') || sp.get('format');
+            const targetId = urlId || prev?.id;
+            const found = data.workflow_formats.find((f: WorkflowFormat) => f.id === targetId);
+            return found || data.workflow_formats[0];
           });
         }
       })
@@ -84,7 +91,7 @@ export const CreateWorkflowView: React.FC = () => {
   const [isCanvasOpen, setIsCanvasOpen] = useState<boolean>(() => {
     try {
       const sp = new URLSearchParams(window.location.search);
-      if (sp.get('canvas') === 'true' || sp.get('format')) return true;
+      if (sp.get('id') || sp.get('format') || sp.get('canvas') === 'true') return true;
       return localStorage.getItem('ea_workflow_canvas_open') === 'true';
     } catch {
       return false;
@@ -92,11 +99,27 @@ export const CreateWorkflowView: React.FC = () => {
   });
   const [editingFormat, setEditingFormat] = useState<WorkflowFormat | null>(() => {
     const list = getSavedWorkflowFormats();
-    const id = getActiveWorkflowFormatId();
+    const sp = new URLSearchParams(window.location.search);
+    const urlId = sp.get('id') || sp.get('format');
+    const id = urlId || getActiveWorkflowFormatId();
     return list.find((f) => f.id === id) || list[0] || null;
   });
-  const [modalFormatName, setModalFormatName] = useState<string>('');
-  const [modalFormatDesc, setModalFormatDesc] = useState<string>('');
+  const [modalFormatName, setModalFormatName] = useState<string>(() => {
+    const list = getSavedWorkflowFormats();
+    const sp = new URLSearchParams(window.location.search);
+    const urlId = sp.get('id') || sp.get('format');
+    const id = urlId || getActiveWorkflowFormatId();
+    const found = list.find((f) => f.id === id) || list[0];
+    return found ? found.name : '';
+  });
+  const [modalFormatDesc, setModalFormatDesc] = useState<string>(() => {
+    const list = getSavedWorkflowFormats();
+    const sp = new URLSearchParams(window.location.search);
+    const urlId = sp.get('id') || sp.get('format');
+    const id = urlId || getActiveWorkflowFormatId();
+    const found = list.find((f) => f.id === id) || list[0];
+    return found ? found.description || '' : '';
+  });
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   // Auto Save state (default: true)
@@ -189,6 +212,22 @@ export const CreateWorkflowView: React.FC = () => {
     };
   }, [isRunningWorkflow]);
 
+  // Synchronize when URL searchParams change
+  useEffect(() => {
+    const urlId = searchParams.get('id') || searchParams.get('format');
+    if (urlId) {
+      const found = formats.find((f) => f.id === urlId);
+      if (found) {
+        setEditingFormat(found);
+        setModalFormatName(found.name);
+        setModalFormatDesc(found.description || '');
+        setIsCanvasOpen(true);
+        setActiveWorkflowFormatId(found.id);
+        window.dispatchEvent(new CustomEvent('ea_set_canvas_mode', { detail: { active: true } }));
+      }
+    }
+  }, [searchParams, formats]);
+
   // Open Canvas as full page for an existing format
   const handleOpenCanvas = (format: WorkflowFormat) => {
     setEditingFormat(format);
@@ -196,6 +235,8 @@ export const CreateWorkflowView: React.FC = () => {
     setModalFormatDesc(format.description || '');
     setUndoStack([]);
     setIsCanvasOpen(true);
+    setActiveWorkflowFormatId(format.id);
+    navigate(`/create-workflow?id=${encodeURIComponent(format.id)}`, { replace: false });
     try {
       localStorage.setItem('ea_workflow_canvas_open', 'true');
     } catch {}
@@ -205,6 +246,7 @@ export const CreateWorkflowView: React.FC = () => {
   // Close Canvas Page and return to list
   const handleCloseCanvas = () => {
     setIsCanvasOpen(false);
+    navigate('/create-workflow', { replace: false });
     try {
       localStorage.removeItem('ea_workflow_canvas_open');
     } catch {}
