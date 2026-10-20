@@ -99,7 +99,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
                 border: `1.5px solid ${isSelected ? 'var(--accent-primary, #3B82F6)' : 'var(--border-color)'}`,
                 backgroundColor: isSelected
                   ? (isDark ? 'rgba(59, 130, 246, 0.12)' : 'rgba(59, 130, 246, 0.05)')
-                  : (isDark ? 'rgba(255, 255, 255, 0.02)' : 'var(--bg-main)'),
+                  : (isDark ? 'var(--bg-surface)' : 'var(--bg-main)'),
                 cursor: 'pointer',
                 transition: 'all 0.15s ease',
                 gap: '12px',
@@ -107,13 +107,13 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
               onMouseEnter={(e) => {
                 if (!isSelected) {
                   e.currentTarget.style.borderColor = 'var(--accent-primary, #3B82F6)';
-                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.04)' : 'var(--bg-surface)';
+                  e.currentTarget.style.backgroundColor = isDark ? 'var(--bg-surface-hover)' : 'var(--bg-surface)';
                 }
               }}
               onMouseLeave={(e) => {
                 if (!isSelected) {
                   e.currentTarget.style.borderColor = 'var(--border-color)';
-                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.02)' : 'var(--bg-main)';
+                  e.currentTarget.style.backgroundColor = isDark ? 'var(--bg-surface)' : 'var(--bg-main)';
                 }
               }}
             >
@@ -215,7 +215,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
           gap: '8px',
           padding: '6px 10px',
           borderRadius: '6px',
-          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'var(--bg-main)',
+          backgroundColor: isDark ? 'var(--bg-surface)' : 'var(--bg-main)',
           border: '1px solid var(--border-color)',
         }}
       >
