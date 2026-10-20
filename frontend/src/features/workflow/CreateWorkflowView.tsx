@@ -598,8 +598,8 @@ export const CreateWorkflowView: React.FC = () => {
         setWatermarkedPhotos((prev) => ({ ...prev, ...localWatermarkedMap }));
       } else {
         let copyText = '';
-        const aiProvider = box.provider === 'openai' || box.provider === 'laozhang_ai' ? 'google_ai' : (box.provider || 'google_ai');
-        const aiModel = box.provider === 'openai' || box.provider === 'laozhang_ai' ? 'gemini-flash-lite-latest' : (box.model || 'gemini-flash-lite-latest');
+        const aiProvider = box.provider || (box.model?.startsWith('gpt-') ? 'openai' : 'google_ai');
+        const aiModel = box.model || (aiProvider === 'openai' ? 'gpt-4o' : 'gemini-2.5-flash');
         const aiStart = Date.now();
         try {
           const aiResp = await fetch('http://localhost:8085/api/facebook-import/generate-ai', {
