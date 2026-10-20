@@ -8460,32 +8460,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                       />
                     </div>
 
-                    {/* Prompt Template Instructions (Editable!) */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                      <label style={{ display: 'block', fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
-                        Prompt Template Instructions
-                      </label>
-                      <textarea
-                        value={currentModalAIBox.templateText || ''}
-                        onChange={(e) => handleUpdateAIBox(currentModalAIBox.id, { templateText: e.target.value })}
-                        rows={6}
-                        placeholder="Enter prompt instructions for this AI process..."
-                        style={{
-                          width: '100%',
-                          backgroundColor: isDark ? '#0D1117' : '#F8FAFC',
-                          border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                          borderRadius: '0.375rem',
-                          padding: '0.625rem',
-                          color: 'var(--text-primary)',
-                          fontSize: '0.75rem',
-                          lineHeight: 1.5,
-                          outline: 'none',
-                          fontFamily: `'SF Mono', 'Fira Code', monospace`,
-                          resize: 'vertical',
-                          boxSizing: 'border-box',
-                        }}
-                      />
-                    </div>
+
 
                     {/* Generated Output Preview Box (if available) */}
                     {(() => {
