@@ -8267,17 +8267,17 @@ export const FacebookWorkflowCanvas = forwardRef<
                               <div
                                 style={{
                                   display: 'grid',
-                                  gridTemplateColumns: 'repeat(4, 1fr)',
-                                  gap: '4px',
-                                  maxHeight: '180px',
+                                  gridTemplateColumns: 'repeat(3, 1fr)',
+                                  gap: '6px',
+                                  maxHeight: '220px',
                                   overflowY: 'auto',
-                                  padding: '4px',
+                                  padding: '6px',
                                   borderRadius: '6px',
                                   backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
                                   border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
                                 }}
                               >
-                                {images.map((img) => {
+                                {images.map((img, idx) => {
                                   const url =
                                     watermarkedPhotos?.[img.index] ||
                                     enhancedPhotos?.[img.index] ||
@@ -8286,34 +8286,41 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   return (
                                     <div
                                       key={`combine-img-${img.index}`}
+                                      onClick={() => handleOpenLightbox(idx)}
                                       style={{
                                         position: 'relative',
-                                        aspectRatio: '1/1',
-                                        borderRadius: '4px',
+                                        width: '100%',
+                                        paddingTop: '100%',
+                                        borderRadius: '6px',
                                         overflow: 'hidden',
                                         backgroundColor: '#000000',
-                                        border: '1px solid var(--border-color)',
+                                        border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                        cursor: 'pointer',
+                                        transition: 'transform 0.15s ease',
                                       }}
+                                      title={`Click to view Photo #${idx + 1} full size`}
                                     >
-                                      <img
-                                        src={url}
-                                        alt={`Merged #${img.index + 1}`}
-                                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                                      />
-                                      <div
-                                        style={{
-                                          position: 'absolute',
-                                          bottom: '1px',
-                                          left: '1px',
-                                          fontSize: '0.5rem',
-                                          fontWeight: 600,
-                                          padding: '1px 3px',
-                                          borderRadius: '2px',
-                                          backgroundColor: 'rgba(0,0,0,0.7)',
-                                          color: '#FFFFFF',
-                                        }}
-                                      >
-                                        #{img.index + 1}
+                                      <div style={{ position: 'absolute', inset: 0 }}>
+                                        <img
+                                          src={url}
+                                          alt={`Merged #${img.index + 1}`}
+                                          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                                        />
+                                        <div
+                                          style={{
+                                            position: 'absolute',
+                                            bottom: '2px',
+                                            left: '2px',
+                                            fontSize: '0.5rem',
+                                            fontWeight: 700,
+                                            padding: '1px 4px',
+                                            borderRadius: '2px',
+                                            backgroundColor: 'rgba(0,0,0,0.7)',
+                                            color: '#FFFFFF',
+                                          }}
+                                        >
+                                          #{idx + 1}
+                                        </div>
                                       </div>
                                     </div>
                                   );
@@ -8727,6 +8734,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   images={images}
                   watermarkedPhotos={watermarkedPhotos}
                   enhancedPhotos={enhancedPhotos}
+                  onOpenLightbox={handleOpenLightbox}
                 />
               </div>
 

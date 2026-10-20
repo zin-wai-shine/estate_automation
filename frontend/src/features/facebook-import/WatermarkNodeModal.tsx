@@ -1,11 +1,12 @@
 import React, { useState, useMemo } from 'react';
-import { FiEdit2 } from 'react-icons/fi';
+import { FiEdit2, FiMaximize2, FiCheck } from 'react-icons/fi';
 import {
   type CropStudioFormat,
   getSavedCropFormats,
 } from '../watermark/cropFormats';
 import type { DynamicAIBoxConfig } from './FacebookWorkflowCanvas';
 import { Select, type SelectOption } from '../../components/ui/Select';
+import { PhotoLightboxModal } from './PhotoLightboxModal';
 
 interface WatermarkNodeModalProps {
   box: DynamicAIBoxConfig;
@@ -24,6 +25,7 @@ interface WatermarkNodeModalProps {
   }>;
   watermarkedPhotos?: Record<number, string>;
   enhancedPhotos?: Record<number, string>;
+  onOpenLightbox?: (index: number) => void;
 }
 
 export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
@@ -33,6 +35,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
   images,
   watermarkedPhotos,
   enhancedPhotos,
+  onOpenLightbox,
 }) => {
   const savedFormats = useMemo(() => getSavedCropFormats(), []);
 
@@ -47,6 +50,8 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
   });
 
   const [nodeTitle, setNodeTitle] = useState<string>(box.title || 'Photo Format');
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
 
   const formatOptions = useMemo<SelectOption[]>(() => {
     return savedFormats.map((f) => ({
@@ -228,77 +233,170 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
                 gap: '4px',
               }}
             >
-              ✓ {images.length} Ready · {currentFormat?.aspect || '1:1'} ({currentFormat?.targetWidth || 1200}×{currentFormat?.targetHeight || 1200})
+              ✓ {images.length} Ready · {currentFormat?.aspect || '1:1'}
             </span>
           </div>
+
           <div
             style={{
               display: 'grid',
               gridTemplateColumns: 'repeat(3, 1fr)',
-              gap: '6px',
-              maxHeight: '260px',
+              gap: '8px',
+              maxHeight: '340px',
               overflowY: 'auto',
               padding: '6px',
               borderRadius: '8px',
-              border: '1px solid var(--border-color)',
-              backgroundColor: isDark ? 'var(--bg-surface)' : '#F8FAFC',
+              border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+              backgroundColor: isDark ? '#0D1117' : '#F8FAFC',
             }}
           >
-            {images.map((img) => {
+            {images.map((img, idx) => {
               const url =
                 watermarkedPhotos?.[img.index] ||
                 enhancedPhotos?.[img.index] ||
                 img.stored_url ||
                 img.source_url;
+              const isSelected = selectedPhotoIndex === idx;
+
               return (
                 <div
                   key={`crop-preview-${img.index}`}
+                  onClick={() => {
+                    setSelectedPhotoIndex(idx);
+                    if (onOpenLightbox) {
+                      onOpenLightbox(idx);
+                    } else {
+                      setLightboxIndex(idx);
+                    }
+                  }}
                   style={{
                     position: 'relative',
-                    aspectRatio:
+                    width: '100%',
+                    paddingTop:
                       currentFormat?.aspect === '16:9'
-                        ? '16/9'
+                        ? '56.25%'
                         : currentFormat?.aspect === '4:5'
-                        ? '4/5'
+                        ? '125%'
                         : currentFormat?.aspect === '9:16'
-                        ? '9/16'
-                        : '1/1',
+                        ? '177.7%'
+                        : '100%',
                     borderRadius: '6px',
                     overflow: 'hidden',
-                    border: '1px solid var(--border-color)',
-                    backgroundColor: '#000000',
+                    border: isSelected
+                      ? '2px solid #3B82F6'
+                      : isDark
+                      ? '1px solid #30363D'
+                      : '1px solid #CBD5E1',
+                    backgroundColor: isDark ? '#161B22' : '#E2E8F0',
+                    cursor: 'pointer',
+                    boxShadow: isSelected ? '0 0 10px rgba(59, 130, 246, 0.4)' : 'none',
+                    transition: 'all 0.15s ease',
                   }}
+                  title={`Click to view Photo #${idx + 1} full size`}
                 >
-                  <img
-                    src={url}
-                    alt={`Photo #${img.index + 1}`}
-                    style={{
-                      width: '100%',
-                      height: '100%',
-                      objectFit: 'cover',
-                      display: 'block',
-                    }}
-                  />
                   <div
                     style={{
                       position: 'absolute',
-                      bottom: '2px',
-                      left: '2px',
-                      fontSize: '0.5625rem',
-                      fontWeight: 600,
-                      padding: '1px 4px',
-                      borderRadius: '3px',
-                      backgroundColor: 'rgba(0,0,0,0.7)',
-                      color: '#FFFFFF',
+                      inset: 0,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
                     }}
                   >
-                    #{img.index + 1}
+                    <img
+                      src={url}
+                      alt={`Photo #${img.index + 1}`}
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        objectFit: 'cover',
+                        display: 'block',
+                      }}
+                    />
+                    {/* Hover Overlay with Maximize Icon */}
+                    <div
+                      style={{
+                        position: 'absolute',
+                        inset: 0,
+                        backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                        opacity: 0,
+                        transition: 'opacity 0.15s ease',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: '#FFFFFF',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.opacity = '1';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.opacity = '0';
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: '26px',
+                          height: '26px',
+                          borderRadius: '50%',
+                          backgroundColor: 'rgba(0, 0, 0, 0.65)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        <FiMaximize2 size={13} />
+                      </div>
+                    </div>
+
+                    {/* Photo Number Badge */}
+                    <div
+                      style={{
+                        position: 'absolute',
+                        bottom: '3px',
+                        left: '3px',
+                        fontSize: '0.5625rem',
+                        fontWeight: 700,
+                        padding: '1px 5px',
+                        borderRadius: '3px',
+                        backgroundColor: 'rgba(0,0,0,0.75)',
+                        color: '#FFFFFF',
+                        pointerEvents: 'none',
+                      }}
+                    >
+                      #{idx + 1}
+                    </div>
                   </div>
                 </div>
               );
             })}
           </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 2px' }}>
+            <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+              Click any photo to select & view full size
+            </span>
+          </div>
         </div>
+      )}
+
+      {/* Fullscreen Photo Lightbox Modal */}
+      {images && images.length > 0 && lightboxIndex !== null && (
+        <PhotoLightboxModal
+          isOpen={lightboxIndex !== null}
+          onClose={() => setLightboxIndex(null)}
+          initialIndex={lightboxIndex}
+          photos={images.map((img) => ({
+            index: img.index,
+            url:
+              watermarkedPhotos?.[img.index] ||
+              enhancedPhotos?.[img.index] ||
+              img.stored_url ||
+              img.source_url,
+            name: `Photo #${img.index + 1}`,
+          }))}
+          title={nodeTitle || 'Photo Format & Crop'}
+          formatSubtitle={`${currentFormat?.name || 'Crop Preset'} · ${currentFormat?.targetWidth || 1200}×${currentFormat?.targetHeight || 1200} (${currentFormat?.aspect || '1:1'})`}
+        />
       )}
     </div>
   );
