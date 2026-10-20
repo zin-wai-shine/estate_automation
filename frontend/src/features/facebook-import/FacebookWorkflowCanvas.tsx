@@ -954,7 +954,7 @@ export const buildAlignedLayout = (
   // Compact Clean Tree Metrics
   const NODE_V_STEP = 120;      // Compact vertical step - gives clean ~16px gap between label and card
   const BRANCH_GAP = 36;        // Balanced separation gap between Content and Image branches
-  const TOP_MARGIN = 80;
+  const TOP_MARGIN = 140;
 
   // Horizontal column grid
   const TRIGGER_X = 100;
@@ -1051,7 +1051,7 @@ export const buildAlignedLayout = (
   const contentSpan = (textSlots - 1) * NODE_V_STEP;
   const naturalImageTopY = contentTopY + contentSpan + NODE_V_STEP + BRANCH_GAP;
   // Ensure the image branch maintains clean separation and never collides with upper text format presets
-  const imageTopY = Math.max(320, naturalImageTopY);
+  const imageTopY = Math.max(340, naturalImageTopY);
   const imageCenterY =
     imageSlots <= 1
       ? imageTopY
@@ -1112,7 +1112,9 @@ export const buildAlignedLayout = (
 
   // Hierarchical Destination Layout:
   // Primary destinations (connected from Combine Box / Output or root) sit at Column 5 (1180).
-  // Child destinations (connected from a platform hub) fan out into Column 6 (1400).
+  // -------------------------------------------------------------
+  // Planar Non-Crossing Hierarchical Destination & Combine Layout
+  // -------------------------------------------------------------
   const rawDests = getNormalizedDestinations(base);
   const isChildDest = (destId: string) =>
     conns.some((c) => rawDests.some((p) => p.id === c.fromNodeId) && c.toNodeId === destId);
@@ -1120,13 +1122,41 @@ export const buildAlignedLayout = (
   const primaryDests = rawDests.filter((d) => !isChildDest(d.id));
   const childDests = rawDests.filter((d) => isChildDest(d.id));
 
-  const totalPrimary = primaryDests.length;
-  const PRIMARY_STEP = 150;
-  const destCoords: Record<string, { x: number; y: number }> = {};
+  // Determine upstream affinity for each destination or combine box to guarantee 0 crossing wires:
+  // - Pure Text / Content Branch inputs -> Upper lane (Affinity ~50)
+  // - Hybrid Text + Image inputs -> Bottom Image Lane (Affinity ~300)
+  // - Pure Image inputs -> Lowest Image Lane (Affinity ~400)
+  const getBranchAffinity = (destId: string): number => {
+    // Check if an incoming combine box feeds this destination
+    const incomingCb = conns.find(
+      (c) => c.toNodeId === destId && (base.combineBoxes || []).some((b) => b.id === c.fromNodeId)
+    );
+    const targetId = incomingCb ? incomingCb.fromNodeId : destId;
 
-  // Helper to compute natural vertical center of inputs feeding a node
-  const getNodeInputCenterY = (nodeId: string): number => {
-    const inConns = conns.filter((c) => c.toNodeId === nodeId);
+    const inConns = conns.filter((c) => c.toNodeId === targetId);
+    if (inConns.length === 0) return 200;
+
+    const hasImageInput = inConns.some((c) => {
+      const fromId = c.fromNodeId;
+      if (fromId === 'get-images') return true;
+      const b = boxes.find((box) => box.id === fromId);
+      if (b && (isWatermarkAIBox(b) || isEnhanceAIBox(b, conns) || fromImages(b.id))) return true;
+      return false;
+    });
+
+    const hasTextInput = inConns.some((c) => {
+      const fromId = c.fromNodeId;
+      if (fromId === 'get-content') return true;
+      const b = boxes.find((box) => box.id === fromId);
+      if (b && (fromContent(b.id) || !fromImages(b.id))) return true;
+      return false;
+    });
+
+    if (hasTextInput && !hasImageInput) return 50;  // Pure text -> Top lane!
+    if (hasTextInput && hasImageInput) return 340; // Hybrid (Text + Images) -> Bottom lane!
+    if (hasImageInput && !hasTextInput) return 380; // Pure images -> Bottom lane!
+
+    // Fallback: average Y of direct inputs
     const inYs = inConns
       .map((c) => {
         if (yById[c.fromNodeId] !== undefined) return yById[c.fromNodeId];
@@ -1136,63 +1166,87 @@ export const buildAlignedLayout = (
       })
       .filter((y): y is number => typeof y === 'number');
 
-    if (inYs.length > 0) {
-      return Math.round(inYs.reduce((a, b) => a + b, 0) / inYs.length);
-    }
-    return contentCenterY;
+    return inYs.length > 0 ? inYs.reduce((a, b) => a + b, 0) / inYs.length : 200;
   };
 
-  const isSingleCbMode = activeCombineBoxes.length <= 1;
-  const singleCb = activeCombineBoxes[0];
-  const singleCbCenterY = singleCb ? getNodeInputCenterY(singleCb.id) : contentCenterY;
-  const singleCbConnectedDestId = singleCb
-    ? conns.find((c) => c.fromNodeId === singleCb.id && primaryDests.some((p) => p.id === c.toNodeId))?.toNodeId
-    : undefined;
+  // Sort primary destinations so upper-affinity branches stay on top, eliminating crossing wires!
+  const sortedPrimaryDests = [...primaryDests].sort((a, b) => {
+    const diff = getBranchAffinity(a.id) - getBranchAffinity(b.id);
+    if (diff !== 0) return diff;
+    return primaryDests.indexOf(a) - primaryDests.indexOf(b);
+  });
 
-  primaryDests.forEach((p, pIdx) => {
-    let py: number;
+  const totalPrimary = sortedPrimaryDests.length;
+  const CHILD_STEP = 115;
+  const destCoords: Record<string, { x: number; y: number }> = {};
 
-    if (isSingleCbMode) {
-      // If there is only 1 combine box, align its connected destination directly to the center line!
-      if (singleCbConnectedDestId) {
-        if (p.id === singleCbConnectedDestId) {
-          py = singleCbCenterY;
-        } else {
-          const otherIdx = primaryDests.filter((d) => d.id !== singleCbConnectedDestId).findIndex((d) => d.id === p.id);
-          py = singleCbCenterY + (otherIdx + 1) * PRIMARY_STEP;
-        }
-      } else {
-        // Direct connection without combine box or fallback
-        const inConns = conns.filter((c) => c.toNodeId === p.id);
-        const inYs = inConns.map((c) => yById[c.fromNodeId]).filter((y): y is number => typeof y === 'number');
-        if (inYs.length > 0) {
-          py = Math.round(inYs.reduce((a, b) => a + b, 0) / inYs.length);
-        } else {
-          py = totalPrimary <= 1 ? singleCbCenterY : singleCbCenterY + pIdx * PRIMARY_STEP;
-        }
-      }
-    } else {
-      // Multiple combine boxes / lanes (e.g. Image 2 with top Remaining Posts DB & bottom Facebook Hub)
-      py = totalPrimary === 2
-        ? (pIdx === 0 ? contentCenterY : imageCenterY)
-        : (totalPrimary <= 1 ? triggerY : triggerY - Math.round(((totalPrimary - 1) * PRIMARY_STEP) / 2) + pIdx * PRIMARY_STEP);
-    }
-
+  // Compute flexible, collision-free Y positions for each primary destination branch
+  if (totalPrimary === 1) {
+    const p = sortedPrimaryDests[0];
+    const affinity = getBranchAffinity(p.id);
+    const py = affinity <= 100 ? contentCenterY : affinity >= 300 ? imageCenterY : triggerY;
     destCoords[p.id] = { x: destinationX, y: py };
 
-    // Position children of this primary destination in Column 6 (destinationX + 220 = 1400)
     const children = childDests.filter((c) => conns.some((w) => w.fromNodeId === p.id && w.toNodeId === c.id));
     const numChildren = children.length;
-    const CHILD_STEP = 130;
     const startChildY = numChildren <= 1 ? py : py - Math.round(((numChildren - 1) * CHILD_STEP) / 2);
-
     children.forEach((c, cIdx) => {
-      destCoords[c.id] = {
-        x: destinationX + 220,
-        y: startChildY + cIdx * CHILD_STEP,
-      };
+      destCoords[c.id] = { x: destinationX + 220, y: startChildY + cIdx * CHILD_STEP };
     });
-  });
+  } else if (totalPrimary === 2) {
+    // 2-Branch Layout (e.g. Exact match to Image 2: Top Instagram text branch, Bottom Facebook photo/text branch)
+    const topDest = sortedPrimaryDests[0];
+    const btmDest = sortedPrimaryDests[1];
+
+    const topChildren = childDests.filter((c) => conns.some((w) => w.fromNodeId === topDest.id && w.toNodeId === c.id));
+    const btmChildren = childDests.filter((c) => conns.some((w) => w.fromNodeId === btmDest.id && w.toNodeId === c.id));
+
+    const topChildSpan = Math.max((topChildren.length - 1) * CHILD_STEP, 0);
+    const btmChildSpan = Math.max((btmChildren.length - 1) * CHILD_STEP, 0);
+
+    // Anchor bottom branch at imageCenterY (340) so Format / Image nodes go straight horizontally into it:
+    const btmY = imageCenterY;
+    // Calculate top branch Y with generous flexible separation between child account envelopes:
+    const MIN_BRANCH_GAP = 120;
+    const topYNeeded = btmY - (btmChildSpan / 2 + topChildSpan / 2 + MIN_BRANCH_GAP);
+    const topY = Math.min(topYNeeded, 20); // Elevated top lane (e.g. Y = 20), exactly matching Image 2!
+
+    destCoords[topDest.id] = { x: destinationX, y: topY };
+    destCoords[btmDest.id] = { x: destinationX, y: btmY };
+
+    const startTopChildY = topChildren.length <= 1 ? topY : topY - Math.round(((topChildren.length - 1) * CHILD_STEP) / 2);
+    topChildren.forEach((c, cIdx) => {
+      destCoords[c.id] = { x: destinationX + 220, y: startTopChildY + cIdx * CHILD_STEP };
+    });
+
+    const startBtmChildY = btmChildren.length <= 1 ? btmY : btmY - Math.round(((btmChildren.length - 1) * CHILD_STEP) / 2);
+    btmChildren.forEach((c, cIdx) => {
+      destCoords[c.id] = { x: destinationX + 220, y: startBtmChildY + cIdx * CHILD_STEP };
+    });
+  } else {
+    // Multi-branch layout (> 2 destinations) with flexible dynamic spacing:
+    const MIN_GAP = 100;
+    let currentY = 20;
+    sortedPrimaryDests.forEach((p, idx) => {
+      const children = childDests.filter((c) => conns.some((w) => w.fromNodeId === p.id && w.toNodeId === c.id));
+      const childSpan = Math.max((children.length - 1) * CHILD_STEP, 0);
+
+      if (idx === 0) {
+        currentY = Math.max(20, contentCenterY - 80);
+      } else {
+        const prevChildren = childDests.filter((c) => conns.some((w) => w.fromNodeId === sortedPrimaryDests[idx - 1].id && w.toNodeId === c.id));
+        const prevSpan = Math.max((prevChildren.length - 1) * CHILD_STEP, 0);
+        currentY += prevSpan / 2 + childSpan / 2 + MIN_GAP;
+      }
+
+      destCoords[p.id] = { x: destinationX, y: currentY };
+
+      const startChildY = children.length <= 1 ? currentY : currentY - Math.round(((children.length - 1) * CHILD_STEP) / 2);
+      children.forEach((c, cIdx) => {
+        destCoords[c.id] = { x: destinationX + 220, y: startChildY + cIdx * CHILD_STEP };
+      });
+    });
+  }
 
   // Handle any orphan child destinations (if parent wire was cut or not found)
   childDests.forEach((c, cIdx) => {
@@ -1211,14 +1265,6 @@ export const buildAlignedLayout = (
   }));
 
   // Categorize Combine Boxes by upstream column:
-  // - Early combine boxes: directly connected from Column 1 (Get Content or Get Images)
-  //   -> Placed in Column 2 (x = 520, near Get Content / Get Images!)
-  //   -> If from Get Content: sits at y = 20 (contentCenterY - 120, above the primary Gemini in Image 3)
-  //   -> If from Get Images: sits at y = imageCenterY + 120
-  // - Late combine boxes: connected from Column 3 format presets or general destination mergers
-  //   -> Placed in Column 4 (x = mergerNodeX = 960)
-  //   -> Upper lane (connected to Remaining Posts DB or text branch): y = contentCenterY = 140
-  //   -> Lower lane (connected to Facebook Hub or image branch): y = imageCenterY = 323
   const getUpstreamMaxX = (cbId: string): number => {
     const inConns = conns.filter((c) => c.toNodeId === cbId);
     if (inConns.length === 0) return COL_FORMAT_X;
@@ -1251,27 +1297,28 @@ export const buildAlignedLayout = (
     const isFromImages = conns.some((c) => c.fromNodeId === 'get-images' && c.toNodeId === cb.id);
     const cy = isFromImages
       ? imageCenterY + (idx + 1) * NODE_V_STEP
-      : contentCenterY - (idx + 1) * NODE_V_STEP; // 140 - 120 = 20 (exactly like Image 3!)
+      : contentCenterY - (idx + 1) * NODE_V_STEP;
     cbCoords[cb.id] = { x: COL_AI_X, y: cy };
   });
 
-  // Late combine boxes (Column 4: 960, merging format presets / endpoints into destinations):
-  lateCbList.forEach((cb, idx) => {
-    // If connects to a destination, match that destination's Y directly for a straight line:
-    const directDestConn = conns.find((c) => c.fromNodeId === cb.id && primaryDests.some((p) => p.id === c.toNodeId));
+  // Late combine boxes (Column 4 or 3: mergerNodeX):
+  // Match the Y of their directly connected primary destination for a 100% straight horizontal line!
+  lateCbList.forEach((cb) => {
+    const directDestConn = conns.find((c) => c.fromNodeId === cb.id && sortedPrimaryDests.some((p) => p.id === c.toNodeId));
     if (directDestConn && destCoords[directDestConn.toNodeId]) {
       cbCoords[cb.id] = { x: mergerNodeX, y: destCoords[directDestConn.toNodeId].y };
       return;
     }
 
-    if (lateCbList.length <= 1) {
-      cbCoords[cb.id] = { x: mergerNodeX, y: singleCbCenterY };
+    // If not directly connected to a primary destination, match upstream affinity:
+    const affinity = getBranchAffinity(cb.id);
+    const matchedDest = sortedPrimaryDests.find((d) => Math.abs(getBranchAffinity(d.id) - affinity) < 50);
+    if (matchedDest && destCoords[matchedDest.id]) {
+      cbCoords[cb.id] = { x: mergerNodeX, y: destCoords[matchedDest.id].y };
       return;
     }
 
-    // Default lane positions for multiple late combine boxes:
-    const targetY = idx === 0 ? contentCenterY : idx === 1 ? imageCenterY : imageCenterY + (idx - 1) * 140;
-    cbCoords[cb.id] = { x: mergerNodeX, y: targetY };
+    cbCoords[cb.id] = { x: mergerNodeX, y: affinity <= 100 ? 20 : imageCenterY };
   });
 
   const updatedCombineBoxes = (base.combineBoxes || []).map((cb) => {
@@ -5507,19 +5554,15 @@ export const FacebookWorkflowCanvas = forwardRef<
     }
 
     // Forward straight line check:
-    // If the vertical difference between start and end is minor (<= 14px),
-    // drawing a cubic Bézier creates an awkward S-bend sag/kink in what should be a clean horizontal line.
-    // Instead, draw a crisp, clean straight line directly between sockets!
-    if (Math.abs(rawDy) <= 14) {
-      return `M ${start.x} ${start.y} L ${end.x} ${end.y}`;
+    // If start and end are on the exact same horizontal plane (<= 2px diff),
+    // draw a perfectly clean horizontal straight line directly between sockets!
+    if (Math.abs(rawDy) <= 2) {
+      return `M ${start.x} ${start.y} L ${end.x} ${start.y}`;
     }
 
-    // Forward curve: control offset is strictly bounded by rawDx * 0.5 so c1x <= c2x always
-    const controlOffset = Math.min(
-      Math.max(rawDx * 0.45, 20),
-      rawDx * 0.5,
-      85
-    );
+    // Forward curve: smooth cubic bezier with horizontal tangency at sockets
+    const curvature = 0.48;
+    const controlOffset = Math.max(rawDx * curvature, 36);
     const c1x = start.x + controlOffset;
     const c1y = start.y;
     const c2x = end.x - controlOffset;

@@ -15,7 +15,7 @@
             "templateText": "Convert the raw property data below into a professional Facebook rental post for Myanmar customers in Bangkok.\n\nFOLLOW THE OUTPUT STRUCTURE EXACTLY.\n\n━━━━━━━━━━━━━━━━━━━━\nMYANMAR HEADER — VERY IMPORTANT\n━━━━━━━━━━━━━━━━━━━━\n\nThe FIRST paragraph MUST be a natural, friendly, attractive Myanmar-language rental advertisement.\n\nDo NOT make the header short or simply translate the project name and price.\n\nWhen the information is available, the header should naturally combine:\n\n- Rental price\n- BTS/MRT station name\n- BTS/MRT proximity or distance\n- Condo/project name\n- Floor\n- Room size\n- Bedroom type\n- One attractive unit feature such as clean room, spacious room, high floor, nice view, new project, fully furnished, etc.\n\nThe header should feel like a Myanmar real estate agent naturally introducing the property on Facebook.\n\nUse a conversational ending such as:\n- ငှားဖို့ရှိပါတယ်ရှင့်\n- ငှားရန်ရှိပါတယ်ရှင့်\n- ငှားပေးနေပါတယ်ရှင့်\n- အခန်းလေး ငှားဖို့ရှိပါတယ်နော်\n\nChoose the wording naturally.\n\nDO NOT use a fixed sentence every time.\nChange the sentence structure naturally depending on the property.\n\nGOOD EXAMPLE:\n\n11,000 THB နဲ့ BTS Bangna ဘူတာအနီး Regent Home Bangna မှာ 25th Floor က 28 Sq.m. ကျယ်ဝန်းတဲ့ 1 Bedroom အခန်းသန့်လေး ငှားဖို့ရှိပါတယ်ရှင့်။\n\nGOOD EXAMPLE:\n\nBTS Bangna ဘူတာအနီး Regent Home Bangna ရဲ့ 25th Floor မှာ 28 Sq.m. ကျယ်တဲ့ 1 Bedroom အခန်းလေးကို 11,000 THB နဲ့ ငှားရန်ရှိပါတယ်ရှင့်။\n\nGOOD EXAMPLE:\n\nBTS Bangna ဘူတာနဲ့နီးတဲ့ Regent Home Bangna မှာ 11,000 THB နဲ့ 25th Floor က 28 Sq.m. 1 Bedroom အခန်းသန့်လေး ငှားဖို့ရှိပါတယ်ရှင့်။\n\nGOOD EXAMPLE:\n\n11,000 THB နဲ့ BTS Bangna အနီး Regent Home Bangna ရဲ့ 25th Floor မှာ 28 Sq.m. 1 Bedroom အခန်းလေး ငှားရန်ရှိပါတယ်ရှင့်။\n\nIMPORTANT:\n- The header should normally contain AT LEAST 4 useful property details when those details are available.\n- PRIORITIZE price + BTS/MRT + project + size + floor + bedroom.\n- If BTS/MRT information is available, include it.\n- If BTS distance is available, include the actual distance.\n- If only the station is available, use \"BTS [Station] ဘူတာအနီး\".\n- If size is available, include Sq.m.\n- If floor is available, include the floor.\n- If bedroom type is available, include it.\n- Add ONE useful descriptive phrase when supported by the raw data, such as \"အခန်းသန့်လေး\", \"အခန်းကျယ်လေး\", \"အခန်းလှလေး\", \"High-Floor အခန်းလေး\", or \"View ကောင်းတဲ့အခန်းလေး\".\n- NEVER invent a descriptive feature. Only use it when supported by the raw data.\n- Do NOT say the condo is \"near BTS\" unless the raw data actually gives BTS information.\n- Do NOT use \"Condo အနီး\" as a substitute for BTS/location proximity.\n- The header should be 1–2 natural sentences.\n- Do NOT make it sound like a literal translation.\n- Do NOT use Myanmar numerals.\n- ALL numbers in the Myanmar header MUST use English numerals.\n\n━━━━━━━━━━━━━━━━━━━━\nENGLISH PROPERTY TITLE\n━━━━━━━━━━━━━━━━━━━━\n\nImmediately after the Myanmar header:\n\n[Project Name] | [Room Type] | [Size] | [Floor, Building] | [Price] THB\n\nExample:\n\nRegent Home Bangna | 1 Bedroom | 28 Sq.m. | 25th Floor, Building D | 11,000 THB\n\nRules:\n- Use \"1 Bedroom\", \"2 Bedroom\", etc.\n- Use \"Sq.m.\"\n- Use \"25th Floor\", \"18th Floor\", etc.\n- Include Building when provided.\n- Do NOT add \"/month\" to this title.\n- Do NOT add information that is not available.\n\n━━━━━━━━━━━━━━━━━━━━\nPROPERTY OVERVIEW\n━━━━━━━━━━━━━━━━━━━━\n\n𝗣𝗿𝗼𝗽𝗲𝗿𝘁𝘆 𝗢𝘃𝗲𝗿𝘃𝗶𝗲𝘄\n\nInclude the main property information from the raw data.\n\nExample:\n\n• 1 Bedroom | 1 Bathroom\n• Size: 28 Sq.m.\n• Building D | 25th Floor\n• High-Floor Panoramic View\n• New Project Development\n• Fully Furnished \u0026 Fully Equipped\n• Ready to Move In\n\nRules:\n- Include useful details that actually exist.\n- Do not invent information.\n- Keep each bullet focused.\n- Do not put a large amount of unrelated information into one bullet.\n- Do not include agent/co-agent information.\n\n━━━━━━━━━━━━━━━━━━━━\nKEY HIGHLIGHTS\n━━━━━━━━━━━━━━━━━━━━\n\n𝗞𝗲𝘆 𝗛𝗶𝗴𝗵𝗹𝗶𝗴𝗵𝘁𝘀\n\nInclude important selling points that are supported by the raw data.\n\nExamples:\n\n• Near BTS Bangna Station\n• High-Floor Unit\n• New Project Development\n• Panoramic View\n• Ready to Move In\n\nDo not simply copy every Property Overview bullet.\nUse this section to highlight the property's useful advantages.\n\n━━━━━━━━━━━━━━━━━━━━\nFURNITURE \u0026 APPLIANCES\n━━━━━━━━━━━━━━━━━━━━\n\nIf furniture or appliances are mentioned:\n\n𝗙𝘂𝗿𝗻𝗶𝘁𝘂𝗿𝗲 \u0026 𝗔𝗽𝗽𝗹𝗶𝗮𝗻𝗰𝗲𝘀\n\nList the actual items.\n\nExample:\n\n• 6-Foot Bed\n• 180 cm Wardrobe\n• 2 Air Conditioners (12,000 BTU each)\n• Front-Load Washing Machine\n• Samsung Refrigerator\n• Microwave\n• Water Heater\n\nIMPORTANT:\n- Do NOT summarize a detailed list as \"necessary appliances\".\n- Keep quantities, brands, sizes, and capacities when provided.\n- Do NOT invent appliances.\n- Do not remove useful appliance information.\n\n━━━━━━━━━━━━━━━━━━━━\nFACILITIES\n━━━━━━━━━━━━━━━━━━━━\n\nIf facilities are mentioned:\n\n𝗙𝗮𝗰𝗶𝗹𝗶𝘁𝗶𝗲𝘀\n\nList the useful facilities.\n\nExample:\n\n• Swimming Pool\n• Fully Equipped Gym\n• Co-Working Space\n• Children's Playground\n• Keycard Access Control\n• CCTV Monitoring\n• 24-Hour Security\n\nDo not invent facilities.\nDo not list unnecessary minor facilities if there are many.\n\n━━━━━━━━━━━━━━━━━━━━\nLOCATION \u0026 TRANSIT\n━━━━━━━━━━━━━━━━━━━━\n\nIf location information exists:\n\n𝗟𝗼𝗰𝗮𝘁𝗶𝗼𝗻 \u0026 𝗧𝗿𝗮𝗻𝘀𝗶𝘁\n\nExample:\n\n• Near BTS Bangna Station\n• 600 meters to BTS Udomsuk\n• Walking Distance to BTS\n• Near Makro\n• Easy Access to Sukhumvit Road\n• Near BITEC Bangna\n\nUse actual distances and locations from the raw data.\nDo not invent nearby places.\n\n━━━━━━━━━━━━━━━━━━━━\nRENTAL TERMS\n━━━━━━━━━━━━━━━━━━━━\n\nIf rental conditions exist:\n\n𝗥𝗲𝗻𝘁𝗮𝗹 𝗧𝗲𝗿𝗺𝘀\n\nExample:\n\n• Rental Price: 11,000 THB/month\n• Minimum 1-Year Contract\n• 2 Months Security Deposit + 1 Month Advance Rent\n• Ready to Move In\n\nOnly include conditions provided in the raw data.\n\nREMOVE:\n- Agents Welcome\n- Co-Agent Friendly\n- No Co-Agent\n- Agent commission\n- Owner/agent conditions\n- Agent-to-agent information\n\n━━━━━━━━━━━━━━━━━━━━\nSERVICE FEE\n━━━━━━━━━━━━━━━━━━━━\n\nALWAYS include this exact line:\n\n🔴 𝗦𝗲𝗿𝘃𝗶𝗰𝗲 𝗙𝗲𝗲 လုံးဝမရှိပါဘူးရှင့် 🔴\n\nIf the raw data explicitly states a different service fee, replace this line with the actual service fee information.\n\n━━━━━━━━━━━━━━━━━━━━\nCONTACT\n━━━━━━━━━━━━━━━━━━━━\n\nALWAYS use exactly:\n\n𝗖𝗼𝗻𝘁𝗮𝗰𝘁 for Viewing\n• Call / WhatsApp: 062-718-8699\n• LINE: @sweetiehsu\n• Property Code: BHV-XXXXX-XXXXX\n\nDo NOT use the original phone number or LINE ID from the raw data.\n\n━━━━━━━━━━━━━━━━━━━━\nPROPERTY CODE\n━━━━━━━━━━━━━━━━━━━━\n\nGenerate a UNIQUE property code.\n\nFormat:\n\nBHV-XXXXX-XXXXX\n\nRules:\n- Must start with BHV-\n- First section = exactly 5 uppercase letters/numbers\n- Second section = exactly 5 uppercase letters/numbers\n- Example: BHV-K7M2Q-X9P4L\n- Generate a new unique code every time.\n- Never copy an existing code from the raw data.\n\n━━━━━━━━━━━━━━━━━━━━\nHASHTAGS\n━━━━━━━━━━━━━━━━━━━━\n\nGenerate approximately 12–18 relevant English hashtags.\n\nUse only information supported by the raw data.\n\nInclude relevant:\n- Project\n- Location\n- BTS/MRT\n- Condo\n- Rental\n- Bangkok\n- Property features\n\nExample:\n\n#RegentHomeBangna #RegentHome #BTSBangna #NewProject #BangnaCondo #SukhumvitCondo #CondoForRent #RentCondoBangkok #BangkokCondo #BangkokRental #CondoNearBTS #HighFloorCondo #ThailandProperty #BangkokProperty #BangkokRealEstate #ReadyToMoveIn\n\n━━━━━━━━━━━━━━━━━━━━\nREMOVE\n━━━━━━━━━━━━━━━━━━━━\n\nNever include:\n- Owner Post\n- Agent Post\n- Owner\n- Agent\n- Co-Agent\n- Co-Agent Welcome\n- Co-Agent Friendly\n- No Co-Agent\n- Commission\n- Agent commission\n- Agent-only information\n- Original agent contact information\n\n━━━━━━━━━━━━━━━━━━━━\nLANGUAGE \u0026 NUMBER RULES\n━━━━━━━━━━━━━━━━━━━━\n\n- Myanmar header only.\n- Everything after the Myanmar header must be English.\n- Use ENGLISH NUMERALS ONLY.\n- Never use Myanmar numerals.\n- Do NOT use emojis anywhere except the default Service Fee line.\n- Keep project names and proper nouns in English.\n- Keep BTS/MRT names in English.\n- Keep THB, Sq.m., KG, BTU, etc. in English.\n\n━━━━━━━━━━━━━━━━━━━━\nFINAL OUTPUT ORDER\n━━━━━━━━━━━━━━━━━━━━\n\n[FRIENDLY, DETAILED MYANMAR HEADER]\n\n[Project Name] | [Room Type] | [Size] | [Floor, Building] | [Price] THB\n\n𝗣𝗿𝗼𝗽𝗲𝗿𝘁𝘆 𝗢𝘃𝗲𝗿𝘃𝗶𝗲𝘄\n• ...\n• ...\n• ...\n\n𝗞𝗲𝘆 𝗛𝗶𝗴𝗵𝗹𝗶𝗴𝗵𝘁𝘀\n• ...\n• ...\n• ...\n\n𝗙𝘂𝗿𝗻𝗶𝘁𝘂𝗿𝗲 \u0026 𝗔𝗽𝗽𝗹𝗶𝗮𝗻𝗰𝗲𝘀\n• ...\n• ...\n• ...\n\n𝗙𝗮𝗰𝗶𝗹𝗶𝘁𝗶𝗲𝘀\n• ...\n• ...\n• ...\n\n𝗟𝗼𝗰𝗮𝘁𝗶𝗼𝗻 \u0026 𝗧𝗿𝗮𝗻𝘀𝗶𝘁\n• ...\n• ...\n• ...\n\n𝗥𝗲𝗻𝘁𝗮𝗹 𝗧𝗲𝗿𝗺𝘀\n• ...\n• ...\n• ...\n\n🔴 𝗦𝗲𝗿𝘃𝗶𝗰𝗲 𝗙𝗲𝗲 လုံးဝမရှိပါဘူးရှင့် 🔴\n\n𝗖𝗼𝗻𝘁𝗮𝗰𝘁 for Viewing\n• Call / WhatsApp: 062-718-8699\n• LINE: @sweetiehsu\n• Property Code: BHV-XXXXX-XXXXX\n\n#Hashtags\n\nFINAL INSTRUCTION:\nDo NOT summarize the raw data into a short post.\n\nPreserve the useful property information and organize it into the sections above.\n\nThe Myanmar header is the ONLY part that should be Myanmar language.\n\nMake the Myanmar header feel like this style:\n\n\"11,000 THB နဲ့ BTS Bangna ဘူတာအနီး New Project ဖြစ်တဲ့ Regent Home Bangna မှာ 25th Floor က 28 Sq.m. အခန်းကျယ် 1 Bedroom လေး ငှားဖို့ရှိပါတယ်ရှင့်။\"\n\nThe exact wording must change naturally for each property based on its actual information.\n\nOutput ONLY the final ready-to-copy Facebook post.\n\nRAW PROPERTY DATA:\n[PASTE RAW PROPERTY DATA HERE]",
             "title": "Gemini 2.5 Flash",
             "x": 520,
-            "y": 80
+            "y": 140
           },
           {
             "cropFormatId": "format-1792362113668",
@@ -31,7 +31,7 @@
             "title": "Format: FB Format",
             "watermarkPresetId": "format-1792362113668",
             "x": 520,
-            "y": 320
+            "y": 340
           }
         ],
         "combineBoxes": [
@@ -40,14 +40,14 @@
             "id": "combine-box-1792505377426",
             "title": "Combine Box",
             "x": 740,
-            "y": 80
+            "y": 340
           },
           {
             "enabled": true,
             "id": "combine-box-1792511220987",
             "title": "Combine Box",
             "x": 740,
-            "y": 320
+            "y": 20
           }
         ],
         "connections": [
@@ -127,7 +127,7 @@
           "targetMode": "social_media",
           "title": "Facebook",
           "x": 960,
-          "y": 80
+          "y": 340
         },
         "destinations": [
           {
@@ -145,7 +145,7 @@
             "targetMode": "social_media",
             "title": "Facebook",
             "x": 960,
-            "y": 80
+            "y": 340
           },
           {
             "accountAvatar": "https://scontent.fbkk29-7.fna.fbcdn.net/v/t39.30808-1/768969631_122211508982601953_1996946308477586960_n.jpg?stp=c112.165.1765.1765a_dst-jpg_s200x200_tt6\u0026_nc_cat=101\u0026_nc_map=urlgen_bucketless\u0026ccb=1-7\u0026_nc_sid=f907e8\u0026_nc_ohc=ddNQXpYcKPoQ7kNvwF5seyU\u0026_nc_oc=AdpOIcgx3PHMJUaTtn5qTVw6EJ3QUc7Ss-U7iLVb4pGaAh5n5sJko6V8UZZ1Sb85_yc\u0026_nc_zt=24\u0026_nc_ht=scontent.fbkk29-7.fna\u0026edm=AJdBtusEAAAA\u0026_nc_gid=Q8HOOAB7vmig8vIi34ciwg\u0026_nc_tpa=Q5bMBQI4fvG6GXljJgeLfgJz8pdno_EUzbR6u1pNxOTCH8ZNTYBejfyugp1bQX_yuh0kGy4-2dgl0WNt\u0026oh=00_AQOkBzFe8H_nPO9Hvm6KOZ7rajLgurfCElePmgy_mpR_fQ\u0026oe=6AD8034C",
@@ -168,7 +168,7 @@
             "targetMode": "social_media",
             "title": "Bolt Haven Realty",
             "x": 1180,
-            "y": -50
+            "y": 225
           },
           {
             "accountAvatar": "https://scontent.fbkk29-4.fna.fbcdn.net/v/t39.30808-1/822639411_122120158017433356_8965577031838894759_n.jpg?stp=dst-jpg_s200x200_tt6\u0026_nc_cat=107\u0026_nc_map=urlgen_bucketless\u0026ccb=1-7\u0026_nc_sid=f907e8\u0026_nc_ohc=9mL1pV6NSzwQ7kNvwGqs_iz\u0026_nc_oc=AdrpMpoJhzIeTvfcUI68DUqIQ_8W-ZmshIsgb4q1MTQ4CJXqwZHhPJuK387KeDe9YU0\u0026_nc_zt=24\u0026_nc_ht=scontent.fbkk29-4.fna\u0026edm=AJdBtusEAAAA\u0026_nc_gid=0jnL_tvMN6YymG_sVWKTTQ\u0026_nc_tpa=Q5bMBQLiTTYCdq73x6cPztNAFW8SBP5UBEDdvY6ZKxos471-5vwupJGan2PDMzXPT58X2xhC8PWUw1XC\u0026oh=00_AQOU3VGBQCBmIwLcarHenHLYwO2Zzno_i0XQVcFk7xTkhw\u0026oe=6ADAFCC8",
@@ -191,7 +191,7 @@
             "targetMode": "social_media",
             "title": "Dot BKK Living",
             "x": 1180,
-            "y": 80
+            "y": 340
           },
           {
             "accountAvatar": "https://scontent.fbkk29-9.fna.fbcdn.net/v/t39.30808-1/825353234_1595802678905210_8033401886375480040_n.jpg?stp=dst-jpg_s200x200_tt6\u0026_nc_cat=111\u0026_nc_map=urlgen_bucketless\u0026ccb=1-7\u0026_nc_sid=f907e8\u0026_nc_ohc=4wEtItnefREQ7kNvwGDU8dq\u0026_nc_oc=AdqDjsSXKnI41w1oCbxPOyfkMAlVPv3oLMIu9BT1TEHOhmXm_3Fefv51QI9a5huHwII\u0026_nc_zt=24\u0026_nc_ht=scontent.fbkk29-9.fna\u0026edm=AJdBtusEAAAA\u0026_nc_gid=ytR5E7OZuiOTSkAgSlZxew\u0026_nc_tpa=Q5bMBQJM5qjcbR2npD4nr761jCwvWtr922DPszN_JWiW7U2D29H322mxWc9nCDrJpm_ZKEeRFEzGE6zx\u0026oh=00_AQPHtHVKTewDlmFfnE0cMazsUle3emb_NH2FZoklJaWNJw\u0026oe=6ADB240A",
@@ -214,7 +214,7 @@
             "targetMode": "social_media",
             "title": "Page 1546086342286604",
             "x": 1180,
-            "y": 210
+            "y": 455
           },
           {
             "enabled": true,
@@ -231,7 +231,7 @@
             "targetMode": "social_media",
             "title": "Instagram",
             "x": 960,
-            "y": 320
+            "y": 20
           },
           {
             "accountId": "ig-102",
@@ -256,7 +256,7 @@
             "targetMode": "social_media",
             "title": "Living Space Bangkok",
             "x": 1180,
-            "y": 320
+            "y": -38
           },
           {
             "accountId": "ig-101",
@@ -277,8 +277,8 @@
             "storeInDatabase": false,
             "targetMode": "social_media",
             "title": "Dot BKK Living IG",
-            "x": 1140,
-            "y": 435
+            "x": 1180,
+            "y": 78
           }
         ],
         "getContent": {
