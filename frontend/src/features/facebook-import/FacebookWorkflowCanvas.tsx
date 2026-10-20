@@ -7629,6 +7629,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
+                  gap: '1rem',
                   padding: '0.875rem 1rem',
                   borderBottom: 'none',
                   backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
@@ -7676,7 +7677,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   </div>
 
                   {/* Title & Subtitle */}
-                  <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ minWidth: 0, flex: 1, paddingRight: '0.5rem' }}>
                     {isAIBox && currentModalAIBox ? (
                       <input
                         type="text"
@@ -8537,6 +8538,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
+                  gap: '1rem',
                   padding: '0.875rem 1rem',
                   borderBottom: 'none',
                   backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
@@ -8741,6 +8743,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
+                gap: '1rem',
                 padding: '0.875rem 1rem',
                 borderBottom: 'none',
                 backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
@@ -11704,6 +11707,7 @@ export const FacebookWorkflowCanvas = forwardRef<
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
+            gap: '1rem',
             padding: '0.75rem 1rem',
             borderBottom: 'none',
             flexShrink: 0,
