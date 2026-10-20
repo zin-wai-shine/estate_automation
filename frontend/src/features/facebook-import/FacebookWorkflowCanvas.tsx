@@ -1596,19 +1596,23 @@ const NodeActionButton: React.FC<{
 
 export const NodeExecutionBadge: React.FC<{
   status?: 'idle' | 'running' | 'success' | 'error';
-}> = ({ status }) => {
+  isCircle?: boolean;
+}> = ({ status, isCircle = false }) => {
   const { actualTheme } = useTheme();
   const isDark = actualTheme === 'dark';
 
   if (!status || status === 'idle') return null;
+
+  const badgeTop = isCircle ? '1px' : '-5px';
+  const badgeRight = isCircle ? '1px' : '-5px';
 
   if (status === 'running') {
     return (
       <div
         style={{
           position: 'absolute',
-          top: '-5px',
-          right: '-5px',
+          top: badgeTop,
+          right: badgeRight,
           width: '22px',
           height: '22px',
           borderRadius: '50%',
@@ -1654,8 +1658,8 @@ export const NodeExecutionBadge: React.FC<{
       <div
         style={{
           position: 'absolute',
-          top: '-5px',
-          right: '-5px',
+          top: badgeTop,
+          right: badgeRight,
           width: '20px',
           height: '20px',
           borderRadius: '50%',
@@ -1681,8 +1685,8 @@ export const NodeExecutionBadge: React.FC<{
       <div
         style={{
           position: 'absolute',
-          top: '-5px',
-          right: '-5px',
+          top: badgeTop,
+          right: badgeRight,
           width: '20px',
           height: '20px',
           borderRadius: '50%',
@@ -7252,7 +7256,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                   )}
                 </div>
 
-                <NodeExecutionBadge status={isDestSuccess ? 'success' : isDestRunning ? 'running' : 'idle'} />
+                <NodeExecutionBadge
+                  status={isDestSuccess ? 'success' : isDestRunning ? 'running' : 'idle'}
+                  isCircle={isAccountNode}
+                />
 
                 {/* Label below node */}
                 <div
