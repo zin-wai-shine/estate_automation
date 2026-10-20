@@ -9406,11 +9406,17 @@ export const FacebookWorkflowCanvas = forwardRef<
         }
 
         const availableExistingNodes: Array<{ id: string; title: string; subtitle: string; icon: any; color: string }> = [];
+        const pushValidCandidate = (node: { id: string; title: string; subtitle: string; icon: any; color: string }) => {
+          if (isValidConnection(fromNodeId, node.id)) {
+            availableExistingNodes.push(node);
+          }
+        };
+
         if (!isContent && !connectedTargetIds.has('get-content') && config.getContent.enabled) {
-          availableExistingNodes.push({ id: 'get-content', title: 'Get Content', subtitle: 'Extract text & raw caption', icon: FiFileText, color: '#10B981' });
+          pushValidCandidate({ id: 'get-content', title: 'Get Content', subtitle: 'Extract text & raw caption', icon: FiFileText, color: '#10B981' });
         }
         if (!isImages && !connectedTargetIds.has('get-images') && config.getImages.enabled) {
-          availableExistingNodes.push({ id: 'get-images', title: 'Get Images', subtitle: 'Media & photo pipeline', icon: FiImage, color: '#06B6D4' });
+          pushValidCandidate({ id: 'get-images', title: 'Get Images', subtitle: 'Media & photo pipeline', icon: FiImage, color: '#06B6D4' });
         }
         config.aiBoxes.forEach((box) => {
           if (box.id !== fromNodeId && !connectedTargetIds.has(box.id)) {
@@ -9418,7 +9424,7 @@ export const FacebookWorkflowCanvas = forwardRef<
             const isEnh = isEnhanceAIBox(box, config.connections || []);
             const isTxtAI = isTextAIBox(box, config.connections);
             const isTxtFmt = isTextFormatAIBox(box);
-            availableExistingNodes.push({
+            pushValidCandidate({
               id: box.id,
               title: box.title || 'AI Processor',
               subtitle: isCrop ? 'Format & watermark' : isEnh ? 'Photo enhancement' : isTxtAI ? 'AI Engine (Text Model)' : isTxtFmt ? 'Text Format Preset' : 'Text / copywriting',
@@ -9430,7 +9436,7 @@ export const FacebookWorkflowCanvas = forwardRef<
 
         (config.combineBoxes || []).forEach((cb) => {
           if (cb.id !== fromNodeId && cb.enabled !== false && !connectedTargetIds.has(cb.id)) {
-            availableExistingNodes.push({
+            pushValidCandidate({
               id: cb.id,
               title: cb.title || 'Combine Box',
               subtitle: 'Merge inputs into unified view',
@@ -9444,7 +9450,7 @@ export const FacebookWorkflowCanvas = forwardRef<
           if (dest.enabled !== false && !connectedTargetIds.has(dest.id)) {
             const isDb = dest.storeInDatabase ?? (dest.targetMode !== 'social_media');
             const isSoc = dest.postToSocialMedia ?? (dest.targetMode !== 'remaining_posts');
-            availableExistingNodes.push({
+            pushValidCandidate({
               id: dest.id,
               title: dest.title || (isSoc ? 'Facebook Post' : 'Remaining Posts Database'),
               subtitle: isSoc && isDb ? 'Social Media & Database' : isSoc ? 'Publish directly to Facebook Page' : 'Store in database queue',
@@ -9746,7 +9752,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                       ))}
 
                   {/* AI Model (Content AI Copywriter & Text Formatter) */}
-                  {(isContent || isImages || isFromTextAI) && (
+                  {(isContent || isImages) && (
                     <button
                       type="button"
                       onClick={() => {
