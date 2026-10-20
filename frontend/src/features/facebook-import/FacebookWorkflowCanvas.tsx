@@ -6084,8 +6084,12 @@ export const FacebookWorkflowCanvas = forwardRef<
                   onClick={(e) => {
                     e.stopPropagation();
                     if (!hasMoved.current) {
-                      setConnectDrawerNode(null);
-                      setActiveModalNode({ type: 'add-trigger' });
+                      const updated = {
+                        ...config,
+                        trigger: { ...config.trigger, enabled: true },
+                      };
+                      updateConfig(updated);
+                      handleOpenConnectDrawer('trigger', 'trigger', 'Facebook URL Importer');
                     }
                   }}
                 >
@@ -7587,7 +7591,7 @@ export const FacebookWorkflowCanvas = forwardRef<
         activeModalNode.type !== 'destination' &&
         !(activeModalNode.type === 'ai-box' && currentModalAIBox && isWatermarkAIBox(currentModalAIBox)) &&
         !connectDrawerNode && (() => {
-          const isTrigger = activeModalNode.type === 'trigger';
+          const isTrigger = activeModalNode.type === 'trigger' || activeModalNode.type === 'add-trigger';
           const isContent = activeModalNode.type === 'get-content';
           const isImages = activeModalNode.type === 'get-images';
           const isCombine = activeModalNode.type === 'combine';
@@ -7774,7 +7778,40 @@ export const FacebookWorkflowCanvas = forwardRef<
                 {isTrigger && (
                   <>
                     {/* Connect Next Step Quick Button (top) */}
-                    {renderCenteredConnectButton('trigger', 'trigger', 'Trigger')}
+                    {renderCenteredConnectButton('trigger', 'trigger', 'Facebook URL Importer')}
+
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '0.5rem',
+                        padding: '0.875rem',
+                        borderRadius: '8px',
+                        backgroundColor: isDark ? 'var(--bg-surface)' : 'var(--bg-main)',
+                        border: '1px solid var(--border-color)',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                          Facebook URL Importer
+                        </span>
+                        <span
+                          style={{
+                            fontSize: '0.625rem',
+                            fontWeight: 600,
+                            padding: '2px 8px',
+                            borderRadius: '10px',
+                            backgroundColor: isDark ? 'rgba(24, 119, 242, 0.15)' : 'rgba(24, 119, 242, 0.1)',
+                            color: '#1877F2',
+                          }}
+                        >
+                          Active Trigger
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                        Extracts post content, high-resolution media gallery, and property attributes from Facebook URLs to feed downstream workflow branches.
+                      </div>
+                    </div>
                   </>
                 )}
 
