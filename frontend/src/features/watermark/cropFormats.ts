@@ -1,4 +1,4 @@
-import type { WatermarkConfig } from '../autopost/watermarkStorage';
+import { type WatermarkConfig, loadActiveWatermarkConfig } from '../autopost/watermarkStorage';
 import { drawWatermarkOnContext } from '../autopost/watermarkCanvas';
 
 export type WatermarkPosition =
@@ -53,6 +53,21 @@ export const FOCUS_COORDS: Record<WatermarkPosition, { x: number; y: number }> =
 
 export const INITIAL_CROP_FORMATS: CropStudioFormat[] = [
   {
+    id: 'format-1792362113668',
+    name: 'FB Format',
+    description: '1080 × 1350 px • Portrait listing photos for Facebook & IG',
+    mode: 'standard',
+    targetWidth: 1080,
+    targetHeight: 1350,
+    aspect: '4:5',
+    fitMode: 'cover',
+    focusPosition: 'center',
+    cropZoom: 1,
+    isDefault: true,
+    createdAt: 1792362113668,
+    updatedAt: Date.now(),
+  },
+  {
     id: 'format-ig-portrait',
     name: 'Instagram Portrait (4:5)',
     description: '1080 × 1350 px • High-converting vertical feed format',
@@ -63,7 +78,7 @@ export const INITIAL_CROP_FORMATS: CropStudioFormat[] = [
     fitMode: 'cover',
     focusPosition: 'center',
     cropZoom: 1,
-    isDefault: true,
+    isDefault: false,
     createdAt: Date.now() - 3600000 * 24,
     updatedAt: Date.now(),
   },
@@ -131,12 +146,92 @@ export const INITIAL_CROP_FORMATS: CropStudioFormat[] = [
   },
 ];
 
+export const syncCropFormatToWorkflowConfig = async (format: CropStudioFormat) => {
+  try {
+    const res = await fetch('http://localhost:8085/api/workflow/config');
+    if (!res.ok) return;
+    const data = await res.json();
+    let modified = false;
+
+    const updateBoxWithFormat = (box: any) => {
+      const isMatch =
+        box.cropFormatId === format.id ||
+        box.templateId === format.id ||
+        box.watermarkPresetId === format.id ||
+        (box.templateText && box.templateText.toLowerCase() === format.name.toLowerCase()) ||
+        (box.title && box.title.toLowerCase().includes(format.name.toLowerCase())) ||
+        (format.name.toLowerCase().includes('fb') && (box.title?.toLowerCase().includes('fb') || box.templateText?.toLowerCase().includes('fb')));
+
+      if (isMatch && (box.processType === 'watermark' || box.model === 'watermark' || box.provider === 'watermark')) {
+        box.cropFormatId = format.id;
+        box.templateId = format.id;
+        box.watermarkPresetId = format.id;
+        box.templateText = format.name;
+        box.title = `Format: ${format.name}`;
+        box.subtitle = `${format.targetWidth}×${format.targetHeight} (${format.aspect || '1:1'})`;
+        box.targetWidth = format.targetWidth;
+        box.targetHeight = format.targetHeight;
+        box.aspect = format.aspect;
+        box.fitMode = format.fitMode;
+        box.focusPosition = format.focusPosition;
+        box.cropZoom = format.cropZoom;
+        if (format.watermarkConfig) {
+          box.watermarkConfig = format.watermarkConfig;
+        }
+        modified = true;
+      }
+    };
+
+    if (Array.isArray(data.workflow_formats)) {
+      data.workflow_formats.forEach((wf: any) => {
+        if (wf.config?.aiBoxes && Array.isArray(wf.config.aiBoxes)) {
+          wf.config.aiBoxes.forEach(updateBoxWithFormat);
+        }
+      });
+    }
+
+    if (data.facebook_import_workflow?.aiBoxes && Array.isArray(data.facebook_import_workflow.aiBoxes)) {
+      data.facebook_import_workflow.aiBoxes.forEach(updateBoxWithFormat);
+    }
+
+    if (modified) {
+      await fetch('http://localhost:8085/api/workflow/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+    }
+  } catch (e) {
+    console.warn('Failed to sync updated crop format to backend workflow config', e);
+  }
+};
+
 export const getSavedCropFormats = (): CropStudioFormat[] => {
   try {
     const raw = localStorage.getItem(STORAGE_CROP_FORMATS_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        // Return existing user formats directly, preserving custom names and edits
+        return parsed.map((fmt: CropStudioFormat) => {
+          // If FB Format was inadvertently assigned raw image dimensions (e.g. 960x1706) or 1200x1200, restore 1080x1350 (4:5)
+          if (
+            fmt.id === 'format-1792362113668' &&
+            ((fmt.targetWidth === 960 && fmt.targetHeight === 1706) ||
+             (fmt.targetWidth === 1200 && fmt.targetHeight === 1200) ||
+             fmt.aspect === '960:1706')
+          ) {
+            return {
+              ...fmt,
+              targetWidth: 1080,
+              targetHeight: 1350,
+              aspect: '4:5',
+              updatedAt: Date.now(),
+            };
+          }
+          return fmt;
+        });
+      }
     }
   } catch (e) {
     console.error('Failed to load saved crop formats', e);
@@ -147,9 +242,67 @@ export const getSavedCropFormats = (): CropStudioFormat[] => {
 export const saveCropFormatsList = (formats: CropStudioFormat[]) => {
   try {
     localStorage.setItem(STORAGE_CROP_FORMATS_KEY, JSON.stringify(formats));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('ea_crop_formats_updated', { detail: formats }));
+    }
   } catch (e) {
     console.error('Failed to save crop formats', e);
   }
+};
+
+export const updateCropFormat = (
+  id: string,
+  updates: Partial<CropStudioFormat>
+): CropStudioFormat | null => {
+  const formats = getSavedCropFormats();
+  const index = formats.findIndex((f) => f.id === id);
+  if (index === -1) return null;
+
+  const updated: CropStudioFormat = {
+    ...formats[index],
+    ...updates,
+    updatedAt: Date.now(),
+  };
+
+  const nextList = [...formats];
+  nextList[index] = updated;
+  saveCropFormatsList(nextList);
+  syncCropFormatToWorkflowConfig(updated);
+  return updated;
+};
+
+export const renameCropFormat = (id: string, newName: string): CropStudioFormat | null => {
+  if (!newName.trim()) return null;
+  return updateCropFormat(id, { name: newName.trim() });
+};
+
+export const saveNewCropFormat = (
+  formatData: Omit<CropStudioFormat, 'id' | 'createdAt' | 'updatedAt'>
+): CropStudioFormat => {
+  const formats = getSavedCropFormats();
+  const newFormat: CropStudioFormat = {
+    ...formatData,
+    id: `format-${Date.now()}`,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  };
+
+  const nextList = [newFormat, ...formats];
+  saveCropFormatsList(nextList);
+  setActiveCropFormatId(newFormat.id);
+  syncCropFormatToWorkflowConfig(newFormat);
+  return newFormat;
+};
+
+export const deleteCropFormat = (id: string): CropStudioFormat[] => {
+  const formats = getSavedCropFormats();
+  const nextList = formats.filter((f) => f.id !== id);
+  saveCropFormatsList(nextList);
+  const activeId = getActiveCropFormatId();
+  if (activeId === id) {
+    setActiveCropFormatId(nextList[0]?.id || '');
+  }
+  return nextList;
 };
 
 export const getActiveCropFormatId = (): string => {
@@ -163,6 +316,9 @@ export const getActiveCropFormatId = (): string => {
 export const setActiveCropFormatId = (id: string) => {
   try {
     localStorage.setItem(STORAGE_ACTIVE_CROP_FORMAT_ID_KEY, id);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('ea_active_crop_format_changed', { detail: id }));
+    }
   } catch (e) {}
 };
 
@@ -260,8 +416,25 @@ export const formatImageWithCropFormat = async (
           ctx.drawImage(img, offsetX, offsetY, zoomedW, zoomedH);
         }
 
-        if (format.watermarkConfig?.enabled) {
-          await drawWatermarkOnContext(ctx, width, height, format.watermarkConfig);
+        // Resolve effective watermark:
+        // Priority 1: format.watermarkConfig if present and explicitly defined
+        // Priority 2: active studio watermark from loadActiveWatermarkConfig if active
+        let effectiveWatermark: WatermarkConfig | null = null;
+        if (format.watermarkConfig && typeof format.watermarkConfig.enabled === 'boolean') {
+          if (format.watermarkConfig.enabled) {
+            effectiveWatermark = format.watermarkConfig;
+          }
+        } else if (typeof window !== 'undefined') {
+          try {
+            const activeWk = loadActiveWatermarkConfig();
+            if (activeWk?.config?.enabled) {
+              effectiveWatermark = activeWk.config;
+            }
+          } catch {}
+        }
+
+        if (effectiveWatermark && effectiveWatermark.enabled) {
+          await drawWatermarkOnContext(ctx, width, height, effectiveWatermark);
         }
 
         const mime = imgSrc.includes('.png') ? 'image/png' : imgSrc.includes('.webp') ? 'image/webp' : 'image/jpeg';

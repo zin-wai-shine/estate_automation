@@ -21,7 +21,8 @@ func main() {
 	database.ConnectDB()
 
 	app := fiber.New(fiber.Config{
-		AppName: "Estate Automate API",
+		AppName:   "Estate Automate API",
+		BodyLimit: 120 * 1024 * 1024, // 120MB limit for multi-photo payloads
 	})
 
 	app.Use(logger.New())

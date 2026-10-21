@@ -20,6 +20,7 @@ import {
   FiTrash2,
   FiCopy,
   FiCheck,
+  FiClock,
   FiSliders,
   FiArrowRight,
   FiRotateCcw,
@@ -133,6 +134,12 @@ export interface DynamicAIBoxConfig {
   watermarkPresetId?: string;
   watermarkConfig?: WatermarkConfig;
   cropFormatId?: string;
+  targetWidth?: number;
+  targetHeight?: number;
+  aspect?: string;
+  fitMode?: 'cover' | 'contain' | string;
+  focusPosition?: string;
+  cropZoom?: number;
   subtitle?: string;
   targetPages?: 'all' | 'first-only' | 'body-only' | 'custom';
   customPages?: string;
@@ -224,6 +231,8 @@ export interface DestinationNodeConfig {
   selectedIgAccountIds?: string[];
   selectedTiktokAccountIds?: string[];
   publishDirectly?: boolean;
+  publishMode?: 'public' | 'schedule';
+  scheduledAt?: string;
   includeHashtags?: boolean;
   includeFirstComment?: boolean;
   includeContent?: boolean; // include text & description from combine box
@@ -956,11 +965,11 @@ export const buildAlignedLayout = (
   const BRANCH_GAP = 36;        // Balanced separation gap between Content and Image branches
   const TOP_MARGIN = 140;
 
-  // Horizontal column grid
-  const TRIGGER_X = 100;
-  const COL_BRANCH_X = 300;     // Column 1: Get Content & Get Images
-  const COL_AI_X = 520;         // Column 2: Content AI Models & Image Enhancers / Direct Formats
-  const COL_FORMAT_X = 740;     // Column 3: Formats & Watermark Nodes (when Enhancers exist)
+  // Horizontal column grid - uniform 220px step across all columns
+  const TRIGGER_X = 80;
+  const COL_BRANCH_X = 300;     // Column 1: Get Content & Get Images (gap = 220px)
+  const COL_AI_X = 520;         // Column 2: Content AI Models & Image Enhancers / Direct Formats (gap = 220px)
+  const COL_FORMAT_X = 740;     // Column 3: Formats & Watermark Nodes (gap = 220px)
 
   const yById: Record<string, number> = {};
   const xById: Record<string, number> = {};
@@ -1110,159 +1119,27 @@ export const buildAlignedLayout = (
   const outputNodeY = triggerY;
   const destinationX = mergerNodeX + 220; // 960 or 1180
 
-  // Hierarchical Destination Layout:
-  // Primary destinations (connected from Combine Box / Output or root) sit at Column 5 (1180).
-  // -------------------------------------------------------------
-  // Planar Non-Crossing Hierarchical Destination & Combine Layout
-  // -------------------------------------------------------------
-  const rawDests = getNormalizedDestinations(base);
-  const isChildDest = (destId: string) =>
-    conns.some((c) => rawDests.some((p) => p.id === c.fromNodeId) && c.toNodeId === destId);
-
-  const primaryDests = rawDests.filter((d) => !isChildDest(d.id));
-  const childDests = rawDests.filter((d) => isChildDest(d.id));
-
-  // Determine upstream affinity for each destination or combine box to guarantee 0 crossing wires:
-  // - Pure Text / Content Branch inputs -> Upper lane (Affinity ~50)
-  // - Hybrid Text + Image inputs -> Bottom Image Lane (Affinity ~300)
-  // - Pure Image inputs -> Lowest Image Lane (Affinity ~400)
-  const getBranchAffinity = (destId: string): number => {
-    // Check if an incoming combine box feeds this destination
-    const incomingCb = conns.find(
-      (c) => c.toNodeId === destId && (base.combineBoxes || []).some((b) => b.id === c.fromNodeId)
-    );
-    const targetId = incomingCb ? incomingCb.fromNodeId : destId;
-
-    const inConns = conns.filter((c) => c.toNodeId === targetId);
-    if (inConns.length === 0) return 200;
-
-    const hasImageInput = inConns.some((c) => {
-      const fromId = c.fromNodeId;
-      if (fromId === 'get-images') return true;
-      const b = boxes.find((box) => box.id === fromId);
-      if (b && (isWatermarkAIBox(b) || isEnhanceAIBox(b, conns) || fromImages(b.id))) return true;
-      return false;
-    });
-
-    const hasTextInput = inConns.some((c) => {
-      const fromId = c.fromNodeId;
-      if (fromId === 'get-content') return true;
-      const b = boxes.find((box) => box.id === fromId);
-      if (b && (fromContent(b.id) || !fromImages(b.id))) return true;
-      return false;
-    });
-
-    if (hasTextInput && !hasImageInput) return 50;  // Pure text -> Top lane!
-    if (hasTextInput && hasImageInput) return 340; // Hybrid (Text + Images) -> Bottom lane!
-    if (hasImageInput && !hasTextInput) return 380; // Pure images -> Bottom lane!
-
-    // Fallback: average Y of direct inputs
+  // Helper to compute the vertical center of incoming connections for any node
+  const getIncomingCenterY = (
+    nodeId: string,
+    extraCoords?: Record<string, { x: number; y: number }>
+  ): number | null => {
+    const inConns = conns.filter((c) => c.toNodeId === nodeId);
+    if (inConns.length === 0) return null;
     const inYs = inConns
       .map((c) => {
+        if (extraCoords && extraCoords[c.fromNodeId]?.y !== undefined) return extraCoords[c.fromNodeId].y;
         if (yById[c.fromNodeId] !== undefined) return yById[c.fromNodeId];
         if (c.fromNodeId === 'get-content') return getContentY;
         if (c.fromNodeId === 'get-images') return getImagesY;
+        if (c.fromNodeId === 'trigger') return triggerY;
         return undefined;
       })
       .filter((y): y is number => typeof y === 'number');
 
-    return inYs.length > 0 ? inYs.reduce((a, b) => a + b, 0) / inYs.length : 200;
+    if (inYs.length === 0) return null;
+    return Math.round(inYs.reduce((sum, y) => sum + y, 0) / inYs.length);
   };
-
-  // Sort primary destinations so upper-affinity branches stay on top, eliminating crossing wires!
-  const sortedPrimaryDests = [...primaryDests].sort((a, b) => {
-    const diff = getBranchAffinity(a.id) - getBranchAffinity(b.id);
-    if (diff !== 0) return diff;
-    return primaryDests.indexOf(a) - primaryDests.indexOf(b);
-  });
-
-  const totalPrimary = sortedPrimaryDests.length;
-  const CHILD_STEP = 115;
-  const destCoords: Record<string, { x: number; y: number }> = {};
-
-  // Compute flexible, collision-free Y positions for each primary destination branch
-  if (totalPrimary === 1) {
-    const p = sortedPrimaryDests[0];
-    const affinity = getBranchAffinity(p.id);
-    const py = affinity <= 100 ? contentCenterY : affinity >= 300 ? imageCenterY : triggerY;
-    destCoords[p.id] = { x: destinationX, y: py };
-
-    const children = childDests.filter((c) => conns.some((w) => w.fromNodeId === p.id && w.toNodeId === c.id));
-    const numChildren = children.length;
-    const startChildY = numChildren <= 1 ? py : py - Math.round(((numChildren - 1) * CHILD_STEP) / 2);
-    children.forEach((c, cIdx) => {
-      destCoords[c.id] = { x: destinationX + 220, y: startChildY + cIdx * CHILD_STEP };
-    });
-  } else if (totalPrimary === 2) {
-    // 2-Branch Layout (e.g. Exact match to Image 2: Top Instagram text branch, Bottom Facebook photo/text branch)
-    const topDest = sortedPrimaryDests[0];
-    const btmDest = sortedPrimaryDests[1];
-
-    const topChildren = childDests.filter((c) => conns.some((w) => w.fromNodeId === topDest.id && w.toNodeId === c.id));
-    const btmChildren = childDests.filter((c) => conns.some((w) => w.fromNodeId === btmDest.id && w.toNodeId === c.id));
-
-    const topChildSpan = Math.max((topChildren.length - 1) * CHILD_STEP, 0);
-    const btmChildSpan = Math.max((btmChildren.length - 1) * CHILD_STEP, 0);
-
-    // Anchor bottom branch at imageCenterY (340) so Format / Image nodes go straight horizontally into it:
-    const btmY = imageCenterY;
-    // Calculate top branch Y with generous flexible separation between child account envelopes:
-    const MIN_BRANCH_GAP = 120;
-    const topYNeeded = btmY - (btmChildSpan / 2 + topChildSpan / 2 + MIN_BRANCH_GAP);
-    const topY = Math.min(topYNeeded, 20); // Elevated top lane (e.g. Y = 20), exactly matching Image 2!
-
-    destCoords[topDest.id] = { x: destinationX, y: topY };
-    destCoords[btmDest.id] = { x: destinationX, y: btmY };
-
-    const startTopChildY = topChildren.length <= 1 ? topY : topY - Math.round(((topChildren.length - 1) * CHILD_STEP) / 2);
-    topChildren.forEach((c, cIdx) => {
-      destCoords[c.id] = { x: destinationX + 220, y: startTopChildY + cIdx * CHILD_STEP };
-    });
-
-    const startBtmChildY = btmChildren.length <= 1 ? btmY : btmY - Math.round(((btmChildren.length - 1) * CHILD_STEP) / 2);
-    btmChildren.forEach((c, cIdx) => {
-      destCoords[c.id] = { x: destinationX + 220, y: startBtmChildY + cIdx * CHILD_STEP };
-    });
-  } else {
-    // Multi-branch layout (> 2 destinations) with flexible dynamic spacing:
-    const MIN_GAP = 100;
-    let currentY = 20;
-    sortedPrimaryDests.forEach((p, idx) => {
-      const children = childDests.filter((c) => conns.some((w) => w.fromNodeId === p.id && w.toNodeId === c.id));
-      const childSpan = Math.max((children.length - 1) * CHILD_STEP, 0);
-
-      if (idx === 0) {
-        currentY = Math.max(20, contentCenterY - 80);
-      } else {
-        const prevChildren = childDests.filter((c) => conns.some((w) => w.fromNodeId === sortedPrimaryDests[idx - 1].id && w.toNodeId === c.id));
-        const prevSpan = Math.max((prevChildren.length - 1) * CHILD_STEP, 0);
-        currentY += prevSpan / 2 + childSpan / 2 + MIN_GAP;
-      }
-
-      destCoords[p.id] = { x: destinationX, y: currentY };
-
-      const startChildY = children.length <= 1 ? currentY : currentY - Math.round(((children.length - 1) * CHILD_STEP) / 2);
-      children.forEach((c, cIdx) => {
-        destCoords[c.id] = { x: destinationX + 220, y: startChildY + cIdx * CHILD_STEP };
-      });
-    });
-  }
-
-  // Handle any orphan child destinations (if parent wire was cut or not found)
-  childDests.forEach((c, cIdx) => {
-    if (!destCoords[c.id]) {
-      destCoords[c.id] = {
-        x: destinationX + 220,
-        y: triggerY + cIdx * 130,
-      };
-    }
-  });
-
-  const updatedDestinations = rawDests.map((d) => ({
-    ...d,
-    x: destCoords[d.id]?.x ?? destinationX,
-    y: destCoords[d.id]?.y ?? triggerY,
-  }));
 
   // Categorize Combine Boxes by upstream column:
   const getUpstreamMaxX = (cbId: string): number => {
@@ -1294,31 +1171,34 @@ export const buildAlignedLayout = (
 
   // Early combine boxes (Column 2: 520, near Get Content or Get Images):
   earlyCbList.forEach((cb, idx) => {
+    const inCenter = getIncomingCenterY(cb.id);
     const isFromImages = conns.some((c) => c.fromNodeId === 'get-images' && c.toNodeId === cb.id);
-    const cy = isFromImages
+    const fallbackCy = isFromImages
       ? imageCenterY + (idx + 1) * NODE_V_STEP
       : contentCenterY - (idx + 1) * NODE_V_STEP;
-    cbCoords[cb.id] = { x: COL_AI_X, y: cy };
+    cbCoords[cb.id] = { x: COL_AI_X, y: inCenter !== null ? inCenter : fallbackCy };
   });
 
   // Late combine boxes (Column 4 or 3: mergerNodeX):
-  // Match the Y of their directly connected primary destination for a 100% straight horizontal line!
-  lateCbList.forEach((cb) => {
-    const directDestConn = conns.find((c) => c.fromNodeId === cb.id && sortedPrimaryDests.some((p) => p.id === c.toNodeId));
-    if (directDestConn && destCoords[directDestConn.toNodeId]) {
-      cbCoords[cb.id] = { x: mergerNodeX, y: destCoords[directDestConn.toNodeId].y };
-      return;
-    }
+  // Vertically center based on their incoming connections! (e.g. 2 connects -> exact midpoint)
+  const lateCbWithIdeal = lateCbList.map((cb) => {
+    const inCenter = getIncomingCenterY(cb.id);
+    return {
+      cb,
+      idealY: inCenter !== null ? inCenter : triggerY,
+    };
+  });
+  lateCbWithIdeal.sort((a, b) => a.idealY - b.idealY);
 
-    // If not directly connected to a primary destination, match upstream affinity:
-    const affinity = getBranchAffinity(cb.id);
-    const matchedDest = sortedPrimaryDests.find((d) => Math.abs(getBranchAffinity(d.id) - affinity) < 50);
-    if (matchedDest && destCoords[matchedDest.id]) {
-      cbCoords[cb.id] = { x: mergerNodeX, y: destCoords[matchedDest.id].y };
-      return;
+  const MIN_CB_GAP = 130;
+  for (let i = 1; i < lateCbWithIdeal.length; i++) {
+    if (lateCbWithIdeal[i].idealY < lateCbWithIdeal[i - 1].idealY + MIN_CB_GAP) {
+      lateCbWithIdeal[i].idealY = lateCbWithIdeal[i - 1].idealY + MIN_CB_GAP;
     }
+  }
 
-    cbCoords[cb.id] = { x: mergerNodeX, y: affinity <= 100 ? 20 : imageCenterY };
+  lateCbWithIdeal.forEach(({ cb, idealY }) => {
+    cbCoords[cb.id] = { x: mergerNodeX, y: idealY };
   });
 
   const updatedCombineBoxes = (base.combineBoxes || []).map((cb) => {
@@ -1329,6 +1209,122 @@ export const buildAlignedLayout = (
       y: coords?.y ?? triggerY,
     };
   });
+
+  // Hierarchical Destination Layout:
+  const rawDests = getNormalizedDestinations(base);
+  const isChildDest = (destId: string) =>
+    conns.some((c) => rawDests.some((p) => p.id === c.fromNodeId) && c.toNodeId === destId);
+
+  const primaryDests = rawDests.filter((d) => !isChildDest(d.id));
+  const childDests = rawDests.filter((d) => isChildDest(d.id));
+
+  // Determine incoming center for each primary destination to place and sort them without crossed wires
+  const getDestIncomingCenterY = (destId: string): number => {
+    const inCenter = getIncomingCenterY(destId, cbCoords);
+    if (inCenter !== null) return inCenter;
+    return triggerY;
+  };
+
+  const sortedPrimaryDests = [...primaryDests].sort((a, b) => {
+    const diff = getDestIncomingCenterY(a.id) - getDestIncomingCenterY(b.id);
+    if (diff !== 0) return diff;
+    return primaryDests.indexOf(a) - primaryDests.indexOf(b);
+  });
+
+  const totalPrimary = sortedPrimaryDests.length;
+  const CHILD_STEP = 150;
+  const destCoords: Record<string, { x: number; y: number }> = {};
+
+  if (totalPrimary === 1) {
+    const p = sortedPrimaryDests[0];
+    const py = getDestIncomingCenterY(p.id);
+    destCoords[p.id] = { x: destinationX, y: py };
+
+    const children = childDests.filter((c) => conns.some((w) => w.fromNodeId === p.id && w.toNodeId === c.id));
+    const numChildren = children.length;
+    const startChildY = numChildren <= 1 ? py : py - Math.round(((numChildren - 1) * CHILD_STEP) / 2);
+    children.forEach((c, cIdx) => {
+      destCoords[c.id] = { x: destinationX + 220, y: startChildY + cIdx * CHILD_STEP };
+    });
+  } else if (totalPrimary === 2) {
+    const topDest = sortedPrimaryDests[0];
+    const btmDest = sortedPrimaryDests[1];
+
+    const topChildren = childDests.filter((c) => conns.some((w) => w.fromNodeId === topDest.id && w.toNodeId === c.id));
+    const btmChildren = childDests.filter((c) => conns.some((w) => w.fromNodeId === btmDest.id && w.toNodeId === c.id));
+
+    const topChildSpan = Math.max((topChildren.length - 1) * CHILD_STEP, 0);
+    const btmChildSpan = Math.max((btmChildren.length - 1) * CHILD_STEP, 0);
+
+    const topIncomingY = getDestIncomingCenterY(topDest.id);
+    const btmIncomingY = getDestIncomingCenterY(btmDest.id);
+
+    const MIN_BRANCH_GAP = 150;
+    const minTopY = Math.round(topChildSpan / 2) + 20;
+    const requiredSeparation = btmChildSpan / 2 + topChildSpan / 2 + MIN_BRANCH_GAP;
+
+    let topY = topIncomingY;
+    let btmY = btmIncomingY;
+
+    if (btmY - topY < requiredSeparation) {
+      const midY = Math.round((topIncomingY + btmIncomingY) / 2);
+      topY = Math.max(minTopY, midY - Math.round(requiredSeparation / 2));
+      btmY = topY + requiredSeparation;
+    }
+
+    destCoords[topDest.id] = { x: destinationX, y: topY };
+    destCoords[btmDest.id] = { x: destinationX, y: btmY };
+
+    const startTopChildY = topChildren.length <= 1 ? topY : topY - Math.round(((topChildren.length - 1) * CHILD_STEP) / 2);
+    topChildren.forEach((c, cIdx) => {
+      destCoords[c.id] = { x: destinationX + 220, y: startTopChildY + cIdx * CHILD_STEP };
+    });
+
+    const startBtmChildY = btmChildren.length <= 1 ? btmY : btmY - Math.round(((btmChildren.length - 1) * CHILD_STEP) / 2);
+    btmChildren.forEach((c, cIdx) => {
+      destCoords[c.id] = { x: destinationX + 220, y: startBtmChildY + cIdx * CHILD_STEP };
+    });
+  } else {
+    const MIN_GAP = 150;
+    let currentY = 20;
+    sortedPrimaryDests.forEach((p, idx) => {
+      const children = childDests.filter((c) => conns.some((w) => w.fromNodeId === p.id && w.toNodeId === c.id));
+      const childSpan = Math.max((children.length - 1) * CHILD_STEP, 0);
+      const inCenter = getDestIncomingCenterY(p.id);
+
+      if (idx === 0) {
+        currentY = Math.max(20 + Math.round(childSpan / 2), inCenter);
+      } else {
+        const prevChildren = childDests.filter((c) => conns.some((w) => w.fromNodeId === sortedPrimaryDests[idx - 1].id && w.toNodeId === c.id));
+        const prevSpan = Math.max((prevChildren.length - 1) * CHILD_STEP, 0);
+        const naturalY = inCenter;
+        currentY = Math.max(naturalY, currentY + prevSpan / 2 + childSpan / 2 + MIN_GAP);
+      }
+
+      destCoords[p.id] = { x: destinationX, y: currentY };
+
+      const startChildY = children.length <= 1 ? currentY : currentY - Math.round(((children.length - 1) * CHILD_STEP) / 2);
+      children.forEach((c, cIdx) => {
+        destCoords[c.id] = { x: destinationX + 220, y: startChildY + cIdx * CHILD_STEP };
+      });
+    });
+  }
+
+  // Handle any orphan child destinations (if parent wire was cut or not found)
+  childDests.forEach((c, cIdx) => {
+    if (!destCoords[c.id]) {
+      destCoords[c.id] = {
+        x: destinationX + 220,
+        y: triggerY + cIdx * 150,
+      };
+    }
+  });
+
+  const updatedDestinations = rawDests.map((d) => ({
+    ...d,
+    x: destCoords[d.id]?.x ?? destinationX,
+    y: destCoords[d.id]?.y ?? triggerY,
+  }));
 
   return {
     ...base,
@@ -1345,7 +1341,7 @@ export const buildAlignedLayout = (
       id: 'output',
       enabled: isOutputActive,
       x: outputNodeX,
-      y: outputNodeY,
+      y: getIncomingCenterY('output', cbCoords) ?? outputNodeY,
       title: base.outputNode?.title || 'Final Content & Images',
     },
     destination: updatedDestinations[0],
@@ -2073,6 +2069,7 @@ export interface FacebookWorkflowCanvasRef {
   openGeneralSettings: () => void;
   toggleGeneralSettings: () => void;
   getDeletedBoxesCount: () => number;
+  openNodeDrawer: (nodeId: string) => void;
 }
 
 export interface WorkflowExecutionState {
@@ -2127,6 +2124,9 @@ export interface FacebookWorkflowCanvasProps {
   isGeneralSettingsOpen?: boolean;
   onToggleGeneralSettings?: (open: boolean) => void;
   formatName?: string;
+  onUpdateBoxOutput?: (boxId: string, outputText: string) => void;
+  onRegenerateBoxOutput?: (boxId: string) => Promise<string | void>;
+  onContinueWorkflow?: (fromBoxId?: string) => void;
 }
 
 /**
@@ -2280,21 +2280,32 @@ export const FacebookWorkflowCanvas = forwardRef<
     isGeneralSettingsOpen,
     onToggleGeneralSettings,
     formatName,
+    onUpdateBoxOutput,
+    onRegenerateBoxOutput,
+    onContinueWorkflow,
   },
   ref
 ) {
   const { actualTheme } = useTheme();
   const isDark = actualTheme === 'dark';
   const RECEPTIVE_COLOR = isDark ? '#EAB308' : '#D97706';
-  const [config, setConfig] = useState<FacebookWorkflowConfig>(() =>
-    sanitizeAndResolveCollisions(initialConfig || loadSavedFacebookWorkflowConfig())
-  );
-
-  useEffect(() => {
-    if (initialConfig) {
-      setConfig(sanitizeAndResolveCollisions(initialConfig));
-    }
-  }, [initialConfig]);
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const [config, setConfig] = useState<FacebookWorkflowConfig>(() => {
+    const base = sanitizeAndResolveCollisions(initialConfig || loadSavedFacebookWorkflowConfig());
+    const vWidth = typeof window !== 'undefined' ? window.innerWidth - 56 : 1200;
+    const vHeight = typeof window !== 'undefined' ? window.innerHeight - 60 : 800;
+    const contentWidth = 1420;
+    const contentHeight = 440;
+    const fitZoomX = (vWidth - 140) / contentWidth;
+    const fitZoomY = (vHeight - 120) / contentHeight;
+    const optimalZoom = Math.min(Math.max(Math.min(fitZoomX, fitZoomY), 0.76), 0.88);
+    const centeredPan = calculateCenteredPanOffset(base, vWidth, vHeight, optimalZoom);
+    return {
+      ...base,
+      zoom: optimalZoom,
+      panOffset: centeredPan,
+    };
+  });
 
   const getNodeExecutionStatus = (nodeId: string): 'idle' | 'running' | 'success' | 'error' => {
     if (!executionState) return 'idle';
@@ -2304,62 +2315,58 @@ export const FacebookWorkflowCanvas = forwardRef<
     return 'idle';
   };
 
-  const canvasRef = useRef<HTMLDivElement>(null);
-  const hasAutoCenteredRef = useRef(false);
+  // Synchronize when initialConfig updates (e.g. backend sync or format switch) with smooth centering
+  useEffect(() => {
+    if (!initialConfig) return;
+    const sanitized = sanitizeAndResolveCollisions(initialConfig);
+    const el = canvasRef.current;
+    const vWidth = el && el.clientWidth > 50 ? el.clientWidth : (typeof window !== 'undefined' ? window.innerWidth - 56 : 1200);
+    const vHeight = el && el.clientHeight > 50 ? el.clientHeight : (typeof window !== 'undefined' ? window.innerHeight - 60 : 800);
 
-  // Auto-center workflow nodes in viewport on mount as soon as canvas is measured
+    const contentWidth = 1420;
+    const contentHeight = 440;
+    const fitZoomX = (vWidth - 140) / contentWidth;
+    const fitZoomY = (vHeight - 120) / contentHeight;
+    const optimalZoom = Math.min(Math.max(Math.min(fitZoomX, fitZoomY), 0.76), 0.88);
+    const centeredPan = calculateCenteredPanOffset(sanitized, vWidth, vHeight, optimalZoom);
+
+    setConfig({
+      ...sanitized,
+      zoom: optimalZoom,
+      panOffset: centeredPan,
+    });
+  }, [initialConfig]);
+
+  // Keep canvas centered smoothly on viewport resize (debounced)
   useEffect(() => {
     const el = canvasRef.current;
     if (!el) return;
 
-    const performCenter = (width: number, height: number) => {
-      if (width <= 50 || height <= 50) return;
-      hasAutoCenteredRef.current = true;
-      setConfig((prev) => {
-        const nextPan = calculateCenteredPanOffset(prev, width, height, prev.zoom);
-        if (prev.panOffset.x === nextPan.x && prev.panOffset.y === nextPan.y) {
-          return prev;
-        }
-        return { ...prev, panOffset: nextPan };
-      });
-    };
-
-    if (el.clientWidth > 50 && el.clientHeight > 50 && !hasAutoCenteredRef.current) {
-      performCenter(el.clientWidth, el.clientHeight);
-    }
-
+    let resizeTimer: any = null;
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const { width, height } = entry.contentRect;
-        if (width > 50 && height > 50 && !hasAutoCenteredRef.current) {
-          performCenter(width, height);
+        if (width > 100 && height > 100) {
+          clearTimeout(resizeTimer);
+          resizeTimer = setTimeout(() => {
+            setConfig((prev) => {
+              const nextPan = calculateCenteredPanOffset(prev, width, height, prev.zoom);
+              if (Math.abs(prev.panOffset.x - nextPan.x) <= 2 && Math.abs(prev.panOffset.y - nextPan.y) <= 2) {
+                return prev;
+              }
+              return { ...prev, panOffset: nextPan };
+            });
+          }, 60);
         }
       }
     });
 
     observer.observe(el);
     return () => {
+      clearTimeout(resizeTimer);
       observer.disconnect();
     };
   }, []);
-
-  useEffect(() => {
-    if (initialConfig) {
-      const sanitized = sanitizeAndResolveCollisions(initialConfig);
-      if (canvasRef.current && canvasRef.current.clientWidth > 50 && canvasRef.current.clientHeight > 50) {
-        const centeredPan = calculateCenteredPanOffset(
-          sanitized,
-          canvasRef.current.clientWidth,
-          canvasRef.current.clientHeight,
-          sanitized.zoom
-        );
-        setConfig({ ...sanitized, panOffset: centeredPan });
-      } else {
-        hasAutoCenteredRef.current = false;
-        setConfig(sanitized);
-      }
-    }
-  }, [initialConfig]);
 
   // Ensure sanitized, deduplicated config is persisted on mount to immediately repair any legacy corrupted/duplicate connections
   useEffect(() => {
@@ -2499,6 +2506,7 @@ export const FacebookWorkflowCanvas = forwardRef<
   // Node Modal State
   const [activeModalNode, setActiveModalNode] = useState<ActiveModalNode>(null);
   const [isAISettingsDrawerOpen, setIsAISettingsDrawerOpen] = useState(false);
+  const [isRegeneratingAI, setIsRegeneratingAI] = useState(false);
 
   // Dedicated Connect Items Drawer (opened via [+] node button)
   const [connectDrawerNode, setConnectDrawerNode] = useState<{
@@ -2816,6 +2824,82 @@ export const FacebookWorkflowCanvas = forwardRef<
     syncPrompts();
     window.addEventListener('storage', syncPrompts);
     return () => window.removeEventListener('storage', syncPrompts);
+  }, [activeModalNode]);
+
+  // Saved Crop Studio Formats (synced with Crop & Cut Studio)
+  const [savedCropFormatsList, setSavedCropFormatsList] = useState<CropStudioFormat[]>(() => getSavedCropFormats());
+
+  useEffect(() => {
+    const syncFormats = () => {
+      const formats = getSavedCropFormats();
+      setSavedCropFormatsList(formats);
+
+      // Auto-synchronize any watermark node in config with the updated format settings
+      setConfig((prev) => {
+        let changed = false;
+        const newAiBoxes = (prev.aiBoxes || []).map((box) => {
+          if (!isWatermarkAIBox(box)) return box;
+          const match =
+            formats.find((f) => f.id === box.cropFormatId || f.id === box.templateId || f.id === box.watermarkPresetId) ||
+            formats.find((f) => box.templateText && f.name.toLowerCase() === box.templateText.toLowerCase()) ||
+            formats.find((f) => box.title && f.name && box.title.toLowerCase().includes(f.name.toLowerCase())) ||
+            ((box.title?.toLowerCase().includes('fb') || box.templateText?.toLowerCase().includes('fb')) ? formats.find((f) => f.name.toLowerCase().includes('fb')) : null);
+
+          if (match) {
+            const expectedSubtitle = `${match.targetWidth}×${match.targetHeight} (${match.aspect || '1:1'})`;
+            const expectedTitle = `Format: ${match.name}`;
+            const isDiff =
+              box.subtitle !== expectedSubtitle ||
+              box.title !== expectedTitle ||
+              box.templateText !== match.name ||
+              box.cropFormatId !== match.id ||
+              box.targetWidth !== match.targetWidth ||
+              box.targetHeight !== match.targetHeight ||
+              box.aspect !== match.aspect ||
+              box.fitMode !== match.fitMode ||
+              box.focusPosition !== match.focusPosition ||
+              box.cropZoom !== match.cropZoom;
+
+            if (isDiff) {
+              changed = true;
+              return {
+                ...box,
+                cropFormatId: match.id,
+                templateId: match.id,
+                watermarkPresetId: match.id,
+                templateText: match.name,
+                title: expectedTitle,
+                subtitle: expectedSubtitle,
+                targetWidth: match.targetWidth,
+                targetHeight: match.targetHeight,
+                aspect: match.aspect,
+                fitMode: match.fitMode,
+                focusPosition: match.focusPosition,
+                cropZoom: match.cropZoom,
+                watermarkConfig: match.watermarkConfig || box.watermarkConfig,
+              };
+            }
+          }
+          return box;
+        });
+
+        if (changed) {
+          const nextConfig = { ...prev, aiBoxes: newAiBoxes };
+          updateConfig(nextConfig);
+          return nextConfig;
+        }
+        return prev;
+      });
+    };
+    syncFormats();
+    window.addEventListener('storage', syncFormats);
+    window.addEventListener('ea_crop_formats_updated', syncFormats);
+    window.addEventListener('ea_active_crop_format_changed', syncFormats);
+    return () => {
+      window.removeEventListener('storage', syncFormats);
+      window.removeEventListener('ea_crop_formats_updated', syncFormats);
+      window.removeEventListener('ea_active_crop_format_changed', syncFormats);
+    };
   }, [activeModalNode]);
 
   // Sync to parent and localStorage
@@ -3724,7 +3808,7 @@ export const FacebookWorkflowCanvas = forwardRef<
       id: newId,
       enabled: true,
       x: (currentDests[0]?.x || 740),
-      y: (currentDests[currentDests.length - 1]?.y || 248) + 140,
+      y: (currentDests[currentDests.length - 1]?.y || 248) + 150,
       targetMode,
       storeInDatabase: isDb,
       postToSocialMedia: isSoc,
@@ -3865,14 +3949,14 @@ export const FacebookWorkflowCanvas = forwardRef<
         if (sourceDest) {
           const siblingCount = (config.connections || []).filter((c) => c.fromNodeId === fromNodeId).length;
           newX = sourceDest.x + 180;
-          newY = sourceDest.y + siblingCount * 115;
+          newY = sourceDest.y + siblingCount * 150;
         } else if (sourceCb) {
           const siblingCount = (config.connections || []).filter((c) => c.fromNodeId === fromNodeId).length;
           newX = sourceCb.x + 180;
-          newY = sourceCb.y + siblingCount * 115;
+          newY = sourceCb.y + siblingCount * 150;
         } else if (lastDest) {
           newX = lastDest.x;
-          newY = lastDest.y + 140;
+          newY = lastDest.y + 150;
         }
 
         const newDest: DestinationNodeConfig = {
@@ -3945,14 +4029,14 @@ export const FacebookWorkflowCanvas = forwardRef<
         if (sourceCb) {
           const siblingCount = (config.connections || []).filter((c) => c.fromNodeId === fromNodeId).length;
           newX = sourceCb.x + 180;
-          newY = sourceCb.y + siblingCount * 120;
+          newY = sourceCb.y + siblingCount * 150;
         } else if (sourceDest) {
           const siblingCount = (config.connections || []).filter((c) => c.fromNodeId === fromNodeId).length;
           newX = sourceDest.x + 180;
-          newY = sourceDest.y + siblingCount * 120;
+          newY = sourceDest.y + siblingCount * 150;
         } else if (lastDest) {
           newX = lastDest.x;
-          newY = lastDest.y + 140;
+          newY = lastDest.y + 150;
         }
         const platformTitle =
           platform === 'facebook'
@@ -4034,7 +4118,7 @@ export const FacebookWorkflowCanvas = forwardRef<
         id: destId,
         enabled: true,
         x: updatedDests[0]?.x || 740,
-        y: (updatedDests[updatedDests.length - 1]?.y || 248) + 140,
+        y: (updatedDests[updatedDests.length - 1]?.y || 248) + 150,
         targetMode,
         platform: targetMode === 'remaining_posts' ? 'database' : undefined,
         storeInDatabase: isDb,
@@ -4664,6 +4748,13 @@ export const FacebookWorkflowCanvas = forwardRef<
       templateText: defaultFormat?.name || '',
       cropFormatId: defaultFormat?.id || '',
       watermarkPresetId: defaultFormat?.id || '',
+      targetWidth: defaultFormat?.targetWidth || 1080,
+      targetHeight: defaultFormat?.targetHeight || 1350,
+      aspect: defaultFormat?.aspect || '4:5',
+      fitMode: (defaultFormat?.fitMode || 'cover') as any,
+      focusPosition: (defaultFormat?.focusPosition || 'center') as any,
+      cropZoom: defaultFormat?.cropZoom || 1,
+      watermarkConfig: defaultFormat?.watermarkConfig,
       customPrompt: '',
       enabled: true,
       x: 820,
@@ -5221,6 +5312,26 @@ export const FacebookWorkflowCanvas = forwardRef<
         handleToggleGeneralSettings(!isRecoverModalOpen);
       },
       getDeletedBoxesCount: () => deletedBoxes.length,
+      openNodeDrawer: (nodeId: string) => {
+        if (nodeId === 'trigger') {
+          setActiveModalNode({ type: 'trigger' });
+        } else if (nodeId === 'get-content') {
+          setActiveModalNode({ type: 'get-content' });
+        } else if (nodeId === 'get-images') {
+          setActiveModalNode({ type: 'get-images' });
+        } else if (nodeId === 'output') {
+          setActiveModalNode({ type: 'output' });
+        } else if (config.aiBoxes.some((b) => b.id === nodeId)) {
+          setActiveModalNode({ type: 'ai-box', boxId: nodeId });
+        } else if (config.combineBoxes?.some((cb) => cb.id === nodeId)) {
+          setActiveModalNode({ type: 'combine', combineId: nodeId });
+        } else if (
+          config.destinations?.some((d) => d.id === nodeId) ||
+          config.destination?.id === nodeId
+        ) {
+          setActiveModalNode({ type: 'destination', destinationId: nodeId });
+        }
+      },
     }),
     [config, deletedBoxes, isRecoverModalOpen, onToggleGeneralSettings]
   );
@@ -5817,6 +5928,7 @@ export const FacebookWorkflowCanvas = forwardRef<
             left: 0,
             width: '100%',
             height: '100%',
+            transition: isPanning || draggedNodeId ? 'none' : 'transform 0.28s cubic-bezier(0.16, 1, 0.3, 1)',
           }}
         >
           {/* SVG Connection Lines */}
@@ -6407,7 +6519,11 @@ export const FacebookWorkflowCanvas = forwardRef<
                     top: `${CIRCLE_SIZE + 8}px`,
                     left: '50%',
                     transform: 'translateX(-50%)',
-                    whiteSpace: 'nowrap',
+                    width: 'max-content',
+                    maxWidth: '160px',
+                    textAlign: 'center',
+                    whiteSpace: 'normal',
+                    lineHeight: '1.25',
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
@@ -6418,7 +6534,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   }}
                   onClick={(e) => handleNodeClick({ type: 'trigger' }, e)}
                 >
-                  <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                  <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)', wordBreak: 'break-word', textAlign: 'center' }}>
                     {config.trigger.monitoredPageName || 'Extract Link'}
                   </span>
                   {triggerStatus === 'running' && (
@@ -6556,7 +6672,11 @@ export const FacebookWorkflowCanvas = forwardRef<
                     top: `${CIRCLE_SIZE + 8}px`,
                     left: '50%',
                     transform: 'translateX(-50%)',
-                    whiteSpace: 'nowrap',
+                    width: 'max-content',
+                    maxWidth: '150px',
+                    textAlign: 'center',
+                    whiteSpace: 'normal',
+                    lineHeight: '1.25',
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
@@ -6567,7 +6687,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   }}
                   onClick={(e) => handleNodeClick({ type: 'get-content' }, e)}
                 >
-                  <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                  <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)', wordBreak: 'break-word', textAlign: 'center' }}>
                     Get Content
                   </span>
                   {contentStatus === 'running' ? (
@@ -6712,7 +6832,11 @@ export const FacebookWorkflowCanvas = forwardRef<
                 top: `${CIRCLE_SIZE + 8}px`,
                 left: '50%',
                 transform: 'translateX(-50%)',
-                whiteSpace: 'nowrap',
+                width: 'max-content',
+                maxWidth: '150px',
+                textAlign: 'center',
+                whiteSpace: 'normal',
+                lineHeight: '1.25',
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
@@ -6723,7 +6847,7 @@ export const FacebookWorkflowCanvas = forwardRef<
               }}
               onClick={(e) => handleNodeClick({ type: 'get-images' }, e)}
             >
-              <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+              <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)', wordBreak: 'break-word', textAlign: 'center' }}>
                 Get Images
               </span>
               {imagesStatus === 'running' ? (
@@ -6904,7 +7028,11 @@ export const FacebookWorkflowCanvas = forwardRef<
                     top: `${CIRCLE_SIZE + 8}px`,
                     left: '50%',
                     transform: 'translateX(-50%)',
-                    whiteSpace: 'nowrap',
+                    width: 'max-content',
+                    maxWidth: '160px',
+                    textAlign: 'center',
+                    whiteSpace: 'normal',
+                    lineHeight: '1.25',
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
@@ -6959,32 +7087,50 @@ export const FacebookWorkflowCanvas = forwardRef<
                         boxShadow: '0 2px 8px rgba(0,0,0,0.18)',
                       }}
                     />
-                  ) : (
-                    <span
-                      style={{
-                        fontSize: '0.8125rem',
-                        fontWeight: 600,
-                        color: 'var(--text-primary)',
-                        transition: 'color 0.2s ease',
-                        maxWidth: '130px',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        display: '-webkit-box',
-                        WebkitLineClamp: 2,
-                        WebkitBoxOrient: 'vertical',
-                        textAlign: 'center',
-                        lineHeight: '1.25',
-                        wordBreak: 'break-word',
-                      }}
-                      onDoubleClick={(e) => {
-                        e.stopPropagation();
-                        setEditingCanvasBoxId(box.id);
-                        setEditingCanvasBoxTitle(box.title);
-                      }}
-                    >
-                      {box.title}
-                    </span>
-                  )}
+                  ) : (() => {
+                    const matchingCropFormat = isWatermark
+                      ? (savedCropFormatsList.find((f) => f.id === box.cropFormatId || f.id === box.templateId || f.id === box.watermarkPresetId) ||
+                         savedCropFormatsList.find((f) => box.templateText && f.name.toLowerCase() === box.templateText.toLowerCase()) ||
+                         savedCropFormatsList.find((f) => box.title && f.name && box.title.toLowerCase().includes(f.name.toLowerCase())) ||
+                         ((box.title?.toLowerCase().includes('fb') || box.templateText?.toLowerCase().includes('fb')) ? savedCropFormatsList.find((f) => f.name.toLowerCase().includes('fb')) : null))
+                      : null;
+
+                    const displayNodeTitle = isWatermark && matchingCropFormat && (!box.title || box.title.startsWith('Format:') || box.title.startsWith('Crop & Format') || box.title === matchingCropFormat.name)
+                      ? `Format: ${matchingCropFormat.name}`
+                      : box.title;
+
+                    const displayNodeSubtitle = isWatermark && matchingCropFormat
+                      ? `${matchingCropFormat.targetWidth}×${matchingCropFormat.targetHeight} (${matchingCropFormat.aspect || '1:1'})`
+                      : (box.subtitle || 'Crop & Watermark');
+
+                    return (
+                      <span
+                        style={{
+                          fontSize: '0.8125rem',
+                          fontWeight: 600,
+                          color: 'var(--text-primary)',
+                          transition: 'color 0.2s ease',
+                          maxWidth: '130px',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          display: '-webkit-box',
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: 'vertical',
+                          textAlign: 'center',
+                          lineHeight: '1.25',
+                          wordBreak: 'break-word',
+                        }}
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          setEditingCanvasBoxId(box.id);
+                          setEditingCanvasBoxTitle(displayNodeTitle);
+                        }}
+                        title={displayNodeTitle}
+                      >
+                        {displayNodeTitle}
+                      </span>
+                    );
+                  })()}
                   {boxStatus === 'running' ? (
                     <span
                       style={{
@@ -7016,7 +7162,24 @@ export const FacebookWorkflowCanvas = forwardRef<
                         lineHeight: '1.2',
                       }}
                     >
-                      {isWatermark ? (box.subtitle || 'Crop & Watermark') : (isRunware || isEnhance) ? 'Image Enhancer' : isTextFormatAIBox(box) ? 'Format Preset' : isTextAIBox(box, config.connections) ? 'AI Model' : 'Copywriter'}
+                      {isWatermark
+                        ? (() => {
+                            const matchingCropFormat =
+                              savedCropFormatsList.find((f) => f.id === box.cropFormatId || f.id === box.templateId || f.id === box.watermarkPresetId) ||
+                              savedCropFormatsList.find((f) => box.templateText && f.name.toLowerCase() === box.templateText.toLowerCase()) ||
+                              savedCropFormatsList.find((f) => box.title && f.name && box.title.toLowerCase().includes(f.name.toLowerCase())) ||
+                              ((box.title?.toLowerCase().includes('fb') || box.templateText?.toLowerCase().includes('fb')) ? savedCropFormatsList.find((f) => f.name.toLowerCase().includes('fb')) : null);
+                            return matchingCropFormat
+                              ? `${matchingCropFormat.targetWidth}×${matchingCropFormat.targetHeight} (${matchingCropFormat.aspect || '1:1'})`
+                              : (box.subtitle || 'Crop & Watermark');
+                          })()
+                        : (isRunware || isEnhance)
+                        ? 'Image Enhancer'
+                        : isTextFormatAIBox(box)
+                        ? 'Format Preset'
+                        : isTextAIBox(box, config.connections)
+                        ? 'AI Model'
+                        : 'Copywriter'}
                     </span>
                   )}
                 </div>
@@ -7115,7 +7278,11 @@ export const FacebookWorkflowCanvas = forwardRef<
                     top: `${CIRCLE_SIZE + 8}px`,
                     left: '50%',
                     transform: 'translateX(-50%)',
-                    whiteSpace: 'nowrap',
+                    width: 'max-content',
+                    maxWidth: '160px',
+                    textAlign: 'center',
+                    whiteSpace: 'normal',
+                    lineHeight: '1.25',
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
@@ -7126,7 +7293,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   }}
                   onClick={(e) => handleNodeClick({ type: 'combine', combineId: cb.id, id: cb.id }, e)}
                 >
-                  <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>{cb.title || 'Combine Box'}</span>
+                  <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)', wordBreak: 'break-word', textAlign: 'center' }}>{cb.title || 'Combine Box'}</span>
                   <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
                     {cbStatus === 'success' ? `✓ Merged Output · ${uniqueCbInputs.length} ready` : `Merged Output · ${uniqueCbInputs.length} input${uniqueCbInputs.length !== 1 ? 's' : ''}`}
                   </span>
@@ -7139,7 +7306,7 @@ export const FacebookWorkflowCanvas = forwardRef<
             if (destNode.enabled === false) return null;
             const destId = destNode.id || 'destination';
             const destX = destNode.x ?? 740;
-            const destY = destNode.y ?? (248 + destIdx * 140);
+            const destY = destNode.y ?? (248 + destIdx * 150);
             const isSelected =
               (activeModalNode?.type === 'destination' &&
               (activeModalNode.destinationId ? activeModalNode.destinationId === destId : destIdx === 0)) ||
@@ -7458,10 +7625,14 @@ export const FacebookWorkflowCanvas = forwardRef<
                 <div
                   style={{
                     position: 'absolute',
-                    top: `${CIRCLE_SIZE + 8}px`,
+                    top: `${CIRCLE_SIZE + 6}px`,
                     left: '50%',
                     transform: 'translateX(-50%)',
-                    whiteSpace: 'nowrap',
+                    width: 'max-content',
+                    maxWidth: '160px',
+                    textAlign: 'center',
+                    whiteSpace: 'normal',
+                    lineHeight: '1.25',
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
@@ -7472,10 +7643,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                   }}
                   onClick={(e) => handleNodeClick({ type: 'destination', destinationId: destId }, e)}
                 >
-                  <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                  <span style={{ fontSize: '0.8125rem', fontWeight: 600, lineHeight: 1.25, color: 'var(--text-primary)', wordBreak: 'break-word', textAlign: 'center' }}>
                     {targetTitle}
                   </span>
-                  <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
+                  <span style={{ fontSize: '0.625rem', lineHeight: 1.25, color: 'var(--text-muted)' }}>
                     {targetSubtitle}
                   </span>
                 </div>
@@ -8688,77 +8859,217 @@ export const FacebookWorkflowCanvas = forwardRef<
 
 
 
-                    {/* Generated Output Preview Box (if available) */}
+                    {/* Generated Output Preview & Editor Box */}
                     {(() => {
-                      const boxOutput = aiGeneratedOutputs?.[currentModalAIBox.id] || (currentModalAIBox.id === config.aiBoxes[0]?.id ? aiGeneratedCopy : undefined);
-                      if (!boxOutput) return null;
+                      const isNodeFailed = Boolean(executionState?.failedNodeIds?.includes(currentModalAIBox.id));
+                      const boxOutput = aiGeneratedOutputs?.[currentModalAIBox.id] ?? (currentModalAIBox.id === config.aiBoxes[0]?.id ? (aiGeneratedCopy ?? '') : '');
+                      const hasExecutionOrOutput = Boolean(
+                        boxOutput ||
+                        isNodeFailed ||
+                        executionState?.isRunning ||
+                        executionState?.completedNodeIds?.includes(currentModalAIBox.id) ||
+                        executionState?.currentStepMessage
+                      );
+
+                      if (!hasExecutionOrOutput && !boxOutput && !isNodeFailed) return null;
+
+                      const hasValidContent = Boolean(boxOutput && boxOutput.trim().length > 0);
+
                       return (
                         <div
                           style={{
                             display: 'flex',
                             flexDirection: 'column',
-                            gap: '0.45rem',
-                            padding: '0.625rem',
+                            gap: '0.5rem',
+                            padding: '0.75rem',
                             borderRadius: '8px',
-                            border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                            border: isNodeFailed && !hasValidContent
+                              ? '1px solid #EF4444'
+                              : isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
                             backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#F8FAFC',
                           }}
                         >
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          {/* Failure Alert Banner */}
+                          {isNodeFailed && (
+                            <div
+                              style={{
+                                display: 'flex',
+                                alignItems: 'flex-start',
+                                gap: '0.5rem',
+                                padding: '0.5rem 0.625rem',
+                                borderRadius: '6px',
+                                backgroundColor: isDark ? 'rgba(239, 68, 68, 0.12)' : '#FEF2F2',
+                                border: '1px solid rgba(239, 68, 68, 0.35)',
+                                color: isDark ? '#FCA5A5' : '#DC2626',
+                                fontSize: '0.71875rem',
+                                lineHeight: 1.4,
+                              }}
+                            >
+                              <FiAlertTriangle size={15} style={{ flexShrink: 0, marginTop: '2px', color: '#EF4444' }} />
+                              <div style={{ flex: 1 }}>
+                                <div style={{ fontWeight: 700, color: isDark ? '#FCA5A5' : '#B91C1C' }}>
+                                  Formatting Failed at this Step
+                                </div>
+                                <div style={{ fontSize: '0.6875rem', color: isDark ? '#F87171' : '#DC2626', marginTop: '2px' }}>
+                                  AI generation did not complete. You can edit/write formatted copy below or click &quot;Re-generate&quot;. Then click &quot;Continue Workflow&quot; to proceed.
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '4px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                               <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)' }}>
                                 Generated Output Copy
                               </span>
-                              <span style={{ fontSize: '0.625rem', fontWeight: 600, color: '#10B981', backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#DCFCE7', padding: '1px 5px', borderRadius: '4px' }}>
-                                ✓ Ready
-                              </span>
+                              {hasValidContent ? (
+                                <span style={{ fontSize: '0.625rem', fontWeight: 600, color: '#10B981', backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#DCFCE7', padding: '1px 5px', borderRadius: '4px' }}>
+                                  ✓ Ready
+                                </span>
+                              ) : isNodeFailed ? (
+                                <span style={{ fontSize: '0.625rem', fontWeight: 600, color: '#EF4444', backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : '#FEE2E2', padding: '1px 5px', borderRadius: '4px' }}>
+                                  ⚠️ Input Required
+                                </span>
+                              ) : null}
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                navigator.clipboard.writeText(boxOutput);
-                                setCopiedTextSuccess(true);
-                                setTimeout(() => setCopiedTextSuccess(false), 2000);
-                              }}
-                              style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '3px',
-                                background: 'none',
-                                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                                borderRadius: '4px',
-                                padding: '2px 6px',
-                                fontSize: '0.625rem',
-                                color: copiedTextSuccess ? '#10B981' : 'var(--text-secondary)',
-                                cursor: 'pointer',
-                              }}
-                            >
-                              {copiedTextSuccess ? <FiCheck size={11} /> : <FiCopy size={11} />}
-                              <span>{copiedTextSuccess ? 'Copied' : 'Copy'}</span>
-                            </button>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              {onRegenerateBoxOutput && (
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    if (isRegeneratingAI) return;
+                                    setIsRegeneratingAI(true);
+                                    try {
+                                      await onRegenerateBoxOutput(currentModalAIBox.id);
+                                    } finally {
+                                      setIsRegeneratingAI(false);
+                                    }
+                                  }}
+                                  disabled={isRegeneratingAI}
+                                  title="Re-generate content with AI"
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '3px',
+                                    background: isDark ? '#21262D' : '#F1F5F9',
+                                    border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                    borderRadius: '4px',
+                                    padding: '2px 7px',
+                                    fontSize: '0.625rem',
+                                    fontWeight: 600,
+                                    color: 'var(--text-primary)',
+                                    cursor: isRegeneratingAI ? 'not-allowed' : 'pointer',
+                                    opacity: isRegeneratingAI ? 0.7 : 1,
+                                  }}
+                                >
+                                  <FiRefreshCw size={11} style={{ animation: isRegeneratingAI ? 'spin 1s linear infinite' : 'none' }} />
+                                  <span>{isRegeneratingAI ? 'Generating...' : 'Re-generate'}</span>
+                                </button>
+                              )}
+                              {hasValidContent && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(boxOutput);
+                                    setCopiedTextSuccess(true);
+                                    setTimeout(() => setCopiedTextSuccess(false), 2000);
+                                  }}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '3px',
+                                    background: 'none',
+                                    border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                    borderRadius: '4px',
+                                    padding: '2px 6px',
+                                    fontSize: '0.625rem',
+                                    color: copiedTextSuccess ? '#10B981' : 'var(--text-secondary)',
+                                    cursor: 'pointer',
+                                  }}
+                                >
+                                  {copiedTextSuccess ? <FiCheck size={11} /> : <FiCopy size={11} />}
+                                  <span>{copiedTextSuccess ? 'Copied' : 'Copy'}</span>
+                                </button>
+                              )}
+                            </div>
                           </div>
+
+                          {/* Character & Word Counts */}
                           <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', display: 'flex', gap: '8px' }}>
                             <span>{boxOutput.length} characters</span>
                             <span>•</span>
                             <span>{boxOutput.trim().split(/\s+/).filter(Boolean).length} words</span>
                           </div>
-                          <div
+
+                          {/* Editable Textarea so user can write/fix/paste format directly */}
+                          <textarea
+                            value={boxOutput}
+                            onChange={(e) => {
+                              onUpdateBoxOutput?.(currentModalAIBox.id, e.target.value);
+                            }}
+                            placeholder="Enter or paste formatted real estate listing copy here..."
+                            rows={6}
                             style={{
-                              maxHeight: '160px',
-                              overflowY: 'auto',
-                              padding: '0.5rem',
+                              width: '100%',
+                              minHeight: '130px',
+                              maxHeight: '260px',
+                              padding: '0.5rem 0.625rem',
                               borderRadius: '6px',
                               backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
                               border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
                               fontSize: '0.75rem',
                               lineHeight: 1.5,
                               color: 'var(--text-primary)',
-                              whiteSpace: 'pre-wrap',
-                              wordBreak: 'break-word',
+                              resize: 'vertical',
+                              fontFamily: 'inherit',
+                              boxSizing: 'border-box',
+                              outline: 'none',
                             }}
-                          >
-                            {boxOutput}
-                          </div>
+                          />
+
+                          {/* Continue Workflow Button (Prominent when node failed or paused) */}
+                          {onContinueWorkflow && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!hasValidContent) {
+                                  alert('Please enter or generate formatted content before continuing.');
+                                  return;
+                                }
+                                onContinueWorkflow(currentModalAIBox.id);
+                              }}
+                              disabled={!hasValidContent || executionState?.isRunning}
+                              style={{
+                                marginTop: '0.25rem',
+                                width: '100%',
+                                height: '34px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '6px',
+                                borderRadius: '6px',
+                                border: 'none',
+                                backgroundColor: !hasValidContent
+                                  ? (isDark ? '#21262D' : '#E2E8F0')
+                                  : isNodeFailed
+                                  ? '#10B981'
+                                  : (isDark ? '#2563EB' : '#3B82F6'),
+                                color: !hasValidContent
+                                  ? 'var(--text-muted)'
+                                  : '#FFFFFF',
+                                fontSize: '0.75rem',
+                                fontWeight: 600,
+                                cursor: !hasValidContent || executionState?.isRunning ? 'not-allowed' : 'pointer',
+                                transition: 'all 0.15s ease',
+                                boxShadow: hasValidContent && isNodeFailed
+                                  ? '0 2px 8px rgba(16, 185, 129, 0.35)'
+                                  : 'none',
+                              }}
+                            >
+                              <FiPlay size={12} style={{ fill: hasValidContent ? '#FFFFFF' : 'none' }} />
+                              <span>Continue Workflow from This Step</span>
+                            </button>
+                          )}
                         </div>
                       );
                     })()}
@@ -9330,24 +9641,95 @@ export const FacebookWorkflowCanvas = forwardRef<
                 <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                   Publishing Strategy
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.75rem' }}>
-                  <span style={{ color: 'var(--text-secondary)' }}>Publish Status</span>
-                  <button
-                    type="button"
-                    onClick={() => updateCurrentDest({ publishDirectly: !(currentDest.publishDirectly !== false) })}
-                    style={{
-                      padding: '4px 10px',
-                      borderRadius: '5px',
-                      border: 'none',
-                      backgroundColor: currentDest.publishDirectly !== false ? '#10B981' : isDark ? 'var(--bg-main)' : '#E2E8F0',
-                      color: '#FFFFFF',
-                      fontSize: '0.7rem',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {currentDest.publishDirectly !== false ? 'Direct Publish' : 'Save as Draft'}
-                  </button>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.75rem' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Publish Mode</span>
+                    <span
+                      style={{
+                        fontSize: '0.7rem',
+                        fontWeight: 600,
+                        color: currentDest.publishMode === 'schedule' ? '#3B82F6' : '#10B981',
+                      }}
+                    >
+                      {currentDest.publishMode === 'schedule' ? 'Scheduled' : 'Public (Now)'}
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                    <button
+                      type="button"
+                      onClick={() => updateCurrentDest({ publishMode: 'public', publishDirectly: true })}
+                      style={{
+                        padding: '6px 10px',
+                        borderRadius: '6px',
+                        border: currentDest.publishMode !== 'schedule' ? '1px solid #10B981' : '1px solid var(--border-color)',
+                        backgroundColor: currentDest.publishMode !== 'schedule' ? (isDark ? 'rgba(16, 185, 129, 0.2)' : '#ECFDF5') : (isDark ? 'var(--bg-main)' : '#F8FAFC'),
+                        color: currentDest.publishMode !== 'schedule' ? '#10B981' : 'var(--text-secondary)',
+                        fontSize: '0.72rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      <FiSend size={12} />
+                      <span>Public</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const defaultIso = currentDest.scheduledAt || new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString().slice(0, 16);
+                        updateCurrentDest({ publishMode: 'schedule', scheduledAt: defaultIso, publishDirectly: true });
+                      }}
+                      style={{
+                        padding: '6px 10px',
+                        borderRadius: '6px',
+                        border: currentDest.publishMode === 'schedule' ? '1px solid #3B82F6' : '1px solid var(--border-color)',
+                        backgroundColor: currentDest.publishMode === 'schedule' ? (isDark ? 'rgba(59, 130, 246, 0.2)' : '#EFF6FF') : (isDark ? 'var(--bg-main)' : '#F8FAFC'),
+                        color: currentDest.publishMode === 'schedule' ? '#3B82F6' : 'var(--text-secondary)',
+                        fontSize: '0.72rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      <FiClock size={12} />
+                      <span>Schedule Time</span>
+                    </button>
+                  </div>
+
+                  {currentDest.publishMode === 'schedule' && (
+                    <div style={{ marginTop: '2px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                        Select Scheduled Time:
+                      </span>
+                      <input
+                        type="datetime-local"
+                        value={currentDest.scheduledAt || new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString().slice(0, 16)}
+                        min={new Date().toISOString().slice(0, 16)}
+                        onChange={(e) => updateCurrentDest({ scheduledAt: e.target.value })}
+                        style={{
+                          width: '100%',
+                          padding: '5px 8px',
+                          borderRadius: '6px',
+                          border: '1px solid var(--border-color)',
+                          backgroundColor: isDark ? 'var(--bg-main)' : '#F8FAFC',
+                          color: 'var(--text-primary)',
+                          fontSize: '0.72rem',
+                          outline: 'none',
+                          boxSizing: 'border-box',
+                        }}
+                      />
+                    </div>
+                  )}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.75rem' }}>
                   <span style={{ color: 'var(--text-secondary)' }}>Include AI Hashtags</span>

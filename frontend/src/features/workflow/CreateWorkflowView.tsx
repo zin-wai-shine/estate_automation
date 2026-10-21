@@ -23,7 +23,8 @@ import {
   type WorkflowFormat,
 } from './workflowFormats';
 import { isWatermarkAIBox, isTextFormatAIBox } from '../facebook-import/aiModelUtils';
-import { getSavedCropFormats, formatImageWithCropFormat } from '../watermark/cropFormats';
+import { getSavedCropFormats, formatImageWithCropFormat, type CropStudioFormat } from '../watermark/cropFormats';
+import { loadActiveWatermarkConfig } from '../autopost/watermarkStorage';
 import {
   FiGitBranch,
   FiPlus,
@@ -171,6 +172,25 @@ export const CreateWorkflowView: React.FC = () => {
   const [showLeaveConfirmModal, setShowLeaveConfirmModal] = useState<boolean>(false);
   const [pendingLeaveAction, setPendingLeaveAction] = useState<(() => void) | null>(null);
   const isCancelledRef = useRef<boolean>(false);
+  const workflowContextRef = useRef<{
+    rawCaption: string;
+    imageList: any[];
+    propData: any;
+    projName: string;
+    localWatermarkedMap: Record<number, string>;
+    generatedOutputsMap: Record<string, string>;
+    primaryCopy: string;
+    targetUrl: string;
+  }>({
+    rawCaption: '',
+    imageList: [],
+    propData: null,
+    projName: '',
+    localWatermarkedMap: {},
+    generatedOutputsMap: {},
+    primaryCopy: '',
+    targetUrl: '',
+  });
 
   // Global navigation & page unload guards when workflow is actively executing
   useEffect(() => {
@@ -489,6 +509,482 @@ export const CreateWorkflowView: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isCanvasOpen, undoStack, editingFormat, formats]);
 
+  // Downstream execution helper for Phases 4, 5, and 6 (shared by initial run and resume)
+  const executeDownstreamWorkflow = async ({
+    cfg,
+    rawCaption,
+    imageList,
+    propData,
+    projName,
+    localWatermarkedMap,
+    generatedOutputsMap,
+    primaryCopy: initialPrimaryCopy,
+    targetUrl,
+  }: {
+    cfg: FacebookWorkflowConfig;
+    rawCaption: string;
+    imageList: any[];
+    propData: any;
+    projName: string;
+    localWatermarkedMap: Record<number, string>;
+    generatedOutputsMap: Record<string, string>;
+    primaryCopy: string;
+    targetUrl: string;
+  }) => {
+    const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+    let primaryCopy = initialPrimaryCopy;
+
+    // Phase 4: Combine Boxes (Merge Parallel Branches)
+    const activeCombineBoxes = (cfg.combineBoxes || []).filter((cb) => cb && cb.enabled !== false);
+    const combinedOutputsMap: Record<string, { text: string; images: string[] }> = {};
+
+    for (const cb of activeCombineBoxes) {
+      if (isCancelledRef.current) return;
+
+      setExecutionState((prev) => ({
+        ...prev!,
+        activeNodeIds: [cb.id],
+        currentStepMessage: `⚡ Merging content & formatted images in [${cb.title || 'Combine Box'}]...`,
+        stepIndex: 5,
+      }));
+      await delay(500);
+
+      const inConns = (cfg.connections || []).filter((c) => c.toNodeId === cb.id);
+      const inFromIds = inConns.map((c) => c.fromNodeId);
+
+      // Find incoming text from connected nodes
+      let cbText = '';
+      for (const fromId of inFromIds) {
+        if (generatedOutputsMap[fromId]) {
+          cbText = generatedOutputsMap[fromId];
+          break;
+        }
+      }
+      if (!cbText) {
+        cbText = inFromIds.includes('get-content') ? rawCaption : (primaryCopy || rawCaption);
+      }
+
+      // Find incoming images from connected nodes
+      const cbImages = imageList
+        .map((img: any, idx: number) => localWatermarkedMap[idx] || img.stored_url || img.source_url)
+        .filter(Boolean);
+
+      combinedOutputsMap[cb.id] = { text: cbText, images: cbImages };
+      primaryCopy = cbText;
+      setAiGeneratedCopy(cbText);
+
+      setExecutionState((prev) => ({
+        ...prev!,
+        completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), cb.id])),
+        activeNodeIds: [],
+        currentStepMessage: `✓ [${cb.title || 'Combine Box'}] merged ${inConns.length || 2} inputs successfully!`,
+      }));
+      await delay(300);
+    }
+
+    // Phase 5: Post Output (Compile Assets)
+    if (cfg.outputNode?.enabled !== false) {
+      setExecutionState((prev) => ({
+        ...prev!,
+        activeNodeIds: ['output'],
+        currentStepMessage: '⚡ Compiling Final Content & Media package for dispatch...',
+        stepIndex: 5,
+      }));
+      await delay(500);
+
+      setExecutionState((prev) => ({
+        ...prev!,
+        completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), 'output'])),
+        activeNodeIds: [],
+        currentStepMessage: '✓ Final Content & Images compiled successfully!',
+      }));
+      await delay(300);
+    }
+
+    // Phase 6: Destinations (Direct Social Channels & Remaining Posts Database)
+    const allDestinations = (cfg.destinations && cfg.destinations.length > 0)
+      ? cfg.destinations
+      : [cfg.destination || { id: 'destination', storeInDatabase: true, postToSocialMedia: false }];
+
+    const connDestIds = new Set(
+      (cfg.connections || [])
+        .filter((c) => allDestinations.some((d) => d.id === c.toNodeId))
+        .map((c) => c.toNodeId)
+    );
+
+    const activeDestList = allDestinations.filter((d) => {
+      if (d.enabled === false) return false;
+      if (connDestIds.size > 0) {
+        return connDestIds.has(d.id);
+      }
+      return true;
+    });
+
+    const targetDestinations = activeDestList.length > 0 ? activeDestList : allDestinations.filter((d) => d.enabled !== false);
+    const destIds = targetDestinations.map((d) => d.id || 'destination');
+
+    const socialDestinations = targetDestinations.filter(
+      (d) => (d.postToSocialMedia ?? (d.targetMode !== 'remaining_posts'))
+    );
+    const dbDestinations = targetDestinations.filter(
+      (d) => (d.storeInDatabase ?? (d.targetMode !== 'social_media'))
+    );
+
+    setExecutionState((prev) => ({
+      ...prev!,
+      activeNodeIds: destIds,
+      currentStepMessage: '🚀 Delivering to destinations in background (Social Post & Remaining Posts Database)...',
+      stepIndex: 6,
+    }));
+    await delay(350);
+
+    let anyFacebookPosted = false;
+    let lastFbPostId = '';
+    let lastFbPermalink = '';
+
+    // 1. Process Direct Social Media Posting
+    for (const socialDest of socialDestinations) {
+      if (isCancelledRef.current) return;
+
+      const targetPageId = socialDest.accountId || socialDest.selectedPageId || socialDest.selectedPageIds?.[0] || '1546086342286604';
+      const destTitle = socialDest.accountName || socialDest.title || 'Facebook Page';
+
+      // If this is a platform hub routing node that connects to a specific page account node,
+      // pass through and let the downstream page account node execute the actual post.
+      const isHubWithChildren = (cfg.connections || []).some(
+        (c) => c.fromNodeId === socialDest.id && allDestinations.some((d) => d.id === c.toNodeId)
+      );
+      if (isHubWithChildren) {
+        setExecutionState((prev) => ({
+          ...prev!,
+          completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), socialDest.id])),
+          activeNodeIds: [],
+          currentStepMessage: `✓ [${destTitle}] routed to connected Facebook Page.`,
+        }));
+        await delay(200);
+        continue;
+      }
+
+      const isSchedule = (socialDest as any).publishMode === 'schedule';
+      const scheduledIso = (socialDest as any).scheduledAt
+        ? new Date((socialDest as any).scheduledAt).toISOString()
+        : new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+
+      setExecutionState((prev) => ({
+        ...prev!,
+        activeNodeIds: [socialDest.id],
+        currentStepMessage: isSchedule
+          ? `⏰ Scheduling Facebook post for [${destTitle}] at ${new Date(scheduledIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}...`
+          : `🚀 Auto-posting directly to Facebook [${destTitle}] in background...`,
+        stepIndex: 6,
+      }));
+
+      const projectName = projName || propData?.project_name || '';
+
+      // Get the specific text and images feeding into this destination (directly or through a hub node)
+      const destInConns = (cfg.connections || []).filter((c) => c.toNodeId === socialDest.id);
+      let upstreamId = destInConns[0]?.fromNodeId;
+
+      // If upstream is a parent destination hub, trace back to the hub's incoming connection (e.g. Combine Box)
+      if (upstreamId && !combinedOutputsMap[upstreamId] && !generatedOutputsMap[upstreamId]) {
+        const hubInConn = (cfg.connections || []).find((c) => c.toNodeId === upstreamId);
+        if (hubInConn) {
+          upstreamId = hubInConn.fromNodeId;
+        }
+      }
+
+      const caption =
+        socialDest.includeContent !== false
+          ? ((upstreamId && combinedOutputsMap[upstreamId]?.text) ||
+             (upstreamId && generatedOutputsMap[upstreamId]) ||
+             primaryCopy ||
+             rawCaption)
+          : '';
+
+      const hashtags = socialDest.includeHashtags !== false
+        ? ((socialDest as any).defaultHashtags || '')
+        : '';
+
+      const imageUrls =
+        socialDest.includeImages !== false
+          ? ((upstreamId && combinedOutputsMap[upstreamId]?.images) ||
+             imageList
+               .map((img: any, idx: number) => localWatermarkedMap[idx] || img.stored_url || img.source_url)
+               .filter(Boolean))
+          : [];
+
+      let publishedSuccess = false;
+      let errorMsg = '';
+
+      try {
+        if (isSchedule) {
+          const schedPayload = {
+            page_id: targetPageId,
+            headline: '',
+            caption: caption.trim(),
+            hashtags: hashtags.trim(),
+            image_urls: imageUrls,
+            scheduled_at: scheduledIso,
+          };
+
+          const res = await fetch('http://localhost:8085/api/facebook/schedule', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(schedPayload),
+          });
+
+          const data = await res.json().catch(() => ({}));
+          if (res.ok && data.status === 'success') {
+            publishedSuccess = true;
+            anyFacebookPosted = true;
+            lastFbPostId = String(data.post_id || '');
+
+            saveAutoPostItem({
+              id: `autopost_${Date.now()}_${socialDest.id}`,
+              projectName,
+              listingType: (propData?.listing_type as any) || 'RENT',
+              price: propData?.price || '',
+              specs: propData ? [
+                propData.bedrooms ? `${propData.bedrooms} Bed` : '',
+                propData.bathrooms ? `${propData.bathrooms} Bath` : '',
+                propData.size_sqm ? `${propData.size_sqm} sqm` : '',
+              ].filter(Boolean).join(' · ') : '',
+              images: [],
+              originalUrl: targetUrl,
+              facebook: {
+                enabled: true,
+                pageId: targetPageId,
+                pageName: destTitle,
+                headline: '',
+                caption,
+                cta: 'Contact for viewing',
+                hashtags,
+              },
+              instagram: { enabled: false, accountId: '', accountName: '', caption: '', firstCommentHashtags: '', locationTag: '' },
+              tiktok: { enabled: false, accountId: '', accountName: '', hook: '', caption: '', sound: '', privacy: 'public', allowComments: true, allowDuet: true },
+              scheduleType: 'SCHEDULED',
+              status: 'SCHEDULED',
+              scheduledAt: scheduledIso,
+              createdAt: Date.now(),
+              platformResults: {
+                facebook: {
+                  status: 'scheduled',
+                  postId: String(data.post_id || ''),
+                  timestamp: Date.now(),
+                  pageId: targetPageId,
+                  pageName: destTitle,
+                },
+                instagram: { status: 'skipped' },
+                tiktok: { status: 'skipped' },
+              },
+            });
+          } else {
+            errorMsg = data.message || `Meta Graph API returned status ${res.status}`;
+          }
+        } else {
+          const fbPayload = {
+            page_id: targetPageId,
+            headline: '',
+            caption: caption.trim(),
+            hashtags: hashtags.trim(),
+            image_urls: imageUrls,
+            force: true,
+            original_url: targetUrl,
+          };
+
+          const res = await fetch('http://localhost:8085/api/facebook/publish', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(fbPayload),
+          });
+
+          const data = await res.json().catch(() => ({}));
+          if (res.ok && data.status === 'success') {
+            publishedSuccess = true;
+            anyFacebookPosted = true;
+            lastFbPostId = data.facebook_post_id;
+            lastFbPermalink = data.permalink_url;
+
+            saveAutoPostItem({
+              id: `autopost_${Date.now()}_${socialDest.id}`,
+              projectName,
+              listingType: (propData?.listing_type as any) || 'RENT',
+              price: propData?.price || '',
+              specs: propData ? [
+                propData.bedrooms ? `${propData.bedrooms} Bed` : '',
+                propData.bathrooms ? `${propData.bathrooms} Bath` : '',
+                propData.size_sqm ? `${propData.size_sqm} sqm` : '',
+              ].filter(Boolean).join(' · ') : '',
+              images: [],
+              originalUrl: targetUrl,
+              facebook: {
+                enabled: true,
+                pageId: targetPageId,
+                pageName: destTitle,
+                headline: '',
+                caption,
+                cta: 'Contact for viewing',
+                hashtags,
+              },
+              instagram: { enabled: false, accountId: '', accountName: '', caption: '', firstCommentHashtags: '', locationTag: '' },
+              tiktok: { enabled: false, accountId: '', accountName: '', hook: '', caption: '', sound: '', privacy: 'public', allowComments: true, allowDuet: true },
+              scheduleType: 'NOW',
+              status: 'PUBLISHED',
+              createdAt: Date.now(),
+              platformResults: {
+                facebook: {
+                  status: 'success',
+                  postId: data.facebook_post_id,
+                  postUrl: data.permalink_url,
+                  timestamp: Date.now(),
+                  pageId: targetPageId,
+                  pageName: destTitle,
+                },
+                instagram: { status: 'skipped' },
+                tiktok: { status: 'skipped' },
+              },
+            });
+          } else {
+            errorMsg = data.message || `Meta Graph API returned status ${res.status}`;
+          }
+        }
+      } catch (err: any) {
+        errorMsg = err.message || 'Network error publishing to Facebook';
+      }
+
+      if (!publishedSuccess) {
+        setExecutionState((prev) => ({
+          ...prev!,
+          isRunning: false,
+          hasError: true,
+          failedNodeIds: Array.from(new Set([...(prev?.failedNodeIds || []), socialDest.id])),
+          activeNodeIds: [socialDest.id],
+          currentStepMessage: `❌ Failed to publish to Facebook [${destTitle}]: ${errorMsg}`,
+        }));
+        return;
+      }
+
+      setExecutionState((prev) => ({
+        ...prev!,
+        completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), socialDest.id])),
+        activeNodeIds: [],
+        currentStepMessage: isSchedule
+          ? `✓ Scheduled Facebook post for [${destTitle}] at ${new Date(scheduledIso).toLocaleString()}!`
+          : `✓ Published to Facebook [${destTitle}] (Post ID: ${lastFbPostId})!`,
+      }));
+
+      await delay(400);
+    }
+
+    // 2. Process Remaining Posts Database Storage
+    for (const dbDest of dbDestinations) {
+      if (isCancelledRef.current) return;
+
+      setExecutionState((prev) => ({
+        ...prev!,
+        activeNodeIds: [dbDest.id],
+        currentStepMessage: `💾 Storing in [${dbDest.title || 'Remaining Posts Database'}]...`,
+      }));
+
+      const destInConns = (cfg.connections || []).filter((c) => c.toNodeId === dbDest.id);
+      const upstreamId = destInConns[0]?.fromNodeId;
+      const dbCaption =
+        (upstreamId && combinedOutputsMap[upstreamId]?.text) ||
+        (upstreamId && generatedOutputsMap[upstreamId]) ||
+        primaryCopy ||
+        rawCaption;
+
+      try {
+        saveRemainingPost({
+          facebook_url: targetUrl,
+          projectName: projName || propData?.project_name || '',
+          source: {
+            platform: 'facebook',
+            original_url: targetUrl,
+            canonical_url: targetUrl,
+            source_type: 'facebook_post',
+            source_name: 'Facebook Link',
+            post_id: lastFbPostId || `post_${Date.now()}`,
+            created_time: new Date().toISOString(),
+            extraction_method: 'browser',
+          },
+          caption: dbCaption,
+          languages: ['th', 'en'],
+          propertyData: {
+            project_name: propData?.project_name || projName || '',
+            listing_type: propData?.listing_type || 'RENT',
+            price: String(propData?.price || ''),
+            currency: propData?.currency || 'THB',
+            bedrooms: String(propData?.bedrooms || ''),
+            bathrooms: String(propData?.bathrooms || ''),
+            size_sqm: String(propData?.size_sqm || ''),
+            floor: String(propData?.floor || ''),
+            building: propData?.building || '',
+            unit_number: propData?.unit_number || '',
+            furnished: propData?.furnished || '',
+            nearest_transit: propData?.nearest_transit || '',
+            location: propData?.location || '',
+            move_in_status: propData?.move_in_status || '',
+            contact_name: propData?.contact_name || '',
+            contact_phone: propData?.contact_phone || '',
+            contact_line: propData?.contact_line || '',
+          },
+          originalImages: imageList.map((img: any, i: number) => ({
+            index: img.index ?? i,
+            source_url: img.source_url || '',
+            stored_url: img.stored_url || '',
+            status: img.status || 'verified',
+            width: img.width || 800,
+            height: img.height || 600,
+          })),
+          enhancedPhotos: {},
+          watermarkedPhotos: localWatermarkedMap,
+          aiGeneratedOutputs: generatedOutputsMap,
+          aiGeneratedCopy: dbCaption,
+          workflowFormatName: editingFormat?.name || 'Workflow',
+          autoProcessed: true,
+        });
+
+        setExecutionState((prev) => ({
+          ...prev!,
+          completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), dbDest.id])),
+          activeNodeIds: [],
+          currentStepMessage: `✓ Saved in [${dbDest.title || 'Remaining Posts Database'}]!`,
+        }));
+      } catch (dbErr) {
+        console.error('Failed to save to Remaining Posts storage:', dbErr);
+      }
+
+      await delay(300);
+    }
+
+    if (isCancelledRef.current) return;
+
+    // Final Completion
+    setExecutionState({
+      isRunning: false,
+      isComplete: true,
+      hasError: false,
+      activeNodeIds: [],
+      completedNodeIds: Array.from(
+        new Set([
+          'trigger',
+          'get-content',
+          'get-images',
+          ...(cfg.aiBoxes || []).map((b) => b.id),
+          ...activeCombineBoxes.map((cb) => cb.id),
+          'output',
+          ...destIds,
+        ])
+      ),
+      currentStepMessage: anyFacebookPosted
+        ? `✓ Workflow completed! "${projName || 'Listing'}" auto-posted directly to Facebook & delivered to all destinations.`
+        : `✓ Workflow completed! "${projName || 'Listing'}" delivered to all destinations.`,
+      stepIndex: 6,
+      totalSteps: 6,
+    });
+  };
+
   // Run Workflow directly on this Canvas screen smoothly
   const executeCanvasWorkflow = async (targetUrl: string) => {
     if (!editingFormat) return;
@@ -580,6 +1076,18 @@ export const CreateWorkflowView: React.FC = () => {
     setProjectName(projName);
     setPropertyData(propData);
 
+    // Save into workflow context for downstream resume capability
+    workflowContextRef.current = {
+      rawCaption,
+      imageList,
+      propData,
+      projName,
+      localWatermarkedMap: {},
+      generatedOutputsMap: {},
+      primaryCopy: '',
+      targetUrl,
+    };
+
     setExecutionState((prev) => ({
       ...prev!,
       completedNodeIds: ['trigger'],
@@ -637,10 +1145,29 @@ export const CreateWorkflowView: React.FC = () => {
 
       if (isWatermark) {
         const savedFormats = getSavedCropFormats();
-        const targetFormat =
+        const baseFormat =
           savedFormats.find((f) => f.id === box.cropFormatId || f.id === box.templateId || f.id === box.watermarkPresetId) ||
-          savedFormats.find((f) => box.title?.toLowerCase().includes(f.name.toLowerCase())) ||
+          savedFormats.find((f) => box.templateText && f.name.toLowerCase() === box.templateText.toLowerCase()) ||
+          savedFormats.find((f) => box.title && f.name && box.title.toLowerCase().includes(f.name.toLowerCase())) ||
+          ((box.title?.toLowerCase().includes('fb') || box.templateText?.toLowerCase().includes('fb'))
+            ? savedFormats.find((f) => f.name.toLowerCase().includes('fb'))
+            : null) ||
           savedFormats[0];
+
+        const activeWk = typeof window !== 'undefined' ? loadActiveWatermarkConfig() : null;
+        const targetFormat: CropStudioFormat = {
+          ...baseFormat,
+          targetWidth: box.targetWidth || baseFormat?.targetWidth || 1080,
+          targetHeight: box.targetHeight || baseFormat?.targetHeight || 1350,
+          aspect: box.aspect || baseFormat?.aspect || '4:5',
+          fitMode: (box.fitMode || baseFormat?.fitMode || 'cover') as any,
+          focusPosition: (box.focusPosition || baseFormat?.focusPosition || 'center') as any,
+          cropZoom: box.cropZoom || baseFormat?.cropZoom || 1,
+          watermarkConfig:
+            box.watermarkConfig ||
+            baseFormat?.watermarkConfig ||
+            (activeWk?.config?.enabled ? activeWk.config : undefined),
+        };
 
         for (let i = 0; i < imageList.length; i++) {
           const img = imageList[i];
@@ -657,6 +1184,7 @@ export const CreateWorkflowView: React.FC = () => {
         }
         setWatermarkedPhotos((prev) => ({ ...prev, ...localWatermarkedMap }));
         setEnhancedPhotos((prev) => ({ ...prev, ...localWatermarkedMap }));
+        workflowContextRef.current.localWatermarkedMap = { ...workflowContextRef.current.localWatermarkedMap, ...localWatermarkedMap };
         await delay(400);
       } else {
         // Resolve upstream text for this text AI or format node
@@ -705,18 +1233,36 @@ export const CreateWorkflowView: React.FC = () => {
           taskType: 'text',
           prompt: box.title || 'AI Box',
           inputPreview: String(upstreamText || '').slice(0, 200),
-          outputPreview: copyText || 'Generation failed (fallback copy used)',
+          outputPreview: copyText || 'Generation failed',
           status: copyText ? 'success' : 'failed',
           durationMs: Date.now() - aiStart,
           sourceWorkflow: 'Create Workflow',
         });
 
-        if (!copyText) {
-          copyText = upstreamText;
+        // If formatting failed or returned empty: ABSOLUTE STOP AT THIS STEP!
+        // Do NOT fall back to unformatted raw content and do NOT continue downstream!
+        if (!copyText || copyText.trim().length === 0) {
+          setExecutionState((prev) => ({
+            ...prev!,
+            isRunning: false,
+            hasError: true,
+            activeNodeIds: [box.id],
+            failedNodeIds: [box.id],
+            currentStepMessage: `❌ AI generation failed for [${box.title || 'Formatted Content'}]. Please write/fix content or re-generate to continue.`,
+          }));
+          setIsRunningWorkflow(false);
+          (window as any).__isWorkflowProcessing = false;
+          // Automatically open this node's drawer so user can inspect and fix directly
+          canvasRef.current?.openNodeDrawer(box.id);
+          return;
         }
 
         generatedOutputsMap[box.id] = copyText;
-        if (!primaryCopy || isTextFormat) primaryCopy = copyText;
+        workflowContextRef.current.generatedOutputsMap[box.id] = copyText;
+        if (!primaryCopy || isTextFormat) {
+          primaryCopy = copyText;
+          workflowContextRef.current.primaryCopy = copyText;
+        }
         setAiGeneratedOutputs((prev) => ({ ...prev, [box.id]: copyText }));
         setAiGeneratedCopy(copyText);
         await delay(500);
@@ -731,344 +1277,293 @@ export const CreateWorkflowView: React.FC = () => {
       await delay(250);
     }
 
-    // Phase 4: Combine Boxes (Merge Parallel Branches)
-    const activeCombineBoxes = (cfg.combineBoxes || []).filter((cb) => cb && cb.enabled !== false);
-    const combinedOutputsMap: Record<string, { text: string; images: string[] }> = {};
+    // Execute downstream: Combine Boxes, Output, Destinations
+    await executeDownstreamWorkflow({
+      cfg,
+      rawCaption,
+      imageList,
+      propData,
+      projName,
+      localWatermarkedMap,
+      generatedOutputsMap,
+      primaryCopy,
+      targetUrl,
+    });
+    } finally {
+      setIsRunningWorkflow(false);
+      (window as any).__isWorkflowProcessing = false;
+      (window as any).__workflowConfirmLeave = null;
+    }
+  };
 
-    for (const cb of activeCombineBoxes) {
-      if (isCancelledRef.current) return;
+  // Update box output directly from drawer textarea
+  const handleUpdateBoxOutput = (boxId: string, outputText: string) => {
+    setAiGeneratedOutputs((prev) => ({ ...prev, [boxId]: outputText }));
+    setAiGeneratedCopy(outputText);
+    if (workflowContextRef.current) {
+      workflowContextRef.current.generatedOutputsMap[boxId] = outputText;
+      workflowContextRef.current.primaryCopy = outputText;
+    }
+    if (outputText.trim().length > 0) {
+      setExecutionState((prev) => {
+        if (!prev) return prev;
+        const nextFailed = (prev.failedNodeIds || []).filter((id) => id !== boxId);
+        return {
+          ...prev,
+          failedNodeIds: nextFailed,
+          hasError: nextFailed.length > 0,
+          currentStepMessage: `✓ Formatted content updated for [${boxId}]`,
+        };
+      });
+    }
+  };
 
-      setExecutionState((prev) => ({
-        ...prev!,
-        activeNodeIds: [cb.id],
-        currentStepMessage: `⚡ Merging content & formatted images in [${cb.title || 'Combine Box'}]...`,
-        stepIndex: 5,
-      }));
-      await delay(500);
+  // Re-generate copy with AI for a specific box
+  const handleRegenerateBoxOutput = async (boxId: string): Promise<string | void> => {
+    if (!editingFormat?.config) return;
+    const cfg = editingFormat.config;
+    const box = cfg.aiBoxes?.find((b) => b.id === boxId);
+    if (!box) return;
 
-      const inConns = (cfg.connections || []).filter((c) => c.toNodeId === cb.id);
-      const inFromIds = inConns.map((c) => c.fromNodeId);
+    const inConns = (cfg.connections || []).filter((c) => c.toNodeId === box.id);
+    const upstreamBoxId = inConns[0]?.fromNodeId;
+    const ctx = workflowContextRef.current;
+    const upstreamText =
+      (upstreamBoxId && (aiGeneratedOutputs[upstreamBoxId] || ctx.generatedOutputsMap[upstreamBoxId])) ||
+      (upstreamBoxId === 'get-content' ? (extractedContent || ctx.rawCaption) : '') ||
+      aiGeneratedCopy ||
+      ctx.primaryCopy ||
+      extractedContent ||
+      ctx.rawCaption;
 
-      // Find incoming text from connected nodes
-      let cbText = '';
-      for (const fromId of inFromIds) {
-        if (generatedOutputsMap[fromId]) {
-          cbText = generatedOutputsMap[fromId];
-          break;
+    const isTextFormat = isTextFormatAIBox(box);
+    const aiProvider = box.provider || (box.model?.startsWith('gpt-') ? 'openai' : 'google_ai');
+    const aiModel = box.model || (aiProvider === 'openai' ? 'gpt-4o' : 'gemini-2.5-flash');
+
+    try {
+      const aiResp = await fetch('http://localhost:8085/api/facebook-import/generate-ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: aiProvider,
+          model: aiModel,
+          template_id: box.templateId || '',
+          template_name: box.title || 'Dynamic Real Estate Copywriter',
+          template_text: box.templateText || '',
+          raw_content: upstreamText,
+          custom_prompt:
+            box.customPrompt ||
+            (isTextFormat
+              ? `Format this real estate listing according to the ${box.title || 'preset'} style. Maintain all property details, price, contact numbers, and formatting clean and attractive.`
+              : ''),
+        }),
+      });
+
+      if (aiResp.ok) {
+        const aiData = await aiResp.json();
+        if (aiData.success && aiData.generated_content) {
+          const generated = aiData.generated_content;
+          setAiGeneratedOutputs((prev) => ({ ...prev, [boxId]: generated }));
+          setAiGeneratedCopy(generated);
+          if (workflowContextRef.current) {
+            workflowContextRef.current.generatedOutputsMap[boxId] = generated;
+            workflowContextRef.current.primaryCopy = generated;
+          }
+          setExecutionState((prev) => {
+            if (!prev) return prev;
+            const nextFailed = (prev.failedNodeIds || []).filter((id) => id !== boxId);
+            return {
+              ...prev,
+              failedNodeIds: nextFailed,
+              hasError: nextFailed.length > 0,
+              completedNodeIds: Array.from(new Set([...(prev.completedNodeIds || []), boxId])),
+              currentStepMessage: `✓ Re-generated copy for [${box.title || 'Node'}] successfully!`,
+            };
+          });
+          return generated;
         }
       }
-      if (!cbText) {
-        cbText = inFromIds.includes('get-content') ? rawCaption : (primaryCopy || rawCaption);
-      }
+    } catch (err) {
+      console.warn('Re-generate AI API call threw:', err);
+    }
+  };
 
-      // Find incoming images from connected nodes
-      const cbImages = imageList
-        .map((img: any, idx: number) => localWatermarkedMap[idx] || img.stored_url || img.source_url)
-        .filter(Boolean);
+  // Continue workflow execution from a previously stopped or fixed step
+  const handleContinueWorkflow = async (fromBoxId?: string) => {
+    if (!editingFormat?.config || isRunningWorkflow) return;
+    const cfg = editingFormat.config;
+    const ctx = workflowContextRef.current;
+    const targetBoxId = fromBoxId || executionState?.failedNodeIds?.[0] || cfg.aiBoxes?.[0]?.id;
+    if (!targetBoxId) return;
 
-      combinedOutputsMap[cb.id] = { text: cbText, images: cbImages };
-      primaryCopy = cbText;
-      setAiGeneratedCopy(cbText);
-
-      setExecutionState((prev) => ({
-        ...prev!,
-        completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), cb.id])),
-        activeNodeIds: [],
-        currentStepMessage: `✓ [${cb.title || 'Combine Box'}] merged ${inConns.length || 2} inputs successfully!`,
-      }));
-      await delay(300);
+    const currentCopy = aiGeneratedOutputs[targetBoxId] || ctx.generatedOutputsMap[targetBoxId] || aiGeneratedCopy;
+    if (!currentCopy || currentCopy.trim().length === 0) {
+      alert('Please enter or generate formatted content before continuing.');
+      return;
     }
 
-    // Phase 5: Post Output (Compile Assets)
-    if (cfg.outputNode?.enabled !== false) {
-      setExecutionState((prev) => ({
-        ...prev!,
-        activeNodeIds: ['output'],
-        currentStepMessage: '⚡ Compiling Final Content & Media package for dispatch...',
-        stepIndex: 5,
-      }));
-      await delay(500);
+    ctx.generatedOutputsMap[targetBoxId] = currentCopy;
+    if (!ctx.primaryCopy) ctx.primaryCopy = currentCopy;
+    setAiGeneratedCopy(currentCopy);
 
-      setExecutionState((prev) => ({
-        ...prev!,
-        completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), 'output'])),
-        activeNodeIds: [],
-        currentStepMessage: '✓ Final Content & Images compiled successfully!',
-      }));
-      await delay(300);
-    }
+    setIsRunningWorkflow(true);
+    isCancelledRef.current = false;
+    (window as any).__isWorkflowProcessing = true;
 
-    // Phase 6: Destinations (Direct Social Channels & Remaining Posts Database)
-    const allDestinations = (cfg.destinations && cfg.destinations.length > 0)
-      ? cfg.destinations
-      : [cfg.destination || { id: 'destination', storeInDatabase: true, postToSocialMedia: false }];
-
-    // Destinations that have incoming wires:
-    const connDestIds = new Set(
-      (cfg.connections || [])
-        .filter((c) => allDestinations.some((d) => d.id === c.toNodeId))
-        .map((c) => c.toNodeId)
-    );
-
-    // Filter to destinations connected, or if no destination has incoming wires, all enabled destinations
-    const activeDestList = allDestinations.filter((d) => {
-      if (d.enabled === false) return false;
-      if (connDestIds.size > 0) {
-        return connDestIds.has(d.id);
-      }
-      return true;
-    });
-
-    const targetDestinations = activeDestList.length > 0 ? activeDestList : allDestinations.filter((d) => d.enabled !== false);
-    const destIds = targetDestinations.map((d) => d.id || 'destination');
-
-    // Separate into social media destinations and database storage destinations
-    const socialDestinations = targetDestinations.filter(
-      (d) => (d.postToSocialMedia ?? (d.targetMode !== 'remaining_posts'))
-    );
-    const dbDestinations = targetDestinations.filter(
-      (d) => (d.storeInDatabase ?? (d.targetMode !== 'social_media'))
-    );
+    const updatedFailed = (executionState?.failedNodeIds || []).filter((id) => id !== targetBoxId);
+    const updatedCompleted = Array.from(new Set([...(executionState?.completedNodeIds || []), targetBoxId]));
 
     setExecutionState((prev) => ({
       ...prev!,
-      activeNodeIds: destIds,
-      currentStepMessage: '🚀 Delivering to destinations in background (Social Post & Remaining Posts Database)...',
-      stepIndex: 6,
+      isRunning: true,
+      hasError: updatedFailed.length > 0,
+      failedNodeIds: updatedFailed,
+      completedNodeIds: updatedCompleted,
+      activeNodeIds: [],
+      currentStepMessage: `▶ Resuming workflow from [${cfg.aiBoxes.find((b) => b.id === targetBoxId)?.title || 'Node'}]...`,
     }));
-    await delay(350);
 
-    // Track social posting outcome to link into database post record if applicable
-    let anyFacebookPosted = false;
-    let lastFbPostId = '';
-    let lastFbPermalink = '';
+    const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-    // 1. Process Direct Social Media Posting (Working completely in background, zero screen popups)
-    for (const socialDest of socialDestinations) {
-      if (isCancelledRef.current) return;
+    try {
+      const targetIdx = cfg.aiBoxes.findIndex((b) => b.id === targetBoxId);
+      const remainingAiBoxes = targetIdx >= 0 ? cfg.aiBoxes.slice(targetIdx + 1) : [];
 
-      const targetPageId = socialDest.selectedPageId || socialDest.selectedPageIds?.[0] || '1546086342286604';
-      const destTitle = socialDest.title || 'Facebook Page';
-
-      setExecutionState((prev) => ({
-        ...prev!,
-        activeNodeIds: [socialDest.id],
-        currentStepMessage: `🚀 Auto-posting directly to Facebook [${destTitle}] in background...`,
-        stepIndex: 6,
-      }));
-
-      const projectName = projName || propData?.project_name || '';
-
-      // Get the specific text and images feeding into this destination:
-      const destInConns = (cfg.connections || []).filter((c) => c.toNodeId === socialDest.id);
-      const upstreamId = destInConns[0]?.fromNodeId;
-      const caption =
-        (upstreamId && combinedOutputsMap[upstreamId]?.text) ||
-        (upstreamId && generatedOutputsMap[upstreamId]) ||
-        primaryCopy ||
-        rawCaption;
-      const hashtags = socialDest.includeHashtags !== false
-        ? ((socialDest as any).defaultHashtags || '')
-        : '';
-      const imageUrls =
-        (upstreamId && combinedOutputsMap[upstreamId]?.images) ||
-        imageList
-          .map((img: any, idx: number) => localWatermarkedMap[idx] || img.stored_url || img.source_url)
-          .filter(Boolean);
-
-      let publishedSuccess = false;
-      let errorMsg = '';
-
-      try {
-        const fbPayload = {
-          page_id: targetPageId,
-          headline: '', // Leave empty so generic labels like 'Property Listing' are never prepended
-          caption: caption.trim(),
-          hashtags: hashtags.trim(),
-          image_urls: imageUrls,
-          force: true,
-          original_url: targetUrl,
-        };
-
-        const res = await fetch('http://localhost:8085/api/facebook/publish', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(fbPayload),
-        });
-
-        const data = await res.json();
-        if (res.ok && data.status === 'success') {
-          publishedSuccess = true;
-          anyFacebookPosted = true;
-          lastFbPostId = data.facebook_post_id;
-          lastFbPermalink = data.permalink_url;
-
-          // Record published item to AutoPost storage so it seamlessly appears in Post History
-          saveAutoPostItem({
-            id: `autopost_${Date.now()}_${socialDest.id}`,
-            projectName,
-            listingType: (propData?.listing_type as any) || 'RENT',
-            price: propData?.price || '',
-            specs: propData ? [
-              propData.bedrooms ? `${propData.bedrooms} Bed` : '',
-              propData.bathrooms ? `${propData.bathrooms} Bath` : '',
-              propData.size_sqm ? `${propData.size_sqm} sqm` : '',
-            ].filter(Boolean).join(' · ') : '',
-            images: [],
-            originalUrl: targetUrl,
-            facebook: {
-              enabled: true,
-              pageId: targetPageId,
-              pageName: destTitle,
-              headline: '',
-              caption,
-              cta: 'Contact for viewing',
-              hashtags,
-            },
-            instagram: { enabled: false, accountId: '', accountName: '', caption: '', firstCommentHashtags: '', locationTag: '' },
-            tiktok: { enabled: false, accountId: '', accountName: '', hook: '', caption: '', sound: '', privacy: 'public', allowComments: true, allowDuet: true },
-            scheduleType: 'NOW',
-            status: 'PUBLISHED',
-            createdAt: Date.now(),
-            platformResults: {
-              facebook: {
-                status: 'success',
-                postId: data.facebook_post_id,
-                postUrl: data.permalink_url,
-                timestamp: Date.now(),
-                pageId: targetPageId,
-                pageName: destTitle,
-              },
-              instagram: { status: 'skipped' },
-              tiktok: { status: 'skipped' },
-            },
-          });
-        } else {
-          errorMsg = data.message || 'Meta Graph API error';
-        }
-      } catch (err: any) {
-        errorMsg = err.message || 'Network error publishing to Facebook';
-      }
-
-      setExecutionState((prev) => ({
-        ...prev!,
-        completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), socialDest.id])),
-        activeNodeIds: [],
-        currentStepMessage: publishedSuccess
-          ? `✓ Published to Facebook [${destTitle}] (Post ID: ${lastFbPostId})!`
-          : `⚠️ Facebook publish notice [${destTitle}]: ${errorMsg}`,
-      }));
-
-      await delay(400);
-    }
-
-    // 2. Process Remaining Posts Database Storage (if configured)
-    for (const dbDest of dbDestinations) {
-      if (isCancelledRef.current) return;
-
-      setExecutionState((prev) => ({
-        ...prev!,
-        activeNodeIds: [dbDest.id],
-        currentStepMessage: `💾 Storing in [${dbDest.title || 'Remaining Posts Database'}]...`,
-      }));
-
-      const destInConns = (cfg.connections || []).filter((c) => c.toNodeId === dbDest.id);
-      const upstreamId = destInConns[0]?.fromNodeId;
-      const dbCaption =
-        (upstreamId && combinedOutputsMap[upstreamId]?.text) ||
-        (upstreamId && generatedOutputsMap[upstreamId]) ||
-        primaryCopy ||
-        rawCaption;
-
-      try {
-        saveRemainingPost({
-          facebook_url: targetUrl,
-          projectName: projName || propData?.project_name || '',
-          source: {
-            platform: 'facebook',
-            original_url: targetUrl,
-            canonical_url: targetUrl,
-            source_type: 'facebook_post',
-            source_name: 'Facebook Link',
-            post_id: lastFbPostId || `post_${Date.now()}`,
-            created_time: new Date().toISOString(),
-            extraction_method: 'browser',
-          },
-          caption: dbCaption,
-          languages: ['th', 'en'],
-          propertyData: {
-            project_name: propData?.project_name || projName || '',
-            listing_type: propData?.listing_type || 'RENT',
-            price: String(propData?.price || ''),
-            currency: propData?.currency || 'THB',
-            bedrooms: String(propData?.bedrooms || ''),
-            bathrooms: String(propData?.bathrooms || ''),
-            size_sqm: String(propData?.size_sqm || ''),
-            floor: String(propData?.floor || ''),
-            building: propData?.building || '',
-            unit_number: propData?.unit_number || '',
-            furnished: propData?.furnished || '',
-            nearest_transit: propData?.nearest_transit || '',
-            location: propData?.location || '',
-            move_in_status: propData?.move_in_status || '',
-            contact_name: propData?.contact_name || '',
-            contact_phone: propData?.contact_phone || '',
-            contact_line: propData?.contact_line || '',
-          },
-          originalImages: imageList.map((img: any, i: number) => ({
-            index: img.index ?? i,
-            source_url: img.source_url || '',
-            stored_url: img.stored_url || '',
-            status: img.status || 'verified',
-            width: img.width || 800,
-            height: img.height || 600,
-          })),
-          enhancedPhotos: {},
-          watermarkedPhotos: localWatermarkedMap,
-          aiGeneratedOutputs: generatedOutputsMap,
-          aiGeneratedCopy: dbCaption,
-          workflowFormatName: editingFormat.name,
-          autoProcessed: true,
-        });
+      for (const nextBox of remainingAiBoxes) {
+        if (!nextBox.enabled || updatedCompleted.includes(nextBox.id)) continue;
+        const isWatermark = isWatermarkAIBox(nextBox);
+        const isTextFormat = isTextFormatAIBox(nextBox);
 
         setExecutionState((prev) => ({
           ...prev!,
-          completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), dbDest.id])),
-          activeNodeIds: [],
-          currentStepMessage: `✓ Saved in [${dbDest.title || 'Remaining Posts Database'}]!`,
+          activeNodeIds: [nextBox.id],
+          currentStepMessage: isWatermark
+            ? `✂️ Applying photo crop & frame preset [${nextBox.title || 'Format'}]...`
+            : isTextFormat
+            ? `📝 Formatting AI copy with [${nextBox.title || 'Format Preset'}]...`
+            : `⚡ Generating AI copy with [${nextBox.title || 'AI Model'}]...`,
         }));
-      } catch (dbErr) {
-        console.error('Failed to save to Remaining Posts storage:', dbErr);
+
+        if (isWatermark) {
+          const savedFormats = getSavedCropFormats();
+          const baseFormat =
+            savedFormats.find((f) => f.id === nextBox.cropFormatId || f.id === nextBox.templateId || f.id === nextBox.watermarkPresetId) ||
+            savedFormats.find((f) => nextBox.templateText && f.name.toLowerCase() === nextBox.templateText.toLowerCase()) ||
+            savedFormats.find((f) => nextBox.title && f.name && nextBox.title.toLowerCase().includes(f.name.toLowerCase())) ||
+            ((nextBox.title?.toLowerCase().includes('fb') || nextBox.templateText?.toLowerCase().includes('fb'))
+              ? savedFormats.find((f) => f.name.toLowerCase().includes('fb'))
+              : null) ||
+            savedFormats[0];
+
+          const activeWk = typeof window !== 'undefined' ? loadActiveWatermarkConfig() : null;
+          const targetFormat: CropStudioFormat = {
+            ...baseFormat,
+            targetWidth: nextBox.targetWidth || baseFormat?.targetWidth || 1080,
+            targetHeight: nextBox.targetHeight || baseFormat?.targetHeight || 1350,
+            aspect: nextBox.aspect || baseFormat?.aspect || '4:5',
+            fitMode: (nextBox.fitMode || baseFormat?.fitMode || 'cover') as any,
+            focusPosition: (nextBox.focusPosition || baseFormat?.focusPosition || 'center') as any,
+            cropZoom: nextBox.cropZoom || baseFormat?.cropZoom || 1,
+            watermarkConfig:
+              nextBox.watermarkConfig ||
+              baseFormat?.watermarkConfig ||
+              (activeWk?.config?.enabled ? activeWk.config : undefined),
+          };
+
+          for (let i = 0; i < ctx.imageList.length; i++) {
+            const img = ctx.imageList[i];
+            const rawUrl = img.stored_url
+              ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
+              : img.source_url;
+            try {
+              const formattedDataUrl = await formatImageWithCropFormat(rawUrl, targetFormat);
+              ctx.localWatermarkedMap[img.index] = formattedDataUrl;
+            } catch (err) {
+              ctx.localWatermarkedMap[img.index] = rawUrl;
+            }
+          }
+          setWatermarkedPhotos((prev) => ({ ...prev, ...ctx.localWatermarkedMap }));
+          setEnhancedPhotos((prev) => ({ ...prev, ...ctx.localWatermarkedMap }));
+          await delay(400);
+        } else {
+          const inConns = (cfg.connections || []).filter((c) => c.toNodeId === nextBox.id);
+          const upstreamBoxId = inConns[0]?.fromNodeId;
+          const upstreamText =
+            (upstreamBoxId && ctx.generatedOutputsMap[upstreamBoxId]) ||
+            (upstreamBoxId === 'get-content' ? ctx.rawCaption : '') ||
+            ctx.primaryCopy ||
+            ctx.rawCaption;
+
+          let nextCopy = '';
+          const aiProvider = nextBox.provider || (nextBox.model?.startsWith('gpt-') ? 'openai' : 'google_ai');
+          const aiModel = nextBox.model || (aiProvider === 'openai' ? 'gpt-4o' : 'gemini-2.5-flash');
+          try {
+            const aiResp = await fetch('http://localhost:8085/api/facebook-import/generate-ai', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                provider: aiProvider,
+                model: aiModel,
+                template_id: nextBox.templateId || '',
+                template_name: nextBox.title || 'Dynamic Real Estate Copywriter',
+                template_text: nextBox.templateText || '',
+                raw_content: upstreamText,
+                custom_prompt:
+                  nextBox.customPrompt ||
+                  (isTextFormat
+                    ? `Format this real estate listing according to the ${nextBox.title || 'preset'} style. Maintain all property details, price, contact numbers, and formatting clean and attractive.`
+                    : ''),
+              }),
+            });
+            if (aiResp.ok) {
+              const aiData = await aiResp.json();
+              if (aiData.success && aiData.generated_content) {
+                nextCopy = aiData.generated_content;
+              }
+            }
+          } catch (err) {
+            console.warn('Next AI step threw:', err);
+          }
+
+          if (!nextCopy || nextCopy.trim().length === 0) {
+            setExecutionState((prev) => ({
+              ...prev!,
+              isRunning: false,
+              hasError: true,
+              activeNodeIds: [nextBox.id],
+              failedNodeIds: [nextBox.id],
+              currentStepMessage: `❌ AI generation failed for [${nextBox.title || 'Formatted Content'}]. Please write/fix content or re-generate to continue.`,
+            }));
+            setIsRunningWorkflow(false);
+            (window as any).__isWorkflowProcessing = false;
+            canvasRef.current?.openNodeDrawer(nextBox.id);
+            return;
+          }
+
+          ctx.generatedOutputsMap[nextBox.id] = nextCopy;
+          if (!ctx.primaryCopy || isTextFormat) ctx.primaryCopy = nextCopy;
+          setAiGeneratedOutputs((prev) => ({ ...prev, [nextBox.id]: nextCopy }));
+          setAiGeneratedCopy(nextCopy);
+          setExecutionState((prev) => ({
+            ...prev!,
+            completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), nextBox.id])),
+            activeNodeIds: [],
+          }));
+          await delay(300);
+        }
       }
 
-      await delay(300);
-    }
-
-    if (isCancelledRef.current) return;
-
-    // Final Completion
-    setExecutionState({
-      isRunning: false,
-      isComplete: true,
-      hasError: false,
-      activeNodeIds: [],
-      completedNodeIds: Array.from(
-        new Set([
-          'trigger',
-          'get-content',
-          'get-images',
-          ...aiBoxes.map((b) => b.id),
-          ...activeCombineBoxes.map((cb) => cb.id),
-          'output',
-          ...destIds,
-        ])
-      ),
-      currentStepMessage: anyFacebookPosted
-        ? `✓ Workflow completed! "${projName || 'Listing'}" auto-posted directly to Facebook & delivered to all destinations.`
-        : `✓ Workflow completed! "${projName || 'Listing'}" delivered to all destinations.`,
-      stepIndex: 6,
-      totalSteps: 6,
-    });
+      await executeDownstreamWorkflow({
+        cfg,
+        rawCaption: ctx.rawCaption || extractedContent,
+        imageList: ctx.imageList.length > 0 ? ctx.imageList : extractedImages,
+        propData: ctx.propData || propertyData,
+        projName: ctx.projName || projectName,
+        localWatermarkedMap: { ...watermarkedPhotos, ...ctx.localWatermarkedMap },
+        generatedOutputsMap: { ...aiGeneratedOutputs, ...ctx.generatedOutputsMap },
+        primaryCopy: ctx.primaryCopy || aiGeneratedCopy,
+        targetUrl: ctx.targetUrl || runFacebookUrl,
+      });
     } finally {
       setIsRunningWorkflow(false);
       (window as any).__isWorkflowProcessing = false;
@@ -1138,23 +1633,6 @@ export const CreateWorkflowView: React.FC = () => {
         formats.length > 0 &&
         createPortal(
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleDeleteAllFormats}
-              leftIcon={<FiTrash2 style={{ fontSize: '13px' }} />}
-              style={{
-                height: '32px',
-                fontSize: '0.75rem',
-                fontWeight: 600,
-                borderColor: 'rgba(239, 68, 68, 0.35)',
-                color: '#EF4444',
-                borderRadius: '0.375rem',
-              }}
-              title="Remove all workflow formats and samples"
-            >
-              Remove All
-            </Button>
 
             <Button
               variant="primary"
@@ -1348,6 +1826,44 @@ export const CreateWorkflowView: React.FC = () => {
               </button>
             )}
 
+            {/* Continue Workflow Button: Shown when execution is paused on error */}
+            {!isRunningWorkflow && executionState?.hasError && (executionState.failedNodeIds?.length || 0) > 0 && (
+              <button
+                type="button"
+                onClick={() => handleContinueWorkflow(executionState.failedNodeIds?.[0])}
+                style={{
+                  height: '32px',
+                  padding: '0 12px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  borderRadius: '6px',
+                  backgroundColor: '#10B981',
+                  color: '#FFFFFF',
+                  border: '1px solid #059669',
+                  boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                  outline: 'none',
+                  userSelect: 'none',
+                  whiteSpace: 'nowrap',
+                  boxSizing: 'border-box',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#059669';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = '#10B981';
+                }}
+              >
+                <FiPlay size={12} style={{ fill: '#FFFFFF', color: '#FFFFFF' }} />
+                <span>Continue Workflow</span>
+              </button>
+            )}
+
             {/* Reset Layout Button - Simple matching surface style, exact same size, no glow */}
             <button
               type="button"
@@ -1434,6 +1950,9 @@ export const CreateWorkflowView: React.FC = () => {
             aiGeneratedOutputs={aiGeneratedOutputs}
             aiGeneratedCopy={aiGeneratedCopy}
             projectName={projectName}
+            onUpdateBoxOutput={handleUpdateBoxOutput}
+            onRegenerateBoxOutput={handleRegenerateBoxOutput}
+            onContinueWorkflow={handleContinueWorkflow}
           />
         </div>
       ) : (

@@ -290,7 +290,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: isCollapsed ? 'center' : 'flex-start',
-                borderRight: (isCollapsed || isCanvasMode) ? 'none' : '1px solid var(--border-color)',
+                borderRight: '1px solid var(--border-color)',
                 borderBottom: 'none',
                 backgroundColor: isCanvasMode ? 'var(--bg-secondary)' : undefined,
                 pointerEvents: isCanvasMode ? 'auto' : undefined,

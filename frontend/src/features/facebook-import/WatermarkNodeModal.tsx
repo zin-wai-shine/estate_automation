@@ -1,8 +1,11 @@
-import React, { useState, useMemo } from 'react';
-import { FiEdit2, FiMaximize2, FiCheck } from 'react-icons/fi';
+import React, { useState, useMemo, useEffect } from 'react';
+import { FiEdit2, FiMaximize2, FiCheck, FiX } from 'react-icons/fi';
 import {
   type CropStudioFormat,
   getSavedCropFormats,
+  renameCropFormat,
+  formatImageWithCropFormat,
+  syncCropFormatToWorkflowConfig,
 } from '../watermark/cropFormats';
 import type { DynamicAIBoxConfig } from './FacebookWorkflowCanvas';
 import { Select, type SelectOption } from '../../components/ui/Select';
@@ -37,15 +40,36 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
   enhancedPhotos,
   onOpenLightbox,
 }) => {
-  const savedFormats = useMemo(() => getSavedCropFormats(), []);
+  const [savedFormats, setSavedFormats] = useState<CropStudioFormat[]>(() => getSavedCropFormats());
+  const [isEditingFormatName, setIsEditingFormatName] = useState<boolean>(false);
+  const [formatNameInput, setFormatNameInput] = useState<string>('');
+
+  useEffect(() => {
+    const handleSync = () => {
+      setSavedFormats(getSavedCropFormats());
+    };
+    window.addEventListener('storage', handleSync);
+    window.addEventListener('ea_crop_formats_updated', handleSync);
+    window.addEventListener('ea_active_crop_format_changed', handleSync);
+    return () => {
+      window.removeEventListener('storage', handleSync);
+      window.removeEventListener('ea_crop_formats_updated', handleSync);
+      window.removeEventListener('ea_active_crop_format_changed', handleSync);
+    };
+  }, []);
 
   const [selectedFormatId, setSelectedFormatId] = useState<string>(() => {
     return (
       box.cropFormatId ||
       savedFormats.find((f) => f.id === box.templateId)?.id ||
+      savedFormats.find((f) => box.templateText && f.name.toLowerCase() === box.templateText.toLowerCase())?.id ||
+      savedFormats.find((f) => box.title && f.name && box.title.toLowerCase().includes(f.name.toLowerCase()))?.id ||
+      ((box.title?.toLowerCase().includes('fb') || box.templateText?.toLowerCase().includes('fb'))
+        ? savedFormats.find((f) => f.name.toLowerCase().includes('fb'))?.id
+        : null) ||
       savedFormats.find((f) => f.isDefault)?.id ||
       savedFormats[0]?.id ||
-      'format-ig-portrait'
+      'format-1792362113668'
     );
   });
 
@@ -55,15 +79,21 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     const formatId =
       box.cropFormatId ||
       savedFormats.find((f) => f.id === box.templateId)?.id ||
+      savedFormats.find((f) => box.templateText && f.name.toLowerCase() === box.templateText.toLowerCase())?.id ||
+      savedFormats.find((f) => box.title && f.name && box.title.toLowerCase().includes(f.name.toLowerCase()))?.id ||
+      ((box.title?.toLowerCase().includes('fb') || box.templateText?.toLowerCase().includes('fb'))
+        ? savedFormats.find((f) => f.name.toLowerCase().includes('fb'))?.id
+        : null) ||
       savedFormats.find((f) => f.isDefault)?.id ||
       savedFormats[0]?.id ||
-      'format-ig-portrait';
+      'format-1792362113668';
     setSelectedFormatId(formatId);
     setNodeTitle(box.title || 'Photo Format');
-  }, [box.id, box.cropFormatId, box.templateId, box.title, savedFormats]);
+  }, [box.id, box.cropFormatId, box.templateId, box.templateText, box.title, savedFormats]);
 
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
+  const [liveFormattedPhotos, setLiveFormattedPhotos] = useState<Record<number, string>>({});
 
   const formatOptions = useMemo<SelectOption[]>(() => {
     return savedFormats.map((f) => ({
@@ -73,8 +103,58 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
   }, [savedFormats]);
 
   const currentFormat = useMemo(() => {
-    return savedFormats.find((f) => f.id === selectedFormatId) || savedFormats[0];
-  }, [savedFormats, selectedFormatId]);
+    return (
+      savedFormats.find((f) => f.id === selectedFormatId) ||
+      savedFormats.find((f) => f.id === box.cropFormatId || f.id === box.templateId || f.id === box.watermarkPresetId) ||
+      savedFormats.find((f) => box.templateText && f.name.toLowerCase() === box.templateText.toLowerCase()) ||
+      savedFormats.find((f) => box.title && f.name && box.title.toLowerCase().includes(f.name.toLowerCase())) ||
+      ((box.title?.toLowerCase().includes('fb') || box.templateText?.toLowerCase().includes('fb'))
+        ? savedFormats.find((f) => f.name.toLowerCase().includes('fb'))
+        : null) ||
+      savedFormats[0]
+    );
+  }, [savedFormats, selectedFormatId, box.cropFormatId, box.templateId, box.watermarkPresetId, box.templateText, box.title]);
+
+  // Live offscreen formatting for instant 4:5 preview
+  useEffect(() => {
+    if (!images || images.length === 0 || !currentFormat) return;
+    let isCancelled = false;
+
+    const generatePreviews = async () => {
+      const result: Record<number, string> = {};
+      for (const img of images) {
+        const rawUrl = img.stored_url
+          ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
+          : img.source_url;
+        try {
+          const cropped = await formatImageWithCropFormat(rawUrl, currentFormat);
+          if (!isCancelled) {
+            result[img.index] = cropped;
+          }
+        } catch {
+          if (!isCancelled) {
+            result[img.index] = rawUrl;
+          }
+        }
+      }
+      if (!isCancelled) {
+        setLiveFormattedPhotos(result);
+      }
+    };
+
+    generatePreviews();
+    return () => {
+      isCancelled = true;
+    };
+  }, [
+    images,
+    currentFormat?.id,
+    currentFormat?.targetWidth,
+    currentFormat?.targetHeight,
+    currentFormat?.aspect,
+    currentFormat?.fitMode,
+    currentFormat?.focusPosition,
+  ]);
 
   const handleSelectFormat = (format: CropStudioFormat) => {
     setSelectedFormatId(format.id);
@@ -87,7 +167,15 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
       templateId: format.id,
       templateText: format.name,
       watermarkPresetId: format.id,
+      targetWidth: format.targetWidth,
+      targetHeight: format.targetHeight,
+      aspect: format.aspect,
+      fitMode: format.fitMode,
+      focusPosition: format.focusPosition,
+      cropZoom: format.cropZoom,
+      watermarkConfig: format.watermarkConfig,
     });
+    syncCropFormatToWorkflowConfig(format);
   };
 
   const handleTitleChange = (val: string) => {
@@ -162,9 +250,113 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
 
           <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                {currentFormat.name}
-              </span>
+              {isEditingFormatName ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <input
+                    type="text"
+                    value={formatNameInput}
+                    onChange={(e) => setFormatNameInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        if (formatNameInput.trim()) {
+                          renameCropFormat(currentFormat.id, formatNameInput.trim());
+                          const newTitle = `Format: ${formatNameInput.trim()}`;
+                          setNodeTitle(newTitle);
+                          onUpdateBox(box.id, { title: newTitle, templateText: formatNameInput.trim() });
+                        }
+                        setIsEditingFormatName(false);
+                      }
+                      if (e.key === 'Escape') setIsEditingFormatName(false);
+                    }}
+                    autoFocus
+                    style={{
+                      height: '24px',
+                      padding: '0 6px',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      borderRadius: '4px',
+                      border: '1px solid var(--accent-primary)',
+                      backgroundColor: 'var(--bg-main)',
+                      color: 'var(--text-primary)',
+                      outline: 'none',
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (formatNameInput.trim()) {
+                        renameCropFormat(currentFormat.id, formatNameInput.trim());
+                        const newTitle = `Format: ${formatNameInput.trim()}`;
+                        setNodeTitle(newTitle);
+                        onUpdateBox(box.id, { title: newTitle, templateText: formatNameInput.trim() });
+                      }
+                      setIsEditingFormatName(false);
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      width: '22px',
+                      height: '22px',
+                      borderRadius: '4px',
+                      border: 'none',
+                      backgroundColor: 'var(--accent-primary)',
+                      color: '#FFFFFF',
+                      cursor: 'pointer',
+                    }}
+                    title="Save name"
+                  >
+                    <FiCheck size={11} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingFormatName(false)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      width: '22px',
+                      height: '22px',
+                      borderRadius: '4px',
+                      border: '1px solid var(--border-color)',
+                      backgroundColor: 'transparent',
+                      color: 'var(--text-secondary)',
+                      cursor: 'pointer',
+                    }}
+                    title="Cancel"
+                  >
+                    <FiX size={11} />
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                    {currentFormat.name}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFormatNameInput(currentFormat.name);
+                      setIsEditingFormatName(true);
+                    }}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      width: '18px',
+                      height: '18px',
+                      borderRadius: '3px',
+                      border: 'none',
+                      backgroundColor: 'transparent',
+                      color: 'var(--text-muted)',
+                      cursor: 'pointer',
+                    }}
+                    title="Rename format"
+                  >
+                    <FiEdit2 size={11} />
+                  </button>
+                </>
+              )}
               <span
                 style={{
                   fontSize: '0.6875rem',
@@ -245,7 +437,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
                 gap: '4px',
               }}
             >
-              ✓ {images.length} Ready · {currentFormat?.aspect || '1:1'}
+              ✓ {images.length} Ready · {currentFormat?.aspect || '4:5'}
             </span>
           </div>
 
@@ -264,11 +456,23 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
           >
             {images.map((img, idx) => {
               const url =
+                liveFormattedPhotos[img.index] ||
                 watermarkedPhotos?.[img.index] ||
                 enhancedPhotos?.[img.index] ||
                 img.stored_url ||
                 img.source_url;
               const isSelected = selectedPhotoIndex === idx;
+
+              const cardPaddingTop =
+                currentFormat?.targetWidth && currentFormat?.targetHeight
+                  ? `${(currentFormat.targetHeight / currentFormat.targetWidth) * 100}%`
+                  : currentFormat?.aspect === '4:5'
+                  ? '125%'
+                  : currentFormat?.aspect === '16:9'
+                  ? '56.25%'
+                  : currentFormat?.aspect === '9:16'
+                  ? '177.7%'
+                  : '100%';
 
               return (
                 <div
@@ -284,14 +488,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
                   style={{
                     position: 'relative',
                     width: '100%',
-                    paddingTop:
-                      currentFormat?.aspect === '16:9'
-                        ? '56.25%'
-                        : currentFormat?.aspect === '4:5'
-                        ? '125%'
-                        : currentFormat?.aspect === '9:16'
-                        ? '177.7%'
-                        : '100%',
+                    paddingTop: cardPaddingTop,
                     borderRadius: '6px',
                     overflow: 'hidden',
                     border: isSelected

@@ -50,10 +50,16 @@ import {
 import { drawWatermarkOnContext } from '../autopost/watermarkCanvas';
 import {
   type CropStudioFormat,
+  INITIAL_CROP_FORMATS,
   getSavedCropFormats,
   saveCropFormatsList,
   getActiveCropFormatId,
   setActiveCropFormatId,
+  updateCropFormat,
+  renameCropFormat,
+  saveNewCropFormat,
+  deleteCropFormat,
+  syncCropFormatToWorkflowConfig,
 } from './cropFormats';
 import {
   savePhotoToIndexedDB,
@@ -565,16 +571,26 @@ export const WatermarkView: React.FC = () => {
     }
     return INITIAL_CROP_PRESETS;
   });
-  const [activePresetId, setActivePresetId] = useState<string>('original');
+  const initialActiveFormat = useMemo(() => {
+    const list = getSavedCropFormats();
+    const activeId = getActiveCropFormatId();
+    return list.find((f) => f.id === activeId) || list[0] || INITIAL_CROP_FORMATS[0];
+  }, []);
+
+  const [activePresetId, setActivePresetId] = useState<string>(() => {
+    if (initialActiveFormat?.targetWidth === 1080 && initialActiveFormat?.targetHeight === 1350) return 'ig-portrait';
+    if (initialActiveFormat?.targetWidth === 1200 && initialActiveFormat?.targetHeight === 1200) return 'square';
+    return 'custom';
+  });
 
   // Crop Settings (Matches Screenshot 1 & 2)
   const [cropEnabled, setCropEnabled] = useState<boolean>(true);
-  const [targetWidth, setTargetWidth] = useState<number>(() => images[0]?.width || 1200);
-  const [targetHeight, setTargetHeight] = useState<number>(() => images[0]?.height || 1200);
-  const [focusPosition, setFocusPosition] = useState<WatermarkPosition>('center');
+  const [targetWidth, setTargetWidth] = useState<number>(() => initialActiveFormat?.targetWidth || 1080);
+  const [targetHeight, setTargetHeight] = useState<number>(() => initialActiveFormat?.targetHeight || 1350);
+  const [focusPosition, setFocusPosition] = useState<WatermarkPosition>(() => initialActiveFormat?.focusPosition || 'center');
   const [applyToAllImages, setApplyToAllImages] = useState<boolean>(true);
-  const [cropZoom, setCropZoom] = useState<number>(1);
-  const [fitMode, setFitMode] = useState<'cover' | 'contain'>('cover');
+  const [cropZoom, setCropZoom] = useState<number>(() => initialActiveFormat?.cropZoom || 1);
+  const [fitMode, setFitMode] = useState<'cover' | 'contain'>(() => initialActiveFormat?.fitMode || 'cover');
   const [hoveredImageIndex, setHoveredImageIndex] = useState<number | null>(null);
 
   // Grid Split Settings (Cut session)
@@ -588,6 +604,9 @@ export const WatermarkView: React.FC = () => {
 
   // Watermark Configuration State
   const [watermarkConfig, setWatermarkConfig] = useState<WatermarkConfig>(() => {
+    if (initialActiveFormat?.watermarkConfig) {
+      return initialActiveFormat.watermarkConfig;
+    }
     try {
       const loaded = loadActiveWatermarkConfig();
       if (loaded?.config) {
@@ -744,8 +763,73 @@ export const WatermarkView: React.FC = () => {
   const [selectedStudioFormatId, setSelectedStudioFormatId] = useState<string>(() => getActiveCropFormatId());
   const [showSaveFormatModal, setShowSaveFormatModal] = useState<boolean>(false);
   const [showSavedFormatsModal, setShowSavedFormatsModal] = useState<boolean>(false);
+  const [saveFormatMode, setSaveFormatMode] = useState<'update' | 'create'>('update');
+  const [saveFormatTargetId, setSaveFormatTargetId] = useState<string>('');
   const [saveFormatName, setSaveFormatName] = useState<string>('');
   const [saveFormatDesc, setSaveFormatDesc] = useState<string>('');
+  // Inline rename state in Saved Formats modal
+  const [editingFormatId, setEditingFormatId] = useState<string | null>(null);
+  const [editingFormatName, setEditingFormatName] = useState<string>('');
+
+  const activeStudioFormat = useMemo(() => {
+    return cropStudioFormats.find((f) => f.id === selectedStudioFormatId) || null;
+  }, [cropStudioFormats, selectedStudioFormatId]);
+
+  // Auto-sync current studio setup (crop size, framing, anchor, zoom, watermark) into active format
+  useEffect(() => {
+    if (!selectedStudioFormatId) return;
+
+    const resolvedAspect =
+      (targetWidth === 1080 && targetHeight === 1350) ? '4:5' :
+      (targetWidth === 1200 && targetHeight === 1200) || (targetWidth === 1080 && targetHeight === 1080) ? '1:1' :
+      (targetWidth === 1920 && targetHeight === 1080) ? '16:9' :
+      (targetWidth === 1080 && targetHeight === 1920) ? '9:16' :
+      (targetWidth === 1440 && targetHeight === 1080) ? '4:3' :
+      (targetWidth === 1620 && targetHeight === 1080) ? '3:2' :
+      `${targetWidth}:${targetHeight}`;
+
+    const effectiveWatermark = watermarkConfig.enabled ? { ...watermarkConfig } : undefined;
+
+    setCropStudioFormats((prevList) => {
+      const existing = prevList.find((f) => f.id === selectedStudioFormatId);
+      if (!existing) return prevList;
+
+      const isDifferent =
+        existing.targetWidth !== targetWidth ||
+        existing.targetHeight !== targetHeight ||
+        existing.aspect !== resolvedAspect ||
+        existing.fitMode !== fitMode ||
+        existing.focusPosition !== focusPosition ||
+        existing.cropZoom !== cropZoom ||
+        JSON.stringify(existing.watermarkConfig || null) !== JSON.stringify(effectiveWatermark || null);
+
+      if (!isDifferent) return prevList;
+
+      const updated: CropStudioFormat = {
+        ...existing,
+        targetWidth,
+        targetHeight,
+        aspect: resolvedAspect,
+        fitMode,
+        focusPosition,
+        cropZoom,
+        watermarkConfig: effectiveWatermark,
+        updatedAt: Date.now(),
+      };
+      const nextList = prevList.map((f) => (f.id === selectedStudioFormatId ? updated : f));
+      saveCropFormatsList(nextList);
+      syncCropFormatToWorkflowConfig(updated);
+      return nextList;
+    });
+  }, [
+    selectedStudioFormatId,
+    targetWidth,
+    targetHeight,
+    fitMode,
+    focusPosition,
+    cropZoom,
+    watermarkConfig,
+  ]);
   const [isDownloadImageDropdownOpen, setIsDownloadImageDropdownOpen] = useState<boolean>(false);
   const [isDownloadingAllDirect, setIsDownloadingAllDirect] = useState<boolean>(false);
   // Cut Slice Preview Animation states
@@ -829,13 +913,17 @@ export const WatermarkView: React.FC = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Re-sync saved crop studio formats when window gains focus
+  // Re-sync saved crop studio formats when window gains focus or formats updated
   useEffect(() => {
     const handleSync = () => {
       setCropStudioFormats(getSavedCropFormats());
     };
     window.addEventListener('focus', handleSync);
-    return () => window.removeEventListener('focus', handleSync);
+    window.addEventListener('ea_crop_formats_updated', handleSync);
+    return () => {
+      window.removeEventListener('focus', handleSync);
+      window.removeEventListener('ea_crop_formats_updated', handleSync);
+    };
   }, []);
 
   const showToast = (msg: string) => {
@@ -1277,8 +1365,36 @@ export const WatermarkView: React.FC = () => {
     }
   };
 
-  // Open Save Studio Format Modal
-  const handleOpenSaveFormatModal = () => {
+  // Open Save Studio Format Modal (supports update or create)
+  const handleOpenSaveFormatModal = (targetFormatId?: string) => {
+    const targetFormat = targetFormatId
+      ? cropStudioFormats.find((f) => f.id === targetFormatId)
+      : activeStudioFormat;
+
+    if (targetFormat) {
+      setSaveFormatMode('update');
+      setSaveFormatTargetId(targetFormat.id);
+      setSaveFormatName(targetFormat.name);
+      setSaveFormatDesc(targetFormat.description || `${targetWidth} × ${targetHeight} px`);
+    } else {
+      setSaveFormatMode('create');
+      setSaveFormatTargetId('');
+      const defaultName = studioMode === 'grid'
+        ? `${currentGridLayout.name} Grid Format`
+        : `${activePreset?.aspect || 'Custom'} ${targetWidth}×${targetHeight} Format`;
+      const defaultDesc = studioMode === 'grid'
+        ? `${currentGridLayout.tileCount} Tiles • Sliced resolution: ${currentTileWidth}×${currentTileHeight} px`
+        : `${targetWidth} × ${targetHeight} px • ${fitMode === 'cover' ? 'Fill (Cover)' : 'Fit (Contain)'} • Anchor: ${POSITION_LABELS[focusPosition]}`;
+      setSaveFormatName(defaultName);
+      setSaveFormatDesc(defaultDesc);
+    }
+    setShowSaveFormatModal(true);
+  };
+
+  // Open modal explicitly to create brand new format
+  const handleOpenCreateNewFormatModal = () => {
+    setSaveFormatMode('create');
+    setSaveFormatTargetId('');
     const defaultName = studioMode === 'grid'
       ? `${currentGridLayout.name} Grid Format`
       : `${activePreset?.aspect || 'Custom'} ${targetWidth}×${targetHeight} Format`;
@@ -1290,9 +1406,98 @@ export const WatermarkView: React.FC = () => {
     setShowSaveFormatModal(true);
   };
 
-  // Confirm Save Studio Format (Available in Crop Studio & Facebook Import)
+  // 1-Click Update of any format with current studio settings
+  const handleUpdateStudioFormatWithCurrentSettings = (formatId: string, customName?: string, customDesc?: string) => {
+    const resolvedAspect =
+      (targetWidth === 1080 && targetHeight === 1350) ? '4:5' :
+      (targetWidth === 1200 && targetHeight === 1200) || (targetWidth === 1080 && targetHeight === 1080) ? '1:1' :
+      (targetWidth === 1920 && targetHeight === 1080) ? '16:9' :
+      (targetWidth === 1080 && targetHeight === 1920) ? '9:16' :
+      (targetWidth === 1440 && targetHeight === 1080) ? '4:3' :
+      (targetWidth === 1620 && targetHeight === 1080) ? '3:2' :
+      (activePreset && activePreset.aspect !== 'None' ? activePreset.aspect : `${targetWidth}:${targetHeight}`);
+
+    let updatedFormat: CropStudioFormat | null = null;
+    setCropStudioFormats((prevList) => {
+      const existing = prevList.find((f) => f.id === formatId);
+      if (!existing) return prevList;
+
+      updatedFormat = {
+        ...existing,
+        name: customName !== undefined ? customName.trim() : existing.name,
+        description: customDesc !== undefined ? customDesc.trim() : (existing.description || `${targetWidth} × ${targetHeight} px`),
+        mode: studioMode === 'grid' ? 'grid' : 'standard',
+        targetWidth,
+        targetHeight,
+        aspect: resolvedAspect,
+        fitMode,
+        focusPosition,
+        cropZoom,
+        watermarkConfig: watermarkConfig.enabled ? { ...watermarkConfig } : undefined,
+        gridLayoutId: studioMode === 'grid' ? gridLayoutId : undefined,
+        tileCropMap: studioMode === 'grid' ? tileCropMap : undefined,
+        tileFocusMap: studioMode === 'grid' ? tileFocusMap : undefined,
+        useWatermarkOnTiles: studioMode === 'grid' ? useWatermarkOnTiles : undefined,
+        applyToAllTiles: studioMode === 'grid' ? applyToAllTiles : undefined,
+        updatedAt: Date.now(),
+      };
+
+      const nextList = prevList.map((f) => (f.id === formatId ? updatedFormat! : f));
+      saveCropFormatsList(nextList);
+      return nextList;
+    });
+
+    if (updatedFormat) {
+      const saved = updatedFormat as CropStudioFormat;
+      setSelectedStudioFormatId(formatId);
+      setActiveCropFormatId(formatId);
+      syncCropFormatToWorkflowConfig(saved);
+      setShowSaveFormatModal(false);
+      showToast(`✨ Updated format "${saved.name}" to ${targetWidth}×${targetHeight} (${resolvedAspect})!`);
+    }
+  };
+
+  // Inline rename of format
+  const handleRenameStudioFormat = (formatId: string, newName: string) => {
+    if (!newName.trim()) {
+      setEditingFormatId(null);
+      return;
+    }
+    const trimmed = newName.trim();
+    let updatedFormat: CropStudioFormat | null = null;
+    setCropStudioFormats((prevList) => {
+      const existing = prevList.find((f) => f.id === formatId);
+      if (!existing) return prevList;
+      updatedFormat = { ...existing, name: trimmed, updatedAt: Date.now() };
+      const nextList = prevList.map((f) => (f.id === formatId ? updatedFormat! : f));
+      saveCropFormatsList(nextList);
+      return nextList;
+    });
+    if (updatedFormat) {
+      syncCropFormatToWorkflowConfig(updatedFormat);
+      showToast(`✨ Renamed format to "${trimmed}"`);
+    }
+    setEditingFormatId(null);
+  };
+
+  // Confirm Save Studio Format (Handles both Update and Create)
   const handleSaveWholeStudioFormat = () => {
     if (!saveFormatName.trim()) return;
+
+    if (saveFormatMode === 'update' && saveFormatTargetId) {
+      handleUpdateStudioFormatWithCurrentSettings(saveFormatTargetId, saveFormatName, saveFormatDesc);
+      return;
+    }
+
+    const resolvedAspect =
+      (targetWidth === 1080 && targetHeight === 1350) ? '4:5' :
+      (targetWidth === 1200 && targetHeight === 1200) || (targetWidth === 1080 && targetHeight === 1080) ? '1:1' :
+      (targetWidth === 1920 && targetHeight === 1080) ? '16:9' :
+      (targetWidth === 1080 && targetHeight === 1920) ? '9:16' :
+      (targetWidth === 1440 && targetHeight === 1080) ? '4:3' :
+      (targetWidth === 1620 && targetHeight === 1080) ? '3:2' :
+      (activePreset && activePreset.aspect !== 'None' ? activePreset.aspect : `${targetWidth}:${targetHeight}`);
+
     const newFormatId = `format-${Date.now()}`;
     const newFormat: CropStudioFormat = {
       id: newFormatId,
@@ -1301,7 +1506,7 @@ export const WatermarkView: React.FC = () => {
       mode: studioMode === 'grid' ? 'grid' : 'standard',
       targetWidth,
       targetHeight,
-      aspect: activePreset?.aspect || `${targetWidth}:${targetHeight}`,
+      aspect: resolvedAspect,
       fitMode,
       focusPosition,
       cropZoom,
@@ -1315,13 +1520,17 @@ export const WatermarkView: React.FC = () => {
       updatedAt: Date.now(),
     };
 
-    const updated = [newFormat, ...cropStudioFormats.filter((f) => f.id !== newFormatId)];
-    setCropStudioFormats(updated);
-    saveCropFormatsList(updated);
+    setCropStudioFormats((prevList) => {
+      const nextList = [newFormat, ...prevList.filter((f) => f.id !== newFormatId)];
+      saveCropFormatsList(nextList);
+      return nextList;
+    });
+
     setSelectedStudioFormatId(newFormatId);
     setActiveCropFormatId(newFormatId);
+    syncCropFormatToWorkflowConfig(newFormat);
     setShowSaveFormatModal(false);
-    showToast(`✨ Saved format "${newFormat.name}"! Ready to use in Facebook Import.`);
+    showToast(`✨ Saved format "${newFormat.name}"! Ready to use in layout.`);
   };
 
   // Load a Saved Studio Format
@@ -1717,10 +1926,10 @@ export const WatermarkView: React.FC = () => {
     <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
       {/* Group 1: Studio Format Presets (Save & Saved Formats) */}
       <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-        {/* Save Studio Format Button */}
+        {/* Save / Update Studio Format Button */}
         <button
           type="button"
-          onClick={handleOpenSaveFormatModal}
+          onClick={() => handleOpenSaveFormatModal(activeStudioFormat?.id)}
           style={{
             display: 'inline-flex',
             alignItems: 'center',
@@ -1745,10 +1954,10 @@ export const WatermarkView: React.FC = () => {
             e.currentTarget.style.color = 'var(--text-primary)';
             e.currentTarget.style.borderColor = 'var(--border-color)';
           }}
-          title="Save whole format to use in Crop & Cut Studio and Facebook Import"
+          title={activeStudioFormat ? `Update "${activeStudioFormat.name}" or save as new format` : 'Save whole format to use in Crop & Cut Studio and Workflow'}
         >
           <FiSave size={13} />
-          <span>Save</span>
+          <span>{activeStudioFormat ? 'Save / Update' : 'Save'}</span>
         </button>
 
         {/* Saved Formats Button (Opens Modal Box) */}
@@ -1782,6 +1991,34 @@ export const WatermarkView: React.FC = () => {
           <FiScissors size={13} style={{ color: 'var(--accent-primary)' }} />
           <span>Saved Formats</span>
         </button>
+
+        {/* Active Format Indicator Pill */}
+        {activeStudioFormat && (
+          <div
+            onClick={() => setShowSavedFormatsModal(true)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              height: '32px',
+              padding: '0 10px',
+              borderRadius: '8px',
+              backgroundColor: isDark ? 'rgba(37, 99, 235, 0.12)' : 'rgba(37, 99, 235, 0.08)',
+              border: '1px solid var(--accent-primary)',
+              color: 'var(--accent-primary)',
+              fontSize: '0.75rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              transition: 'opacity 0.15s ease',
+            }}
+            title={`Active format: ${activeStudioFormat.name} (${activeStudioFormat.targetWidth}×${activeStudioFormat.targetHeight}). Click to view/edit saved formats.`}
+          >
+            <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: 'var(--accent-primary)' }} />
+            <span style={{ maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {activeStudioFormat.name}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Group 2: Export File Type & Download (Clean spacing, no group bg) */}
@@ -6375,20 +6612,160 @@ export const WatermarkView: React.FC = () => {
                 boxShadow: '0 20px 40px rgba(0, 0, 0, 0.4)',
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                <FiScissors size={18} style={{ color: 'var(--accent-primary)' }} />
-                <div style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                  Save Crop & Cut Studio Format
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <FiScissors size={18} style={{ color: 'var(--accent-primary)' }} />
+                  <div style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                    {saveFormatMode === 'update' ? 'Update Studio Format' : 'Save as New Format'}
+                  </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setShowSaveFormatModal(false)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: '26px',
+                    height: '26px',
+                    borderRadius: '6px',
+                    border: '1px solid var(--border-color)',
+                    backgroundColor: 'transparent',
+                    color: 'var(--text-secondary)',
+                    cursor: 'pointer',
+                  }}
+                  title="Close"
+                >
+                  <FiX size={14} />
+                </button>
               </div>
+
+              {/* Mode Toggle Pills (Update Existing vs Create New) */}
+              {cropStudioFormats.length > 0 && (
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: '4px',
+                    marginBottom: '1rem',
+                    padding: '3px',
+                    borderRadius: '8px',
+                    backgroundColor: isDark ? 'rgba(0, 0, 0, 0.25)' : 'var(--bg-surface-hover)',
+                    border: '1px solid var(--border-color)',
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSaveFormatMode('update');
+                      const target = activeStudioFormat || cropStudioFormats[0];
+                      if (target) {
+                        setSaveFormatTargetId(target.id);
+                        setSaveFormatName(target.name);
+                        setSaveFormatDesc(target.description || `${targetWidth} × ${targetHeight} px`);
+                      }
+                    }}
+                    style={{
+                      flex: 1,
+                      padding: '6px 10px',
+                      borderRadius: '6px',
+                      border: 'none',
+                      backgroundColor: saveFormatMode === 'update' ? 'var(--accent-primary)' : 'transparent',
+                      color: saveFormatMode === 'update' ? '#FFFFFF' : 'var(--text-secondary)',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '5px',
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
+                    <FiRefreshCw size={11} />
+                    <span>Update Existing Format</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSaveFormatMode('create');
+                      setSaveFormatTargetId('');
+                      const defaultName = studioMode === 'grid'
+                        ? `${currentGridLayout.name} Grid Format`
+                        : `${activePreset?.aspect || 'Custom'} ${targetWidth}×${targetHeight} Format`;
+                      setSaveFormatName(defaultName);
+                      setSaveFormatDesc(`${targetWidth} × ${targetHeight} px • ${fitMode === 'cover' ? 'Fill (Cover)' : 'Fit (Contain)'}`);
+                    }}
+                    style={{
+                      flex: 1,
+                      padding: '6px 10px',
+                      borderRadius: '6px',
+                      border: 'none',
+                      backgroundColor: saveFormatMode === 'create' ? 'var(--accent-primary)' : 'transparent',
+                      color: saveFormatMode === 'create' ? '#FFFFFF' : 'var(--text-secondary)',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '5px',
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
+                    <FiPlus size={11} />
+                    <span>Save as New Format</span>
+                  </button>
+                </div>
+              )}
+
               <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '1rem', lineHeight: 1.5 }}>
-                Save this full format to easily format photos in Facebook Import and switch formats anytime.
+                {saveFormatMode === 'update'
+                  ? 'Update this format with your current crop size, anchor, framing & watermark settings.'
+                  : 'Save your current studio settings as a new reusable format for workflow layouts.'}
               </p>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '1.25rem' }}>
+                {saveFormatMode === 'update' && (
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                      Select Format to Overwrite
+                    </label>
+                    <select
+                      value={saveFormatTargetId}
+                      onChange={(e) => {
+                        const targetId = e.target.value;
+                        setSaveFormatTargetId(targetId);
+                        const fmt = cropStudioFormats.find((f) => f.id === targetId);
+                        if (fmt) {
+                          setSaveFormatName(fmt.name);
+                          setSaveFormatDesc(fmt.description || `${targetWidth} × ${targetHeight} px`);
+                        }
+                      }}
+                      style={{
+                        width: '100%',
+                        height: '36px',
+                        padding: '0 10px',
+                        borderRadius: '8px',
+                        border: '1px solid var(--border-color)',
+                        backgroundColor: 'var(--bg-main)',
+                        color: 'var(--text-primary)',
+                        fontSize: '0.8125rem',
+                        outline: 'none',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {cropStudioFormats.map((f) => (
+                        <option key={f.id} value={f.id}>
+                          {f.name} ({f.targetWidth}×{f.targetHeight} • {f.aspect})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
                 <div>
                   <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                    Format Name
+                    Format Name {saveFormatMode === 'update' && '(Rename here if desired)'}
                   </label>
                   <input
                     type="text"
@@ -6400,7 +6777,7 @@ export const WatermarkView: React.FC = () => {
                       }
                     }}
                     autoFocus
-                    placeholder="e.g., Instagram Feed 4:5, Condo Square 1:1"
+                    placeholder="e.g., FB Format, Instagram Feed 4:5, Condo Square 1:1"
                     style={{
                       width: '100%',
                       height: '36px',
@@ -6464,7 +6841,7 @@ export const WatermarkView: React.FC = () => {
                   </div>
                   <div>
                     <span style={{ color: 'var(--text-muted)' }}>Dimensions: </span>
-                    <strong style={{ color: 'var(--text-primary)' }}>
+                    <strong style={{ color: 'var(--accent-primary)' }}>
                       {targetWidth} × {targetHeight} px
                     </strong>
                   </div>
@@ -6538,7 +6915,7 @@ export const WatermarkView: React.FC = () => {
                   }}
                 >
                   <FiCheck size={14} />
-                  <span>Save Format</span>
+                  <span>{saveFormatMode === 'update' ? 'Update Format' : 'Save as New Format'}</span>
                 </button>
               </div>
             </motion.div>
@@ -6729,58 +7106,190 @@ export const WatermarkView: React.FC = () => {
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'space-between',
+                            gap: '8px',
                           }}
                         >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span
-                              style={{
-                                fontSize: '0.875rem',
-                                fontWeight: 600,
-                                color: isSelected ? 'var(--accent-primary)' : 'var(--text-primary)',
-                              }}
-                            >
-                              {fmt.name}
-                            </span>
-                            {isSelected && (
-                              <span
-                                style={{
-                                  fontSize: '0.6875rem',
-                                  fontWeight: 700,
-                                  color: '#FFFFFF',
-                                  backgroundColor: 'var(--accent-primary)',
-                                  padding: '1px 6px',
-                                  borderRadius: '4px',
-                                  textTransform: 'uppercase',
-                                  letterSpacing: '0.04em',
-                                }}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0 }}>
+                            {editingFormatId === fmt.id ? (
+                              <div
+                                style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1 }}
+                                onClick={(e) => e.stopPropagation()}
                               >
-                                Active
-                              </span>
+                                <input
+                                  type="text"
+                                  value={editingFormatName}
+                                  onChange={(e) => setEditingFormatName(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') handleRenameStudioFormat(fmt.id, editingFormatName);
+                                    if (e.key === 'Escape') setEditingFormatId(null);
+                                  }}
+                                  autoFocus
+                                  style={{
+                                    height: '28px',
+                                    padding: '0 8px',
+                                    fontSize: '0.8125rem',
+                                    fontWeight: 600,
+                                    borderRadius: '6px',
+                                    border: '1.5px solid var(--accent-primary)',
+                                    backgroundColor: 'var(--bg-main)',
+                                    color: 'var(--text-primary)',
+                                    outline: 'none',
+                                    flex: 1,
+                                    maxWidth: '220px',
+                                  }}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleRenameStudioFormat(fmt.id, editingFormatName)}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    width: '26px',
+                                    height: '26px',
+                                    borderRadius: '6px',
+                                    border: 'none',
+                                    backgroundColor: 'var(--accent-primary)',
+                                    color: '#FFFFFF',
+                                    cursor: 'pointer',
+                                  }}
+                                  title="Save name"
+                                >
+                                  <FiCheck size={13} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingFormatId(null)}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    width: '26px',
+                                    height: '26px',
+                                    borderRadius: '6px',
+                                    border: '1px solid var(--border-color)',
+                                    backgroundColor: 'transparent',
+                                    color: 'var(--text-secondary)',
+                                    cursor: 'pointer',
+                                  }}
+                                  title="Cancel"
+                                >
+                                  <FiX size={13} />
+                                </button>
+                              </div>
+                            ) : (
+                              <>
+                                <span
+                                  style={{
+                                    fontSize: '0.875rem',
+                                    fontWeight: 600,
+                                    color: isSelected ? 'var(--accent-primary)' : 'var(--text-primary)',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap',
+                                  }}
+                                >
+                                  {fmt.name}
+                                </span>
+                                {isSelected && (
+                                  <span
+                                    style={{
+                                      fontSize: '0.6875rem',
+                                      fontWeight: 700,
+                                      color: '#FFFFFF',
+                                      backgroundColor: 'var(--accent-primary)',
+                                      padding: '1px 6px',
+                                      borderRadius: '4px',
+                                      textTransform: 'uppercase',
+                                      letterSpacing: '0.04em',
+                                      flexShrink: 0,
+                                    }}
+                                  >
+                                    Active
+                                  </span>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setEditingFormatId(fmt.id);
+                                    setEditingFormatName(fmt.name);
+                                  }}
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    width: '22px',
+                                    height: '22px',
+                                    borderRadius: '4px',
+                                    border: 'none',
+                                    backgroundColor: 'transparent',
+                                    color: 'var(--text-muted)',
+                                    cursor: 'pointer',
+                                    transition: 'color 0.15s ease',
+                                    flexShrink: 0,
+                                  }}
+                                  onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--accent-primary)')}
+                                  onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
+                                  title="Rename format"
+                                >
+                                  <FiEdit2 size={12} />
+                                </button>
+                              </>
                             )}
                           </div>
 
-                          <button
-                            type="button"
-                            onClick={(e) => handleDeleteStudioFormat(fmt.id, e)}
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              width: '24px',
-                              height: '24px',
-                              borderRadius: '6px',
-                              border: 'none',
-                              backgroundColor: 'transparent',
-                              color: 'var(--text-muted)',
-                              cursor: 'pointer',
-                              transition: 'color 0.15s ease',
-                            }}
-                            onMouseEnter={(e) => (e.currentTarget.style.color = '#EF4444')}
-                            onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
-                            title="Delete this format"
-                          >
-                            <FiTrash2 size={13} />
-                          </button>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                            {/* 1-Click Update Format with Current Settings Button */}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleUpdateStudioFormatWithCurrentSettings(fmt.id);
+                              }}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                padding: '4px 9px',
+                                borderRadius: '6px',
+                                border: '1px solid var(--accent-primary)',
+                                backgroundColor: isSelected ? 'var(--accent-primary)' : (isDark ? 'rgba(37, 99, 235, 0.15)' : 'rgba(37, 99, 235, 0.08)'),
+                                color: isSelected ? '#FFFFFF' : 'var(--accent-primary)',
+                                fontSize: '0.6875rem',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                transition: 'all 0.15s ease',
+                              }}
+                              title="Update this format with current studio settings (size, anchor, framing & watermark)"
+                            >
+                              <FiRefreshCw size={11} />
+                              <span>Update</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={(e) => handleDeleteStudioFormat(fmt.id, e)}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                width: '24px',
+                                height: '24px',
+                                borderRadius: '6px',
+                                border: 'none',
+                                backgroundColor: 'transparent',
+                                color: 'var(--text-muted)',
+                                cursor: 'pointer',
+                                transition: 'color 0.15s ease',
+                              }}
+                              onMouseEnter={(e) => (e.currentTarget.style.color = '#EF4444')}
+                              onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
+                              title="Delete this format"
+                            >
+                              <FiTrash2 size={13} />
+                            </button>
+                          </div>
                         </div>
 
                         {/* Format Badges */}
@@ -6883,31 +7392,61 @@ export const WatermarkView: React.FC = () => {
                   padding: '1rem 1.5rem',
                   borderTop: '1px solid var(--border-color)',
                   backgroundColor: isDark ? 'rgba(0, 0, 0, 0.2)' : 'var(--bg-main)',
+                  gap: '8px',
                 }}
               >
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowSavedFormatsModal(false);
-                    handleOpenSaveFormatModal();
-                  }}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    padding: '7px 14px',
-                    borderRadius: '8px',
-                    border: '1px solid var(--accent-primary)',
-                    backgroundColor: 'var(--accent-primary-alpha)',
-                    color: 'var(--accent-primary)',
-                    fontSize: '0.75rem',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}
-                >
-                  <FiPlus size={13} />
-                  <span>Save Current as New Format</span>
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowSavedFormatsModal(false);
+                      handleOpenCreateNewFormatModal();
+                    }}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '7px 14px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--accent-primary)',
+                      backgroundColor: 'var(--accent-primary-alpha)',
+                      color: 'var(--accent-primary)',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <FiPlus size={13} />
+                    <span>Save Current as New Format</span>
+                  </button>
+
+                  {activeStudioFormat && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleUpdateStudioFormatWithCurrentSettings(activeStudioFormat.id);
+                        setShowSavedFormatsModal(false);
+                      }}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '7px 12px',
+                        borderRadius: '8px',
+                        border: '1px solid var(--accent-primary)',
+                        backgroundColor: 'var(--accent-primary)',
+                        color: '#FFFFFF',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                      }}
+                      title={`Update "${activeStudioFormat.name}" with current studio settings`}
+                    >
+                      <FiRefreshCw size={12} />
+                      <span>Update Active ({activeStudioFormat.name})</span>
+                    </button>
+                  )}
+                </div>
 
                 <button
                   type="button"
