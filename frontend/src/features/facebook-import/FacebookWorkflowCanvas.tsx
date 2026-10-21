@@ -2847,10 +2847,11 @@ export const FacebookWorkflowCanvas = forwardRef<
 
           if (match) {
             const expectedSubtitle = `${match.targetWidth}×${match.targetHeight} (${match.aspect || '1:1'})`;
-            const expectedTitle = `Format: ${match.name}`;
+            const isDefaultTitle = !box.title || box.title.startsWith('Format:') || box.title.startsWith('Crop & Format') || box.title === 'Format Preset' || box.title === match.name;
+            const expectedTitle = isDefaultTitle ? `Format: ${match.name}` : box.title;
             const isDiff =
               box.subtitle !== expectedSubtitle ||
-              box.title !== expectedTitle ||
+              (isDefaultTitle && box.title !== expectedTitle) ||
               box.templateText !== match.name ||
               box.cropFormatId !== match.id ||
               box.targetWidth !== match.targetWidth ||
@@ -7095,9 +7096,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                          ((box.title?.toLowerCase().includes('fb') || box.templateText?.toLowerCase().includes('fb')) ? savedCropFormatsList.find((f) => f.name.toLowerCase().includes('fb')) : null))
                       : null;
 
-                    const displayNodeTitle = isWatermark && matchingCropFormat && (!box.title || box.title.startsWith('Format:') || box.title.startsWith('Crop & Format') || box.title === matchingCropFormat.name)
-                      ? `Format: ${matchingCropFormat.name}`
-                      : box.title;
+                    const displayNodeTitle = box.title || (isWatermark && matchingCropFormat ? `Format: ${matchingCropFormat.name}` : (isWatermark ? 'Format Preset' : 'AI Node'));
 
                     const displayNodeSubtitle = isWatermark && matchingCropFormat
                       ? `${matchingCropFormat.targetWidth}×${matchingCropFormat.targetHeight} (${matchingCropFormat.aspect || '1:1'})`

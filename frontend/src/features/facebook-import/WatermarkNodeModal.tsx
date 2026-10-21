@@ -256,6 +256,15 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
                     type="text"
                     value={formatNameInput}
                     onChange={(e) => setFormatNameInput(e.target.value)}
+                    onBlur={() => {
+                      if (formatNameInput.trim()) {
+                        renameCropFormat(currentFormat.id, formatNameInput.trim());
+                        const newTitle = `Format: ${formatNameInput.trim()}`;
+                        setNodeTitle(newTitle);
+                        onUpdateBox(box.id, { title: newTitle, templateText: formatNameInput.trim() });
+                      }
+                      setIsEditingFormatName(false);
+                    }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
                         if (formatNameInput.trim()) {

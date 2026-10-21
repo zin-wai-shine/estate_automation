@@ -147,51 +147,100 @@ export const INITIAL_CROP_FORMATS: CropStudioFormat[] = [
 ];
 
 export const syncCropFormatToWorkflowConfig = async (format: CropStudioFormat) => {
+  const updateBox = (box: any) => {
+    const isMatch =
+      box.cropFormatId === format.id ||
+      box.templateId === format.id ||
+      box.watermarkPresetId === format.id ||
+      (box.templateText && box.templateText.toLowerCase() === format.name.toLowerCase()) ||
+      (box.title && box.title.toLowerCase().includes(format.name.toLowerCase())) ||
+      (format.name.toLowerCase().includes('fb') && (box.title?.toLowerCase().includes('fb') || box.templateText?.toLowerCase().includes('fb')));
+
+    if (isMatch && (box.processType === 'watermark' || box.model === 'watermark' || box.provider === 'watermark')) {
+      box.cropFormatId = format.id;
+      box.templateId = format.id;
+      box.watermarkPresetId = format.id;
+      box.templateText = format.name;
+      box.title = `Format: ${format.name}`;
+      box.subtitle = `${format.targetWidth}×${format.targetHeight} (${format.aspect || '1:1'})`;
+      box.targetWidth = format.targetWidth;
+      box.targetHeight = format.targetHeight;
+      box.aspect = format.aspect;
+      box.fitMode = format.fitMode;
+      box.focusPosition = format.focusPosition;
+      box.cropZoom = format.cropZoom;
+      if (format.watermarkConfig) {
+        box.watermarkConfig = format.watermarkConfig;
+      }
+      return true;
+    }
+    return false;
+  };
+
+  // 1. Sync immediately to localStorage workflow formats
+  try {
+    const rawWf = localStorage.getItem('ea_workflow_formats_v2');
+    if (rawWf) {
+      const parsedWf = JSON.parse(rawWf);
+      if (Array.isArray(parsedWf)) {
+        let changed = false;
+        parsedWf.forEach((wf: any) => {
+          if (wf.config?.aiBoxes && Array.isArray(wf.config.aiBoxes)) {
+            wf.config.aiBoxes.forEach((b: any) => {
+              if (updateBox(b)) changed = true;
+            });
+          }
+        });
+        if (changed) {
+          localStorage.setItem('ea_workflow_formats_v2', JSON.stringify(parsedWf));
+        }
+      }
+    }
+  } catch (e) {}
+
+  // 2. Sync immediately to localStorage Facebook workflow config
+  try {
+    const rawFb = localStorage.getItem('ea_facebook_workflow_config_v2');
+    if (rawFb) {
+      const parsedFb = JSON.parse(rawFb);
+      if (parsedFb.aiBoxes && Array.isArray(parsedFb.aiBoxes)) {
+        let changed = false;
+        parsedFb.aiBoxes.forEach((b: any) => {
+          if (updateBox(b)) changed = true;
+        });
+        if (changed) {
+          localStorage.setItem('ea_facebook_workflow_config_v2', JSON.stringify(parsedFb));
+        }
+      }
+    }
+  } catch (e) {}
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('ea_workflow_updated'));
+    window.dispatchEvent(new CustomEvent('ea_crop_formats_updated', { detail: getSavedCropFormats() }));
+  }
+
+  // 3. Sync to backend API
   try {
     const res = await fetch('http://localhost:8085/api/workflow/config');
     if (!res.ok) return;
     const data = await res.json();
     let modified = false;
 
-    const updateBoxWithFormat = (box: any) => {
-      const isMatch =
-        box.cropFormatId === format.id ||
-        box.templateId === format.id ||
-        box.watermarkPresetId === format.id ||
-        (box.templateText && box.templateText.toLowerCase() === format.name.toLowerCase()) ||
-        (box.title && box.title.toLowerCase().includes(format.name.toLowerCase())) ||
-        (format.name.toLowerCase().includes('fb') && (box.title?.toLowerCase().includes('fb') || box.templateText?.toLowerCase().includes('fb')));
-
-      if (isMatch && (box.processType === 'watermark' || box.model === 'watermark' || box.provider === 'watermark')) {
-        box.cropFormatId = format.id;
-        box.templateId = format.id;
-        box.watermarkPresetId = format.id;
-        box.templateText = format.name;
-        box.title = `Format: ${format.name}`;
-        box.subtitle = `${format.targetWidth}×${format.targetHeight} (${format.aspect || '1:1'})`;
-        box.targetWidth = format.targetWidth;
-        box.targetHeight = format.targetHeight;
-        box.aspect = format.aspect;
-        box.fitMode = format.fitMode;
-        box.focusPosition = format.focusPosition;
-        box.cropZoom = format.cropZoom;
-        if (format.watermarkConfig) {
-          box.watermarkConfig = format.watermarkConfig;
-        }
-        modified = true;
-      }
-    };
-
     if (Array.isArray(data.workflow_formats)) {
       data.workflow_formats.forEach((wf: any) => {
         if (wf.config?.aiBoxes && Array.isArray(wf.config.aiBoxes)) {
-          wf.config.aiBoxes.forEach(updateBoxWithFormat);
+          wf.config.aiBoxes.forEach((b: any) => {
+            if (updateBox(b)) modified = true;
+          });
         }
       });
     }
 
     if (data.facebook_import_workflow?.aiBoxes && Array.isArray(data.facebook_import_workflow.aiBoxes)) {
-      data.facebook_import_workflow.aiBoxes.forEach(updateBoxWithFormat);
+      data.facebook_import_workflow.aiBoxes.forEach((b: any) => {
+        if (updateBox(b)) modified = true;
+      });
     }
 
     if (modified) {

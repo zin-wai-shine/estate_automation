@@ -86,6 +86,30 @@ export const CreateWorkflowView: React.FC = () => {
         }
       })
       .catch(() => {});
+
+    const handleWfSync = () => {
+      fetch('http://localhost:8085/api/workflow/config')
+        .then((res) => res.json())
+        .then((data) => {
+          if (data && Array.isArray(data.workflow_formats) && data.workflow_formats.length > 0) {
+            setFormats(data.workflow_formats);
+            localStorage.setItem('estate_saved_workflow_formats_v2', JSON.stringify(data.workflow_formats));
+            setEditingFormat((prev) => {
+              const targetId = prev?.id;
+              const found = data.workflow_formats.find((f: WorkflowFormat) => f.id === targetId);
+              return found || prev;
+            });
+          }
+        })
+        .catch(() => {});
+    };
+
+    window.addEventListener('ea_workflow_updated', handleWfSync);
+    window.addEventListener('ea_crop_formats_updated', handleWfSync);
+    return () => {
+      window.removeEventListener('ea_workflow_updated', handleWfSync);
+      window.removeEventListener('ea_crop_formats_updated', handleWfSync);
+    };
   }, []);
 
   // Canvas Page view state (replaces modal popup with full-page canvas)

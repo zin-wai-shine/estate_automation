@@ -7119,6 +7119,13 @@ export const WatermarkView: React.FC = () => {
                                   type="text"
                                   value={editingFormatName}
                                   onChange={(e) => setEditingFormatName(e.target.value)}
+                                  onBlur={() => {
+                                    if (editingFormatName.trim()) {
+                                      handleRenameStudioFormat(fmt.id, editingFormatName);
+                                    } else {
+                                      setEditingFormatId(null);
+                                    }
+                                  }}
                                   onKeyDown={(e) => {
                                     if (e.key === 'Enter') handleRenameStudioFormat(fmt.id, editingFormatName);
                                     if (e.key === 'Escape') setEditingFormatId(null);
@@ -7245,7 +7252,9 @@ export const WatermarkView: React.FC = () => {
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleUpdateStudioFormatWithCurrentSettings(fmt.id);
+                                const newName = editingFormatId === fmt.id ? editingFormatName : undefined;
+                                handleUpdateStudioFormatWithCurrentSettings(fmt.id, newName);
+                                if (editingFormatId === fmt.id) setEditingFormatId(null);
                               }}
                               style={{
                                 display: 'inline-flex',
