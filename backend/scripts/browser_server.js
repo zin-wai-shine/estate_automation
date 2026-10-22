@@ -2947,6 +2947,209 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Dedicated TikTok Post Extractor Endpoint
+  if (url === '/tiktok-post-extract' && req.method === 'POST') {
+    let body = '';
+    req.on('data', (chunk) => (body += chunk));
+    req.on('end', async () => {
+      try {
+        const payload = JSON.parse(body || '{}');
+        const targetUrl = payload.url || payload.target_url;
+        const maxImages = Math.min(payload.max_images || 50, MAX_MEDIA_PER_POST);
+        const userId = payload.user_id || '1';
+
+        if (!targetUrl) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ success: false, error_code: 'INVALID_URL', error_message: 'No URL provided' }));
+          return;
+        }
+
+        const launchRes = await launchPersistentBrowser(userId);
+        if (!launchRes.success || !currentBrowserPage) {
+          res.writeHead(500);
+          res.end(JSON.stringify({ success: false, error_code: 'BROWSER_TIMEOUT', error_message: 'Could not initialize browser' }));
+          return;
+        }
+
+        const page = currentBrowserPage;
+        await page.bringToFront().catch(() => {});
+
+        console.log(`[TIKTOK_EXTRACT] Navigating to: ${targetUrl}`);
+        try {
+          await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 35000 });
+          await page.waitForTimeout(3000);
+        } catch (err) {
+          console.warn(`[TIKTOK_EXTRACT] Navigation warning: ${err.message}`);
+        }
+
+        const canonicalUrl = page.url();
+        console.log(`[TIKTOK_EXTRACT] Arrived at: ${canonicalUrl}`);
+
+        const extracted = await page.evaluate((maxImgs) => {
+          let caption = '';
+          let author = '';
+          let images = [];
+
+          try {
+            const rehydration = window.__UNIVERSAL_DATA_FOR_REHYDRATION__;
+            const videoDetail = rehydration && rehydration['__DEFAULT_SCOPE__'] && rehydration['__DEFAULT_SCOPE__']['webapp.video-detail'];
+            const item = videoDetail && videoDetail.itemInfo && videoDetail.itemInfo.itemStruct;
+            if (item) {
+              caption = item.desc || '';
+              author = (item.author && (item.author.uniqueId || item.author.nickname)) || '';
+
+              if (item.imagePost && Array.isArray(item.imagePost.images)) {
+                item.imagePost.images.forEach((imgObj, idx) => {
+                  const list = (imgObj.imageURL && imgObj.imageURL.urlList) || (imgObj.displayImage && imgObj.displayImage.urlList) || [];
+                  const u = list[0] || list[list.length - 1];
+                  if (u) {
+                    images.push({
+                      index: idx,
+                      source_url: u,
+                      width: (imgObj.imageURL && imgObj.imageURL.width) || 1080,
+                      height: (imgObj.imageURL && imgObj.imageURL.height) || 1080,
+                      status: 'verified',
+                    });
+                  }
+                });
+              } else if (item.video) {
+                const cover = item.video.originCover || item.video.cover || item.video.dynamicCover;
+                if (cover) {
+                  images.push({
+                    index: 0,
+                    source_url: cover,
+                    width: item.video.width || 1080,
+                    height: item.video.height || 1920,
+                    status: 'verified',
+                  });
+                }
+              }
+            }
+          } catch (e) {}
+
+          if (!caption) {
+            const descEl = document.querySelector('[data-e2e="browse-video-desc"], [data-e2e="video-desc"], h1, [data-e2e="user-post-item-desc"]');
+            if (descEl) caption = descEl.innerText.trim();
+            if (!caption) {
+              const ogDesc = document.querySelector('meta[property="og:description"]');
+              if (ogDesc) caption = ogDesc.getAttribute('content') || '';
+            }
+          }
+
+          if (!author) {
+            const authorEl = document.querySelector('[data-e2e="browse-username"], [data-e2e="video-author-uniqueid"], [data-e2e="browser-nickname"]');
+            if (authorEl) author = authorEl.innerText.replace(/^@/, '').trim();
+            if (!author) {
+              const match = window.location.pathname.match(/@([^/]+)/);
+              if (match) author = match[1];
+            }
+          }
+
+          if (images.length === 0) {
+            const imgs = Array.from(document.querySelectorAll('img[src*="tiktokcdn"], img[src*="bytegoofy"], img[src*="ttwstatic"]'));
+            imgs.forEach((img) => {
+              const src = img.src || img.getAttribute('data-src');
+              if (src && !src.includes('avatar') && !images.some(i => i.source_url === src)) {
+                images.push({
+                  index: images.length,
+                  source_url: src,
+                  width: img.naturalWidth || 1080,
+                  height: img.naturalHeight || 1080,
+                  status: 'verified',
+                });
+              }
+            });
+
+            if (images.length === 0) {
+              const ogImg = document.querySelector('meta[property="og:image"]');
+              if (ogImg && ogImg.getAttribute('content')) {
+                images.push({
+                  index: 0,
+                  source_url: ogImg.getAttribute('content'),
+                  width: 1080,
+                  height: 1920,
+                  status: 'verified',
+                });
+              }
+            }
+          }
+
+          return { caption, author, images: images.slice(0, maxImgs) };
+        }, maxImages);
+
+        let postId = '';
+        const idMatch = canonicalUrl.match(/\/(?:video|photo)\/(\d+)/);
+        if (idMatch) postId = idMatch[1];
+
+        let finalCaption = extracted.caption;
+        let finalAuthor = extracted.author;
+        let finalImages = extracted.images;
+
+        if (finalImages.length === 0 && !finalCaption) {
+          try {
+            const https = require('https');
+            const tikwmUrl = `https://www.tikwm.com/api/?url=${encodeURIComponent(targetUrl)}&count=50`;
+            const tikwmData = await new Promise((resolve) => {
+              const tReq = https.get(tikwmUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } }, (tRes) => {
+                let d = '';
+                tRes.on('data', (c) => (d += c));
+                tRes.on('end', () => {
+                  try { resolve(JSON.parse(d)); } catch (e) { resolve(null); }
+                });
+              });
+              tReq.on('error', () => resolve(null));
+              tReq.setTimeout(10000, () => { tReq.destroy(); resolve(null); });
+            });
+
+            if (tikwmData && tikwmData.code === 0 && tikwmData.data) {
+              const td = tikwmData.data;
+              finalCaption = td.title || finalCaption;
+              if (td.author && (td.author.nickname || td.author.unique_id)) {
+                finalAuthor = td.author.nickname || td.author.unique_id;
+              }
+              if (Array.isArray(td.images) && td.images.length > 0) {
+                finalImages = td.images.slice(0, maxImages).map((imgUrl, i) => ({
+                  index: i,
+                  source_url: imgUrl,
+                  width: 1080,
+                  height: 1920,
+                  status: 'verified',
+                }));
+              } else if (td.origin_cover || td.cover) {
+                finalImages = [{
+                  index: 0,
+                  source_url: td.origin_cover || td.cover,
+                  width: 1080,
+                  height: 1920,
+                  status: 'verified',
+                }];
+              }
+            }
+          } catch (e) {
+            console.warn(`[TIKTOK_EXTRACT] TikWM fallback error: ${e.message}`);
+          }
+        }
+
+        res.writeHead(200);
+        res.end(JSON.stringify({
+          success: true,
+          platform: 'tiktok',
+          canonical_url: canonicalUrl,
+          source_type: 'tiktok_post',
+          source_name: finalAuthor ? `@${finalAuthor}` : 'TikTok Creator',
+          post_id: postId,
+          caption: finalCaption,
+          images: finalImages,
+        }));
+      } catch (e) {
+        console.error(`[TIKTOK_EXTRACT] Exception: ${e.message}`);
+        res.writeHead(500);
+        res.end(JSON.stringify({ success: false, error_code: 'EXTRACTION_FAILED', error_message: e.message }));
+      }
+    });
+    return;
+  }
+
   // Extract Target Post Images Endpoint (Session 2 Fresh Browser Session)
   if (url === '/extract-target-images' && req.method === 'POST') {
     let body = '';

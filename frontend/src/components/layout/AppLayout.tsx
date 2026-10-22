@@ -21,6 +21,7 @@ import {
   FiShield,
   FiScissors,
   FiCpu,
+  FiServer,
 } from 'react-icons/fi';
 import { FaFacebook } from 'react-icons/fa';
 import { getRemainingPostsCount, subscribeRemainingPosts } from '../../features/remaining-posts/remainingPostsStorage';
@@ -144,6 +145,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
           badge: remainingPostsCount > 0 ? remainingPostsCount : undefined,
         },
         { id: 'create-workflow', label: 'Create Workflow', icon: <FiGitBranch /> },
+        { id: 'n8n-automation', label: 'n8n Automation', icon: <FiServer /> },
         { id: 'ai-models', label: 'AI Models & History', icon: <FiCpu /> },
         { id: 'add-url', label: 'Add URL', icon: <FiPlusSquare /> },
         { id: 'prompts', label: 'Prompt Templates', icon: <FiFileText /> },

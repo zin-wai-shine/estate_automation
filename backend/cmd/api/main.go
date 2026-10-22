@@ -13,6 +13,7 @@ import (
 	"github.com/zinwaishine/estate-automate/backend/internal/database"
 	"github.com/zinwaishine/estate-automate/backend/internal/handlers"
 	"github.com/zinwaishine/estate-automate/backend/internal/middleware"
+	"github.com/zinwaishine/estate-automate/backend/internal/models"
 	"github.com/zinwaishine/estate-automate/backend/internal/services"
 )
 
@@ -181,6 +182,21 @@ func main() {
 	wf := app.Group("/api/workflow")
 	wf.Get("/config", handlers.GetWorkflowConfig)
 	wf.Post("/config", handlers.SaveWorkflowConfig)
+
+	// n8n Automation Engine Integration Routes (Admin-protected)
+	n8nRoutes := app.Group("/api/integrations/n8n", middleware.Protected(), middleware.RequireRole(models.RoleAdmin))
+	n8nRoutes.Get("/status", handlers.N8NStatusCheck)
+	n8nRoutes.Get("/workflows", handlers.N8NListWorkflows)
+	n8nRoutes.Get("/workflows/:id", handlers.N8NGetWorkflow)
+	n8nRoutes.Post("/workflows/:id/run", handlers.N8NRunWorkflow)
+	n8nRoutes.Post("/workflows/:id/activate", handlers.N8NActivateWorkflow)
+	n8nRoutes.Post("/workflows/:id/deactivate", handlers.N8NDeactivateWorkflow)
+	n8nRoutes.Get("/executions", handlers.N8NListExecutions)
+	n8nRoutes.Get("/executions/:id", handlers.N8NGetExecution)
+	n8nRoutes.Get("/settings", handlers.N8NGetSettings)
+	n8nRoutes.Put("/settings", handlers.N8NUpdateSettings)
+	// Webhook callback endpoint — validated by HMAC signature, not JWT
+	app.Post("/api/integrations/n8n/callback", handlers.N8NWebhookCallback)
 
 	// Isolated Testing Menu Routes
 	testingApi := app.Group("/api/testing")

@@ -40,6 +40,8 @@ export interface Property {
   bts?: string;
   mrt?: string;
   status: PropertyStatus;
+  platform?: 'facebook' | 'tiktok';
+  socialMediaType?: 'facebook' | 'tiktok';
   sourceUrl: string;
   sourceAuthor?: string;
   originalImages: string[];

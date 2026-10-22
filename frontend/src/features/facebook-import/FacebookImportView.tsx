@@ -53,7 +53,7 @@ import {
   FiFolder,
 } from 'react-icons/fi';
 import { useNavigate } from 'react-router-dom';
-import { FaFacebook } from 'react-icons/fa';
+import { FaFacebook, FaTiktok } from 'react-icons/fa';
 import { SiGooglegemini } from 'react-icons/si';
 import { HiSparkles } from 'react-icons/hi2';
 import { LuWorkflow } from 'react-icons/lu';
@@ -89,7 +89,7 @@ import {
   type WorkflowFormat,
 } from '../workflow/workflowFormats';
 import { ToggleSwitch } from '../../components/ui/ToggleSwitch';
-import { saveRemainingPost } from '../remaining-posts/remainingPostsStorage';
+import { saveRemainingPost, checkSocialPlatform } from '../remaining-posts/remainingPostsStorage';
 import {
   type CropStudioFormat,
   getSavedCropFormats,
@@ -257,6 +257,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
 
   // Input & Modes
   const [url, setUrl] = useState<string>(() => savedSession?.url || '');
+  const detectedPlatform = useMemo(() => checkSocialPlatform(url), [url]);
   const [autoImport, setAutoImport] = useState<boolean>(() => savedSession?.autoImport ?? true);
   const [preferredMethod, setPreferredMethod] = useState<'auto' | 'meta_graph_api' | 'openclaw_browser'>(
     () => savedSession?.preferredMethod || 'auto'
@@ -773,7 +774,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
 
       setAiGeneratedOutputs((prev) => ({ ...prev, [boxId]: data.generated_content }));
       setAiGeneratedCopy(data.generated_content);
-      if (box.provider !== 'watermark') {
+      if (box.provider !== 'watermark' && box.provider !== 'n8n') {
         setGeneratedProvider(box.provider);
       }
       addLog(`✨ [${box.title}] generated copy successfully!`, 'success');
@@ -806,10 +807,15 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
       addLog(`🎉 All ${activeContentBoxes.length} dynamic AI copy processes completed!`, 'success');
 
       // Auto-save generated copies to Remaining Posts
-      const projectName = propertyData.project_name || 'Facebook Property Post';
+      const isTikTok = (source?.platform === 'tiktok') || checkSocialPlatform(url) === 'tiktok';
+      const defaultPostName = isTikTok ? 'TikTok Property Post' : 'Facebook Property Post';
+      const postPrefix = isTikTok ? 'TikTok Post' : 'Facebook Post';
+      const projectName = propertyData.project_name || (source?.post_id ? `${postPrefix} #${source.post_id}` : defaultPostName);
       saveRemainingPost({
         facebook_url: url.trim(),
         projectName,
+        platform: isTikTok ? 'tiktok' : 'facebook',
+        socialMediaType: isTikTok ? 'tiktok' : 'facebook',
         source,
         caption,
         languages,
@@ -1020,6 +1026,15 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
     const validUrl = typeof overrideUrl === 'string' ? overrideUrl : undefined;
     const targetUrl = (validUrl || url).trim();
     if (!targetUrl) return;
+
+    // Check link first before processing
+    const platform = checkSocialPlatform(targetUrl);
+    if (platform === 'unknown') {
+      showToast('⚠️ Please enter a valid Facebook or TikTok post URL.');
+      return;
+    }
+    const platformLabel = platform === 'tiktok' ? 'TikTok' : 'Facebook';
+
     if (validUrl) setUrl(validUrl);
 
     setIsProcessing(true);
@@ -1033,7 +1048,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
       activeNodeIds: ['trigger'],
       completedNodeIds: [],
       failedNodeIds: [],
-      currentStepMessage: 'Resolving Facebook post URL...',
+      currentStepMessage: `Resolving ${platformLabel} post URL...`,
       stepIndex: 1,
       totalSteps: 6,
     });
@@ -1077,13 +1092,13 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
     try {
       // Step 1: URL Normalization & Resolution
       setCurrentStepIndex(1);
-      addLog('Resolving Facebook share URL...');
+      addLog(`Resolving ${platformLabel} post link...`);
       setWorkflowExecutionState((prev) => ({
         ...prev,
         isRunning: true,
         activeNodeIds: ['trigger'],
         completedNodeIds: [],
-        currentStepMessage: 'Resolving Facebook post URL...',
+        currentStepMessage: `Resolving ${platformLabel} post URL...`,
       }));
 
       const resResp = await fetch('http://localhost:8085/api/facebook-import/resolve', {
@@ -1094,17 +1109,17 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
 
       if (!resResp.ok) {
         const resErr = await resResp.json();
-        throw new Error(resErr.error_message || 'Invalid Facebook URL');
+        throw new Error(resErr.error_message || `Invalid ${platformLabel} URL`);
       }
 
       const resData = await resResp.json();
-      addLog(`Facebook URL resolved to: ${resData.canonical_url}`, 'success');
+      addLog(`${platformLabel} URL resolved to: ${resData.canonical_url}`, 'success');
       addLog(`Source detected: ${resData.source_name || resData.source_type}`);
       setWorkflowExecutionState((prev) => ({
         ...prev,
         completedNodeIds: ['trigger'],
         activeNodeIds: ['trigger'],
-        currentStepMessage: `Facebook URL resolved: ${resData.source_name || 'Post Detected'}`,
+        currentStepMessage: `${platformLabel} URL resolved: ${resData.source_name || 'Post Detected'}`,
       }));
       await delay(250);
 
@@ -1535,9 +1550,12 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
         }));
         await delay(300);
 
+        const isTikTok = (result.source?.platform === 'tiktok') || checkSocialPlatform(url) === 'tiktok';
+        const defaultPostName = isTikTok ? 'TikTok Property Post' : 'Facebook Property Post';
+        const postPrefix = isTikTok ? 'TikTok Post' : 'Facebook Post';
         const projectName =
           result.property?.project_name ||
-          (result.source?.post_id ? `Facebook Post #${result.source.post_id}` : 'Facebook Property Post');
+          (result.source?.post_id ? `${postPrefix} #${result.source.post_id}` : defaultPostName);
 
         // Check if database storage is enabled in any destination
         const shouldStoreInDb = allDestinations.some(
@@ -1548,6 +1566,8 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
           saveRemainingPost({
             facebook_url: url.trim(),
             projectName,
+            platform: isTikTok ? 'tiktok' : 'facebook',
+            socialMediaType: isTikTok ? 'tiktok' : 'facebook',
             source: result.source,
             caption: result.caption?.original || '',
             languages: result.caption?.language_detected || [],
@@ -1626,9 +1646,12 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
         }));
         await delay(300);
 
+        const isTikTok = (result.source?.platform === 'tiktok') || checkSocialPlatform(url) === 'tiktok';
+        const defaultPostName = isTikTok ? 'TikTok Property Post' : 'Facebook Property Post';
+        const postPrefix = isTikTok ? 'TikTok Post' : 'Facebook Post';
         const projectName =
           result.property?.project_name ||
-          (result.source?.post_id ? `Facebook Post #${result.source.post_id}` : 'Facebook Property Post');
+          (result.source?.post_id ? `${postPrefix} #${result.source.post_id}` : defaultPostName);
         const photoList: ExtractedImage[] = result.images || [];
 
         const shouldStoreInDb = allDestinations.some(
@@ -1639,6 +1662,8 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
           saveRemainingPost({
             facebook_url: url.trim(),
             projectName,
+            platform: isTikTok ? 'tiktok' : 'facebook',
+            socialMediaType: isTikTok ? 'tiktok' : 'facebook',
             source: result.source,
             caption: result.caption?.original || '',
             languages: result.caption?.language_detected || [],
@@ -2202,9 +2227,14 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
       return;
     }
 
+    const isTikTok = (source?.platform === 'tiktok') || checkSocialPlatform(url) === 'tiktok';
+    const defaultPostName = isTikTok ? 'TikTok Property Post' : 'Facebook Property Post';
+    const postPrefix = isTikTok ? 'TikTok Post' : 'Facebook Post';
     const saved = saveRemainingPost({
       facebook_url: url.trim(),
-      projectName: propertyData.project_name || 'Facebook Property Post',
+      projectName: propertyData.project_name || (source?.post_id ? `${postPrefix} #${source.post_id}` : defaultPostName),
+      platform: isTikTok ? 'tiktok' : 'facebook',
+      socialMediaType: isTikTok ? 'tiktok' : 'facebook',
       source,
       caption,
       languages,
@@ -2992,10 +3022,31 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                 transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
               }}
             >
-              <FaFacebook style={{ color: '#1877F2', fontSize: '1rem', flexShrink: 0, marginRight: '0.5rem' }} />
+              {/* Dynamic Platform Icon & Input */}
+              {detectedPlatform === 'tiktok' ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0, marginRight: '0.5rem' }}>
+                  <FaTiktok style={{ color: '#FE2C55', fontSize: '1.05rem' }} />
+                  <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: '#FE2C55', background: 'rgba(254, 44, 85, 0.12)', padding: '1px 6px', borderRadius: '4px' }}>
+                    TikTok
+                  </span>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0, marginRight: '0.5rem' }}>
+                  <FaFacebook style={{ color: '#1877F2', fontSize: '1.05rem' }} />
+                  {url && (
+                    <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: '#1877F2', background: 'rgba(24, 119, 242, 0.12)', padding: '1px 6px', borderRadius: '4px' }}>
+                      Facebook
+                    </span>
+                  )}
+                </div>
+              )}
               <input
                 type="text"
-                placeholder="Paste Facebook post URL (e.g. https://www.facebook.com/share/p/...)"
+                placeholder={
+                  detectedPlatform === 'tiktok'
+                    ? "Paste TikTok video/photo URL (e.g. https://www.tiktok.com/@user/photo/... or vt.tiktok.com/...)"
+                    : "Paste Facebook or TikTok post URL (e.g. facebook.com/share/p/... or tiktok.com/@user/photo/...)"
+                }
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
                 onKeyDown={(e) => {
@@ -3055,7 +3106,11 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
               variant="primary"
               onClick={handleStartImport}
               disabled={!url.trim() || isProcessing}
-              title={isProcessing ? 'Importing Facebook post...' : 'Import Post'}
+              title={
+                isProcessing
+                  ? `Importing ${detectedPlatform === 'tiktok' ? 'TikTok' : 'Facebook'} post...`
+                  : `Import ${detectedPlatform === 'tiktok' ? 'TikTok' : 'Facebook'} Post`
+              }
               aria-label="Import Post"
               style={{
                 width: '36px',
@@ -3064,10 +3119,11 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                backgroundColor: '#1877F2',
-                borderColor: '#1877F2',
+                backgroundColor: detectedPlatform === 'tiktok' ? '#FE2C55' : '#1877F2',
+                borderColor: detectedPlatform === 'tiktok' ? '#FE2C55' : '#1877F2',
                 borderRadius: '0.375rem',
                 flexShrink: 0,
+                boxShadow: detectedPlatform === 'tiktok' ? '0 2px 8px rgba(254, 44, 85, 0.35)' : undefined,
               }}
             >
               {isProcessing ? (

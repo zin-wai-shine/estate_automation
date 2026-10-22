@@ -2198,7 +2198,7 @@ export const AITrainingChatbot: React.FC<AITrainingChatbotProps> = ({
           {/* Top-Left AI Model Selector: Compact, always visible at top-left, takes zero full-width bar space */}
           <div style={{ position: 'absolute', top: '12px', left: '16px', zIndex: 30 }}>
             <ModelSelectorMenu
-              provider={box.provider === 'watermark' ? 'google_ai' : box.provider}
+              provider={(box.provider === 'watermark' || box.provider === 'n8n') ? 'google_ai' : box.provider}
               model={box.model}
               filterType="text"
               align="left"

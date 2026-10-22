@@ -1,5 +1,26 @@
 import type { Property } from '../../types';
 
+export const checkSocialPlatform = (inputUrl: string): 'facebook' | 'tiktok' | 'unknown' => {
+  const trimmed = (inputUrl || '').trim().toLowerCase();
+  if (!trimmed) return 'unknown';
+  if (
+    trimmed.includes('tiktok.com') ||
+    trimmed.includes('vt.tiktok.com') ||
+    trimmed.includes('vm.tiktok.com')
+  ) {
+    return 'tiktok';
+  }
+  if (
+    trimmed.includes('facebook.com') ||
+    trimmed.includes('fb.watch') ||
+    trimmed.includes('fb.com') ||
+    trimmed.includes('fb.me')
+  ) {
+    return 'facebook';
+  }
+  return 'unknown';
+};
+
 export interface RemainingPostImage {
   index: number;
   facebook_photo_id?: string;
@@ -44,6 +65,8 @@ export interface RemainingPostPropertyData {
 export interface RemainingPost {
   id: string;
   facebook_url: string;
+  platform?: 'facebook' | 'tiktok';
+  socialMediaType?: 'facebook' | 'tiktok';
   projectName: string;
   source: RemainingPostSource | null;
   caption: string;
@@ -86,14 +109,26 @@ export const saveRemainingPost = (
   const id = postData.id || `post_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   const createdAt = postData.createdAt || Date.now();
 
+  const platform: 'facebook' | 'tiktok' =
+    postData.platform ||
+    postData.socialMediaType ||
+    (postData.source?.platform === 'tiktok' ? 'tiktok' : undefined) ||
+    (postData.facebook_url && postData.facebook_url.includes('tiktok') ? 'tiktok' : 'facebook');
+
+  const defaultName = platform === 'tiktok'
+    ? (postData.source?.post_id ? `TikTok Post #${postData.source.post_id}` : `TikTok Listing ${new Date(createdAt).toLocaleDateString()}`)
+    : (postData.source?.post_id ? `Facebook Post #${postData.source.post_id}` : `Facebook Listing ${new Date(createdAt).toLocaleDateString()}`);
+
   const newPost: RemainingPost = {
     ...postData,
     id,
+    platform,
+    socialMediaType: platform,
     createdAt,
     projectName:
       postData.projectName ||
       postData.propertyData?.project_name ||
-      `Facebook Listing ${new Date(createdAt).toLocaleDateString()}`,
+      defaultName,
   };
 
   // Avoid duplicates by Facebook URL + short time frame or existing ID

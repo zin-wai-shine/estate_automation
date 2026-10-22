@@ -11,7 +11,7 @@ import {
   type FacebookWorkflowCanvasRef,
   type WorkflowExecutionState,
 } from '../facebook-import/FacebookWorkflowCanvas';
-import { saveRemainingPost } from '../remaining-posts/remainingPostsStorage';
+import { saveRemainingPost, checkSocialPlatform } from '../remaining-posts/remainingPostsStorage';
 import { saveAutoPostItem } from '../autopost/autoPostStorage';
 import { addAIHistoryEntry } from '../ai-models/aiModelStorage';
 import {
@@ -22,7 +22,8 @@ import {
   restoreDefaultWorkflowFormats,
   type WorkflowFormat,
 } from './workflowFormats';
-import { isWatermarkAIBox, isTextFormatAIBox } from '../facebook-import/aiModelUtils';
+import { isWatermarkAIBox, isTextFormatAIBox, isN8NAIBox } from '../facebook-import/aiModelUtils';
+import { runN8NWorkflow } from '../../services/n8nService';
 import { getSavedCropFormats, formatImageWithCropFormat, type CropStudioFormat } from '../watermark/cropFormats';
 import { loadActiveWatermarkConfig } from '../autopost/watermarkStorage';
 import {
@@ -45,7 +46,7 @@ import {
   FiAlertTriangle,
   FiSquare,
 } from 'react-icons/fi';
-import { FaFacebook } from 'react-icons/fa';
+import { FaFacebook, FaTiktok } from 'react-icons/fa';
 import { HiSparkles } from 'react-icons/hi2';
 import { useTheme } from '../../context/ThemeContext';
 
@@ -919,15 +920,18 @@ export const CreateWorkflowView: React.FC = () => {
         rawCaption;
 
       try {
+        const isTikTok = checkSocialPlatform(targetUrl) === 'tiktok';
         saveRemainingPost({
           facebook_url: targetUrl,
-          projectName: projName || propData?.project_name || '',
+          platform: isTikTok ? 'tiktok' : 'facebook',
+          socialMediaType: isTikTok ? 'tiktok' : 'facebook',
+          projectName: projName || propData?.project_name || (isTikTok ? `TikTok Post #${lastFbPostId || Date.now()}` : `Facebook Post #${lastFbPostId || Date.now()}`),
           source: {
-            platform: 'facebook',
+            platform: isTikTok ? 'tiktok' : 'facebook',
             original_url: targetUrl,
             canonical_url: targetUrl,
-            source_type: 'facebook_post',
-            source_name: 'Facebook Link',
+            source_type: isTikTok ? 'tiktok_post' : 'facebook_post',
+            source_name: isTikTok ? 'TikTok Link' : 'Facebook Link',
             post_id: lastFbPostId || `post_${Date.now()}`,
             created_time: new Date().toISOString(),
             extraction_method: 'browser',
@@ -1029,6 +1033,25 @@ export const CreateWorkflowView: React.FC = () => {
     setAiGeneratedCopy('');
     setProjectName('');
 
+    const platform = checkSocialPlatform(targetUrl);
+    if (platform === 'unknown') {
+      setExecutionState({
+        isRunning: false,
+        isComplete: false,
+        hasError: true,
+        activeNodeIds: [],
+        completedNodeIds: [],
+        failedNodeIds: ['trigger'],
+        currentStepMessage: '❌ Invalid URL. Please provide a valid Facebook or TikTok post link.',
+        stepIndex: 1,
+        totalSteps: 6,
+      });
+      setIsRunningWorkflow(false);
+      (window as any).__isWorkflowProcessing = false;
+      return;
+    }
+    const platformLabel = platform === 'tiktok' ? 'TikTok' : 'Facebook';
+
     // Phase 1: Trigger (Extract Link)
     setExecutionState({
       isRunning: true,
@@ -1037,7 +1060,7 @@ export const CreateWorkflowView: React.FC = () => {
       activeNodeIds: ['trigger'],
       completedNodeIds: [],
       failedNodeIds: [],
-      currentStepMessage: 'Resolving Facebook post link and isolating listing...',
+      currentStepMessage: `Resolving ${platformLabel} post link and isolating listing...`,
       stepIndex: 1,
       totalSteps: 6,
     });
@@ -1080,19 +1103,23 @@ export const CreateWorkflowView: React.FC = () => {
       console.warn('Backend live extract call threw:', err);
     }
 
-    // If extraction produced no content, stop with an error — do not continue with fake data
-    if (!rawCaption || rawCaption.trim().length === 0) {
+    // If extraction produced no content (neither caption nor images), stop with an error
+    if ((!rawCaption || rawCaption.trim().length === 0) && imageList.length === 0) {
       setExecutionState((prev) => ({
         ...prev!,
         isRunning: false,
         hasError: true,
         activeNodeIds: [],
         failedNodeIds: ['trigger'],
-        currentStepMessage: '❌ Could not extract content from the provided link. Please check the URL and try again.',
+        currentStepMessage: '❌ Could not extract content or images from the provided link. Please check the URL and try again.',
       }));
       setIsRunningWorkflow(false);
       (window as any).__isWorkflowProcessing = false;
       return;
+    }
+
+    if (!rawCaption || rawCaption.trim().length === 0) {
+      rawCaption = projName || 'Property listing media extracted';
     }
 
     setExtractedContent(rawCaption);
@@ -1155,6 +1182,7 @@ export const CreateWorkflowView: React.FC = () => {
       if (!box.enabled) continue;
       const isWatermark = isWatermarkAIBox(box);
       const isTextFormat = isTextFormatAIBox(box);
+      const isN8N = isN8NAIBox(box);
 
       setExecutionState((prev) => ({
         ...prev!,
@@ -1163,6 +1191,8 @@ export const CreateWorkflowView: React.FC = () => {
           ? `✂️ Applying photo crop & frame preset [${box.title || 'Format'}]...`
           : isTextFormat
           ? `📝 Formatting AI copy with [${box.title || 'Format Preset'}]...`
+          : isN8N
+          ? `🔄 Executing n8n Automation Engine [${box.title || 'n8n Workflow'}]...`
           : `⚡ Generating AI copy with [${box.title || 'AI Model'}] (${box.model || 'Gemini 2.5 Flash'})...`,
         stepIndex: 4,
       }));
@@ -1209,6 +1239,63 @@ export const CreateWorkflowView: React.FC = () => {
         setWatermarkedPhotos((prev) => ({ ...prev, ...localWatermarkedMap }));
         setEnhancedPhotos((prev) => ({ ...prev, ...localWatermarkedMap }));
         workflowContextRef.current.localWatermarkedMap = { ...workflowContextRef.current.localWatermarkedMap, ...localWatermarkedMap };
+        await delay(400);
+      } else if (isN8N) {
+        // Resolve upstream text / property for this n8n automation node
+        const inConns = (cfg.connections || []).filter((c) => c.toNodeId === box.id);
+        const upstreamBoxId = inConns[0]?.fromNodeId;
+        const upstreamText =
+          (upstreamBoxId && generatedOutputsMap[upstreamBoxId]) ||
+          (upstreamBoxId === 'get-content' ? rawCaption : '') ||
+          primaryCopy ||
+          rawCaption;
+
+        const webhookPath = (box as any).n8nWebhookPath || 'property-content-processing';
+        const workflowId = (box as any).n8nWorkflowId || 'Dtjq2OPmO1SqiXm4';
+        let n8nCopyText = '';
+
+        try {
+          const runRes = await runN8NWorkflow(workflowId, webhookPath, {
+            execution_id: `corr-${Date.now()}`,
+            source: 'BoltHavenProperty',
+            event: 'property.process',
+            property: {
+              id: (propData as any)?.id || 'listing-01',
+              project_name: projName || (propData as any)?.project_name || 'Featured Property Listing',
+              bedrooms: (propData as any)?.bedrooms || 1,
+              area_sqm: (propData as any)?.area_sqm || (propData as any)?.sizeSqm || 35,
+              monthly_rent_thb: (propData as any)?.monthly_rent_thb || (propData as any)?.rentPrice || 35000,
+              caption: upstreamText || rawCaption,
+              images: imageList.map((img) => img.stored_url || img.source_url),
+            },
+          });
+
+          const respObj = runRes.webhook_response as Record<string, any>;
+          if (respObj) {
+            n8nCopyText = respObj.formatted_summary || respObj.summary || (typeof respObj === 'string' ? respObj : JSON.stringify(respObj, null, 2));
+          }
+        } catch (err: any) {
+          console.warn('n8n automation step error:', err);
+          if (!(box as any).n8nContinueOnFailure) {
+            setExecutionState((prev) => ({
+              ...prev!,
+              isRunning: false,
+              hasError: true,
+              activeNodeIds: [box.id],
+              failedNodeIds: [box.id],
+              currentStepMessage: `❌ n8n Automation failed for [${box.title || 'n8n Node'}]: ${err.message || 'Workflow execution error'}.`,
+            }));
+            setIsRunningWorkflow(false);
+            (window as any).__isWorkflowProcessing = false;
+            canvasRef.current?.openNodeDrawer(box.id);
+            return;
+          }
+        }
+
+        const finalText = n8nCopyText || upstreamText;
+        generatedOutputsMap[box.id] = finalText;
+        if (!primaryCopy) primaryCopy = finalText;
+        setAiGeneratedOutputs((prev) => ({ ...prev, [box.id]: finalText }));
         await delay(400);
       } else {
         // Resolve upstream text for this text AI or format node
@@ -2349,36 +2436,67 @@ export const CreateWorkflowView: React.FC = () => {
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', padding: '0.25rem 0' }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
-              <div
-                style={{
-                  width: '38px',
-                  height: '38px',
-                  borderRadius: '10px',
-                  backgroundColor: 'rgba(24, 119, 242, 0.1)',
-                  color: '#1877F2',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '1.25rem',
-                  flexShrink: 0,
-                }}
-              >
-                <FaFacebook />
-              </div>
-              <div>
-                <h4 style={{ margin: 0, fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                  Enter Facebook Post Link
-                </h4>
-                <p style={{ margin: '4px 0 0', fontSize: '0.8125rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                  Provide the URL of the Facebook listing post you want to import and process with this workflow format.
-                </p>
-              </div>
+              {(() => {
+                const detected = checkSocialPlatform(runFacebookUrl);
+                const isTt = detected === 'tiktok';
+                const isFb = detected === 'facebook';
+                return (
+                  <>
+                    <div
+                      style={{
+                        width: '38px',
+                        height: '38px',
+                        borderRadius: '10px',
+                        backgroundColor: isTt ? 'rgba(254, 44, 85, 0.12)' : isFb ? 'rgba(24, 119, 242, 0.12)' : 'var(--bg-surface)',
+                        color: isTt ? '#FE2C55' : isFb ? '#1877F2' : 'var(--text-secondary)',
+                        border: '1px solid var(--border-color)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '1.25rem',
+                        flexShrink: 0,
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      {isTt ? <FaTiktok /> : isFb ? <FaFacebook /> : <FiLink />}
+                    </div>
+                    <div>
+                      <h4 style={{ margin: 0, fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                        {isTt ? 'Enter TikTok Post Link' : isFb ? 'Enter Facebook Post Link' : 'Enter Post Link (Facebook or TikTok)'}
+                      </h4>
+                      <p style={{ margin: '4px 0 0', fontSize: '0.8125rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                        Provide the URL of the Facebook or TikTok listing post you want to import and process with this workflow format.
+                      </p>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-              <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                Facebook Post URL <span style={{ color: '#ef4444' }}>*</span>
-              </label>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                  Social Post URL <span style={{ color: '#ef4444' }}>*</span>
+                </label>
+                {(() => {
+                  const detected = checkSocialPlatform(runFacebookUrl);
+                  if (detected === 'tiktok') {
+                    return (
+                      <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: '#FE2C55', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                        <FaTiktok style={{ fontSize: '9px' }} /> TikTok Post Detected
+                      </span>
+                    );
+                  }
+                  if (detected === 'facebook') {
+                    return (
+                      <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: '#1877F2', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                        <FaFacebook style={{ fontSize: '10px' }} /> Facebook Post Detected
+                      </span>
+                    );
+                  }
+                  return null;
+                })()}
+              </div>
               <div
                 style={{
                   display: 'flex',
@@ -2394,7 +2512,7 @@ export const CreateWorkflowView: React.FC = () => {
                 <input
                   type="url"
                   autoFocus
-                  placeholder="https://www.facebook.com/groups/... or /posts/..."
+                  placeholder="Paste Facebook or TikTok post URL (e.g. facebook.com/... or tiktok.com/@...)"
                   value={runFacebookUrl}
                   onChange={(e) => setRunFacebookUrl(e.target.value)}
                   onKeyDown={(e) => {
@@ -2414,7 +2532,7 @@ export const CreateWorkflowView: React.FC = () => {
                 />
               </div>
               <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-                Press Enter to run immediately with the current canvas workflow format.
+                Supports Facebook posts/groups & TikTok photos/videos. Press Enter to run immediately.
               </span>
             </div>
 
@@ -2442,11 +2560,12 @@ export const CreateWorkflowView: React.FC = () => {
                 disabled={!runFacebookUrl.trim()}
                 leftIcon={<FiPlay style={{ fill: 'currentColor' }} />}
                 style={{
-                  backgroundColor: '#1877F2',
-                  borderColor: '#1877F2',
+                  backgroundColor: checkSocialPlatform(runFacebookUrl) === 'tiktok' ? '#FE2C55' : '#1877F2',
+                  borderColor: checkSocialPlatform(runFacebookUrl) === 'tiktok' ? '#FE2C55' : '#1877F2',
                   color: '#FFFFFF',
                   opacity: !runFacebookUrl.trim() ? 0.6 : 1,
                   cursor: !runFacebookUrl.trim() ? 'not-allowed' : 'pointer',
+                  transition: 'all 0.15s ease',
                 }}
               >
                 Run Workflow

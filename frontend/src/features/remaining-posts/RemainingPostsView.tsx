@@ -43,7 +43,7 @@ import {
   FiMapPin,
   FiPlus,
 } from 'react-icons/fi';
-import { FaFacebook } from 'react-icons/fa';
+import { FaFacebook, FaTiktok } from 'react-icons/fa';
 import { HiSparkles } from 'react-icons/hi2';
 
 interface RemainingPostsViewProps {
@@ -221,6 +221,7 @@ export const RemainingPostsView: React.FC<RemainingPostsViewProps> = ({ onNaviga
 
   const [posts, setPosts] = useState<RemainingPost[]>(() => getRemainingPosts());
   const [searchQuery, setSearchQuery] = useState('');
+  const [platformFilter, setPlatformFilter] = useState<'all' | 'facebook' | 'tiktok'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'not_posted' | 'posted'>('all');
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
@@ -336,6 +337,25 @@ export const RemainingPostsView: React.FC<RemainingPostsViewProps> = ({ onNaviga
   const filteredPosts = useMemo(() => {
     let list = posts;
 
+    // Filter by Platform (Facebook vs TikTok)
+    if (platformFilter === 'tiktok') {
+      list = list.filter(
+        (p) =>
+          p.platform === 'tiktok' ||
+          p.socialMediaType === 'tiktok' ||
+          p.source?.platform === 'tiktok' ||
+          Boolean(p.facebook_url && p.facebook_url.includes('tiktok'))
+      );
+    } else if (platformFilter === 'facebook') {
+      list = list.filter(
+        (p) =>
+          p.platform !== 'tiktok' &&
+          p.socialMediaType !== 'tiktok' &&
+          p.source?.platform !== 'tiktok' &&
+          !Boolean(p.facebook_url && p.facebook_url.includes('tiktok'))
+      );
+    }
+
     // Filter by Posted status
     if (statusFilter === 'posted') {
       list = list.filter((p) => Boolean(p.isPosted));
@@ -368,10 +388,32 @@ export const RemainingPostsView: React.FC<RemainingPostsViewProps> = ({ onNaviga
     }
 
     return list;
-  }, [posts, statusFilter, searchQuery]);
+  }, [posts, platformFilter, statusFilter, searchQuery]);
 
   const postedCount = useMemo(() => posts.filter((p) => Boolean(p.isPosted)).length, [posts]);
   const notPostedCount = useMemo(() => posts.filter((p) => !Boolean(p.isPosted)).length, [posts]);
+  const fbCount = useMemo(
+    () =>
+      posts.filter(
+        (p) =>
+          p.platform !== 'tiktok' &&
+          p.socialMediaType !== 'tiktok' &&
+          p.source?.platform !== 'tiktok' &&
+          !Boolean(p.facebook_url && p.facebook_url.includes('tiktok'))
+      ).length,
+    [posts]
+  );
+  const ttCount = useMemo(
+    () =>
+      posts.filter(
+        (p) =>
+          p.platform === 'tiktok' ||
+          p.socialMediaType === 'tiktok' ||
+          p.source?.platform === 'tiktok' ||
+          Boolean(p.facebook_url && p.facebook_url.includes('tiktok'))
+      ).length,
+    [posts]
+  );
 
   // Open Lightbox
   const handleOpenLightbox = (post: RemainingPost, startIndex = 0) => {
@@ -682,71 +724,131 @@ export const RemainingPostsView: React.FC<RemainingPostsViewProps> = ({ onNaviga
           )}
         </div>
 
-        {/* Status Filter Tabs */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F4F4F5',
-            border: '1px solid var(--border-color)',
-            borderRadius: '8px',
-            padding: '3px',
-            gap: '2px',
-          }}
-        >
-          {[
-            { id: 'all', label: 'All', count: posts.length },
-            { id: 'not_posted', label: 'Not Posted', count: notPostedCount, dot: '#94A3B8' },
-            { id: 'posted', label: 'Posted', count: postedCount, dot: '#22C55E' },
-          ].map((item) => {
-            const active = statusFilter === item.id;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setStatusFilter(item.id as any)}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '4px 12px',
-                  borderRadius: '6px',
-                  fontSize: '0.75rem',
-                  fontWeight: active ? 600 : 500,
-                  border: 'none',
-                  cursor: 'pointer',
-                  backgroundColor: active
-                    ? (isDark ? '#27272A' : '#FFFFFF')
-                    : 'transparent',
-                  color: active ? 'var(--text-primary)' : 'var(--text-muted)',
-                  boxShadow: active ? '0 1px 2px rgba(0, 0, 0, 0.08)' : 'none',
-                  transition: 'all 0.15s ease',
-                }}
-              >
-                {item.dot && (
-                  <span
-                    style={{
-                      width: '6px',
-                      height: '6px',
-                      borderRadius: '50%',
-                      backgroundColor: item.dot,
-                      display: 'inline-block',
-                    }}
-                  />
-                )}
-                <span>{item.label}</span>
-                <span
+        {/* Filter Tabs Container */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', flexWrap: 'wrap' }}>
+          {/* Platform Filter Tabs (All / Facebook / TikTok) */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F4F4F5',
+              border: '1px solid var(--border-color)',
+              borderRadius: '8px',
+              padding: '3px',
+              gap: '2px',
+            }}
+          >
+            {[
+              { id: 'all', label: 'All', count: posts.length, icon: null },
+              { id: 'facebook', label: 'Facebook', count: fbCount, icon: <FaFacebook style={{ color: '#1877F2', fontSize: '11px' }} /> },
+              { id: 'tiktok', label: 'TikTok', count: ttCount, icon: <FaTiktok style={{ color: '#FE2C55', fontSize: '10px' }} /> },
+            ].map((item) => {
+              const active = platformFilter === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setPlatformFilter(item.id as any)}
                   style={{
-                    fontSize: '0.6875rem',
-                    opacity: active ? 0.9 : 0.6,
-                    fontWeight: 500,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    fontSize: '0.75rem',
+                    fontWeight: active ? 600 : 500,
+                    border: 'none',
+                    cursor: 'pointer',
+                    backgroundColor: active
+                      ? (isDark ? '#27272A' : '#FFFFFF')
+                      : 'transparent',
+                    color: active ? 'var(--text-primary)' : 'var(--text-muted)',
+                    boxShadow: active ? '0 1px 2px rgba(0, 0, 0, 0.08)' : 'none',
+                    transition: 'all 0.15s ease',
                   }}
                 >
-                  ({item.count})
-                </span>
-              </button>
-            );
-          })}
+                  {item.icon}
+                  <span>{item.label}</span>
+                  <span
+                    style={{
+                      fontSize: '0.6875rem',
+                      opacity: active ? 0.9 : 0.6,
+                      fontWeight: 500,
+                    }}
+                  >
+                    ({item.count})
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Status Filter Tabs (All / Not Posted / Posted) */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F4F4F5',
+              border: '1px solid var(--border-color)',
+              borderRadius: '8px',
+              padding: '3px',
+              gap: '2px',
+            }}
+          >
+            {[
+              { id: 'all', label: 'All Status', count: posts.length },
+              { id: 'not_posted', label: 'Not Posted', count: notPostedCount, dot: '#94A3B8' },
+              { id: 'posted', label: 'Posted', count: postedCount, dot: '#22C55E' },
+            ].map((item) => {
+              const active = statusFilter === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setStatusFilter(item.id as any)}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '4px 12px',
+                    borderRadius: '6px',
+                    fontSize: '0.75rem',
+                    fontWeight: active ? 600 : 500,
+                    border: 'none',
+                    cursor: 'pointer',
+                    backgroundColor: active
+                      ? (isDark ? '#27272A' : '#FFFFFF')
+                      : 'transparent',
+                    color: active ? 'var(--text-primary)' : 'var(--text-muted)',
+                    boxShadow: active ? '0 1px 2px rgba(0, 0, 0, 0.08)' : 'none',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  {item.dot && (
+                    <span
+                      style={{
+                        width: '6px',
+                        height: '6px',
+                        borderRadius: '50%',
+                        backgroundColor: item.dot,
+                        display: 'inline-block',
+                      }}
+                    />
+                  )}
+                  <span>{item.label}</span>
+                  <span
+                    style={{
+                      fontSize: '0.6875rem',
+                      opacity: active ? 0.9 : 0.6,
+                      fontWeight: 500,
+                    }}
+                  >
+                    ({item.count})
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 
@@ -817,9 +919,19 @@ export const RemainingPostsView: React.FC<RemainingPostsViewProps> = ({ onNaviga
             }}
           >
             {filteredPosts.map((post) => {
+              const isTikTok =
+                post.platform === 'tiktok' ||
+                post.socialMediaType === 'tiktok' ||
+                post.source?.platform === 'tiktok' ||
+                Boolean(post.facebook_url && post.facebook_url.includes('tiktok'));
               const code = getRemainingPostCode(post);
               const englishInfo = getEnglishPropertyInfo(post);
-              const condoName = englishInfo.condoName;
+              let condoName = englishInfo.condoName;
+              if (isTikTok && condoName.startsWith('Facebook Post #')) {
+                condoName = condoName.replace('Facebook Post #', 'TikTok Post #');
+              } else if (isTikTok && condoName === 'Bangkok Condo Listing') {
+                condoName = 'TikTok Property Listing';
+              }
               const firstPhoto = post.originalImages && post.originalImages[0];
               const hasWatermarkedPhoto = Boolean(post.watermarkedPhotos && Object.keys(post.watermarkedPhotos).length > 0);
               const hasEnhancedPhoto = Boolean(post.enhancedPhotos && Object.keys(post.enhancedPhotos).length > 0);
@@ -906,22 +1018,68 @@ export const RemainingPostsView: React.FC<RemainingPostsViewProps> = ({ onNaviga
                       zIndex: 2,
                     }}
                   >
-                    {/* Left: Listing Type (Clean Neutral Pill) */}
-                    <span
-                      style={{
-                        fontSize: '0.6875rem',
-                        fontWeight: 600,
-                        letterSpacing: '0.02em',
-                        padding: '3px 8px',
-                        borderRadius: '6px',
-                        backgroundColor: 'rgba(0, 0, 0, 0.65)',
-                        color: '#FFFFFF',
-                        backdropFilter: 'blur(8px)',
-                        border: '1px solid rgba(255, 255, 255, 0.15)',
-                      }}
-                    >
-                      {isRent ? 'For Rent' : 'For Sale'}
-                    </span>
+                    {/* Left: Listing Type & Platform Badge */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      <span
+                        style={{
+                          fontSize: '0.6875rem',
+                          fontWeight: 600,
+                          letterSpacing: '0.02em',
+                          padding: '3px 8px',
+                          borderRadius: '6px',
+                          backgroundColor: 'rgba(0, 0, 0, 0.65)',
+                          color: '#FFFFFF',
+                          backdropFilter: 'blur(8px)',
+                          border: '1px solid rgba(255, 255, 255, 0.15)',
+                        }}
+                      >
+                        {isRent ? 'For Rent' : 'For Sale'}
+                      </span>
+
+                      {isTikTok ? (
+                        <span
+                          title="TikTok Listing"
+                          style={{
+                            fontSize: '0.6875rem',
+                            fontWeight: 600,
+                            letterSpacing: '0.02em',
+                            padding: '3px 7px',
+                            borderRadius: '6px',
+                            backgroundColor: 'rgba(0, 0, 0, 0.65)',
+                            color: '#FFFFFF',
+                            backdropFilter: 'blur(8px)',
+                            border: '1px solid rgba(254, 44, 85, 0.4)',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                          }}
+                        >
+                          <FaTiktok style={{ color: '#FE2C55', fontSize: '9px' }} />
+                          <span>TikTok</span>
+                        </span>
+                      ) : (
+                        <span
+                          title="Facebook Listing"
+                          style={{
+                            fontSize: '0.6875rem',
+                            fontWeight: 600,
+                            letterSpacing: '0.02em',
+                            padding: '3px 7px',
+                            borderRadius: '6px',
+                            backgroundColor: 'rgba(0, 0, 0, 0.65)',
+                            color: '#FFFFFF',
+                            backdropFilter: 'blur(8px)',
+                            border: '1px solid rgba(24, 119, 242, 0.4)',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                          }}
+                        >
+                          <FaFacebook style={{ color: '#1877F2', fontSize: '10px' }} />
+                          <span>Facebook</span>
+                        </span>
+                      )}
+                    </div>
 
                     {/* Right: Status Pill & Delete Button */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
@@ -1096,9 +1254,19 @@ export const RemainingPostsView: React.FC<RemainingPostsViewProps> = ({ onNaviga
       {/* DETAIL MODAL: 2 COLUMNS (LEFT: FORMAT, RIGHT: IMAGES)    */}
       {/* ======================================================== */}
       {viewingPost && (() => {
+        const isTikTok =
+          viewingPost.platform === 'tiktok' ||
+          viewingPost.socialMediaType === 'tiktok' ||
+          viewingPost.source?.platform === 'tiktok' ||
+          Boolean(viewingPost.facebook_url && viewingPost.facebook_url.includes('tiktok'));
         const code = getRemainingPostCode(viewingPost);
         const englishInfo = getEnglishPropertyInfo(viewingPost);
-        const condoName = englishInfo.condoName;
+        let condoName = englishInfo.condoName;
+        if (isTikTok && condoName.startsWith('Facebook Post #')) {
+          condoName = condoName.replace('Facebook Post #', 'TikTok Post #');
+        } else if (isTikTok && condoName === 'Bangkok Condo Listing') {
+          condoName = 'TikTok Property Listing';
+        }
         const isRent = (viewingPost.propertyData?.listing_type || 'RENT').toUpperCase() === 'RENT';
         const rawPrice = englishInfo.price || viewingPost.propertyData?.price || '';
         const numPrice = Number(rawPrice.replace(/,/g, ''));
@@ -1143,6 +1311,46 @@ export const RemainingPostsView: React.FC<RemainingPostsViewProps> = ({ onNaviga
                 <span style={{ fontSize: '1.125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                   {condoName}
                 </span>
+
+                {/* Social Media Type Badge */}
+                {isTikTok ? (
+                  <span
+                    style={{
+                      fontSize: '0.6875rem',
+                      fontWeight: 600,
+                      padding: '2px 8px',
+                      borderRadius: '4px',
+                      backgroundColor: 'rgba(254, 44, 85, 0.15)',
+                      color: '#FE2C55',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      border: '1px solid rgba(254, 44, 85, 0.3)',
+                    }}
+                  >
+                    <FaTiktok style={{ fontSize: '10px' }} />
+                    <span>TikTok</span>
+                  </span>
+                ) : (
+                  <span
+                    style={{
+                      fontSize: '0.6875rem',
+                      fontWeight: 600,
+                      padding: '2px 8px',
+                      borderRadius: '4px',
+                      backgroundColor: 'rgba(24, 119, 242, 0.15)',
+                      color: '#1877F2',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      border: '1px solid rgba(24, 119, 242, 0.3)',
+                    }}
+                  >
+                    <FaFacebook style={{ fontSize: '11px' }} />
+                    <span>Facebook</span>
+                  </span>
+                )}
+
                 <span
                   style={{
                     fontFamily: 'monospace',
@@ -1222,6 +1430,23 @@ export const RemainingPostsView: React.FC<RemainingPostsViewProps> = ({ onNaviga
                   />
                   <span>{isPosted ? 'Posted' : 'Not Posted'}</span>
                 </button>
+
+                {viewingPost.facebook_url && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => window.open(viewingPost.facebook_url, '_blank')}
+                    title={`Open original post on ${isTikTok ? 'TikTok' : 'Facebook'}`}
+                  >
+                    {isTikTok ? (
+                      <FaTiktok style={{ marginRight: '5px', color: '#FE2C55' }} />
+                    ) : (
+                      <FaFacebook style={{ marginRight: '5px', color: '#1877F2' }} />
+                    )}
+                    {isTikTok ? 'View on TikTok' : 'View on Facebook'}
+                  </Button>
+                )}
+
                 <Button
                   variant="outline"
                   size="sm"
@@ -1231,7 +1456,7 @@ export const RemainingPostsView: React.FC<RemainingPostsViewProps> = ({ onNaviga
                   }}
                 >
                   <FiExternalLink style={{ marginRight: '5px' }} />
-                  Open in FB Import
+                  {isTikTok ? 'Open in Import' : 'Open in FB Import'}
                 </Button>
                 <Button
                   variant="outline"

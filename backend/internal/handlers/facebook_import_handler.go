@@ -22,9 +22,10 @@ var (
 	aiExtractor     = services.NewPropertyAIExtractor()
 	importRepo      = services.GetFacebookImportRepository()
 	googleAIService = services.NewGoogleAIService()
+	tiktokExtractor = services.NewTikTokExtractor()
 )
 
-// ResolveFacebookURL validates and resolves canonical Facebook URLs
+// ResolveFacebookURL validates and resolves canonical Facebook or TikTok URLs
 func ResolveFacebookURL(c *fiber.Ctx) error {
 	var req models.ResolveURLRequest
 	if err := c.BodyParser(&req); err != nil || strings.TrimSpace(req.URL) == "" {
@@ -36,49 +37,163 @@ func ResolveFacebookURL(c *fiber.Ctx) error {
 	}
 
 	targetURL := strings.TrimSpace(req.URL)
-	if !urlResolver.IsFacebookURL(targetURL) {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"success":       false,
-			"error_code":    models.ErrCodeNotFacebookURL,
-			"error_message": "Supplied URL is not a valid Facebook URL",
+
+	// Check TikTok URL
+	if tiktokExtractor.IsTikTokURL(targetURL) {
+		canonicalURL, err := tiktokExtractor.ResolveCanonicalURL(targetURL)
+		if err != nil {
+			canonicalURL = targetURL
+		}
+		postID := tiktokExtractor.ExtractPostID(canonicalURL)
+		username := tiktokExtractor.ExtractUsername(canonicalURL)
+		sourceName := "TikTok Post"
+		if username != "" {
+			sourceName = "@" + username
+		}
+
+		return c.JSON(fiber.Map{
+			"success":       true,
+			"platform":      "tiktok",
+			"original_url":  targetURL,
+			"canonical_url": canonicalURL,
+			"source_type":   "tiktok_post",
+			"source_name":   sourceName,
+			"post_id":       postID,
 		})
 	}
 
-	canonicalURL, err := urlResolver.ResolveCanonicalURL(targetURL)
-	if err != nil {
-		canonicalURL = targetURL
+	// Check Facebook URL
+	if urlResolver.IsFacebookURL(targetURL) {
+		canonicalURL, err := urlResolver.ResolveCanonicalURL(targetURL)
+		if err != nil {
+			canonicalURL = targetURL
+		}
+
+		sourceType, sourceName := sourceDetector.DetectSource(canonicalURL)
+		postID := urlResolver.ExtractPostID(canonicalURL)
+
+		return c.JSON(fiber.Map{
+			"success":       true,
+			"platform":      "facebook",
+			"original_url":  targetURL,
+			"canonical_url": canonicalURL,
+			"source_type":   sourceType,
+			"source_name":   sourceName,
+			"post_id":       postID,
+		})
 	}
 
-	sourceType, sourceName := sourceDetector.DetectSource(canonicalURL)
-	postID := urlResolver.ExtractPostID(canonicalURL)
-
-	return c.JSON(fiber.Map{
-		"success":       true,
-		"original_url":  targetURL,
-		"canonical_url": canonicalURL,
-		"source_type":   sourceType,
-		"source_name":   sourceName,
-		"post_id":       postID,
+	return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+		"success":       false,
+		"error_code":    models.ErrCodeInvalidURL,
+		"error_message": "Supplied URL is not a valid Facebook or TikTok post link",
 	})
 }
 
-// ExtractFacebookPost coordinates hybrid extraction pipeline (Meta API -> OpenClaw -> Downloader -> AI)
+// ExtractFacebookPost coordinates hybrid extraction pipeline (TikTok / Facebook Meta API -> OpenClaw -> Downloader -> AI)
 func ExtractFacebookPost(c *fiber.Ctx) error {
 	var req models.ExtractRequest
 	if err := c.BodyParser(&req); err != nil || strings.TrimSpace(req.URL) == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"success":       false,
 			"error_code":    models.ErrCodeInvalidURL,
-			"error_message": "Please provide a Facebook URL",
+			"error_message": "Please provide a Facebook or TikTok URL",
 		})
 	}
 
 	rawURL := strings.TrimSpace(req.URL)
+
+	// Handle TikTok URL
+	if tiktokExtractor.IsTikTokURL(rawURL) {
+		canonicalURL, _ := tiktokExtractor.ResolveCanonicalURL(rawURL)
+		if canonicalURL == "" {
+			canonicalURL = rawURL
+		}
+		postID := tiktokExtractor.ExtractPostID(canonicalURL)
+		username := tiktokExtractor.ExtractUsername(canonicalURL)
+		sourceName := "TikTok Post"
+		if username != "" {
+			sourceName = "@" + username
+		}
+
+		job := importRepo.CreateJob(rawURL, canonicalURL, "tiktok_direct", "tiktok_post")
+		jobID := job.JobID
+
+		importRepo.UpdateJobStatus(jobID, models.JobStateResolvingURL)
+		importRepo.AddJobLog(jobID, "info", fmt.Sprintf("TikTok URL verified: %s", canonicalURL))
+
+		importRepo.UpdateJobStatus(jobID, models.JobStateDetectingSource)
+		importRepo.AddJobLog(jobID, "info", fmt.Sprintf("Source detected: %s", sourceName))
+
+		importRepo.UpdateJobStatus(jobID, models.JobStateOpeningBrowser)
+		importRepo.AddJobLog(jobID, "info", "Extracting TikTok photos and caption content...")
+
+		rawResult, errCode, err := tiktokExtractor.ExtractPost(canonicalURL, req.MaxImages)
+		if err != nil {
+			importRepo.SetJobError(jobID, errCode, err.Error())
+			updatedJob, _ := importRepo.GetJob(jobID)
+			return c.Status(fiber.StatusOK).JSON(fiber.Map{
+				"success": false,
+				"job":     updatedJob,
+			})
+		}
+
+		rawResult.Source.OriginalURL = rawURL
+		rawResult.Source.CanonicalURL = canonicalURL
+		rawResult.Source.SourceType = "tiktok_post"
+		rawResult.Source.SourceName = sourceName
+		rawResult.Source.Platform = "tiktok"
+		if postID != "" && rawResult.Source.PostID == "" {
+			rawResult.Source.PostID = postID
+		}
+
+		importRepo.UpdateJobStatus(jobID, models.JobStateExtractingCaption)
+		if rawResult.Caption.Original != "" {
+			importRepo.AddJobLog(jobID, "info", fmt.Sprintf("TikTok caption extracted (%d characters)", len(rawResult.Caption.Original)))
+		} else {
+			importRepo.AddJobLog(jobID, "warn", "No caption text detected in TikTok post")
+		}
+
+		importRepo.UpdateJobStatus(jobID, models.JobStateDownloadingMedia)
+		importRepo.AddJobLog(jobID, "info", fmt.Sprintf("%d photos/media detected in TikTok post", len(rawResult.Images)))
+
+		downloadedImages, dlErr := mediaDownloader.DownloadPostImages(jobID, rawResult.Images)
+		if dlErr == nil && len(downloadedImages) > 0 {
+			rawResult.Images = downloadedImages
+			importRepo.AddJobLog(jobID, "success", fmt.Sprintf("%d TikTok photos downloaded & stored locally", len(downloadedImages)))
+		} else {
+			importRepo.AddJobLog(jobID, "warn", "Photos could not be downloaded locally; retaining source URLs")
+		}
+
+		importRepo.UpdateJobStatus(jobID, models.JobStateAnalyzing)
+		importRepo.AddJobLog(jobID, "info", "Running AI property extraction on TikTok caption & media...")
+
+		finalResult, aiErr := aiExtractor.ExtractPropertyDetails(rawResult.Caption.Original, rawResult.Images, &rawResult.Source)
+		if aiErr == nil && finalResult != nil {
+			finalResult.Source.Platform = "tiktok"
+			finalResult.Source.SourceType = "tiktok_post"
+			finalResult.Source.ExtractionMethod = "tiktok_direct"
+			rawResult = finalResult
+			importRepo.AddJobLog(jobID, "success", "AI property analysis complete")
+		}
+
+		importRepo.SetJobResult(jobID, rawResult)
+		importRepo.AddJobLog(jobID, "success", "Ready for review")
+
+		updatedJob, _ := importRepo.GetJob(jobID)
+		return c.JSON(fiber.Map{
+			"success": true,
+			"job":     updatedJob,
+			"result":  rawResult,
+		})
+	}
+
+	// Handle Facebook URL
 	if !urlResolver.IsFacebookURL(rawURL) {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"success":       false,
-			"error_code":    models.ErrCodeNotFacebookURL,
-			"error_message": "Supplied URL is not a recognized Facebook domain",
+			"error_code":    models.ErrCodeInvalidURL,
+			"error_message": "Supplied URL is not a recognized Facebook or TikTok post link",
 		})
 	}
 
@@ -119,6 +234,7 @@ func ExtractFacebookPost(c *fiber.Ctx) error {
 		graphResult, errCode, err := graphClient.ExtractPost(postID)
 		if err == nil && graphResult != nil {
 			rawResult = graphResult
+			rawResult.Source.Platform = "facebook"
 			rawResult.Source.OriginalURL = rawURL
 			rawResult.Source.CanonicalURL = canonicalURL
 			rawResult.Source.SourceType = sourceType
@@ -146,6 +262,7 @@ func ExtractFacebookPost(c *fiber.Ctx) error {
 		}
 
 		rawResult = browserResult
+		rawResult.Source.Platform = "facebook"
 		rawResult.Source.OriginalURL = rawURL
 		rawResult.Source.CanonicalURL = canonicalURL
 		rawResult.Source.SourceType = sourceType
@@ -269,9 +386,20 @@ func SaveToPropertyInbox(c *fiber.Ctx) error {
 	todayStr := now.Format("060102")
 	refCode := fmt.Sprintf("BH%s-%04d", todayStr, (now.UnixNano()%9000)+1000)
 
+	platform := "facebook"
+	if res.Source.Platform == "tiktok" || strings.Contains(strings.ToLower(res.Source.SourceType), "tiktok") || strings.Contains(strings.ToLower(res.Source.CanonicalURL), "tiktok") {
+		platform = "tiktok"
+	}
+
 	projectName := "Bangkok Property"
 	if res.Property.ProjectName != nil && *res.Property.ProjectName != "" {
 		projectName = *res.Property.ProjectName
+	} else if res.Source.PostID != "" {
+		if platform == "tiktok" {
+			projectName = fmt.Sprintf("TikTok Post #%s", res.Source.PostID)
+		} else {
+			projectName = fmt.Sprintf("Facebook Post #%s", res.Source.PostID)
+		}
 	}
 
 	listingType := "RENT"
@@ -313,28 +441,32 @@ func SaveToPropertyInbox(c *fiber.Ctx) error {
 
 	// Create Property record for frontend / database
 	propertyRecord := fiber.Map{
-		"id":             time.Now().UnixMilli(),
-		"code":           refCode,
-		"projectName":    projectName,
-		"propertyType":   "CONDO",
-		"listingType":    listingType,
-		"title":          title,
-		"description":    res.Caption.Original,
-		"rentPrice":      rentPrice,
-		"salePrice":      salePrice,
-		"bedrooms":       res.Property.Bedrooms,
-		"bathrooms":      res.Property.Bathrooms,
-		"sizeSqm":        res.Property.SizeSqm,
-		"floor":          res.Property.Floor,
-		"btsMrt":         res.Property.NearestTransit,
-		"contactInfo":    contactStr,
-		"status":         "NEW",
-		"sourceUrl":      res.Source.CanonicalURL,
-		"sourceAuthor":   res.Source.SourceName,
-		"originalImages": originalImages,
-		"enhancedImages": originalImages,
-		"finalImages":    originalImages,
-		"createdAt":      "Just now",
+		"id":              time.Now().UnixMilli(),
+		"code":            refCode,
+		"projectName":     projectName,
+		"propertyType":    "CONDO",
+		"listingType":     listingType,
+		"platform":        platform,
+		"socialMediaType": platform,
+		"sourcePlatform":  platform,
+		"sourceType":      res.Source.SourceType,
+		"title":           title,
+		"description":     res.Caption.Original,
+		"rentPrice":       rentPrice,
+		"salePrice":       salePrice,
+		"bedrooms":        res.Property.Bedrooms,
+		"bathrooms":       res.Property.Bathrooms,
+		"sizeSqm":         res.Property.SizeSqm,
+		"floor":           res.Property.Floor,
+		"btsMrt":          res.Property.NearestTransit,
+		"contactInfo":     contactStr,
+		"status":          "NEW",
+		"sourceUrl":       res.Source.CanonicalURL,
+		"sourceAuthor":    res.Source.SourceName,
+		"originalImages":  originalImages,
+		"enhancedImages":  originalImages,
+		"finalImages":     originalImages,
+		"createdAt":       "Just now",
 	}
 
 	// Persist to database if DB connected
@@ -343,6 +475,7 @@ func SaveToPropertyInbox(c *fiber.Ctx) error {
 			FacebookURL:     res.Source.OriginalURL,
 			NormalizedURL:   res.Source.CanonicalURL,
 			FacebookPostID:  res.Source.PostID,
+			Platform:        platform,
 			SourceType:      res.Source.SourceType,
 			SourceName:      res.Source.SourceName,
 			OriginalContent: res.Caption.Original,

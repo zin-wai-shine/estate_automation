@@ -1,0 +1,90 @@
+{
+  "name": "Property Content Processing",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "property-content-processing",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "b8a82cf6-92c2-4913-9a3b-25ff0c0a911e",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300],
+      "webhookId": "property-content-processing"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body || $input.first().json;\nconst prop = body.property || body;\n\nif (!prop.project_name && !prop.caption && !prop.title) {\n  throw new Error('Validation Failed: Missing project name or caption');\n}\n\nreturn {\n  json: {\n    execution_id: body.execution_id || 'exec-' + Date.now(),\n    source: body.source || 'BoltHavenProperty',\n    event: body.event || 'property.process',\n    valid: true,\n    validated_at: new Date().toISOString(),\n    property: prop\n  }\n};"
+      },
+      "id": "c7a82cf6-92c2-4913-9a3b-25ff0c0a912f",
+      "name": "Validate Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nconst p = item.property || {};\n\nconst normalizedPrice = Number(p.monthly_rent_thb || p.rentPrice || 0);\nconst normalizedBeds = Number(p.bedrooms || 1);\nconst normalizedArea = Number(p.area_sqm || p.sizeSqm || 0);\nconst name = p.project_name || p.title || 'Featured Property';\n\nconst formattedSummary = `🏢 ${name}\\n💰 Rent: ฿${normalizedPrice.toLocaleString()}/mo\\n🛏️ ${normalizedBeds} Bed | 📐 ${normalizedArea} sqm\\n✨ Automated via BoltHaven n8n Engine`;\n\nreturn {\n  json: {\n    execution_id: item.execution_id,\n    status: 'success',\n    workflow_name: 'Property Content Processing',\n    normalized_property: {\n      name: name,\n      monthly_rent: normalizedPrice,\n      bedrooms: normalizedBeds,\n      area_sqm: normalizedArea,\n      images_count: (p.images || []).length,\n      summary: formattedSummary\n    },\n    formatted_summary: formattedSummary,\n    processed_at: new Date().toISOString()\n  }\n};"
+      },
+      "id": "d8a82cf6-92c2-4913-9a3b-25ff0c0a9130",
+      "name": "Normalize Listing Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($input.first().json) }}",
+        "options": {}
+      },
+      "id": "e9a82cf6-92c2-4913-9a3b-25ff0c0a9141",
+      "name": "Return Results",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [920, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Validate Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Input": {
+      "main": [
+        [
+          {
+            "node": "Normalize Listing Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Listing Data": {
+      "main": [
+        [
+          {
+            "node": "Return Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

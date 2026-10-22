@@ -78,10 +78,25 @@ export const isImageModel = (model?: string, provider?: string): boolean => {
 /**
  * Determines whether an AI Box is specifically a Watermark node.
  */
+/**
+ * Determines whether a box is an n8n Automation Engine integration node.
+ */
+export const isN8NAIBox = (
+  box?: { id?: string; provider?: string; processType?: string; title?: string }
+): boolean => {
+  if (!box) return false;
+  return (
+    box.provider === 'n8n' ||
+    box.processType === 'n8n_automation' ||
+    Boolean(box.id?.includes('n8n'))
+  );
+};
+
 export const isWatermarkAIBox = (
   box?: { id?: string; provider?: string; model?: string; processType?: string; title?: string; cropFormatId?: string; watermarkPresetId?: string; subtitle?: string }
 ): boolean => {
   if (!box) return false;
+  if (isN8NAIBox(box)) return false;
   if (box.processType === 'text_format' || box.processType === 'text_ai') return false;
   return (
     box.processType === 'watermark' ||
@@ -100,6 +115,7 @@ export const isTextFormatAIBox = (
   box?: { id?: string; provider?: string; model?: string; processType?: string; title?: string; cropFormatId?: string; watermarkPresetId?: string; subtitle?: string; templateId?: string; templateText?: string }
 ): boolean => {
   if (!box) return false;
+  if (isN8NAIBox(box)) return false;
   if (isWatermarkAIBox(box)) return false;
   if (box.processType === 'image_enhance' || box.provider === 'runware_ai' || box.processType === 'text_ai') return false;
   return (
@@ -116,6 +132,7 @@ export const isTextAIBox = (
   connections: { fromNodeId: string; toNodeId: string }[] = []
 ): boolean => {
   if (!box) return false;
+  if (isN8NAIBox(box)) return false;
   if (isWatermarkAIBox(box)) return false;
   if (isTextFormatAIBox(box)) return false;
   if (isImageAIBox(box, connections)) return false;
@@ -131,6 +148,7 @@ export const isImageAIBox = (
   connections: { fromNodeId: string; toNodeId: string }[] = []
 ): boolean => {
   if (!box) return false;
+  if (isN8NAIBox(box)) return false;
   if (isWatermarkAIBox(box)) return true;
   // If connected from 'get-content', it is guaranteed to be a Content / Copywriting node
   if (box.id && connections.some((c) => c.fromNodeId === 'get-content' && c.toNodeId === box.id)) {

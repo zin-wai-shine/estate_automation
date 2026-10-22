@@ -72,6 +72,9 @@ services:
       - TIKTOK_REDIRECT_URI=${TIKTOK_REDIRECT_URI}
       - PUBLIC_APP_URL=${PUBLIC_APP_URL:-https://app.bolthavenproperty.com}
       - TIKTOK_ENVIRONMENT=${TIKTOK_ENVIRONMENT:-sandbox}
+      - N8N_BASE_URL=${N8N_BASE_URL:-http://n8n:5678}
+      - N8N_API_KEY=${N8N_API_KEY:-}
+      - N8N_WEBHOOK_SECRET=${N8N_WEBHOOK_SECRET:-bolthaven_webhook_secret_change_me_2026}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -216,6 +219,44 @@ services:
     networks:
       - bolthaven_net
 
+  n8n:
+    image: n8nio/n8n:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5678:5678"
+    volumes:
+      - n8n_data:/home/node/.n8n
+    environment:
+      - GENERIC_TIMEZONE=${N8N_TIMEZONE:-Asia/Bangkok}
+      - TZ=${N8N_TIMEZONE:-Asia/Bangkok}
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY:-bolthaven_n8n_enc_key_change_me_2026}
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_BASIC_AUTH_USER:-admin}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_BASIC_AUTH_PASSWORD:-BoltHaven2026!}
+      - N8N_API_DISABLED=false
+      - EXECUTIONS_DATA_SAVE_ON_ERROR=all
+      - EXECUTIONS_DATA_SAVE_ON_SUCCESS=all
+      - EXECUTIONS_DATA_SAVE_ON_PROGRESS=true
+      - EXECUTIONS_DATA_MAX_AGE=720
+      - N8N_LOG_LEVEL=info
+      - N8N_PERSONALIZATION_ENABLED=false
+      - N8N_VERSION_NOTIFICATIONS_ENABLED=false
+      - N8N_DIAGNOSTICS_ENABLED=false
+      - N8N_HIRING_BANNER_ENABLED=false
+      - WEBHOOK_URL=http://localhost:5678/
+      - N8N_RUNNERS_ENABLED=true
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:5678/healthz || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - bolthaven_net
+
 networks:
   bolthaven_net:
     name: bolthaven_net
@@ -225,3 +266,4 @@ volumes:
   pgdata:
   redisdata:
   browser_profiles:
+  n8n_data:

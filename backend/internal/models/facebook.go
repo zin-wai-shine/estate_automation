@@ -143,6 +143,7 @@ type ImportSource struct {
 	NormalizedURL     string       `gorm:"type:varchar(255);index" json:"normalized_url"`
 	FacebookPostID    string       `gorm:"type:varchar(100);index" json:"facebook_post_id"`
 	FacebookPageID    string       `gorm:"type:varchar(100);index" json:"facebook_page_id"`
+	Platform          string       `gorm:"type:varchar(30);default:'facebook'" json:"platform"`
 	SourceType        string       `gorm:"type:varchar(50);default:'FACEBOOK_POST'" json:"source_type"`
 	SourceName        string       `gorm:"type:varchar(255)" json:"source_name"`
 	OriginalContent   string       `gorm:"type:text" json:"original_content"`

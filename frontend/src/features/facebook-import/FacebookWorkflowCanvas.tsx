@@ -50,6 +50,7 @@ import {
   FiGitMerge,
   FiFolder,
   FiCornerDownRight,
+  FiServer,
 } from 'react-icons/fi';
 import { FaFacebook, FaFacebookF, FaInstagram, FaTiktok } from 'react-icons/fa';
 import { SiGooglegemini } from 'react-icons/si';
@@ -57,7 +58,7 @@ import { HiSparkles } from 'react-icons/hi2';
 import { useScrollLock } from '../../hooks/useScrollLock';
 import { AITrainingChatbot, ModelSelectorMenu, LaoZhangIcon, RunwareIcon } from './AITrainingChatbot';
 import { useTheme } from '../../context/ThemeContext';
-import { getAIModelDisplayName, isImageAIBox, isImageModel, isWatermarkAIBox, isEnhanceAIBox, isAIBoxConnected, isTextFormatAIBox, isTextAIBox } from './aiModelUtils';
+import { getAIModelDisplayName, isImageAIBox, isImageModel, isWatermarkAIBox, isEnhanceAIBox, isAIBoxConnected, isTextFormatAIBox, isTextAIBox, isN8NAIBox } from './aiModelUtils';
 import { AIImageStudio } from './AIImageStudio';
 import { WatermarkNodeModal } from './WatermarkNodeModal';
 import { ToggleSwitch } from '../../components/ui/ToggleSwitch';
@@ -123,8 +124,8 @@ export const loadAvailablePromptTemplates = (): CanvasPromptOption[] => {
 export interface DynamicAIBoxConfig {
   id: string;
   title: string;
-  processType?: 'rental' | 'sale' | 'tiktok' | 'line_oa' | 'seo_tags' | 'custom' | 'image_enhance' | 'watermark' | 'text_ai' | 'text_format' | string;
-  provider: 'google_ai' | 'openai' | 'laozhang_ai' | 'runware_ai' | 'watermark';
+  processType?: 'rental' | 'sale' | 'tiktok' | 'line_oa' | 'seo_tags' | 'custom' | 'image_enhance' | 'watermark' | 'text_ai' | 'text_format' | 'n8n_automation' | string;
+  provider: 'google_ai' | 'openai' | 'laozhang_ai' | 'runware_ai' | 'watermark' | 'n8n';
   model: string;
   templateId: string;
   templateText: string;
@@ -145,6 +146,12 @@ export interface DynamicAIBoxConfig {
   customPages?: string;
   x: number;
   y: number;
+  n8nWorkflowId?: string;
+  n8nWebhookPath?: string;
+  n8nTriggerMethod?: 'webhook' | 'api';
+  n8nTimeoutSeconds?: number;
+  n8nRetryCount?: number;
+  n8nContinueOnFailure?: boolean;
 }
 
 export interface WorkflowWireConnection {
@@ -4822,6 +4829,53 @@ export const FacebookWorkflowCanvas = forwardRef<
     // User requested: "show that cycle at canvas first don't need to connected in another until I create what that use for and after that I can connect it with drap that string"
   };
 
+  // Add Dynamic n8n Automation Engine Node
+  const handleAddN8NNodeConnectedFrom = (fromNodeId?: string): string => {
+    const n8nBoxes = config.aiBoxes.filter((b) => isN8NAIBox(b));
+    const newCount = n8nBoxes.length + 1;
+    const newId = `ai-box-n8n-${Date.now()}`;
+
+    const newBox: DynamicAIBoxConfig = {
+      id: newId,
+      title: `n8n Automation #${newCount}`,
+      subtitle: 'n8n Automation Engine',
+      processType: 'n8n_automation',
+      provider: 'n8n' as any,
+      model: 'n8n-webhook',
+      templateId: 'Dtjq2OPmO1SqiXm4',
+      templateText: '',
+      customPrompt: '',
+      enabled: true,
+      n8nWorkflowId: 'Dtjq2OPmO1SqiXm4',
+      n8nWebhookPath: 'property-content-processing',
+      n8nTriggerMethod: 'webhook',
+      n8nTimeoutSeconds: 30,
+      n8nRetryCount: 1,
+      n8nContinueOnFailure: false,
+      x: 740,
+      y: 220 + (newCount - 1) * 140,
+    };
+
+    const nextBoxes = [...config.aiBoxes, newBox];
+    let nextConns = [...(config.connections || [])];
+    if (fromNodeId) {
+      nextConns.push({
+        id: `wire-${fromNodeId}-${newId}-${Date.now()}`,
+        fromNodeId: fromNodeId,
+        toNodeId: newId,
+      });
+    }
+
+    const nextConfig = {
+      ...config,
+      aiBoxes: nextBoxes,
+      connections: nextConns,
+    };
+    updateConfig(nextConfig);
+    setSelectedBoxId(newId);
+    return newId;
+  };
+
   // Helper for rendering AI Box icon in recover & delete modals
   const renderAIBoxIcon = (b: DynamicAIBoxConfig, size = 22) => {
     if (b.id === 'get-content') return <FiFileText style={{ fontSize: `${size}px`, color: '#3B82F6' }} />;
@@ -4831,6 +4885,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     const isEnhance = (isEnhanceAIBox(b) || isImageAIBox(b, config.connections)) && !isWatermark;
     if (isEnhance) return <FiImage style={{ fontSize: `${size}px`, color: '#EC4899' }} />;
     if (isTextFormatAIBox(b)) return <FiFileText style={{ fontSize: `${size}px`, color: '#6366F1' }} />;
+    if (isN8NAIBox(b)) return <FiServer style={{ fontSize: `${size}px`, color: '#FF6D5A' }} />;
     return <FiMessageSquare style={{ fontSize: `${size}px`, color: '#8B5CF6' }} />;
   };
 
@@ -7016,6 +7071,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                     <FiImage style={{ fontSize: '28px', color: isEffectiveEnabled ? '#EC4899' : '#8B949E', transition: 'color 0.2s ease' }} />
                   ) : isTextFormatAIBox(box) ? (
                     <FiFileText style={{ fontSize: '28px', color: isEffectiveEnabled ? '#6366F1' : '#8B949E', transition: 'color 0.2s ease' }} />
+                  ) : isN8NAIBox(box) ? (
+                    <FiServer style={{ fontSize: '28px', color: isEffectiveEnabled ? '#FF6D5A' : '#8B949E', transition: 'color 0.2s ease' }} />
                   ) : (
                     <FiMessageSquare style={{ fontSize: '28px', color: isEffectiveEnabled ? '#8B5CF6' : '#8B949E', transition: 'color 0.2s ease' }} />
                   )}
@@ -8775,86 +8832,259 @@ export const FacebookWorkflowCanvas = forwardRef<
                       </button>
                     </div>
 
-                    {/* Select Prompt Template */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
-                          <FiFileText style={{ fontSize: '12px', color: 'var(--accent-primary, #3B82F6)' }} />
-                          Select Prompt Template
-                        </label>
-                        {currentModalAIBox.templateId && currentModalAIBox.templateId !== 'custom' && (
-                          <span style={{ fontSize: '0.625rem', color: '#10B981', fontWeight: 500 }}>
-                            ● Linked to Template
-                          </span>
-                        )}
+                    {isN8NAIBox(currentModalAIBox) ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                        {/* n8n Engine Banner */}
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.625rem',
+                            padding: '0.65rem 0.75rem',
+                            borderRadius: '8px',
+                            background: isDark ? 'rgba(255, 109, 90, 0.1)' : '#FFF5F4',
+                            border: '1px solid rgba(255, 109, 90, 0.3)',
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: '28px',
+                              height: '28px',
+                              borderRadius: '6px',
+                              backgroundColor: '#FF6D5A',
+                              color: '#FFFFFF',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <FiServer size={14} />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#FF6D5A' }}>
+                              n8n Automation Node
+                            </div>
+                            <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                              Local Docker engine (http://localhost:5678)
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Workflow Selection */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                          <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                            Target n8n Workflow
+                          </label>
+                          <Select
+                            options={[
+                              { value: 'Dtjq2OPmO1SqiXm4', label: 'Property Content Processing (Active)' },
+                              { value: 'custom', label: 'Custom Workflow ID' },
+                            ]}
+                            value={currentModalAIBox.n8nWorkflowId || 'Dtjq2OPmO1SqiXm4'}
+                            onChange={(val) => {
+                              handleUpdateAIBox(currentModalAIBox.id, {
+                                n8nWorkflowId: val,
+                                templateId: val,
+                                title: val === 'Dtjq2OPmO1SqiXm4' ? 'Property Content Processing' : currentModalAIBox.title,
+                              });
+                            }}
+                            height="34px"
+                          />
+                        </div>
+
+                        {/* Webhook Path */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                          <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                            Webhook Path
+                          </label>
+                          <input
+                            type="text"
+                            value={currentModalAIBox.n8nWebhookPath || 'property-content-processing'}
+                            onChange={(e) => {
+                              handleUpdateAIBox(currentModalAIBox.id, {
+                                n8nWebhookPath: e.target.value,
+                              });
+                            }}
+                            placeholder="e.g. property-content-processing"
+                            style={{
+                              width: '100%',
+                              height: '34px',
+                              padding: '0 0.625rem',
+                              borderRadius: '6px',
+                              border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                              backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
+                              color: 'var(--text-primary)',
+                              fontSize: '0.75rem',
+                              boxSizing: 'border-box',
+                            }}
+                          />
+                        </div>
+
+                        {/* Trigger Method & Timeout */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                            <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                              Trigger Method
+                            </label>
+                            <Select
+                              options={[
+                                { value: 'webhook', label: 'Webhook (POST)' },
+                                { value: 'api', label: 'Direct API' },
+                              ]}
+                              value={currentModalAIBox.n8nTriggerMethod || 'webhook'}
+                              onChange={(val) => {
+                                handleUpdateAIBox(currentModalAIBox.id, {
+                                  n8nTriggerMethod: val as any,
+                                });
+                              }}
+                              height="34px"
+                            />
+                          </div>
+
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                            <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                              Timeout (Sec)
+                            </label>
+                            <input
+                              type="number"
+                              min={5}
+                              max={120}
+                              value={currentModalAIBox.n8nTimeoutSeconds ?? 30}
+                              onChange={(e) => {
+                                handleUpdateAIBox(currentModalAIBox.id, {
+                                  n8nTimeoutSeconds: Number(e.target.value),
+                                });
+                              }}
+                              style={{
+                                width: '100%',
+                                height: '34px',
+                                padding: '0 0.625rem',
+                                borderRadius: '6px',
+                                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
+                                color: 'var(--text-primary)',
+                                fontSize: '0.75rem',
+                                boxSizing: 'border-box',
+                              }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Continue on Failure Toggle */}
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '0.625rem 0.75rem',
+                            borderRadius: '6px',
+                            border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                            backgroundColor: isDark ? '#161B22' : '#F8FAFC',
+                          }}
+                        >
+                          <div>
+                            <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                              Continue on Failure
+                            </div>
+                            <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
+                              Do not stop pipeline if n8n returns an error
+                            </div>
+                          </div>
+                          <ToggleSwitch
+                            checked={Boolean(currentModalAIBox.n8nContinueOnFailure)}
+                            onChange={(val) => {
+                              handleUpdateAIBox(currentModalAIBox.id, {
+                                n8nContinueOnFailure: val,
+                              });
+                            }}
+                          />
+                        </div>
                       </div>
-                      <Select
-                        options={[
-                          ...availablePrompts.map((p) => ({
-                            value: String(p.id),
-                            label: p.name,
-                          })),
-                          { value: 'custom', label: '✨ Custom Prompt (Manual Input)' },
-                        ]}
-                        value={
-                          availablePrompts.some((p) => String(p.id) === String(currentModalAIBox.templateId))
-                            ? String(currentModalAIBox.templateId)
-                            : availablePrompts.some((p) => p.name === currentModalAIBox.title)
-                            ? String(availablePrompts.find((p) => p.name === currentModalAIBox.title)!.id)
-                            : currentModalAIBox.templateId === 'custom'
-                            ? 'custom'
-                            : availablePrompts[0]?.id ? String(availablePrompts[0].id) : 'custom'
-                        }
-                        onChange={(val) => {
-                          if (val === 'custom') {
-                            handleUpdateAIBox(currentModalAIBox.id, {
-                              templateId: 'custom',
-                            });
-                            return;
-                          }
-                          const matched = availablePrompts.find((p) => String(p.id) === String(val));
-                          if (matched) {
-                            const isGenericTitle =
-                              !currentModalAIBox.title ||
-                              /^AI Process #\d+/i.test(currentModalAIBox.title) ||
-                              availablePrompts.some(
-                                (p) =>
-                                  currentModalAIBox.title === p.name ||
-                                  currentModalAIBox.title === `${p.name} - Prompt` ||
-                                  currentModalAIBox.title === `${p.name} - Content - Prompt`
-                              );
+                    ) : (
+                      <>
+                        {/* Select Prompt Template */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                              <FiFileText style={{ fontSize: '12px', color: 'var(--accent-primary, #3B82F6)' }} />
+                              Select Prompt Template
+                            </label>
+                            {currentModalAIBox.templateId && currentModalAIBox.templateId !== 'custom' && (
+                              <span style={{ fontSize: '0.625rem', color: '#10B981', fontWeight: 500 }}>
+                                ● Linked to Template
+                              </span>
+                            )}
+                          </div>
+                          <Select
+                            options={[
+                              ...availablePrompts.map((p) => ({
+                                value: String(p.id),
+                                label: p.name,
+                              })),
+                              { value: 'custom', label: '✨ Custom Prompt (Manual Input)' },
+                            ]}
+                            value={
+                              availablePrompts.some((p) => String(p.id) === String(currentModalAIBox.templateId))
+                                ? String(currentModalAIBox.templateId)
+                                : availablePrompts.some((p) => p.name === currentModalAIBox.title)
+                                ? String(availablePrompts.find((p) => p.name === currentModalAIBox.title)!.id)
+                                : currentModalAIBox.templateId === 'custom'
+                                ? 'custom'
+                                : availablePrompts[0]?.id ? String(availablePrompts[0].id) : 'custom'
+                            }
+                            onChange={(val) => {
+                              if (val === 'custom') {
+                                handleUpdateAIBox(currentModalAIBox.id, {
+                                  templateId: 'custom',
+                                });
+                                return;
+                              }
+                              const matched = availablePrompts.find((p) => String(p.id) === String(val));
+                              if (matched) {
+                                const isGenericTitle =
+                                  !currentModalAIBox.title ||
+                                  /^AI Process #\d+/i.test(currentModalAIBox.title) ||
+                                  availablePrompts.some(
+                                    (p) =>
+                                      currentModalAIBox.title === p.name ||
+                                      currentModalAIBox.title === `${p.name} - Prompt` ||
+                                      currentModalAIBox.title === `${p.name} - Content - Prompt`
+                                  );
 
-                            handleUpdateAIBox(currentModalAIBox.id, {
-                              templateId: String(matched.id),
-                              templateText: matched.templateText,
-                              title: isGenericTitle ? matched.name : currentModalAIBox.title,
-                            });
-                          }
-                        }}
-                        height="34px"
-                        placeholder="Select prompt template..."
-                      />
-                    </div>
+                                handleUpdateAIBox(currentModalAIBox.id, {
+                                  templateId: String(matched.id),
+                                  templateText: matched.templateText,
+                                  title: isGenericTitle ? matched.name : currentModalAIBox.title,
+                                });
+                              }
+                            }}
+                            height="34px"
+                            placeholder="Select prompt template..."
+                          />
+                        </div>
 
-                    {/* AI Engine & Model */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                      <label style={{ display: 'block', fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
-                        AI Engine & Model
-                      </label>
-                      <Select
-                        options={AI_ENGINE_MODEL_GROUPS}
-                        value={currentModalAIBox.model || (currentModalAIBox.provider === 'openai' ? 'gpt-4o' : 'gemini-2.5-flash')}
-                        onChange={(val) => {
-                          const isGoogle = AI_ENGINE_MODEL_GROUPS[0]?.options.some((o) => o.value === val);
-                          handleUpdateAIBox(currentModalAIBox.id, {
-                            model: val,
-                            provider: isGoogle ? 'google_ai' : 'openai',
-                          });
-                        }}
-                        height="36px"
-                        placeholder="Select AI Model..."
-                      />
-                    </div>
+                        {/* AI Engine & Model */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                          <label style={{ display: 'block', fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                            AI Engine & Model
+                          </label>
+                          <Select
+                            options={AI_ENGINE_MODEL_GROUPS}
+                            value={currentModalAIBox.model || (currentModalAIBox.provider === 'openai' ? 'gpt-4o' : 'gemini-2.5-flash')}
+                            onChange={(val) => {
+                              const isGoogle = AI_ENGINE_MODEL_GROUPS[0]?.options.some((o) => o.value === val);
+                              handleUpdateAIBox(currentModalAIBox.id, {
+                                model: val,
+                                provider: isGoogle ? 'google_ai' : 'openai',
+                              });
+                            }}
+                            height="36px"
+                            placeholder="Select AI Model..."
+                          />
+                        </div>
+                      </>
+                    )}
 
 
 
@@ -10899,6 +11129,61 @@ export const FacebookWorkflowCanvas = forwardRef<
                     </div>
                     <FiArrowRight size={13} style={{ color: isDark ? '#8B949E' : '#94A3B8' }} />
                   </button>
+
+                  {/* n8n Automation Engine Node */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleAddN8NNodeConnectedFrom(fromNodeId);
+                      setConnectDrawerNode(null);
+                      setActiveModalNode(null);
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                      padding: '0.55rem 0.65rem',
+                      borderRadius: '7px',
+                      border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                      backgroundColor: isDark ? '#1C2128' : '#F8FAFC',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      transition: 'all 0.15s ease',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = '#FF6D5A';
+                      e.currentTarget.style.backgroundColor = isDark ? '#2D1614' : '#FFF5F4';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
+                      e.currentTarget.style.backgroundColor = isDark ? '#1C2128' : '#F8FAFC';
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: '28px',
+                        height: '28px',
+                        borderRadius: '6px',
+                        background: 'linear-gradient(135deg, #FF6D5A, #E03E2D)',
+                        color: '#FFFFFF',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <FiServer size={14} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '0.71875rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
+                        + n8n Automation
+                      </div>
+                      <div style={{ fontSize: '0.5625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                        Execute n8n webhook pipelines & workflows
+                      </div>
+                    </div>
+                    <FiArrowRight size={13} style={{ color: isDark ? '#8B949E' : '#94A3B8' }} />
+                  </button>
                 </div>
               </div>
 
@@ -12291,6 +12576,67 @@ export const FacebookWorkflowCanvas = forwardRef<
                   borderRadius: '6px',
                   border: 'none',
                   backgroundColor: '#EC4899',
+                  color: '#FFFFFF',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                }}
+              >
+                <FiPlus size={13} /> Add
+              </button>
+            </div>
+
+            {/* Option 5: n8n Automation Engine */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '0.75rem',
+                borderRadius: '8px',
+                border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#F8FAFC',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', flex: 1, minWidth: 0 }}>
+                <div
+                  style={{
+                    width: '34px',
+                    height: '34px',
+                    borderRadius: '8px',
+                    backgroundColor: '#FF6D5A',
+                    color: '#FFFFFF',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  <FiServer size={16} />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                    n8n Automation Engine
+                  </div>
+                  <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', lineHeight: 1.3 }}>
+                    Trigger n8n webhook pipeline & workflow automations
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  handleAddN8NNodeConnectedFrom();
+                  setIsAddFromTriggerOpen(false);
+                }}
+                style={{
+                  padding: '5px 10px',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  borderRadius: '6px',
+                  border: 'none',
+                  backgroundColor: '#FF6D5A',
                   color: '#FFFFFF',
                   cursor: 'pointer',
                   display: 'flex',

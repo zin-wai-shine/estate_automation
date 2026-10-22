@@ -56,8 +56,12 @@ func (d *FacebookMediaDownloader) DownloadPostImages(jobID string, rawImages []m
 		if err != nil {
 			continue
 		}
-		req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
-		req.Header.Set("Referer", "https://www.facebook.com/")
+		req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+		if strings.Contains(raw.SourceURL, "tiktok") || strings.Contains(raw.SourceURL, "byteoversea") {
+			req.Header.Set("Referer", "https://www.tiktok.com/")
+		} else {
+			req.Header.Set("Referer", "https://www.facebook.com/")
+		}
 
 		resp, err := d.httpClient.Do(req)
 		if err != nil || resp.StatusCode != http.StatusOK {

@@ -71,6 +71,10 @@ func ConnectDB() *gorm.DB {
 		&models.TikTokAccount{},
 		&models.TikTokPublishPost{},
 		&models.UrlGroup{},
+		// n8n Integration Tables
+		&models.N8NWorkflowConnection{},
+		&models.N8NExecutionRecord{},
+		&models.N8NAutomationSetting{},
 	)
 	if err != nil {
 		log.Fatalf("Failed to auto-migrate models: %v", err)
