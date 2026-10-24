@@ -1493,6 +1493,15 @@ export const sanitizeAndResolveCollisions = (
     connections: nextConnections,
   };
 
+  // If boxes already have valid user coordinates, preserve their exact positions!
+  const hasExistingPositions =
+    (updatedAiBoxes.length === 0 || updatedAiBoxes.every((b) => typeof b.x === 'number' && typeof b.y === 'number')) &&
+    (conf.combineBoxes || []).every((cb) => typeof cb.x === 'number' && typeof cb.y === 'number');
+
+  if (hasExistingPositions && conf.aiBoxes && conf.aiBoxes.length > 0) {
+    return baseConfig;
+  }
+
   return buildAlignedLayout(updatedAiBoxes, nextConnections, baseConfig);
 };
 
@@ -2351,7 +2360,9 @@ export const FacebookWorkflowCanvas = forwardRef<
     return 'idle';
   };
 
-  // Synchronize when initialConfig updates (e.g. backend sync or format switch) with smooth centering
+  const hasInitializedPan = useRef(false);
+
+  // Synchronize when initialConfig updates (e.g. backend sync or format switch) while preserving user pan & positions
   useEffect(() => {
     if (!initialConfig) return;
     const sanitized = sanitizeAndResolveCollisions(initialConfig);
@@ -2366,14 +2377,20 @@ export const FacebookWorkflowCanvas = forwardRef<
     const optimalZoom = Math.min(Math.max(Math.min(fitZoomX, fitZoomY), 0.76), 0.88);
     const centeredPan = calculateCenteredPanOffset(sanitized, vWidth, vHeight, optimalZoom);
 
-    setConfig({
-      ...sanitized,
-      zoom: optimalZoom,
-      panOffset: centeredPan,
+    setConfig((prev) => {
+      const hasActivePan = prev && prev.panOffset && (prev.panOffset.x !== 0 || prev.panOffset.y !== 0);
+      const panOffset = hasActivePan ? prev.panOffset : centeredPan;
+      const zoom = prev && typeof prev.zoom === 'number' && prev.zoom > 0 ? prev.zoom : optimalZoom;
+
+      return {
+        ...sanitized,
+        zoom,
+        panOffset,
+      };
     });
   }, [initialConfig]);
 
-  // Keep canvas centered smoothly on viewport resize (debounced)
+  // Keep canvas centered smoothly on initial viewport mount only (never jerk or re-center on sidebar toggle)
   useEffect(() => {
     const el = canvasRef.current;
     if (!el) return;
@@ -2386,6 +2403,8 @@ export const FacebookWorkflowCanvas = forwardRef<
           clearTimeout(resizeTimer);
           resizeTimer = setTimeout(() => {
             setConfig((prev) => {
+              if (hasInitializedPan.current) return prev;
+              hasInitializedPan.current = true;
               const nextPan = calculateCenteredPanOffset(prev, width, height, prev.zoom);
               if (Math.abs(prev.panOffset.x - nextPan.x) <= 2 && Math.abs(prev.panOffset.y - nextPan.y) <= 2) {
                 return prev;
@@ -3437,11 +3456,11 @@ export const FacebookWorkflowCanvas = forwardRef<
         });
       }
       const nextConns = [...currentConnections, newConn];
-      const nextConfig = buildAlignedLayout(updatedBoxes, nextConns, {
+      const nextConfig = {
         ...config,
         aiBoxes: updatedBoxes,
         connections: nextConns,
-      });
+      };
       updateConfig(nextConfig);
     }
     setDragWire(null);
@@ -4443,7 +4462,7 @@ export const FacebookWorkflowCanvas = forwardRef<
           toNodeId: existingCb.id,
         };
         const nextConns = [...(config.connections || []), newConn];
-        updateConfig(buildAlignedLayout(config.aiBoxes, nextConns, { ...config, connections: nextConns }));
+        updateConfig({ ...config, connections: nextConns });
       }
       return existingCb.id;
     }
@@ -5382,24 +5401,10 @@ export const FacebookWorkflowCanvas = forwardRef<
   // Update AI Box Details
   const handleUpdateAIBox = (id: string, partial: Partial<DynamicAIBoxConfig>) => {
     const newBoxes = config.aiBoxes.map((b) => (b.id === id ? { ...b, ...partial } : b));
-    const hasCombine = (config.combineBoxes || []).some((b) => b && b.enabled !== false);
-    const isOutputActive = !hasCombine && config.outputNode?.enabled !== false;
-    const nextConns = autoConnectImagePipeline(
-      newBoxes,
-      config.connections,
-      config.getContent.enabled,
-      config.getImages.enabled,
-      getNormalizedDestinations(config).some((d) => d.enabled !== false),
-      isOutputActive,
-      getNormalizedDestinations(config),
-      config.combineBoxes || []
-    );
-    const nextConfig = buildAlignedLayout(newBoxes, nextConns, {
+    updateConfig({
       ...config,
       aiBoxes: newBoxes,
-      connections: nextConns,
     });
-    updateConfig(nextConfig);
   };
 
   // Reset Layout to compact aligned grid with clean gaps (75% zoom)
@@ -5727,9 +5732,17 @@ export const FacebookWorkflowCanvas = forwardRef<
     if (isPanning) setIsPanning(false);
     if (draggedNodeId) {
       setDraggedNodeId(null);
-      try {
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(config));
-      } catch (e) {}
+      if (hasMoved.current) {
+        setConfig((latest) => {
+          try {
+            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(latest));
+          } catch (e) {}
+          if (onConfigChange) {
+            onConfigChange(latest);
+          }
+          return latest;
+        });
+      }
     }
   };
 
