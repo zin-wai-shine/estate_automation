@@ -320,8 +320,11 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
         setTabGroups(groups);
         if (groups && groups.length > 0) {
           const targetGroup =
-            groups.find((g) => g.name.toLowerCase() === (selectedGroupName || boxConfig.browserGroupName || 'enhance img').toLowerCase()) ||
+            (selectedGroupName && selectedGroupName.toLowerCase().includes('enhance')
+              ? groups.find((g) => g.name === selectedGroupName)
+              : null) ||
             groups.find((g) => g.name.toLowerCase().includes('enhance')) ||
+            groups.find((g) => g.name.toLowerCase() === (selectedGroupName || boxConfig.browserGroupName || '').toLowerCase()) ||
             groups[0];
           setSelectedGroupName(targetGroup.name);
 
@@ -1157,7 +1160,10 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
             variant="ghost"
             onClick={() => {
               if (selectedProfileId) {
-                fetchTabGroups(selectedProfileId).then((g) => setTabGroups(g));
+                const currentProf = profiles.find((p) => p.id === selectedProfileId);
+                const profKey = currentProf?.profile_key || boxConfig.browserProfileKey || 'Profile 14';
+                const profName = currentProf?.display_name || boxConfig.browserProfileName || 'Hsu';
+                fetchTabGroups(selectedProfileId, profKey, profName).then((g) => setTabGroups(g));
               }
             }}
             style={{ fontSize: '0.625rem', padding: '2px 6px', height: 'auto' }}

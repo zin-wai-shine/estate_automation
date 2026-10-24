@@ -1,5 +1,5 @@
 {
-  "timestamp": 1792880850490,
+  "timestamp": 1792883587573,
   "workflow_formats": [
     {
       "config": {
@@ -243,6 +243,7 @@
             "browserTabId": "1778555865",
             "browserTabTitle": "Prompt analysis",
             "customPrompt": "",
+            "enableEnhanceGroup": true,
             "enabled": true,
             "id": "ai-box-external-browser-1792852541152",
             "model": "chatgpt-browser",
@@ -396,7 +397,7 @@
       "description": "Custom Facebook import extraction with dynamic AI prompt generator",
       "id": "format-1792648980268",
       "name": "Download FB Post",
-      "updatedAt": 1792880850484
+      "updatedAt": 1792883587570
     },
     {
       "config": {

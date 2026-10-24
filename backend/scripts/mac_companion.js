@@ -179,17 +179,17 @@ function scanProfileGroups(profileKey, profileName) {
       ['6ad49918-a4f0-83ec-acf5-efb0ef516adc', '6ad49924-7dd0-83ec-8205-768c67420600', '6ad4992a-66e8-83ec-9b11-c5e727e258d9', '6ad4992b-135c-83ec-b042-8c92220921d7'].includes(c.uuid)
   );
 
-  if (enhanceTabs.length === 0) {
-    const defaultEnhanceUuids = [
-      { uuid: '6ad49918-a4f0-83ec-acf5-efb0ef516adc', title: 'Enhance Interior Photograph' },
-      { uuid: '6ad49924-7dd0-83ec-8205-768c67420600', title: 'Enhance Interior Photograph' },
-      { uuid: '6ad4992a-66e8-83ec-9b11-c5e727e258d9', title: 'Enhance Interior Photograph' },
-      { uuid: '6ad4992b-135c-83ec-b042-8c92220921d7', title: 'Enhance Interior Photograph' },
-    ];
-    defaultEnhanceUuids.forEach((d) => {
+  const defaultEnhanceUuids = [
+    { uuid: '6ad49918-a4f0-83ec-acf5-efb0ef516adc', title: 'Enhance Interior Photograph 1' },
+    { uuid: '6ad49924-7dd0-83ec-8205-768c67420600', title: 'Enhance Interior Photograph 2' },
+    { uuid: '6ad4992a-66e8-83ec-9b11-c5e727e258d9', title: 'Enhance Interior Photograph 3' },
+    { uuid: '6ad4992b-135c-83ec-b042-8c92220921d7', title: 'Enhance Interior Photograph 4' },
+  ];
+  defaultEnhanceUuids.forEach((d) => {
+    if (!enhanceTabs.some((t) => t.uuid === d.uuid)) {
       enhanceTabs.push({ url: `https://chatgpt.com/c/${d.uuid}`, title: d.title, uuid: d.uuid });
-    });
-  }
+    }
+  });
 
   const facilitiesTabs = chatgptChats.filter(
     (c) =>
@@ -201,8 +201,20 @@ function scanProfileGroups(profileKey, profileName) {
     (c) =>
       c.title.toLowerCase().includes('facebook') ||
       c.title.toLowerCase().includes('create facebook') ||
-      c.uuid === '6ad49862-4bb0-83ec-969a-1a85cf694b6b'
+      c.title.toLowerCase().includes('prompt analysis') ||
+      c.uuid === '6ad49862-4bb0-83ec-969a-1a85cf694b6b' ||
+      c.uuid === '6ad49a3b-f934-83ec-a7c3-ed5f0977c9f6'
   );
+
+  const defaultFbUuids = [
+    { uuid: '6ad49862-4bb0-83ec-969a-1a85cf694b6b', title: 'Prompt analysis' },
+    { uuid: '6ad49a3b-f934-83ec-a7c3-ed5f0977c9f6', title: 'Create Facebook Advertisement' },
+  ];
+  defaultFbUuids.forEach((d) => {
+    if (!fbTabs.some((t) => t.uuid === d.uuid)) {
+      fbTabs.push({ url: `https://chatgpt.com/c/${d.uuid}`, title: d.title, uuid: d.uuid });
+    }
+  });
 
   const tiktokTabs = chatgptChats.filter(
     (c) =>
@@ -217,10 +229,17 @@ function scanProfileGroups(profileKey, profileName) {
 
   const result = [];
   const order = ['enhance img', 'fb hero', 'tiktok - bh hero', 'tiktok dot hero', 'facilities img'];
+  const prettyNames = {
+    'enhance img': 'Enhance IMG',
+    'fb hero': 'FB Hero',
+    'tiktok - bh hero': 'Tiktok - BH Hero',
+    'tiktok dot hero': 'Tiktok Dot Hero',
+    'facilities img': 'Facilities IMG',
+  };
 
   for (const groupNameLower of order) {
     const grp = groups.get(groupNameLower) || {
-      name: groupNameLower.split(' ').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
+      name: prettyNames[groupNameLower] || groupNameLower.split(' ').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
       color:
         groupNameLower.includes('enhance')
           ? '#3B82F6'
@@ -1019,91 +1038,113 @@ const server = http.createServer((req, res) => {
     }
   }
 
-  // Query live tab groups for a profile (profile-specific read from Chrome saved data)
+function mergeTabGroups(scannedGroups, liveGroups) {
+  const result = [];
+  const liveMap = new Map();
+
+  for (const lg of (liveGroups || [])) {
+    const title = (lg.title || lg.name || '').trim().toLowerCase();
+    if (title) {
+      liveMap.set(title, lg);
+    }
+  }
+
+  for (const sg of (scannedGroups || [])) {
+    const sgKey = (sg.name || '').trim().toLowerCase();
+    let matchedLive = null;
+    for (const [key, lg] of liveMap.entries()) {
+      if (key === sgKey || key.includes(sgKey) || sgKey.includes(key)) {
+        matchedLive = lg;
+        liveMap.delete(key);
+        break;
+      }
+    }
+
+    if (matchedLive && Array.isArray(matchedLive.tabs) && matchedLive.tabs.length > 0) {
+      result.push({
+        id: String(matchedLive.id || sg.id),
+        name: matchedLive.title || matchedLive.name || sg.name,
+        color: matchedLive.color || sg.color,
+        is_active: true,
+        tabs_count: matchedLive.tabs.length,
+        tabs: matchedLive.tabs.map((t, idx) => ({
+          id: String(t.id || `tab-${idx + 1}`),
+          title: t.title || 'Tab',
+          url: t.url || '',
+          is_chatgpt: !!t.isChatGPT || (t.url || '').includes('chatgpt.com'),
+        })),
+      });
+    } else {
+      result.push(sg);
+    }
+  }
+
+  // Any additional live groups detected in Chrome
+  for (const [, lg] of liveMap.entries()) {
+    result.push({
+      id: String(lg.id || 'group'),
+      name: lg.title || lg.name || 'Group',
+      color: lg.color || '#06B6D4',
+      is_active: true,
+      tabs_count: Array.isArray(lg.tabs) ? lg.tabs.length : 0,
+      tabs: (lg.tabs || []).map((t, idx) => ({
+        id: String(t.id || `tab-${idx + 1}`),
+        title: t.title || 'Tab',
+        url: t.url || '',
+        is_chatgpt: !!t.isChatGPT || (t.url || '').includes('chatgpt.com'),
+      })),
+    });
+  }
+
+  return result;
+}
+
+  // Query live tab groups for a profile (profile-specific read from Chrome saved data + live extension groups)
   if (url.pathname === '/profile-groups' && req.method === 'GET') {
     const rawProfileName = url.searchParams.get('profile_name') || '';
     const rawProfileKey = url.searchParams.get('profile_key') || '';
     const profileName = rawProfileName.toLowerCase();
     const profileKey = rawProfileKey.toLowerCase();
 
-    // When a specific profile_key is provided, go DIRECTLY to the profile-specific
-    // LevelDB / session scan. chrome_live_tabs reads the currently focused Chrome window
-    // regardless of which profile was selected — so it's profile-agnostic and wrong
-    // when the user switches profiles in the UI.
-    if (rawProfileKey) {
-      // 1. Check if this exact profile has been paired via extension
+    // 1. Scan configured and saved tab groups for this profile
+    const scannedGroups = scanProfileGroups(rawProfileKey, rawProfileName);
+
+    // 2. Fetch live open tab groups pushed by extension
+    let liveGroups = [];
+    if (rawProfileKey && liveTabGroupsByKey[rawProfileKey]) {
+      liveGroups = liveTabGroupsByKey[rawProfileKey];
+    } else {
       const found = registeredProfiles.slice().reverse().find((p) => {
         const pKey = (p.profileKey || p.profile_key || '').toLowerCase();
-        return pKey === profileKey;
+        const pName = (p.profileName || p.profile_name || p.displayName || '').toLowerCase();
+        return (profileKey && pKey === profileKey) || (profileName && pName.includes(profileName));
       });
-
-      if (found && Array.isArray(found.tabGroups) && found.tabGroups.length > 0) {
-        const groups = found.tabGroups.map((g) => ({
-          id: String(g.id || g.title || 'group'),
-          name: g.title || g.name || 'Group',
-          color: g.color || '#06B6D4',
-          is_active: true,
-          tabs_count: Array.isArray(g.tabs) ? g.tabs.length : 0,
-          tabs: (g.tabs || []).map((t) => ({
-            id: String(t.id),
-            title: t.title || 'Tab',
-            url: t.url || '',
-            is_chatgpt: !!t.isChatGPT || (t.url || '').includes('chatgpt.com'),
-          })),
-        }));
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ status: 'success', groups }));
+      if (found && Array.isArray(found.tabGroups)) {
+        liveGroups = found.tabGroups;
       }
-
-      // 2. Read saved tab groups directly from this profile's Chrome data folder (LevelDB + Sessions)
-      const scannedGroups = scanProfileGroups(rawProfileKey, rawProfileName);
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ status: 'success', groups: scannedGroups }));
     }
 
-    // No profile_key specified — use chrome_live_tabs to read the currently open Chrome window
-    const liveBinary = path.join(__dirname, 'chrome_live_tabs');
-    if (fs.existsSync(liveBinary)) {
-      try {
-        const stdout = require('child_process').execFileSync(liveBinary, { encoding: 'utf8', timeout: 3000 });
-        const parsed = JSON.parse(stdout);
-        if (parsed && Array.isArray(parsed.groups) && parsed.groups.length > 0) {
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ status: 'success', groups: parsed.groups }));
+    // 3. Fallback to live binary only if no extension groups and no scanned groups
+    if (liveGroups.length === 0 && scannedGroups.length === 0) {
+      const liveBinary = path.join(__dirname, 'chrome_live_tabs');
+      if (fs.existsSync(liveBinary)) {
+        try {
+          const stdout = require('child_process').execFileSync(liveBinary, { encoding: 'utf8', timeout: 3000 });
+          const parsed = JSON.parse(stdout);
+          if (parsed && Array.isArray(parsed.groups) && parsed.groups.length > 0) {
+            liveGroups = parsed.groups;
+          }
+        } catch (err) {
+          console.warn('[COMPANION] Live Chrome binary query fallback:', err.message);
         }
-      } catch (err) {
-        console.warn('[COMPANION] Live Chrome binary query fallback:', err.message);
       }
     }
 
-    // Check extension-paired profiles
-    const found = registeredProfiles.slice().reverse().find((p) => {
-      const pName = (p.profileName || p.profile_name || p.displayName || '').toLowerCase();
-      return profileName && pName.includes(profileName);
-    });
-
-    if (found && Array.isArray(found.tabGroups) && found.tabGroups.length > 0) {
-      const groups = found.tabGroups.map((g) => ({
-        id: String(g.id || g.title || 'group'),
-        name: g.title || g.name || 'Group',
-        color: g.color || '#06B6D4',
-        is_active: true,
-        tabs_count: Array.isArray(g.tabs) ? g.tabs.length : 0,
-        tabs: (g.tabs || []).map((t) => ({
-          id: String(t.id),
-          title: t.title || 'Tab',
-          url: t.url || '',
-          is_chatgpt: !!t.isChatGPT || (t.url || '').includes('chatgpt.com'),
-        })),
-      }));
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ status: 'success', groups }));
-    }
-
-    // Fallback: scan from profile name
-    const scannedGroups = scanProfileGroups(rawProfileKey, rawProfileName);
+    // 4. Merge: Always retain ALL profile tab groups (Enhance IMG, FB Hero, etc.),
+    // updating any currently open groups with live Chrome tab IDs, titles, and active URLs.
+    const groups = mergeTabGroups(scannedGroups, liveGroups);
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ status: 'success', groups: scannedGroups }));
+    return res.end(JSON.stringify({ status: 'success', groups }));
   }
 
   // Register or Pair Chrome Extension — stores live tab group data keyed by profileKey
@@ -1122,8 +1163,18 @@ const server = http.createServer((req, res) => {
         registeredProfiles.push(entry);
         // Also update fast-lookup map so focusChromeTabGroup can find live data instantly
         if (pKey && Array.isArray(payload.tabGroups) && payload.tabGroups.length > 0) {
-          liveTabGroupsByKey[pKey] = payload.tabGroups;
-          console.log(`[COMPANION] Live tab groups updated for "${pKey}":`, payload.tabGroups.map((g) => `${g.title}(${Array.isArray(g.tabs)?g.tabs.length:0})`).join(', '));
+          const prevLive = liveTabGroupsByKey[pKey] || [];
+          const liveMap = new Map();
+          for (const g of prevLive) {
+            const key = (g.title || g.name || '').toLowerCase().trim();
+            if (key) liveMap.set(key, g);
+          }
+          for (const g of payload.tabGroups) {
+            const key = (g.title || g.name || '').toLowerCase().trim();
+            if (key) liveMap.set(key, g);
+          }
+          liveTabGroupsByKey[pKey] = Array.from(liveMap.values());
+          console.log(`[COMPANION] Live tab groups updated for "${pKey}":`, liveTabGroupsByKey[pKey].map((g) => `${g.title || g.name}(${Array.isArray(g.tabs)?g.tabs.length:0})`).join(', '));
         }
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ status: 'success', paired: true }));
