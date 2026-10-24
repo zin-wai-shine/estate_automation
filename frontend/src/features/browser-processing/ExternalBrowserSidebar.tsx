@@ -21,6 +21,8 @@ import {
   FiUserPlus,
   FiPlus,
   FiX,
+  FiUploadCloud,
+  FiImage,
 } from 'react-icons/fi';
 import { Button } from '../../components/ui/Button';
 import { Select } from '../../components/ui/Select';
@@ -135,6 +137,132 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   const [isAutomating, setIsAutomating] = useState<boolean>(false);
   const [automationStatus, setAutomationStatus] = useState<AutomationStatusResponse | null>(null);
   const [automationMessage, setAutomationMessage] = useState<string | null>(null);
+
+  // 6. Two-Stage Tab Group Staging & Local Condo Building Image State
+  const [referenceImage, setReferenceImage] = useState<string>(() => boxConfig.referenceImage || '');
+  const [condoSearchQuery, setCondoSearchQuery] = useState<string>(
+    () => boxConfig.browserCondoName || propertyContext?.title || 'Regent Home Bangna'
+  );
+  const [matchedCondoInfo, setMatchedCondoInfo] = useState<any>(null);
+  const [isScanningCondo, setIsScanningCondo] = useState<boolean>(false);
+  const [twoStageStatus, setTwoStageStatus] = useState<any>(null);
+  const [isRunningTwoStage, setIsRunningTwoStage] = useState<boolean>(false);
+  const [twoStageMessage, setTwoStageMessage] = useState<string | null>(null);
+
+  // Scan condo directory from local Mac companion (Strictly Read-Only!)
+  const handleScanCondo = async (queryToSearch?: string) => {
+    const q = queryToSearch !== undefined ? queryToSearch : condoSearchQuery;
+    if (!q) return;
+    setIsScanningCondo(true);
+    try {
+      const resp = await fetch(`http://127.0.0.1:9224/condo-images?condo_name=${encodeURIComponent(q)}`);
+      const data = await resp.json();
+      if (data && data.status === 'success') {
+        setMatchedCondoInfo(data);
+        updateMultiConfig({
+          browserCondoName: q,
+          browserMatchedFolder: data.matched_folder,
+          browserCondoImagesCount: data.images_found,
+        });
+      } else {
+        setMatchedCondoInfo(null);
+      }
+    } catch (e) {
+      console.warn('Error querying condo images from companion:', e);
+      setMatchedCondoInfo(null);
+    } finally {
+      setIsScanningCondo(false);
+    }
+  };
+
+  useEffect(() => {
+    const q = boxConfig.browserCondoName || propertyContext?.title || 'Regent Home Bangna';
+    if (q) {
+      setCondoSearchQuery(q);
+      handleScanCondo(q);
+    }
+  }, [propertyContext?.title]);
+
+  const handleReferenceImageFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string;
+      setReferenceImage(dataUrl);
+      updateConfig('referenceImage', dataUrl);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveReferenceImage = () => {
+    setReferenceImage('');
+    updateConfig('referenceImage', '');
+  };
+
+  const handleRunTwoStageTest = async () => {
+    setIsRunningTwoStage(true);
+    setTwoStageMessage('Initiating Two-Stage Staging via companion...');
+    try {
+      const activeProf = profiles.find((p) => p.id === selectedProfileId);
+      const profKey = activeProf?.profile_key || boxConfig.browserProfileKey || 'Profile 14';
+
+      const resp = await fetch('http://127.0.0.1:9224/start-two-stage-staging', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          profile_key: profKey,
+          group_name: selectedGroupName || 'FB Hero',
+          condo_name: condoSearchQuery,
+          initial_prompt: resolvedPromptPreview || customPromptText || 'Analyze property details and formulate facebook ad prompt',
+          reference_image: referenceImage || null,
+        }),
+      });
+      const data = await resp.json();
+      if (data.status === 'success') {
+        setTwoStageMessage(`🚀 Two-Stage Staging started: Tab 1 generating prompt for "${data.matched_folder}"...`);
+
+        let pollCount = 0;
+        const interval = setInterval(async () => {
+          pollCount++;
+          if (pollCount > 100) {
+            clearInterval(interval);
+            setIsRunningTwoStage(false);
+            setTwoStageMessage('Two-stage staging completed or timed out.');
+            return;
+          }
+          try {
+            const stResp = await fetch('http://127.0.0.1:9224/two-stage-status');
+            const stData = await stResp.json();
+            if (stData && stData.state) {
+              setTwoStageStatus(stData.state);
+              if (stData.state.step === 'stage1_running') {
+                setTwoStageMessage('⏳ Tab 1: Pasted prompt, generating & extracting output...');
+              } else if (stData.state.step === 'stage1_completed') {
+                setTwoStageMessage('✓ Tab 1: Extracted prompt! Focusing Tab 2...');
+              } else if (stData.state.step === 'stage2_running') {
+                setTwoStageMessage('🖼️ Tab 2: Pasting reference image, condo images 1, 2, 3 & prompt...');
+              } else if (stData.state.step === 'completed') {
+                clearInterval(interval);
+                setIsRunningTwoStage(false);
+                setTwoStageMessage(`🎉 Complete! Tab 2 submitted with ${stData.state.images_attached || 4} images and extracted prompt.`);
+              } else if (stData.state.step === 'error') {
+                clearInterval(interval);
+                setIsRunningTwoStage(false);
+                setTwoStageMessage(`⚠️ Error: ${stData.state.error}`);
+              }
+            }
+          } catch (e) {}
+        }, 2000);
+      } else {
+        setIsRunningTwoStage(false);
+        setTwoStageMessage(`Error starting: ${data.message || 'Unknown error'}`);
+      }
+    } catch (e: any) {
+      setIsRunningTwoStage(false);
+      setTwoStageMessage(`Connection error: ${e.message}`);
+    }
+  };
 
   // Sync state back to canvas box config
   const updateMultiConfig = (updates: Record<string, any>) => {
@@ -639,8 +767,9 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
         <Select
           options={[
             { value: 'chrome_assisted', label: '1. Chrome / ChatGPT Assisted (Default)' },
-            { value: 'local_enhance', label: '2. Local Image Enhancement (Unattended Native)' },
-            { value: 'authorized_api', label: '3. Authorized Image API (Official API Limits)' },
+            { value: 'two_stage_staging', label: '2. Two-Stage Tab Group (Prompt Gen Tab 1 → Auto Condo Staging Tab 2)' },
+            { value: 'local_enhance', label: '3. Local Image Enhancement (Unattended Native)' },
+            { value: 'authorized_api', label: '4. Authorized Image API (Official API Limits)' },
           ]}
           value={processingMode}
           onChange={(val) => {
@@ -664,6 +793,11 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
           {processingMode === 'chrome_assisted' && (
             <div>
               <strong style={{ color: '#06B6D4' }}>Chrome / ChatGPT Assisted:</strong> Prepares exact room-preserving prompts and files, focuses your selected Chrome profile & ChatGPT tab group, guides manual submission/download, and automatically collects completed files.
+            </div>
+          )}
+          {processingMode === 'two_stage_staging' && (
+            <div>
+              <strong style={{ color: '#8B5CF6' }}>Two-Stage Staging:</strong> Multi-group workflow under the same profile. Tab 1 generates the prompt copy, then Tab 2 receives the reference image (pasted 1st), local condo images (1, 2, 3), and the extracted prompt!
             </div>
           )}
           {processingMode === 'local_enhance' && (
@@ -1123,6 +1257,290 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                 />
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* SECTION D.2 — TWO-STAGE STAGING & CONDO FOLDER RUNNER */}
+      {processingMode === 'two_stage_staging' && (
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.75rem',
+            padding: '0.85rem',
+            borderRadius: '10px',
+            background: isDark
+              ? 'linear-gradient(145deg, rgba(139, 92, 246, 0.08), rgba(99, 102, 241, 0.05))'
+              : 'linear-gradient(145deg, #FAF5FF, #EEF2FF)',
+            border: isDark ? '1px solid rgba(139, 92, 246, 0.3)' : '1px solid rgba(139, 92, 246, 0.25)',
+          }}
+        >
+          {/* Header */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <FiLayers style={{ color: '#8B5CF6' }} size={14} />
+              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                Two-Stage Tab Group Staging
+              </span>
+            </div>
+            <span
+              style={{
+                fontSize: '0.5625rem',
+                fontWeight: 600,
+                padding: '2px 6px',
+                borderRadius: '4px',
+                background: 'rgba(139, 92, 246, 0.15)',
+                color: '#8B5CF6',
+              }}
+            >
+              2 Tabs Pipeline
+            </span>
+          </div>
+
+          <div style={{ fontSize: '0.625rem', color: isDark ? '#94A3B8' : '#64748B', lineHeight: 1.35 }}>
+            Tab 1 generates prompt copy, extracts it, then Tab 2 receives the reference photo (1st), local condo images 1, 2, 3 (2nd), and submits.
+          </div>
+
+          {/* 1. Manual Example / Reference Image Upload */}
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.35rem',
+              padding: '0.6rem',
+              borderRadius: '8px',
+              background: isDark ? '#111827' : '#FFFFFF',
+              border: isDark ? '1px solid #374151' : '1px solid #E2E8F0',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                1. Reference / Example Image <span style={{ color: '#8B5CF6' }}>(Pasted 1st in Tab 2)</span>
+              </label>
+              {referenceImage && (
+                <button
+                  type="button"
+                  onClick={handleRemoveReferenceImage}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    fontSize: '0.625rem',
+                    color: '#EF4444',
+                    cursor: 'pointer',
+                    padding: '0 2px',
+                  }}
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+
+            {referenceImage ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                <img
+                  src={referenceImage}
+                  alt="Reference"
+                  style={{
+                    width: '48px',
+                    height: '48px',
+                    objectFit: 'cover',
+                    borderRadius: '6px',
+                    border: '1px solid #8B5CF6',
+                  }}
+                />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                    Manual Example Image Ready
+                  </span>
+                  <span style={{ fontSize: '0.5625rem', color: '#10B981' }}>
+                    ✓ Will be attached first before condo photos 1, 2, 3
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <label
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '0.75rem 0.5rem',
+                  borderRadius: '6px',
+                  border: isDark ? '1px dashed #4B5563' : '1px dashed #CBD5E1',
+                  background: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.01)',
+                  cursor: 'pointer',
+                  textAlign: 'center',
+                  gap: '4px',
+                }}
+              >
+                <FiUploadCloud size={18} style={{ color: '#8B5CF6' }} />
+                <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                  Upload Manual Example Image
+                </span>
+                <span style={{ fontSize: '0.5625rem', color: 'var(--text-muted)' }}>
+                  Click to choose file from your computer (JPG, PNG)
+                </span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleReferenceImageFile}
+                  style={{ display: 'none' }}
+                />
+              </label>
+            )}
+          </div>
+
+          {/* 2. Local Mac Condo Building Folder Scanner */}
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.35rem',
+              padding: '0.6rem',
+              borderRadius: '8px',
+              background: isDark ? '#111827' : '#FFFFFF',
+              border: isDark ? '1px solid #374151' : '1px solid #E2E8F0',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                2. Condo Building Folder <span style={{ color: '#06B6D4' }}>(Auto-Detects 1, 2, 3)</span>
+              </label>
+              <span
+                style={{
+                  fontSize: '0.5625rem',
+                  color: '#10B981',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '3px',
+                }}
+              >
+                <FiShield size={10} /> Strictly Read-Only
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', gap: '4px' }}>
+              <input
+                type="text"
+                value={condoSearchQuery}
+                placeholder="e.g. Regent Home Bangna, Modiz Sukhumvit 50"
+                onChange={(e) => setCondoSearchQuery(e.target.value)}
+                style={{
+                  flex: 1,
+                  padding: '4px 8px',
+                  borderRadius: '5px',
+                  fontSize: '0.6875rem',
+                  border: isDark ? '1px solid #374151' : '1px solid #CBD5E1',
+                  background: isDark ? '#1E293B' : '#F8FAFC',
+                  color: 'var(--text-primary)',
+                  outline: 'none',
+                }}
+              />
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={isScanningCondo}
+                onClick={() => handleScanCondo()}
+                style={{ fontSize: '0.625rem', padding: '0 8px', height: '28px' }}
+              >
+                <FiRefreshCw size={10} className={isScanningCondo ? 'animate-spin' : ''} />
+              </Button>
+            </div>
+
+            {matchedCondoInfo ? (
+              <div
+                style={{
+                  marginTop: '2px',
+                  padding: '0.45rem',
+                  borderRadius: '5px',
+                  background: isDark ? 'rgba(16, 185, 129, 0.1)' : '#F0FDF4',
+                  border: '1px solid rgba(16, 185, 129, 0.25)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '3px',
+                }}
+              >
+                <div style={{ fontSize: '0.6875rem', fontWeight: 600, color: '#10B981', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <FiCheckCircle size={12} />
+                  Matched: "{matchedCondoInfo.matched_folder}"
+                </div>
+                <div style={{ fontSize: '0.5625rem', color: isDark ? '#94A3B8' : '#64748B' }}>
+                  Path: Desktop/Condo Building/{matchedCondoInfo.matched_folder}
+                </div>
+                <div style={{ display: 'flex', gap: '4px', marginTop: '2px' }}>
+                  {matchedCondoInfo.images?.map((img: any) => (
+                    <span
+                      key={img.index}
+                      style={{
+                        fontSize: '0.5625rem',
+                        padding: '1px 5px',
+                        borderRadius: '3px',
+                        background: '#10B981',
+                        color: '#FFFFFF',
+                        fontWeight: 700,
+                      }}
+                    >
+                      {img.filename}
+                    </span>
+                  ))}
+                  <span style={{ fontSize: '0.5625rem', color: 'var(--text-muted)', alignSelf: 'center', marginLeft: '4px' }}>
+                    ({matchedCondoInfo.images_found} images ready)
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div style={{ fontSize: '0.5625rem', color: '#F59E0B', marginTop: '2px' }}>
+                ⚠️ No matching folder found yet in Desktop/Condo Building.
+              </div>
+            )}
+          </div>
+
+          {/* 3. Run & Test Pipeline Button */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+            <Button
+              size="sm"
+              variant="primary"
+              disabled={isRunningTwoStage}
+              onClick={handleRunTwoStageTest}
+              style={{
+                width: '100%',
+                fontWeight: 700,
+                fontSize: '0.75rem',
+                background: 'linear-gradient(135deg, #8B5CF6, #6366F1)',
+                border: 'none',
+                color: '#fff',
+                padding: '6px 12px',
+              }}
+            >
+              {isRunningTwoStage ? (
+                <>
+                  <FiRefreshCw size={12} className="animate-spin" style={{ marginRight: '6px' }} />
+                  Running Two-Stage Staging...
+                </>
+              ) : (
+                <>
+                  <FiPlay size={12} style={{ marginRight: '6px' }} />
+                  Run Two-Stage Staging (Tab 1 → Tab 2)
+                </>
+              )}
+            </Button>
+
+            {twoStageMessage && (
+              <div
+                style={{
+                  padding: '0.4rem 0.6rem',
+                  borderRadius: '5px',
+                  fontSize: '0.625rem',
+                  background: isDark ? '#1E293B' : '#F1F5F9',
+                  border: '1px solid var(--border-color)',
+                  color: isDark ? '#E2E8F0' : '#1E293B',
+                  lineHeight: 1.35,
+                }}
+              >
+                {twoStageMessage}
+              </div>
+            )}
           </div>
         </div>
       )}

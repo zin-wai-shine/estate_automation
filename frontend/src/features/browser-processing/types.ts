@@ -1,4 +1,4 @@
-export type BrowserProcessingMode = 'chrome_assisted' | 'local_enhance' | 'authorized_api';
+export type BrowserProcessingMode = 'chrome_assisted' | 'local_enhance' | 'authorized_api' | 'two_stage_staging';
 
 export type ImageJobStatus =
   | 'PENDING'

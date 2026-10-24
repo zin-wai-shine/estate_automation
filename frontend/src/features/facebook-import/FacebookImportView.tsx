@@ -1604,8 +1604,78 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
             console.warn('External browser focus error:', e);
           }
 
-          // Queue all images from photoList and trigger multi-tab enhancement across the 4 tabs
-          const totalPhotos = photoList.length;
+          // Check if this node is in Two-Stage Staging mode (Tab 1 Prompt Extract -> Tab 2 Auto Condo Staging)
+          if ((extBox as any).browserProcessingMode === 'two_stage_staging') {
+            const propTitle = (result.property as any)?.project_name || (result.property as any)?.title || 'Featured Property Listing';
+            const initialPrompt = resolvePromptForBrowserNode(extBox, {
+              title: propTitle,
+              width: (extBox as any).outputWidth || 1080,
+              height: (extBox as any).outputHeight || 1350,
+            });
+
+            addLog(`🚀 Starting Two-Stage Staging for "${propTitle}" in group [${groupName}]...`, 'info');
+            setWorkflowExecutionState((prev) => ({
+              ...prev,
+              activeNodeIds: [extBox.id],
+              currentStepMessage: `🚀 Tab 1: Pasting & generating prompt for ${propTitle}...`,
+            }));
+
+            try {
+              await fetch('http://127.0.0.1:9224/start-two-stage-staging', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  profile_key: profKey,
+                  group_name: groupName,
+                  condo_name: (extBox as any).browserCondoName || propTitle,
+                  initial_prompt: initialPrompt,
+                  reference_image: (extBox as any).referenceImage || null,
+                }),
+              });
+
+              let twoStageDone = false;
+              let attempts = 0;
+              while (!twoStageDone && attempts < 150) {
+                attempts++;
+                await delay(2000);
+                try {
+                  const st = await fetch('http://127.0.0.1:9224/two-stage-status').then((r) => r.json());
+                  if (st && st.state) {
+                    if (st.state.step === 'stage1_running') {
+                      setWorkflowExecutionState((prev) => ({
+                        ...prev,
+                        currentStepMessage: '⏳ Tab 1: Generating & extracting prompt copy...',
+                      }));
+                    } else if (st.state.step === 'stage1_completed') {
+                      setWorkflowExecutionState((prev) => ({
+                        ...prev,
+                        currentStepMessage: '✓ Tab 1 extracted! Focusing Tab 2...',
+                      }));
+                    } else if (st.state.step === 'stage2_running') {
+                      setWorkflowExecutionState((prev) => ({
+                        ...prev,
+                        currentStepMessage: '🖼️ Tab 2: Pasting reference photo, condo images 1, 2, 3 & prompt...',
+                      }));
+                    } else if (st.state.step === 'completed') {
+                      twoStageDone = true;
+                      addLog(`✓ Two-stage staging successfully completed and submitted in Tab 2!`, 'success');
+                      setWorkflowExecutionState((prev) => ({
+                        ...prev,
+                        currentStepMessage: `✓ Two-Stage Staging complete: Tab 2 submitted with reference photo, condo photos 1,2,3 & prompt!`,
+                      }));
+                    } else if (st.state.step === 'error') {
+                      addLog(`Two-stage staging warning: ${st.state.error}`, 'warn');
+                      break;
+                    }
+                  }
+                } catch (e) {}
+              }
+            } catch (twoStageErr: any) {
+              console.warn('Two-stage staging execution error:', twoStageErr);
+            }
+          } else {
+            // Queue all images from photoList and trigger multi-tab enhancement across the 4 tabs
+            const totalPhotos = photoList.length;
           if (totalPhotos > 0) {
             const propId = (result.property as any)?.id || `PROP-${Date.now()}`;
             const propTitle = (result.property as any)?.project_name || 'Featured Property Listing';
@@ -1710,6 +1780,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
             }
 
             addLog(`✓ All ${totalPhotos} images enhanced and downloaded! Advancing to Combine Box...`, 'success');
+          }
           }
 
           setWorkflowExecutionState((prev) => ({

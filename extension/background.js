@@ -519,6 +519,114 @@ chrome.windows.onFocusChanged.addListener((windowId) => {
   }
 });
 
+// ── Two-Stage Staging Orchestration (Group 2: Tab 1 Prompt -> Tab 2 Staging) ──
+async function executeTwoStageStaging(payload) {
+  const { profileKey, groupName, initialPrompt, referenceImage, condoImages, condoName } = payload;
+  console.log(`[BOLTHAVEN EXT] 🚀 Starting Two-Stage Staging for "${condoName}" in group "${groupName}"...`);
+
+  await fetch(`${COMPANION_URL}/two-stage-status`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ is_running: true, step: 'locating_tab_group', condo_name: condoName }),
+  }).catch(() => {});
+
+  // 1. Locate the target tab group (e.g. "FB Hero")
+  const groups = await new Promise((r) => chrome.tabGroups.query({}, r));
+  const cleanTarget = (groupName || 'fb hero').toLowerCase().trim();
+  const matchGroup = (groups || []).find((g) => {
+    const t = (g.title || '').toLowerCase().trim();
+    return t && (t.includes(cleanTarget) || cleanTarget.includes(t));
+  });
+
+  if (!matchGroup) {
+    throw new Error(`Tab group "${groupName}" not found in current Chrome profile.`);
+  }
+
+  // 2. Query tabs in this group
+  const tabs = await new Promise((r) => chrome.tabs.query({ groupId: matchGroup.id }, r));
+  if (!tabs || tabs.length < 2) {
+    throw new Error(`Tab group "${groupName}" must contain at least 2 tabs (found ${tabs ? tabs.length : 0}).`);
+  }
+
+  const tab1 = tabs[0];
+  const tab2 = tabs[1];
+
+  // 3. Step 1: Focus Tab 1 and extract generated prompt
+  console.log('[BOLTHAVEN EXT] Focusing Tab 1:', tab1.id, tab1.title);
+  await focusTab(tab1.id);
+  await new Promise((r) => setTimeout(r, 600));
+
+  await fetch(`${COMPANION_URL}/two-stage-status`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ step: 'stage1_running', message: 'Generating and extracting prompt in Tab 1...' }),
+  }).catch(() => {});
+
+  const stage1Response = await new Promise((resolve, reject) => {
+    chrome.tabs.sendMessage(tab1.id, {
+      action: 'EXTRACT_STAGE1_PROMPT',
+      prompt: initialPrompt,
+    }, (res) => {
+      if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
+      if (!res || !res.success) return reject(new Error(res?.error || 'Failed to extract prompt from Tab 1'));
+      resolve(res);
+    });
+  });
+
+  const extractedPrompt = stage1Response.extractedPrompt || '';
+  console.log('[BOLTHAVEN EXT] ✓ Stage 1 prompt extracted, length:', extractedPrompt.length);
+
+  await fetch(`${COMPANION_URL}/two-stage-status`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      step: 'stage1_completed',
+      extracted_prompt: extractedPrompt,
+      message: 'Tab 1 prompt extracted successfully! Proceeding to Tab 2...'
+    }),
+  }).catch(() => {});
+
+  // 4. Step 2: Focus Tab 2 and assemble images + prompt
+  console.log('[BOLTHAVEN EXT] Focusing Tab 2:', tab2.id, tab2.title);
+  await focusTab(tab2.id);
+  await new Promise((r) => setTimeout(r, 800));
+
+  await fetch(`${COMPANION_URL}/two-stage-status`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      step: 'stage2_running',
+      message: 'Pasting reference image, condo images 1, 2, 3, and prompt in Tab 2...'
+    }),
+  }).catch(() => {});
+
+  const stage2Response = await new Promise((resolve, reject) => {
+    chrome.tabs.sendMessage(tab2.id, {
+      action: 'EXECUTE_STAGE2_STAGING',
+      extractedPrompt,
+      referenceImage, // manual example image pasted 1st
+      condoImages,    // 1.png, 2.png, 3.png pasted 2nd
+    }, (res) => {
+      if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
+      if (!res || !res.success) return reject(new Error(res?.error || 'Failed to execute staging in Tab 2'));
+      resolve(res);
+    });
+  });
+
+  console.log('[BOLTHAVEN EXT] ✓ Stage 2 completed successfully!');
+  await fetch(`${COMPANION_URL}/two-stage-status`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      is_running: false,
+      step: 'completed',
+      extracted_prompt: extractedPrompt,
+      images_attached: stage2Response.imagesAttached || 0,
+      message: 'Stage 2 submitted with reference photo, condo images 1,2,3, and prompt!'
+    }),
+  }).catch(() => {});
+}
+
 // ─── Companion Polling Loop ──────────────────────────────────────────────────
 // Poll the companion service every 2 seconds for pending automation commands.
 // This bridges Node.js companion → Chrome extension without native messaging setup.
@@ -557,6 +665,15 @@ async function pollCompanion() {
       if (action === 'START_AUTOMATION') {
         const result = await startAutomation(payload);
         console.log('[BOLTHAVEN EXT] Automation start:', result);
+      } else if (action === 'START_TWO_STAGE_STAGING') {
+        executeTwoStageStaging(payload).catch((err) => {
+          console.error('[BOLTHAVEN EXT] Two-stage staging error:', err);
+          fetch(`${COMPANION_URL}/two-stage-status`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ is_running: false, step: 'error', error: err.message }),
+          }).catch(() => {});
+        });
       } else if (action === 'STOP_AUTOMATION') {
         automation.isRunning = false;
         automation.queue = [];

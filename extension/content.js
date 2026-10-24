@@ -550,6 +550,187 @@
     });
   }
 
+  // ── Two-Stage Staging: Tab 1 (Prompt Extractor) ───────────────────────────
+  async function extractStage1Prompt(promptText) {
+    activeJobAborted = false;
+    console.log('[BOLTHAVEN] Stage 1: Injecting prompt into Tab 1 to generate response...');
+
+    const input = await waitForElement('#prompt-textarea, div[contenteditable="true"], textarea', 25000);
+    if (!input) throw new Error('Could not locate ChatGPT prompt input textarea in Tab 1');
+
+    // Count existing assistant turns before sending
+    const preAssistantCount = document.querySelectorAll(
+      'div[data-message-author-role="assistant"], article[data-testid*="conversation-turn"]'
+    ).length;
+
+    // Set the prompt text
+    setPromptText(input, promptText || 'Analyze property details and formulate facebook ad prompt');
+    await new Promise((r) => setTimeout(r, 800));
+
+    if (activeJobAborted) throw new Error('Stage 1 aborted by user');
+
+    // Wait for send button and click send
+    let sendBtn = findSendButton();
+    let attempts = 0;
+    while ((!sendBtn || sendBtn.disabled) && attempts < 25) {
+      if (activeJobAborted) throw new Error('Stage 1 aborted by user');
+      await new Promise((r) => setTimeout(r, 300));
+      sendBtn = findSendButton();
+      attempts++;
+    }
+
+    if (!sendBtn) throw new Error('Send button could not be activated in Tab 1');
+    sendBtn.click();
+    console.log('[BOLTHAVEN] Stage 1: Prompt sent in Tab 1. Waiting for completion...');
+
+    await new Promise((r) => setTimeout(r, 2000));
+
+    // Wait for generation to complete
+    return new Promise((resolve, reject) => {
+      let streamRetryCount = 0;
+      const MAX_STREAM_RETRIES = 3;
+      let lastRetryClickTime = 0;
+      let waitSeconds = 0;
+      const MAX_WAIT_SECONDS = 180;
+      let calmChecks = 0;
+
+      const interval = setInterval(async () => {
+        if (activeJobAborted) {
+          clearInterval(interval);
+          return reject(new Error('Stage 1 aborted by user'));
+        }
+
+        waitSeconds++;
+        if (waitSeconds > MAX_WAIT_SECONDS) {
+          clearInterval(interval);
+          return reject(new Error('Stage 1 generation timed out after 180s'));
+        }
+
+        const currentlyGenerating = isThinkingOrGenerating();
+
+        // Auto-retry on "Error in message stream"
+        const now = Date.now();
+        if (!currentlyGenerating && now - lastRetryClickTime > 4000) {
+          const retryBtn = findRetryButton();
+          if (retryBtn) {
+            if (streamRetryCount < MAX_STREAM_RETRIES) {
+              streamRetryCount++;
+              lastRetryClickTime = now;
+              calmChecks = 0;
+              console.log(`[BOLTHAVEN] Stage 1: Auto-clicking Retry (${streamRetryCount}/${MAX_STREAM_RETRIES})...`);
+              retryBtn.click();
+              return;
+            } else {
+              clearInterval(interval);
+              return reject(new Error('Stage 1 failed: Error in message stream persisted'));
+            }
+          }
+        }
+
+        if (currentlyGenerating) {
+          calmChecks = 0;
+          return;
+        }
+
+        // Generation not running: check for assistant turn
+        calmChecks++;
+        if (calmChecks >= 2) {
+          const assistantTurns = Array.from(
+            document.querySelectorAll(
+              'div[data-message-author-role="assistant"], article[data-testid*="conversation-turn"]'
+            )
+          ).filter((el) => {
+            return (
+              el.getAttribute('data-message-author-role') === 'assistant' ||
+              el.querySelector('div.markdown, p, .whitespace-pre-wrap')
+            );
+          });
+
+          if (assistantTurns.length > 0) {
+            clearInterval(interval);
+            const latestTurn = assistantTurns[assistantTurns.length - 1];
+            const contentEl = latestTurn.querySelector('div.markdown') || latestTurn;
+            const extractedText = (contentEl.innerText || contentEl.textContent || '').trim();
+
+            console.log('[BOLTHAVEN] ✓ Stage 1 complete! Extracted prompt length:', extractedText.length);
+            resolve({
+              success: true,
+              extractedPrompt: extractedText,
+            });
+          }
+        }
+      }, 1000);
+    });
+  }
+
+  // ── Two-Stage Staging: Tab 2 (Image Pasting + Final Assembly) ─────────────
+  // 1. Pastes manual reference image FIRST
+  // 2. Pastes condo images 1.png, 2.png, 3.png SECOND
+  // 3. Pastes extracted prompt BELOW the images
+  // 4. Sends in Tab 2
+  async function executeStage2Staging({ extractedPrompt, referenceImage, condoImages }) {
+    activeJobAborted = false;
+    console.log('[BOLTHAVEN] Stage 2: Assembling reference image, condo images, and prompt in Tab 2...');
+
+    const input = await waitForElement('#prompt-textarea, div[contenteditable="true"], textarea', 25000);
+    if (!input) throw new Error('Could not locate ChatGPT prompt input textarea in Tab 2');
+
+    let totalImagesPasted = 0;
+
+    // 1. Paste manual reference / example image FIRST
+    if (referenceImage) {
+      console.log('[BOLTHAVEN] Stage 2: Pasting manual reference / example image FIRST...');
+      const refOk = await attachImageViaPaste(input, referenceImage, '0_example_reference.png');
+      if (refOk) {
+        totalImagesPasted++;
+        await new Promise((r) => setTimeout(r, 1600)); // allow thumbnail to settle
+      }
+    }
+
+    if (activeJobAborted) throw new Error('Stage 2 aborted by user');
+
+    // 2. Paste condo images 1, 2, 3 SECOND in order
+    if (Array.isArray(condoImages) && condoImages.length > 0) {
+      console.log(`[BOLTHAVEN] Stage 2: Pasting ${condoImages.length} condo building images (1, 2, 3)...`);
+      for (const img of condoImages) {
+        if (activeJobAborted) throw new Error('Stage 2 aborted by user');
+        const imgUrl = img.data_url || img.url || img.full_path;
+        const fileName = img.filename || `${img.index}.png`;
+        const ok = await attachImageViaPaste(input, imgUrl, fileName);
+        if (ok) totalImagesPasted++;
+        await new Promise((r) => setTimeout(r, 1400));
+      }
+    }
+
+    if (activeJobAborted) throw new Error('Stage 2 aborted by user');
+
+    // 3. Set the prompt text extracted from Tab 1 BELOW all the attached images
+    console.log('[BOLTHAVEN] Stage 2: Setting extracted prompt text below attached images...');
+    setPromptText(input, extractedPrompt || 'Create facebook advertisement from the attached reference and building photos');
+    await new Promise((r) => setTimeout(r, 1000));
+
+    if (activeJobAborted) throw new Error('Stage 2 aborted by user');
+
+    // 4. Wait for send button and click send
+    let sendBtn = findSendButton();
+    let attempts = 0;
+    while ((!sendBtn || sendBtn.disabled) && attempts < 25) {
+      if (activeJobAborted) throw new Error('Stage 2 aborted by user');
+      await new Promise((r) => setTimeout(r, 300));
+      sendBtn = findSendButton();
+      attempts++;
+    }
+
+    if (!sendBtn) throw new Error('Send button could not be activated in Tab 2');
+    sendBtn.click();
+    console.log(`[BOLTHAVEN] ✓ Stage 2: Sent with ${totalImagesPasted} images and prompt!`);
+
+    return {
+      success: true,
+      imagesAttached: totalImagesPasted,
+    };
+  }
+
   // Listen for commands from background worker
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'STOP_TAB_JOB' || request.action === 'ABORT_TAB_JOB') {
@@ -564,6 +745,24 @@
         .then((result) => sendResponse({ success: true, result }))
         .catch((err) => sendResponse({ success: false, error: err.message }));
       return true; // asynchronous
+    }
+
+    if (request.action === 'EXTRACT_STAGE1_PROMPT') {
+      extractStage1Prompt(request.prompt)
+        .then((result) => sendResponse(result))
+        .catch((err) => sendResponse({ success: false, error: err.message }));
+      return true;
+    }
+
+    if (request.action === 'EXECUTE_STAGE2_STAGING') {
+      executeStage2Staging({
+        extractedPrompt: request.extractedPrompt,
+        referenceImage: request.referenceImage,
+        condoImages: request.condoImages,
+      })
+        .then((result) => sendResponse(result))
+        .catch((err) => sendResponse({ success: false, error: err.message }));
+      return true;
     }
 
     if (request.action === 'PING_TAB') {

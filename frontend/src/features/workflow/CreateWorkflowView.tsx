@@ -1385,13 +1385,80 @@ export const CreateWorkflowView: React.FC = () => {
           console.warn('Could not auto-open Chrome profile and tab group:', openErr);
         }
 
-        const totalImages = imageList.length;
-        const extPhotosMap: Record<number, string> = {};
-        imageList.forEach((img, idx) => {
-          extPhotosMap[idx] = img.stored_url || img.source_url;
-        });
+        // Check if this node is in Two-Stage Staging mode (Tab 1 Prompt Extract -> Tab 2 Auto Condo Staging)
+        if ((box as any).browserProcessingMode === 'two_stage_staging') {
+          const initialPrompt = resolvePromptForBrowserNode(box, {
+            title: propName,
+            width: (box as any).outputWidth || (box as any).targetWidth || 1080,
+            height: (box as any).outputHeight || (box as any).targetHeight || 1350,
+          });
 
-        if (totalImages > 0) {
+          setExecutionState((prev) => ({
+            ...prev!,
+            activeNodeIds: [box.id],
+            currentStepMessage: `🚀 Tab 1: Pasting & generating prompt for ${propName}...`,
+          }));
+
+          try {
+            await fetch('http://127.0.0.1:9224/start-two-stage-staging', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                profile_key: profKey,
+                group_name: groupName,
+                condo_name: (box as any).browserCondoName || propName,
+                initial_prompt: initialPrompt,
+                reference_image: (box as any).referenceImage || null,
+              }),
+            });
+
+            let twoStageDone = false;
+            let attempts = 0;
+            while (!twoStageDone && attempts < 150) {
+              if (isCancelledRef.current) break;
+              attempts++;
+              await delay(2000);
+              try {
+                const st = await fetch('http://127.0.0.1:9224/two-stage-status').then((r) => r.json());
+                if (st && st.state) {
+                  if (st.state.step === 'stage1_running') {
+                    setExecutionState((prev) => ({
+                      ...prev!,
+                      currentStepMessage: '⏳ Tab 1: Generating & extracting prompt copy...',
+                    }));
+                  } else if (st.state.step === 'stage1_completed') {
+                    setExecutionState((prev) => ({
+                      ...prev!,
+                      currentStepMessage: '✓ Tab 1 extracted! Focusing Tab 2...',
+                    }));
+                  } else if (st.state.step === 'stage2_running') {
+                    setExecutionState((prev) => ({
+                      ...prev!,
+                      currentStepMessage: '🖼️ Tab 2: Pasting reference photo, condo images 1, 2, 3 & prompt...',
+                    }));
+                  } else if (st.state.step === 'completed') {
+                    twoStageDone = true;
+                    setExecutionState((prev) => ({
+                      ...prev!,
+                      currentStepMessage: `✓ Two-Stage Staging complete: Tab 2 submitted with reference photo, condo photos 1,2,3 & prompt!`,
+                    }));
+                  } else if (st.state.step === 'error') {
+                    break;
+                  }
+                }
+              } catch (e) {}
+            }
+          } catch (twoStageErr: any) {
+            console.warn('Two-stage staging execution error:', twoStageErr);
+          }
+        } else {
+          const totalImages = imageList.length;
+          const extPhotosMap: Record<number, string> = {};
+          imageList.forEach((img, idx) => {
+            extPhotosMap[idx] = img.stored_url || img.source_url;
+          });
+
+          if (totalImages > 0) {
           // Resolve prompt strictly preserving user-selected template
           const enhancePrompt = resolvePromptForBrowserNode(box, {
             title: propName,
@@ -1510,6 +1577,7 @@ export const CreateWorkflowView: React.FC = () => {
 
         setEnhancedPhotos((prev) => ({ ...prev, ...extPhotosMap }));
         workflowContextRef.current.localWatermarkedMap = { ...workflowContextRef.current.localWatermarkedMap, ...extPhotosMap };
+        }
       } else {
         // Resolve upstream text for this text AI or format node
         const inConns = (cfg.connections || []).filter((c) => c.toNodeId === box.id);

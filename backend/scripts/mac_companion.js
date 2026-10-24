@@ -732,13 +732,171 @@ const server = http.createServer((req, res) => {
       JSON.stringify({
         status: 'online',
         service: 'BoltHaven Mac Browser Companion',
-        version: '2.4.0',
+        version: '2.5.0',
         platform: os.platform(),
         watch_directory: activeWatchDir,
         monitored_exists: fs.existsSync(activeWatchDir),
         registered_profiles_count: registeredProfiles.length,
       })
     );
+  }
+
+  // ── Read-Only Condo Folder Image Scanner ───────────────────────────────────
+  // Scans /Users/zinwaishine/Desktop/Condo Building with fuzzy matching
+  // STRICT READ-ONLY: Never alters, renames, writes, or deletes any desktop files!
+  const CONDO_BASE_DIR = path.join(os.homedir(), 'Desktop', 'Condo Building');
+
+  function normalizeCondoName(str) {
+    if (!str) return '';
+    return str
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      // Convert mathematical bold, italic, and sans-serif Unicode to standard ASCII
+      .replace(/[\u{1D400}-\u{1D7FF}]/gu, (c) => {
+        const code = c.codePointAt(0);
+        if (code >= 0x1d400 && code <= 0x1d419) return String.fromCharCode(65 + code - 0x1d400);
+        if (code >= 0x1d41a && code <= 0x1d433) return String.fromCharCode(97 + code - 0x1d41a);
+        if (code >= 0x1d7ce && code <= 0x1d7d7) return String.fromCharCode(48 + code - 0x1d7ce);
+        if (code >= 0x1d5d4 && code <= 0x1d5ed) return String.fromCharCode(65 + code - 0x1d5d4);
+        if (code >= 0x1d5ee && code <= 0x1d607) return String.fromCharCode(97 + code - 0x1d5ee);
+        return c;
+      })
+      .toLowerCase()
+      .replace(/[:\/_\-\(\)]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function findCondoDirectory(query) {
+    if (!fs.existsSync(CONDO_BASE_DIR)) return null;
+    const dirs = fs.readdirSync(CONDO_BASE_DIR, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name);
+
+    const normQ = normalizeCondoName(query);
+    if (!normQ) return null;
+
+    // 1. Exact normalized match
+    for (const d of dirs) {
+      if (normalizeCondoName(d) === normQ) return d;
+    }
+    // 2. Substring match
+    for (const d of dirs) {
+      const nd = normalizeCondoName(d);
+      if (nd && (nd.includes(normQ) || normQ.includes(nd))) return d;
+    }
+    // 3. Token overlap match (e.g. "Regent Home Bangna" vs "Regent Home Bangna")
+    const qTokens = normQ.split(' ').filter((t) => t.length > 2);
+    let best = null;
+    let bestScore = 0;
+    for (const d of dirs) {
+      const nd = normalizeCondoName(d);
+      let score = 0;
+      for (const t of qTokens) {
+        if (nd.includes(t)) score++;
+      }
+      if (score > bestScore) {
+        bestScore = score;
+        best = d;
+      }
+    }
+    return bestScore >= Math.min(2, qTokens.length) ? best : null;
+  }
+
+  if (url.pathname === '/condo-images') {
+    const handleCondoRequest = (condoName) => {
+      try {
+        if (!fs.existsSync(CONDO_BASE_DIR)) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ status: 'error', message: 'Condo Building directory not found on Desktop' }));
+        }
+
+        const matchedDir = findCondoDirectory(condoName);
+        if (!matchedDir) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({
+            status: 'error',
+            message: `No matching condo directory found for "${condoName}"`,
+            base_dir: CONDO_BASE_DIR,
+          }));
+        }
+
+        const folderPath = path.join(CONDO_BASE_DIR, matchedDir);
+        const entries = fs.readdirSync(folderPath, { withFileTypes: true });
+
+        // Strictly locate image files named 1, 2, 3 (ignoring subdirectories like D or watermark)
+        const images = [];
+        [1, 2, 3].forEach((num) => {
+          const match = entries.find(
+            (f) => f.isFile() && new RegExp(`^${num}\\.(png|jpg|jpeg|webp)$`, 'i').test(f.name)
+          );
+          if (match) {
+            const filePath = path.join(folderPath, match.name);
+            const ext = path.extname(match.name).toLowerCase().replace('.', '') || 'png';
+            const mime = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+            const fileBuf = fs.readFileSync(filePath);
+            const b64 = fileBuf.toString('base64');
+            images.push({
+              index: num,
+              filename: match.name,
+              mime_type: mime,
+              full_path: filePath,
+              size_bytes: fileBuf.length,
+              data_url: `data:${mime};base64,${b64}`,
+            });
+          }
+        });
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({
+          status: 'success',
+          condo_query: condoName,
+          matched_folder: matchedDir,
+          folder_path: folderPath,
+          images_found: images.length,
+          images: images,
+        }));
+      } catch (err) {
+        console.error('[COMPANION] Error reading condo images:', err);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ status: 'error', message: err.message }));
+      }
+    };
+
+    if (req.method === 'POST') {
+      let body = '';
+      req.on('data', (c) => (body += c));
+      req.on('end', () => {
+        try {
+          const parsed = JSON.parse(body || '{}');
+          handleCondoRequest(parsed.condo_name || parsed.condoName || parsed.title || '');
+        } catch (e) {
+          handleCondoRequest('');
+        }
+      });
+      return;
+    } else {
+      const q = url.searchParams.get('condo_name') || url.searchParams.get('condoName') || url.searchParams.get('q') || '';
+      return handleCondoRequest(q);
+    }
+  }
+
+  // Preview all indexed condo directories
+  if (url.pathname === '/scan-condos' && req.method === 'GET') {
+    if (!fs.existsSync(CONDO_BASE_DIR)) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ status: 'success', total_condos: 0, folders: [] }));
+    }
+    const dirs = fs.readdirSync(CONDO_BASE_DIR, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({
+      status: 'success',
+      base_dir: CONDO_BASE_DIR,
+      total_condos: dirs.length,
+      folders: dirs,
+    }));
   }
 
   // Discovered Chrome Profiles on macOS
@@ -1085,6 +1243,125 @@ const server = http.createServer((req, res) => {
     console.log('[COMPANION] Stop automation command queued');
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ status: 'ok' }));
+  }
+
+  // ── Two-Stage Staging Automation (Group 2: Tab 1 Prompt Extractor -> Tab 2 Staging) ──
+  let twoStageState = {
+    is_running: false,
+    step: 'idle',
+    extracted_prompt: '',
+    condo_name: '',
+    matched_folder: '',
+    images_attached: 0,
+    error: null,
+    started_at: null,
+    updated_at: null,
+  };
+
+  if (url.pathname === '/start-two-stage-staging' && req.method === 'POST') {
+    let body = '';
+    req.on('data', (c) => (body += c));
+    req.on('end', async () => {
+      try {
+        const payload = JSON.parse(body || '{}');
+        const profileKey = payload.profile_key || 'Profile 14';
+        const groupName = payload.group_name || 'FB Hero';
+        const condoName = payload.condo_name || payload.title || '';
+        const initialPrompt = payload.initial_prompt || payload.prompt || '';
+        const referenceImage = payload.reference_image || null; // Manually uploaded example image (pasted 1st)
+
+        // Read local condo images 1, 2, 3 (Strictly Read-Only!)
+        let condoImages = [];
+        let matchedDir = '';
+        if (condoName && fs.existsSync(CONDO_BASE_DIR)) {
+          matchedDir = findCondoDirectory(condoName);
+          if (matchedDir) {
+            const folderPath = path.join(CONDO_BASE_DIR, matchedDir);
+            const entries = fs.readdirSync(folderPath, { withFileTypes: true });
+            [1, 2, 3].forEach((num) => {
+              const match = entries.find(
+                (f) => f.isFile() && new RegExp(`^${num}\\.(png|jpg|jpeg|webp)$`, 'i').test(f.name)
+              );
+              if (match) {
+                const filePath = path.join(folderPath, match.name);
+                const ext = path.extname(match.name).toLowerCase().replace('.', '') || 'png';
+                const mime = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+                const buf = fs.readFileSync(filePath);
+                condoImages.push({
+                  index: num,
+                  filename: match.name,
+                  data_url: `data:${mime};base64,${buf.toString('base64')}`,
+                });
+              }
+            });
+          }
+        }
+
+        twoStageState = {
+          is_running: true,
+          step: 'starting',
+          condo_name: condoName,
+          matched_folder: matchedDir || 'not found',
+          images_attached: (referenceImage ? 1 : 0) + condoImages.length,
+          extracted_prompt: '',
+          error: null,
+          started_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+
+        pendingAutomationCommand = {
+          action: 'START_TWO_STAGE_STAGING',
+          payload: {
+            profileKey,
+            groupName,
+            initialPrompt,
+            referenceImage, // manual example image pasted 1st
+            condoImages,    // 1.png, 2.png, 3.png pasted right after
+            condoName,
+            matchedFolder: matchedDir,
+          },
+          created_at: new Date().toISOString(),
+        };
+
+        activateChromeWindow();
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          status: 'success',
+          message: `Two-stage staging initiated for "${condoName}" in group "${groupName}"`,
+          matched_folder: matchedDir,
+          images_count: condoImages.length,
+          reference_image_present: !!referenceImage,
+        }));
+      } catch (e) {
+        console.error('[COMPANION] Error starting two-stage staging:', e);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+
+  if (url.pathname === '/two-stage-status') {
+    if (req.method === 'POST') {
+      let body = '';
+      req.on('data', (c) => (body += c));
+      req.on('end', () => {
+        try {
+          const update = JSON.parse(body || '{}');
+          twoStageState = { ...twoStageState, ...update, updated_at: new Date().toISOString() };
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'ok', twoStageState }));
+        } catch (e) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: e.message }));
+        }
+      });
+      return;
+    } else {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ status: 'success', state: twoStageState }));
+    }
   }
 
   // ── Poll for Pending Extension Command (called by the extension background on an interval) ─
