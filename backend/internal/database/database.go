@@ -75,6 +75,14 @@ func ConnectDB() *gorm.DB {
 		&models.N8NWorkflowConnection{},
 		&models.N8NExecutionRecord{},
 		&models.N8NAutomationSetting{},
+		// External Browser Processing & Smart Image Queue Tables
+		&models.BrowserProfile{},
+		&models.BrowserGroupBinding{},
+		&models.ProcessingLane{},
+		&models.ImageProcessingJob{},
+		&models.JobEvent{},
+		&models.ProcessedImageOutput{},
+		&models.DownloadWatcherSetting{},
 	)
 	if err != nil {
 		log.Fatalf("Failed to auto-migrate models: %v", err)

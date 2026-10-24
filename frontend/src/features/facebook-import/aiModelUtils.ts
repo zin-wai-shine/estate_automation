@@ -92,11 +92,26 @@ export const isN8NAIBox = (
   );
 };
 
+/**
+ * Determines whether a workflow box is an External Browser image processing node.
+ */
+export const isExternalBrowserAIBox = (
+  box?: { id?: string; provider?: string; processType?: string; title?: string }
+): boolean => {
+  if (!box) return false;
+  return (
+    box.provider === 'external_browser' ||
+    box.processType === 'external_browser' ||
+    Boolean(box.id?.includes('external-browser')) ||
+    Boolean(box.title?.toLowerCase().includes('external browser'))
+  );
+};
+
 export const isWatermarkAIBox = (
   box?: { id?: string; provider?: string; model?: string; processType?: string; title?: string; cropFormatId?: string; watermarkPresetId?: string; subtitle?: string }
 ): boolean => {
   if (!box) return false;
-  if (isN8NAIBox(box)) return false;
+  if (isN8NAIBox(box) || isExternalBrowserAIBox(box)) return false;
   if (box.processType === 'text_format' || box.processType === 'text_ai') return false;
   return (
     box.processType === 'watermark' ||
@@ -115,7 +130,7 @@ export const isTextFormatAIBox = (
   box?: { id?: string; provider?: string; model?: string; processType?: string; title?: string; cropFormatId?: string; watermarkPresetId?: string; subtitle?: string; templateId?: string; templateText?: string }
 ): boolean => {
   if (!box) return false;
-  if (isN8NAIBox(box)) return false;
+  if (isN8NAIBox(box) || isExternalBrowserAIBox(box)) return false;
   if (isWatermarkAIBox(box)) return false;
   if (box.processType === 'image_enhance' || box.provider === 'runware_ai' || box.processType === 'text_ai') return false;
   return (
@@ -132,7 +147,7 @@ export const isTextAIBox = (
   connections: { fromNodeId: string; toNodeId: string }[] = []
 ): boolean => {
   if (!box) return false;
-  if (isN8NAIBox(box)) return false;
+  if (isN8NAIBox(box) || isExternalBrowserAIBox(box)) return false;
   if (isWatermarkAIBox(box)) return false;
   if (isTextFormatAIBox(box)) return false;
   if (isImageAIBox(box, connections)) return false;
@@ -149,6 +164,7 @@ export const isImageAIBox = (
 ): boolean => {
   if (!box) return false;
   if (isN8NAIBox(box)) return false;
+  if (isExternalBrowserAIBox(box)) return true;
   if (isWatermarkAIBox(box)) return true;
   // If connected from 'get-content', it is guaranteed to be a Content / Copywriting node
   if (box.id && connections.some((c) => c.fromNodeId === 'get-content' && c.toNodeId === box.id)) {

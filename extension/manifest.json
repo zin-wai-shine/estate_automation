@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "BoltHaven Browser Companion",
+  "version": "1.0.0",
+  "description": "Secure Chrome profile registration, tab-group discovery, and tab focusing for BoltHavenProperty workflows.",
+  "permissions": [
+    "alarms",
+    "tabGroups",
+    "tabs",
+    "storage",
+    "activeTab",
+    "scripting",
+    "downloads",
+    "clipboardRead",
+    "clipboardWrite"
+  ],
+  "host_permissions": [
+    "http://localhost:8085/*",
+    "http://127.0.0.1:9224/*",
+    "https://chatgpt.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "BoltHaven Browser Companion"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://chatgpt.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

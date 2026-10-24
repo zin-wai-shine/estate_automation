@@ -72,6 +72,7 @@ type ExtractedImage struct {
 	SHA256          string `json:"sha256,omitempty"`
 	FileSize        int64  `json:"file_size,omitempty"`
 	Status          string `json:"status"` // "downloaded", "pending", "failed"
+	ResolvedPrompt  string `json:"resolved_prompt,omitempty"`
 }
 
 // SourceDetails provides origin information about the post

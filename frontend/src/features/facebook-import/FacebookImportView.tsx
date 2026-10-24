@@ -62,6 +62,7 @@ import { CustomDropdown } from '../../components/ui/CustomDropdown';
 import {
   FacebookWorkflowCanvas,
   loadSavedFacebookWorkflowConfig,
+  loadAvailablePromptTemplates,
   type FacebookWorkflowConfig,
   type DynamicAIBoxConfig,
   type WorkflowExecutionState,
@@ -76,7 +77,10 @@ import {
   isWatermarkAIBox,
   isTextFormatAIBox,
   isTextAIBox,
+  isExternalBrowserAIBox,
 } from './aiModelUtils';
+import { focusBrowserTabGroup, openBrowserProfile, fetchTabGroups, waitForBrowserTabsReady, createBatchImageQueue, startImageQueue, startAutomation, stopAutomation, getAutomationStatus, fetchImageQueue } from '../browser-processing/browserAutomationService';
+import { resolvePromptForBrowserNode } from '../browser-processing/browserPromptUtils';
 import { renderWatermarkedImage } from '../autopost/watermarkCanvas';
 import { DEFAULT_WATERMARK_CONFIG } from '../autopost/watermarkStorage';
 import { AIImageStudio, type AttachedPhotoItem } from './AIImageStudio';
@@ -774,8 +778,8 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
 
       setAiGeneratedOutputs((prev) => ({ ...prev, [boxId]: data.generated_content }));
       setAiGeneratedCopy(data.generated_content);
-      if (box.provider !== 'watermark' && box.provider !== 'n8n') {
-        setGeneratedProvider(box.provider);
+      if ((box.provider as string) !== 'watermark' && (box.provider as string) !== 'n8n' && (box.provider as string) !== 'external_browser') {
+        setGeneratedProvider(box.provider as any);
       }
       addLog(`✨ [${box.title}] generated copy successfully!`, 'success');
     } catch (err: any) {
@@ -1518,6 +1522,202 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
               currentStepMessage: `✓ [${wmBox.title}] formatted!`,
             }));
           }
+        }
+
+        // 2c. External Browser Node Execution (Auto-open Chrome profile and tab group)
+        const extBrowserBoxes = (workflowConfig.aiBoxes || []).filter(
+          (b) => isExternalBrowserAIBox(b) && b.enabled
+        );
+        for (const extBox of extBrowserBoxes) {
+          const profId = (extBox as any).browserProfileId || 14;
+          const profKey = (extBox as any).browserProfileKey || (extBox as any).browserProfileName || 'Profile 14';
+          const groupName = (extBox as any).browserGroupName || 'Enhance IMG';
+          const targetTabId = (extBox as any).browserTabId || (extBox as any).browserPromptTabId || '';
+
+          addLog(`🌐 Workflow arrived at External Browser [${extBox.title}]: Opening Chrome [${profKey}] & Tab Group [${groupName}]...`, 'info');
+          setWorkflowExecutionState((prev) => ({
+            ...prev,
+            activeNodeIds: [extBox.id],
+            currentStepMessage: `🌐 Opening Chrome [${profKey}] & focusing Tab Group [${groupName}]...`,
+          }));
+
+          let targetUrls = (extBox as any).browserGroupTabUrls ||
+            ((extBox as any)._liveGroupTabs || []).map((t: any) => t.url).filter(Boolean);
+
+          if (!targetUrls || targetUrls.length === 0) {
+            try {
+              const fetched = await fetchTabGroups(profId, profKey, (extBox as any).browserProfileName);
+              const m = fetched.find((g) => g.name.toLowerCase() === groupName.toLowerCase()) || fetched[0];
+              if (m && m.tabs && m.tabs.length > 0) {
+                targetUrls = m.tabs.map((t) => t.url).filter(Boolean);
+              }
+            } catch (e) {}
+          }
+
+          if (!targetUrls || targetUrls.length === 0) {
+            if (groupName.toLowerCase().includes('enhance')) {
+              targetUrls = [
+                'https://chatgpt.com/c/6ad49918-a4f0-83ec-acf5-efb0ef516adc',
+                'https://chatgpt.com/c/6ad49924-7dd0-83ec-8205-768c67420600',
+                'https://chatgpt.com/c/6ad4992a-66e8-83ec-9b11-c5e727e258d9',
+                'https://chatgpt.com/c/6ad4992b-135c-83ec-b042-8c92220921d7',
+              ];
+            }
+          }
+
+          try {
+            await focusBrowserTabGroup({
+              profileId: profId,
+              profileKey: profKey,
+              groupName: groupName,
+              tabId: targetTabId,
+              groupTabUrls: targetUrls,
+              url: targetUrls[0],
+              force: true,
+            });
+
+            // Actively verify and wait until Chrome and selected tab group are verified open in browser
+            const readyResult = await waitForBrowserTabsReady({
+              profileKey: profKey,
+              groupName: groupName,
+              expectedUrls: targetUrls,
+              maxWaitMs: 15000,
+              onProgress: (msg) => {
+                setWorkflowExecutionState((prev) => ({
+                  ...prev,
+                  activeNodeIds: [extBox.id],
+                  currentStepMessage: msg,
+                }));
+              },
+            });
+
+            if (readyResult.verified) {
+              addLog(`✓ Chrome profile [${profKey}] and Tab Group [${groupName}] confirmed open in browser!`, 'success');
+              setWorkflowExecutionState((prev) => ({
+                ...prev,
+                activeNodeIds: [extBox.id],
+                currentStepMessage: `✓ Chrome open & Tab Group [${groupName}] confirmed active in browser!`,
+              }));
+              await delay(600);
+            }
+          } catch (e: any) {
+            console.warn('External browser focus error:', e);
+          }
+
+          // Queue all images from photoList and trigger multi-tab enhancement across the 4 tabs
+          const totalPhotos = photoList.length;
+          if (totalPhotos > 0) {
+            const propId = (result.property as any)?.id || `PROP-${Date.now()}`;
+            const propTitle = (result.property as any)?.project_name || 'Featured Property Listing';
+
+            const enhancePrompt = resolvePromptForBrowserNode(extBox, {
+              title: propTitle,
+              width: (extBox as any).outputWidth || 1080,
+              height: (extBox as any).outputHeight || 1350,
+            });
+
+            const rawImgs = photoList.map((img, i) => ({
+              index: i + 1,
+              source_url: img.source_url || img.stored_url,
+              stored_url: img.stored_url || img.source_url,
+              local_path: (img as any).local_path || '',
+              sha256: (img as any).sha256 || '',
+              width: (extBox as any).outputWidth || 1080,
+              height: (extBox as any).outputHeight || 1350,
+              resolved_prompt: enhancePrompt,
+            }));
+
+            try {
+              await createBatchImageQueue({
+                property_id: propId,
+                property_name: propTitle,
+                prompt_template_text: enhancePrompt,
+                prompt_template_id: (extBox as any).browserPromptTemplateKey || 'photo_retouch',
+                images: rawImgs,
+                processing_mode: (extBox as any).browserProcessingMode || 'chrome_assisted',
+                lane_id: (extBox as any).browserLaneKey || 'lane-1',
+                output_width: (extBox as any).outputWidth || 1080,
+                output_height: (extBox as any).outputHeight || 1350,
+                strict_preservation_active: (extBox as any).strictPreservationActive !== false,
+              });
+              await startImageQueue(propId);
+            } catch (qErr) {
+              console.warn('Queue init notice:', qErr);
+            }
+
+            addLog(`⚡ Distributing ${totalPhotos} images across 4 ChatGPT tabs with Enhance Prompt...`, 'info');
+            setWorkflowExecutionState((prev) => ({
+              ...prev,
+              propertyId: propId,
+              activeNodeIds: [extBox.id],
+              currentStepMessage: `⚡ Distributing ${totalPhotos} images across 4 ChatGPT tabs with Enhance Prompt...`,
+            }));
+
+            try {
+              await startAutomation({
+                property_id: propId,
+                profile_key: profKey,
+                tab_ids: [1, 2, 3, 4],
+              });
+            } catch (autoErr) {
+              console.warn('Automation start error:', autoErr);
+            }
+
+            // Active enhancement monitoring loop across the 4 tabs
+            let pollAttempts = 0;
+            const maxPollAttempts = 150;
+            let isDone = false;
+
+            while (!isDone && pollAttempts < maxPollAttempts) {
+              pollAttempts++;
+              await delay(2000);
+
+              try {
+                const queueJobs = await fetchImageQueue(propId);
+                const status = await getAutomationStatus();
+
+                let completedCount = 0;
+                if (queueJobs && queueJobs.length > 0) {
+                  queueJobs.forEach((job) => {
+                    const isJobDone = job.status === 'COMPLETED' || (job.status as string) === 'completed' || (job as any).is_completed;
+                    const resUrl = job.output_file_url || (job as any).result_file_url;
+                    if (isJobDone && resUrl) {
+                      completedCount++;
+                      const pos = (job.original_position || 1) - 1;
+                      enhancedPhotosResult[pos] = resUrl;
+                      setEnhancedPhotos((prev) => ({ ...prev, [pos]: resUrl }));
+                    }
+                  });
+                }
+
+                if (status && status.completed !== undefined) {
+                  completedCount = Math.max(completedCount, status.completed);
+                }
+
+                setWorkflowExecutionState((prev) => ({
+                  ...prev,
+                  activeNodeIds: [extBox.id],
+                  currentStepMessage: `⚡ Enhancing images across 4 ChatGPT tabs: ${completedCount}/${totalPhotos} completed (${Math.max(0, totalPhotos - completedCount)} remaining)...`,
+                }));
+
+                if (completedCount >= totalPhotos || (status && !status.is_running && (status.completed || 0) >= totalPhotos)) {
+                  isDone = true;
+                  break;
+                }
+              } catch (pollErr) {
+                console.warn('Enhancement status check warning:', pollErr);
+              }
+            }
+
+            addLog(`✓ All ${totalPhotos} images enhanced and downloaded! Advancing to Combine Box...`, 'success');
+          }
+
+          setWorkflowExecutionState((prev) => ({
+            ...prev,
+            completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), extBox.id])),
+            activeNodeIds: [],
+            currentStepMessage: `✓ [${extBox.title}] All images enhanced and downloaded!`,
+          }));
         }
 
         // 2.5 Compile Final Content & Images Box

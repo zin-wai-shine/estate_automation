@@ -51,6 +51,7 @@ import {
   FiFolder,
   FiCornerDownRight,
   FiServer,
+  FiMonitor,
 } from 'react-icons/fi';
 import { FaFacebook, FaFacebookF, FaInstagram, FaTiktok } from 'react-icons/fa';
 import { SiGooglegemini } from 'react-icons/si';
@@ -58,8 +59,10 @@ import { HiSparkles } from 'react-icons/hi2';
 import { useScrollLock } from '../../hooks/useScrollLock';
 import { AITrainingChatbot, ModelSelectorMenu, LaoZhangIcon, RunwareIcon } from './AITrainingChatbot';
 import { useTheme } from '../../context/ThemeContext';
-import { getAIModelDisplayName, isImageAIBox, isImageModel, isWatermarkAIBox, isEnhanceAIBox, isAIBoxConnected, isTextFormatAIBox, isTextAIBox, isN8NAIBox } from './aiModelUtils';
+import { getAIModelDisplayName, isImageAIBox, isImageModel, isWatermarkAIBox, isEnhanceAIBox, isAIBoxConnected, isTextFormatAIBox, isTextAIBox, isN8NAIBox, isExternalBrowserAIBox } from './aiModelUtils';
 import { AIImageStudio } from './AIImageStudio';
+import { ExternalBrowserSidebar } from '../browser-processing/ExternalBrowserSidebar';
+import { focusBrowserTabGroup } from '../browser-processing/browserAutomationService';
 import { WatermarkNodeModal } from './WatermarkNodeModal';
 import { ToggleSwitch } from '../../components/ui/ToggleSwitch';
 import { loadWatermarkPresets, DEFAULT_WATERMARK_CONFIG, DEFAULT_PRESETS, type WatermarkConfig } from '../autopost/watermarkStorage';
@@ -124,8 +127,8 @@ export const loadAvailablePromptTemplates = (): CanvasPromptOption[] => {
 export interface DynamicAIBoxConfig {
   id: string;
   title: string;
-  processType?: 'rental' | 'sale' | 'tiktok' | 'line_oa' | 'seo_tags' | 'custom' | 'image_enhance' | 'watermark' | 'text_ai' | 'text_format' | 'n8n_automation' | string;
-  provider: 'google_ai' | 'openai' | 'laozhang_ai' | 'runware_ai' | 'watermark' | 'n8n';
+  processType?: 'rental' | 'sale' | 'tiktok' | 'line_oa' | 'seo_tags' | 'custom' | 'image_enhance' | 'watermark' | 'text_ai' | 'text_format' | 'n8n_automation' | 'external_browser' | string;
+  provider: 'google_ai' | 'openai' | 'laozhang_ai' | 'runware_ai' | 'watermark' | 'n8n' | 'external_browser' | string;
   model: string;
   templateId: string;
   templateText: string;
@@ -152,6 +155,20 @@ export interface DynamicAIBoxConfig {
   n8nTimeoutSeconds?: number;
   n8nRetryCount?: number;
   n8nContinueOnFailure?: boolean;
+  // External Browser Automation
+  browserProfileId?: number;
+  browserProfileKey?: string;
+  browserProfileName?: string;
+  browserGroupName?: string;
+  browserTabId?: string;
+  browserTabTitle?: string;
+  browserProcessingMode?: string;
+  browserLaneKey?: string;
+  browserPromptTemplateKey?: string;
+  browserCustomPrompt?: string;
+  outputWidth?: number;
+  outputHeight?: number;
+  strictPreservationActive?: boolean;
 }
 
 export interface WorkflowWireConnection {
@@ -2090,6 +2107,7 @@ export interface WorkflowExecutionState {
   isComplete?: boolean;
   hasError?: boolean;
   errorMessage?: string;
+  propertyId?: string;
 }
 
 export interface FacebookWorkflowCanvasProps {
@@ -3197,9 +3215,9 @@ export const FacebookWorkflowCanvas = forwardRef<
         return !alreadyConnected;
       }
 
-      // B) Image Enhancer -> Watermark node
+      // B) Image Enhancer / External Browser -> Watermark node
       // "if that enhance have that watermark must be have after that enhance"
-      if (sourceBox && isEnhanceAIBox(sourceBox, conns) && targetBox && isWatermarkAIBox(targetBox)) {
+      if (sourceBox && (isEnhanceAIBox(sourceBox, conns) || isExternalBrowserAIBox(sourceBox)) && targetBox && isWatermarkAIBox(targetBox)) {
         const alreadyConnected = conns.some((c) => c.fromNodeId === fromId && c.toNodeId === toId);
         return !alreadyConnected;
       }
@@ -4876,10 +4894,67 @@ export const FacebookWorkflowCanvas = forwardRef<
     return newId;
   };
 
+  // Add Dynamic External Browser Node (Chrome / ChatGPT multi-worker automation)
+  const handleAddExternalBrowserNodeConnectedFrom = (fromNodeId?: string): string => {
+    const browserBoxes = config.aiBoxes.filter((b) => isExternalBrowserAIBox(b));
+    const newCount = browserBoxes.length + 1;
+    const newId = `ai-box-external-browser-${Date.now()}`;
+
+    const newBox: DynamicAIBoxConfig = {
+      id: newId,
+      title: `External Browser #${newCount}`,
+      subtitle: 'Chrome Automation',
+      processType: 'external_browser',
+      provider: 'external_browser' as any,
+      model: 'chatgpt-browser',
+      templateId: 'enhance-interior',
+      templateText: 'Enhance real estate photo via ChatGPT browser multi-worker pipeline',
+      customPrompt: '',
+      enabled: true,
+      x: 740,
+      y: 260 + (newCount - 1) * 140,
+      browserProfileId: 11,
+      browserProfileKey: 'Profile 14',
+      browserProfileName: 'Hsu (Profile 14)',
+      browserGroupName: 'Enhance IMG',
+      browserTabId: 'tab-enh-1',
+      browserTabTitle: 'Enhance Interior Photograph — Worker #1',
+      browserGroupTabUrls: [
+        'https://chatgpt.com/c/6ad49918-a4f0-83ec-acf5-efb0ef516adc',
+        'https://chatgpt.com/c/6ad49924-7dd0-83ec-8205-768c67420600',
+        'https://chatgpt.com/c/6ad4992a-66e8-83ec-9b11-c5e727e258d9',
+        'https://chatgpt.com/c/6ad4992b-135c-83ec-b042-8c92220921d7',
+      ],
+      browserProcessingMode: 'chrome_assisted',
+      browserLaneKey: 'lane-1',
+      browserPromptTemplateKey: 'photo_retouch',
+    } as any;
+
+    const nextBoxes = [...config.aiBoxes, newBox];
+    let nextConns = [...(config.connections || [])];
+    if (fromNodeId) {
+      nextConns.push({
+        id: `wire-${fromNodeId}-${newId}-${Date.now()}`,
+        fromNodeId: fromNodeId,
+        toNodeId: newId,
+      });
+    }
+
+    const nextConfig = {
+      ...config,
+      aiBoxes: nextBoxes,
+      connections: nextConns,
+    };
+    updateConfig(buildAlignedLayout(nextBoxes, nextConns, nextConfig));
+    setSelectedBoxId(newId);
+    return newId;
+  };
+
   // Helper for rendering AI Box icon in recover & delete modals
   const renderAIBoxIcon = (b: DynamicAIBoxConfig, size = 22) => {
     if (b.id === 'get-content') return <FiFileText style={{ fontSize: `${size}px`, color: '#3B82F6' }} />;
     if (b.id === 'get-images') return <FiImage style={{ fontSize: `${size}px`, color: '#10B981' }} />;
+    if (isExternalBrowserAIBox(b)) return <FiMonitor style={{ fontSize: `${size}px`, color: '#06B6D4' }} />;
     const isWatermark = isWatermarkAIBox(b);
     if (isWatermark) return <FiScissors style={{ fontSize: `${size}px`, color: '#8B5CF6' }} />;
     const isEnhance = (isEnhanceAIBox(b) || isImageAIBox(b, config.connections)) && !isWatermark;
@@ -6978,7 +7053,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 ? RECEPTIVE_COLOR
                 : (isDark ? '#30363D' : '#D0D7DE');
             const strokeDasharray = !isSelected && !isEffectiveEnabled && boxStatus === 'idle' ? '4, 4' : 'none';
-            const isEnhance = (isEnhanceAIBox(box) || isImageAIBox(box, config.connections)) && !isWatermark;
+            const isEnhance = (isEnhanceAIBox(box) || isImageAIBox(box, config.connections) || isExternalBrowserAIBox(box)) && !isWatermark;
             const isBoxInputConnected = (config.connections || []).some((c) => c.toNodeId === box.id);
             const isBoxOutputConnected = (config.connections || []).some((c) => c.fromNodeId === box.id);
             const boxHasReceiver = isEffectiveEnabled && isEnhance;
@@ -7067,6 +7142,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                 >
                   {isWatermark ? (
                     <FiScissors style={{ fontSize: '28px', color: isEffectiveEnabled ? '#8B5CF6' : '#8B949E', transition: 'color 0.2s ease' }} />
+                  ) : isExternalBrowserAIBox(box) ? (
+                    <FiMonitor style={{ fontSize: '28px', color: isEffectiveEnabled ? '#06B6D4' : '#8B949E', transition: 'color 0.2s ease' }} />
                   ) : isEnhance ? (
                     <FiImage style={{ fontSize: '28px', color: isEffectiveEnabled ? '#EC4899' : '#8B949E', transition: 'color 0.2s ease' }} />
                   ) : isTextFormatAIBox(box) ? (
@@ -7229,7 +7306,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                               ? `${matchingCropFormat.targetWidth}×${matchingCropFormat.targetHeight} (${matchingCropFormat.aspect || '1:1'})`
                               : (box.subtitle || 'Crop & Watermark');
                           })()
-                        : (isRunware || isEnhance)
+                        : isExternalBrowserAIBox(box) ? (
+                          'Chrome Automation'
+                        ) : (isRunware || isEnhance)
                         ? 'Image Enhancer'
                         : isTextFormatAIBox(box)
                         ? 'Format Preset'
@@ -9001,6 +9080,21 @@ export const FacebookWorkflowCanvas = forwardRef<
                           />
                         </div>
                       </div>
+                    ) : isExternalBrowserAIBox(currentModalAIBox) ? (
+                      <ExternalBrowserSidebar
+                        isDark={isDark}
+                        boxConfig={currentModalAIBox}
+                        onUpdateBoxConfig={(updated) => handleUpdateAIBox(currentModalAIBox.id, updated)}
+                        availablePrompts={availablePrompts as any}
+                        propertyContext={{
+                          id: executionState?.propertyId || '',
+                          title: _projectName || 'Featured Property Listing',
+                          images: (images || []).map((img, i) => ({
+                            url: typeof img === 'string' ? img : img.source_url || img.stored_url || '',
+                            index: typeof img === 'object' && img.index ? img.index : i + 1,
+                          })),
+                        }}
+                      />
                     ) : (
                       <>
                         {/* Select Prompt Template */}
@@ -10455,15 +10549,16 @@ export const FacebookWorkflowCanvas = forwardRef<
         config.aiBoxes.forEach((box) => {
           if (box.id !== fromNodeId && !connectedTargetIds.has(box.id)) {
             const isCrop = isWatermarkAIBox(box);
-            const isEnh = isEnhanceAIBox(box, config.connections || []);
+            const isExtBrowser = isExternalBrowserAIBox(box);
+            const isEnh = isEnhanceAIBox(box, config.connections || []) && !isExtBrowser;
             const isTxtAI = isTextAIBox(box, config.connections);
             const isTxtFmt = isTextFormatAIBox(box);
             pushValidCandidate({
               id: box.id,
               title: box.title || 'AI Processor',
-              subtitle: isCrop ? 'Format & watermark' : isEnh ? 'Photo enhancement' : isTxtAI ? 'AI Engine (Text Model)' : isTxtFmt ? 'Text Format Preset' : 'Text / copywriting',
-              icon: isCrop ? FiScissors : isEnh ? FiCpu : isTxtFmt ? FiFileText : FiCpu,
-              color: isCrop ? '#8B5CF6' : isEnh ? '#EC4899' : isTxtFmt ? '#6366F1' : '#3B82F6',
+              subtitle: isExtBrowser ? 'Chrome / ChatGPT auto' : isCrop ? 'Format & watermark' : isEnh ? 'Photo enhancement' : isTxtAI ? 'AI Engine (Text Model)' : isTxtFmt ? 'Text Format Preset' : 'Text / copywriting',
+              icon: isExtBrowser ? FiMonitor : isCrop ? FiScissors : isEnh ? FiCpu : isTxtFmt ? FiFileText : FiCpu,
+              color: isExtBrowser ? '#06B6D4' : isCrop ? '#8B5CF6' : isEnh ? '#EC4899' : isTxtFmt ? '#6366F1' : '#3B82F6',
             });
           }
         });
@@ -10955,6 +11050,63 @@ export const FacebookWorkflowCanvas = forwardRef<
                         </div>
                         <div style={{ fontSize: '0.5625rem', color: isDark ? '#8B949E' : '#64748B' }}>
                           AI HDR lighting, clarity & color restoration
+                        </div>
+                      </div>
+                      <FiArrowRight size={13} style={{ color: isDark ? '#8B949E' : '#94A3B8' }} />
+                    </button>
+                  )}
+
+                  {/* External Browser Node (Chrome / ChatGPT Multi-Worker Automation) */}
+                  {(isImages || isFromEnhance || isContent || isFromTextAI || !fromNodeId) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newId = handleAddExternalBrowserNodeConnectedFrom(fromNodeId);
+                        setConnectDrawerNode(null);
+                        setActiveModalNode({ type: 'ai-box', boxId: newId });
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        padding: '0.55rem 0.65rem',
+                        borderRadius: '7px',
+                        border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                        backgroundColor: isDark ? '#1C2128' : '#F8FAFC',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        transition: 'all 0.15s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.borderColor = '#06B6D4';
+                        e.currentTarget.style.backgroundColor = isDark ? '#082531' : '#ECFEFF';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
+                        e.currentTarget.style.backgroundColor = isDark ? '#1C2128' : '#F8FAFC';
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: '28px',
+                          height: '28px',
+                          borderRadius: '6px',
+                          background: 'linear-gradient(135deg, #06B6D4, #0891B2)',
+                          color: '#FFFFFF',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                        }}
+                      >
+                        <FiMonitor size={14} />
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: '0.71875rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
+                          + External Browser
+                        </div>
+                        <div style={{ fontSize: '0.5625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                          Chrome / ChatGPT profile &amp; multi-tab auto-processing
                         </div>
                       </div>
                       <FiArrowRight size={13} style={{ color: isDark ? '#8B949E' : '#94A3B8' }} />
@@ -12637,6 +12789,68 @@ export const FacebookWorkflowCanvas = forwardRef<
                   borderRadius: '6px',
                   border: 'none',
                   backgroundColor: '#FF6D5A',
+                  color: '#FFFFFF',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                }}
+              >
+                <FiPlus size={13} /> Add
+              </button>
+            </div>
+
+            {/* Option 6: External Browser (Chrome / ChatGPT) */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '0.75rem',
+                borderRadius: '8px',
+                border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#F8FAFC',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', flex: 1, minWidth: 0 }}>
+                <div
+                  style={{
+                    width: '34px',
+                    height: '34px',
+                    borderRadius: '8px',
+                    backgroundColor: '#06B6D4',
+                    color: '#FFFFFF',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  <FiMonitor size={16} />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                    External Browser (Chrome)
+                  </div>
+                  <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', lineHeight: 1.3 }}>
+                    Automate ChatGPT &amp; multi-tab browser groups with Chrome profiles
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const newId = handleAddExternalBrowserNodeConnectedFrom();
+                  setIsAddFromTriggerOpen(false);
+                  setActiveModalNode({ type: 'ai-box', boxId: newId });
+                }}
+                style={{
+                  padding: '5px 10px',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  borderRadius: '6px',
+                  border: 'none',
+                  backgroundColor: '#06B6D4',
                   color: '#FFFFFF',
                   cursor: 'pointer',
                   display: 'flex',
