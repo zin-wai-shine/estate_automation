@@ -2218,7 +2218,7 @@ export const calculateCenteredPanOffset = (
     points.push({
       x: b.x,
       y: b.y,
-      width: isExt ? CIRCLE_SIZE * 2 : CIRCLE_SIZE,
+      width: isExt ? 216 : CIRCLE_SIZE,
       height: CIRCLE_SIZE + LABEL_EXTRA,
     });
   });
@@ -3043,7 +3043,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     const box = config.aiBoxes.find((b) => b.id === nodeId && b.enabled !== false);
     if (box) {
       const isExt = isExternalBrowserAIBox(box);
-      const boxW = isExt ? CIRCLE_SIZE * 2 : CIRCLE_SIZE;
+      const boxW = isExt ? 216 : CIRCLE_SIZE;
       const hasAddBtn = isNodeEffectivelyEnabled(box.id);
       return socketType === 'output'
         ? { x: box.x + (hasAddBtn ? boxW + 37 : boxW - 1), y: box.y + HALF_CIRCLE }
@@ -7070,7 +7070,7 @@ export const FacebookWorkflowCanvas = forwardRef<
             const boxHasSource = isEffectiveEnabled && boxCanConnectBack;
 
             const isExternalBrowser = isExternalBrowserAIBox(box);
-            const nodeWidth = isExternalBrowser ? CIRCLE_SIZE * 2 : CIRCLE_SIZE;
+            const nodeWidth = isExternalBrowser ? 216 : CIRCLE_SIZE;
 
             return (
               <div
@@ -7149,8 +7149,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                     zIndex: 2,
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: isExternalBrowser ? '10px' : '0px',
+                    justifyContent: isExternalBrowser ? 'flex-start' : 'center',
+                    paddingLeft: isExternalBrowser ? '20px' : '0px',
+                    paddingRight: isExternalBrowser ? '20px' : '0px',
+                    gap: isExternalBrowser ? '14px' : '0px',
                     pointerEvents: 'none',
                     userSelect: 'none',
                     width: '100%',
@@ -7161,12 +7163,12 @@ export const FacebookWorkflowCanvas = forwardRef<
                     <FiScissors style={{ fontSize: '28px', color: isEffectiveEnabled ? '#8B5CF6' : '#8B949E', transition: 'color 0.2s ease' }} />
                   ) : isExternalBrowser ? (
                     <>
-                      <FiMonitor style={{ fontSize: '28px', color: isEffectiveEnabled ? '#06B6D4' : '#8B949E', transition: 'color 0.2s ease', flexShrink: 0 }} />
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.15 }}>
-                        <span style={{ fontSize: '0.75rem', fontWeight: 700, color: isEffectiveEnabled ? (isDark ? '#F1F5F9' : '#0F172A') : '#8B949E', letterSpacing: '-0.01em' }}>
+                      <FiMonitor style={{ fontSize: '32px', color: isEffectiveEnabled ? '#06B6D4' : '#8B949E', transition: 'color 0.2s ease', flexShrink: 0 }} />
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.25, minWidth: 0, flex: 1 }}>
+                        <span style={{ fontSize: '0.875rem', fontWeight: 700, color: isEffectiveEnabled ? (isDark ? '#F1F5F9' : '#0F172A') : '#8B949E', letterSpacing: '-0.01em', whiteSpace: 'nowrap' }}>
                           Chrome
                         </span>
-                        <span style={{ fontSize: '0.5625rem', color: isDark ? '#38BDF8' : '#0284C7', fontWeight: 600 }}>
+                        <span style={{ fontSize: '0.6875rem', color: isDark ? '#38BDF8' : '#0284C7', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '135px' }}>
                           {box.browserGroupName || 'Multi-Tab'}
                         </span>
                       </div>
@@ -7191,7 +7193,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                     left: '50%',
                     transform: 'translateX(-50%)',
                     width: 'max-content',
-                    maxWidth: isExternalBrowser ? '200px' : '160px',
+                    maxWidth: isExternalBrowser ? '240px' : '160px',
                     textAlign: 'center',
                     whiteSpace: 'normal',
                     lineHeight: '1.25',
