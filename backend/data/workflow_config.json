@@ -275,7 +275,7 @@
             "enabled": true,
             "id": "combine-box-1792697914542",
             "title": "Combine Box",
-            "x": 740,
+            "x": 900,
             "y": 240
           }
         ],
@@ -321,7 +321,7 @@
           "storeInDatabase": true,
           "targetMode": "hybrid",
           "title": "Social \u0026 Database Storage",
-          "x": 960,
+          "x": 1120,
           "y": 240
         },
         "destinations": [
@@ -345,7 +345,7 @@
             "storeInDatabase": true,
             "targetMode": "hybrid",
             "title": "Social \u0026 Database Storage",
-            "x": 960,
+            "x": 1120,
             "y": 240
           }
         ],

@@ -995,6 +995,10 @@ export const buildAlignedLayout = (
   const COL_AI_X = 520;         // Column 2: Content AI Models & Image Enhancers / Direct Formats (gap = 220px)
   const COL_FORMAT_X = 740;     // Column 3: Formats & Watermark Nodes (gap = 220px)
 
+  // Dynamic clearance for wide nodes (e.g. External Browser with 216px width vs standard 72px)
+  const hasWideCol2 = boxes.some((b) => isExternalBrowserAIBox(b));
+  const effectiveColFormatX = hasWideCol2 ? 900 : COL_FORMAT_X;
+
   const yById: Record<string, number> = {};
   const xById: Record<string, number> = {};
 
@@ -1002,7 +1006,7 @@ export const buildAlignedLayout = (
   const numTextAI = textAIBoxes.length;
   const numTextFormat = textFormatBoxes.length;
   const hasTextAI = numTextAI > 0;
-  const textFormatColX = hasTextAI ? COL_FORMAT_X : COL_AI_X;
+  const textFormatColX = hasTextAI ? effectiveColFormatX : COL_AI_X;
 
   const textSlots = Math.max(numTextAI, numTextFormat, 1);
   const contentTopY = TOP_MARGIN;
@@ -1078,7 +1082,7 @@ export const buildAlignedLayout = (
   // Watermark format presets sit in Column 3 (740) only if enhancers exist before them or text format presets exist in Column 3
   const hasCol3InTextLane = numTextFormat > 0;
   const shouldWatermarkBeInColumn3 = hasEnhancers || hasCol3InTextLane;
-  const watermarkColX = shouldWatermarkBeInColumn3 ? COL_FORMAT_X : COL_AI_X;
+  const watermarkColX = shouldWatermarkBeInColumn3 ? effectiveColFormatX : COL_AI_X;
 
   const imageSlots = Math.max(numEnhance, numWatermark, 1);
   const contentSpan = (textSlots - 1) * NODE_V_STEP;
@@ -1115,7 +1119,7 @@ export const buildAlignedLayout = (
   }
 
   // 3. Other boxes (if any)
-  const otherColX = shouldWatermarkBeInColumn3 ? (COL_FORMAT_X + 220) : (COL_AI_X + 220);
+  const otherColX = shouldWatermarkBeInColumn3 ? (effectiveColFormatX + 220) : (hasWideCol2 ? (COL_AI_X + 380) : (COL_AI_X + 220));
   otherBoxes.forEach((b, idx) => {
     xById[b.id] = otherColX;
     yById[b.id] = contentTopY + idx * NODE_V_STEP;
@@ -1137,11 +1141,11 @@ export const buildAlignedLayout = (
   const activeCombineBoxes = (base.combineBoxes || []).filter((cb) => cb && cb.enabled !== false);
   const allXValues = Object.values(xById);
   const maxNodeX = allXValues.length > 0 ? Math.max(...allXValues) : COL_BRANCH_X;
-  const hasCol3Nodes = allXValues.some((x) => x >= COL_FORMAT_X);
-  const mergerNodeX = hasCol3Nodes ? (COL_FORMAT_X + 220) : (COL_AI_X + 220); // 740 when no Col 3 nodes, 960 when Col 3 exists
+  const hasCol3Nodes = allXValues.some((x) => x >= effectiveColFormatX);
+  const mergerNodeX = hasCol3Nodes ? (effectiveColFormatX + 220) : (hasWideCol2 ? (COL_AI_X + 380) : (COL_AI_X + 220)); // 900 when wide Col 2 box exists, 740 standard, 960/1120 when Col 3 exists
   const outputNodeX = isOutputActive ? mergerNodeX : maxNodeX;
   const outputNodeY = triggerY;
-  const destinationX = mergerNodeX + 220; // 960 or 1180
+  const destinationX = mergerNodeX + 220; // 960, 1120 or 1180
 
   // Helper to compute the vertical center of incoming connections for any node
   const getIncomingCenterY = (
@@ -1168,7 +1172,7 @@ export const buildAlignedLayout = (
   // Categorize Combine Boxes by upstream column:
   const getUpstreamMaxX = (cbId: string): number => {
     const inConns = conns.filter((c) => c.toNodeId === cbId);
-    if (inConns.length === 0) return COL_FORMAT_X;
+    if (inConns.length === 0) return effectiveColFormatX;
     let maxX = 0;
     inConns.forEach((c) => {
       if (c.fromNodeId === 'trigger') maxX = Math.max(maxX, TRIGGER_X);
@@ -5789,31 +5793,34 @@ export const FacebookWorkflowCanvas = forwardRef<
     }
   };
 
-  // Bezier curve generator with bounded control points to prevent backwards loops and sharp kinks
+  // Bezier curve generator with strictly horizontal socket tangency and smooth curvature
   const createBezierPath = (start: { x: number; y: number }, end: { x: number; y: number }) => {
     const rawDx = end.x - start.x;
     const rawDy = end.y - start.y;
 
-    if (rawDx < 0) {
-      // Loop outward gracefully if connecting backwards
-      const vertOffset = Math.min(Math.max(Math.abs(rawDy) * 0.35, 40), 90);
-      const c1x = start.x + 40;
-      const c1y = start.y + (rawDy >= 0 ? vertOffset : -vertOffset);
-      const c2x = end.x - 40;
-      const c2y = end.y - (rawDy >= 0 ? vertOffset : -vertOffset);
-      return `M ${start.x} ${start.y} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${end.x} ${end.y}`;
-    }
-
     // Forward straight line check:
-    // If start and end are on the exact same horizontal plane (<= 2px diff),
+    // If start and end are on the exact same horizontal plane (<= 2px diff) and target is forward,
     // draw a perfectly clean horizontal straight line directly between sockets!
-    if (Math.abs(rawDy) <= 2) {
+    if (Math.abs(rawDy) <= 2 && rawDx > 10) {
       return `M ${start.x} ${start.y} L ${end.x} ${start.y}`;
     }
 
-    // Forward curve: smooth cubic bezier with horizontal tangency at sockets
-    const curvature = 0.48;
-    const controlOffset = Math.max(rawDx * curvature, 36);
+    // If target is behind or very close horizontally (rawDx < 48),
+    // loop outward gracefully. Sockets MUST ALWAYS maintain strictly horizontal tangency
+    // (c1y === start.y, c2y === end.y) so wires never angle sharply or cut into sockets.
+    if (rawDx < 48) {
+      const loopOffset = Math.max(36, Math.min(80, Math.abs(rawDy) * 0.4));
+      const c1x = start.x + loopOffset;
+      const c1y = start.y;
+      const c2x = end.x - loopOffset;
+      const c2y = end.y;
+      return `M ${start.x} ${start.y} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${end.x} ${end.y}`;
+    }
+
+    // Standard forward curve: smooth cubic bezier with horizontal tangency at sockets.
+    // Control offset is bounded by rawDx * 0.5 so control points never cross (c1x <= c2x),
+    // preventing any overshoot, backward kink, or distortion.
+    const controlOffset = Math.min(rawDx * 0.5, 140);
     const c1x = start.x + controlOffset;
     const c1y = start.y;
     const c2x = end.x - controlOffset;
