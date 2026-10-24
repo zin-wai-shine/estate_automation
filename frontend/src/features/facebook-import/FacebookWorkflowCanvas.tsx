@@ -1520,6 +1520,8 @@ const OpenAIIcon: React.FC<{ size?: number; color?: string }> = ({ size = 26, co
 
 export interface MergedNodeShapeProps {
   sockets: 'left' | 'right' | 'both';
+  width?: number;
+  height?: number;
   strokeColor: string;
   fillColor?: string;
   strokeWidth?: number;
@@ -1772,6 +1774,8 @@ export const NodeExecutionBadge: React.FC<{
 
 export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
   sockets,
+  width: customWidth,
+  height: customHeight,
   strokeColor,
   fillColor,
   strokeWidth = 1.75,
@@ -1794,6 +1798,8 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
 }) => {
   const { actualTheme } = useTheme();
   const isDark = actualTheme === 'dark';
+  const nodeWidth = customWidth || 72;
+  const nodeHeight = customHeight || 72;
   const resolvedFillColor = fillColor || (isDark ? '#1C2128' : '#FFFFFF');
   const [hoveredSocket, setHoveredSocket] = useState<'input' | 'output' | null>(null);
 
@@ -1824,8 +1830,8 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
         position: 'absolute',
         top: 0,
         left: 0,
-        width: '72px',
-        height: '72px',
+        width: `${nodeWidth}px`,
+        height: `${nodeHeight}px`,
         pointerEvents: 'none',
       }}
     >
@@ -1834,12 +1840,12 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
           position: 'absolute',
           top: 0,
           left: 0,
-          width: '72px',
-          height: '72px',
+          width: `${nodeWidth}px`,
+          height: `${nodeHeight}px`,
           overflow: 'visible',
           filter: isDark ? 'drop-shadow(0 4px 14px rgba(0, 0, 0, 0.45))' : 'drop-shadow(0 2px 8px rgba(0, 0, 0, 0.08))',
         }}
-        viewBox="0 0 72 72"
+        viewBox={`0 0 ${nodeWidth} ${nodeHeight}`}
       >
         {/* n8n Node Card */}
         {isTrigger ? (
@@ -1871,8 +1877,8 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
           <rect
             x="1"
             y="1"
-            width="70"
-            height="70"
+            width={nodeWidth - 2}
+            height={nodeHeight - 2}
             rx="16"
             ry="16"
             fill={resolvedFillColor}
@@ -1919,15 +1925,15 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
 
         {/* n8n line connecting right edge/dot to [+] button */}
         {showAddButton && (
-          <line x1="71" y1="36" x2="87" y2="36" stroke={isDark ? '#4B5563' : '#94A3B8'} strokeWidth="1.75" />
+          <line x1={nodeWidth - 1} y1="36" x2={nodeWidth + 15} y2="36" stroke={isDark ? '#4B5563' : '#94A3B8'} strokeWidth="1.75" />
         )}
 
-        {/* RIGHT OUTPUT PORT (n8n solid circle on right border at x = 71, y = 36) */}
+        {/* RIGHT OUTPUT PORT (n8n solid circle on right border at x = nodeWidth - 1, y = 36) */}
         {(sockets === 'right' || sockets === 'both') && (
           <g>
             {isReceptiveOutput && (
               <circle
-                cx="71"
+                cx={nodeWidth - 1}
                 cy="36"
                 r="9"
                 fill={RECEPTIVE_COLOR}
@@ -1935,7 +1941,7 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
               />
             )}
             <circle
-              cx="71"
+              cx={nodeWidth - 1}
               cy="36"
               r={isReceptiveOutput || hoveredSocket === 'output' ? 6.5 : 5}
               fill={outputDotColor}
@@ -1949,7 +1955,7 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
         )}
       </svg>
 
-      {/* Right Output Socket Hitbox for drag-to-connect NEXT (strictly covers ONLY the socket dot at x=71, NEVER the [+] button) */}
+      {/* Right Output Socket Hitbox for drag-to-connect NEXT (strictly covers ONLY the socket dot at x=nodeWidth-1, NEVER the [+] button) */}
       {(sockets === 'right' || sockets === 'both') && (
         <div
           className="socket-handle socket-handle-output"
@@ -2000,7 +2006,7 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
           }}
           style={{
             position: 'absolute',
-            left: '87px',
+            left: `${nodeWidth + 15}px`,
             top: '25px',
             width: '22px',
             height: '22px',
@@ -2208,10 +2214,11 @@ export const calculateCenteredPanOffset = (
   }
 
   activeBoxes.forEach((b) => {
+    const isExt = isExternalBrowserAIBox(b);
     points.push({
       x: b.x,
       y: b.y,
-      width: CIRCLE_SIZE,
+      width: isExt ? CIRCLE_SIZE * 2 : CIRCLE_SIZE,
       height: CIRCLE_SIZE + LABEL_EXTRA,
     });
   });
@@ -3035,9 +3042,11 @@ export const FacebookWorkflowCanvas = forwardRef<
     }
     const box = config.aiBoxes.find((b) => b.id === nodeId && b.enabled !== false);
     if (box) {
+      const isExt = isExternalBrowserAIBox(box);
+      const boxW = isExt ? CIRCLE_SIZE * 2 : CIRCLE_SIZE;
       const hasAddBtn = isNodeEffectivelyEnabled(box.id);
       return socketType === 'output'
-        ? { x: box.x + (hasAddBtn ? 109 : 71), y: box.y + HALF_CIRCLE }
+        ? { x: box.x + (hasAddBtn ? boxW + 37 : boxW - 1), y: box.y + HALF_CIRCLE }
         : { x: box.x + 1, y: box.y + HALF_CIRCLE };
     }
     return null;
@@ -7060,6 +7069,9 @@ export const FacebookWorkflowCanvas = forwardRef<
             const boxCanConnectBack = !isBoxInputConnected && (isValidConnection('get-content', box.id) || isValidConnection('get-images', box.id));
             const boxHasSource = isEffectiveEnabled && boxCanConnectBack;
 
+            const isExternalBrowser = isExternalBrowserAIBox(box);
+            const nodeWidth = isExternalBrowser ? CIRCLE_SIZE * 2 : CIRCLE_SIZE;
+
             return (
               <div
                 key={box.id}
@@ -7079,7 +7091,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   position: 'absolute',
                   left: `${box.x}px`,
                   top: `${box.y}px`,
-                  width: `${CIRCLE_SIZE}px`,
+                  width: `${nodeWidth}px`,
                   height: `${CIRCLE_SIZE}px`,
                   ['--ring' as any]: isBoxReceptive ? RECEPTIVE_COLOR : (isDark ? '#30363D' : '#D0D7DE'),
                   ['--receptive-color' as any]: RECEPTIVE_COLOR,
@@ -7094,6 +7106,8 @@ export const FacebookWorkflowCanvas = forwardRef<
               >
                 <MergedNodeShape
                   sockets="both"
+                  width={nodeWidth}
+                  height={CIRCLE_SIZE}
                   strokeColor={strokeColor}
                   strokeDasharray={strokeDasharray}
                   socketDotColor={isBoxReceptive ? RECEPTIVE_COLOR : (isDark ? '#8B949E' : '#64748B')}
@@ -7136,14 +7150,27 @@ export const FacebookWorkflowCanvas = forwardRef<
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
+                    gap: isExternalBrowser ? '10px' : '0px',
                     pointerEvents: 'none',
                     userSelect: 'none',
+                    width: '100%',
+                    height: '100%',
                   }}
                 >
                   {isWatermark ? (
                     <FiScissors style={{ fontSize: '28px', color: isEffectiveEnabled ? '#8B5CF6' : '#8B949E', transition: 'color 0.2s ease' }} />
-                  ) : isExternalBrowserAIBox(box) ? (
-                    <FiMonitor style={{ fontSize: '28px', color: isEffectiveEnabled ? '#06B6D4' : '#8B949E', transition: 'color 0.2s ease' }} />
+                  ) : isExternalBrowser ? (
+                    <>
+                      <FiMonitor style={{ fontSize: '28px', color: isEffectiveEnabled ? '#06B6D4' : '#8B949E', transition: 'color 0.2s ease', flexShrink: 0 }} />
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.15 }}>
+                        <span style={{ fontSize: '0.75rem', fontWeight: 700, color: isEffectiveEnabled ? (isDark ? '#F1F5F9' : '#0F172A') : '#8B949E', letterSpacing: '-0.01em' }}>
+                          Chrome
+                        </span>
+                        <span style={{ fontSize: '0.5625rem', color: isDark ? '#38BDF8' : '#0284C7', fontWeight: 600 }}>
+                          {box.browserGroupName || 'Multi-Tab'}
+                        </span>
+                      </div>
+                    </>
                   ) : isEnhance ? (
                     <FiImage style={{ fontSize: '28px', color: isEffectiveEnabled ? '#EC4899' : '#8B949E', transition: 'color 0.2s ease' }} />
                   ) : isTextFormatAIBox(box) ? (
@@ -7164,7 +7191,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                     left: '50%',
                     transform: 'translateX(-50%)',
                     width: 'max-content',
-                    maxWidth: '160px',
+                    maxWidth: isExternalBrowser ? '200px' : '160px',
                     textAlign: 'center',
                     whiteSpace: 'normal',
                     lineHeight: '1.25',
