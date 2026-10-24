@@ -1,5 +1,5 @@
 {
-  "timestamp": 1792880223728,
+  "timestamp": 1792880850490,
   "workflow_formats": [
     {
       "config": {
@@ -219,32 +219,20 @@
           {
             "_liveGroupTabs": [
               {
-                "id": "tab-enh-1",
-                "title": "Enhance interior photograph — Worker #1",
-                "url": "https://chatgpt.com/c/6ad4992b-135c-83ec-b042-8c92220921d7"
+                "id": "1778555865",
+                "title": "Prompt analysis",
+                "url": "https://chatgpt.com/c/6ad49862-4bb0-83ec-969a-1a85cf694b6b"
               },
               {
-                "id": "tab-enh-2",
-                "title": "Enhance Interior Photograph — Worker #2",
-                "url": "https://chatgpt.com/c/6ad49924-7dd0-83ec-8205-768c67420600"
-              },
-              {
-                "id": "tab-enh-3",
-                "title": "ChatGPT — Worker #3",
-                "url": "https://chatgpt.com/c/6ad49918-a4f0-83ec-acf5-efb0ef516adc"
-              },
-              {
-                "id": "tab-enh-4",
-                "title": "Enhance Interior Photograph — Worker #4",
-                "url": "https://chatgpt.com/c/6ad4992a-66e8-83ec-9b11-c5e727e258d9"
+                "id": "1778555866",
+                "title": "Create Facebook Advertisement",
+                "url": "https://chatgpt.com/c/6ad49a3b-f934-83ec-a7c3-ed5f0977c9f6"
               }
             ],
-            "browserGroupName": "Enhance IMG",
+            "browserGroupName": "FB Hero",
             "browserGroupTabUrls": [
-              "https://chatgpt.com/c/6ad4992b-135c-83ec-b042-8c92220921d7",
-              "https://chatgpt.com/c/6ad49924-7dd0-83ec-8205-768c67420600",
-              "https://chatgpt.com/c/6ad49918-a4f0-83ec-acf5-efb0ef516adc",
-              "https://chatgpt.com/c/6ad4992a-66e8-83ec-9b11-c5e727e258d9"
+              "https://chatgpt.com/c/6ad49862-4bb0-83ec-969a-1a85cf694b6b",
+              "https://chatgpt.com/c/6ad49a3b-f934-83ec-a7c3-ed5f0977c9f6"
             ],
             "browserLaneKey": "lane-1",
             "browserProcessingMode": "chrome_assisted",
@@ -252,8 +240,8 @@
             "browserProfileKey": "Profile 14",
             "browserProfileName": "Hsu",
             "browserPromptTemplateKey": "1792793637553",
-            "browserTabId": "tab-enh-1",
-            "browserTabTitle": "Enhance interior photograph — Worker #1",
+            "browserTabId": "1778555865",
+            "browserTabTitle": "Prompt analysis",
             "customPrompt": "",
             "enabled": true,
             "id": "ai-box-external-browser-1792852541152",
@@ -385,8 +373,8 @@
           "y": 240
         },
         "panOffset": {
-          "x": 6,
-          "y": 147
+          "x": 336,
+          "y": 218
         },
         "trigger": {
           "autoClassifyProperty": true,
@@ -402,13 +390,13 @@
           "x": 80,
           "y": 240
         },
-        "zoom": 0.828169014084507
+        "zoom": 0.88
       },
       "createdAt": 1792648980268,
       "description": "Custom Facebook import extraction with dynamic AI prompt generator",
       "id": "format-1792648980268",
       "name": "Download FB Post",
-      "updatedAt": 1792880223721
+      "updatedAt": 1792880850484
     },
     {
       "config": {

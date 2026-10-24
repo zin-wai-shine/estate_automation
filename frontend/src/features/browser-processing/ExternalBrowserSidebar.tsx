@@ -92,6 +92,9 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   const [selectedProfileId, setSelectedProfileId] = useState<number>(() => boxConfig.browserProfileId || 11);
   const [tabGroups, setTabGroups] = useState<BrowserGroupItem[]>([]);
   const [selectedGroupName, setSelectedGroupName] = useState<string>(() => boxConfig.browserGroupName || 'Enhance IMG');
+  const [stagingGroupName, setStagingGroupName] = useState<string>(() => boxConfig.stagingGroupName || 'FB Hero');
+  const [enableEnhanceGroup, setEnableEnhanceGroup] = useState<boolean>(() => boxConfig.enableEnhanceGroup !== false);
+  const [enableStagingGroup, setEnableStagingGroup] = useState<boolean>(() => boxConfig.enableStagingGroup !== false);
   const [selectedTabId, setSelectedTabId] = useState<string>(() => boxConfig.browserTabId || 'tab-enh-1');
   const [processingMode, setProcessingMode] = useState<BrowserProcessingMode>(
     () => boxConfig.browserProcessingMode || 'chrome_assisted'
@@ -590,15 +593,33 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     return profiles.find((p) => p.id === selectedProfileId) || profiles[0];
   }, [profiles, selectedProfileId]);
 
-  // Active selected Tab Group
+  // Active selected Tab Group 1 (Enhance IMG)
   const activeGroup = useMemo(() => {
-    return tabGroups.find((g) => g.name === selectedGroupName) || tabGroups[0];
+    return (
+      tabGroups.find((g) => g.name === selectedGroupName) ||
+      tabGroups.find((g) => g.name.toLowerCase().includes('enhance')) ||
+      tabGroups[0]
+    );
   }, [tabGroups, selectedGroupName]);
 
-  // Active tabs inside current group
+  // Active tabs inside Group 1 (Photo Enhancement)
   const groupTabs = useMemo(() => {
     return activeGroup?.tabs || [];
   }, [activeGroup]);
+
+  // Active selected Tab Group 2 (FB Hero / Staging)
+  const stagingGroup = useMemo(() => {
+    return (
+      tabGroups.find((g) => g.name === stagingGroupName) ||
+      tabGroups.find((g) => g.name.toLowerCase().includes('fb')) ||
+      tabGroups.find((g) => g.tabs_count === 2 && g.name !== activeGroup?.name)
+    );
+  }, [tabGroups, stagingGroupName, activeGroup]);
+
+  // Active tabs inside Group 2 (Staging & Ad Creation)
+  const stagingGroupTabs = useMemo(() => {
+    return stagingGroup?.tabs || [];
+  }, [stagingGroup]);
 
   // Copy prompt to clipboard
   const handleCopyPrompt = () => {
@@ -1125,425 +1146,469 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
         </div>
       </div>
 
-      {/* SECTION C — CHROME TAB GROUP MANAGER */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-        <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
-          Tab Group
-        </label>
-        <Select
-          options={tabGroups.map((g) => ({
-            value: g.name,
-            label: `${g.name} (${g.tabs_count} tabs)`,
-          }))}
-          value={selectedGroupName}
-          onChange={async (val) => {
-            setSelectedGroupName(val);
-            const foundGroup = tabGroups.find((g) => g.name === val);
-            if (foundGroup && foundGroup.tabs && foundGroup.tabs.length > 0) {
-              const firstTab = foundGroup.tabs[0];
-              setSelectedTabId(firstTab.id);
-              const tabUrls = foundGroup.tabs.map((t) => t.url).filter(Boolean);
-              updateMultiConfig({
-                browserGroupName: val,
-                browserTabId: firstTab.id,
-                browserTabTitle: firstTab.title,
-                browserGroupTabUrls: tabUrls,
-                _liveGroupTabs: foundGroup.tabs.map((t) => ({ id: t.id, title: t.title, url: t.url })),
-              });
-
-              // Automatically focus selected tab group in Chrome
-              try {
-                await focusBrowserTabGroup({
-                  profileId: activeProfile?.id || selectedProfileId,
-                  profileKey: activeProfile?.profile_key || 'Profile 14',
-                  groupName: val,
-                  tabId: firstTab.id,
-                  groupTabUrls: tabUrls,
-                  url: firstTab.url,
-                  force: true,
-                });
-              } catch (e) {
-                console.warn('Auto focus tab group on select error:', e);
+      {/* SECTION C — CHROME TAB GROUPS MULTI-PIPELINE */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <FiLayers style={{ color: '#06B6D4' }} /> Chrome Tab Groups Assignment
+          </label>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              if (selectedProfileId) {
+                fetchTabGroups(selectedProfileId).then((g) => setTabGroups(g));
               }
-            } else {
-              setSelectedTabId('');
-              updateMultiConfig({
-                browserGroupName: val,
-                browserTabId: '',
-                browserTabTitle: '',
-                browserGroupTabUrls: [],
-                _liveGroupTabs: [],
-              });
-            }
-          }}
-        />
-        <div style={{ fontSize: '0.625rem', color: '#64748B' }}>
-          Logical group binding preserved across browser restarts.
+            }}
+            style={{ fontSize: '0.625rem', padding: '2px 6px', height: 'auto' }}
+          >
+            <FiRefreshCw size={10} style={{ marginRight: '3px' }} /> Refresh Groups
+          </Button>
         </div>
-      </div>
 
-      {/* SECTION D — GROUP WORKERS OVERVIEW */}
-      {groupTabs.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <label style={{ fontSize: '0.6875rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-              Group Workers ({groupTabs.length} Tabs Active)
-            </label>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                if (selectedProfileId) {
-                  fetchTabGroups(selectedProfileId).then((g) => setTabGroups(g));
-                }
-              }}
-              style={{ fontSize: '0.625rem', padding: '2px 6px', height: 'auto' }}
-            >
-              <FiRefreshCw size={10} style={{ marginRight: '3px' }} /> Refresh
-            </Button>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
-            {groupTabs.map((tab, idx) => (
-              <div
-                key={tab.id}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.5rem',
-                  padding: '0.4rem 0.6rem',
-                  borderRadius: '7px',
-                  background: isDark ? 'rgba(99, 102, 241, 0.08)' : 'rgba(99, 102, 241, 0.05)',
-                  border: '1px solid rgba(99, 102, 241, 0.2)',
-                }}
-              >
-                <div
-                  style={{
-                    width: '16px',
-                    height: '16px',
-                    borderRadius: '50%',
-                    background: 'linear-gradient(135deg, #6366F1, #8B5CF6)',
-                    color: '#fff',
-                    fontSize: '0.5rem',
-                    fontWeight: 800,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    flexShrink: 0,
-                  }}
-                >
-                  {idx + 1}
-                </div>
-                <span
-                  style={{
-                    fontSize: '0.625rem',
-                    color: isDark ? '#CBD5E1' : '#334155',
-                    flex: 1,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                  title={tab.title}
-                >
-                  {tab.title || `Tab ${idx + 1}`}
-                </span>
-                <div
-                  style={{
-                    width: '6px',
-                    height: '6px',
-                    borderRadius: '50%',
-                    background: '#10B981',
-                    flexShrink: 0,
-                  }}
-                />
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* SECTION D.2 — TWO-STAGE STAGING & CONDO FOLDER RUNNER */}
-      {processingMode === 'two_stage_staging' && (
+        {/* ── 1. GROUP 1: PHOTO ENHANCEMENT (4 TABS) ── */}
         <div
           style={{
+            padding: '0.75rem',
+            borderRadius: '8px',
+            background: isDark ? 'rgba(59, 130, 246, 0.06)' : '#EFF6FF',
+            border: isDark ? '1px solid rgba(59, 130, 246, 0.25)' : '1px solid #BFDBFE',
             display: 'flex',
             flexDirection: 'column',
-            gap: '0.75rem',
-            padding: '0.85rem',
-            borderRadius: '10px',
-            background: isDark
-              ? 'linear-gradient(145deg, rgba(139, 92, 246, 0.08), rgba(99, 102, 241, 0.05))'
-              : 'linear-gradient(145deg, #FAF5FF, #EEF2FF)',
-            border: isDark ? '1px solid rgba(139, 92, 246, 0.3)' : '1px solid rgba(139, 92, 246, 0.25)',
+            gap: '0.5rem',
           }}
         >
-          {/* Header */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <FiLayers style={{ color: '#8B5CF6' }} size={14} />
-              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                Two-Stage Tab Group Staging
+              <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#3B82F6' }} />
+              <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: isDark ? '#93C5FD' : '#1D4ED8' }}>
+                Group 1: Photo Enhancement ({groupTabs.length || 4} Tabs)
               </span>
             </div>
-            <span
-              style={{
-                fontSize: '0.5625rem',
-                fontWeight: 600,
-                padding: '2px 6px',
-                borderRadius: '4px',
-                background: 'rgba(139, 92, 246, 0.15)',
-                color: '#8B5CF6',
-              }}
-            >
-              2 Tabs Pipeline
-            </span>
-          </div>
-
-          <div style={{ fontSize: '0.625rem', color: isDark ? '#94A3B8' : '#64748B', lineHeight: 1.35 }}>
-            Tab 1 generates prompt copy, extracts it, then Tab 2 receives the reference photo (1st), local condo images 1, 2, 3 (2nd), and submits.
-          </div>
-
-          {/* 1. Manual Example / Reference Image Upload */}
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '0.35rem',
-              padding: '0.6rem',
-              borderRadius: '8px',
-              background: isDark ? '#111827' : '#FFFFFF',
-              border: isDark ? '1px solid #374151' : '1px solid #E2E8F0',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                1. Reference / Example Image <span style={{ color: '#8B5CF6' }}>(Pasted 1st in Tab 2)</span>
-              </label>
-              {referenceImage && (
-                <button
-                  type="button"
-                  onClick={handleRemoveReferenceImage}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    fontSize: '0.625rem',
-                    color: '#EF4444',
-                    cursor: 'pointer',
-                    padding: '0 2px',
-                  }}
-                >
-                  Remove
-                </button>
-              )}
-            </div>
-
-            {referenceImage ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                <img
-                  src={referenceImage}
-                  alt="Reference"
-                  style={{
-                    width: '48px',
-                    height: '48px',
-                    objectFit: 'cover',
-                    borderRadius: '6px',
-                    border: '1px solid #8B5CF6',
-                  }}
-                />
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                  <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                    Manual Example Image Ready
-                  </span>
-                  <span style={{ fontSize: '0.5625rem', color: '#10B981' }}>
-                    ✓ Will be attached first before condo photos 1, 2, 3
-                  </span>
-                </div>
-              </div>
-            ) : (
-              <label
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  padding: '0.75rem 0.5rem',
-                  borderRadius: '6px',
-                  border: isDark ? '1px dashed #4B5563' : '1px dashed #CBD5E1',
-                  background: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.01)',
-                  cursor: 'pointer',
-                  textAlign: 'center',
-                  gap: '4px',
-                }}
-              >
-                <FiUploadCloud size={18} style={{ color: '#8B5CF6' }} />
-                <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                  Upload Manual Example Image
-                </span>
-                <span style={{ fontSize: '0.5625rem', color: 'var(--text-muted)' }}>
-                  Click to choose file from your computer (JPG, PNG)
-                </span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleReferenceImageFile}
-                  style={{ display: 'none' }}
-                />
-              </label>
-            )}
-          </div>
-
-          {/* 2. Local Mac Condo Building Folder Scanner */}
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '0.35rem',
-              padding: '0.6rem',
-              borderRadius: '8px',
-              background: isDark ? '#111827' : '#FFFFFF',
-              border: isDark ? '1px solid #374151' : '1px solid #E2E8F0',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                2. Condo Building Folder <span style={{ color: '#06B6D4' }}>(Auto-Detects 1, 2, 3)</span>
-              </label>
-              <span
-                style={{
-                  fontSize: '0.5625rem',
-                  color: '#10B981',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '3px',
-                }}
-              >
-                <FiShield size={10} /> Strictly Read-Only
-              </span>
-            </div>
-
-            <div style={{ display: 'flex', gap: '4px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.625rem', color: 'var(--text-secondary)', cursor: 'pointer' }}>
               <input
-                type="text"
-                value={condoSearchQuery}
-                placeholder="e.g. Regent Home Bangna, Modiz Sukhumvit 50"
-                onChange={(e) => setCondoSearchQuery(e.target.value)}
-                style={{
-                  flex: 1,
-                  padding: '4px 8px',
-                  borderRadius: '5px',
-                  fontSize: '0.6875rem',
-                  border: isDark ? '1px solid #374151' : '1px solid #CBD5E1',
-                  background: isDark ? '#1E293B' : '#F8FAFC',
-                  color: 'var(--text-primary)',
-                  outline: 'none',
+                type="checkbox"
+                checked={enableEnhanceGroup}
+                onChange={(e) => {
+                  setEnableEnhanceGroup(e.target.checked);
+                  updateConfig('enableEnhanceGroup', e.target.checked);
                 }}
               />
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={isScanningCondo}
-                onClick={() => handleScanCondo()}
-                style={{ fontSize: '0.625rem', padding: '0 8px', height: '28px' }}
-              >
-                <FiRefreshCw size={10} className={isScanningCondo ? 'animate-spin' : ''} />
-              </Button>
-            </div>
+              Active
+            </label>
+          </div>
 
-            {matchedCondoInfo ? (
+          <Select
+            options={[
+              ...tabGroups.map((g) => ({
+                value: g.name,
+                label: `${g.name} (${g.tabs_count} tabs)`,
+              })),
+            ]}
+            value={selectedGroupName}
+            onChange={async (val) => {
+              setSelectedGroupName(val);
+              const foundGroup = tabGroups.find((g) => g.name === val);
+              if (foundGroup && foundGroup.tabs && foundGroup.tabs.length > 0) {
+                const firstTab = foundGroup.tabs[0];
+                setSelectedTabId(firstTab.id);
+                const tabUrls = foundGroup.tabs.map((t) => t.url).filter(Boolean);
+                updateMultiConfig({
+                  browserGroupName: val,
+                  browserTabId: firstTab.id,
+                  browserTabTitle: firstTab.title,
+                  browserGroupTabUrls: tabUrls,
+                  _liveGroupTabs: foundGroup.tabs.map((t) => ({ id: t.id, title: t.title, url: t.url })),
+                });
+
+                // Focus selected group in Chrome
+                try {
+                  await focusBrowserTabGroup({
+                    profileId: activeProfile?.id || selectedProfileId,
+                    profileKey: activeProfile?.profile_key || 'Profile 14',
+                    groupName: val,
+                    tabId: firstTab.id,
+                    groupTabUrls: tabUrls,
+                    url: firstTab.url,
+                    force: true,
+                  });
+                } catch (e) {}
+              }
+            }}
+          />
+
+          {enableEnhanceGroup && groupTabs.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', marginTop: '2px' }}>
+              <div style={{ fontSize: '0.5625rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                Active Workers ({groupTabs.length} tabs for photo retouching):
+              </div>
+              {groupTabs.map((tab, idx) => (
+                <div
+                  key={tab.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                    padding: '0.35rem 0.5rem',
+                    borderRadius: '6px',
+                    background: isDark ? 'rgba(59, 130, 246, 0.08)' : '#FFFFFF',
+                    border: '1px solid rgba(59, 130, 246, 0.2)',
+                  }}
+                >
+                  <div
+                    style={{
+                      width: '14px',
+                      height: '14px',
+                      borderRadius: '50%',
+                      background: '#3B82F6',
+                      color: '#fff',
+                      fontSize: '0.5rem',
+                      fontWeight: 800,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    {idx + 1}
+                  </div>
+                  <span
+                    style={{
+                      fontSize: '0.625rem',
+                      color: isDark ? '#CBD5E1' : '#334155',
+                      flex: 1,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                    title={tab.title}
+                  >
+                    {tab.title || `Tab ${idx + 1}`}
+                  </span>
+                  <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10B981', flexShrink: 0 }} />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* ── 2. GROUP 2: STAGING & FB HERO (2 TABS) ── */}
+        <div
+          style={{
+            padding: '0.75rem',
+            borderRadius: '8px',
+            background: isDark ? 'rgba(139, 92, 246, 0.06)' : '#FAF5FF',
+            border: isDark ? '1px solid rgba(139, 92, 246, 0.25)' : '1px solid #E9D5FF',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.5rem',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#8B5CF6' }} />
+              <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: isDark ? '#C4B5FD' : '#6D28D9' }}>
+                Group 2: Staging & FB Hero ({stagingGroupTabs.length || 2} Tabs)
+              </span>
+            </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.625rem', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={enableStagingGroup}
+                onChange={(e) => {
+                  setEnableStagingGroup(e.target.checked);
+                  updateConfig('enableStagingGroup', e.target.checked);
+                }}
+              />
+              Active
+            </label>
+          </div>
+
+          <Select
+            options={[
+              ...tabGroups.map((g) => ({
+                value: g.name,
+                label: `${g.name} (${g.tabs_count} tabs)`,
+              })),
+            ]}
+            value={stagingGroupName}
+            onChange={async (val) => {
+              setStagingGroupName(val);
+              updateConfig('stagingGroupName', val);
+              const found = tabGroups.find((g) => g.name === val);
+              if (found && found.tabs && found.tabs.length > 0) {
+                try {
+                  await focusBrowserTabGroup({
+                    profileId: activeProfile?.id || selectedProfileId,
+                    profileKey: activeProfile?.profile_key || 'Profile 14',
+                    groupName: val,
+                    tabId: found.tabs[0].id,
+                    groupTabUrls: found.tabs.map((t) => t.url).filter(Boolean),
+                    url: found.tabs[0].url,
+                    force: true,
+                  });
+                } catch (e) {}
+              }
+            }}
+          />
+
+          {enableStagingGroup && stagingGroupTabs.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', marginTop: '2px' }}>
+              <div style={{ fontSize: '0.5625rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                Pipeline Workers:
+              </div>
+              {stagingGroupTabs.map((tab, idx) => (
+                <div
+                  key={tab.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                    padding: '0.35rem 0.5rem',
+                    borderRadius: '6px',
+                    background: isDark ? 'rgba(139, 92, 246, 0.08)' : '#FFFFFF',
+                    border: '1px solid rgba(139, 92, 246, 0.2)',
+                  }}
+                >
+                  <div
+                    style={{
+                      width: '14px',
+                      height: '14px',
+                      borderRadius: '50%',
+                      background: '#8B5CF6',
+                      color: '#fff',
+                      fontSize: '0.5rem',
+                      fontWeight: 800,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    {idx + 1}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+                    <span
+                      style={{
+                        fontSize: '0.625rem',
+                        fontWeight: 600,
+                        color: isDark ? '#E2E8F0' : '#1E293B',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                      title={tab.title}
+                    >
+                      {tab.title || `Tab ${idx + 1}`}
+                    </span>
+                    <span style={{ fontSize: '0.5rem', color: idx === 0 ? '#06B6D4' : '#10B981' }}>
+                      {idx === 0
+                        ? '↳ Tab 1: Pastes prompt, sends, and extracts prompt copy'
+                        : '↳ Tab 2: Pastes prompt + Reference Image (1st) + Condo Photos 1,2,3 (2nd)'}
+                    </span>
+                  </div>
+                  <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10B981', flexShrink: 0 }} />
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Reference Image & Condo Building Scanner inside Group 2 */}
+          {enableStagingGroup && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginTop: '4px' }}>
+              {/* 1. Manual Reference Image */}
               <div
                 style={{
-                  marginTop: '2px',
-                  padding: '0.45rem',
-                  borderRadius: '5px',
-                  background: isDark ? 'rgba(16, 185, 129, 0.1)' : '#F0FDF4',
-                  border: '1px solid rgba(16, 185, 129, 0.25)',
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: '3px',
+                  gap: '0.35rem',
+                  padding: '0.55rem',
+                  borderRadius: '6px',
+                  background: isDark ? '#111827' : '#FFFFFF',
+                  border: isDark ? '1px solid #374151' : '1px solid #E2E8F0',
                 }}
               >
-                <div style={{ fontSize: '0.6875rem', fontWeight: 600, color: '#10B981', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <FiCheckCircle size={12} />
-                  Matched: "{matchedCondoInfo.matched_folder}"
-                </div>
-                <div style={{ fontSize: '0.5625rem', color: isDark ? '#94A3B8' : '#64748B' }}>
-                  Path: Desktop/Condo Building/{matchedCondoInfo.matched_folder}
-                </div>
-                <div style={{ display: 'flex', gap: '4px', marginTop: '2px' }}>
-                  {matchedCondoInfo.images?.map((img: any) => (
-                    <span
-                      key={img.index}
-                      style={{
-                        fontSize: '0.5625rem',
-                        padding: '1px 5px',
-                        borderRadius: '3px',
-                        background: '#10B981',
-                        color: '#FFFFFF',
-                        fontWeight: 700,
-                      }}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <label style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                    Reference / Example Image <span style={{ color: '#8B5CF6' }}>(Pasted 1st in Tab 2)</span>
+                  </label>
+                  {referenceImage && (
+                    <button
+                      type="button"
+                      onClick={handleRemoveReferenceImage}
+                      style={{ background: 'none', border: 'none', fontSize: '0.5625rem', color: '#EF4444', cursor: 'pointer' }}
                     >
-                      {img.filename}
-                    </span>
-                  ))}
-                  <span style={{ fontSize: '0.5625rem', color: 'var(--text-muted)', alignSelf: 'center', marginLeft: '4px' }}>
-                    ({matchedCondoInfo.images_found} images ready)
-                  </span>
+                      Remove
+                    </button>
+                  )}
                 </div>
-              </div>
-            ) : (
-              <div style={{ fontSize: '0.5625rem', color: '#F59E0B', marginTop: '2px' }}>
-                ⚠️ No matching folder found yet in Desktop/Condo Building.
-              </div>
-            )}
-          </div>
 
-          {/* 3. Run & Test Pipeline Button */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-            <Button
-              size="sm"
-              variant="primary"
-              disabled={isRunningTwoStage}
-              onClick={handleRunTwoStageTest}
-              style={{
-                width: '100%',
-                fontWeight: 700,
-                fontSize: '0.75rem',
-                background: 'linear-gradient(135deg, #8B5CF6, #6366F1)',
-                border: 'none',
-                color: '#fff',
-                padding: '6px 12px',
-              }}
-            >
-              {isRunningTwoStage ? (
-                <>
-                  <FiRefreshCw size={12} className="animate-spin" style={{ marginRight: '6px' }} />
-                  Running Two-Stage Staging...
-                </>
-              ) : (
-                <>
-                  <FiPlay size={12} style={{ marginRight: '6px' }} />
-                  Run Two-Stage Staging (Tab 1 → Tab 2)
-                </>
-              )}
-            </Button>
+                {referenceImage ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <img
+                      src={referenceImage}
+                      alt="Reference"
+                      style={{ width: '42px', height: '42px', objectFit: 'cover', borderRadius: '5px', border: '1px solid #8B5CF6' }}
+                    />
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <span style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-primary)' }}>Reference Image Ready</span>
+                      <span style={{ fontSize: '0.5rem', color: '#10B981' }}>✓ Will be attached first before condo photos 1, 2, 3</span>
+                    </div>
+                  </div>
+                ) : (
+                  <label
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '0.6rem 0.4rem',
+                      borderRadius: '5px',
+                      border: isDark ? '1px dashed #4B5563' : '1px dashed #CBD5E1',
+                      cursor: 'pointer',
+                      gap: '3px',
+                    }}
+                  >
+                    <FiUploadCloud size={16} style={{ color: '#8B5CF6' }} />
+                    <span style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Upload Reference Image</span>
+                    <input type="file" accept="image/*" onChange={handleReferenceImageFile} style={{ display: 'none' }} />
+                  </label>
+                )}
+              </div>
 
-            {twoStageMessage && (
+              {/* 2. Condo Building Desktop Folder Scanner */}
               <div
                 style={{
-                  padding: '0.4rem 0.6rem',
-                  borderRadius: '5px',
-                  fontSize: '0.625rem',
-                  background: isDark ? '#1E293B' : '#F1F5F9',
-                  border: '1px solid var(--border-color)',
-                  color: isDark ? '#E2E8F0' : '#1E293B',
-                  lineHeight: 1.35,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.35rem',
+                  padding: '0.55rem',
+                  borderRadius: '6px',
+                  background: isDark ? '#111827' : '#FFFFFF',
+                  border: isDark ? '1px solid #374151' : '1px solid #E2E8F0',
                 }}
               >
-                {twoStageMessage}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <label style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                    Condo Folder from Desktop <span style={{ color: '#06B6D4' }}>(Auto-Detects 1, 2, 3)</span>
+                  </label>
+                  <span style={{ fontSize: '0.5rem', color: '#10B981', display: 'flex', alignItems: 'center', gap: '2px' }}>
+                    <FiShield size={9} /> Strictly Read-Only
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', gap: '4px' }}>
+                  <input
+                    type="text"
+                    value={condoSearchQuery}
+                    placeholder="e.g. Regent Home Bangna, Modiz Sukhumvit 50"
+                    onChange={(e) => setCondoSearchQuery(e.target.value)}
+                    style={{
+                      flex: 1,
+                      padding: '4px 6px',
+                      borderRadius: '4px',
+                      fontSize: '0.625rem',
+                      border: isDark ? '1px solid #374151' : '1px solid #CBD5E1',
+                      background: isDark ? '#1E293B' : '#F8FAFC',
+                      color: 'var(--text-primary)',
+                      outline: 'none',
+                    }}
+                  />
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={isScanningCondo}
+                    onClick={() => handleScanCondo()}
+                    style={{ fontSize: '0.5625rem', padding: '0 6px', height: '26px' }}
+                  >
+                    <FiRefreshCw size={9} className={isScanningCondo ? 'animate-spin' : ''} />
+                  </Button>
+                </div>
+
+                {matchedCondoInfo ? (
+                  <div
+                    style={{
+                      marginTop: '2px',
+                      padding: '0.4rem',
+                      borderRadius: '4px',
+                      background: isDark ? 'rgba(16, 185, 129, 0.1)' : '#F0FDF4',
+                      border: '1px solid rgba(16, 185, 129, 0.25)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '2px',
+                    }}
+                  >
+                    <div style={{ fontSize: '0.625rem', fontWeight: 600, color: '#10B981', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                      <FiCheckCircle size={10} /> Matched: "{matchedCondoInfo.matched_folder}"
+                    </div>
+                    <div style={{ display: 'flex', gap: '3px', marginTop: '2px' }}>
+                      {matchedCondoInfo.images?.map((img: any) => (
+                        <span
+                          key={img.index}
+                          style={{ fontSize: '0.5rem', padding: '1px 4px', borderRadius: '2px', background: '#10B981', color: '#fff', fontWeight: 700 }}
+                        >
+                          {img.filename}
+                        </span>
+                      ))}
+                      <span style={{ fontSize: '0.5rem', color: 'var(--text-muted)', alignSelf: 'center', marginLeft: '3px' }}>
+                        ({matchedCondoInfo.images_found} images ready)
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ fontSize: '0.5rem', color: '#F59E0B' }}>
+                    ⚠️ No matching folder found in Desktop/Condo Building.
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+
+              {/* 3. Run Test Button */}
+              <Button
+                size="sm"
+                variant="primary"
+                disabled={isRunningTwoStage}
+                onClick={handleRunTwoStageTest}
+                style={{
+                  width: '100%',
+                  fontWeight: 700,
+                  fontSize: '0.6875rem',
+                  background: 'linear-gradient(135deg, #8B5CF6, #6366F1)',
+                  border: 'none',
+                  color: '#fff',
+                  padding: '5px 10px',
+                }}
+              >
+                {isRunningTwoStage ? (
+                  <>
+                    <FiRefreshCw size={11} className="animate-spin" style={{ marginRight: '5px' }} />
+                    Running Staging...
+                  </>
+                ) : (
+                  <>
+                    <FiPlay size={11} style={{ marginRight: '5px' }} />
+                    Test Run Staging ({stagingGroupName})
+                  </>
+                )}
+              </Button>
+
+              {twoStageMessage && (
+                <div
+                  style={{
+                    padding: '0.35rem 0.5rem',
+                    borderRadius: '4px',
+                    fontSize: '0.5625rem',
+                    background: isDark ? '#1E293B' : '#F1F5F9',
+                    border: '1px solid var(--border-color)',
+                    color: isDark ? '#E2E8F0' : '#1E293B',
+                  }}
+                >
+                  {twoStageMessage}
+                </div>
+              )}
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
       {/* SECTION E — PROMPT TEMPLATE SELECTOR */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
