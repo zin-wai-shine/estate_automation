@@ -1,5 +1,5 @@
 {
-  "timestamp": 1792888075055,
+  "timestamp": 1792888710867,
   "workflow_formats": [
     {
       "config": {
@@ -284,9 +284,40 @@
             "y": 140
           },
           {
+            "_liveGroupTabs": [
+              {
+                "id": "tab-enh-1",
+                "title": "ChatGPT Conversation — Worker #1",
+                "url": "https://chatgpt.com/c/6ad49918-a4f0-83ec-acf5-efb0ef516adc"
+              },
+              {
+                "id": "tab-enh-2",
+                "title": "ChatGPT Conversation — Worker #2",
+                "url": "https://chatgpt.com/c/6ad49924-7dd0-83ec-8205-768c67420600"
+              },
+              {
+                "id": "tab-enh-3",
+                "title": "Enhance IMG — Worker #3",
+                "url": "https://chatgpt.com/c/6ad4992a-66e8-83ec-9b11-c5e727e258d9"
+              },
+              {
+                "id": "tab-enh-4",
+                "title": "Enhance Interior Photograph — Worker #4",
+                "url": "https://chatgpt.com/c/6ad4992b-135c-83ec-b042-8c92220921d7"
+              }
+            ],
+            "browserGroupName": "Enhance IMG",
+            "browserGroupTabUrls": [
+              "https://chatgpt.com/c/6ad49918-a4f0-83ec-acf5-efb0ef516adc",
+              "https://chatgpt.com/c/6ad49924-7dd0-83ec-8205-768c67420600",
+              "https://chatgpt.com/c/6ad4992a-66e8-83ec-9b11-c5e727e258d9",
+              "https://chatgpt.com/c/6ad4992b-135c-83ec-b042-8c92220921d7"
+            ],
             "browserProfileId": 11,
             "browserProfileKey": "Profile 14",
             "browserProfileName": "Hsu",
+            "browserTabId": "tab-enh-1",
+            "browserTabTitle": "ChatGPT Conversation — Worker #1",
             "customPrompt": "",
             "enabled": true,
             "id": "ai-box-chrome-11-1792887929724",
@@ -297,8 +328,8 @@
             "templateId": "chrome-profile",
             "templateText": "Chrome Profile: Hsu (Profile 14)",
             "title": "Hsu",
-            "x": 597.6818181818181,
-            "y": 620
+            "x": 449.95823555119915,
+            "y": 639.5828698553938
           }
         ],
         "combineBoxes": [
@@ -410,8 +441,8 @@
           "y": 270
         },
         "panOffset": {
-          "x": 171,
-          "y": -79
+          "x": -253,
+          "y": -398
         },
         "trigger": {
           "autoClassifyProperty": true,
@@ -427,13 +458,13 @@
           "x": 80,
           "y": 270
         },
-        "zoom": 0.88
+        "zoom": 1.45
       },
       "createdAt": 1792648980268,
       "description": "Custom Facebook import extraction with dynamic AI prompt generator",
       "id": "format-1792648980268",
       "name": "Download FB Post",
-      "updatedAt": 1792888075019
+      "updatedAt": 1792888710861
     },
     {
       "config": {

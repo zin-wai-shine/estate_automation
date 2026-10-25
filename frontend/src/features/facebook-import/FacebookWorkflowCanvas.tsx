@@ -59,7 +59,7 @@ import { HiSparkles } from 'react-icons/hi2';
 import { useScrollLock } from '../../hooks/useScrollLock';
 import { AITrainingChatbot, ModelSelectorMenu, LaoZhangIcon, RunwareIcon } from './AITrainingChatbot';
 import { useTheme } from '../../context/ThemeContext';
-import { getAIModelDisplayName, isImageAIBox, isImageModel, isWatermarkAIBox, isEnhanceAIBox, isAIBoxConnected, isTextFormatAIBox, isTextAIBox, isN8NAIBox, isExternalBrowserAIBox } from './aiModelUtils';
+import { getAIModelDisplayName, isImageAIBox, isImageModel, isWatermarkAIBox, isEnhanceAIBox, isAIBoxConnected, isTextFormatAIBox, isTextAIBox, isN8NAIBox, isExternalBrowserAIBox, isChromeProfileAIBox } from './aiModelUtils';
 import { AIImageStudio } from './AIImageStudio';
 import { ExternalBrowserSidebar } from '../browser-processing/ExternalBrowserSidebar';
 import { focusBrowserTabGroup, fetchBrowserProfiles } from '../browser-processing/browserAutomationService';
@@ -3131,12 +3131,14 @@ export const FacebookWorkflowCanvas = forwardRef<
     }
     const box = config.aiBoxes.find((b) => b.id === nodeId && b.enabled !== false);
     if (box) {
-      const isExt = isExternalBrowserAIBox(box);
-      const isProf = box.processType === 'chrome_profile';
+      const isProf = isChromeProfileAIBox(box);
+      const isExt = isExternalBrowserAIBox(box) && !isProf;
       const boxW = isExt ? 216 : CIRCLE_SIZE;
       const hasAddBtn = isNodeEffectivelyEnabled(box.id) && !isProf;
       return socketType === 'output'
         ? { x: box.x + (hasAddBtn ? boxW + 37 : boxW - 1), y: box.y + HALF_CIRCLE }
+        : isProf
+        ? { x: box.x + HALF_CIRCLE, y: box.y + 1 }
         : { x: box.x + 1, y: box.y + HALF_CIRCLE };
     }
     return null;
@@ -6468,7 +6470,7 @@ export const FacebookWorkflowCanvas = forwardRef<
               const fromBox = config.aiBoxes.find((b) => b.id === conn.fromNodeId);
               const toBox = config.aiBoxes.find((b) => b.id === conn.toNodeId);
               const isBaseVerticalWire = Boolean(
-                fromBox && isExternalBrowserAIBox(fromBox) && toBox && toBox.processType === 'chrome_profile'
+                fromBox && isExternalBrowserAIBox(fromBox) && toBox && isChromeProfileAIBox(toBox)
               );
 
               let fromPos = getNodeSocketPos(conn.fromNodeId, 'output');
@@ -7215,8 +7217,8 @@ export const FacebookWorkflowCanvas = forwardRef<
             const boxCanConnectBack = !isBoxInputConnected && (isValidConnection('get-content', box.id) || isValidConnection('get-images', box.id));
             const boxHasSource = isEffectiveEnabled && boxCanConnectBack;
 
-            const isExternalBrowser = isExternalBrowserAIBox(box);
-            const isChromeProfile = box.processType === 'chrome_profile';
+            const isChromeProfile = isChromeProfileAIBox(box);
+            const isExternalBrowser = isExternalBrowserAIBox(box) && !isChromeProfile;
             const nodeWidth = isExternalBrowser ? 216 : CIRCLE_SIZE;
 
             return (

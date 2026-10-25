@@ -99,12 +99,20 @@ export const isExternalBrowserAIBox = (
   box?: { id?: string; provider?: string; processType?: string; title?: string }
 ): boolean => {
   if (!box) return false;
+  if (box.processType === 'chrome_profile' || Boolean(box.id?.includes('ai-box-chrome-'))) return false;
   return (
-    box.provider === 'external_browser' ||
+    (box.provider === 'external_browser' && box.processType !== 'chrome_profile') ||
     box.processType === 'external_browser' ||
     Boolean(box.id?.includes('external-browser')) ||
     Boolean(box.title?.toLowerCase().includes('external browser'))
   );
+};
+
+export const isChromeProfileAIBox = (
+  box?: { id?: string; processType?: string }
+): boolean => {
+  if (!box) return false;
+  return box.processType === 'chrome_profile' || Boolean(box.id?.includes('ai-box-chrome-'));
 };
 
 export const isWatermarkAIBox = (
