@@ -892,30 +892,161 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
           </button>
         </div>
 
-        <Select
-          options={[
-            ...profiles.map((p) => ({
-              value: String(p.id),
-              label: `${p.display_name} (${p.profile_key})`,
-            })),
-            { value: '__add_new__', label: '+ Add / Import New Profile...' },
-          ]}
-          value={String(selectedProfileId)}
-          onChange={(val) => {
-            if (val === '__add_new__') {
-              setIsAddProfileOpen(true);
-              return;
-            }
-            const num = Number(val);
-            setSelectedProfileId(num);
-            const found = profiles.find((p) => p.id === num);
-            updateMultiConfig({
-              browserProfileId: num,
-              browserProfileName: found ? found.display_name : '',
-              browserProfileKey: found ? found.profile_key : '',
-            });
+        {/* Chrome Profile Card Box Selection (Replaces Dropbox) */}
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.45rem',
+            maxHeight: '240px',
+            overflowY: 'auto',
+            paddingRight: '2px',
           }}
-        />
+        >
+          {profiles.map((p) => {
+            const isSelected = selectedProfileId === p.id;
+            return (
+              <div
+                key={p.id}
+                onClick={() => {
+                  setSelectedProfileId(p.id);
+                  updateMultiConfig({
+                    browserProfileId: p.id,
+                    browserProfileName: p.display_name,
+                    browserProfileKey: p.profile_key,
+                  });
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '0.55rem 0.65rem',
+                  borderRadius: '7px',
+                  border: isSelected
+                    ? '1.5px solid #06B6D4'
+                    : isDark ? '1px solid #374151' : '1px solid #E2E8F0',
+                  backgroundColor: isSelected
+                    ? (isDark ? 'rgba(6, 182, 212, 0.12)' : '#ECFEFF')
+                    : (isDark ? '#1F2937' : '#F8FAFC'),
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                  boxShadow: isSelected ? '0 0 0 1px rgba(6, 182, 212, 0.35)' : 'none',
+                }}
+                onMouseEnter={(e) => {
+                  if (!isSelected) {
+                    e.currentTarget.style.borderColor = isDark ? '#4B5563' : '#CBD5E1';
+                    e.currentTarget.style.backgroundColor = isDark ? '#263342' : '#F1F5F9';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isSelected) {
+                    e.currentTarget.style.borderColor = isDark ? '#374151' : '#E2E8F0';
+                    e.currentTarget.style.backgroundColor = isDark ? '#1F2937' : '#F8FAFC';
+                  }
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', minWidth: 0, flex: 1 }}>
+                  <div
+                    style={{
+                      width: '30px',
+                      height: '30px',
+                      borderRadius: '6px',
+                      background: isSelected
+                        ? 'linear-gradient(135deg, #06B6D4, #0891B2)'
+                        : (isDark ? '#374151' : '#E2E8F0'),
+                      color: isSelected ? '#FFFFFF' : (isDark ? '#9CA3AF' : '#64748B'),
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <FiMonitor size={15} />
+                  </div>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      <span
+                        style={{
+                          fontSize: '0.75rem',
+                          fontWeight: 700,
+                          color: isSelected ? (isDark ? '#38BDF8' : '#0284C7') : 'var(--text-primary)',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                      >
+                        {p.display_name}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: '0.5625rem',
+                          padding: '1px 5px',
+                          borderRadius: '4px',
+                          backgroundColor: isDark ? '#374151' : '#E2E8F0',
+                          color: isDark ? '#9CA3AF' : '#64748B',
+                          fontWeight: 600,
+                          flexShrink: 0,
+                        }}
+                      >
+                        {p.profile_key}
+                      </span>
+                    </div>
+                    {p.email ? (
+                      <div
+                        style={{
+                          fontSize: '0.625rem',
+                          color: 'var(--text-muted)',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          marginTop: '1px',
+                        }}
+                      >
+                        {p.email}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', marginTop: '1px' }}>
+                        {p.integration_id}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', marginLeft: '6px', flexShrink: 0 }}>
+                  {isSelected ? (
+                    <span style={{ color: '#06B6D4', display: 'flex', alignItems: 'center' }}>
+                      <FiCheckCircle size={16} />
+                    </span>
+                  ) : (
+                    <span
+                      style={{
+                        width: '14px',
+                        height: '14px',
+                        borderRadius: '50%',
+                        border: isDark ? '1.5px solid #4B5563' : '1.5px solid #CBD5E1',
+                        display: 'block',
+                      }}
+                    />
+                  )}
+                </div>
+              </div>
+            );
+          })}
+          {profiles.length === 0 && (
+            <div
+              style={{
+                fontSize: '0.6875rem',
+                color: 'var(--text-muted)',
+                textAlign: 'center',
+                padding: '0.75rem',
+                border: '1px dashed var(--border-color)',
+                borderRadius: '6px',
+              }}
+            >
+              No Chrome profiles discovered. Click &ldquo;+ Add&rdquo; above to scan or register.
+            </div>
+          )}
+        </div>
 
         {/* Status / Feedback message */}
         {syncMessage && (

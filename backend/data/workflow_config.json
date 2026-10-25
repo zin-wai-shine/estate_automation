@@ -1,5 +1,5 @@
 {
-  "timestamp": 1792886242915,
+  "timestamp": 1792887418714,
   "workflow_formats": [
     {
       "config": {
@@ -335,8 +335,8 @@
           "storeInDatabase": true,
           "targetMode": "hybrid",
           "title": "Social \u0026 Database Storage",
-          "x": 960,
-          "y": 248
+          "x": 1120,
+          "y": 240
         },
         "destinations": [
           {
@@ -388,8 +388,8 @@
           "y": 240
         },
         "panOffset": {
-          "x": -342,
-          "y": -203
+          "x": 265,
+          "y": 218
         },
         "trigger": {
           "autoClassifyProperty": true,
@@ -405,13 +405,13 @@
           "x": 80,
           "y": 240
         },
-        "zoom": 1.6
+        "zoom": 0.88
       },
       "createdAt": 1792648980268,
       "description": "Custom Facebook import extraction with dynamic AI prompt generator",
       "id": "format-1792648980268",
       "name": "Download FB Post",
-      "updatedAt": 1792886242912
+      "updatedAt": 1792887418698
     },
     {
       "config": {

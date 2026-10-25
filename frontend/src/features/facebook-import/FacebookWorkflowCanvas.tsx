@@ -62,7 +62,8 @@ import { useTheme } from '../../context/ThemeContext';
 import { getAIModelDisplayName, isImageAIBox, isImageModel, isWatermarkAIBox, isEnhanceAIBox, isAIBoxConnected, isTextFormatAIBox, isTextAIBox, isN8NAIBox, isExternalBrowserAIBox } from './aiModelUtils';
 import { AIImageStudio } from './AIImageStudio';
 import { ExternalBrowserSidebar } from '../browser-processing/ExternalBrowserSidebar';
-import { focusBrowserTabGroup } from '../browser-processing/browserAutomationService';
+import { focusBrowserTabGroup, fetchBrowserProfiles } from '../browser-processing/browserAutomationService';
+import type { BrowserProfile } from '../browser-processing/types';
 import { WatermarkNodeModal } from './WatermarkNodeModal';
 import { ToggleSwitch } from '../../components/ui/ToggleSwitch';
 import { loadWatermarkPresets, DEFAULT_WATERMARK_CONFIG, DEFAULT_PRESETS, type WatermarkConfig } from '../autopost/watermarkStorage';
@@ -2255,7 +2256,7 @@ export const calculateCenteredPanOffset = (
   }
 
   activeBoxes.forEach((b) => {
-    const isExt = isExternalBrowserAIBox(b);
+    const isExt = isExternalBrowserAIBox(b) || b.processType === 'chrome_profile';
     points.push({
       x: b.x,
       y: b.y,
@@ -2596,8 +2597,18 @@ export const FacebookWorkflowCanvas = forwardRef<
     nodeId: string;
     nodeType: string;
     title: string;
-    platform?: 'facebook' | 'instagram' | 'tiktok' | 'database';
+    platform?: 'facebook' | 'instagram' | 'tiktok' | 'database' | 'chrome-profile';
   } | null>(null);
+
+  const [browserProfilesList, setBrowserProfilesList] = useState<BrowserProfile[]>([]);
+
+  useEffect(() => {
+    fetchBrowserProfiles().then((res) => {
+      if (res && res.length > 0) {
+        setBrowserProfilesList(res);
+      }
+    });
+  }, []);
 
   const [isAddFromTriggerOpen, setIsAddFromTriggerOpen] = useState(false);
   const [pendingDeleteBox, setPendingDeleteBox] = useState<DynamicAIBoxConfig | null>(null);
@@ -2702,13 +2713,18 @@ export const FacebookWorkflowCanvas = forwardRef<
     nodeId: string,
     nodeType: string,
     title: string,
-    platform?: 'facebook' | 'instagram' | 'tiktok' | 'database',
+    platform?: 'facebook' | 'instagram' | 'tiktok' | 'database' | 'chrome-profile',
   ) => {
     setActiveModalNode(null);
     setSelectedBoxId(null);
     setQuickAddPopover(null);
     setIsRecoverModalOpen(false);
     onToggleGeneralSettings?.(false);
+    if (platform === 'chrome-profile') {
+      fetchBrowserProfiles().then((res) => {
+        if (res && res.length > 0) setBrowserProfilesList(res);
+      });
+    }
     setConnectDrawerNode({ nodeId, nodeType, title, platform });
   };
 
@@ -2716,7 +2732,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     nodeId: string,
     nodeType: string,
     nodeTitle?: string,
-    platform?: 'facebook' | 'instagram' | 'tiktok' | 'database',
+    platform?: 'facebook' | 'instagram' | 'tiktok' | 'database' | 'chrome-profile',
   ) => (
     <button
       type="button"
@@ -3093,7 +3109,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     }
     const box = config.aiBoxes.find((b) => b.id === nodeId && b.enabled !== false);
     if (box) {
-      const isExt = isExternalBrowserAIBox(box);
+      const isExt = isExternalBrowserAIBox(box) || box.processType === 'chrome_profile';
       const boxW = isExt ? 216 : CIRCLE_SIZE;
       const hasAddBtn = isNodeEffectivelyEnabled(box.id);
       return socketType === 'output'
@@ -5010,11 +5026,55 @@ export const FacebookWorkflowCanvas = forwardRef<
     return newId;
   };
 
+  // Connect dedicated Chrome Profile Box from External Browser base port
+  const handleConnectChromeProfileBox = (fromNodeId: string, profile: BrowserProfile) => {
+    const parentBox = config.aiBoxes.find((b) => b.id === fromNodeId);
+    const newId = `ai-box-chrome-${profile.id}-${Date.now()}`;
+    const parentX = parentBox?.x ?? 740;
+    const parentY = parentBox?.y ?? 260;
+
+    const newBox: DynamicAIBoxConfig = {
+      id: newId,
+      title: profile.display_name || 'Chrome Profile',
+      subtitle: profile.profile_key || 'Profile',
+      processType: 'chrome_profile',
+      provider: 'external_browser' as any,
+      model: 'chrome-profile',
+      templateId: 'chrome-profile',
+      templateText: `Chrome Profile: ${profile.display_name} (${profile.profile_key})`,
+      customPrompt: '',
+      enabled: true,
+      x: parentX,
+      y: parentY + 220,
+      browserProfileId: profile.id,
+      browserProfileKey: profile.profile_key,
+      browserProfileName: profile.display_name,
+    };
+
+    const nextBoxes = [...config.aiBoxes, newBox];
+    const nextConns = [
+      ...(config.connections || []),
+      {
+        id: `wire-${fromNodeId}-${newId}-${Date.now()}`,
+        fromNodeId: fromNodeId,
+        toNodeId: newId,
+      },
+    ];
+
+    updateConfig({
+      ...config,
+      aiBoxes: nextBoxes,
+      connections: nextConns,
+    });
+    setConnectDrawerNode(null);
+    setActiveModalNode(null);
+  };
+
   // Helper for rendering AI Box icon in recover & delete modals
   const renderAIBoxIcon = (b: DynamicAIBoxConfig, size = 22) => {
     if (b.id === 'get-content') return <FiFileText style={{ fontSize: `${size}px`, color: '#3B82F6' }} />;
     if (b.id === 'get-images') return <FiImage style={{ fontSize: `${size}px`, color: '#10B981' }} />;
-    if (isExternalBrowserAIBox(b)) return <FiMonitor style={{ fontSize: `${size}px`, color: '#06B6D4' }} />;
+    if (isExternalBrowserAIBox(b) || b.processType === 'chrome_profile') return <FiMonitor style={{ fontSize: `${size}px`, color: '#06B6D4' }} />;
     const isWatermark = isWatermarkAIBox(b);
     if (isWatermark) return <FiScissors style={{ fontSize: `${size}px`, color: '#8B5CF6' }} />;
     const isEnhance = (isEnhanceAIBox(b) || isImageAIBox(b, config.connections)) && !isWatermark;
@@ -6382,8 +6442,20 @@ export const FacebookWorkflowCanvas = forwardRef<
             {/* Dynamic AI / Workflow Connections from config.connections */}
             {dedupeConnections(config.connections || []).map((conn) => {
               if (conn.fromNodeId === 'trigger') return null;
-              const fromPos = getNodeSocketPos(conn.fromNodeId, 'output');
-              const toPos = getNodeSocketPos(conn.toNodeId, 'input');
+              const fromBox = config.aiBoxes.find((b) => b.id === conn.fromNodeId);
+              const toBox = config.aiBoxes.find((b) => b.id === conn.toNodeId);
+              const isBaseVerticalWire = Boolean(
+                fromBox && isExternalBrowserAIBox(fromBox) && toBox && toBox.processType === 'chrome_profile'
+              );
+
+              let fromPos = getNodeSocketPos(conn.fromNodeId, 'output');
+              let toPos = getNodeSocketPos(conn.toNodeId, 'input');
+
+              if (isBaseVerticalWire && fromBox && toBox) {
+                fromPos = { x: fromBox.x + 108, y: fromBox.y + 138 };
+                toPos = { x: toBox.x + 108, y: toBox.y + 1 };
+              }
+
               // Safety check: skip any wire with unresolved coordinates to prevent broken loops to (0, 0)
               if (
                 !fromPos ||
@@ -6393,8 +6465,11 @@ export const FacebookWorkflowCanvas = forwardRef<
               ) {
                 return null;
               }
-              const path =
-                conn.fromNodeId === 'get-images' && (conn.toNodeId === 'destination' || conn.toNodeId.startsWith('dest-'))
+              const path = isBaseVerticalWire
+                ? Math.abs(fromPos.x - toPos.x) < 5
+                  ? `M ${fromPos.x} ${fromPos.y} L ${toPos.x} ${toPos.y}`
+                  : `M ${fromPos.x} ${fromPos.y} C ${fromPos.x} ${fromPos.y + 35}, ${toPos.x} ${toPos.y - 35}, ${toPos.x} ${toPos.y}`
+                : conn.fromNodeId === 'get-images' && (conn.toNodeId === 'destination' || conn.toNodeId.startsWith('dest-'))
                   ? createBaseChannelPath(fromPos, toPos)
                   : createBezierPath(fromPos, toPos);
 
@@ -7118,7 +7193,8 @@ export const FacebookWorkflowCanvas = forwardRef<
             const boxHasSource = isEffectiveEnabled && boxCanConnectBack;
 
             const isExternalBrowser = isExternalBrowserAIBox(box);
-            const nodeWidth = isExternalBrowser ? 216 : CIRCLE_SIZE;
+            const isChromeProfile = box.processType === 'chrome_profile';
+            const nodeWidth = isExternalBrowser || isChromeProfile ? 216 : CIRCLE_SIZE;
 
             return (
               <div
@@ -7198,10 +7274,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                     zIndex: 2,
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: isExternalBrowser ? 'flex-start' : 'center',
-                    paddingLeft: isExternalBrowser ? '20px' : '0px',
-                    paddingRight: isExternalBrowser ? '20px' : '0px',
-                    gap: isExternalBrowser ? '14px' : '0px',
+                    justifyContent: isExternalBrowser || isChromeProfile ? 'flex-start' : 'center',
+                    paddingLeft: isExternalBrowser || isChromeProfile ? '20px' : '0px',
+                    paddingRight: isExternalBrowser || isChromeProfile ? '20px' : '0px',
+                    gap: isExternalBrowser || isChromeProfile ? '14px' : '0px',
                     pointerEvents: 'none',
                     userSelect: 'none',
                     width: '100%',
@@ -7219,6 +7295,34 @@ export const FacebookWorkflowCanvas = forwardRef<
                         </span>
                         <span style={{ fontSize: '0.6875rem', color: isDark ? '#38BDF8' : '#0284C7', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '135px' }}>
                           {box.browserGroupName || 'Multi-Tab'}
+                        </span>
+                      </div>
+                    </>
+                  ) : isChromeProfile ? (
+                    <>
+                      <div
+                        style={{
+                          width: '32px',
+                          height: '32px',
+                          borderRadius: '8px',
+                          background: 'linear-gradient(135deg, #0284C7, #06B6D4)',
+                          color: '#FFFFFF',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                          boxShadow: '0 2px 6px rgba(6, 182, 212, 0.35)',
+                        }}
+                      >
+                        <FiMonitor size={17} />
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.25, minWidth: 0, flex: 1 }}>
+                        <span style={{ fontSize: '0.875rem', fontWeight: 700, color: isEffectiveEnabled ? (isDark ? '#F1F5F9' : '#0F172A') : '#8B949E', letterSpacing: '-0.01em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '140px' }}>
+                          {box.browserProfileName || box.title || 'Chrome Profile'}
+                        </span>
+                        <span style={{ fontSize: '0.6875rem', color: '#10B981', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <span style={{ width: '5px', height: '5px', borderRadius: '50%', backgroundColor: '#10B981' }} />
+                          {box.browserProfileKey || 'Connected'}
                         </span>
                       </div>
                     </>
@@ -7386,6 +7490,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                           })()
                         : isExternalBrowserAIBox(box) ? (
                           'Chrome Automation'
+                        ) : box.processType === 'chrome_profile' ? (
+                          box.browserProfileKey || 'Chrome Profile'
                         ) : (isRunware || isEnhance)
                         ? 'Image Enhancer'
                         : isTextFormatAIBox(box)
@@ -7417,7 +7523,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                       <button
                         type="button"
                         className="merged-node-bottom-add-btn"
-                        title="Add Base Step"
+                        title="Connect Chrome Profile"
                         onMouseDown={(e) => {
                           e.stopPropagation();
                           e.preventDefault();
@@ -7425,7 +7531,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                         onClick={(e) => {
                           e.stopPropagation();
                           e.preventDefault();
-                          handleOpenConnectDrawer(box.id, 'ai-box', box.title || 'External Browser');
+                          handleOpenConnectDrawer(box.id, 'ai-box', box.title || 'External Browser', 'chrome-profile');
                         }}
                         style={{
                           width: '22px',
@@ -9226,7 +9332,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                           />
                         </div>
                       </div>
-                    ) : isExternalBrowserAIBox(currentModalAIBox) ? (
+                    ) : isExternalBrowserAIBox(currentModalAIBox) || currentModalAIBox.processType === 'chrome_profile' ? (
                       <ExternalBrowserSidebar
                         isDark={isDark}
                         boxConfig={currentModalAIBox}
@@ -10296,6 +10402,264 @@ export const FacebookWorkflowCanvas = forwardRef<
           (resolvedTitle.includes('database') || resolvedId.includes('database') || fromDestNode?.targetMode === 'remaining_posts' ? 'database' : undefined)
         );
         const isDestination = !isNonDestinationNode && (fromNodeType === 'destination' || fromNodeId.startsWith('dest-') || Boolean(fromDestNode) || destinationPlatform !== undefined);
+
+        // If clicking [+] from External Browser base port:
+        // Show ONLY Chrome Profiles to connect as a dedicated Chrome Profile box!
+        if (connectDrawerNode.platform === 'chrome-profile') {
+          return (
+            <aside
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                position: 'absolute',
+                top: 0,
+                right: 0,
+                bottom: 0,
+                width: '380px',
+                maxWidth: '100%',
+                backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
+                borderLeft: '1px solid var(--border-color)',
+                boxShadow: isDark
+                  ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
+                  : '-3px 0 16px rgba(0, 0, 0, 0.06)',
+                zIndex: 170,
+                display: 'flex',
+                flexDirection: 'column',
+                animation: 'sidebarSlideIn 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
+              }}
+            >
+              {/* Header */}
+              <div
+                style={{
+                  padding: '0.875rem 1rem',
+                  borderBottom: '1px solid var(--border-color)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  background: isDark
+                    ? 'linear-gradient(180deg, #161B22 0%, #0D1117 100%)'
+                    : '#FFFFFF',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+                  <div
+                    style={{
+                      width: '32px',
+                      height: '32px',
+                      borderRadius: '8px',
+                      background: 'linear-gradient(135deg, #06B6D4, #0891B2)',
+                      color: '#FFFFFF',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      boxShadow: '0 2px 6px rgba(6, 182, 212, 0.35)',
+                    }}
+                  >
+                    <FiMonitor size={17} />
+                  </div>
+                  <div style={{ minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: '0.8125rem',
+                        fontWeight: 700,
+                        color: isDark ? '#F0F6FC' : '#0F172A',
+                        lineHeight: 1.2,
+                      }}
+                    >
+                      Connect Chrome Profile
+                    </div>
+                    <div
+                      style={{
+                        fontSize: '0.625rem',
+                        color: '#06B6D4',
+                        fontWeight: 600,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      From: {fromTitle}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setConnectDrawerNode(null);
+                    setActiveModalNode(null);
+                  }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  title="Close (Esc)"
+                  aria-label="Close"
+                  style={{
+                    width: '24px',
+                    height: '24px',
+                    borderRadius: '6px',
+                    border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                    backgroundColor: 'transparent',
+                    color: isDark ? '#8B949E' : '#64748B',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    flexShrink: 0,
+                  }}
+                >
+                  <FiX size={14} />
+                </button>
+              </div>
+
+              {/* Scrollable Content Body */}
+              <div
+                style={{
+                  flex: 1,
+                  overflowY: 'auto',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.75rem',
+                  padding: '0.875rem',
+                }}
+              >
+                <div>
+                  <div
+                    style={{
+                      fontSize: '0.6875rem',
+                      fontWeight: 600,
+                      color: isDark ? '#8B949E' : '#64748B',
+                      marginBottom: '0.35rem',
+                    }}
+                  >
+                    Choose Chrome Profile
+                  </div>
+                  <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', marginBottom: '0.65rem' }}>
+                    Select a Chrome profile card below to connect a dedicated Chrome Profile box to {fromTitle}:
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    {browserProfilesList.map((prof) => (
+                      <div
+                        key={prof.id}
+                        onClick={() => {
+                          handleConnectChromeProfileBox(fromNodeId, prof);
+                        }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '0.65rem 0.75rem',
+                          borderRadius: '8px',
+                          border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                          backgroundColor: isDark ? '#1C2128' : '#F8FAFC',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = '#06B6D4';
+                          e.currentTarget.style.backgroundColor = isDark ? 'rgba(6, 182, 212, 0.12)' : '#ECFEFF';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
+                          e.currentTarget.style.backgroundColor = isDark ? '#1C2128' : '#F8FAFC';
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', minWidth: 0, flex: 1 }}>
+                          <div
+                            style={{
+                              width: '32px',
+                              height: '32px',
+                              borderRadius: '6px',
+                              background: 'linear-gradient(135deg, #06B6D4, #0891B2)',
+                              color: '#FFFFFF',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <FiMonitor size={16} />
+                          </div>
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                              <span
+                                style={{
+                                  fontSize: '0.78125rem',
+                                  fontWeight: 700,
+                                  color: 'var(--text-primary)',
+                                  whiteSpace: 'nowrap',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                }}
+                              >
+                                {prof.display_name}
+                              </span>
+                              <span
+                                style={{
+                                  fontSize: '0.5625rem',
+                                  padding: '1px 5px',
+                                  borderRadius: '4px',
+                                  backgroundColor: isDark ? '#374151' : '#E2E8F0',
+                                  color: isDark ? '#9CA3AF' : '#64748B',
+                                  fontWeight: 600,
+                                  flexShrink: 0,
+                                }}
+                              >
+                                {prof.profile_key}
+                              </span>
+                            </div>
+                            <div
+                              style={{
+                                fontSize: '0.625rem',
+                                color: 'var(--text-muted)',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                                marginTop: '1px',
+                              }}
+                            >
+                              {prof.email || prof.integration_id}
+                            </div>
+                          </div>
+                        </div>
+
+                        <span
+                          style={{
+                            fontSize: '0.625rem',
+                            padding: '4px 9px',
+                            borderRadius: '5px',
+                            backgroundColor: '#06B6D4',
+                            color: '#FFFFFF',
+                            fontWeight: 700,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            flexShrink: 0,
+                          }}
+                        >
+                          <FiPlus size={11} /> Connect Box
+                        </span>
+                      </div>
+                    ))}
+                    {browserProfilesList.length === 0 && (
+                      <div
+                        style={{
+                          fontSize: '0.6875rem',
+                          color: 'var(--text-muted)',
+                          textAlign: 'center',
+                          padding: '1.5rem',
+                          border: '1px dashed var(--border-color)',
+                          borderRadius: '8px',
+                        }}
+                      >
+                        No Chrome profiles found.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </aside>
+          );
+        }
 
         // If clicking [+] from a specific Social Media node (Facebook, Instagram, TikTok):
         // Show ONLY the accounts relative to that specific social media platform!
