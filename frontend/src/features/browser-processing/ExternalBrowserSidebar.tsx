@@ -79,6 +79,9 @@ interface ExternalBrowserSidebarProps {
     price?: string;
     images?: Array<{ url: string; index?: number; filename?: string }>;
   };
+  isProfileNode?: boolean;
+  connectedProfileNodeId?: string;
+  onOpenProfileNode?: (nodeId: string) => void;
 }
 
 export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
@@ -87,13 +90,12 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   onUpdateBoxConfig,
   availablePrompts = [],
   propertyContext,
+  isProfileNode: propIsProfileNode,
+  connectedProfileNodeId,
+  onOpenProfileNode,
 }) => {
-  const isChromeProfileNode = Boolean(
-    boxConfig.processType === 'chrome_profile' ||
-    Boolean(boxConfig.browserProfileKey) ||
-    Boolean(boxConfig.browserProfileName) ||
-    Boolean(boxConfig.browserProfileId) ||
-    Boolean(boxConfig.id?.includes('ai-box-chrome-'))
+  const isProfileNode = Boolean(
+    propIsProfileNode ?? (boxConfig.processType === 'chrome_profile' || boxConfig.id?.includes('ai-box-chrome-'))
   );
 
   const condoName = propertyContext?.title || boxConfig.browserCondoName || 'Featured Property Listing';
@@ -789,6 +791,77 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     }
   };
 
+  const renderEnhancementRequirements = () => (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '0.5rem',
+        padding: '0.75rem',
+        borderRadius: '8px',
+        background: isDark ? 'rgba(16, 185, 129, 0.05)' : '#F0FDF4',
+        border: '1px solid rgba(16, 185, 129, 0.25)',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: '#10B981' }}>
+        <FiShield size={14} />
+        <span style={{ fontSize: '0.75rem', fontWeight: 700 }}>Strict Room Preservation</span>
+      </div>
+      <div style={{ fontSize: '0.65625rem', color: isDark ? '#94A3B8' : '#64748B', lineHeight: 1.4 }}>
+        Mandatory real estate authenticity: exact room structure, walls, windows, doors, furniture, flooring, and camera angles are preserved 100%. No virtual staging or added elements.
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '0.25rem' }}>
+        <div>
+          <label style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+            Target Width
+          </label>
+          <input
+            type="number"
+            value={outputWidth}
+            onChange={(e) => {
+              const w = Number(e.target.value);
+              setOutputWidth(w);
+              updateConfig('outputWidth', w);
+            }}
+            style={{
+              width: '100%',
+              padding: '4px 8px',
+              borderRadius: '6px',
+              border: '1px solid var(--border-color)',
+              background: isDark ? '#1E293B' : '#FFFFFF',
+              color: 'var(--text-color)',
+              fontSize: '0.75rem',
+            }}
+          />
+        </div>
+        <div>
+          <label style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+            Target Height (4:5)
+          </label>
+          <input
+            type="number"
+            value={outputHeight}
+            onChange={(e) => {
+              const h = Number(e.target.value);
+              setOutputHeight(h);
+              updateConfig('outputHeight', h);
+            }}
+            style={{
+              width: '100%',
+              padding: '4px 8px',
+              borderRadius: '6px',
+              border: '1px solid var(--border-color)',
+              background: isDark ? '#1E293B' : '#FFFFFF',
+              color: 'var(--text-color)',
+              fontSize: '0.75rem',
+            }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', paddingBottom: '2rem' }}>
       {/* Node Header Banner */}
@@ -820,80 +893,192 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
         </div>
         <div>
           <div style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#06B6D4' }}>
-            External Browser Node
+            {isProfileNode
+              ? `Chrome Profile — ${activeProfile?.display_name || boxConfig.browserProfileName || 'Browser Profile'}`
+              : 'External Browser Node'}
           </div>
           <div style={{ fontSize: '0.6875rem', color: isDark ? '#94A3B8' : '#64748B' }}>
-            Chrome Profiles · ChatGPT Assist · Smart Queue
+            {isProfileNode
+              ? `${activeProfile?.profile_key || boxConfig.browserProfileKey || 'Profile'} · Tab Groups · Worker Tabs · Pipelines`
+              : 'Chrome Automation · Processing Pipeline'}
           </div>
         </div>
       </div>
 
-      {/* SECTION A — PROCESSING ENGINE */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-        <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
-          Processing Mode
-        </label>
-        <Select
-          options={[
-            { value: 'chrome_assisted', label: '1. Chrome / ChatGPT Assisted (Default)' },
-            { value: 'two_stage_staging', label: '2. Two-Stage Tab Group (Prompt Gen Tab 1 → Auto Condo Staging Tab 2)' },
-            { value: 'local_enhance', label: '3. Local Image Enhancement (Unattended Native)' },
-            { value: 'authorized_api', label: '4. Authorized Image API (Official API Limits)' },
-          ]}
-          value={processingMode}
-          onChange={(val) => {
-            setProcessingMode(val as BrowserProcessingMode);
-            updateConfig('browserProcessingMode', val);
-          }}
-        />
+      {!isProfileNode ? (
+        <>
+          {/* SECTION A — PROCESSING ENGINE (Parent Box) */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+            <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+              Processing Mode
+            </label>
+            <Select
+              options={[
+                { value: 'chrome_assisted', label: '1. Chrome / ChatGPT Assisted (Default)' },
+                { value: 'two_stage_staging', label: '2. Two-Stage Tab Group (Prompt Gen Tab 1 → Auto Condo Staging Tab 2)' },
+                { value: 'local_enhance', label: '3. Local Image Enhancement (Unattended Native)' },
+                { value: 'authorized_api', label: '4. Authorized Image API (Official API Limits)' },
+              ]}
+              value={processingMode}
+              onChange={(val) => {
+                setProcessingMode(val as BrowserProcessingMode);
+                updateConfig('browserProcessingMode', val);
+              }}
+            />
 
-        {/* Mode Explanatory Callout */}
-        <div
-          style={{
-            padding: '0.5rem 0.65rem',
-            borderRadius: '6px',
-            background: isDark ? '#1E293B' : '#F8FAFC',
-            border: '1px solid var(--border-color)',
-            fontSize: '0.6875rem',
-            color: isDark ? '#94A3B8' : '#64748B',
-            lineHeight: 1.4,
-          }}
-        >
-          {processingMode === 'chrome_assisted' && (
-            <div>
-              <strong style={{ color: '#06B6D4' }}>Chrome / ChatGPT Assisted:</strong> Prepares exact room-preserving prompts and files, focuses your selected Chrome profile & ChatGPT tab group, guides manual submission/download, and automatically collects completed files.
+            {/* Mode Explanatory Callout */}
+            <div
+              style={{
+                padding: '0.5rem 0.65rem',
+                borderRadius: '6px',
+                background: isDark ? '#1E293B' : '#F8FAFC',
+                border: '1px solid var(--border-color)',
+                fontSize: '0.6875rem',
+                color: isDark ? '#94A3B8' : '#64748B',
+                lineHeight: 1.4,
+              }}
+            >
+              {processingMode === 'chrome_assisted' && (
+                <div>
+                  <strong style={{ color: '#06B6D4' }}>Chrome / ChatGPT Assisted:</strong> Prepares exact room-preserving prompts and files, focuses your selected Chrome profile & ChatGPT tab group, guides manual submission/download, and automatically collects completed files.
+                </div>
+              )}
+              {processingMode === 'two_stage_staging' && (
+                <div>
+                  <strong style={{ color: '#8B5CF6' }}>Two-Stage Staging:</strong> Multi-group workflow under the same profile. Tab 1 generates the prompt copy, then Tab 2 receives the reference image (pasted 1st), local condo images (1, 2, 3), and the extracted prompt!
+                </div>
+              )}
+              {processingMode === 'local_enhance' && (
+                <div>
+                  <strong style={{ color: '#10B981' }}>Local Image Enhancement:</strong> Runs completely unattended on your Mac. Applies deterministic dynamic range restoration, shadow lifting, white balance calibration, and 1080x1350 4:5 scaling without external API fees.
+                </div>
+              )}
+              {processingMode === 'authorized_api' && (
+                <div>
+                  <strong style={{ color: '#F59E0B' }}>Authorized Image API:</strong> Processes via official OpenAI/Runware endpoints with strict server-side authentication, concurrency limits, and configured spending caps.
+                </div>
+              )}
             </div>
-          )}
-          {processingMode === 'two_stage_staging' && (
-            <div>
-              <strong style={{ color: '#8B5CF6' }}>Two-Stage Staging:</strong> Multi-group workflow under the same profile. Tab 1 generates the prompt copy, then Tab 2 receives the reference image (pasted 1st), local condo images (1, 2, 3), and the extracted prompt!
-            </div>
-          )}
-          {processingMode === 'local_enhance' && (
-            <div>
-              <strong style={{ color: '#10B981' }}>Local Image Enhancement:</strong> Runs completely unattended on your Mac. Applies deterministic dynamic range restoration, shadow lifting, white balance calibration, and 1080x1350 4:5 scaling without external API fees.
-            </div>
-          )}
-          {processingMode === 'authorized_api' && (
-            <div>
-              <strong style={{ color: '#F59E0B' }}>Authorized Image API:</strong> Processes via official OpenAI/Runware endpoints with strict server-side authentication, concurrency limits, and configured spending caps.
-            </div>
-          )}
-        </div>
-      </div>
+          </div>
 
-      {/* SECTION B — CHROME PROFILE MANAGER */}
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '0.5rem',
-          padding: '0.75rem',
-          borderRadius: '8px',
-          background: isDark ? '#111827' : '#FFFFFF',
-          border: '1px solid var(--border-color)',
-        }}
-      >
+          {/* ASSIGNED CHROME PROFILE (SIMPLE SUMMARY FOR PARENT BOX) */}
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.6rem',
+              padding: '0.75rem',
+              borderRadius: '8px',
+              background: isDark ? '#111827' : '#FFFFFF',
+              border: '1px solid var(--border-color)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                Assigned Chrome Profile
+              </label>
+              <span style={{ fontSize: '0.625rem', color: '#10B981', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10B981' }} />
+                Connected
+              </span>
+            </div>
+
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '0.6rem 0.75rem',
+                borderRadius: '7px',
+                border: '1.5px solid #06B6D4',
+                backgroundColor: isDark ? 'rgba(6, 182, 212, 0.12)' : '#ECFEFF',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', minWidth: 0, flex: 1 }}>
+                <div
+                  style={{
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '6px',
+                    background: 'linear-gradient(135deg, #06B6D4, #0891B2)',
+                    color: '#FFFFFF',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  <FiMonitor size={16} />
+                </div>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: isDark ? '#38BDF8' : '#0284C7' }}>
+                      {activeProfile?.display_name || boxConfig.browserProfileName || 'Hsu'}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: '0.5625rem',
+                        padding: '1px 5px',
+                        borderRadius: '4px',
+                        backgroundColor: isDark ? '#374151' : '#E2E8F0',
+                        color: isDark ? '#9CA3AF' : '#64748B',
+                        fontWeight: 600,
+                      }}
+                    >
+                      {activeProfile?.profile_key || boxConfig.browserProfileKey || 'Profile 14'}
+                    </span>
+                  </div>
+                  {activeProfile?.email && (
+                    <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', marginTop: '1px' }}>
+                      {activeProfile.email}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {connectedProfileNodeId && onOpenProfileNode && (
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => onOpenProfileNode(connectedProfileNodeId)}
+                style={{
+                  width: '100%',
+                  fontSize: '0.6875rem',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  backgroundColor: isDark ? 'rgba(6, 182, 212, 0.12)' : '#E0F2FE',
+                  color: isDark ? '#38BDF8' : '#0284C7',
+                  border: '1px solid rgba(6, 182, 212, 0.35)',
+                }}
+              >
+                <span>Open &ldquo;{activeProfile?.display_name || 'Hsu'}&rdquo; Profile Node for Tabs & Pipelines</span>
+                <FiExternalLink size={11} />
+              </Button>
+            )}
+          </div>
+
+          {/* SECTION F — PHOTO ENHANCEMENT REQUIREMENTS */}
+          {renderEnhancementRequirements()}
+        </>
+      ) : (
+        <>
+          {/* PROFILE BROWSER BOX SIDEBAR: Render profile manager, tab groups, worker tabs, relative prompts & pipelines */}
+          {/* SECTION B — CHROME PROFILE MANAGER */}
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.5rem',
+              padding: '0.75rem',
+              borderRadius: '8px',
+              background: isDark ? '#111827' : '#FFFFFF',
+              border: '1px solid var(--border-color)',
+            }}
+          >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
@@ -938,7 +1123,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
         </div>
 
         {/* Chrome Profile Card Box Selection */}
-        {isChromeProfileNode ? (
+        {isProfileNode ? (
           <div
             style={{
               display: 'flex',
@@ -2327,6 +2512,8 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
           </div>
         )}
       </div>
+        </>
+      )}
     </div>
   );
 };

@@ -9367,11 +9367,17 @@ export const FacebookWorkflowCanvas = forwardRef<
 
                         const aboveBoxTitle = candidateAbove ? candidateAbove.title : 'Format: Enhance Image';
                         const condoName = _projectName || (candidateAbove && candidateAbove.title) || 'Featured Property Listing';
+                        const isProfileNode = currentModalAIBox.processType === 'chrome_profile' || Boolean(currentModalAIBox.id?.includes('ai-box-chrome-'));
 
                         return (
                           <ExternalBrowserSidebar
                             isDark={isDark}
                             boxConfig={effectiveBoxConfig}
+                            isProfileNode={isProfileNode}
+                            connectedProfileNodeId={connectedProfileBox?.id}
+                            onOpenProfileNode={(nodeId) => {
+                              setActiveModalNode({ type: 'ai-box', boxId: nodeId });
+                            }}
                             onUpdateBoxConfig={(updated) => handleUpdateAIBox(currentModalAIBox.id, updated)}
                             availablePrompts={availablePrompts as any}
                             propertyContext={{
