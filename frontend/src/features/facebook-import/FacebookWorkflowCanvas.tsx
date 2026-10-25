@@ -1974,6 +1974,16 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
         {/* BOTTOM BASE OUTPUT PORT (n8n solid circle on bottom border at x = nodeWidth / 2, y = nodeHeight - 1) */}
         {showBottomAddButton && (
           <g>
+            {/* Top vertical line from bottom dot to top of text label - rendered FIRST so circle dot sits cleanly on top of line */}
+            <line
+              x1={nodeWidth / 2}
+              y1={nodeHeight - 1}
+              x2={nodeWidth / 2}
+              y2={nodeHeight + 22}
+              stroke={isDark ? '#4B5563' : '#94A3B8'}
+              strokeWidth="1.75"
+            />
+            {/* Base circle dot rendered SECOND so it sits cleanly on top of the line */}
             <circle
               cx={nodeWidth / 2}
               cy={nodeHeight - 1}
@@ -1981,15 +1991,6 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
               fill={outputDotColor}
               stroke={outputDotColor}
               strokeWidth="1.5"
-            />
-            {/* Top vertical line from bottom dot to top of text label */}
-            <line
-              x1={nodeWidth / 2}
-              y1={nodeHeight - 1}
-              x2={nodeWidth / 2}
-              y2={nodeHeight + 11}
-              stroke={isDark ? '#4B5563' : '#94A3B8'}
-              strokeWidth="1.75"
             />
           </g>
         )}
@@ -7237,7 +7238,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 <div
                   style={{
                     position: 'absolute',
-                    top: isExternalBrowser ? `${CIRCLE_SIZE + 10}px` : `${CIRCLE_SIZE + 8}px`,
+                    top: isExternalBrowser ? `${CIRCLE_SIZE + 24}px` : `${CIRCLE_SIZE + 8}px`,
                     left: '50%',
                     transform: 'translateX(-50%)',
                     width: 'max-content',
@@ -7402,14 +7403,14 @@ export const FacebookWorkflowCanvas = forwardRef<
                         display: 'flex',
                         flexDirection: 'column',
                         alignItems: 'center',
-                        marginTop: '3px',
+                        marginTop: '8px',
                         pointerEvents: 'auto',
                       }}
                     >
                       <div
                         style={{
                           width: '1.75px',
-                          height: '14px',
+                          height: '18px',
                           backgroundColor: isDark ? '#4B5563' : '#94A3B8',
                         }}
                       />
