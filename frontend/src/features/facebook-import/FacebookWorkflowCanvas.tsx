@@ -7562,7 +7562,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                       />
                       <span>{isWatermark ? 'Processing...' : isRunware ? 'Enhancing...' : isTextFormatAIBox(box) ? 'Formatting...' : 'Generating...'}</span>
                     </span>
-                  ) : (
+                  ) : !isChromeProfile ? (
                     <span
                       style={{
                         fontSize: '0.6875rem',
@@ -7584,8 +7584,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                           })()
                         : isExternalBrowserAIBox(box) ? (
                           'Chrome Automation'
-                        ) : box.processType === 'chrome_profile' ? (
-                          box.browserProfileKey || 'Chrome Profile'
                         ) : (isRunware || isEnhance)
                         ? 'Image Enhancer'
                         : isTextFormatAIBox(box)
@@ -7594,7 +7592,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                         ? 'AI Model'
                         : 'Copywriter'}
                     </span>
-                  )}
+                  ) : null}
 
                   {/* Base vertical line and [+] button below text */}
                   {isExternalBrowser && (

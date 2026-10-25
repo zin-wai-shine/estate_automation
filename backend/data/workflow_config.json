@@ -1,5 +1,5 @@
 {
-  "timestamp": 1792895298964,
+  "timestamp": 1792895659115,
   "workflow_formats": [
     {
       "config": {
@@ -316,36 +316,22 @@
             "browserProfileId": 11,
             "browserProfileKey": "Profile 14",
             "browserProfileName": "Hsu",
+            "browserPromptTemplateKey": "photo_retouch",
+            "browserPromptText": "Professionally retouch this property photograph: enhance sharpness, clarity, dynamic range, window sky dehazing, and authentic true-daylight color accuracy. Preserve exactly the original room layout, furniture, walls, floor, and architecture without alteration.",
             "browserTabId": "tab-enh-1",
             "browserTabTitle": "ChatGPT Conversation — Worker #1",
-            "customPrompt": "",
+            "customPrompt": "Professionally retouch this property photograph: enhance sharpness, clarity, dynamic range, window sky dehazing, and authentic true-daylight color accuracy. Preserve exactly the original room layout, furniture, walls, floor, and architecture without alteration.",
             "enabled": true,
-            "id": "ai-box-chrome-11-1792895272906",
+            "id": "ai-box-chrome-11-1792895623416",
             "model": "chrome-profile",
             "processType": "chrome_profile",
             "provider": "external_browser",
+            "resolvedPrompt": "Professionally retouch this property photograph: enhance sharpness, clarity, dynamic range, window sky dehazing, and authentic true-daylight color accuracy. Preserve exactly the original room layout, furniture, walls, floor, and architecture without alteration.",
             "subtitle": "Profile 14",
             "templateId": "chrome-profile",
-            "templateText": "Chrome Profile: Hsu (Profile 14)",
+            "templateText": "Professionally retouch this property photograph: enhance sharpness, clarity, dynamic range, window sky dehazing, and authentic true-daylight color accuracy. Preserve exactly the original room layout, furniture, walls, floor, and architecture without alteration.",
             "title": "Hsu",
-            "x": 522,
-            "y": 590
-          },
-          {
-            "browserProfileId": 7,
-            "browserProfileKey": "Profile 18",
-            "browserProfileName": "Jutha",
-            "customPrompt": "",
-            "enabled": true,
-            "id": "ai-box-chrome-7-1792895285139",
-            "model": "chrome-profile",
-            "processType": "chrome_profile",
-            "provider": "external_browser",
-            "subtitle": "Profile 18",
-            "templateId": "chrome-profile",
-            "templateText": "Chrome Profile: Jutha (Profile 18)",
-            "title": "Jutha",
-            "x": 662,
+            "x": 592,
             "y": 590
           }
         ],
@@ -381,13 +367,8 @@
           },
           {
             "fromNodeId": "ai-box-external-browser-1792852541152",
-            "id": "wire-ai-box-external-browser-1792852541152-ai-box-chrome-11-1792895272906-1792895272906",
-            "toNodeId": "ai-box-chrome-11-1792895272906"
-          },
-          {
-            "fromNodeId": "ai-box-external-browser-1792852541152",
-            "id": "wire-ai-box-external-browser-1792852541152-ai-box-chrome-7-1792895285139-1792895285139",
-            "toNodeId": "ai-box-chrome-7-1792895285139"
+            "id": "wire-ai-box-external-browser-1792852541152-ai-box-chrome-11-1792895623416-1792895623416",
+            "toNodeId": "ai-box-chrome-11-1792895623416"
           }
         ],
         "destination": {
@@ -459,12 +440,12 @@
           "enabled": false,
           "id": "output",
           "title": "Final Content \u0026 Images",
-          "x": 520,
+          "x": 592,
           "y": 240
         },
         "panOffset": {
           "x": 119,
-          "y": 108
+          "y": -27
         },
         "trigger": {
           "autoClassifyProperty": true,
@@ -486,7 +467,7 @@
       "description": "Custom Facebook import extraction with dynamic AI prompt generator",
       "id": "format-1792648980268",
       "name": "Download FB Post",
-      "updatedAt": 1792895298952
+      "updatedAt": 1792895659108
     },
     {
       "config": {
