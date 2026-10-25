@@ -75,8 +75,9 @@ interface ExternalBrowserSidebarProps {
   propertyContext?: {
     id?: string;
     title?: string;
+    aboveBoxTitle?: string;
     price?: string;
-    images?: Array<{ url: string; index?: number }>;
+    images?: Array<{ url: string; index?: number; filename?: string }>;
   };
 }
 
@@ -87,6 +88,21 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   availablePrompts = [],
   propertyContext,
 }) => {
+  const isChromeProfileNode = Boolean(
+    boxConfig.processType === 'chrome_profile' ||
+    Boolean(boxConfig.browserProfileKey) ||
+    Boolean(boxConfig.browserProfileName) ||
+    Boolean(boxConfig.browserProfileId) ||
+    Boolean(boxConfig.id?.includes('ai-box-chrome-'))
+  );
+
+  const condoName = propertyContext?.title || boxConfig.browserCondoName || 'Featured Property Listing';
+  const aboveBoxTitle = propertyContext?.aboveBoxTitle || 'Format: Enhance Image';
+
+  const receivedImages = useMemo(() => {
+    return (propertyContext?.images || []).filter((img) => Boolean(img.url));
+  }, [propertyContext?.images]);
+
   // 1. Core Profile, Group, and Tab State
   const [profiles, setProfiles] = useState<BrowserProfile[]>([]);
   const [selectedProfileId, setSelectedProfileId] = useState<number>(() => boxConfig.browserProfileId || 11);
@@ -308,6 +324,21 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       if (s) setDownloadWatcher(s);
     });
   }, []);
+
+  // Sync selectedProfileId when boxConfig profile changes
+  useEffect(() => {
+    if (boxConfig.browserProfileId) {
+      setSelectedProfileId(boxConfig.browserProfileId);
+    } else if (boxConfig.browserProfileKey && profiles.length > 0) {
+      const match = profiles.find((p) => p.profile_key === boxConfig.browserProfileKey);
+      if (match) setSelectedProfileId(match.id);
+    } else if (boxConfig.browserProfileName && profiles.length > 0) {
+      const match = profiles.find(
+        (p) => p.display_name === boxConfig.browserProfileName || p.display_name.includes(boxConfig.browserProfileName)
+      );
+      if (match) setSelectedProfileId(match.id);
+    }
+  }, [boxConfig.browserProfileId, boxConfig.browserProfileKey, boxConfig.browserProfileName, profiles]);
 
   // When profile changes, automatically reload and bind tab groups & tabs
   useEffect(() => {
@@ -593,8 +624,22 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
 
   // Active selected Chrome profile
   const activeProfile = useMemo(() => {
+    if (boxConfig.browserProfileKey) {
+      const match = profiles.find((p) => p.profile_key === boxConfig.browserProfileKey);
+      if (match) return match;
+    }
+    if (boxConfig.browserProfileId) {
+      const match = profiles.find((p) => p.id === boxConfig.browserProfileId);
+      if (match) return match;
+    }
+    if (boxConfig.browserProfileName) {
+      const match = profiles.find(
+        (p) => p.display_name === boxConfig.browserProfileName || p.display_name.includes(boxConfig.browserProfileName)
+      );
+      if (match) return match;
+    }
     return profiles.find((p) => p.id === selectedProfileId) || profiles[0];
-  }, [profiles, selectedProfileId]);
+  }, [profiles, selectedProfileId, boxConfig.browserProfileKey, boxConfig.browserProfileId, boxConfig.browserProfileName]);
 
   // Active selected Tab Group 1 (Enhance IMG)
   const activeGroup = useMemo(() => {
@@ -892,146 +937,225 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
           </button>
         </div>
 
-        {/* Chrome Profile Card Box Selection (Replaces Dropbox) */}
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '0.45rem',
-            maxHeight: '240px',
-            overflowY: 'auto',
-            paddingRight: '2px',
-          }}
-        >
-          {profiles.map((p) => {
-            const isSelected = selectedProfileId === p.id;
-            return (
+        {/* Chrome Profile Card Box Selection */}
+        {isChromeProfileNode ? (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '0.65rem 0.75rem',
+              borderRadius: '7px',
+              border: '1.5px solid #06B6D4',
+              backgroundColor: isDark ? 'rgba(6, 182, 212, 0.12)' : '#ECFEFF',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', minWidth: 0, flex: 1 }}>
               <div
-                key={p.id}
-                onClick={() => {
-                  setSelectedProfileId(p.id);
-                  updateMultiConfig({
-                    browserProfileId: p.id,
-                    browserProfileName: p.display_name,
-                    browserProfileKey: p.profile_key,
-                  });
-                }}
                 style={{
+                  width: '30px',
+                  height: '30px',
+                  borderRadius: '6px',
+                  background: 'linear-gradient(135deg, #06B6D4, #0891B2)',
+                  color: '#FFFFFF',
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '0.55rem 0.65rem',
-                  borderRadius: '7px',
-                  border: isSelected
-                    ? '1.5px solid #06B6D4'
-                    : isDark ? '1px solid #374151' : '1px solid #E2E8F0',
-                  backgroundColor: isSelected
-                    ? (isDark ? 'rgba(6, 182, 212, 0.12)' : '#ECFEFF')
-                    : (isDark ? '#1F2937' : '#F8FAFC'),
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease',
-                  boxShadow: isSelected ? '0 0 0 1px rgba(6, 182, 212, 0.35)' : 'none',
-                }}
-                onMouseEnter={(e) => {
-                  if (!isSelected) {
-                    e.currentTarget.style.borderColor = isDark ? '#4B5563' : '#CBD5E1';
-                    e.currentTarget.style.backgroundColor = isDark ? '#263342' : '#F1F5F9';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!isSelected) {
-                    e.currentTarget.style.borderColor = isDark ? '#374151' : '#E2E8F0';
-                    e.currentTarget.style.backgroundColor = isDark ? '#1F2937' : '#F8FAFC';
-                  }
+                  justifyContent: 'center',
+                  flexShrink: 0,
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', minWidth: 0, flex: 1 }}>
-                  <div
+                <FiMonitor size={15} />
+              </div>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <span
                     style={{
-                      width: '30px',
-                      height: '30px',
-                      borderRadius: '6px',
-                      background: isSelected
-                        ? 'linear-gradient(135deg, #06B6D4, #0891B2)'
-                        : (isDark ? '#374151' : '#E2E8F0'),
-                      color: isSelected ? '#FFFFFF' : (isDark ? '#9CA3AF' : '#64748B'),
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      color: isDark ? '#38BDF8' : '#0284C7',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}
+                  >
+                    {activeProfile?.display_name || boxConfig.browserProfileName || 'Hsu'}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: '0.5625rem',
+                      padding: '1px 5px',
+                      borderRadius: '4px',
+                      backgroundColor: isDark ? '#374151' : '#E2E8F0',
+                      color: isDark ? '#9CA3AF' : '#64748B',
+                      fontWeight: 600,
                       flexShrink: 0,
                     }}
                   >
-                    <FiMonitor size={15} />
+                    {activeProfile?.profile_key || boxConfig.browserProfileKey || 'Profile 14'}
+                  </span>
+                </div>
+                {activeProfile?.email && (
+                  <div
+                    style={{
+                      fontSize: '0.625rem',
+                      color: 'var(--text-muted)',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      marginTop: '1px',
+                    }}
+                  >
+                    {activeProfile.email}
                   </div>
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                      <span
-                        style={{
-                          fontSize: '0.75rem',
-                          fontWeight: 700,
-                          color: isSelected ? (isDark ? '#38BDF8' : '#0284C7') : 'var(--text-primary)',
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                        }}
-                      >
-                        {p.display_name}
-                      </span>
-                      <span
-                        style={{
-                          fontSize: '0.5625rem',
-                          padding: '1px 5px',
-                          borderRadius: '4px',
-                          backgroundColor: isDark ? '#374151' : '#E2E8F0',
-                          color: isDark ? '#9CA3AF' : '#64748B',
-                          fontWeight: 600,
-                          flexShrink: 0,
-                        }}
-                      >
-                        {p.profile_key}
-                      </span>
+                )}
+              </div>
+            </div>
+            <span style={{ color: '#06B6D4', display: 'flex', alignItems: 'center' }}>
+              <FiCheckCircle size={16} />
+            </span>
+          </div>
+        ) : (
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.45rem',
+              maxHeight: '240px',
+              overflowY: 'auto',
+              paddingRight: '2px',
+            }}
+          >
+            {profiles.map((p) => {
+              const isSelected = selectedProfileId === p.id;
+              return (
+                <div
+                  key={p.id}
+                  onClick={() => {
+                    setSelectedProfileId(p.id);
+                    updateMultiConfig({
+                      browserProfileId: p.id,
+                      browserProfileName: p.display_name,
+                      browserProfileKey: p.profile_key,
+                    });
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '0.55rem 0.65rem',
+                    borderRadius: '7px',
+                    border: isSelected
+                      ? '1.5px solid #06B6D4'
+                      : isDark ? '1px solid #374151' : '1px solid #E2E8F0',
+                    backgroundColor: isSelected
+                      ? (isDark ? 'rgba(6, 182, 212, 0.12)' : '#ECFEFF')
+                      : (isDark ? '#1F2937' : '#F8FAFC'),
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                    boxShadow: isSelected ? '0 0 0 1px rgba(6, 182, 212, 0.35)' : 'none',
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isSelected) {
+                      e.currentTarget.style.borderColor = isDark ? '#4B5563' : '#CBD5E1';
+                      e.currentTarget.style.backgroundColor = isDark ? '#263342' : '#F1F5F9';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isSelected) {
+                      e.currentTarget.style.borderColor = isDark ? '#374151' : '#E2E8F0';
+                      e.currentTarget.style.backgroundColor = isDark ? '#1F2937' : '#F8FAFC';
+                    }
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', minWidth: 0, flex: 1 }}>
+                    <div
+                      style={{
+                        width: '30px',
+                        height: '30px',
+                        borderRadius: '6px',
+                        background: isSelected
+                          ? 'linear-gradient(135deg, #06B6D4, #0891B2)'
+                          : (isDark ? '#374151' : '#E2E8F0'),
+                        color: isSelected ? '#FFFFFF' : (isDark ? '#9CA3AF' : '#64748B'),
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <FiMonitor size={15} />
                     </div>
-                    {p.email ? (
-                      <div
-                        style={{
-                          fontSize: '0.625rem',
-                          color: 'var(--text-muted)',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                          marginTop: '1px',
-                        }}
-                      >
-                        {p.email}
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <span
+                          style={{
+                            fontSize: '0.75rem',
+                            fontWeight: 700,
+                            color: isSelected ? (isDark ? '#38BDF8' : '#0284C7') : 'var(--text-primary)',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                          }}
+                        >
+                          {p.display_name}
+                        </span>
+                        <span
+                          style={{
+                            fontSize: '0.5625rem',
+                            padding: '1px 5px',
+                            borderRadius: '4px',
+                            backgroundColor: isDark ? '#374151' : '#E2E8F0',
+                            color: isDark ? '#9CA3AF' : '#64748B',
+                            fontWeight: 600,
+                            flexShrink: 0,
+                          }}
+                        >
+                          {p.profile_key}
+                        </span>
                       </div>
+                      {p.email ? (
+                        <div
+                          style={{
+                            fontSize: '0.625rem',
+                            color: 'var(--text-muted)',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            marginTop: '1px',
+                          }}
+                        >
+                          {p.email}
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', marginTop: '1px' }}>
+                          {p.integration_id}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', marginLeft: '6px', flexShrink: 0 }}>
+                    {isSelected ? (
+                      <span style={{ color: '#06B6D4', display: 'flex', alignItems: 'center' }}>
+                        <FiCheckCircle size={16} />
+                      </span>
                     ) : (
-                      <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', marginTop: '1px' }}>
-                        {p.integration_id}
-                      </div>
+                      <span
+                        style={{
+                          width: '14px',
+                          height: '14px',
+                          borderRadius: '50%',
+                          border: isDark ? '1.5px solid #4B5563' : '1.5px solid #CBD5E1',
+                          display: 'block',
+                        }}
+                      />
                     )}
                   </div>
                 </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', marginLeft: '6px', flexShrink: 0 }}>
-                  {isSelected ? (
-                    <span style={{ color: '#06B6D4', display: 'flex', alignItems: 'center' }}>
-                      <FiCheckCircle size={16} />
-                    </span>
-                  ) : (
-                    <span
-                      style={{
-                        width: '14px',
-                        height: '14px',
-                        borderRadius: '50%',
-                        border: isDark ? '1.5px solid #4B5563' : '1.5px solid #CBD5E1',
-                        display: 'block',
-                      }}
-                    />
-                  )}
-                </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
+        )}
           {profiles.length === 0 && (
             <div
               style={{
@@ -1046,7 +1170,6 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
               No Chrome profiles discovered. Click &ldquo;+ Add&rdquo; above to scan or register.
             </div>
           )}
-        </div>
 
         {/* Status / Feedback message */}
         {syncMessage && (
@@ -1280,21 +1403,142 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
         </div>
       </div>
 
-      {/* SECTION C — CHROME TAB GROUPS MULTI-PIPELINE */}
+      {/* SECTION: CONDO PROPERTY & GET IMAGES (from workflow) */}
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '0.65rem',
+          padding: '0.75rem',
+          borderRadius: '8px',
+          background: isDark ? 'rgba(6, 182, 212, 0.05)' : '#F0FDFA',
+          border: isDark ? '1px solid rgba(6, 182, 212, 0.25)' : '1px solid #CCFBF1',
+        }}
+      >
+        {/* Condo / Property Name */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <label style={{ fontSize: '0.625rem', fontWeight: 700, color: '#06B6D4', textTransform: 'uppercase', letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <FiFolder size={11} /> Condo / Project Name
+            </label>
+            <span style={{ fontSize: '0.5625rem', color: 'var(--text-muted)' }}>
+              From {aboveBoxTitle}
+            </span>
+          </div>
+          <div
+            style={{
+              padding: '6px 10px',
+              borderRadius: '6px',
+              background: isDark ? '#1E293B' : '#FFFFFF',
+              border: isDark ? '1px solid #334155' : '1px solid #E2E8F0',
+              fontSize: '0.8125rem',
+              fontWeight: 700,
+              color: isDark ? '#F1F5F9' : '#0F172A',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}
+          >
+            <span>{condoName}</span>
+            <span style={{ fontSize: '0.5625rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(6, 182, 212, 0.15)', color: '#06B6D4', fontWeight: 600 }}>
+              Active Project
+            </span>
+          </div>
+        </div>
+
+        {/* Images received from Get Images */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <label style={{ fontSize: '0.625rem', fontWeight: 700, color: isDark ? '#E2E8F0' : '#1E293B', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <FiImage size={11} style={{ color: '#10B981' }} /> Images from Get Images
+            </label>
+            <span style={{ fontSize: '0.5625rem', fontWeight: 600, color: '#10B981', background: 'rgba(16, 185, 129, 0.12)', padding: '1px 6px', borderRadius: '4px' }}>
+              {receivedImages.length} images ready
+            </span>
+          </div>
+
+          {receivedImages.length > 0 ? (
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(64px, 1fr))',
+                gap: '6px',
+                maxHeight: '160px',
+                overflowY: 'auto',
+                padding: '4px',
+                background: isDark ? '#0F172A' : '#F8FAFC',
+                borderRadius: '6px',
+                border: isDark ? '1px solid #1E293B' : '1px solid #E2E8F0',
+              }}
+            >
+              {receivedImages.map((img, idx) => (
+                <div
+                  key={idx}
+                  style={{
+                    position: 'relative',
+                    aspectRatio: '1',
+                    borderRadius: '5px',
+                    overflow: 'hidden',
+                    border: isDark ? '1px solid #334155' : '1px solid #CBD5E1',
+                    background: '#000',
+                  }}
+                >
+                  <img
+                    src={img.url}
+                    alt={img.filename || `Photo #${img.index || idx + 1}`}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
+                  <span
+                    style={{
+                      position: 'absolute',
+                      bottom: '2px',
+                      right: '2px',
+                      background: 'rgba(0,0,0,0.75)',
+                      color: '#fff',
+                      fontSize: '0.5rem',
+                      fontWeight: 700,
+                      padding: '1px 3px',
+                      borderRadius: '3px',
+                    }}
+                  >
+                    #{img.index || idx + 1}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div
+              style={{
+                padding: '8px 10px',
+                borderRadius: '6px',
+                background: isDark ? '#1E293B' : '#F8FAFC',
+                border: '1px dashed var(--border-color)',
+                fontSize: '0.625rem',
+                color: 'var(--text-muted)',
+                textAlign: 'center',
+              }}
+            >
+              No images from Get Images yet. Connect to Get Images to stream photos.
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* SECTION C — CHROME TAB GROUPS MULTI-PIPELINE (RELATIVE TO SELECTED PROFILE) */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <FiLayers style={{ color: '#06B6D4' }} /> Chrome Tab Groups Assignment
+            <FiLayers style={{ color: '#06B6D4' }} /> Tab Groups & Pipelines ({activeProfile?.display_name || 'Chrome'})
           </label>
           <Button
             size="sm"
             variant="ghost"
             onClick={() => {
-              if (selectedProfileId) {
-                const currentProf = profiles.find((p) => p.id === selectedProfileId);
-                const profKey = currentProf?.profile_key || boxConfig.browserProfileKey || 'Profile 14';
-                const profName = currentProf?.display_name || boxConfig.browserProfileName || 'Hsu';
-                fetchTabGroups(selectedProfileId, profKey, profName).then((g) => setTabGroups(g));
+              const profId = activeProfile?.id || selectedProfileId;
+              const profKey = activeProfile?.profile_key || boxConfig.browserProfileKey || 'Profile 14';
+              const profName = activeProfile?.display_name || boxConfig.browserProfileName || 'Hsu';
+              if (profId) {
+                fetchTabGroups(profId, profKey, profName).then((g) => setTabGroups(g));
               }
             }}
             style={{ fontSize: '0.625rem', padding: '2px 6px', height: 'auto' }}
@@ -1303,448 +1547,277 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
           </Button>
         </div>
 
-        {/* ── 1. GROUP 1: PHOTO ENHANCEMENT (4 TABS) ── */}
-        <div
-          style={{
-            padding: '0.75rem',
-            borderRadius: '8px',
-            background: isDark ? 'rgba(59, 130, 246, 0.06)' : '#EFF6FF',
-            border: isDark ? '1px solid rgba(59, 130, 246, 0.25)' : '1px solid #BFDBFE',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '0.5rem',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#3B82F6' }} />
-              <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: isDark ? '#93C5FD' : '#1D4ED8' }}>
-                Group 1: Photo Enhancement ({groupTabs.length || 4} Tabs)
-              </span>
-            </div>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.625rem', color: 'var(--text-secondary)', cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={enableEnhanceGroup}
-                onChange={(e) => {
-                  setEnableEnhanceGroup(e.target.checked);
-                  updateConfig('enableEnhanceGroup', e.target.checked);
-                }}
-              />
-              Active
-            </label>
-          </div>
-
-          <Select
-            options={[
-              ...tabGroups.map((g) => ({
-                value: g.name,
-                label: `${g.name} (${g.tabs_count} tabs)`,
-              })),
-            ]}
-            value={selectedGroupName}
-            onChange={async (val) => {
-              setSelectedGroupName(val);
-              const foundGroup = tabGroups.find((g) => g.name === val);
-              if (foundGroup && foundGroup.tabs && foundGroup.tabs.length > 0) {
-                const firstTab = foundGroup.tabs[0];
-                setSelectedTabId(firstTab.id);
-                const tabUrls = foundGroup.tabs.map((t) => t.url).filter(Boolean);
-                updateMultiConfig({
-                  browserGroupName: val,
-                  browserTabId: firstTab.id,
-                  browserTabTitle: firstTab.title,
-                  browserGroupTabUrls: tabUrls,
-                  _liveGroupTabs: foundGroup.tabs.map((t) => ({ id: t.id, title: t.title, url: t.url })),
-                });
-
-                // Focus selected group in Chrome
-                try {
-                  await focusBrowserTabGroup({
-                    profileId: activeProfile?.id || selectedProfileId,
-                    profileKey: activeProfile?.profile_key || 'Profile 14',
-                    groupName: val,
-                    tabId: firstTab.id,
-                    groupTabUrls: tabUrls,
-                    url: firstTab.url,
-                    force: true,
-                  });
-                } catch (e) {}
-              }
+        {tabGroups.length === 0 ? (
+          <div
+            style={{
+              padding: '0.85rem',
+              borderRadius: '8px',
+              border: isDark ? '1px dashed #374151' : '1px dashed #CBD5E1',
+              textAlign: 'center',
+              fontSize: '0.6875rem',
+              color: 'var(--text-muted)',
             }}
-          />
-
-          {enableEnhanceGroup && groupTabs.length > 0 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', marginTop: '2px' }}>
-              <div style={{ fontSize: '0.5625rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                Active Workers ({groupTabs.length} tabs for photo retouching):
-              </div>
-              {groupTabs.map((tab, idx) => (
-                <div
-                  key={tab.id}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.4rem',
-                    padding: '0.35rem 0.5rem',
-                    borderRadius: '6px',
-                    background: isDark ? 'rgba(59, 130, 246, 0.08)' : '#FFFFFF',
-                    border: '1px solid rgba(59, 130, 246, 0.2)',
-                  }}
-                >
-                  <div
-                    style={{
-                      width: '14px',
-                      height: '14px',
-                      borderRadius: '50%',
-                      background: '#3B82F6',
-                      color: '#fff',
-                      fontSize: '0.5rem',
-                      fontWeight: 800,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
-                    }}
-                  >
-                    {idx + 1}
-                  </div>
-                  <span
-                    style={{
-                      fontSize: '0.625rem',
-                      color: isDark ? '#CBD5E1' : '#334155',
-                      flex: 1,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                    title={tab.title}
-                  >
-                    {tab.title || `Tab ${idx + 1}`}
-                  </span>
-                  <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10B981', flexShrink: 0 }} />
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* ── 2. GROUP 2: STAGING & FB HERO (2 TABS) ── */}
-        <div
-          style={{
-            padding: '0.75rem',
-            borderRadius: '8px',
-            background: isDark ? 'rgba(139, 92, 246, 0.06)' : '#FAF5FF',
-            border: isDark ? '1px solid rgba(139, 92, 246, 0.25)' : '1px solid #E9D5FF',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '0.5rem',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#8B5CF6' }} />
-              <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: isDark ? '#C4B5FD' : '#6D28D9' }}>
-                Group 2: Staging & FB Hero ({stagingGroupTabs.length || 2} Tabs)
-              </span>
-            </div>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.625rem', color: 'var(--text-secondary)', cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={enableStagingGroup}
-                onChange={(e) => {
-                  setEnableStagingGroup(e.target.checked);
-                  updateConfig('enableStagingGroup', e.target.checked);
-                }}
-              />
-              Active
-            </label>
+          >
+            No tab groups discovered for &ldquo;{activeProfile?.display_name || 'Selected Profile'}&rdquo;.
+            <br />
+            Create or focus tab groups in Chrome (e.g. &ldquo;Enhance IMG&rdquo;, &ldquo;FB Hero&rdquo;).
           </div>
+        ) : (
+          tabGroups.map((group, groupIdx) => {
+            const isEnhance = group.name.toLowerCase().includes('enhance');
+            const isHero = group.name.toLowerCase().includes('hero') || group.name.toLowerCase().includes('fb');
+            const isTikTok = group.name.toLowerCase().includes('tiktok');
+            const groupThemeColor = isEnhance ? '#3B82F6' : isHero ? '#8B5CF6' : isTikTok ? '#EC4899' : '#06B6D4';
+            const groupBg = isDark
+              ? `${groupThemeColor}14`
+              : (isEnhance ? '#EFF6FF' : isHero ? '#FAF5FF' : isTikTok ? '#FDF2F8' : '#ECFEFF');
+            const groupBorder = isDark ? `1px solid ${groupThemeColor}35` : `1px solid ${groupThemeColor}50`;
+            const tabs = group.tabs || [];
 
-          <Select
-            options={[
-              ...tabGroups.map((g) => ({
-                value: g.name,
-                label: `${g.name} (${g.tabs_count} tabs)`,
-              })),
-            ]}
-            value={stagingGroupName}
-            onChange={async (val) => {
-              setStagingGroupName(val);
-              updateConfig('stagingGroupName', val);
-              const found = tabGroups.find((g) => g.name === val);
-              if (found && found.tabs && found.tabs.length > 0) {
-                try {
-                  await focusBrowserTabGroup({
-                    profileId: activeProfile?.id || selectedProfileId,
-                    profileKey: activeProfile?.profile_key || 'Profile 14',
-                    groupName: val,
-                    tabId: found.tabs[0].id,
-                    groupTabUrls: found.tabs.map((t) => t.url).filter(Boolean),
-                    url: found.tabs[0].url,
-                    force: true,
-                  });
-                } catch (e) {}
-              }
-            }}
-          />
+            // Relative prompt formulation matching this group and condo name
+            const relativePrompt = isEnhance
+              ? `Enhance interior and exterior photos for "${condoName}". Maintain strict architectural realism, enhance natural ambient lighting, correct exposure balance, and produce high-resolution editorial quality.`
+              : isHero
+              ? `Create high-converting Facebook Real Estate hero advertisement copy and staging layout for "${condoName}". Highlight luxury living, key amenities, prime location, and a compelling call-to-action.`
+              : `Produce engaging TikTok / Reels video caption and visual hook for property "${condoName}". Include energetic opener, 3 selling points, and urgent inquiry call-to-action.`;
 
-          {enableStagingGroup && stagingGroupTabs.length > 0 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', marginTop: '2px' }}>
-              <div style={{ fontSize: '0.5625rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                Pipeline Workers:
-              </div>
-              {stagingGroupTabs.map((tab, idx) => (
-                <div
-                  key={tab.id}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.4rem',
-                    padding: '0.35rem 0.5rem',
-                    borderRadius: '6px',
-                    background: isDark ? 'rgba(139, 92, 246, 0.08)' : '#FFFFFF',
-                    border: '1px solid rgba(139, 92, 246, 0.2)',
-                  }}
-                >
-                  <div
-                    style={{
-                      width: '14px',
-                      height: '14px',
-                      borderRadius: '50%',
-                      background: '#8B5CF6',
-                      color: '#fff',
-                      fontSize: '0.5rem',
-                      fontWeight: 800,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
-                    }}
-                  >
-                    {idx + 1}
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+            return (
+              <div
+                key={group.id || group.name || groupIdx}
+                style={{
+                  padding: '0.75rem',
+                  borderRadius: '8px',
+                  background: groupBg,
+                  border: groupBorder,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.5rem',
+                }}
+              >
+                {/* Group Title Header */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ width: '9px', height: '9px', borderRadius: '50%', background: groupThemeColor }} />
+                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: isDark ? '#F1F5F9' : '#0F172A' }}>
+                      {group.name}
+                    </span>
                     <span
                       style={{
-                        fontSize: '0.625rem',
+                        fontSize: '0.5625rem',
+                        padding: '1px 6px',
+                        borderRadius: '10px',
+                        backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+                        color: 'var(--text-secondary)',
                         fontWeight: 600,
-                        color: isDark ? '#E2E8F0' : '#1E293B',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
                       }}
-                      title={tab.title}
                     >
-                      {tab.title || `Tab ${idx + 1}`}
-                    </span>
-                    <span style={{ fontSize: '0.5rem', color: idx === 0 ? '#06B6D4' : '#10B981' }}>
-                      {idx === 0
-                        ? '↳ Tab 1: Pastes prompt, sends, and extracts prompt copy'
-                        : '↳ Tab 2: Pastes prompt + Reference Image (1st) + Condo Photos 1,2,3 (2nd)'}
+                      {tabs.length} {tabs.length === 1 ? 'Tab' : 'Tabs'}
                     </span>
                   </div>
-                  <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10B981', flexShrink: 0 }} />
-                </div>
-              ))}
-            </div>
-          )}
 
-          {/* Reference Image & Condo Building Scanner inside Group 2 */}
-          {enableStagingGroup && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginTop: '4px' }}>
-              {/* 1. Manual Reference Image */}
-              <div
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '0.35rem',
-                  padding: '0.55rem',
-                  borderRadius: '6px',
-                  background: isDark ? '#111827' : '#FFFFFF',
-                  border: isDark ? '1px solid #374151' : '1px solid #E2E8F0',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <label style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                    Reference / Example Image <span style={{ color: '#8B5CF6' }}>(Pasted 1st in Tab 2)</span>
-                  </label>
-                  {referenceImage && (
-                    <button
-                      type="button"
-                      onClick={handleRemoveReferenceImage}
-                      style={{ background: 'none', border: 'none', fontSize: '0.5625rem', color: '#EF4444', cursor: 'pointer' }}
-                    >
-                      Remove
-                    </button>
-                  )}
-                </div>
-
-                {referenceImage ? (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <img
-                      src={referenceImage}
-                      alt="Reference"
-                      style={{ width: '42px', height: '42px', objectFit: 'cover', borderRadius: '5px', border: '1px solid #8B5CF6' }}
-                    />
-                    <div style={{ display: 'flex', flexDirection: 'column' }}>
-                      <span style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-primary)' }}>Reference Image Ready</span>
-                      <span style={{ fontSize: '0.5rem', color: '#10B981' }}>✓ Will be attached first before condo photos 1, 2, 3</span>
-                    </div>
-                  </div>
-                ) : (
-                  <label
-                    style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      padding: '0.6rem 0.4rem',
-                      borderRadius: '5px',
-                      border: isDark ? '1px dashed #4B5563' : '1px dashed #CBD5E1',
-                      cursor: 'pointer',
-                      gap: '3px',
-                    }}
-                  >
-                    <FiUploadCloud size={16} style={{ color: '#8B5CF6' }} />
-                    <span style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Upload Reference Image</span>
-                    <input type="file" accept="image/*" onChange={handleReferenceImageFile} style={{ display: 'none' }} />
-                  </label>
-                )}
-              </div>
-
-              {/* 2. Condo Building Desktop Folder Scanner */}
-              <div
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '0.35rem',
-                  padding: '0.55rem',
-                  borderRadius: '6px',
-                  background: isDark ? '#111827' : '#FFFFFF',
-                  border: isDark ? '1px solid #374151' : '1px solid #E2E8F0',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <label style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                    Condo Folder from Desktop <span style={{ color: '#06B6D4' }}>(Auto-Detects 1, 2, 3)</span>
-                  </label>
-                  <span style={{ fontSize: '0.5rem', color: '#10B981', display: 'flex', alignItems: 'center', gap: '2px' }}>
-                    <FiShield size={9} /> Strictly Read-Only
-                  </span>
-                </div>
-
-                <div style={{ display: 'flex', gap: '4px' }}>
-                  <input
-                    type="text"
-                    value={condoSearchQuery}
-                    placeholder="e.g. Regent Home Bangna, Modiz Sukhumvit 50"
-                    onChange={(e) => setCondoSearchQuery(e.target.value)}
-                    style={{
-                      flex: 1,
-                      padding: '4px 6px',
-                      borderRadius: '4px',
-                      fontSize: '0.625rem',
-                      border: isDark ? '1px solid #374151' : '1px solid #CBD5E1',
-                      background: isDark ? '#1E293B' : '#F8FAFC',
-                      color: 'var(--text-primary)',
-                      outline: 'none',
-                    }}
-                  />
                   <Button
                     size="sm"
-                    variant="secondary"
-                    disabled={isScanningCondo}
-                    onClick={() => handleScanCondo()}
-                    style={{ fontSize: '0.5625rem', padding: '0 6px', height: '26px' }}
+                    variant="ghost"
+                    onClick={async () => {
+                      if (tabs.length > 0) {
+                        try {
+                          await focusBrowserTabGroup({
+                            profileId: activeProfile?.id || selectedProfileId,
+                            profileKey: activeProfile?.profile_key || 'Profile 14',
+                            groupName: group.name,
+                            tabId: tabs[0].id,
+                            groupTabUrls: tabs.map((t) => t.url).filter(Boolean),
+                            url: tabs[0].url,
+                            force: true,
+                          });
+                        } catch (e) {}
+                      }
+                    }}
+                    style={{ fontSize: '0.625rem', padding: '2px 7px', height: '22px' }}
                   >
-                    <FiRefreshCw size={9} className={isScanningCondo ? 'animate-spin' : ''} />
+                    <FiExternalLink size={10} style={{ marginRight: '3px' }} /> Focus Group
                   </Button>
                 </div>
 
-                {matchedCondoInfo ? (
-                  <div
-                    style={{
-                      marginTop: '2px',
-                      padding: '0.4rem',
-                      borderRadius: '4px',
-                      background: isDark ? 'rgba(16, 185, 129, 0.1)' : '#F0FDF4',
-                      border: '1px solid rgba(16, 185, 129, 0.25)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '2px',
-                    }}
-                  >
-                    <div style={{ fontSize: '0.625rem', fontWeight: 600, color: '#10B981', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                      <FiCheckCircle size={10} /> Matched: "{matchedCondoInfo.matched_folder}"
+                {/* Worker Tabs in this Group */}
+                {tabs.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', marginTop: '2px' }}>
+                    <div style={{ fontSize: '0.5625rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      Pipeline Workers ({tabs.length} live {tabs.length === 1 ? 'tab' : 'tabs'}):
                     </div>
-                    <div style={{ display: 'flex', gap: '3px', marginTop: '2px' }}>
-                      {matchedCondoInfo.images?.map((img: any) => (
-                        <span
-                          key={img.index}
-                          style={{ fontSize: '0.5rem', padding: '1px 4px', borderRadius: '2px', background: '#10B981', color: '#fff', fontWeight: 700 }}
+                    {tabs.map((tab, idx) => (
+                      <div
+                        key={tab.id || idx}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.45rem',
+                          padding: '0.35rem 0.5rem',
+                          borderRadius: '6px',
+                          background: isDark ? 'rgba(0, 0, 0, 0.25)' : '#FFFFFF',
+                          border: isDark ? '1px solid rgba(255,255,255,0.07)' : '1px solid rgba(0,0,0,0.08)',
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: '16px',
+                            height: '16px',
+                            borderRadius: '50%',
+                            background: groupThemeColor,
+                            color: '#fff',
+                            fontSize: '0.5625rem',
+                            fontWeight: 800,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flexShrink: 0,
+                          }}
                         >
-                          {img.filename}
-                        </span>
-                      ))}
-                      <span style={{ fontSize: '0.5rem', color: 'var(--text-muted)', alignSelf: 'center', marginLeft: '3px' }}>
-                        ({matchedCondoInfo.images_found} images ready)
-                      </span>
-                    </div>
-                  </div>
-                ) : (
-                  <div style={{ fontSize: '0.5rem', color: '#F59E0B' }}>
-                    ⚠️ No matching folder found in Desktop/Condo Building.
+                          {idx + 1}
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+                          <span
+                            style={{
+                              fontSize: '0.625rem',
+                              fontWeight: 600,
+                              color: isDark ? '#E2E8F0' : '#1E293B',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}
+                            title={tab.title}
+                          >
+                            {tab.title || `Worker Tab #${idx + 1}`}
+                          </span>
+                          <span
+                            style={{
+                              fontSize: '0.5rem',
+                              color: 'var(--text-muted)',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {tab.url || 'chrome-tab://active'}
+                          </span>
+                        </div>
+                        <div
+                          style={{
+                            width: '6px',
+                            height: '6px',
+                            borderRadius: '50%',
+                            background: '#10B981',
+                            boxShadow: '0 0 4px #10B981',
+                            flexShrink: 0,
+                          }}
+                          title="Tab Active"
+                        />
+                      </div>
+                    ))}
                   </div>
                 )}
-              </div>
 
-              {/* 3. Run Test Button */}
-              <Button
-                size="sm"
-                variant="primary"
-                disabled={isRunningTwoStage}
-                onClick={handleRunTwoStageTest}
-                style={{
-                  width: '100%',
-                  fontWeight: 700,
-                  fontSize: '0.6875rem',
-                  background: 'linear-gradient(135deg, #8B5CF6, #6366F1)',
-                  border: 'none',
-                  color: '#fff',
-                  padding: '5px 10px',
-                }}
-              >
-                {isRunningTwoStage ? (
-                  <>
-                    <FiRefreshCw size={11} className="animate-spin" style={{ marginRight: '5px' }} />
-                    Running Staging...
-                  </>
-                ) : (
-                  <>
-                    <FiPlay size={11} style={{ marginRight: '5px' }} />
-                    Test Run Staging ({stagingGroupName})
-                  </>
-                )}
-              </Button>
-
-              {twoStageMessage && (
+                {/* Relative Prompt Box */}
                 <div
                   style={{
-                    padding: '0.35rem 0.5rem',
-                    borderRadius: '4px',
-                    fontSize: '0.5625rem',
-                    background: isDark ? '#1E293B' : '#F1F5F9',
-                    border: '1px solid var(--border-color)',
-                    color: isDark ? '#E2E8F0' : '#1E293B',
+                    padding: '0.45rem 0.6rem',
+                    borderRadius: '6px',
+                    background: isDark ? 'rgba(0, 0, 0, 0.35)' : 'rgba(255, 255, 255, 0.7)',
+                    border: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.06)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.25rem',
+                    marginTop: '2px',
                   }}
                 >
-                  {twoStageMessage}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: '0.5625rem', fontWeight: 700, color: groupThemeColor, textTransform: 'uppercase' }}>
+                      Relative Prompt ({condoName})
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(relativePrompt);
+                      }}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        padding: 0,
+                        cursor: 'pointer',
+                        color: 'var(--text-muted)',
+                        fontSize: '0.5625rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '2px',
+                      }}
+                      title="Copy Prompt"
+                    >
+                      <FiCopy size={10} /> Copy
+                    </button>
+                  </div>
+                  <div
+                    style={{
+                      fontSize: '0.625rem',
+                      color: isDark ? '#CBD5E1' : '#334155',
+                      lineHeight: 1.35,
+                      fontFamily: 'monospace',
+                    }}
+                  >
+                    {relativePrompt}
+                  </div>
                 </div>
-              )}
-            </div>
-          )}
-        </div>
+
+                {/* Group Automation Process Action Button */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', marginTop: '2px' }}>
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    disabled={isAutomating || isRunningTwoStage}
+                    onClick={() => {
+                      if (isHero) {
+                        handleRunTwoStageTest();
+                      } else {
+                        setSelectedGroupName(group.name);
+                        handleStartGroupAutomation();
+                      }
+                    }}
+                    style={{
+                      fontSize: '0.6875rem',
+                      fontWeight: 700,
+                      backgroundColor: groupThemeColor,
+                      borderColor: groupThemeColor,
+                      color: '#FFFFFF',
+                      width: '100%',
+                    }}
+                  >
+                    <FiPlay size={11} style={{ marginRight: '5px' }} />
+                    Run {group.name} ({receivedImages.length} {receivedImages.length === 1 ? 'image' : 'images'} from Get Images)
+                  </Button>
+                </div>
+              </div>
+            );
+          })
+        )}
+
+        {/* Global Automation Messages */}
+        {(automationMessage || twoStageMessage) && (
+          <div
+            style={{
+              padding: '0.45rem 0.6rem',
+              borderRadius: '6px',
+              fontSize: '0.625rem',
+              background: isDark ? '#1E293B' : '#F1F5F9',
+              border: '1px solid var(--border-color)',
+              color: isDark ? '#E2E8F0' : '#1E293B',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+            }}
+          >
+            <FiCheckCircle size={12} style={{ color: '#10B981', flexShrink: 0 }} />
+            <span>{automationMessage || twoStageMessage}</span>
+          </div>
+        )}
       </div>
 
       {/* SECTION E — PROMPT TEMPLATE SELECTOR */}

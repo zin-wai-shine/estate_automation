@@ -9333,20 +9333,60 @@ export const FacebookWorkflowCanvas = forwardRef<
                         </div>
                       </div>
                     ) : isExternalBrowserAIBox(currentModalAIBox) || currentModalAIBox.processType === 'chrome_profile' ? (
-                      <ExternalBrowserSidebar
-                        isDark={isDark}
-                        boxConfig={currentModalAIBox}
-                        onUpdateBoxConfig={(updated) => handleUpdateAIBox(currentModalAIBox.id, updated)}
-                        availablePrompts={availablePrompts as any}
-                        propertyContext={{
-                          id: executionState?.propertyId || '',
-                          title: _projectName || 'Featured Property Listing',
-                          images: (images || []).map((img, i) => ({
-                            url: typeof img === 'string' ? img : img.source_url || img.stored_url || '',
-                            index: typeof img === 'object' && img.index ? img.index : i + 1,
-                          })),
-                        }}
-                      />
+                      (() => {
+                        const candidateAbove =
+                          config.aiBoxes
+                            .filter(
+                              (b) =>
+                                b.id !== currentModalAIBox.id &&
+                                b.processType !== 'chrome_profile' &&
+                                !isExternalBrowserAIBox(b) &&
+                                b.y < currentModalAIBox.y
+                            )
+                            .sort((a, b) => b.y - a.y)[0] ||
+                          config.aiBoxes
+                            .filter((b) => b.id !== currentModalAIBox.id && b.y < currentModalAIBox.y)
+                            .sort((a, b) => b.y - a.y)[0];
+
+                        const connectedProfileBox = config.aiBoxes.find(
+                          (b) =>
+                            b.processType === 'chrome_profile' &&
+                            config.connections?.some(
+                              (c) =>
+                                (c.fromNodeId === currentModalAIBox.id && c.toNodeId === b.id) ||
+                                (c.fromNodeId === b.id && c.toNodeId === currentModalAIBox.id)
+                            )
+                        );
+
+                        const effectiveBoxConfig = {
+                          ...currentModalAIBox,
+                          browserProfileId: currentModalAIBox.browserProfileId || connectedProfileBox?.browserProfileId,
+                          browserProfileKey: currentModalAIBox.browserProfileKey || connectedProfileBox?.browserProfileKey,
+                          browserProfileName: currentModalAIBox.browserProfileName || connectedProfileBox?.browserProfileName,
+                        };
+
+                        const aboveBoxTitle = candidateAbove ? candidateAbove.title : 'Format: Enhance Image';
+                        const condoName = _projectName || (candidateAbove && candidateAbove.title) || 'Featured Property Listing';
+
+                        return (
+                          <ExternalBrowserSidebar
+                            isDark={isDark}
+                            boxConfig={effectiveBoxConfig}
+                            onUpdateBoxConfig={(updated) => handleUpdateAIBox(currentModalAIBox.id, updated)}
+                            availablePrompts={availablePrompts as any}
+                            propertyContext={{
+                              id: executionState?.propertyId || '',
+                              title: condoName,
+                              aboveBoxTitle: aboveBoxTitle,
+                              images: (images || []).map((img, i) => ({
+                                url: typeof img === 'string' ? img : img.stored_url || img.source_url || (img as any).preview || (img as any).url || '',
+                                index: typeof img === 'object' && img.index ? img.index : i + 1,
+                                filename: typeof img === 'object' && (img as any).filename ? (img as any).filename : `Photo #${i + 1}`,
+                              })),
+                            }}
+                          />
+                        );
+                      })()
                     ) : (
                       <>
                         {/* Select Prompt Template */}
