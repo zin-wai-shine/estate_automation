@@ -548,12 +548,42 @@ export const autoConnectWorkflow = (
     );
   }
 
-  const enhanceBoxes = boxes.filter((b) => isEnhanceAIBox(b, conns));
-  const watermarkBoxes = boxes.filter((b) => isWatermarkAIBox(b));
-  const textFormatBoxes = boxes.filter((b) => isTextFormatAIBox(b));
+  const chromeProfileBoxes = boxes.filter((b) => isChromeProfileAIBox(b));
+  const externalBrowserBoxes = boxes.filter((b) => isExternalBrowserAIBox(b));
+  const enhanceBoxes = boxes.filter((b) => !isChromeProfileAIBox(b) && isEnhanceAIBox(b, conns));
+  const watermarkBoxes = boxes.filter((b) => !isChromeProfileAIBox(b) && isWatermarkAIBox(b));
+  const textFormatBoxes = boxes.filter((b) => !isChromeProfileAIBox(b) && isTextFormatAIBox(b));
   const textAIBoxes = boxes.filter(
-    (b) => !isWatermarkAIBox(b) && !enhanceBoxes.includes(b) && !isTextFormatAIBox(b)
+    (b) => !isChromeProfileAIBox(b) && !isWatermarkAIBox(b) && !enhanceBoxes.includes(b) && !isTextFormatAIBox(b)
   );
+
+  // Chrome profile boxes are subordinate profile nodes under External Browser;
+  // They never receive wires from get-content, get-images, or other AI nodes, and never output into combine/output/destinations.
+  if (chromeProfileBoxes.length > 0) {
+    // 1. Remove all outgoing wires from chrome profile boxes
+    conns = conns.filter((c) => !chromeProfileBoxes.some((p) => p.id === c.fromNodeId));
+    // 2. Remove all incoming wires to chrome profile boxes EXCEPT those coming from an external browser box
+    conns = conns.filter(
+      (c) =>
+        !chromeProfileBoxes.some((p) => p.id === c.toNodeId) ||
+        externalBrowserBoxes.some((eb) => eb.id === c.fromNodeId)
+    );
+    // 3. Ensure each chrome profile box is connected from its parent external browser (or the first external browser if not yet wired)
+    if (externalBrowserBoxes.length > 0) {
+      chromeProfileBoxes.forEach((p) => {
+        const hasParentWire = conns.some(
+          (c) => externalBrowserBoxes.some((eb) => eb.id === c.fromNodeId) && c.toNodeId === p.id
+        );
+        if (!hasParentWire) {
+          conns.push({
+            id: `wire-${externalBrowserBoxes[0].id}-${p.id}-${Date.now()}`,
+            fromNodeId: externalBrowserBoxes[0].id,
+            toNodeId: p.id,
+          });
+        }
+      });
+    }
+  }
 
   // 1. Text Pipeline: get-content -> textAIBoxes -> textFormatBoxes
   if (getContentEnabled) {
@@ -973,16 +1003,18 @@ export const buildAlignedLayout = (
   const fromContent = (id: string) => conns.some((c) => c.fromNodeId === 'get-content' && c.toNodeId === id);
   const fromImages = (id: string) => conns.some((c) => c.fromNodeId === 'get-images' && c.toNodeId === id);
 
-  const watermarkBoxes = boxes.filter((b) => isWatermarkAIBox(b));
+  const chromeProfileBoxes = boxes.filter((b) => isChromeProfileAIBox(b));
+  const externalBrowserBoxes = boxes.filter((b) => isExternalBrowserAIBox(b));
+  const watermarkBoxes = boxes.filter((b) => !isChromeProfileAIBox(b) && isWatermarkAIBox(b));
   const enhanceBoxes = boxes.filter(
-    (b) => !isWatermarkAIBox(b) && (isEnhanceAIBox(b, conns) || fromImages(b.id))
+    (b) => !isChromeProfileAIBox(b) && !isWatermarkAIBox(b) && (isEnhanceAIBox(b, conns) || fromImages(b.id))
   );
-  const textFormatBoxes = boxes.filter((b) => isTextFormatAIBox(b));
+  const textFormatBoxes = boxes.filter((b) => !isChromeProfileAIBox(b) && isTextFormatAIBox(b));
   const textAIBoxes = boxes.filter(
-    (b) => !isWatermarkAIBox(b) && !enhanceBoxes.includes(b) && !isTextFormatAIBox(b) && (fromContent(b.id) || !fromImages(b.id))
+    (b) => !isChromeProfileAIBox(b) && !isWatermarkAIBox(b) && !enhanceBoxes.includes(b) && !isTextFormatAIBox(b) && (fromContent(b.id) || !fromImages(b.id))
   );
   const otherBoxes = boxes.filter(
-    (b) => !textAIBoxes.includes(b) && !textFormatBoxes.includes(b) && !enhanceBoxes.includes(b) && !watermarkBoxes.includes(b)
+    (b) => !isChromeProfileAIBox(b) && !textAIBoxes.includes(b) && !textFormatBoxes.includes(b) && !enhanceBoxes.includes(b) && !watermarkBoxes.includes(b)
   );
 
   // Compact Clean Tree Metrics
@@ -1125,6 +1157,47 @@ export const buildAlignedLayout = (
     xById[b.id] = otherColX;
     yById[b.id] = contentTopY + idx * NODE_V_STEP;
   });
+
+  // 4. Chrome Profile Boxes (position centered directly below parent External Browser node)
+  if (chromeProfileBoxes.length > 0) {
+    const PROFILE_SPACING = 140;
+    // Map profiles to their parent external browser
+    externalBrowserBoxes.forEach((eb) => {
+      const ebProfiles = chromeProfileBoxes.filter((p) =>
+        conns.some((c) => c.fromNodeId === eb.id && c.toNodeId === p.id)
+      );
+      // Fallback: if no connections yet or only 1 external browser, assign unassigned profiles to it
+      const unassigned = chromeProfileBoxes.filter(
+        (p) => !conns.some((c) => externalBrowserBoxes.some((b) => b.id === c.fromNodeId) && c.toNodeId === p.id)
+      );
+      const profilesToPlace = eb === externalBrowserBoxes[0]
+        ? [...ebProfiles, ...unassigned.filter((p) => !ebProfiles.includes(p))]
+        : ebProfiles;
+
+      const numP = profilesToPlace.length;
+      if (numP === 0) return;
+
+      const parentX = xById[eb.id] ?? COL_AI_X;
+      const parentY = yById[eb.id] ?? imageCenterY;
+      const parentCenterX = parentX + 108; // External Browser width 216 / 2 = 108
+
+      profilesToPlace.forEach((p, pIdx) => {
+        const centerOffset = numP === 1 ? 0 : (pIdx - (numP - 1) / 2) * PROFILE_SPACING;
+        xById[p.id] = Math.round(parentCenterX + centerOffset - 36);
+        yById[p.id] = parentY + 180;
+      });
+    });
+
+    // Any remaining profiles without external browser
+    const placedIds = new Set(Object.keys(xById));
+    const unplacedProfiles = chromeProfileBoxes.filter((p) => !placedIds.has(p.id));
+    if (unplacedProfiles.length > 0) {
+      unplacedProfiles.forEach((p, pIdx) => {
+        xById[p.id] = COL_AI_X + pIdx * PROFILE_SPACING;
+        yById[p.id] = imageTopY + 180;
+      });
+    }
+  }
 
   const hasContent = base.getContent?.enabled !== false;
   const hasImages = base.getImages?.enabled !== false;
@@ -5548,8 +5621,9 @@ export const FacebookWorkflowCanvas = forwardRef<
       : (typeof window !== 'undefined' ? window.innerHeight - 56 : 800);
 
     // Dynamic zoom to ensure whole flow is focused and centered with balanced margins
+    const hasProfiles = (config.aiBoxes || []).some((b) => isChromeProfileAIBox(b));
     const contentWidth = 1420;
-    const contentHeight = 440;
+    const contentHeight = hasProfiles ? 620 : 440;
     const fitZoomX = (vWidth - 140) / contentWidth;
     const fitZoomY = (vHeight - 120) / contentHeight;
     const zoom = Math.min(Math.max(Math.min(fitZoomX, fitZoomY), 0.72), 0.88);

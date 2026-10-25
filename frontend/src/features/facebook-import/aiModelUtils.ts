@@ -119,6 +119,7 @@ export const isWatermarkAIBox = (
   box?: { id?: string; provider?: string; model?: string; processType?: string; title?: string; cropFormatId?: string; watermarkPresetId?: string; subtitle?: string }
 ): boolean => {
   if (!box) return false;
+  if (isChromeProfileAIBox(box)) return false;
   if (isN8NAIBox(box) || isExternalBrowserAIBox(box)) return false;
   if (box.processType === 'text_format' || box.processType === 'text_ai') return false;
   return (
@@ -138,6 +139,7 @@ export const isTextFormatAIBox = (
   box?: { id?: string; provider?: string; model?: string; processType?: string; title?: string; cropFormatId?: string; watermarkPresetId?: string; subtitle?: string; templateId?: string; templateText?: string }
 ): boolean => {
   if (!box) return false;
+  if (isChromeProfileAIBox(box)) return false;
   if (isN8NAIBox(box) || isExternalBrowserAIBox(box)) return false;
   if (isWatermarkAIBox(box)) return false;
   if (box.processType === 'image_enhance' || box.provider === 'runware_ai' || box.processType === 'text_ai') return false;
@@ -155,6 +157,7 @@ export const isTextAIBox = (
   connections: { fromNodeId: string; toNodeId: string }[] = []
 ): boolean => {
   if (!box) return false;
+  if (isChromeProfileAIBox(box)) return false;
   if (isN8NAIBox(box) || isExternalBrowserAIBox(box)) return false;
   if (isWatermarkAIBox(box)) return false;
   if (isTextFormatAIBox(box)) return false;
@@ -171,6 +174,7 @@ export const isImageAIBox = (
   connections: { fromNodeId: string; toNodeId: string }[] = []
 ): boolean => {
   if (!box) return false;
+  if (isChromeProfileAIBox(box)) return false;
   if (isN8NAIBox(box)) return false;
   if (isExternalBrowserAIBox(box)) return true;
   if (isWatermarkAIBox(box)) return true;
@@ -200,7 +204,7 @@ export const isEnhanceAIBox = (
   box: { id?: string; provider?: string; model?: string; processType?: string },
   connections: { fromNodeId: string; toNodeId: string }[] = []
 ): boolean => {
-  if (!box || isWatermarkAIBox(box)) return false;
+  if (!box || isChromeProfileAIBox(box) || isWatermarkAIBox(box)) return false;
   return isImageAIBox(box, connections);
 };
 
