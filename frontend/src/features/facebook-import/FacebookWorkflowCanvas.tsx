@@ -1549,7 +1549,9 @@ export interface MergedNodeShapeProps {
   isTrigger?: boolean;   // First trigger node
   isCircle?: boolean;    // Circular account/end node
   showAddButton?: boolean;
+  showBottomAddButton?: boolean;
   onAddClick?: (e: React.MouseEvent) => void;
+  onBottomAddClick?: (e: React.MouseEvent) => void;
   onSocketMouseDown?: (type: 'input' | 'output', e: React.MouseEvent) => void;
   onSocketMouseUp?: (type: 'input' | 'output', e: React.MouseEvent) => void;
   onSocketMouseEnter?: (type: 'input' | 'output') => void;
@@ -1803,7 +1805,9 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
   isTrigger = false,
   isCircle = false,
   showAddButton = false,
+  showBottomAddButton = false,
   onAddClick,
+  onBottomAddClick: _onBottomAddClick,
   onSocketMouseDown,
   onSocketMouseUp,
   onSocketMouseEnter,
@@ -1963,6 +1967,29 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
               style={{
                 transition: 'all 0.15s ease',
               }}
+            />
+          </g>
+        )}
+
+        {/* BOTTOM BASE OUTPUT PORT (n8n solid circle on bottom border at x = nodeWidth / 2, y = nodeHeight - 1) */}
+        {showBottomAddButton && (
+          <g>
+            <circle
+              cx={nodeWidth / 2}
+              cy={nodeHeight - 1}
+              r={5}
+              fill={outputDotColor}
+              stroke={outputDotColor}
+              strokeWidth="1.5"
+            />
+            {/* Top vertical line from bottom dot to top of text label */}
+            <line
+              x1={nodeWidth / 2}
+              y1={nodeHeight - 1}
+              x2={nodeWidth / 2}
+              y2={nodeHeight + 11}
+              stroke={isDark ? '#4B5563' : '#94A3B8'}
+              strokeWidth="1.75"
             />
           </g>
         )}
@@ -7138,6 +7165,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   hasReceiver={boxHasReceiver}
                   hasSource={boxHasSource}
                   showAddButton={Boolean(isEffectiveEnabled)}
+                  showBottomAddButton={isExternalBrowser && Boolean(isEffectiveEnabled)}
                   onAddClick={(e) => {
                     e.stopPropagation();
                     setDragWire(null);
@@ -7209,7 +7237,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 <div
                   style={{
                     position: 'absolute',
-                    top: `${CIRCLE_SIZE + 8}px`,
+                    top: isExternalBrowser ? `${CIRCLE_SIZE + 10}px` : `${CIRCLE_SIZE + 8}px`,
                     left: '50%',
                     transform: 'translateX(-50%)',
                     width: 'max-content',
@@ -7365,6 +7393,74 @@ export const FacebookWorkflowCanvas = forwardRef<
                         ? 'AI Model'
                         : 'Copywriter'}
                     </span>
+                  )}
+
+                  {/* Base vertical line and [+] button below text */}
+                  {isExternalBrowser && (
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        marginTop: '3px',
+                        pointerEvents: 'auto',
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: '1.75px',
+                          height: '14px',
+                          backgroundColor: isDark ? '#4B5563' : '#94A3B8',
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className="merged-node-bottom-add-btn"
+                        title="Add Base Step"
+                        onMouseDown={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          handleOpenConnectDrawer(box.id, 'ai-box', box.title || 'External Browser');
+                        }}
+                        style={{
+                          width: '22px',
+                          height: '22px',
+                          borderRadius: '6px',
+                          border: isDark ? '1.5px solid #4B5563' : '1.5px solid #94A3B8',
+                          backgroundColor: isDark ? '#1F2937' : '#FFFFFF',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          padding: 0,
+                          cursor: 'pointer',
+                          pointerEvents: 'auto',
+                          zIndex: 40,
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+                          transition: 'all 0.15s ease',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = isDark ? '#60A5FA' : '#2563EB';
+                          e.currentTarget.style.backgroundColor = isDark ? '#263342' : '#EFF6FF';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = isDark ? '#4B5563' : '#94A3B8';
+                          e.currentTarget.style.backgroundColor = isDark ? '#1F2937' : '#FFFFFF';
+                        }}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                          <path
+                            d="M 6 2 L 6 10 M 2 6 L 10 6"
+                            stroke={isDark ? '#9CA3AF' : '#64748B'}
+                            strokeWidth="1.75"
+                            strokeLinecap="round"
+                          />
+                        </svg>
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
