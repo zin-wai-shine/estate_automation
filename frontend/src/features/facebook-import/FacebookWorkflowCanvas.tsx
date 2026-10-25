@@ -53,7 +53,7 @@ import {
   FiServer,
   FiMonitor,
 } from 'react-icons/fi';
-import { FaFacebook, FaFacebookF, FaInstagram, FaTiktok } from 'react-icons/fa';
+import { FaFacebook, FaFacebookF, FaInstagram, FaTiktok, FaChrome } from 'react-icons/fa';
 import { SiGooglegemini } from 'react-icons/si';
 import { HiSparkles } from 'react-icons/hi2';
 import { useScrollLock } from '../../hooks/useScrollLock';
@@ -1533,7 +1533,8 @@ const OpenAIIcon: React.FC<{ size?: number; color?: string }> = ({ size = 26, co
 );
 
 export interface MergedNodeShapeProps {
-  sockets: 'left' | 'right' | 'both';
+  sockets: 'left' | 'right' | 'both' | 'none';
+  hasTopSocket?: boolean;
   width?: number;
   height?: number;
   strokeColor: string;
@@ -1790,6 +1791,7 @@ export const NodeExecutionBadge: React.FC<{
 
 export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
   sockets,
+  hasTopSocket = false,
   width: customWidth,
   height: customHeight,
   strokeColor,
@@ -1907,6 +1909,26 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
               transition: 'stroke 0.2s ease, stroke-width 0.2s ease, fill 0.2s ease',
             }}
           />
+        )}
+
+        {/* TOP INPUT PORT (for vertically connected base nodes like Chrome Profile) */}
+        {hasTopSocket && (
+          <g>
+            <rect
+              x={nodeWidth / 2 - 8}
+              y="-4"
+              width="16"
+              height="8"
+              rx="2.5"
+              fill={inputDotColor}
+              stroke={inputDotColor}
+              strokeWidth="1.5"
+            />
+            <polygon
+              points={`${nodeWidth / 2 - 4},-1 ${nodeWidth / 2},3 ${nodeWidth / 2 + 4},-1`}
+              fill={isDark ? '#1C2128' : '#FFFFFF'}
+            />
+          </g>
         )}
 
         {/* LEFT INPUT PORT (n8n grey notch/tab on left border at x = 1, y = 36) */}
@@ -2256,7 +2278,7 @@ export const calculateCenteredPanOffset = (
   }
 
   activeBoxes.forEach((b) => {
-    const isExt = isExternalBrowserAIBox(b) || b.processType === 'chrome_profile';
+    const isExt = isExternalBrowserAIBox(b);
     points.push({
       x: b.x,
       y: b.y,
@@ -3109,9 +3131,10 @@ export const FacebookWorkflowCanvas = forwardRef<
     }
     const box = config.aiBoxes.find((b) => b.id === nodeId && b.enabled !== false);
     if (box) {
-      const isExt = isExternalBrowserAIBox(box) || box.processType === 'chrome_profile';
+      const isExt = isExternalBrowserAIBox(box);
+      const isProf = box.processType === 'chrome_profile';
       const boxW = isExt ? 216 : CIRCLE_SIZE;
-      const hasAddBtn = isNodeEffectivelyEnabled(box.id);
+      const hasAddBtn = isNodeEffectivelyEnabled(box.id) && !isProf;
       return socketType === 'output'
         ? { x: box.x + (hasAddBtn ? boxW + 37 : boxW - 1), y: box.y + HALF_CIRCLE }
         : { x: box.x + 1, y: box.y + HALF_CIRCLE };
@@ -5044,7 +5067,7 @@ export const FacebookWorkflowCanvas = forwardRef<
       templateText: `Chrome Profile: ${profile.display_name} (${profile.profile_key})`,
       customPrompt: '',
       enabled: true,
-      x: parentX,
+      x: parentX + 72,
       y: parentY + 220,
       browserProfileId: profile.id,
       browserProfileKey: profile.profile_key,
@@ -6453,7 +6476,7 @@ export const FacebookWorkflowCanvas = forwardRef<
 
               if (isBaseVerticalWire && fromBox && toBox) {
                 fromPos = { x: fromBox.x + 108, y: fromBox.y + 138 };
-                toPos = { x: toBox.x + 108, y: toBox.y + 1 };
+                toPos = { x: toBox.x + 36, y: toBox.y + 1 };
               }
 
               // Safety check: skip any wire with unresolved coordinates to prevent broken loops to (0, 0)
@@ -7194,7 +7217,7 @@ export const FacebookWorkflowCanvas = forwardRef<
 
             const isExternalBrowser = isExternalBrowserAIBox(box);
             const isChromeProfile = box.processType === 'chrome_profile';
-            const nodeWidth = isExternalBrowser || isChromeProfile ? 216 : CIRCLE_SIZE;
+            const nodeWidth = isExternalBrowser ? 216 : CIRCLE_SIZE;
 
             return (
               <div
@@ -7229,7 +7252,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                 }}
               >
                 <MergedNodeShape
-                  sockets="both"
+                  sockets={isChromeProfile ? 'none' : 'both'}
+                  hasTopSocket={isChromeProfile}
                   width={nodeWidth}
                   height={CIRCLE_SIZE}
                   strokeColor={strokeColor}
@@ -7241,7 +7265,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   highlightOutput={dragWire?.fromType === 'input' && isValidConnection(box.id, dragWire.fromNodeId)}
                   hasReceiver={boxHasReceiver}
                   hasSource={boxHasSource}
-                  showAddButton={Boolean(isEffectiveEnabled)}
+                  showAddButton={!isChromeProfile && Boolean(isEffectiveEnabled)}
                   showBottomAddButton={isExternalBrowser && Boolean(isEffectiveEnabled)}
                   onAddClick={(e) => {
                     e.stopPropagation();
@@ -7274,10 +7298,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                     zIndex: 2,
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: isExternalBrowser || isChromeProfile ? 'flex-start' : 'center',
-                    paddingLeft: isExternalBrowser || isChromeProfile ? '20px' : '0px',
-                    paddingRight: isExternalBrowser || isChromeProfile ? '20px' : '0px',
-                    gap: isExternalBrowser || isChromeProfile ? '14px' : '0px',
+                    justifyContent: isExternalBrowser ? 'flex-start' : 'center',
+                    paddingLeft: isExternalBrowser ? '20px' : '0px',
+                    paddingRight: isExternalBrowser ? '20px' : '0px',
+                    gap: isExternalBrowser ? '14px' : '0px',
                     pointerEvents: 'none',
                     userSelect: 'none',
                     width: '100%',
@@ -7299,33 +7323,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                       </div>
                     </>
                   ) : isChromeProfile ? (
-                    <>
-                      <div
-                        style={{
-                          width: '32px',
-                          height: '32px',
-                          borderRadius: '8px',
-                          background: 'linear-gradient(135deg, #0284C7, #06B6D4)',
-                          color: '#FFFFFF',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          flexShrink: 0,
-                          boxShadow: '0 2px 6px rgba(6, 182, 212, 0.35)',
-                        }}
-                      >
-                        <FiMonitor size={17} />
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.25, minWidth: 0, flex: 1 }}>
-                        <span style={{ fontSize: '0.875rem', fontWeight: 700, color: isEffectiveEnabled ? (isDark ? '#F1F5F9' : '#0F172A') : '#8B949E', letterSpacing: '-0.01em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '140px' }}>
-                          {box.browserProfileName || box.title || 'Chrome Profile'}
-                        </span>
-                        <span style={{ fontSize: '0.6875rem', color: '#10B981', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <span style={{ width: '5px', height: '5px', borderRadius: '50%', backgroundColor: '#10B981' }} />
-                          {box.browserProfileKey || 'Connected'}
-                        </span>
-                      </div>
-                    </>
+                    <FaChrome style={{ fontSize: '32px', color: isEffectiveEnabled ? (isDark ? '#38BDF8' : '#0284C7') : '#8B949E', transition: 'color 0.2s ease' }} />
                   ) : isEnhance ? (
                     <FiImage style={{ fontSize: '28px', color: isEffectiveEnabled ? '#EC4899' : '#8B949E', transition: 'color 0.2s ease' }} />
                   ) : isTextFormatAIBox(box) ? (
