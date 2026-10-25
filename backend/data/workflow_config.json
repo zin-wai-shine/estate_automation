@@ -1,5 +1,5 @@
 {
-  "timestamp": 1792894544141,
+  "timestamp": 1792894996107,
   "workflow_formats": [
     {
       "config": {
@@ -329,7 +329,7 @@
             "templateText": "Chrome Profile: Hsu (Profile 14)",
             "title": "Hsu",
             "x": 592,
-            "y": 568.8636363636359
+            "y": 590
           }
         ],
         "combineBoxes": [
@@ -358,14 +358,14 @@
             "toNodeId": "combine-box-1792697914542"
           },
           {
-            "fromNodeId": "ai-box-external-browser-1792852541152",
-            "id": "wire-ai-box-external-browser-1792852541152-ai-box-chrome-11-1792887929724-1792887929725",
-            "toNodeId": "ai-box-chrome-11-1792887929724"
-          },
-          {
             "fromNodeId": "get-content",
             "id": "conn-1792891325390-l9xk",
             "toNodeId": "ai-box-format-1792879017242"
+          },
+          {
+            "fromNodeId": "ai-box-external-browser-1792852541152",
+            "id": "wire-ai-box-external-browser-1792852541152-ai-box-chrome-11-1792887929724-1792894996095",
+            "toNodeId": "ai-box-chrome-11-1792887929724"
           }
         ],
         "destination": {
@@ -388,8 +388,8 @@
           "storeInDatabase": true,
           "targetMode": "hybrid",
           "title": "Social \u0026 Database Storage",
-          "x": 960,
-          "y": 248
+          "x": 1120,
+          "y": 240
         },
         "destinations": [
           {
@@ -441,8 +441,8 @@
           "y": 240
         },
         "panOffset": {
-          "x": 38,
-          "y": -129
+          "x": 265,
+          "y": 108
         },
         "trigger": {
           "autoClassifyProperty": true,
@@ -464,7 +464,7 @@
       "description": "Custom Facebook import extraction with dynamic AI prompt generator",
       "id": "format-1792648980268",
       "name": "Download FB Post",
-      "updatedAt": 1792894544112
+      "updatedAt": 1792894996096
     },
     {
       "config": {

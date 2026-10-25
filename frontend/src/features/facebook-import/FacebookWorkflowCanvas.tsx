@@ -6586,8 +6586,8 @@ export const FacebookWorkflowCanvas = forwardRef<
               const isExecDone = isExec && toCompleted;
               const isFastFlow = isRunning && toActive;
 
-              const isWireHovered = hoveredWireId === conn.id;
-              const isXHovered = hoveredXId === conn.id;
+              const isWireHovered = !isBaseVerticalWire && hoveredWireId === conn.id;
+              const isXHovered = !isBaseVerticalWire && hoveredXId === conn.id;
 
               const wireStrokeColor = isXHovered
                 ? '#F85149'
@@ -6602,21 +6602,27 @@ export const FacebookWorkflowCanvas = forwardRef<
                 <g
                   key={conn.id}
                   className="workflow-wire-group"
-                  onMouseEnter={() => setHoveredWireId(conn.id)}
+                  onMouseEnter={() => {
+                    if (!isBaseVerticalWire) {
+                      setHoveredWireId(conn.id);
+                    }
+                  }}
                   onMouseLeave={() => {
                     setHoveredWireId(null);
                     setHoveredXId(null);
                   }}
-                  style={{ pointerEvents: 'auto', cursor: 'default' }}
+                  style={{ pointerEvents: isBaseVerticalWire ? 'none' : 'auto', cursor: 'default' }}
                 >
                   {/* Invisible thicker hit-path for hovering to reveal the disconnect (x) button */}
-                  <path
-                    d={path}
-                    fill="none"
-                    stroke="transparent"
-                    strokeWidth="16"
-                    style={{ cursor: 'default' }}
-                  />
+                  {!isBaseVerticalWire && (
+                    <path
+                      d={path}
+                      fill="none"
+                      stroke="transparent"
+                      strokeWidth="16"
+                      style={{ cursor: 'default' }}
+                    />
+                  )}
                   {/* Visual straight/flowing wire */}
                   <path
                     d={path}
