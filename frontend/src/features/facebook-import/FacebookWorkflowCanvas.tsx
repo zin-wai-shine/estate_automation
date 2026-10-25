@@ -5128,8 +5128,8 @@ export const FacebookWorkflowCanvas = forwardRef<
   const handleConnectChromeProfileBox = (fromNodeId: string, profile: BrowserProfile) => {
     const parentBox = config.aiBoxes.find((b) => b.id === fromNodeId);
     const newId = `ai-box-chrome-${profile.id}-${Date.now()}`;
-    const parentX = parentBox?.x ?? 740;
-    const parentY = parentBox?.y ?? 260;
+    const parentX = parentBox?.x ?? 520;
+    const parentY = parentBox?.y ?? 340;
 
     const newBox: DynamicAIBoxConfig = {
       id: newId,
@@ -5159,11 +5159,25 @@ export const FacebookWorkflowCanvas = forwardRef<
       },
     ];
 
-    updateConfig({
+    const autoConns = autoConnectWorkflow(
+      nextBoxes,
+      nextConns,
+      config.getContent.enabled,
+      config.getImages.enabled,
+      config.destination?.enabled !== false,
+      config.outputNode?.enabled !== false,
+      getNormalizedDestinations(config),
+      config.combineBoxes || []
+    );
+
+    const nextConfig = buildAlignedLayout(nextBoxes, autoConns, {
       ...config,
       aiBoxes: nextBoxes,
-      connections: nextConns,
+      connections: autoConns,
     });
+
+    updateConfig(nextConfig);
+    setSelectedBoxId(newId);
     setConnectDrawerNode(null);
     setActiveModalNode(null);
   };

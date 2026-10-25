@@ -1,5 +1,5 @@
 {
-  "timestamp": 1792894996107,
+  "timestamp": 1792895298964,
   "workflow_formats": [
     {
       "config": {
@@ -320,7 +320,7 @@
             "browserTabTitle": "ChatGPT Conversation — Worker #1",
             "customPrompt": "",
             "enabled": true,
-            "id": "ai-box-chrome-11-1792887929724",
+            "id": "ai-box-chrome-11-1792895272906",
             "model": "chrome-profile",
             "processType": "chrome_profile",
             "provider": "external_browser",
@@ -328,7 +328,24 @@
             "templateId": "chrome-profile",
             "templateText": "Chrome Profile: Hsu (Profile 14)",
             "title": "Hsu",
-            "x": 592,
+            "x": 522,
+            "y": 590
+          },
+          {
+            "browserProfileId": 7,
+            "browserProfileKey": "Profile 18",
+            "browserProfileName": "Jutha",
+            "customPrompt": "",
+            "enabled": true,
+            "id": "ai-box-chrome-7-1792895285139",
+            "model": "chrome-profile",
+            "processType": "chrome_profile",
+            "provider": "external_browser",
+            "subtitle": "Profile 18",
+            "templateId": "chrome-profile",
+            "templateText": "Chrome Profile: Jutha (Profile 18)",
+            "title": "Jutha",
+            "x": 662,
             "y": 590
           }
         ],
@@ -364,8 +381,13 @@
           },
           {
             "fromNodeId": "ai-box-external-browser-1792852541152",
-            "id": "wire-ai-box-external-browser-1792852541152-ai-box-chrome-11-1792887929724-1792894996095",
-            "toNodeId": "ai-box-chrome-11-1792887929724"
+            "id": "wire-ai-box-external-browser-1792852541152-ai-box-chrome-11-1792895272906-1792895272906",
+            "toNodeId": "ai-box-chrome-11-1792895272906"
+          },
+          {
+            "fromNodeId": "ai-box-external-browser-1792852541152",
+            "id": "wire-ai-box-external-browser-1792852541152-ai-box-chrome-7-1792895285139-1792895285139",
+            "toNodeId": "ai-box-chrome-7-1792895285139"
           }
         ],
         "destination": {
@@ -388,8 +410,8 @@
           "storeInDatabase": true,
           "targetMode": "hybrid",
           "title": "Social \u0026 Database Storage",
-          "x": 1120,
-          "y": 240
+          "x": 960,
+          "y": 248
         },
         "destinations": [
           {
@@ -437,11 +459,11 @@
           "enabled": false,
           "id": "output",
           "title": "Final Content \u0026 Images",
-          "x": 592,
+          "x": 520,
           "y": 240
         },
         "panOffset": {
-          "x": 265,
+          "x": 119,
           "y": 108
         },
         "trigger": {
@@ -464,7 +486,7 @@
       "description": "Custom Facebook import extraction with dynamic AI prompt generator",
       "id": "format-1792648980268",
       "name": "Download FB Post",
-      "updatedAt": 1792894996096
+      "updatedAt": 1792895298952
     },
     {
       "config": {
