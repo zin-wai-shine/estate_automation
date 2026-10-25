@@ -1184,7 +1184,7 @@ export const buildAlignedLayout = (
       profilesToPlace.forEach((p, pIdx) => {
         const centerOffset = numP === 1 ? 0 : (pIdx - (numP - 1) / 2) * PROFILE_SPACING;
         xById[p.id] = Math.round(parentCenterX + centerOffset - 36);
-        yById[p.id] = parentY + 180;
+        yById[p.id] = parentY + 250;
       });
     });
 
@@ -1194,7 +1194,7 @@ export const buildAlignedLayout = (
     if (unplacedProfiles.length > 0) {
       unplacedProfiles.forEach((p, pIdx) => {
         xById[p.id] = COL_AI_X + pIdx * PROFILE_SPACING;
-        yById[p.id] = imageTopY + 180;
+        yById[p.id] = imageTopY + 250;
       });
     }
   }
@@ -5143,7 +5143,7 @@ export const FacebookWorkflowCanvas = forwardRef<
       customPrompt: '',
       enabled: true,
       x: parentX + 72,
-      y: parentY + 220,
+      y: parentY + 250,
       browserProfileId: profile.id,
       browserProfileKey: profile.profile_key,
       browserProfileName: profile.display_name,
@@ -5623,7 +5623,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     // Dynamic zoom to ensure whole flow is focused and centered with balanced margins
     const hasProfiles = (config.aiBoxes || []).some((b) => isChromeProfileAIBox(b));
     const contentWidth = 1420;
-    const contentHeight = hasProfiles ? 620 : 440;
+    const contentHeight = hasProfiles ? 680 : 440;
     const fitZoomX = (vWidth - 140) / contentWidth;
     const fitZoomY = (vHeight - 120) / contentHeight;
     const zoom = Math.min(Math.max(Math.min(fitZoomX, fitZoomY), 0.72), 0.88);
@@ -6551,7 +6551,7 @@ export const FacebookWorkflowCanvas = forwardRef<
               let toPos = getNodeSocketPos(conn.toNodeId, 'input');
 
               if (isBaseVerticalWire && fromBox && toBox) {
-                fromPos = { x: fromBox.x + 108, y: fromBox.y + 138 };
+                fromPos = { x: fromBox.x + 108, y: fromBox.y + 175 };
                 toPos = { x: toBox.x + 36, y: toBox.y + 1 };
               }
 
