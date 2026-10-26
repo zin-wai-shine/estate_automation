@@ -734,10 +734,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         url: request.url,
         filename: request.filename || `enhanced_${Date.now()}.png`,
         saveAs: false,
-        conflictAction: 'overwrite',
+        conflictAction: 'uniquify',
       },
       (downloadId) => {
-        sendResponse({ success: Boolean(downloadId), downloadId });
+        if (chrome.runtime.lastError) {
+          console.warn('[BOLTHAVEN EXT] chrome.downloads error:', chrome.runtime.lastError.message);
+          sendResponse({ success: false, error: chrome.runtime.lastError.message });
+        } else {
+          console.log('[BOLTHAVEN EXT] ✓ chrome.downloads started, id:', downloadId);
+          sendResponse({ success: Boolean(downloadId), downloadId });
+        }
       }
     );
     return true;

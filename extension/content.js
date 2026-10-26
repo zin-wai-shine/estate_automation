@@ -191,35 +191,51 @@
     return true;
   }
 
-  // Find stop button (indicates generation is actively running)
+  // Find stop button (indicates generation is actively running).
+  // CRITICAL: Must be strictly scoped inside the composer container!
+  // Outside composer, SVG <rect> exists on Copy, Sidebar, and other buttons and would falsely trigger!
   function findStopButton() {
-    // 1. Common attributes
-    const byAttr = document.querySelector(
+    const composer = document.querySelector('form, div[class*="composer"], div[id*="composer"]');
+    if (!composer) return null;
+
+    // 1. Explicit data-testid or aria-label strictly within composer
+    const byAttr = composer.querySelector(
       'button[data-testid="stop-button"], ' +
       'button[data-testid*="stop"], ' +
-      'button[aria-label*="Stop generating"], ' +
-      'button[aria-label*="Stop streaming"], ' +
-      'button[aria-label*="Stop message"], ' +
-      'button[aria-label*="Stop"], ' +
-      'button[aria-label*="stop"]'
+      'button[aria-label*="Stop generating" i], ' +
+      'button[aria-label*="Stop streaming" i], ' +
+      'button[aria-label*="Stop message" i], ' +
+      'button[aria-label*="Stop" i]'
     );
-    if (byAttr) return byAttr;
+    if (byAttr && !byAttr.disabled) return byAttr;
 
-    // 2. Button with SVG containing a square <rect> (the universal stop icon in ChatGPT)
-    const rects = document.querySelectorAll('button svg rect');
-    for (const r of rects) {
-      const btn = r.closest('button');
-      if (btn && !btn.disabled) return btn;
-    }
+    // 2. Button with SVG rect strictly within composer (excluding model picker, attach, mic, copy)
+    const composerButtons = Array.from(composer.querySelectorAll('button:not(:disabled)'));
+    for (const b of composerButtons) {
+      const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+      const testid = (b.getAttribute('data-testid') || '').toLowerCase();
+      const text = (b.textContent || '').trim().toLowerCase();
 
-    // 3. Prompt composer button with square icon
-    const composer = document.querySelector('form, div[class*="composer"], div[id*="composer"]');
-    if (composer) {
-      const buttons = composer.querySelectorAll('button');
-      for (const b of buttons) {
-        if (b.querySelector('svg rect') || (b.getAttribute('aria-label') || '').toLowerCase().includes('stop')) {
-          return b;
-        }
+      // Skip non-stop composer buttons
+      if (
+        aria.includes('attach') ||
+        aria.includes('upload') ||
+        aria.includes('file') ||
+        aria.includes('voice') ||
+        aria.includes('mic') ||
+        aria.includes('dictate') ||
+        aria.includes('model') ||
+        testid.includes('model') ||
+        text.includes('gpt-') ||
+        text.includes('model') ||
+        aria.includes('copy')
+      ) {
+        continue;
+      }
+
+      // Stop button in ChatGPT has either a square SVG rect or stop label
+      if (b.querySelector('svg rect') || aria.includes('stop') || testid.includes('stop')) {
+        return b;
       }
     }
 
@@ -228,7 +244,7 @@
 
   // Detect whether ChatGPT is actively thinking, reasoning, or generating
   function isThinkingOrGenerating() {
-    // 1. Stop button present
+    // 1. Stop button present strictly in composer
     if (findStopButton()) return true;
 
     // 2. Look for active thinking indicators strictly inside the latest assistant turn (never whole body text!)
@@ -253,28 +269,32 @@
   async function downloadEnhancedImage(imgEl, finalUrl, fileName) {
     console.log('[BOLTHAVEN] Triggering download of enhanced image:', fileName, finalUrl);
 
-    // 1. Try clicking ChatGPT native download button on the image container if present
+    // 1. Try clicking ChatGPT native download button on the image card / container
     try {
-      const imageContainer = imgEl.closest('div[class*="group"], article, div');
-      if (imageContainer) {
-        const btns = Array.from(imageContainer.querySelectorAll('button'));
+      const container = imgEl.closest('article, div[data-message-author-role="assistant"], div[class*="group"], div[class*="relative"]') || imgEl.parentElement;
+      if (container) {
+        const btns = Array.from(container.querySelectorAll('button'));
         const downloadBtn = btns.find((b) => {
           const aria = (b.getAttribute('aria-label') || '').toLowerCase();
           const title = (b.getAttribute('title') || '').toLowerCase();
-          return aria.includes('download') || title.includes('download') || (b.innerHTML || '').includes('download');
+          const txt = (b.textContent || '').trim().toLowerCase();
+          return aria.includes('download') || title.includes('download') || txt.includes('download') ||
+                 aria.includes('save image') || title.includes('save image');
         });
         if (downloadBtn) {
-          console.log('[BOLTHAVEN] Clicking native ChatGPT download button on image card...');
+          console.log('[BOLTHAVEN] Clicking native ChatGPT download button on image card...', downloadBtn);
           clickElementSafely(downloadBtn);
           await new Promise((r) => setTimeout(r, 600));
         }
       }
-    } catch (e) {}
+    } catch (e) {
+      console.warn('[BOLTHAVEN] Native download button warning:', e.message);
+    }
 
     // 2. Fetch image as blob directly in the tab and trigger same-origin anchor download
     try {
       console.log('[BOLTHAVEN] Fetching blob for direct browser download...');
-      const resp = await fetch(finalUrl);
+      const resp = await fetch(finalUrl, { mode: 'cors' });
       if (resp.ok) {
         const blob = await resp.blob();
         const blobUrl = URL.createObjectURL(blob);
@@ -1126,8 +1146,25 @@
             return false;
           }
           const rect = img.getBoundingClientRect();
-          return rect.width >= 60 && rect.height >= 60;
+          const hasSize = (rect.width >= 60 && rect.height >= 60) || (img.naturalWidth >= 60 && img.naturalHeight >= 60) || (img.width >= 60 && img.height >= 60);
+          return hasSize || s.includes('oaiusercontent.com') || s.includes('file-service');
         });
+
+        // Also specifically inspect the latest assistant turn for generated images
+        const assistantTurns = Array.from(
+          document.querySelectorAll('div[data-message-author-role="assistant"], article[data-testid*="conversation-turn"]')
+        );
+        let turnImgs = [];
+        if (assistantTurns.length > preAssistantCount) {
+          const latestTurn = assistantTurns[assistantTurns.length - 1];
+          turnImgs = Array.from(latestTurn.querySelectorAll('img')).filter((img) => {
+            const src = img.src || img.getAttribute('src') || '';
+            const s = src.toLowerCase();
+            return src && !preExistingImageUrls.has(src) && !s.includes('avatar') && !s.includes('profile') && !s.includes('icon');
+          });
+        }
+
+        const foundImages = candidateImgs.length > 0 ? candidateImgs : turnImgs;
 
         // If STILL thinking or generating: do NOT complete, reset calm counter!
         if (currentlyGenerating) {
@@ -1136,11 +1173,11 @@
         }
 
         // ChatGPT is NOT generating. If a new image is present, trigger download and complete!
-        if (candidateImgs.length > 0) {
+        if (foundImages.length > 0) {
           consecutiveCalmChecks++;
           if (consecutiveCalmChecks >= 1) {
             clearInterval(checkInterval);
-            const bestImg = candidateImgs[candidateImgs.length - 1];
+            const bestImg = foundImages[foundImages.length - 1];
             const finalUrl = bestImg.src || bestImg.getAttribute('src') || '';
             console.log('[BOLTHAVEN] ✓ Generation fully finished! New image detected:', finalUrl);
 

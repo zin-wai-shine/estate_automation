@@ -20,7 +20,8 @@
     "http://127.0.0.1:9224/*",
     "http://localhost:9224/*",
     "https://chatgpt.com/*",
-    "https://*.chatgpt.com/*"
+    "https://*.chatgpt.com/*",
+    "https://*.oaiusercontent.com/*"
   ],
   "action": {
     "default_popup": "popup.html",
