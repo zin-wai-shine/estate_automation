@@ -9,9 +9,14 @@ services:
       - --no-autoupdate
       - --protocol
       - http2
+      - --retries
+      - "10"
       - --metrics
       - 0.0.0.0:2000
       - run
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     healthcheck:
       test: ["CMD", "cloudflared", "--version"]
       interval: 10s
