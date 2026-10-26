@@ -394,6 +394,47 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
     setTimeout(() => setCopiedPrompt(false), 2000);
   };
 
+  // Apple HIG Segmented Control Styles
+  const appleTrackStyle: React.CSSProperties = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: '2px',
+    borderRadius: '8px',
+    backgroundColor: isDark ? 'rgba(118, 118, 128, 0.24)' : 'rgba(118, 118, 128, 0.12)',
+    border: isDark ? '0.5px solid rgba(255, 255, 255, 0.08)' : '0.5px solid rgba(0, 0, 0, 0.08)',
+    boxShadow: isDark ? 'inset 0 1px 2px rgba(0, 0, 0, 0.35)' : 'inset 0 1px 2px rgba(0, 0, 0, 0.06)',
+    gap: '2px',
+  };
+
+  const getAppleSegmentStyle = (isActive: boolean): React.CSSProperties => ({
+    padding: '3px 10px',
+    borderRadius: '6px',
+    border: 'none',
+    fontSize: '0.625rem',
+    fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", Roboto, sans-serif',
+    fontWeight: isActive ? 600 : 500,
+    letterSpacing: '-0.01em',
+    cursor: 'pointer',
+    background: isActive
+      ? (isDark
+          ? 'linear-gradient(180deg, #1C8BFF 0%, #0071E3 100%)'
+          : 'linear-gradient(180deg, #0077ED 0%, #0066CC 100%)')
+      : 'transparent',
+    color: isActive
+      ? '#FFFFFF'
+      : (isDark ? 'rgba(255, 255, 255, 0.72)' : 'rgba(0, 0, 0, 0.65)'),
+    boxShadow: isActive
+      ? (isDark
+          ? '0 1px 3px rgba(0, 0, 0, 0.4), inset 0 0.5px 0.5px rgba(255, 255, 255, 0.4)'
+          : '0 1px 2px rgba(0, 102, 204, 0.25), inset 0 0.5px 0.5px rgba(255, 255, 255, 0.45)')
+      : 'none',
+    textShadow: isActive ? '0 0.5px 1px rgba(0, 0, 0, 0.25)' : 'none',
+    transition: 'all 0.16s cubic-bezier(0.16, 1, 0.3, 1)',
+    whiteSpace: 'nowrap',
+    outline: 'none',
+    userSelect: 'none',
+  });
+
   if (!isOpen) return null;
 
   return (
@@ -927,36 +968,14 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
                   <span style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-muted)' }}>
                     Staging Flow Mode:
                   </span>
-                  <div
-                    style={{
-                      display: 'flex',
-                      padding: '2px',
-                      borderRadius: '12px',
-                      backgroundColor: isDark ? 'rgba(0,0,0,0.35)' : '#E2E8F0',
-                      border: '1px solid var(--border-color)',
-                    }}
-                  >
+                  <div style={appleTrackStyle}>
                     <button
                       type="button"
                       onClick={() => {
                         setStagingMode('direct_tab2');
                         updateSettings({ stagingMode: 'direct_tab2', skipTab1: true });
                       }}
-                      style={{
-                        padding: '2px 8px',
-                        borderRadius: '10px',
-                        border: 'none',
-                        fontSize: '0.5625rem',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        backgroundColor: stagingMode === 'direct_tab2'
-                          ? (isDark ? '#3B82F6' : '#FFFFFF')
-                          : 'transparent',
-                        color: stagingMode === 'direct_tab2'
-                          ? (isDark ? '#FFFFFF' : '#1E293B')
-                          : 'var(--text-muted)',
-                        transition: 'all 0.15s ease',
-                      }}
+                      style={getAppleSegmentStyle(stagingMode === 'direct_tab2')}
                     >
                       Direct (Skip Tab 1)
                     </button>
@@ -966,21 +985,7 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
                         setStagingMode('two_stage_tabs');
                         updateSettings({ stagingMode: 'two_stage_tabs', skipTab1: false });
                       }}
-                      style={{
-                        padding: '2px 8px',
-                        borderRadius: '10px',
-                        border: 'none',
-                        fontSize: '0.5625rem',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        backgroundColor: stagingMode !== 'direct_tab2'
-                          ? (isDark ? '#3B82F6' : '#FFFFFF')
-                          : 'transparent',
-                        color: stagingMode !== 'direct_tab2'
-                          ? (isDark ? '#FFFFFF' : '#1E293B')
-                          : 'var(--text-muted)',
-                        transition: 'all 0.15s ease',
-                      }}
+                      style={getAppleSegmentStyle(stagingMode !== 'direct_tab2')}
                     >
                       2-Stage Browser
                     </button>
@@ -994,37 +999,14 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
                       <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                         Prompt Type:
                       </span>
-                      <div
-                        style={{
-                          display: 'flex',
-                          padding: '2px',
-                          borderRadius: '10px',
-                          backgroundColor: isDark ? 'rgba(0,0,0,0.35)' : '#E2E8F0',
-                          border: '1px solid var(--border-color)',
-                        }}
-                      >
+                      <div style={appleTrackStyle}>
                         <button
                           type="button"
                           onClick={() => {
                             setPromptSourceMode('preset');
                             updateSettings({ promptSourceMode: 'preset' });
                           }}
-                          style={{
-                            padding: '3px 9px',
-                            borderRadius: '8px',
-                            border: 'none',
-                            fontSize: '0.625rem',
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                            backgroundColor: promptSourceMode === 'preset'
-                              ? (isDark ? '#3B82F6' : '#FFFFFF')
-                              : 'transparent',
-                            color: promptSourceMode === 'preset'
-                              ? (isDark ? '#FFFFFF' : '#1E293B')
-                              : 'var(--text-muted)',
-                            boxShadow: promptSourceMode === 'preset' ? '0 1px 3px rgba(0,0,0,0.15)' : 'none',
-                            transition: 'all 0.15s ease',
-                          }}
+                          style={getAppleSegmentStyle(promptSourceMode === 'preset')}
                         >
                           Prompt Template
                         </button>
@@ -1037,22 +1019,7 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
                               selectedUpstreamAiId: selectedUpstreamAiId || effectiveUpstreamPrompts[0]?.id,
                             });
                           }}
-                          style={{
-                            padding: '3px 9px',
-                            borderRadius: '8px',
-                            border: 'none',
-                            fontSize: '0.625rem',
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                            backgroundColor: promptSourceMode === 'upstream_ai'
-                              ? (isDark ? '#3B82F6' : '#FFFFFF')
-                              : 'transparent',
-                            color: promptSourceMode === 'upstream_ai'
-                              ? (isDark ? '#FFFFFF' : '#1E293B')
-                              : 'var(--text-muted)',
-                            boxShadow: promptSourceMode === 'upstream_ai' ? '0 1px 3px rgba(0,0,0,0.15)' : 'none',
-                            transition: 'all 0.15s ease',
-                          }}
+                          style={getAppleSegmentStyle(promptSourceMode === 'upstream_ai')}
                         >
                           AI Generate
                         </button>
@@ -1062,22 +1029,7 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
                             setPromptSourceMode('custom');
                             updateSettings({ promptSourceMode: 'custom' });
                           }}
-                          style={{
-                            padding: '3px 9px',
-                            borderRadius: '8px',
-                            border: 'none',
-                            fontSize: '0.625rem',
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                            backgroundColor: promptSourceMode === 'custom'
-                              ? (isDark ? '#3B82F6' : '#FFFFFF')
-                              : 'transparent',
-                            color: promptSourceMode === 'custom'
-                              ? (isDark ? '#FFFFFF' : '#1E293B')
-                              : 'var(--text-muted)',
-                            boxShadow: promptSourceMode === 'custom' ? '0 1px 3px rgba(0,0,0,0.15)' : 'none',
-                            transition: 'all 0.15s ease',
-                          }}
+                          style={getAppleSegmentStyle(promptSourceMode === 'custom')}
                         >
                           Custom
                         </button>
@@ -1296,34 +1248,14 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
                     <div style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-muted)' }}>
                       Worker Tabs Source:
                     </div>
-                    <div
-                      style={{
-                        display: 'grid',
-                        gridTemplateColumns: '1fr 1fr',
-                        gap: '4px',
-                        padding: '3px',
-                        borderRadius: '8px',
-                        backgroundColor: isDark ? 'rgba(0,0,0,0.25)' : '#E2E8F0',
-                      }}
-                    >
+                    <div style={{ ...appleTrackStyle, display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
                       <button
                         type="button"
                         onClick={() => {
                           setWorkerTabMode('existing_tabs');
                           updateSettings({ workerTabMode: 'existing_tabs' });
                         }}
-                        style={{
-                          padding: '5px 8px',
-                          fontSize: '0.6875rem',
-                          fontWeight: 600,
-                          borderRadius: '6px',
-                          border: 'none',
-                          cursor: 'pointer',
-                          transition: 'all 0.15s ease',
-                          backgroundColor: workerTabMode === 'existing_tabs' ? (isDark ? '#3B82F6' : '#FFFFFF') : 'transparent',
-                          color: workerTabMode === 'existing_tabs' ? (isDark ? '#FFFFFF' : '#1E293B') : 'var(--text-muted)',
-                          boxShadow: workerTabMode === 'existing_tabs' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-                        }}
+                        style={{ ...getAppleSegmentStyle(workerTabMode === 'existing_tabs'), textAlign: 'center', justifyContent: 'center' }}
                       >
                         Existing Group Tabs
                       </button>
@@ -1334,18 +1266,7 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
                           setWorkerTabMode('new_tabs');
                           updateSettings({ workerTabMode: 'new_tabs' });
                         }}
-                        style={{
-                          padding: '5px 8px',
-                          fontSize: '0.6875rem',
-                          fontWeight: 600,
-                          borderRadius: '6px',
-                          border: 'none',
-                          cursor: 'pointer',
-                          transition: 'all 0.15s ease',
-                          backgroundColor: workerTabMode === 'new_tabs' ? (isDark ? '#3B82F6' : '#FFFFFF') : 'transparent',
-                          color: workerTabMode === 'new_tabs' ? (isDark ? '#FFFFFF' : '#1E293B') : 'var(--text-muted)',
-                          boxShadow: workerTabMode === 'new_tabs' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-                        }}
+                        style={{ ...getAppleSegmentStyle(workerTabMode === 'new_tabs'), textAlign: 'center', justifyContent: 'center' }}
                       >
                         Open Fresh Tabs
                       </button>

@@ -3023,9 +3023,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                       </div>
                       <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
                         {isHeroNode
-                          ? (boxConfig.stagingMode === 'direct_tab2' || boxConfig.skipTab1)
-                            ? 'Direct to Tab 2 (Set in Settings)'
-                            : '2-Stage Browser (Set in Settings)'
+                          ? `${(boxConfig.stagingMode === 'direct_tab2' || boxConfig.skipTab1) ? 'Direct to Tab 2' : '2-Stage Browser'} • ${promptSourceMode === 'upstream_ai' ? 'Canvas AI' : promptSourceMode === 'custom' ? 'Custom Prompt' : 'Template'} (Set in Settings)`
                           : 'Worker tab enhancement template'}
                       </div>
                     </div>
@@ -3055,109 +3053,6 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                       {(boxConfig.stagingMode === 'direct_tab2' || boxConfig.skipTab1) ? 'Direct' : '2-Stage'}
                     </span>
                   )}
-                </div>
-
-                {/* Prompt Type Selection Pills */}
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    marginTop: '2px',
-                    marginBottom: '4px',
-                  }}
-                >
-                  <span style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-muted)' }}>
-                    Prompt Type:
-                  </span>
-                  <div
-                    style={{
-                      display: 'flex',
-                      padding: '2px',
-                      borderRadius: '8px',
-                      backgroundColor: isDark ? 'rgba(0,0,0,0.35)' : '#E2E8F0',
-                      border: '1px solid var(--border-color)',
-                    }}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPromptSourceMode('preset');
-                        updateConfig('promptSourceMode', 'preset');
-                      }}
-                      style={{
-                        padding: '2px 7px',
-                        borderRadius: '6px',
-                        border: 'none',
-                        fontSize: '0.5625rem',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        backgroundColor: promptSourceMode === 'preset'
-                          ? (isDark ? '#3B82F6' : '#FFFFFF')
-                          : 'transparent',
-                        color: promptSourceMode === 'preset'
-                          ? (isDark ? '#FFFFFF' : '#1E293B')
-                          : 'var(--text-muted)',
-                        boxShadow: promptSourceMode === 'preset' ? '0 1px 3px rgba(0,0,0,0.15)' : 'none',
-                        transition: 'all 0.15s ease',
-                      }}
-                    >
-                      Prompt Template
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPromptSourceMode('upstream_ai');
-                        updateMultiConfig({
-                          promptSourceMode: 'upstream_ai',
-                          selectedUpstreamAiId: selectedUpstreamAiId || effectiveUpstreamPrompts[0]?.id,
-                        });
-                      }}
-                      style={{
-                        padding: '2px 7px',
-                        borderRadius: '6px',
-                        border: 'none',
-                        fontSize: '0.5625rem',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        backgroundColor: promptSourceMode === 'upstream_ai'
-                          ? (isDark ? '#3B82F6' : '#FFFFFF')
-                          : 'transparent',
-                        color: promptSourceMode === 'upstream_ai'
-                          ? (isDark ? '#FFFFFF' : '#1E293B')
-                          : 'var(--text-muted)',
-                        boxShadow: promptSourceMode === 'upstream_ai' ? '0 1px 3px rgba(0,0,0,0.15)' : 'none',
-                        transition: 'all 0.15s ease',
-                      }}
-                    >
-                      AI Generate
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPromptSourceMode('custom');
-                        updateConfig('promptSourceMode', 'custom');
-                      }}
-                      style={{
-                        padding: '2px 7px',
-                        borderRadius: '6px',
-                        border: 'none',
-                        fontSize: '0.5625rem',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        backgroundColor: promptSourceMode === 'custom'
-                          ? (isDark ? '#3B82F6' : '#FFFFFF')
-                          : 'transparent',
-                        color: promptSourceMode === 'custom'
-                          ? (isDark ? '#FFFFFF' : '#1E293B')
-                          : 'var(--text-muted)',
-                        boxShadow: promptSourceMode === 'custom' ? '0 1px 3px rgba(0,0,0,0.15)' : 'none',
-                        transition: 'all 0.15s ease',
-                      }}
-                    >
-                      Custom
-                    </button>
-                  </div>
                 </div>
 
                 {/* 1. Prompt Template Mode */}
