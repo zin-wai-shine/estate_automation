@@ -95,16 +95,14 @@ export const isN8NAIBox = (
 /**
  * Determines whether a workflow box is an External Browser image processing node.
  */
-export const isExternalBrowserAIBox = (
-  box?: { id?: string; provider?: string; processType?: string; title?: string }
+export const isChromeTabGroupAIBox = (
+  box?: { id?: string; processType?: string }
 ): boolean => {
   if (!box) return false;
-  if (box.processType === 'chrome_profile' || Boolean(box.id?.includes('ai-box-chrome-'))) return false;
   return (
-    (box.provider === 'external_browser' && box.processType !== 'chrome_profile') ||
-    box.processType === 'external_browser' ||
-    Boolean(box.id?.includes('external-browser')) ||
-    Boolean(box.title?.toLowerCase().includes('external browser'))
+    box.processType === 'chrome_tab_group' ||
+    Boolean(box.id?.includes('tabgroup')) ||
+    Boolean(box.id?.includes('tab-group'))
   );
 };
 
@@ -112,14 +110,33 @@ export const isChromeProfileAIBox = (
   box?: { id?: string; processType?: string }
 ): boolean => {
   if (!box) return false;
-  return box.processType === 'chrome_profile' || Boolean(box.id?.includes('ai-box-chrome-'));
+  if (isChromeTabGroupAIBox(box)) return false;
+  return (
+    box.processType === 'chrome_profile' ||
+    Boolean(box.id?.includes('chrome-')) ||
+    Boolean(box.id?.includes('profile'))
+  );
+};
+
+export const isExternalBrowserAIBox = (
+  box?: { id?: string; provider?: string; processType?: string; title?: string }
+): boolean => {
+  if (!box) return false;
+  if (isChromeProfileAIBox(box) || isChromeTabGroupAIBox(box)) return false;
+  if (box.processType === 'chrome_profile' || box.processType === 'chrome_tab_group') return false;
+  return (
+    box.processType === 'external_browser' ||
+    Boolean(box.id?.includes('external-browser')) ||
+    Boolean(box.title?.toLowerCase().includes('external browser')) ||
+    (box.provider === 'external_browser' && !box.id?.includes('chrome') && !box.id?.includes('tabgroup'))
+  );
 };
 
 export const isWatermarkAIBox = (
   box?: { id?: string; provider?: string; model?: string; processType?: string; title?: string; cropFormatId?: string; watermarkPresetId?: string; subtitle?: string }
 ): boolean => {
   if (!box) return false;
-  if (isChromeProfileAIBox(box)) return false;
+  if (isChromeProfileAIBox(box) || isChromeTabGroupAIBox(box)) return false;
   if (isN8NAIBox(box) || isExternalBrowserAIBox(box)) return false;
   if (box.processType === 'text_format' || box.processType === 'text_ai') return false;
   return (
@@ -139,7 +156,7 @@ export const isTextFormatAIBox = (
   box?: { id?: string; provider?: string; model?: string; processType?: string; title?: string; cropFormatId?: string; watermarkPresetId?: string; subtitle?: string; templateId?: string; templateText?: string }
 ): boolean => {
   if (!box) return false;
-  if (isChromeProfileAIBox(box)) return false;
+  if (isChromeProfileAIBox(box) || isChromeTabGroupAIBox(box)) return false;
   if (isN8NAIBox(box) || isExternalBrowserAIBox(box)) return false;
   if (isWatermarkAIBox(box)) return false;
   if (box.processType === 'image_enhance' || box.provider === 'runware_ai' || box.processType === 'text_ai') return false;
@@ -157,7 +174,7 @@ export const isTextAIBox = (
   connections: { fromNodeId: string; toNodeId: string }[] = []
 ): boolean => {
   if (!box) return false;
-  if (isChromeProfileAIBox(box)) return false;
+  if (isChromeProfileAIBox(box) || isChromeTabGroupAIBox(box)) return false;
   if (isN8NAIBox(box) || isExternalBrowserAIBox(box)) return false;
   if (isWatermarkAIBox(box)) return false;
   if (isTextFormatAIBox(box)) return false;
@@ -174,7 +191,7 @@ export const isImageAIBox = (
   connections: { fromNodeId: string; toNodeId: string }[] = []
 ): boolean => {
   if (!box) return false;
-  if (isChromeProfileAIBox(box)) return false;
+  if (isChromeProfileAIBox(box) || isChromeTabGroupAIBox(box)) return false;
   if (isN8NAIBox(box)) return false;
   if (isExternalBrowserAIBox(box)) return true;
   if (isWatermarkAIBox(box)) return true;
@@ -204,7 +221,7 @@ export const isEnhanceAIBox = (
   box: { id?: string; provider?: string; model?: string; processType?: string },
   connections: { fromNodeId: string; toNodeId: string }[] = []
 ): boolean => {
-  if (!box || isChromeProfileAIBox(box) || isWatermarkAIBox(box)) return false;
+  if (!box || isChromeProfileAIBox(box) || isChromeTabGroupAIBox(box) || isWatermarkAIBox(box)) return false;
   return isImageAIBox(box, connections);
 };
 

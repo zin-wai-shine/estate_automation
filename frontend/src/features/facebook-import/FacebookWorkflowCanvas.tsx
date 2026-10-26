@@ -52,6 +52,7 @@ import {
   FiCornerDownRight,
   FiServer,
   FiMonitor,
+  FiSettings,
 } from 'react-icons/fi';
 import { FaFacebook, FaFacebookF, FaInstagram, FaTiktok, FaChrome } from 'react-icons/fa';
 import { SiGooglegemini } from 'react-icons/si';
@@ -59,11 +60,12 @@ import { HiSparkles } from 'react-icons/hi2';
 import { useScrollLock } from '../../hooks/useScrollLock';
 import { AITrainingChatbot, ModelSelectorMenu, LaoZhangIcon, RunwareIcon } from './AITrainingChatbot';
 import { useTheme } from '../../context/ThemeContext';
-import { getAIModelDisplayName, isImageAIBox, isImageModel, isWatermarkAIBox, isEnhanceAIBox, isAIBoxConnected, isTextFormatAIBox, isTextAIBox, isN8NAIBox, isExternalBrowserAIBox, isChromeProfileAIBox } from './aiModelUtils';
+import { getAIModelDisplayName, isImageAIBox, isImageModel, isWatermarkAIBox, isEnhanceAIBox, isAIBoxConnected, isTextFormatAIBox, isTextAIBox, isN8NAIBox, isExternalBrowserAIBox, isChromeProfileAIBox, isChromeTabGroupAIBox } from './aiModelUtils';
 import { AIImageStudio } from './AIImageStudio';
 import { ExternalBrowserSidebar } from '../browser-processing/ExternalBrowserSidebar';
-import { focusBrowserTabGroup, fetchBrowserProfiles } from '../browser-processing/browserAutomationService';
-import type { BrowserProfile } from '../browser-processing/types';
+import { FBHeroSettingsSidebox } from '../browser-processing/FBHeroSettingsSidebox';
+import { focusBrowserTabGroup, fetchBrowserProfiles, fetchTabGroups } from '../browser-processing/browserAutomationService';
+import type { BrowserProfile, BrowserGroupItem } from '../browser-processing/types';
 import { WatermarkNodeModal } from './WatermarkNodeModal';
 import { ToggleSwitch } from '../../components/ui/ToggleSwitch';
 import { loadWatermarkPresets, DEFAULT_WATERMARK_CONFIG, DEFAULT_PRESETS, type WatermarkConfig } from '../autopost/watermarkStorage';
@@ -88,13 +90,19 @@ export const loadAvailablePromptTemplates = (): CanvasPromptOption[] => {
       if (Array.isArray(parsed) && parsed.length > 0) {
         return parsed
           .filter((item: any) => item && (item.templateText || item.name))
-          .map((item: any) => ({
-            id: String(item.id),
-            name: item.name || 'Untitled Prompt',
-            category: item.category || 'GENERAL',
-            templateText: item.templateText || '',
-            model: item.model,
-          }));
+          .map((item: any) => {
+            let cat = item.category || 'GENERAL';
+            if ((cat === 'IMAGE_ENHANCE' || cat === 'ENHANCE_IMAGE') && item.name && /hero/i.test(item.name)) {
+              cat = 'GENERATE_IMAGE';
+            }
+            return {
+              id: String(item.id),
+              name: item.name || 'Untitled Prompt',
+              category: cat,
+              templateText: item.templateText || '',
+              model: item.model,
+            };
+          });
       }
     }
   } catch (e) {
@@ -121,6 +129,20 @@ export const loadAvailablePromptTemplates = (): CanvasPromptOption[] => {
       category: 'FACEBOOK_SALE',
       templateText:
         'Write a professional sales copy for property sale: {title}.\nHighlight investment yield, BTS access, and price {price}.',
+    },
+    {
+      id: '4',
+      name: 'FB Hero Prompt Template',
+      category: 'GENERATE_IMAGE',
+      templateText:
+        'Generate a hero real estate listing image based on condo unit context and reference styling. Maintain realistic architectural aesthetics, high dynamic range, and authentic materials.',
+    },
+    {
+      id: '5',
+      name: 'Enhance Image (Photo Retouch)',
+      category: 'IMAGE_ENHANCE',
+      templateText:
+        'Edit the attached interior photograph into a clean, detailed, professional architectural real-estate image. Preserve the real interior while correcting camera roll, lighting, and geometric alignment.',
     },
   ];
 };
@@ -167,9 +189,23 @@ export interface DynamicAIBoxConfig {
   browserLaneKey?: string;
   browserPromptTemplateKey?: string;
   browserCustomPrompt?: string;
+  browserGroupTabUrls?: string[];
   outputWidth?: number;
   outputHeight?: number;
   strictPreservationActive?: boolean;
+  tabGroupMode?: 'enhance' | 'generate' | string;
+  processKind?: 'generate_image' | 'enhance_images' | 'create_prompt' | string;
+  useReferenceImage?: boolean;
+  useCondoImages?: boolean;
+  showImagesToEnhance?: boolean;
+  showCondoProjectCard?: boolean;
+  showEnhancementPrompt?: boolean;
+  usePromptConfig?: boolean;
+  promptSourceMode?: 'upstream_ai' | 'preset' | 'custom';
+  selectedUpstreamGroupId?: string;
+  selectedUpstreamAiId?: string;
+  referenceImageMode?: 'photo_1' | 'picked' | 'custom_upload' | 'condo_scan';
+  selectedReferenceIndex?: number;
 }
 
 export interface WorkflowWireConnection {
@@ -548,20 +584,54 @@ export const autoConnectWorkflow = (
     );
   }
 
+  const chromeTabGroupBoxes = boxes.filter((b) => isChromeTabGroupAIBox(b));
   const chromeProfileBoxes = boxes.filter((b) => isChromeProfileAIBox(b));
   const externalBrowserBoxes = boxes.filter((b) => isExternalBrowserAIBox(b));
-  const enhanceBoxes = boxes.filter((b) => !isChromeProfileAIBox(b) && isEnhanceAIBox(b, conns));
-  const watermarkBoxes = boxes.filter((b) => !isChromeProfileAIBox(b) && isWatermarkAIBox(b));
-  const textFormatBoxes = boxes.filter((b) => !isChromeProfileAIBox(b) && isTextFormatAIBox(b));
+  const enhanceBoxes = boxes.filter((b) => !isChromeProfileAIBox(b) && !isChromeTabGroupAIBox(b) && isEnhanceAIBox(b, conns));
+  const watermarkBoxes = boxes.filter((b) => !isChromeProfileAIBox(b) && !isChromeTabGroupAIBox(b) && isWatermarkAIBox(b));
+  const textFormatBoxes = boxes.filter((b) => !isChromeProfileAIBox(b) && !isChromeTabGroupAIBox(b) && isTextFormatAIBox(b));
   const textAIBoxes = boxes.filter(
-    (b) => !isChromeProfileAIBox(b) && !isWatermarkAIBox(b) && !enhanceBoxes.includes(b) && !isTextFormatAIBox(b)
+    (b) => !isChromeProfileAIBox(b) && !isChromeTabGroupAIBox(b) && !isWatermarkAIBox(b) && !enhanceBoxes.includes(b) && !isTextFormatAIBox(b)
   );
 
-  // Chrome profile boxes are subordinate profile nodes under External Browser;
+  // Chrome tab group boxes are subordinate worker nodes connected below a Chrome Profile;
   // They never receive wires from get-content, get-images, or other AI nodes, and never output into combine/output/destinations.
+  if (chromeTabGroupBoxes.length > 0) {
+    // 1. Remove all outgoing wires from chrome tab group boxes
+    conns = conns.filter((c) => !chromeTabGroupBoxes.some((tg) => tg.id === c.fromNodeId));
+    // 2. Remove all incoming wires to chrome tab group boxes EXCEPT those coming from a chrome profile box
+    conns = conns.filter(
+      (c) =>
+        !chromeTabGroupBoxes.some((tg) => tg.id === c.toNodeId) ||
+        chromeProfileBoxes.some((p) => p.id === c.fromNodeId)
+    );
+    // 3. Ensure each chrome tab group box is connected from its parent chrome profile box
+    if (chromeProfileBoxes.length > 0) {
+      chromeTabGroupBoxes.forEach((tg) => {
+        const hasParentWire = conns.some(
+          (c) => chromeProfileBoxes.some((p) => p.id === c.fromNodeId) && c.toNodeId === tg.id
+        );
+        if (!hasParentWire) {
+          const matchingProfile = chromeProfileBoxes.find((p) => p.browserProfileId === tg.browserProfileId) || chromeProfileBoxes[0];
+          conns.push({
+            id: `wire-${matchingProfile.id}-${tg.id}-${Date.now()}`,
+            fromNodeId: matchingProfile.id,
+            toNodeId: tg.id,
+          });
+        }
+      });
+    }
+  }
+
+  // Chrome profile boxes are subordinate profile nodes under External Browser;
+  // They never receive wires from get-content, get-images, or other AI nodes, and never output into combine/output/destinations EXCEPT to chrome tab group boxes.
   if (chromeProfileBoxes.length > 0) {
-    // 1. Remove all outgoing wires from chrome profile boxes
-    conns = conns.filter((c) => !chromeProfileBoxes.some((p) => p.id === c.fromNodeId));
+    // 1. Remove all outgoing wires from chrome profile boxes EXCEPT to chrome tab group boxes
+    conns = conns.filter(
+      (c) =>
+        !chromeProfileBoxes.some((p) => p.id === c.fromNodeId) ||
+        chromeTabGroupBoxes.some((tg) => tg.id === c.toNodeId)
+    );
     // 2. Remove all incoming wires to chrome profile boxes EXCEPT those coming from an external browser box
     conns = conns.filter(
       (c) =>
@@ -1004,28 +1074,28 @@ export const buildAlignedLayout = (
   const fromImages = (id: string) => conns.some((c) => c.fromNodeId === 'get-images' && c.toNodeId === id);
 
   const chromeProfileBoxes = boxes.filter((b) => isChromeProfileAIBox(b));
+  const chromeTabGroupBoxes = boxes.filter((b) => isChromeTabGroupAIBox(b));
   const externalBrowserBoxes = boxes.filter((b) => isExternalBrowserAIBox(b));
-  const watermarkBoxes = boxes.filter((b) => !isChromeProfileAIBox(b) && isWatermarkAIBox(b));
+  const watermarkBoxes = boxes.filter((b) => !isChromeProfileAIBox(b) && !isChromeTabGroupAIBox(b) && isWatermarkAIBox(b));
   const enhanceBoxes = boxes.filter(
-    (b) => !isChromeProfileAIBox(b) && !isWatermarkAIBox(b) && (isEnhanceAIBox(b, conns) || fromImages(b.id))
+    (b) => !isChromeProfileAIBox(b) && !isChromeTabGroupAIBox(b) && !isWatermarkAIBox(b) && !isExternalBrowserAIBox(b) && (isEnhanceAIBox(b, conns) || fromImages(b.id))
   );
-  const textFormatBoxes = boxes.filter((b) => !isChromeProfileAIBox(b) && isTextFormatAIBox(b));
+  const textFormatBoxes = boxes.filter((b) => !isChromeProfileAIBox(b) && !isChromeTabGroupAIBox(b) && isTextFormatAIBox(b));
   const textAIBoxes = boxes.filter(
-    (b) => !isChromeProfileAIBox(b) && !isWatermarkAIBox(b) && !enhanceBoxes.includes(b) && !isTextFormatAIBox(b) && (fromContent(b.id) || !fromImages(b.id))
+    (b) => !isChromeProfileAIBox(b) && !isChromeTabGroupAIBox(b) && !isWatermarkAIBox(b) && !isExternalBrowserAIBox(b) && !enhanceBoxes.includes(b) && !isTextFormatAIBox(b) && (fromContent(b.id) || !fromImages(b.id))
   );
   const otherBoxes = boxes.filter(
-    (b) => !isChromeProfileAIBox(b) && !textAIBoxes.includes(b) && !textFormatBoxes.includes(b) && !enhanceBoxes.includes(b) && !watermarkBoxes.includes(b)
+    (b) => !isChromeProfileAIBox(b) && !isChromeTabGroupAIBox(b) && !isExternalBrowserAIBox(b) && !textAIBoxes.includes(b) && !textFormatBoxes.includes(b) && !enhanceBoxes.includes(b) && !watermarkBoxes.includes(b)
   );
 
-  // Compact Clean Tree Metrics
-  const NODE_V_STEP = 120;      // Compact vertical step - gives clean ~16px gap between label and card
-  const BRANCH_GAP = 36;        // Balanced separation gap between Content and Image branches
+  // Equal Spacing Tree Metrics
+  const NODE_V_STEP = 150;      // Equal vertical step across all rows in Column 2 (Gemini -> FB Hero -> External Browser)
   const TOP_MARGIN = 140;
 
   // Horizontal column grid - uniform 220px step across all columns
   const TRIGGER_X = 80;
   const COL_BRANCH_X = 300;     // Column 1: Get Content & Get Images (gap = 220px)
-  const COL_AI_X = 520;         // Column 2: Content AI Models & Image Enhancers / Direct Formats (gap = 220px)
+  const COL_AI_X = 520;         // Column 2: Content AI Models & Image Enhancers / External Browser (gap = 220px)
   const COL_FORMAT_X = 740;     // Column 3: Formats & Watermark Nodes (gap = 220px)
 
   // Dynamic clearance for wide nodes (e.g. External Browser with 216px width vs standard 72px)
@@ -1041,30 +1111,23 @@ export const buildAlignedLayout = (
   const hasTextAI = numTextAI > 0;
   const textFormatColX = hasTextAI ? effectiveColFormatX : COL_AI_X;
 
-  const textSlots = Math.max(numTextAI, numTextFormat, 1);
-  const contentTopY = TOP_MARGIN;
-  const contentCenterY =
-    textSlots <= 1
-      ? contentTopY
-      : contentTopY + ((textSlots - 1) * NODE_V_STEP) / 2;
-
-  // Position Text AI Boxes (Column 2: 520)
+  // Position Text AI Boxes (Column 2: 520) with equal vertical step
   if (numTextAI === 1) {
     xById[textAIBoxes[0].id] = COL_AI_X;
-    yById[textAIBoxes[0].id] = contentCenterY;
+    yById[textAIBoxes[0].id] = TOP_MARGIN;
   } else if (numTextAI > 1) {
-    // Keep primary AI box (the one feeding format presets or first) at contentCenterY (140)
-    // so Get Content (140) -> Primary Gemini (140) stays 100% dead-straight!
-    // Additional text AI boxes stack cleanly below it (140 + idx * 120 = 260, exactly like Image 3)
-    const primaryAI = textAIBoxes.find((b) => conns.some((c) => c.fromNodeId === b.id && textFormatBoxes.some((f) => f.id === c.toNodeId))) || textAIBoxes[0];
-    const otherAIs = textAIBoxes.filter((b) => b.id !== primaryAI.id);
-    const orderedAIs = [primaryAI, ...otherAIs];
-
-    orderedAIs.forEach((b, idx) => {
+    textAIBoxes.forEach((b, idx) => {
       xById[b.id] = COL_AI_X;
-      yById[b.id] = contentCenterY + idx * NODE_V_STEP;
+      yById[b.id] = TOP_MARGIN + idx * NODE_V_STEP;
     });
   }
+
+  // Get Content Y:
+  // If multiple text AI boxes exist, center Get Content exactly halfway between top and bottom text AI boxes
+  // (e.g. Gemini at 140 and FB Hero at 290 -> Get Content is at 215, curving up and down symmetrically!)
+  const getContentY = numTextAI >= 2
+    ? Math.round((TOP_MARGIN + (TOP_MARGIN + (numTextAI - 1) * NODE_V_STEP)) / 2)
+    : TOP_MARGIN;
 
   // Optimize format box order to eliminate crossing wires:
   // Sort boxes based on their downstream destination/combine box targets.
@@ -1096,58 +1159,58 @@ export const buildAlignedLayout = (
     return textFormatBoxes.indexOf(a) - textFormatBoxes.indexOf(b);
   });
 
-  // Position Text Format Boxes (Column 3: 740, or 520 if no AI box)
+  // Position Text Format Boxes (Column 3: 740/900, or Column 2 if no text AI)
   if (numTextFormat === 1) {
     xById[sortedTextFormatBoxes[0].id] = textFormatColX;
-    yById[sortedTextFormatBoxes[0].id] = contentCenterY;
+    yById[sortedTextFormatBoxes[0].id] = getContentY;
   } else if (numTextFormat > 1) {
-    const offset = ((textSlots - numTextFormat) * NODE_V_STEP) / 2;
+    const formatTopY = Math.round(getContentY - ((numTextFormat - 1) * NODE_V_STEP) / 2);
     sortedTextFormatBoxes.forEach((b, idx) => {
       xById[b.id] = textFormatColX;
-      yById[b.id] = contentTopY + offset + idx * NODE_V_STEP;
+      yById[b.id] = formatTopY + idx * NODE_V_STEP;
     });
   }
 
-  // 2. Image Pipeline Branch (Isolated vertical band, completely collision-free)
-  const numEnhance = enhanceBoxes.length;
+  // 2. Image Pipeline Branch (Column 2)
+  // Equal vertical step continuation below the text lane:
+  // When 2 text AI nodes exist (Row 0 at 140, Row 1 at 290):
+  // Image branch sits at Row 2 (140 + 2 * 150 = 440), giving identical 150px gap!
+  const textRowsCount = Math.max(numTextAI, (numTextAI === 0 ? numTextFormat : 1), 1);
+  const imageTopY = TOP_MARGIN + textRowsCount * NODE_V_STEP;
+
+  const imageCol2Boxes = externalBrowserBoxes.length > 0
+    ? [...externalBrowserBoxes, ...enhanceBoxes.filter((b) => !externalBrowserBoxes.some((eb) => eb.id === b.id))]
+    : enhanceBoxes;
+
+  const numImageCol2 = imageCol2Boxes.length;
+  if (numImageCol2 === 1) {
+    xById[imageCol2Boxes[0].id] = COL_AI_X;
+    yById[imageCol2Boxes[0].id] = imageTopY;
+  } else if (numImageCol2 > 1) {
+    imageCol2Boxes.forEach((b, idx) => {
+      xById[b.id] = COL_AI_X;
+      yById[b.id] = imageTopY + idx * NODE_V_STEP;
+    });
+  }
+
+  // Get Images Y:
+  // Horizontally aligned straight with the primary image node (e.g. Chrome Enhance IMG at 440)
+  const getImagesY = numImageCol2 > 0 ? imageTopY : imageTopY;
+
+  // Watermarks (Column 3 or Column 2)
   const numWatermark = watermarkBoxes.length;
-  const hasEnhancers = numEnhance > 0;
-  // Watermark format presets sit in Column 3 (740) only if enhancers exist before them or text format presets exist in Column 3
   const hasCol3InTextLane = numTextFormat > 0;
-  const shouldWatermarkBeInColumn3 = hasEnhancers || hasCol3InTextLane;
+  const shouldWatermarkBeInColumn3 = numImageCol2 > 0 || hasCol3InTextLane;
   const watermarkColX = shouldWatermarkBeInColumn3 ? effectiveColFormatX : COL_AI_X;
 
-  const imageSlots = Math.max(numEnhance, numWatermark, 1);
-  const contentSpan = (textSlots - 1) * NODE_V_STEP;
-  const naturalImageTopY = contentTopY + contentSpan + NODE_V_STEP + BRANCH_GAP;
-  // Ensure the image branch maintains clean separation and never collides with upper text format presets
-  const imageTopY = Math.max(340, naturalImageTopY);
-  const imageCenterY =
-    imageSlots <= 1
-      ? imageTopY
-      : imageTopY + ((imageSlots - 1) * NODE_V_STEP) / 2;
-
-  // Position Image Enhancers (Column 2: 520)
-  if (numEnhance === 1) {
-    xById[enhanceBoxes[0].id] = COL_AI_X;
-    yById[enhanceBoxes[0].id] = imageCenterY;
-  } else if (numEnhance > 1) {
-    const offset = ((imageSlots - numEnhance) * NODE_V_STEP) / 2;
-    enhanceBoxes.forEach((b, idx) => {
-      xById[b.id] = COL_AI_X;
-      yById[b.id] = imageTopY + offset + idx * NODE_V_STEP;
-    });
-  }
-
-  // Position Watermark / Format Boxes (Column 3: 740, or Column 2: 520 if directly from Get Images and no Column 3 text presets)
   if (numWatermark === 1) {
     xById[watermarkBoxes[0].id] = watermarkColX;
-    yById[watermarkBoxes[0].id] = imageCenterY;
+    yById[watermarkBoxes[0].id] = getImagesY;
   } else if (numWatermark > 1) {
-    const offset = ((imageSlots - numWatermark) * NODE_V_STEP) / 2;
+    const wmTopY = Math.round(getImagesY - ((numWatermark - 1) * NODE_V_STEP) / 2);
     watermarkBoxes.forEach((b, idx) => {
       xById[b.id] = watermarkColX;
-      yById[b.id] = imageTopY + offset + idx * NODE_V_STEP;
+      yById[b.id] = wmTopY + idx * NODE_V_STEP;
     });
   }
 
@@ -1155,18 +1218,22 @@ export const buildAlignedLayout = (
   const otherColX = shouldWatermarkBeInColumn3 ? (effectiveColFormatX + 220) : (hasWideCol2 ? (COL_AI_X + 380) : (COL_AI_X + 220));
   otherBoxes.forEach((b, idx) => {
     xById[b.id] = otherColX;
-    yById[b.id] = contentTopY + idx * NODE_V_STEP;
+    yById[b.id] = TOP_MARGIN + idx * NODE_V_STEP;
   });
 
-  // 4. Chrome Profile Boxes (position centered directly below parent External Browser node)
+  // 4. Chrome Profile & Tab Group Tree Clusters
   if (chromeProfileBoxes.length > 0) {
-    const PROFILE_SPACING = 140;
-    // Map profiles to their parent external browser
+    const TAB_GROUP_COL_WIDTH = 144; // Comfortable width so titles and badges never collide
+    const PROFILE_CLUSTER_GAP = 60;
+    const PROFILE_V_GAP = 190;
+    const TG_V_GAP = 190;
+
     externalBrowserBoxes.forEach((eb) => {
+      // Find all profiles connected to this external browser
       const ebProfiles = chromeProfileBoxes.filter((p) =>
         conns.some((c) => c.fromNodeId === eb.id && c.toNodeId === p.id)
       );
-      // Fallback: if no connections yet or only 1 external browser, assign unassigned profiles to it
+      // Unassigned profiles fall back to the first external browser
       const unassigned = chromeProfileBoxes.filter(
         (p) => !conns.some((c) => externalBrowserBoxes.some((b) => b.id === c.fromNodeId) && c.toNodeId === p.id)
       );
@@ -1174,35 +1241,79 @@ export const buildAlignedLayout = (
         ? [...ebProfiles, ...unassigned.filter((p) => !ebProfiles.includes(p))]
         : ebProfiles;
 
-      const numP = profilesToPlace.length;
-      if (numP === 0) return;
+      if (profilesToPlace.length === 0) return;
 
       const parentX = xById[eb.id] ?? COL_AI_X;
-      const parentY = yById[eb.id] ?? imageCenterY;
+      const parentY = yById[eb.id] ?? imageTopY;
       const parentCenterX = parentX + 108; // External Browser width 216 / 2 = 108
 
-      profilesToPlace.forEach((p, pIdx) => {
-        const centerOffset = numP === 1 ? 0 : (pIdx - (numP - 1) / 2) * PROFILE_SPACING;
-        xById[p.id] = Math.round(parentCenterX + centerOffset - 36);
-        yById[p.id] = parentY + 250;
+      // 1. Calculate cluster width for each profile based on its tab group count
+      const profileClusterData = profilesToPlace.map((p) => {
+        const pTabGroups = chromeTabGroupBoxes.filter(
+          (tg) =>
+            conns.some((c) => c.fromNodeId === p.id && c.toNodeId === tg.id) ||
+            (tg.browserProfileId && tg.browserProfileId === p.browserProfileId)
+        );
+        const numTG = pTabGroups.length;
+        const clusterWidth = Math.max(numTG, 1) * TAB_GROUP_COL_WIDTH;
+        return { profile: p, tabGroups: pTabGroups, clusterWidth };
+      });
+
+      // Total width across all profile clusters under this External Browser
+      const totalClusterWidth = profileClusterData.reduce((acc, curr, idx) => {
+        return acc + curr.clusterWidth + (idx > 0 ? PROFILE_CLUSTER_GAP : 0);
+      }, 0);
+
+      // 2. Position profiles and their tab groups side-by-side with equal symmetry
+      let currentLeft = parentCenterX - totalClusterWidth / 2;
+
+      profileClusterData.forEach(({ profile, tabGroups, clusterWidth }) => {
+        const clusterCenterX = currentLeft + clusterWidth / 2;
+
+        // Position Chrome Profile circle (width 72px)
+        xById[profile.id] = Math.round(clusterCenterX - 36);
+        yById[profile.id] = parentY + PROFILE_V_GAP;
+
+        // Position its Tab Groups (width 72px) directly below this profile with equal vertical step
+        const numTG = tabGroups.length;
+        if (numTG === 1) {
+          xById[tabGroups[0].id] = Math.round(clusterCenterX - 36);
+          yById[tabGroups[0].id] = parentY + PROFILE_V_GAP + TG_V_GAP;
+        } else if (numTG > 1) {
+          tabGroups.forEach((tg, tgIdx) => {
+            const tgCenterX = currentLeft + (tgIdx + 0.5) * TAB_GROUP_COL_WIDTH;
+            xById[tg.id] = Math.round(tgCenterX - 36);
+            yById[tg.id] = parentY + PROFILE_V_GAP + TG_V_GAP;
+          });
+        }
+
+        currentLeft += clusterWidth + PROFILE_CLUSTER_GAP;
       });
     });
 
     // Any remaining profiles without external browser
-    const placedIds = new Set(Object.keys(xById));
-    const unplacedProfiles = chromeProfileBoxes.filter((p) => !placedIds.has(p.id));
+    const placedProfileIds = new Set(Object.keys(xById));
+    const unplacedProfiles = chromeProfileBoxes.filter((p) => !placedProfileIds.has(p.id));
     if (unplacedProfiles.length > 0) {
       unplacedProfiles.forEach((p, pIdx) => {
-        xById[p.id] = COL_AI_X + pIdx * PROFILE_SPACING;
-        yById[p.id] = imageTopY + 250;
+        xById[p.id] = COL_AI_X + pIdx * 160;
+        yById[p.id] = imageTopY + PROFILE_V_GAP;
+      });
+    }
+
+    // Any remaining tab groups without profile
+    const placedTgIds = new Set(Object.keys(xById));
+    const unplacedTabGroups = chromeTabGroupBoxes.filter((tg) => !placedTgIds.has(tg.id));
+    if (unplacedTabGroups.length > 0) {
+      unplacedTabGroups.forEach((tg, tgIdx) => {
+        xById[tg.id] = COL_AI_X + tgIdx * TAB_GROUP_COL_WIDTH;
+        yById[tg.id] = imageTopY + PROFILE_V_GAP + TG_V_GAP;
       });
     }
   }
 
   const hasContent = base.getContent?.enabled !== false;
   const hasImages = base.getImages?.enabled !== false;
-  const getContentY = contentCenterY;
-  const getImagesY = imageCenterY;
   const triggerY = hasContent && hasImages
     ? Math.round((getContentY + getImagesY) / 2)
     : hasContent
@@ -1216,7 +1327,7 @@ export const buildAlignedLayout = (
   const allXValues = Object.values(xById);
   const maxNodeX = allXValues.length > 0 ? Math.max(...allXValues) : COL_BRANCH_X;
   const hasCol3Nodes = allXValues.some((x) => x >= effectiveColFormatX);
-  const mergerNodeX = hasCol3Nodes ? (effectiveColFormatX + 220) : (hasWideCol2 ? (COL_AI_X + 380) : (COL_AI_X + 220)); // 900 when wide Col 2 box exists, 740 standard, 960/1120 when Col 3 exists
+  const mergerNodeX = hasCol3Nodes ? (effectiveColFormatX + 220) : (hasWideCol2 ? 850 : (COL_AI_X + 220)); // 820 when wide Col 2 box exists, 740 standard, 960/1120 when Col 3 exists
   const outputNodeX = isOutputActive ? mergerNodeX : maxNodeX;
   const outputNodeY = triggerY;
   const destinationX = mergerNodeX + 220; // 960, 1120 or 1180
@@ -1276,8 +1387,8 @@ export const buildAlignedLayout = (
     const inCenter = getIncomingCenterY(cb.id);
     const isFromImages = conns.some((c) => c.fromNodeId === 'get-images' && c.toNodeId === cb.id);
     const fallbackCy = isFromImages
-      ? imageCenterY + (idx + 1) * NODE_V_STEP
-      : contentCenterY - (idx + 1) * NODE_V_STEP;
+      ? getImagesY + (idx + 1) * NODE_V_STEP
+      : getContentY - (idx + 1) * NODE_V_STEP;
     cbCoords[cb.id] = { x: COL_AI_X, y: inCenter !== null ? inCenter : fallbackCy };
   });
 
@@ -1433,7 +1544,7 @@ export const buildAlignedLayout = (
     aiBoxes: boxes.map((b) => ({
       ...b,
       x: xById[b.id] ?? COL_AI_X,
-      y: yById[b.id] ?? contentCenterY,
+      y: yById[b.id] ?? getContentY,
     })),
     trigger: { ...base.trigger, x: TRIGGER_X, y: triggerY },
     getContent: { ...base.getContent, x: COL_BRANCH_X, y: getContentY },
@@ -2301,6 +2412,120 @@ export interface FacebookWorkflowCanvasProps {
  * Calculates pan offset (x, y) so that all active nodes or initial trigger
  * are centered in the viewport.
  */
+export const getWorkflowBounds = (cfg: FacebookWorkflowConfig) => {
+  const CIRCLE_SIZE = 72;
+  const LABEL_EXTRA = 48;
+
+  const isTriggerEnabled = cfg.trigger?.enabled !== false;
+  const isContentEnabled = cfg.getContent?.enabled !== false;
+  const isImagesEnabled = cfg.getImages?.enabled !== false;
+  const activeBoxes = (cfg.aiBoxes || []).filter((b) => b.enabled !== false);
+
+  const points: { x: number; y: number; width: number; height: number }[] = [];
+
+  // If trigger is enabled, or if in initial state (neither trigger nor other nodes enabled)
+  if (isTriggerEnabled || (!isContentEnabled && !isImagesEnabled && activeBoxes.length === 0)) {
+    const tx = cfg.trigger?.x ?? 80;
+    const ty = cfg.trigger?.y ?? 240;
+    points.push({
+      x: tx - 40,
+      y: ty,
+      width: CIRCLE_SIZE + 80,
+      height: CIRCLE_SIZE + LABEL_EXTRA,
+    });
+  }
+
+  if (isContentEnabled) {
+    const cx = cfg.getContent?.x ?? 300;
+    const cy = cfg.getContent?.y ?? 140;
+    points.push({
+      x: cx - 20,
+      y: cy,
+      width: CIRCLE_SIZE + 40,
+      height: CIRCLE_SIZE + LABEL_EXTRA,
+    });
+  }
+
+  if (isImagesEnabled) {
+    const ix = cfg.getImages?.x ?? 300;
+    const iy = cfg.getImages?.y ?? 340;
+    points.push({
+      x: ix - 20,
+      y: iy,
+      width: CIRCLE_SIZE + 40,
+      height: CIRCLE_SIZE + LABEL_EXTRA,
+    });
+  }
+
+  activeBoxes.forEach((b) => {
+    const isExt = isExternalBrowserAIBox(b);
+    points.push({
+      x: b.x - (isExt ? 0 : 20),
+      y: b.y,
+      width: isExt ? 216 : CIRCLE_SIZE + 40,
+      height: CIRCLE_SIZE + LABEL_EXTRA,
+    });
+  });
+
+  // Combine Boxes
+  (cfg.combineBoxes || [])
+    .filter((cb) => cb && cb.enabled !== false)
+    .forEach((cb) => {
+      points.push({
+        x: (cb.x ?? 850) - 20,
+        y: cb.y ?? 240,
+        width: CIRCLE_SIZE + 50,
+        height: CIRCLE_SIZE + LABEL_EXTRA,
+      });
+    });
+
+  // Post Output Node (id: 'output')
+  if (cfg.outputNode && cfg.outputNode.enabled !== false) {
+    points.push({
+      x: (cfg.outputNode.x ?? 740) - 20,
+      y: cfg.outputNode.y ?? 200,
+      width: CIRCLE_SIZE + 40,
+      height: CIRCLE_SIZE + LABEL_EXTRA,
+    });
+  }
+
+  // All Destination Nodes (e.g. Dot BKK Living, Remaining Posts Database)
+  const allDestinations = getNormalizedDestinations(cfg).filter((d) => d && d.enabled !== false);
+  allDestinations.forEach((d) => {
+    points.push({
+      x: (d.x ?? 960) - 20,
+      y: d.y ?? 200,
+      width: CIRCLE_SIZE + 40,
+      height: CIRCLE_SIZE + LABEL_EXTRA,
+    });
+  });
+
+  if (points.length === 0) {
+    points.push({
+      x: (cfg.trigger?.x ?? 80) - 40,
+      y: cfg.trigger?.y ?? 240,
+      width: CIRCLE_SIZE + 80,
+      height: CIRCLE_SIZE + LABEL_EXTRA,
+    });
+  }
+
+  const minX = Math.min(...points.map((p) => p.x));
+  const maxX = Math.max(...points.map((p) => p.x + p.width));
+  const minY = Math.min(...points.map((p) => p.y));
+  const maxY = Math.max(...points.map((p) => p.y + p.height));
+
+  return {
+    minX,
+    maxX,
+    minY,
+    maxY,
+    width: maxX - minX,
+    height: maxY - minY,
+    midX: (minX + maxX) / 2,
+    midY: (minY + maxY) / 2,
+  };
+};
+
 export const calculateCenteredPanOffset = (
   cfg: FacebookWorkflowConfig,
   viewportWidth: number,
@@ -2311,107 +2536,11 @@ export const calculateCenteredPanOffset = (
     return cfg.panOffset || { x: 500, y: 180 };
   }
 
-  const effectiveZoom = zoom ?? cfg.zoom ?? 0.9;
-  const CIRCLE_SIZE = 72;
-  const LABEL_EXTRA = 32;
+  const effectiveZoom = zoom ?? cfg.zoom ?? 0.85;
+  const bounds = getWorkflowBounds(cfg);
 
-  const isTriggerEnabled = cfg.trigger?.enabled === true;
-  const isContentEnabled = cfg.getContent?.enabled !== false;
-  const isImagesEnabled = cfg.getImages?.enabled !== false;
-  const activeBoxes = (cfg.aiBoxes || []).filter((b) => b.enabled !== false);
-
-  const points: { x: number; y: number; width: number; height: number }[] = [];
-
-  // If trigger is enabled, or if in initial state (neither trigger nor other nodes enabled)
-  if (isTriggerEnabled || (!isContentEnabled && !isImagesEnabled && activeBoxes.length === 0)) {
-    points.push({
-      x: cfg.trigger?.x ?? 100,
-      y: cfg.trigger?.y ?? 200,
-      width: CIRCLE_SIZE,
-      height: CIRCLE_SIZE + LABEL_EXTRA,
-    });
-  }
-
-  if (isContentEnabled) {
-    points.push({
-      x: cfg.getContent?.x ?? 300,
-      y: cfg.getContent?.y ?? 140,
-      width: CIRCLE_SIZE,
-      height: CIRCLE_SIZE + LABEL_EXTRA,
-    });
-  }
-
-  if (isImagesEnabled) {
-    points.push({
-      x: cfg.getImages?.x ?? 300,
-      y: cfg.getImages?.y ?? 356,
-      width: CIRCLE_SIZE,
-      height: CIRCLE_SIZE + LABEL_EXTRA,
-    });
-  }
-
-  activeBoxes.forEach((b) => {
-    const isExt = isExternalBrowserAIBox(b);
-    points.push({
-      x: b.x,
-      y: b.y,
-      width: isExt ? 216 : CIRCLE_SIZE,
-      height: CIRCLE_SIZE + LABEL_EXTRA,
-    });
-  });
-
-  // Combine Boxes
-  (cfg.combineBoxes || [])
-    .filter((cb) => cb && cb.enabled !== false)
-    .forEach((cb) => {
-      points.push({
-        x: cb.x ?? 960,
-        y: cb.y ?? 200,
-        width: CIRCLE_SIZE,
-        height: CIRCLE_SIZE + LABEL_EXTRA,
-      });
-    });
-
-  // Post Output Node (id: 'output')
-  if (cfg.outputNode && cfg.outputNode.enabled !== false) {
-    points.push({
-      x: cfg.outputNode.x ?? 740,
-      y: cfg.outputNode.y ?? 200,
-      width: CIRCLE_SIZE,
-      height: CIRCLE_SIZE + LABEL_EXTRA,
-    });
-  }
-
-  // All Destination Nodes (e.g. Dot BKK Living, Remaining Posts Database)
-  const allDestinations = getNormalizedDestinations(cfg).filter((d) => d && d.enabled !== false);
-  allDestinations.forEach((d) => {
-    points.push({
-      x: d.x ?? 960,
-      y: d.y ?? 200,
-      width: CIRCLE_SIZE,
-      height: CIRCLE_SIZE + LABEL_EXTRA,
-    });
-  });
-
-  if (points.length === 0) {
-    points.push({
-      x: cfg.trigger?.x ?? 100,
-      y: cfg.trigger?.y ?? 200,
-      width: CIRCLE_SIZE,
-      height: CIRCLE_SIZE + LABEL_EXTRA,
-    });
-  }
-
-  const minX = Math.min(...points.map((p) => p.x));
-  const maxX = Math.max(...points.map((p) => p.x + p.width));
-  const minY = Math.min(...points.map((p) => p.y));
-  const maxY = Math.max(...points.map((p) => p.y + p.height));
-
-  const contentMidX = (minX + maxX) / 2;
-  const contentMidY = (minY + maxY) / 2;
-
-  const targetPanX = Math.round(viewportWidth / 2 - contentMidX * effectiveZoom);
-  const targetPanY = Math.round(viewportHeight / 2 - contentMidY * effectiveZoom);
+  const targetPanX = Math.round(viewportWidth / 2 - bounds.midX * effectiveZoom);
+  const targetPanY = Math.round(viewportHeight / 2 - bounds.midY * effectiveZoom);
 
   return { x: targetPanX, y: targetPanY };
 };
@@ -2463,11 +2592,12 @@ export const FacebookWorkflowCanvas = forwardRef<
     const base = sanitizeAndResolveCollisions(initialConfig || loadSavedFacebookWorkflowConfig());
     const vWidth = typeof window !== 'undefined' ? window.innerWidth - 56 : 1200;
     const vHeight = typeof window !== 'undefined' ? window.innerHeight - 60 : 800;
-    const contentWidth = 1420;
-    const contentHeight = 440;
-    const fitZoomX = (vWidth - 140) / contentWidth;
+    const bounds = getWorkflowBounds(base);
+    const contentWidth = Math.max(bounds.width, 400);
+    const contentHeight = Math.max(bounds.height, 300);
+    const fitZoomX = (vWidth - 160) / contentWidth;
     const fitZoomY = (vHeight - 120) / contentHeight;
-    const optimalZoom = Math.min(Math.max(Math.min(fitZoomX, fitZoomY), 0.76), 0.88);
+    const optimalZoom = Math.min(Math.max(Math.min(fitZoomX, fitZoomY), 0.55), 0.88);
     const centeredPan = calculateCenteredPanOffset(base, vWidth, vHeight, optimalZoom);
     return {
       ...base,
@@ -2476,7 +2606,13 @@ export const FacebookWorkflowCanvas = forwardRef<
     };
   });
 
+  const [locallyRunningNodeId, setLocallyRunningNodeId] = useState<string | null>(null);
+
   const getNodeExecutionStatus = (nodeId: string): 'idle' | 'running' | 'success' | 'error' => {
+    if (locallyRunningNodeId) {
+      if (locallyRunningNodeId === nodeId) return 'running';
+    }
+
     if (!executionState) return 'idle';
     if (executionState.failedNodeIds?.includes(nodeId)) return 'error';
     if (executionState.activeNodeIds?.includes(nodeId)) return 'running';
@@ -2494,11 +2630,12 @@ export const FacebookWorkflowCanvas = forwardRef<
     const vWidth = el && el.clientWidth > 50 ? el.clientWidth : (typeof window !== 'undefined' ? window.innerWidth - 56 : 1200);
     const vHeight = el && el.clientHeight > 50 ? el.clientHeight : (typeof window !== 'undefined' ? window.innerHeight - 60 : 800);
 
-    const contentWidth = 1420;
-    const contentHeight = 440;
-    const fitZoomX = (vWidth - 140) / contentWidth;
+    const bounds = getWorkflowBounds(sanitized);
+    const contentWidth = Math.max(bounds.width, 400);
+    const contentHeight = Math.max(bounds.height, 300);
+    const fitZoomX = (vWidth - 160) / contentWidth;
     const fitZoomY = (vHeight - 120) / contentHeight;
-    const optimalZoom = Math.min(Math.max(Math.min(fitZoomX, fitZoomY), 0.76), 0.88);
+    const optimalZoom = Math.min(Math.max(Math.min(fitZoomX, fitZoomY), 0.55), 0.88);
     const centeredPan = calculateCenteredPanOffset(sanitized, vWidth, vHeight, optimalZoom);
 
     setConfig((prev) => {
@@ -2686,16 +2823,22 @@ export const FacebookWorkflowCanvas = forwardRef<
   const [activeModalNode, setActiveModalNode] = useState<ActiveModalNode>(null);
   const [isAISettingsDrawerOpen, setIsAISettingsDrawerOpen] = useState(false);
   const [isRegeneratingAI, setIsRegeneratingAI] = useState(false);
+  const [showFBHeroSettingsSidebox, setShowFBHeroSettingsSidebox] = useState<boolean>(false);
+
+  useEffect(() => {
+    setShowFBHeroSettingsSidebox(false);
+  }, [(activeModalNode as any)?.boxId, activeModalNode?.type]);
 
   // Dedicated Connect Items Drawer (opened via [+] node button)
   const [connectDrawerNode, setConnectDrawerNode] = useState<{
     nodeId: string;
     nodeType: string;
     title: string;
-    platform?: 'facebook' | 'instagram' | 'tiktok' | 'database' | 'chrome-profile';
+    platform?: 'facebook' | 'instagram' | 'tiktok' | 'database' | 'chrome-profile' | 'chrome-tab-group';
   } | null>(null);
 
   const [browserProfilesList, setBrowserProfilesList] = useState<BrowserProfile[]>([]);
+  const [browserTabGroupsList, setBrowserTabGroupsList] = useState<BrowserGroupItem[]>([]);
 
   useEffect(() => {
     fetchBrowserProfiles().then((res) => {
@@ -2808,7 +2951,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     nodeId: string,
     nodeType: string,
     title: string,
-    platform?: 'facebook' | 'instagram' | 'tiktok' | 'database' | 'chrome-profile',
+    platform?: 'facebook' | 'instagram' | 'tiktok' | 'database' | 'chrome-profile' | 'chrome-tab-group',
   ) => {
     setActiveModalNode(null);
     setSelectedBoxId(null);
@@ -2819,6 +2962,11 @@ export const FacebookWorkflowCanvas = forwardRef<
       fetchBrowserProfiles().then((res) => {
         if (res && res.length > 0) setBrowserProfilesList(res);
       });
+    } else if (platform === 'chrome-tab-group') {
+      const fromBox = config.aiBoxes.find((b) => b.id === nodeId);
+      fetchTabGroups(fromBox?.browserProfileId || 14, fromBox?.browserProfileKey, fromBox?.browserProfileName).then((res) => {
+        if (res && res.length > 0) setBrowserTabGroupsList(res);
+      });
     }
     setConnectDrawerNode({ nodeId, nodeType, title, platform });
   };
@@ -2827,7 +2975,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     nodeId: string,
     nodeType: string,
     nodeTitle?: string,
-    platform?: 'facebook' | 'instagram' | 'tiktok' | 'database' | 'chrome-profile',
+    platform?: 'facebook' | 'instagram' | 'tiktok' | 'database' | 'chrome-profile' | 'chrome-tab-group',
   ) => (
     <button
       type="button"
@@ -2840,6 +2988,10 @@ export const FacebookWorkflowCanvas = forwardRef<
         gap: '0.45rem',
         width: '100%',
         height: '38px',
+        minHeight: '38px',
+        maxHeight: '38px',
+        flexShrink: 0,
+        boxSizing: 'border-box',
         marginBottom: '0.875rem',
         padding: '0 1rem',
         borderRadius: '8px',
@@ -2897,6 +3049,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     setActiveModalNode(null);
     setConnectDrawerNode(null);
     setIsAISettingsDrawerOpen(false);
+    setShowFBHeroSettingsSidebox(false);
     setSelectedNodeIds(new Set());
     setSelectedBoxId(null);
   };
@@ -3205,12 +3358,13 @@ export const FacebookWorkflowCanvas = forwardRef<
     const box = config.aiBoxes.find((b) => b.id === nodeId && b.enabled !== false);
     if (box) {
       const isProf = isChromeProfileAIBox(box);
-      const isExt = isExternalBrowserAIBox(box) && !isProf;
+      const isTabGroup = isChromeTabGroupAIBox(box);
+      const isExt = isExternalBrowserAIBox(box) && !isProf && !isTabGroup;
       const boxW = isExt ? 216 : CIRCLE_SIZE;
-      const hasAddBtn = isNodeEffectivelyEnabled(box.id) && !isProf;
+      const hasAddBtn = isNodeEffectivelyEnabled(box.id) && !isProf && !isTabGroup;
       return socketType === 'output'
         ? { x: box.x + (hasAddBtn ? boxW + 37 : boxW - 1), y: box.y + HALF_CIRCLE }
-        : isProf
+        : (isProf || isTabGroup)
         ? { x: box.x + HALF_CIRCLE, y: box.y + 1 }
         : { x: box.x + 1, y: box.y + HALF_CIRCLE };
     }
@@ -5143,10 +5297,70 @@ export const FacebookWorkflowCanvas = forwardRef<
       customPrompt: '',
       enabled: true,
       x: parentX + 72,
-      y: parentY + 250,
+      y: parentY + 210,
       browserProfileId: profile.id,
       browserProfileKey: profile.profile_key,
       browserProfileName: profile.display_name,
+    };
+
+    const nextBoxes = [...config.aiBoxes, newBox];
+    const nextConns = [
+      ...(config.connections || []),
+      {
+        id: `wire-${fromNodeId}-${newId}-${Date.now()}`,
+        fromNodeId: fromNodeId,
+        toNodeId: newId,
+      },
+    ];
+
+    const autoConns = autoConnectWorkflow(
+      nextBoxes,
+      nextConns,
+      config.getContent.enabled,
+      config.getImages.enabled,
+      config.destination?.enabled !== false,
+      config.outputNode?.enabled !== false,
+      getNormalizedDestinations(config),
+      config.combineBoxes || []
+    );
+
+    const nextConfig = buildAlignedLayout(nextBoxes, autoConns, {
+      ...config,
+      aiBoxes: nextBoxes,
+      connections: autoConns,
+    });
+
+    updateConfig(nextConfig);
+    setSelectedBoxId(newId);
+    setConnectDrawerNode(null);
+    setActiveModalNode(null);
+  };
+
+  // Connect dedicated Chrome Tab Group Box from Chrome Profile node
+  const handleConnectChromeTabGroupBox = (fromNodeId: string, group: Partial<BrowserGroupItem> & { name: string }) => {
+    const parentBox = config.aiBoxes.find((b) => b.id === fromNodeId);
+    const newId = `ai-box-tabgroup-${(group.name || 'group').toLowerCase().replace(/[^a-z0-9]/g, '-')}-${Date.now()}`;
+    const parentX = parentBox?.x ?? 520;
+    const parentY = parentBox?.y ?? 340;
+
+    const newBox: DynamicAIBoxConfig = {
+      id: newId,
+      title: group.name || 'Tab Group',
+      subtitle: `${group.tabs?.length || group.tabs_count || 0} Tabs`,
+      processType: 'chrome_tab_group',
+      provider: 'external_browser' as any,
+      model: 'chrome-tab-group',
+      templateId: 'chrome-tab-group',
+      templateText: `Tab Group: ${group.name}`,
+      customPrompt: '',
+      enabled: true,
+      x: parentX,
+      y: parentY + 190,
+      browserProfileId: parentBox?.browserProfileId,
+      browserProfileKey: parentBox?.browserProfileKey,
+      browserProfileName: parentBox?.browserProfileName,
+      browserGroupName: group.name,
+      browserGroupTabUrls: (group.tabs || []).map((t) => t.url).filter(Boolean),
     };
 
     const nextBoxes = [...config.aiBoxes, newBox];
@@ -5186,6 +5400,7 @@ export const FacebookWorkflowCanvas = forwardRef<
   const renderAIBoxIcon = (b: DynamicAIBoxConfig, size = 22) => {
     if (b.id === 'get-content') return <FiFileText style={{ fontSize: `${size}px`, color: '#3B82F6' }} />;
     if (b.id === 'get-images') return <FiImage style={{ fontSize: `${size}px`, color: '#10B981' }} />;
+    if (isChromeTabGroupAIBox(b)) return <FiLayers style={{ fontSize: `${size}px`, color: '#06B6D4' }} />;
     if (isExternalBrowserAIBox(b) || b.processType === 'chrome_profile') return <FiMonitor style={{ fontSize: `${size}px`, color: '#06B6D4' }} />;
     const isWatermark = isWatermarkAIBox(b);
     if (isWatermark) return <FiScissors style={{ fontSize: `${size}px`, color: '#8B5CF6' }} />;
@@ -5635,12 +5850,12 @@ export const FacebookWorkflowCanvas = forwardRef<
       : (typeof window !== 'undefined' ? window.innerHeight - 56 : 800);
 
     // Dynamic zoom to ensure whole flow is focused and centered with balanced margins
-    const hasProfiles = (config.aiBoxes || []).some((b) => isChromeProfileAIBox(b));
-    const contentWidth = 1420;
-    const contentHeight = hasProfiles ? 680 : 440;
-    const fitZoomX = (vWidth - 140) / contentWidth;
+    const bounds = getWorkflowBounds(resetConfig);
+    const contentWidth = Math.max(bounds.width, 400);
+    const contentHeight = Math.max(bounds.height, 300);
+    const fitZoomX = (vWidth - 160) / contentWidth;
     const fitZoomY = (vHeight - 120) / contentHeight;
-    const zoom = Math.min(Math.max(Math.min(fitZoomX, fitZoomY), 0.72), 0.88);
+    const zoom = Math.min(Math.max(Math.min(fitZoomX, fitZoomY), 0.55), 0.88);
 
     const panOffset = calculateCenteredPanOffset(resetConfig, vWidth, vHeight, zoom);
 
@@ -6238,11 +6453,12 @@ export const FacebookWorkflowCanvas = forwardRef<
               const vHeight = (canvasRef.current && canvasRef.current.clientHeight > 0)
                 ? canvasRef.current.clientHeight
                 : (typeof window !== 'undefined' ? window.innerHeight - 56 : 800);
-              const contentWidth = 1420;
-              const contentHeight = 440;
-              const fitZoomX = (vWidth - 140) / contentWidth;
+              const bounds = getWorkflowBounds(config);
+              const contentWidth = Math.max(bounds.width, 400);
+              const contentHeight = Math.max(bounds.height, 300);
+              const fitZoomX = (vWidth - 160) / contentWidth;
               const fitZoomY = (vHeight - 120) / contentHeight;
-              const zoom = Math.min(Math.max(Math.min(fitZoomX, fitZoomY), 0.72), 0.88);
+              const zoom = Math.min(Math.max(Math.min(fitZoomX, fitZoomY), 0.55), 0.88);
               const panOffset = calculateCenteredPanOffset(config, vWidth, vHeight, zoom);
               setConfig((prev) => ({ ...prev, zoom, panOffset }));
             }}
@@ -6557,15 +6773,22 @@ export const FacebookWorkflowCanvas = forwardRef<
               if (conn.fromNodeId === 'trigger') return null;
               const fromBox = config.aiBoxes.find((b) => b.id === conn.fromNodeId);
               const toBox = config.aiBoxes.find((b) => b.id === conn.toNodeId);
-              const isBaseVerticalWire = Boolean(
+              const isExternalToProfileWire = Boolean(
                 fromBox && isExternalBrowserAIBox(fromBox) && toBox && isChromeProfileAIBox(toBox)
               );
+              const isProfileToTabGroupWire = Boolean(
+                fromBox && isChromeProfileAIBox(fromBox) && toBox && isChromeTabGroupAIBox(toBox)
+              );
+              const isBaseVerticalWire = isExternalToProfileWire || isProfileToTabGroupWire;
 
               let fromPos = getNodeSocketPos(conn.fromNodeId, 'output');
               let toPos = getNodeSocketPos(conn.toNodeId, 'input');
 
-              if (isBaseVerticalWire && fromBox && toBox) {
-                fromPos = { x: fromBox.x + 108, y: fromBox.y + 175 };
+              if (isExternalToProfileWire && fromBox && toBox) {
+                fromPos = { x: fromBox.x + 108, y: fromBox.y + 159 };
+                toPos = { x: toBox.x + 36, y: toBox.y + 1 };
+              } else if (isProfileToTabGroupWire && fromBox && toBox) {
+                fromPos = { x: fromBox.x + 36, y: fromBox.y + 144 };
                 toPos = { x: toBox.x + 36, y: toBox.y + 1 };
               }
 
@@ -6581,7 +6804,7 @@ export const FacebookWorkflowCanvas = forwardRef<
               const path = isBaseVerticalWire
                 ? Math.abs(fromPos.x - toPos.x) < 5
                   ? `M ${fromPos.x} ${fromPos.y} L ${toPos.x} ${toPos.y}`
-                  : `M ${fromPos.x} ${fromPos.y} C ${fromPos.x} ${fromPos.y + 35}, ${toPos.x} ${toPos.y - 35}, ${toPos.x} ${toPos.y}`
+                  : `M ${fromPos.x} ${fromPos.y} C ${fromPos.x} ${fromPos.y + Math.max((toPos.y - fromPos.y) * 0.45, 20)}, ${toPos.x} ${toPos.y - Math.max((toPos.y - fromPos.y) * 0.45, 20)}, ${toPos.x} ${toPos.y}`
                 : conn.fromNodeId === 'get-images' && (conn.toNodeId === 'destination' || conn.toNodeId.startsWith('dest-'))
                   ? createBaseChannelPath(fromPos, toPos)
                   : createBezierPath(fromPos, toPos);
@@ -7312,7 +7535,8 @@ export const FacebookWorkflowCanvas = forwardRef<
             const boxHasSource = isEffectiveEnabled && boxCanConnectBack;
 
             const isChromeProfile = isChromeProfileAIBox(box);
-            const isExternalBrowser = isExternalBrowserAIBox(box) && !isChromeProfile;
+            const isChromeTabGroup = isChromeTabGroupAIBox(box);
+            const isExternalBrowser = isExternalBrowserAIBox(box) && !isChromeProfile && !isChromeTabGroup;
             const nodeWidth = isExternalBrowser ? 216 : CIRCLE_SIZE;
 
             return (
@@ -7348,8 +7572,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                 }}
               >
                 <MergedNodeShape
-                  sockets={isChromeProfile ? 'none' : 'both'}
-                  hasTopSocket={isChromeProfile}
+                  sockets={isChromeProfile || isChromeTabGroup ? 'none' : 'both'}
+                  hasTopSocket={isChromeProfile || isChromeTabGroup}
                   width={nodeWidth}
                   height={CIRCLE_SIZE}
                   strokeColor={strokeColor}
@@ -7361,7 +7585,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   highlightOutput={dragWire?.fromType === 'input' && isValidConnection(box.id, dragWire.fromNodeId)}
                   hasReceiver={boxHasReceiver}
                   hasSource={boxHasSource}
-                  showAddButton={!isChromeProfile && Boolean(isEffectiveEnabled)}
+                  showAddButton={!isChromeProfile && !isChromeTabGroup && Boolean(isEffectiveEnabled)}
                   showBottomAddButton={isExternalBrowser && Boolean(isEffectiveEnabled)}
                   onAddClick={(e) => {
                     e.stopPropagation();
@@ -7420,6 +7644,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                     </>
                   ) : isChromeProfile ? (
                     <FaChrome style={{ fontSize: '32px', color: isEffectiveEnabled ? (isDark ? '#38BDF8' : '#0284C7') : '#8B949E', transition: 'color 0.2s ease' }} />
+                  ) : isChromeTabGroup ? (
+                    <FiLayers style={{ fontSize: '28px', color: isEffectiveEnabled ? '#06B6D4' : '#8B949E', transition: 'color 0.2s ease' }} />
                   ) : isEnhance ? (
                     <FiImage style={{ fontSize: '28px', color: isEffectiveEnabled ? '#EC4899' : '#8B949E', transition: 'color 0.2s ease' }} />
                   ) : isTextFormatAIBox(box) ? (
@@ -7545,7 +7771,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                       style={{
                         fontSize: '0.6875rem',
                         fontWeight: 500,
-                        color: isDark ? (isWatermark ? '#FBBF24' : '#C084FC') : (isWatermark ? '#D97706' : '#7C3AED'),
+                        color: isDark
+                          ? (isWatermark ? '#FBBF24' : (isChromeTabGroup || isChromeProfile || isExternalBrowser) ? '#38BDF8' : '#C084FC')
+                          : (isWatermark ? '#D97706' : (isChromeTabGroup || isChromeProfile || isExternalBrowser) ? '#0284C7' : '#7C3AED'),
                         display: 'inline-flex',
                         alignItems: 'center',
                         gap: '4px',
@@ -7557,10 +7785,38 @@ export const FacebookWorkflowCanvas = forwardRef<
                           width: '5px',
                           height: '5px',
                           borderRadius: '50%',
-                          backgroundColor: isDark ? (isWatermark ? '#FBBF24' : '#C084FC') : (isWatermark ? '#D97706' : '#7C3AED'),
+                          backgroundColor: isDark
+                            ? (isWatermark ? '#FBBF24' : (isChromeTabGroup || isChromeProfile || isExternalBrowser) ? '#38BDF8' : '#C084FC')
+                            : (isWatermark ? '#D97706' : (isChromeTabGroup || isChromeProfile || isExternalBrowser) ? '#0284C7' : '#7C3AED'),
                         }}
                       />
-                      <span>{isWatermark ? 'Processing...' : isRunware ? 'Enhancing...' : isTextFormatAIBox(box) ? 'Formatting...' : 'Generating...'}</span>
+                      <span>
+                        {isChromeTabGroup
+                          ? 'Processing in Tabs...'
+                          : isChromeProfile
+                          ? 'Active Profile...'
+                          : isExternalBrowser
+                          ? 'Chrome Automating...'
+                          : isWatermark
+                          ? 'Processing...'
+                          : isRunware
+                          ? 'Enhancing...'
+                          : isTextFormatAIBox(box)
+                          ? 'Formatting...'
+                          : 'Generating...'}
+                      </span>
+                    </span>
+                  ) : isChromeTabGroup ? (
+                    <span
+                      style={{
+                        fontSize: '0.6875rem',
+                        color: isDark ? '#38BDF8' : '#0284C7',
+                        fontWeight: 600,
+                        textAlign: 'center',
+                        lineHeight: '1.2',
+                      }}
+                    >
+                      {box.subtitle || 'Tab Group'}
                     </span>
                   ) : !isChromeProfile ? (
                     <span
@@ -7595,7 +7851,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   ) : null}
 
                   {/* Base vertical line and [+] button below text */}
-                  {isExternalBrowser && (
+                  {(isExternalBrowser || isChromeProfile) && (
                     <div
                       style={{
                         display: 'flex',
@@ -7615,7 +7871,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                       <button
                         type="button"
                         className="merged-node-bottom-add-btn"
-                        title="Connect Chrome Profile"
+                        title={isChromeProfile ? 'Connect Chrome Tab Group' : 'Connect Chrome Profile'}
                         onMouseDown={(e) => {
                           e.stopPropagation();
                           e.preventDefault();
@@ -7623,7 +7879,11 @@ export const FacebookWorkflowCanvas = forwardRef<
                         onClick={(e) => {
                           e.stopPropagation();
                           e.preventDefault();
-                          handleOpenConnectDrawer(box.id, 'ai-box', box.title || 'External Browser', 'chrome-profile');
+                          if (isChromeProfile) {
+                            handleOpenConnectDrawer(box.id, 'ai-box', box.title || 'Chrome Profile', 'chrome-tab-group');
+                          } else {
+                            handleOpenConnectDrawer(box.id, 'ai-box', box.title || 'External Browser', 'chrome-profile');
+                          }
                         }}
                         style={{
                           width: '22px',
@@ -8612,35 +8872,76 @@ export const FacebookWorkflowCanvas = forwardRef<
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleCloseModal();
-                  }}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  title="Close Inspector (Esc)"
-                  aria-label="Close"
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    width: '28px',
-                    height: '28px',
-                    borderRadius: '6px',
-                    border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
-                    color: 'var(--text-secondary)',
-                    cursor: 'pointer',
-                    flexShrink: 0,
-                  }}
-                >
-                  <FiX size={15} />
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  {isAIBox && currentModalAIBox && (
+                    isChromeTabGroupAIBox(currentModalAIBox) ||
+                    isExternalBrowserAIBox(currentModalAIBox) ||
+                    currentModalAIBox.title?.toLowerCase().includes('hero') ||
+                    currentModalAIBox.title?.toLowerCase().includes('fb')
+                  ) && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowFBHeroSettingsSidebox((prev) => !prev);
+                      }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      title="FB Hero Settings (Reference Image, Prompt & Condo 1,2,3)"
+                      aria-label="FB Hero Settings"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: '28px',
+                        height: '28px',
+                        borderRadius: '6px',
+                        border: showFBHeroSettingsSidebox
+                          ? '1px solid #F59E0B'
+                          : isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                        backgroundColor: showFBHeroSettingsSidebox
+                          ? 'rgba(245, 158, 11, 0.15)'
+                          : isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+                        color: showFBHeroSettingsSidebox ? '#F59E0B' : 'var(--text-secondary)',
+                        cursor: 'pointer',
+                        flexShrink: 0,
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      <FiSettings size={15} />
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleCloseModal();
+                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    title="Close Inspector (Esc)"
+                    aria-label="Close"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      width: '28px',
+                      height: '28px',
+                      borderRadius: '6px',
+                      border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+                      color: 'var(--text-secondary)',
+                      cursor: 'pointer',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <FiX size={15} />
+                  </button>
+                </div>
               </div>
 
               {/* Scrollable Body */}
               <div
+                key={currentModalAIBox ? currentModalAIBox.id : 'empty'}
                 style={{
                   flex: 1,
                   overflowY: 'auto',
@@ -9265,8 +9566,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                             gap: '0.625rem',
                             padding: '0.65rem 0.75rem',
                             borderRadius: '8px',
-                            background: isDark ? 'rgba(255, 109, 90, 0.1)' : '#FFF5F4',
-                            border: '1px solid rgba(255, 109, 90, 0.3)',
+                            backgroundColor: isDark ? 'var(--bg-surface)' : '#F8FAFC',
+                            border: '1px solid var(--border-color)',
                           }}
                         >
                           <div
@@ -9274,8 +9575,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                               width: '28px',
                               height: '28px',
                               borderRadius: '6px',
-                              backgroundColor: '#FF6D5A',
-                              color: '#FFFFFF',
+                              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#E2E8F0',
+                              color: 'var(--text-primary)',
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'center',
@@ -9285,10 +9586,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                             <FiServer size={14} />
                           </div>
                           <div>
-                            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#FF6D5A' }}>
+                            <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                               n8n Automation Node
                             </div>
-                            <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                            <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
                               Local Docker engine (http://localhost:5678)
                             </div>
                           </div>
@@ -9424,7 +9725,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                           />
                         </div>
                       </div>
-                    ) : isExternalBrowserAIBox(currentModalAIBox) || currentModalAIBox.processType === 'chrome_profile' ? (
+                    ) : isExternalBrowserAIBox(currentModalAIBox) || currentModalAIBox.processType === 'chrome_profile' || isChromeTabGroupAIBox(currentModalAIBox) ? (
                       (() => {
                         const candidateAbove =
                           config.aiBoxes
@@ -9433,6 +9734,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                 b.id !== currentModalAIBox.id &&
                                 b.processType !== 'chrome_profile' &&
                                 !isExternalBrowserAIBox(b) &&
+                                !isChromeTabGroupAIBox(b) &&
                                 b.y < currentModalAIBox.y
                             )
                             .sort((a, b) => b.y - a.y)[0] ||
@@ -9440,49 +9742,146 @@ export const FacebookWorkflowCanvas = forwardRef<
                             .filter((b) => b.id !== currentModalAIBox.id && b.y < currentModalAIBox.y)
                             .sort((a, b) => b.y - a.y)[0];
 
+                        const isTabGroupNode = isChromeTabGroupAIBox(currentModalAIBox);
+                        const isProfileNode = currentModalAIBox.processType === 'chrome_profile' || Boolean(currentModalAIBox.id?.includes('ai-box-chrome-'));
+
                         const connectedProfileBox = config.aiBoxes.find(
                           (b) =>
                             b.processType === 'chrome_profile' &&
-                            config.connections?.some(
+                            (config.connections?.some(
                               (c) =>
                                 (c.fromNodeId === currentModalAIBox.id && c.toNodeId === b.id) ||
                                 (c.fromNodeId === b.id && c.toNodeId === currentModalAIBox.id)
-                            )
+                            ) ||
+                            (isTabGroupNode && b.browserProfileId && b.browserProfileId === currentModalAIBox.browserProfileId))
                         );
+
+                        const connectedTabGroupNodes = config.aiBoxes
+                          .filter(
+                            (b) =>
+                              isChromeTabGroupAIBox(b) &&
+                              (config.connections?.some((c) => c.fromNodeId === currentModalAIBox.id && c.toNodeId === b.id) ||
+                               (b.browserProfileId && b.browserProfileId === currentModalAIBox.browserProfileId))
+                          )
+                          .map((b) => ({
+                            id: b.id,
+                            title: b.title || 'Tab Group',
+                            subtitle: b.subtitle || 'Tab Group',
+                            browserGroupName: b.browserGroupName || b.title,
+                          }));
+
+                        const isHeroTitle = Boolean(
+                          (currentModalAIBox.title?.toLowerCase().includes('hero') || currentModalAIBox.title?.toLowerCase().includes('fb')) &&
+                          !currentModalAIBox.title?.toLowerCase().includes('enhance')
+                        );
+                        const isEnhanceTitle = Boolean(currentModalAIBox.title?.toLowerCase().includes('enhance'));
+
+                        const resolvedGroupName = isEnhanceTitle
+                          ? 'Enhance IMG'
+                          : isHeroTitle
+                          ? 'FB Hero'
+                          : (isTabGroupNode
+                              ? (currentModalAIBox.title && currentModalAIBox.title !== 'Tab Group' ? currentModalAIBox.title : (currentModalAIBox.browserGroupName || currentModalAIBox.title || 'Tab Group'))
+                              : currentModalAIBox.browserGroupName);
 
                         const effectiveBoxConfig = {
                           ...currentModalAIBox,
+                          tabGroupMode: isEnhanceTitle ? 'enhance' : isHeroTitle ? 'generate' : currentModalAIBox.tabGroupMode,
+                          processKind: isEnhanceTitle ? 'enhance_images' : isHeroTitle ? 'generate_image' : currentModalAIBox.processKind,
                           browserProfileId: currentModalAIBox.browserProfileId || connectedProfileBox?.browserProfileId,
                           browserProfileKey: currentModalAIBox.browserProfileKey || connectedProfileBox?.browserProfileKey,
                           browserProfileName: currentModalAIBox.browserProfileName || connectedProfileBox?.browserProfileName,
+                          browserGroupName: resolvedGroupName || currentModalAIBox.browserGroupName,
                         };
 
                         const aboveBoxTitle = candidateAbove ? candidateAbove.title : 'Format: Enhance Image';
-                        const condoName = _projectName || (candidateAbove && candidateAbove.title) || 'Featured Property Listing';
-                        const isProfileNode = currentModalAIBox.processType === 'chrome_profile' || Boolean(currentModalAIBox.id?.includes('ai-box-chrome-'));
+                        const condoName =
+                          _projectName ||
+                          (candidateAbove && candidateAbove.processType !== 'text_ai' && !candidateAbove.title.toLowerCase().includes('prompt')
+                            ? candidateAbove.title
+                            : 'Featured Property Listing');
+
+                        const upstreamPrompts = config.aiBoxes
+                          .filter((b) => b.id !== currentModalAIBox.id && (b.processType === 'text_ai' || b.templateId || b.title))
+                          .map((b) => ({
+                            id: b.id,
+                            title: b.title || 'AI Prompt Node',
+                            text: (aiGeneratedOutputs && aiGeneratedOutputs[b.id]) || b.templateText || b.customPrompt || '',
+                            templateId: b.templateId,
+                          }));
+
+                        const upstreamTabGroups = config.aiBoxes
+                          .filter((b) => isChromeTabGroupAIBox(b) && b.id !== currentModalAIBox.id)
+                          .map((b) => ({
+                            id: b.id,
+                            title: b.title || 'Tab Group',
+                            browserGroupName: b.browserGroupName || b.title,
+                          }));
 
                         return (
-                          <ExternalBrowserSidebar
-                            isDark={isDark}
-                            boxConfig={effectiveBoxConfig}
-                            isProfileNode={isProfileNode}
-                            connectedProfileNodeId={connectedProfileBox?.id}
-                            onOpenProfileNode={(nodeId) => {
-                              setActiveModalNode({ type: 'ai-box', boxId: nodeId });
-                            }}
-                            onUpdateBoxConfig={(updated) => handleUpdateAIBox(currentModalAIBox.id, updated)}
-                            availablePrompts={availablePrompts as any}
-                            propertyContext={{
-                              id: executionState?.propertyId || '',
-                              title: condoName,
-                              aboveBoxTitle: aboveBoxTitle,
-                              images: (images || []).map((img, i) => ({
-                                url: typeof img === 'string' ? img : img.stored_url || img.source_url || (img as any).preview || (img as any).url || '',
-                                index: typeof img === 'object' && img.index ? img.index : i + 1,
-                                filename: typeof img === 'object' && (img as any).filename ? (img as any).filename : `Photo #${i + 1}`,
-                              })),
-                            }}
-                          />
+                          <>
+                            <ExternalBrowserSidebar
+                              key={currentModalAIBox.id}
+                              isDark={isDark}
+                              boxConfig={effectiveBoxConfig}
+                              isProfileNode={isProfileNode}
+                              isTabGroupNode={isTabGroupNode}
+                              connectedProfileNodeId={connectedProfileBox?.id}
+                              connectedProfileName={connectedProfileBox?.title || connectedProfileBox?.browserProfileName}
+                              connectedTabGroupNodes={connectedTabGroupNodes}
+                              onOpenProfileNode={(nodeId) => {
+                                setActiveModalNode({ type: 'ai-box', boxId: nodeId });
+                              }}
+                              onOpenTabGroupNode={(nodeId) => {
+                                setActiveModalNode({ type: 'ai-box', boxId: nodeId });
+                              }}
+                              onAddTabGroupNode={(groupName, tabsCount) => {
+                                handleConnectChromeTabGroupBox(currentModalAIBox.id, {
+                                  name: groupName,
+                                  tabs_count: tabsCount,
+                                });
+                              }}
+                              onUpdateBoxConfig={(updated) => handleUpdateAIBox(currentModalAIBox.id, updated)}
+                              availablePrompts={availablePrompts as any}
+                              propertyContext={{
+                                id: executionState?.propertyId || '',
+                                title: condoName,
+                                aboveBoxTitle: aboveBoxTitle,
+                                upstreamPrompts,
+                                upstreamTabGroups,
+                                images: (images || []).map((img, i) => ({
+                                  url: typeof img === 'string' ? img : img.stored_url || img.source_url || (img as any).preview || (img as any).url || '',
+                                  index: typeof img === 'object' && img.index ? img.index : i + 1,
+                                  filename: typeof img === 'object' && (img as any).filename ? (img as any).filename : `Photo #${i + 1}`,
+                                })),
+                              }}
+                              onRunningChange={(isRunning) => setLocallyRunningNodeId(isRunning ? currentModalAIBox.id : null)}
+                              onOpenSettingsSidebox={() => setShowFBHeroSettingsSidebox(true)}
+                              onCloseSettingsSidebox={() => setShowFBHeroSettingsSidebox(false)}
+                              isSettingsSideboxOpen={showFBHeroSettingsSidebox}
+                            />
+                            <FBHeroSettingsSidebox
+                              key={currentModalAIBox.id}
+                              isOpen={showFBHeroSettingsSidebox}
+                              onClose={() => setShowFBHeroSettingsSidebox(false)}
+                              isDark={isDark}
+                              boxConfig={effectiveBoxConfig}
+                              onUpdateBoxConfig={(updated) => handleUpdateAIBox(currentModalAIBox.id, updated)}
+                              availablePrompts={availablePrompts as any}
+                              propertyContext={{
+                                id: executionState?.propertyId || '',
+                                title: condoName,
+                                aboveBoxTitle: aboveBoxTitle,
+                                upstreamPrompts,
+                                upstreamTabGroups,
+                                images: (images || []).map((img, i) => ({
+                                  url: typeof img === 'string' ? img : img.stored_url || img.source_url || (img as any).preview || (img as any).url || '',
+                                  index: typeof img === 'object' && img.index ? img.index : i + 1,
+                                  filename: typeof img === 'object' && (img as any).filename ? (img as any).filename : `Photo #${i + 1}`,
+                                })),
+                              }}
+                            />
+                          </>
                         );
                       })()
                     ) : (
@@ -9930,7 +10329,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                 style={{
                   flex: 1,
                   overflowY: 'auto',
-                  padding: '1.25rem',
+                  padding: '1rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '1rem',
                 }}
               >
                 {/* Connect Next Step Quick Button (top) */}
@@ -10790,6 +11192,248 @@ export const FacebookWorkflowCanvas = forwardRef<
                         }}
                       >
                         No Chrome profiles found.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </aside>
+          );
+        }
+
+        // If clicking [+] from Chrome Profile node:
+        // Show Chrome Tab Groups to connect as a dedicated Chrome Tab Group box!
+        if (connectDrawerNode.platform === 'chrome-tab-group') {
+          return (
+            <aside
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                position: 'absolute',
+                top: 0,
+                right: 0,
+                bottom: 0,
+                width: '380px',
+                maxWidth: '100%',
+                backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
+                borderLeft: '1px solid var(--border-color)',
+                boxShadow: isDark
+                  ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
+                  : '-3px 0 16px rgba(0, 0, 0, 0.06)',
+                zIndex: 170,
+                display: 'flex',
+                flexDirection: 'column',
+                animation: 'sidebarSlideIn 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
+              }}
+            >
+              {/* Header */}
+              <div
+                style={{
+                  padding: '0.875rem 1rem',
+                  borderBottom: '1px solid var(--border-color)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  background: isDark
+                    ? 'linear-gradient(180deg, #161B22 0%, #0D1117 100%)'
+                    : '#FFFFFF',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+                  <div
+                    style={{
+                      width: '32px',
+                      height: '32px',
+                      borderRadius: '8px',
+                      backgroundColor: 'rgba(6, 182, 212, 0.15)',
+                      color: '#06B6D4',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '16px',
+                    }}
+                  >
+                    <FiLayers size={18} />
+                  </div>
+                  <div>
+                    <h3
+                      style={{
+                        margin: 0,
+                        fontSize: '0.875rem',
+                        fontWeight: 700,
+                        color: 'var(--text-primary)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                      }}
+                    >
+                      Connect Chrome Tab Group
+                    </h3>
+                    <p style={{ margin: '2px 0 0', fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                      Attach worker tab group to {fromTitle}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setConnectDrawerNode(null)}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'var(--text-muted)',
+                    cursor: 'pointer',
+                    padding: '4px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderRadius: '6px',
+                  }}
+                >
+                  <FiX size={14} />
+                </button>
+              </div>
+
+              {/* Scrollable Content Body */}
+              <div
+                style={{
+                  flex: 1,
+                  overflowY: 'auto',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.75rem',
+                  padding: '0.875rem',
+                }}
+              >
+                <div>
+                  <div
+                    style={{
+                      fontSize: '0.6875rem',
+                      fontWeight: 600,
+                      color: isDark ? '#8B949E' : '#64748B',
+                      marginBottom: '0.35rem',
+                    }}
+                  >
+                    Discovered Tab Groups
+                  </div>
+                  <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', marginBottom: '0.65rem' }}>
+                    Select a tab group from this Chrome profile to connect directly below on the canvas:
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    {browserTabGroupsList.map((g) => (
+                      <div
+                        key={g.id || g.name}
+                        onClick={() => {
+                          handleConnectChromeTabGroupBox(fromNodeId, g);
+                        }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '0.65rem 0.75rem',
+                          borderRadius: '8px',
+                          border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                          backgroundColor: isDark ? '#1C2128' : '#F8FAFC',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = '#06B6D4';
+                          e.currentTarget.style.backgroundColor = isDark ? 'rgba(6, 182, 212, 0.12)' : '#ECFEFF';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
+                          e.currentTarget.style.backgroundColor = isDark ? '#1C2128' : '#F8FAFC';
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', minWidth: 0, flex: 1 }}>
+                          <div
+                            style={{
+                              width: '32px',
+                              height: '32px',
+                              borderRadius: '6px',
+                              background: 'linear-gradient(135deg, #06B6D4, #0891B2)',
+                              color: '#FFFFFF',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <FiLayers size={16} />
+                          </div>
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                              <span
+                                style={{
+                                  fontSize: '0.78125rem',
+                                  fontWeight: 700,
+                                  color: 'var(--text-primary)',
+                                  whiteSpace: 'nowrap',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                }}
+                              >
+                                {g.name}
+                              </span>
+                              <span
+                                style={{
+                                  fontSize: '0.5625rem',
+                                  padding: '1px 5px',
+                                  borderRadius: '3px',
+                                  backgroundColor: isDark ? '#30363D' : '#E2E8F0',
+                                  color: isDark ? '#8B949E' : '#64748B',
+                                  fontWeight: 600,
+                                }}
+                              >
+                                {g.tabs?.length || g.tabs_count || 0} tabs
+                              </span>
+                            </div>
+                            <div
+                              style={{
+                                fontSize: '0.625rem',
+                                color: 'var(--text-muted)',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                                marginTop: '1px',
+                              }}
+                            >
+                              {(g.tabs || []).map((t) => t.title || t.url).slice(0, 2).join(' • ') || 'Active worker tabs'}
+                            </div>
+                          </div>
+                        </div>
+
+                        <span
+                          style={{
+                            fontSize: '0.625rem',
+                            padding: '4px 9px',
+                            borderRadius: '5px',
+                            backgroundColor: '#06B6D4',
+                            color: '#FFFFFF',
+                            fontWeight: 700,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            flexShrink: 0,
+                          }}
+                        >
+                          <FiPlus size={11} /> Connect Group
+                        </span>
+                      </div>
+                    ))}
+                    {browserTabGroupsList.length === 0 && (
+                      <div
+                        style={{
+                          fontSize: '0.6875rem',
+                          color: 'var(--text-muted)',
+                          textAlign: 'center',
+                          padding: '1.5rem',
+                          border: '1px dashed var(--border-color)',
+                          borderRadius: '8px',
+                        }}
+                      >
+                        No Chrome tab groups found in this profile.
                       </div>
                     )}
                   </div>

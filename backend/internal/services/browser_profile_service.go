@@ -438,7 +438,7 @@ func callCompanion(endpoint string, payload map[string]string) error {
 func (s *BrowserProfileService) LaunchOrFocusProfile(profileKey string) error {
 	if runtime.GOOS == "darwin" {
 		chromeBinary := "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-		cmd := exec.Command(chromeBinary, fmt.Sprintf("--profile-directory=%s", profileKey), "--load-extension=/Users/zinwaishine/Desktop/Project_EA/extension")
+		cmd := exec.Command(chromeBinary, fmt.Sprintf("--profile-directory=%s", profileKey), "--load-extension=/Users/zinwaishine/Desktop/Project_EA/extension", "chrome://newtab")
 		if err := cmd.Start(); err != nil {
 			return fmt.Errorf("failed to open Chrome profile %s on macOS: %w", profileKey, err)
 		}
@@ -671,12 +671,17 @@ func (s *BrowserProfileService) UpdateLane(lane *models.ProcessingLane) error {
 }
 
 // StartAutomationViaCompanion asks the companion service to dispatch automation to the Chrome extension
-func (s *BrowserProfileService) StartAutomationViaCompanion(profileKey, propertyID string, tabIDs []int, jobs []models.ImageProcessingJob) (map[string]interface{}, error) {
+func (s *BrowserProfileService) StartAutomationViaCompanion(profileKey, propertyID string, tabIDs []int, jobs []models.ImageProcessingJob, tabMode string, workerCount int, reuseSessionTabs *bool) (map[string]interface{}, error) {
 	payload := map[string]interface{}{
 		"profile_key": profileKey,
 		"property_id": propertyID,
 		"tab_ids":     tabIDs,
 		"jobs":        jobs,
+		"tab_mode":    tabMode,
+		"worker_count": workerCount,
+	}
+	if reuseSessionTabs != nil {
+		payload["reuse_session_tabs"] = *reuseSessionTabs
 	}
 	bodyBytes, err := json.Marshal(payload)
 	if err != nil {

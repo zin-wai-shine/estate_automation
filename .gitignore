@@ -30,3 +30,4 @@ storage/uploads/
 backend/api
 backend/tmp/
 *.sql
+*.log

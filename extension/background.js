@@ -43,7 +43,7 @@ async function getTabGroupsWithTabs() {
       };
     });
   } catch (err) {
-    console.error('[BOLTHAVEN EXT] Error discovering tab groups:', err);
+    console.warn('[BOLTHAVEN EXT] Warning discovering tab groups:', err.message);
     return [];
   }
 }
@@ -60,7 +60,7 @@ async function focusTab(tabId) {
     }
     return true;
   } catch (e) {
-    console.error('[BOLTHAVEN EXT] Error focusing tab:', e);
+    console.warn('[BOLTHAVEN EXT] Warning focusing tab:', e.message);
     return false;
   }
 }
@@ -220,7 +220,7 @@ async function processSlot(slotIndex) {
     try {
       const result = await dispatchJobToTab(slot.tabId, job);
 
-      if (result && result.success) {
+      if (result && result.success && result.result?.success !== false) {
         automation.completedCount++;
         await reportJobComplete(job.job_id, result.result?.result_url || '');
         console.log(`[BOLTHAVEN EXT] ✓ Job ${job.job_id} completed on tab ${slot.tabId}`);
@@ -229,13 +229,14 @@ async function processSlot(slotIndex) {
         notifyProgress();
       } else {
         automation.failedCount++;
-        await reportJobFailed(job.job_id, result?.error || 'Unknown content script error');
-        console.warn(`[BOLTHAVEN EXT] ✗ Job ${job.job_id} failed:`, result?.error);
+        const reason = result?.error || result?.result?.error || 'Unknown content script error';
+        await reportJobFailed(job.job_id, reason);
+        console.log(`[BOLTHAVEN EXT] ✗ Job ${job.job_id} failed:`, reason);
       }
     } catch (err) {
       automation.failedCount++;
       await reportJobFailed(job.job_id, err.message);
-      console.error(`[BOLTHAVEN EXT] Exception processing job ${job.job_id}:`, err);
+      console.warn(`[BOLTHAVEN EXT] Warning processing job ${job.job_id}:`, err.message);
     }
 
     slot.busy = false;
@@ -285,6 +286,278 @@ function finishAutomation() {
   }).catch(() => {});
 }
 
+const ENHANCE_CHATGPT_DEFAULT_URLS = [
+  'https://chatgpt.com/c/6ad49918-a4f0-83ec-acf5-efb0ef516adc',
+  'https://chatgpt.com/c/6ad49924-7dd0-83ec-8205-768c67420600',
+  'https://chatgpt.com/c/6ad4992a-66e8-83ec-9b11-c5e727e258d9',
+  'https://chatgpt.com/c/6ad4992b-135c-83ec-b042-8c92220921d7',
+];
+
+// Global lock to prevent concurrent calls to ensureTabGroupOpen from racing and creating duplicate tab groups
+let isEnsuringGroupOpen = null;
+
+// Remembers active worker tabs opened during this browser session
+let sessionWorkerTabIds = [];
+
+function getConversationKey(rawUrl) {
+  if (!rawUrl) return '';
+  const match = String(rawUrl).match(/\/c\/([a-zA-Z0-9\-]+)/i);
+  if (match) return `c:${match[1].toLowerCase()}`;
+  try {
+    const parsed = new URL(rawUrl);
+    return (parsed.origin + parsed.pathname).toLowerCase().replace(/\/+$/, '');
+  } catch {
+    return String(rawUrl).toLowerCase().split('?')[0].split('#')[0].replace(/\/+$/, '');
+  }
+}
+
+function getTabKey(tab) {
+  if (!tab) return '';
+  return getConversationKey(tab.url || tab.pendingUrl || '');
+}
+
+async function ensureTabGroupOpen(groupName, customUrls, tabMode = 'existing_tabs', workerCount = 4, reuseSessionTabs = true) {
+  if (isEnsuringGroupOpen) {
+    console.log('[BOLTHAVEN EXT] ensureTabGroupOpen is already executing, reusing pending promise...');
+    return isEnsuringGroupOpen;
+  }
+  isEnsuringGroupOpen = (async () => {
+    try {
+      return await _ensureTabGroupOpenInternal(groupName, customUrls, tabMode, workerCount, reuseSessionTabs);
+    } finally {
+      isEnsuringGroupOpen = null;
+    }
+  })();
+  return isEnsuringGroupOpen;
+}
+
+async function _ensureTabGroupOpenInternal(groupName, customUrls, tabMode = 'existing_tabs', workerCount = 4, reuseSessionTabs = true) {
+  const count = Math.max(1, Math.min(8, parseInt(workerCount, 10) || 4));
+  console.log(`[BOLTHAVEN EXT] ensureTabGroupOpen for "${groupName}" (mode: ${tabMode}, workers: ${count}, reuseSession: ${reuseSessionTabs})`);
+
+  // ── MODE B: Open Fresh New Tabs mode ─────────────────────────────────────
+  if (tabMode === 'new_tabs') {
+    const allTabs = await chrome.tabs.query({});
+    let validSessionTabs = [];
+
+    // If reuseSessionTabs is enabled, check which previously opened tabs are still alive
+    if (reuseSessionTabs && sessionWorkerTabIds.length > 0) {
+      validSessionTabs = sessionWorkerTabIds.filter((id) => allTabs.some((t) => t.id === id));
+      console.log(`[BOLTHAVEN EXT] Reusing ${validSessionTabs.length} previously opened session tabs`);
+    }
+
+    // Also, if reuseSessionTabs is true and we still need tabs, check if there are already open ChatGPT tabs that aren't yet in sessionWorkerTabIds
+    if (reuseSessionTabs && validSessionTabs.length < count) {
+      const existingChatTabs = allTabs.filter((t) => 
+        (t.url || '').includes('chatgpt.com') && !validSessionTabs.includes(t.id)
+      );
+      for (const t of existingChatTabs) {
+        if (validSessionTabs.length >= count) break;
+        validSessionTabs.push(t.id);
+      }
+    }
+
+    // If we already have enough tabs open from this session, reuse them directly!
+    if (validSessionTabs.length >= count) {
+      const activeIds = validSessionTabs.slice(0, count);
+      sessionWorkerTabIds = [...activeIds];
+      await focusTab(activeIds[0]);
+      return activeIds;
+    }
+
+    // Open any needed fresh ChatGPT tabs up to count
+    const needed = count - validSessionTabs.length;
+    console.log(`[BOLTHAVEN EXT] Opening ${needed} fresh ChatGPT tabs...`);
+    for (let i = 0; i < needed; i++) {
+      const t = await chrome.tabs.create({ url: 'https://chatgpt.com/', active: false });
+      validSessionTabs.push(t.id);
+    }
+
+    sessionWorkerTabIds = [...validSessionTabs];
+    await focusTab(sessionWorkerTabIds[0]);
+
+    // Close any empty initial "New Tab" tabs
+    const blankTabs = (await chrome.tabs.query({ groupId: chrome.tabGroups.TAB_GROUP_ID_NONE }))
+      .filter((t) => (t.url || '').includes('newtab') || (t.title || '').toLowerCase() === 'new tab');
+    blankTabs.forEach((bt) => chrome.tabs.remove(bt.id).catch(() => {}));
+
+    return sessionWorkerTabIds.slice(0, count);
+  }
+
+  // ── MODE A: Existing Group Tabs mode ──────────────────────────────────────
+  const clean = (groupName || 'enhance').toLowerCase().trim();
+  const rawTargetUrls = (customUrls && customUrls.length > 0) ? customUrls : ENHANCE_CHATGPT_DEFAULT_URLS;
+  const targetUrls = rawTargetUrls.slice(0, count);
+  const targetKeys = new Set(targetUrls.map(getConversationKey).filter(Boolean));
+
+  // 1. Query all open tab groups across all windows
+  const allGroups = await chrome.tabGroups.query({});
+  
+  // Find all groups matching by title
+  let matchingGroups = (allGroups || []).filter((g) => {
+    const gt = (g.title || '').toLowerCase().trim();
+    return gt && (gt.includes(clean) || clean.includes(gt));
+  });
+
+  // If no group matched by title, check if any existing group contains one of our target worker tabs
+  if (matchingGroups.length === 0) {
+    for (const g of (allGroups || [])) {
+      const gTabs = await chrome.tabs.query({ groupId: g.id });
+      const hasWorkerTab = gTabs.some((t) => {
+        const k = getTabKey(t);
+        return k && targetKeys.has(k);
+      });
+      if (hasWorkerTab) {
+        matchingGroups.push(g);
+        break;
+      }
+    }
+  }
+
+  let primaryGroup = matchingGroups[0] || null;
+
+  // 2. If MULTIPLE duplicate tab groups exist with the same name, MERGE them all into primaryGroup
+  if (matchingGroups.length > 1) {
+    console.log(`[BOLTHAVEN EXT] Found ${matchingGroups.length} duplicate tab groups for "${groupName}". Merging...`);
+    for (let i = 1; i < matchingGroups.length; i++) {
+      const extraGroup = matchingGroups[i];
+      const extraTabs = await chrome.tabs.query({ groupId: extraGroup.id });
+      for (const t of extraTabs) {
+        const key = getTabKey(t);
+        const primaryTabs = await chrome.tabs.query({ groupId: primaryGroup.id });
+        const alreadyInPrimary = primaryTabs.some((pt) => getTabKey(pt) === key);
+        if (alreadyInPrimary) {
+          // Close redundant duplicate tab
+          await chrome.tabs.remove(t.id).catch(() => {});
+        } else {
+          // Adopt tab into primary group
+          await chrome.tabs.group({ groupId: primaryGroup.id, tabIds: [t.id] }).catch(() => {});
+        }
+      }
+    }
+  }
+
+  // 3. If primaryGroup exists: deduplicate its tabs, adopt loose worker tabs, and create any missing tabs
+  if (primaryGroup) {
+    await chrome.tabGroups.update(primaryGroup.id, {
+      collapsed: false,
+      title: groupName || 'Enhance IMG',
+      color: 'blue',
+    }).catch(() => {});
+
+    let groupTabs = await chrome.tabs.query({ groupId: primaryGroup.id });
+
+    // Deduplicate any identical URLs inside the group
+    const seenKeysInGroup = new Set();
+    const keptGroupTabIds = [];
+    for (const t of groupTabs) {
+      const key = getTabKey(t);
+      if (key && seenKeysInGroup.has(key)) {
+        await chrome.tabs.remove(t.id).catch(() => {});
+      } else {
+        if (key) seenKeysInGroup.add(key);
+        keptGroupTabIds.push(t.id);
+      }
+    }
+
+    // Check for loose duplicate worker tabs outside the group
+    const allTabs = await chrome.tabs.query({ windowId: primaryGroup.windowId });
+    for (const t of allTabs) {
+      if (t.groupId !== primaryGroup.id) {
+        const key = getTabKey(t);
+        if (key && targetKeys.has(key)) {
+          if (seenKeysInGroup.has(key)) {
+            // Already in group! Close the duplicate loose tab!
+            await chrome.tabs.remove(t.id).catch(() => {});
+          } else {
+            // Adopt loose tab into group
+            await chrome.tabs.group({ groupId: primaryGroup.id, tabIds: [t.id] }).catch(() => {});
+            seenKeysInGroup.add(key);
+            keptGroupTabIds.push(t.id);
+          }
+        }
+      }
+    }
+
+    // Create any missing worker tabs and add them to the existing group
+    const missingUrls = targetUrls.filter((u) => !seenKeysInGroup.has(getConversationKey(u)));
+    if (missingUrls.length > 0) {
+      console.log(`[BOLTHAVEN EXT] Opening ${missingUrls.length} missing worker tabs into group:`, missingUrls);
+      for (const u of missingUrls) {
+        const createdTab = await chrome.tabs.create({
+          url: u,
+          windowId: primaryGroup.windowId,
+          active: false,
+        });
+        await chrome.tabs.group({ groupId: primaryGroup.id, tabIds: [createdTab.id] }).catch(() => {});
+        keptGroupTabIds.push(createdTab.id);
+      }
+    }
+
+    // Ensure group is uncollapsed and title is set
+    await chrome.tabGroups.update(primaryGroup.id, {
+      collapsed: false,
+      title: groupName || 'Enhance IMG',
+      color: 'blue',
+    }).catch(() => {});
+
+    // Close any empty initial "New Tab" tabs in this window
+    const blankTabs = (await chrome.tabs.query({ groupId: chrome.tabGroups.TAB_GROUP_ID_NONE, windowId: primaryGroup.windowId }))
+      .filter((t) => (t.url || '').includes('newtab') || (t.title || '').toLowerCase() === 'new tab');
+    blankTabs.forEach((bt) => chrome.tabs.remove(bt.id).catch(() => {}));
+
+    if (keptGroupTabIds.length > 0) {
+      await focusTab(keptGroupTabIds[0]);
+      return keptGroupTabIds;
+    }
+    return [];
+  }
+
+  // 4. Tab group is NOT open in tab strip:
+  // Open the 4 worker tabs cleanly as NORMAL TABS without creating a new tab group!
+  // This guarantees Chrome NEVER saves a duplicate tab group to the bookmarks bar.
+  console.log(`[BOLTHAVEN EXT] Tab group "${groupName}" is not open in tab strip. Opening 4 worker tabs cleanly as normal tabs (no new tab group created)...`);
+  const allTabs = await chrome.tabs.query({});
+  const seenKeys = new Set();
+  const existingWorkerTabIds = [];
+
+  for (const t of allTabs) {
+    const key = getTabKey(t);
+    if (key && targetKeys.has(key)) {
+      if (seenKeys.has(key)) {
+        // Redundant duplicate tab: remove it
+        await chrome.tabs.remove(t.id).catch(() => {});
+      } else {
+        seenKeys.add(key);
+        existingWorkerTabIds.push(t.id);
+      }
+    }
+  }
+
+  // Create only missing worker tabs as normal tabs
+  const missingUrls = targetUrls.filter((u) => !seenKeys.has(getConversationKey(u)));
+  const createdTabs = [];
+  for (const u of missingUrls) {
+    const t = await chrome.tabs.create({ url: u, active: false });
+    createdTabs.push(t);
+  }
+  const finalTabIds = [...existingWorkerTabIds, ...createdTabs.map((t) => t.id)];
+
+  if (finalTabIds.length > 0) {
+    // Focus the first worker tab
+    await focusTab(finalTabIds[0]);
+
+    // Close any empty initial "New Tab" tabs
+    const blankTabs = (await chrome.tabs.query({ groupId: chrome.tabGroups.TAB_GROUP_ID_NONE }))
+      .filter((t) => (t.url || '').includes('newtab') || (t.title || '').toLowerCase() === 'new tab');
+    blankTabs.forEach((bt) => chrome.tabs.remove(bt.id).catch(() => {}));
+
+    return finalTabIds;
+  }
+
+  return [];
+}
+
 /**
  * Start the multi-tab processing automation session.
  *
@@ -294,35 +567,86 @@ function finishAutomation() {
  *   - propertyId: string        — property being processed
  */
 async function startAutomation(payload) {
-  let { tabIds, jobs, propertyId } = payload || {};
+  let { tabIds, jobs, propertyId, groupName, groupTabUrls, tabMode, workerCount, reuseSessionTabs } = payload || {};
+  const maxWorkers = Math.max(1, Math.min(8, parseInt(workerCount, 10) || 4));
 
   if (automation.isRunning) {
     console.warn('[BOLTHAVEN EXT] Automation already running, ignoring start request');
     return { success: false, error: 'Automation already running' };
   }
 
-  // 1. Wait for ChatGPT worker tabs to open and finish loading in Chrome (up to 30s)
+  // 1. Immediately ensure the worker tabs are open, expanded, and focused
+  await ensureTabGroupOpen(groupName || 'Enhance IMG', groupTabUrls, tabMode, maxWorkers, reuseSessionTabs).catch(() => {});
+
+  // 2. Wait for ChatGPT worker tabs to be ready (up to 30s)
   let activeTabIds = [];
   const waitDeadline = Date.now() + 30000;
-  console.log('[BOLTHAVEN EXT] Resolving open ChatGPT worker tabs (will wait for tabs to load)...');
+  console.log(`[BOLTHAVEN EXT] Resolving open ChatGPT worker tabs for automation (maxWorkers: ${maxWorkers})...`);
 
   while (Date.now() < waitDeadline) {
     try {
+      // Priority 0: If tabMode === 'new_tabs', use sessionWorkerTabIds or general ChatGPT tabs
+      if (tabMode === 'new_tabs') {
+        const allTabs = await chrome.tabs.query({});
+        const realTabIdSet = new Set(allTabs.map((t) => t.id));
+        const validSession = sessionWorkerTabIds.filter((id) => realTabIdSet.has(id));
+        if (validSession.length > 0) {
+          activeTabIds = validSession.slice(0, maxWorkers);
+          console.log(`[BOLTHAVEN EXT] Selected ${activeTabIds.length} tabs from sessionWorkerTabIds (new_tabs mode):`, activeTabIds);
+          break;
+        }
+        const chatGPTTabs = allTabs.filter((t) => (t.url || '').includes('chatgpt.com'));
+        if (chatGPTTabs.length > 0) {
+          activeTabIds = chatGPTTabs.map((t) => t.id).slice(0, maxWorkers);
+          break;
+        }
+      }
+
+      // Priority 1: Pick tabs that belong to the connected Tab Group (e.g. Enhance IMG)
+      const allGroups = await chrome.tabGroups.query({});
+      const targetGroupName = (groupName || 'enhance').toLowerCase().trim();
+      const targetGroup = allGroups.find((g) => {
+        const title = (g.title || '').toLowerCase().trim();
+        return title.includes(targetGroupName) || targetGroupName.includes(title);
+      });
+
+      if (targetGroup) {
+        const groupTabs = await chrome.tabs.query({ groupId: targetGroup.id });
+        const validGroupTabs = groupTabs.filter((t) => (t.url || '').includes('chatgpt.com'));
+        if (validGroupTabs.length > 0) {
+          activeTabIds = validGroupTabs.map((t) => t.id).slice(0, maxWorkers);
+          console.log(`[BOLTHAVEN EXT] Selected ${activeTabIds.length} tabs strictly from Tab Group "${targetGroup.title}":`, activeTabIds);
+          break;
+        }
+      }
+
       const allTabs = await chrome.tabs.query({});
       const realTabIdSet = new Set(allTabs.map((t) => t.id));
 
       if (Array.isArray(tabIds) && tabIds.length > 0) {
         const valid = tabIds.filter((id) => typeof id === 'number' && realTabIdSet.has(id));
         if (valid.length > 0) {
-          activeTabIds = valid;
+          activeTabIds = valid.slice(0, maxWorkers);
           break;
         }
       }
 
+      // Priority 2: Match tabs by worker conversation URL keys
+      const targetKeys = new Set((groupTabUrls && groupTabUrls.length > 0 ? groupTabUrls : ENHANCE_CHATGPT_DEFAULT_URLS).map(getConversationKey).filter(Boolean));
+      const matchedWorkerTabs = allTabs.filter((t) => {
+        const k = getTabKey(t);
+        return k && targetKeys.has(k);
+      });
+      if (matchedWorkerTabs.length > 0) {
+        activeTabIds = matchedWorkerTabs.map((t) => t.id).slice(0, maxWorkers);
+        console.log(`[BOLTHAVEN EXT] Selected ${activeTabIds.length} worker tabs by conversation URL:`, activeTabIds);
+        break;
+      }
+
+      // Priority 3: Fallback to any open ChatGPT tabs
       const chatGPTTabs = allTabs.filter((t) => (t.url || '').includes('chatgpt.com'));
       if (chatGPTTabs.length > 0) {
-        // Take up to 4 ChatGPT tabs
-        activeTabIds = chatGPTTabs.map((t) => t.id).slice(0, 4);
+        activeTabIds = chatGPTTabs.map((t) => t.id).slice(0, maxWorkers);
         break;
       }
     } catch (e) {
@@ -330,6 +654,8 @@ async function startAutomation(payload) {
     }
     await delay(1000);
   }
+
+  activeTabIds = activeTabIds.slice(0, maxWorkers);
 
   if (activeTabIds.length === 0) {
     return { success: false, error: 'No active ChatGPT worker tabs found. Please ensure ChatGPT tabs are open.' };
@@ -356,8 +682,30 @@ async function startAutomation(payload) {
     return { success: false, error: 'No pending jobs found for this property' };
   }
 
+  // Strictly deduplicate jobs by original_position so each image is enhanced EXACTLY ONCE!
+  const seenPositions = new Set();
+  const uniqueJobs = [];
+  const sortedRaw = [...jobs].sort((a, b) => {
+    const posA = a.original_position || a.index || 0;
+    const posB = b.original_position || b.index || 0;
+    return posA - posB;
+  });
+
+  for (const j of sortedRaw) {
+    const pos = j.original_position || j.index || (uniqueJobs.length + 1);
+    if (!seenPositions.has(pos)) {
+      seenPositions.add(pos);
+      uniqueJobs.push({
+        ...j,
+        original_position: pos,
+      });
+    }
+  }
+
+  jobs = uniqueJobs;
+
   console.log(
-    `[BOLTHAVEN EXT] Starting automation: ${jobs.length} images distributed across ${activeTabIds.length} tabs`
+    `[BOLTHAVEN EXT] Starting automation: ${jobs.length} unique images (positions: ${jobs.map((j) => '#' + j.original_position).join(', ')}) distributed across ${activeTabIds.length} tabs`
   );
 
   // Initialise automation state
@@ -397,21 +745,51 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   // Fetch image as base64 to avoid CSP/Mixed content restrictions on ChatGPT page
   if (request.action === 'FETCH_IMAGE_BASE64') {
-    let targetUrl = request.url || '';
-    if (targetUrl.startsWith('/')) {
-      targetUrl = `${BOLTHAVEN_URL}${targetUrl}`;
-    }
-    fetch(targetUrl)
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status} fetching image`);
-        return r.blob();
-      })
-      .then((blob) => {
-        const reader = new FileReader();
-        reader.onloadend = () => sendResponse({ success: true, dataUrl: reader.result });
-        reader.onerror = (e) => sendResponse({ success: false, error: e.message });
-        reader.readAsDataURL(blob);
-      })
+    const fetchAsDataUrl = async () => {
+      const candidates = [];
+      const primary = request.url || '';
+      const fallback = request.fallbackUrl || '';
+
+      // If local storage path (/storage/...) is present in primary or fallback, try it first
+      if (primary && primary.includes('/storage/')) {
+        candidates.push(primary.startsWith('/') ? `${BOLTHAVEN_URL}${primary}` : primary);
+      }
+      if (fallback && fallback.includes('/storage/')) {
+        candidates.push(fallback.startsWith('/') ? `${BOLTHAVEN_URL}${fallback}` : fallback);
+      }
+      if (primary && !candidates.includes(primary)) {
+        candidates.push(primary.startsWith('/') ? `${BOLTHAVEN_URL}${primary}` : primary);
+      }
+      if (fallback && !candidates.includes(fallback)) {
+        candidates.push(fallback.startsWith('/') ? `${BOLTHAVEN_URL}${fallback}` : fallback);
+      }
+
+      let lastError = null;
+      for (const rawUrl of candidates) {
+        try {
+          console.log('[BOLTHAVEN] Fetching image for base64 conversion:', rawUrl);
+          const r = await fetch(rawUrl);
+          const arrayBuffer = await r.arrayBuffer();
+          const bytes = new Uint8Array(arrayBuffer);
+          let binary = '';
+          const chunkSize = 8192;
+          for (let i = 0; i < bytes.length; i += chunkSize) {
+            const chunk = bytes.subarray(i, i + chunkSize);
+            binary += String.fromCharCode.apply(null, chunk);
+          }
+          const base64 = btoa(binary);
+          const mimeType = r.headers.get('content-type') || (rawUrl.endsWith('.png') ? 'image/png' : 'image/jpeg');
+          return `data:${mimeType};base64,${base64}`;
+        } catch (err) {
+          console.warn('[BOLTHAVEN] Candidate image fetch failed:', rawUrl, err.message);
+          lastError = err;
+        }
+      }
+      throw lastError || new Error('No valid image candidate could be fetched');
+    };
+
+    fetchAsDataUrl()
+      .then((dataUrl) => sendResponse({ success: true, dataUrl }))
       .catch((err) => sendResponse({ success: false, error: err.message }));
     return true; // async
   }
@@ -551,40 +929,55 @@ async function executeTwoStageStaging(payload) {
   const tab1 = tabs[0];
   const tab2 = tabs[1];
 
-  // 3. Step 1: Focus Tab 1 and extract generated prompt
-  console.log('[BOLTHAVEN EXT] Focusing Tab 1:', tab1.id, tab1.title);
-  await focusTab(tab1.id);
-  await new Promise((r) => setTimeout(r, 600));
+  let extractedPrompt = initialPrompt;
 
-  await fetch(`${COMPANION_URL}/two-stage-status`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ step: 'stage1_running', message: 'Generating and extracting prompt in Tab 1...' }),
-  }).catch(() => {});
+  // 3. Step 1: Generate prompt in Tab 1 unless direct mode (skipTab1) is requested
+  if (payload.skipTab1) {
+    console.log('[BOLTHAVEN EXT] ⚡ Direct Mode: Skipping Tab 1, pasting prompt directly into Tab 2');
+    await fetch(`${COMPANION_URL}/two-stage-status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        step: 'stage1_completed',
+        extracted_prompt: initialPrompt,
+        message: 'Direct Mode: Prompt ready from site, skipping Tab 1 and proceeding directly to Tab 2...'
+      }),
+    }).catch(() => {});
+  } else {
+    console.log('[BOLTHAVEN EXT] Focusing Tab 1:', tab1.id, tab1.title);
+    await focusTab(tab1.id);
+    await new Promise((r) => setTimeout(r, 600));
 
-  const stage1Response = await new Promise((resolve, reject) => {
-    chrome.tabs.sendMessage(tab1.id, {
-      action: 'EXTRACT_STAGE1_PROMPT',
-      prompt: initialPrompt,
-    }, (res) => {
-      if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
-      if (!res || !res.success) return reject(new Error(res?.error || 'Failed to extract prompt from Tab 1'));
-      resolve(res);
+    await fetch(`${COMPANION_URL}/two-stage-status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ step: 'stage1_running', message: 'Generating and extracting prompt in Tab 1...' }),
+    }).catch(() => {});
+
+    const stage1Response = await new Promise((resolve, reject) => {
+      chrome.tabs.sendMessage(tab1.id, {
+        action: 'EXTRACT_STAGE1_PROMPT',
+        prompt: initialPrompt,
+      }, (res) => {
+        if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
+        if (!res || !res.success) return reject(new Error(res?.error || 'Failed to extract prompt from Tab 1'));
+        resolve(res);
+      });
     });
-  });
 
-  const extractedPrompt = stage1Response.extractedPrompt || '';
-  console.log('[BOLTHAVEN EXT] ✓ Stage 1 prompt extracted, length:', extractedPrompt.length);
+    extractedPrompt = stage1Response.extractedPrompt || '';
+    console.log('[BOLTHAVEN EXT] ✓ Stage 1 prompt extracted, length:', extractedPrompt.length);
 
-  await fetch(`${COMPANION_URL}/two-stage-status`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      step: 'stage1_completed',
-      extracted_prompt: extractedPrompt,
-      message: 'Tab 1 prompt extracted successfully! Proceeding to Tab 2...'
-    }),
-  }).catch(() => {});
+    await fetch(`${COMPANION_URL}/two-stage-status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        step: 'stage1_completed',
+        extracted_prompt: extractedPrompt,
+        message: 'Tab 1 prompt extracted successfully! Proceeding to Tab 2...'
+      }),
+    }).catch(() => {});
+  }
 
   // 4. Step 2: Focus Tab 2 and assemble images + prompt
   console.log('[BOLTHAVEN EXT] Focusing Tab 2:', tab2.id, tab2.title);
@@ -662,12 +1055,28 @@ async function pollCompanion() {
     if (data.status === 'command' && data.command) {
       const { action, payload } = data.command;
       console.log('[BOLTHAVEN EXT] Received command from companion:', action);
-      if (action === 'START_AUTOMATION') {
+      if (action === 'RELOAD_EXTENSION') {
+        console.log('[BOLTHAVEN EXT] Reloading extension via companion command...');
+        chrome.runtime.reload();
+        return;
+      } else if (action === 'INSPECT_CHATGPT') {
+        const tabs = await chrome.tabs.query({});
+        const chatTab = tabs.find((t) => (t.url || '').includes('chatgpt.com'));
+        if (chatTab) {
+          chrome.tabs.sendMessage(chatTab.id, { action: 'INSPECT_CHATGPT' }, (resp) => {
+            fetch(`${COMPANION_URL}/report-inspect`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(resp || { error: 'No response from tab' }),
+            }).catch(() => {});
+          });
+        }
+      } else if (action === 'START_AUTOMATION') {
         const result = await startAutomation(payload);
         console.log('[BOLTHAVEN EXT] Automation start:', result);
       } else if (action === 'START_TWO_STAGE_STAGING') {
         executeTwoStageStaging(payload).catch((err) => {
-          console.error('[BOLTHAVEN EXT] Two-stage staging error:', err);
+          console.warn('[BOLTHAVEN EXT] Two-stage staging warning:', err.message);
           fetch(`${COMPANION_URL}/two-stage-status`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -686,38 +1095,23 @@ async function pollCompanion() {
         }
         console.log('[BOLTHAVEN EXT] Automation stopped by companion: all tabs aborted');
       } else if (action === 'FOCUS_GROUP') {
-        const { groupName, tabId, groupTabUrls } = payload || {};
-        console.log('[BOLTHAVEN EXT] Focus group request:', groupName, tabId);
+        const { groupName, tabId, groupTabUrls, tabMode, workerCount, reuseSessionTabs } = payload || {};
+        console.log('[BOLTHAVEN EXT] Direct tab group focus request:', groupName, tabId, tabMode, workerCount);
         if (tabId && !isNaN(Number(tabId))) {
           focusTab(Number(tabId));
         } else if (groupName) {
-          chrome.tabGroups.query({}, (groups) => {
-            const clean = (groupName || 'enhance').toLowerCase().trim();
-            const match = (groups || []).find((g) => {
-              const gt = (g.title || '').toLowerCase().trim();
-              return gt && (gt.includes(clean) || clean.includes(gt));
-            });
-            if (match) {
-              chrome.tabGroups.update(match.id, { collapsed: false }).catch(() => {});
-              chrome.tabs.query({ groupId: match.id }, (tabs) => {
-                if (tabs && tabs.length > 0) {
-                  focusTab(tabs[0].id);
-                }
-              });
-            } else if (groupTabUrls && groupTabUrls.length > 0) {
-              Promise.all(groupTabUrls.map((u) => chrome.tabs.create({ url: u, active: false }))).then((newTabs) => {
-                const tabIds = newTabs.map((t) => t.id);
-                chrome.tabs.group({ tabIds }, (groupId) => {
-                  chrome.tabGroups.update(groupId, { title: groupName || 'Enhance IMG', color: 'blue', collapsed: false }).catch(() => {});
-                  if (tabIds.length > 0) {
-                    focusTab(tabIds[0]);
-                  }
-                });
-              });
-            }
+          ensureTabGroupOpen(groupName, groupTabUrls, tabMode, workerCount, reuseSessionTabs).catch((err) => {
+            console.warn('[BOLTHAVEN EXT] Error ensuring tab group open:', err);
           });
         }
+      } else if (action === 'OPEN_URL') {
+        const { url } = payload || {};
+        if (url) {
+          chrome.tabs.create({ url, active: true });
+        }
       }
+      // If we received and processed a command, poll again quickly for any queued commands
+      setTimeout(pollCompanion, 100);
     }
   } catch (e) {
     // Companion may not be running yet — silently ignore
@@ -726,6 +1120,6 @@ async function pollCompanion() {
   }
 }
 
-// Poll every 800ms for swift reaction
-setInterval(pollCompanion, 800);
+// Poll every 500ms for swift reaction
+setInterval(pollCompanion, 500);
 

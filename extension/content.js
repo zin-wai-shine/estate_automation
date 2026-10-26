@@ -67,14 +67,94 @@
     );
   }
 
-  // Find ChatGPT send button
+  // Safely click an element with complete synthetic pointer, mouse, and click events
+  function clickElementSafely(el) {
+    if (!el) return;
+    try {
+      el.focus();
+      el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, view: window }));
+      el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+      el.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, view: window }));
+      el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+      el.click();
+    } catch (e) {
+      el.click();
+    }
+  }
+
+  // Find ChatGPT send button (supporting all modern ChatGPT layouts and icon buttons)
   function findSendButton() {
-    return (
+    const composer = getComposerContainer() || document.querySelector('form') || document;
+    // 1. Explicit modern attributes inside composer or document
+    const explicit = (
+      composer.querySelector('button[data-testid="send-button"]') ||
+      composer.querySelector('button[data-testid="composer-send-button"]') ||
+      composer.querySelector('button[data-testid="fruitjuice-send-button"]') ||
+      composer.querySelector('button[aria-label="Send prompt"]') ||
+      composer.querySelector('button[aria-label="Send message"]') ||
+      composer.querySelector('button[aria-label="Send"]') ||
+      composer.querySelector('button[aria-label*="Send" i]') ||
+      composer.querySelector('button[data-testid*="send" i]') ||
       document.querySelector('button[data-testid="send-button"]') ||
-      document.querySelector('button[data-testid="fruitjuice-send-button"]') ||
+      document.querySelector('button[data-testid="composer-send-button"]') ||
       document.querySelector('button[aria-label="Send prompt"]') ||
-      document.querySelector('button[aria-label="Send message"]')
+      document.querySelector('button[aria-label*="Send" i]')
     );
+    if (explicit) return explicit;
+
+    // 2. Search composer toolbar for the send button (with SVG up-arrow)
+    const buttons = Array.from(composer.querySelectorAll('button'));
+    for (const b of buttons) {
+      const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+      if (aria.includes('voice') || aria.includes('dictate') || aria.includes('record') || aria.includes('attach') || aria.includes('plus')) {
+        continue;
+      }
+      const svg = b.querySelector('svg');
+      if (svg) {
+        const rect = b.getBoundingClientRect();
+        if (rect.width >= 24 && rect.height >= 24) {
+          return b;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  // Check if send button is actually interactive and ready
+  function isSendButtonReady(btn) {
+    if (!btn) return false;
+    if (btn.disabled) return false;
+    if (btn.getAttribute('aria-disabled') === 'true') return false;
+    if (btn.classList.contains('disabled')) return false;
+    return true;
+  }
+
+  // Wait for the attachment thumbnail in composer to finish uploading to OpenAI server
+  async function waitForAttachmentUploadComplete(composerEl, maxWaitMs = 25000) {
+    const deadline = Date.now() + maxWaitMs;
+    console.log('[BOLTHAVEN] Checking attachment upload status in composer...');
+    while (Date.now() < deadline) {
+      if (activeJobAborted) return false;
+      const composer = composerEl || getComposerContainer() || document.querySelector('form') || document;
+      // Look for upload progress spinner (circle, spinner, or progressbar) on the thumbnail
+      const hasSpinner = composer.querySelector(
+        'circle, svg.animate-spin, [class*="animate-spin"], [role="progressbar"], [class*="loading"], [class*="progress"]'
+      );
+      const sendBtn = findSendButton();
+      const sendReady = isSendButtonReady(sendBtn);
+
+      // If no upload spinner is present AND the send button is ready, the attachment is 100% processed!
+      if (!hasSpinner && sendReady) {
+        await new Promise((r) => setTimeout(r, 400));
+        console.log('[BOLTHAVEN] ✓ Attachment upload fully complete and Send button is active!');
+        return true;
+      }
+
+      await new Promise((r) => setTimeout(r, 350));
+    }
+    console.warn('[BOLTHAVEN] Attachment upload wait timeout reached, proceeding to send attempt...');
+    return false;
   }
 
   // Find stop button (indicates generation is actively running)
@@ -185,12 +265,180 @@
 
   let activeJobAborted = false;
 
+  // Get active composer container element
+  function getComposerContainer(inputEl) {
+    if (inputEl) {
+      return (
+        inputEl.closest('form') ||
+        inputEl.closest('div[class*="composer"]') ||
+        inputEl.closest('div[id*="composer"]') ||
+        inputEl.parentElement?.parentElement?.parentElement ||
+        document.querySelector('form')
+      );
+    }
+    return document.querySelector('form, div[class*="composer"], div[id*="composer"]');
+  }
+
+  // Find the attachment (+) button on the ChatGPT composer
+  function findAttachmentButton(composer) {
+    const root = composer || getComposerContainer() || document;
+    
+    // 1. Explicit aria-label or data-testid
+    const explicit = root.querySelector(
+      'button[aria-label*="Attach" i], ' +
+      'button[aria-label*="Upload" i], ' +
+      'button[aria-label*="Add file" i], ' +
+      'button[aria-label*="Add photo" i], ' +
+      'button[data-testid*="attach" i], ' +
+      'button[data-testid*="upload" i]'
+    );
+    if (explicit && !explicit.disabled) return explicit;
+
+    // 2. Buttons in composer with plus icon (exclude send/mic/voice)
+    const buttons = Array.from(root.querySelectorAll('button:not(:disabled)'));
+    for (const b of buttons) {
+      const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+      if (aria.includes('send') || aria.includes('voice') || aria.includes('mic') || aria.includes('dictate')) {
+        continue;
+      }
+      const svg = b.querySelector('svg');
+      if (svg) {
+        const svgHtml = svg.innerHTML || '';
+        if (svgHtml.includes('line') || svgHtml.includes('path')) {
+          const rect = b.getBoundingClientRect();
+          if (rect.width >= 20 && rect.height >= 20) {
+            return b;
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  // Find thumbnail delete / remove buttons inside the composer
+  function findAttachmentRemoveButtons(composer) {
+    const root = composer || getComposerContainer() || document;
+    const explicit = Array.from(root.querySelectorAll(
+      'button[aria-label*="Remove file" i], ' +
+      'button[aria-label*="Remove image" i], ' +
+      'button[aria-label*="Remove attachment" i], ' +
+      'button[aria-label*="Delete" i], ' +
+      'button[data-testid*="remove-upload" i], ' +
+      'button[data-testid*="remove-file" i], ' +
+      'button[data-testid*="delete" i]'
+    ));
+    if (explicit.length > 0) return explicit;
+
+    // Buttons directly adjacent to or inside an attachment thumbnail preview
+    const thumbnailWrappers = root.querySelectorAll(
+      'div[data-testid*="attachment"], div[class*="attachment"], div[class*="upload-item"], div[class*="thumbnail"], div[class*="file-"]'
+    );
+    const containerBtns = [];
+    for (const wrapper of thumbnailWrappers) {
+      const btn = wrapper.querySelector('button');
+      if (btn && !btn.disabled) containerBtns.push(btn);
+    }
+    return containerBtns;
+  }
+
+  // Detect whether an image thumbnail/attachment is actively present in the ChatGPT composer
+  function isImageAttachedInComposer(inputEl) {
+    const composer = getComposerContainer(inputEl);
+    if (!composer) return false;
+
+    // 1. Any preview thumbnail img elements STRICTLY inside composer (blob:, data:image/, or oaiusercontent)
+    const previewImgs = composer.querySelectorAll('img');
+    for (const img of previewImgs) {
+      const src = img.src || '';
+      if (!src) continue;
+      if (src.includes('avatar') || src.includes('profile') || src.includes('icon') || src.includes('emoji')) continue;
+      if (
+        src.startsWith('blob:') ||
+        src.startsWith('data:image/') ||
+        src.includes('oaiusercontent.com') ||
+        src.includes('file-service')
+      ) {
+        return true;
+      }
+    }
+
+    // 2. Specific attachment remove buttons STRICTLY inside composer
+    const removeBtns = findAttachmentRemoveButtons(composer);
+    if (removeBtns.length > 0) return true;
+
+    // 3. Upload spinner or progress bar STRICTLY inside composer
+    const progressEl = composer.querySelector('div[role="progressbar"], svg.animate-spin');
+    if (progressEl) return true;
+
+    // 4. Attachment card container STRICTLY inside composer
+    const attachmentCard = composer.querySelector(
+      'div[data-testid*="attachment"], div[class*="attachment-item"], div[class*="upload-item"]'
+    );
+    if (attachmentCard) return true;
+
+    return false;
+  }
+
+  // Count distinct image attachment cards or remove buttons in the composer
+  function getAttachedImagesCount(inputEl) {
+    const composer = getComposerContainer(inputEl);
+    if (!composer) return 0;
+
+    const removeBtns = findAttachmentRemoveButtons(composer);
+    if (removeBtns.length > 0) return removeBtns.length;
+
+    const previewImgs = Array.from(composer.querySelectorAll('img')).filter((img) => {
+      const src = img.src || '';
+      if (!src || src.includes('avatar') || src.includes('profile') || src.includes('icon') || src.includes('emoji')) return false;
+      return (
+        src.startsWith('blob:') ||
+        src.startsWith('data:image/') ||
+        src.includes('oaiusercontent.com') ||
+        src.includes('file-service')
+      );
+    });
+    return previewImgs.length;
+  }
+
+  // If more than maxExpected images are attached, remove the extra duplicate ones
+  async function pruneExcessAttachments(inputEl, maxExpected = 1) {
+    const composer = getComposerContainer(inputEl);
+    if (!composer) return;
+
+    let removeBtns = findAttachmentRemoveButtons(composer);
+    while (removeBtns.length > maxExpected) {
+      console.warn(`[BOLTHAVEN] Detected ${removeBtns.length} attached images (expected ${maxExpected}). Pruning duplicate thumbnail...`);
+      const btnToRemove = removeBtns[removeBtns.length - 1];
+      clickElementSafely(btnToRemove);
+      await new Promise((r) => setTimeout(r, 400));
+      removeBtns = findAttachmentRemoveButtons(composer);
+    }
+  }
+
+  // Wait until image attachment is detected in composer
+  async function waitForImageAttached(inputEl, timeoutMs = 5000) {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      if (activeJobAborted) return false;
+      if (isImageAttachedInComposer(inputEl)) {
+        await new Promise((r) => setTimeout(r, 350));
+        return true;
+      }
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    return isImageAttachedInComposer(inputEl);
+  }
+
   // Set prompt text inside ProseMirror contenteditable or textarea without duplicating
   function setPromptText(inputEl, text) {
     if (!inputEl || !text) return;
     inputEl.focus();
 
-    // 1. Wipe out any pre-existing residual text
+    const cleanText = text.trim();
+    const existing = (inputEl.textContent || '').trim();
+    if (existing === cleanText) return;
+
+    // 1. Wipe out any pre-existing residual text completely
     try {
       const selection = window.getSelection();
       const range = document.createRange();
@@ -201,15 +449,23 @@
     } catch (e) {}
 
     const p = inputEl.querySelector('p');
-    if (p) p.textContent = '';
+    if (p && (p.textContent || '').trim().length > 0) {
+      p.textContent = '';
+    }
 
-    const cleanText = text.trim();
-    const startSnippet = cleanText.slice(0, 20);
-    const endSnippet = cleanText.slice(-20);
+    // 2. Insert text via execCommand insertText
+    try {
+      document.execCommand('insertText', false, cleanText);
+      inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+    } catch (e) {}
 
-    // 2. Primary: DataTransfer ClipboardEvent paste
-    // In ChatGPT's ProseMirror composer, ClipboardEvent paste cleanly preserves all
-    // multiline text, bullet points, line breaks, and paragraphs without truncation.
+    let curContent = (inputEl.textContent || '').trim();
+    if (curContent.includes(cleanText.slice(0, 20)) && curContent.length >= cleanText.length * 0.8) {
+      console.log(`[BOLTHAVEN] Inserted prompt via execCommand (${cleanText.length} chars)`);
+      return;
+    }
+
+    // 3. Fallback: ProseMirror DataTransfer ClipboardEvent paste (only if execCommand didn't apply)
     try {
       const dt = new DataTransfer();
       dt.setData('text/plain', cleanText);
@@ -222,26 +478,13 @@
       inputEl.dispatchEvent(new Event('input', { bubbles: true }));
     } catch (e) {}
 
-    // Verify if full text was inserted
-    let content = (inputEl.textContent || '').trim();
-    if (content.includes(startSnippet) && content.includes(endSnippet) && content.length >= cleanText.length * 0.7) {
-      console.log(`[BOLTHAVEN] Inserted full prompt via ClipboardEvent paste (${cleanText.length} chars)`);
+    curContent = (inputEl.textContent || '').trim();
+    if (curContent.includes(cleanText.slice(0, 20)) && curContent.length >= cleanText.length * 0.8) {
+      console.log('[BOLTHAVEN] Inserted prompt via paste fallback');
       return;
     }
 
-    // 3. Fallback: Native execCommand insertText
-    try {
-      document.execCommand('insertText', false, cleanText);
-      inputEl.dispatchEvent(new Event('input', { bubbles: true }));
-    } catch (e) {}
-
-    content = (inputEl.textContent || '').trim();
-    if (content.includes(startSnippet) && content.includes(endSnippet) && content.length >= cleanText.length * 0.7) {
-      console.log('[BOLTHAVEN] Inserted full prompt via execCommand');
-      return;
-    }
-
-    // 4. Fallback: ProseMirror DOM paragraphs injection
+    // 4. Last-ditch textarea / paragraph injection fallback
     if (inputEl.tagName.toLowerCase() === 'textarea') {
       inputEl.value = cleanText;
       inputEl.dispatchEvent(new Event('input', { bubbles: true }));
@@ -252,77 +495,200 @@
       inputEl.innerHTML = paragraphsHtml;
       inputEl.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: cleanText }));
       inputEl.dispatchEvent(new Event('change', { bubbles: true }));
-      console.log('[BOLTHAVEN] Inserted full prompt via paragraph structure fallback');
+      console.log('[BOLTHAVEN] Inserted prompt via paragraph structure fallback');
     }
   }
 
-  // Attach a single image via DataTransfer paste event on prompt input
-  async function attachImageViaPaste(inputEl, imageUrl, filename = 'image.jpg') {
+  // Fetch image blob from primary or fallback URL (preferring local storage via background)
+  async function fetchImageBlob(primaryUrl, fallbackUrl) {
+    let b64DataUrl = null;
+    let lastError = null;
+
     try {
-      let blob;
-      if (imageUrl && imageUrl.startsWith('data:')) {
-        const resp = await fetch(imageUrl);
-        blob = await resp.blob();
-      } else {
-        // Fetch via background service worker to bypass ChatGPT CSP & Mixed Content restrictions
-        const b64DataUrl = await new Promise((resolve, reject) => {
-          chrome.runtime.sendMessage({ action: 'FETCH_IMAGE_BASE64', url: imageUrl }, (response) => {
+      const res = await new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage(
+          { action: 'FETCH_IMAGE_BASE64', url: primaryUrl, fallbackUrl: fallbackUrl },
+          (response) => {
             if (response && response.success && response.dataUrl) {
               resolve(response.dataUrl);
             } else {
               reject(new Error(response?.error || 'Failed to fetch image via background'));
             }
-          });
-        });
-        const resp = await fetch(b64DataUrl);
-        blob = await resp.blob();
+          }
+        );
+      });
+      b64DataUrl = res;
+    } catch (e) {
+      lastError = e;
+      console.warn('[BOLTHAVEN] Background image fetch warning:', e.message);
+    }
+
+    if (!b64DataUrl) {
+      const candidates = [primaryUrl, fallbackUrl].filter(Boolean);
+      for (const u of candidates) {
+        try {
+          const resp = await fetch(u);
+          if (resp.ok) {
+            return await resp.blob();
+          }
+        } catch (e) {}
+      }
+      throw lastError || new Error('Could not fetch image blob from candidate URLs');
+    }
+
+    const resp = await fetch(b64DataUrl);
+    return await resp.blob();
+  }
+
+  // Attach a single image File into the ChatGPT composer cleanly without duplicating
+  async function attachImageFileToComposer(inputEl, file) {
+    const composer = getComposerContainer(inputEl);
+
+    // Channel 0: System Clipboard write + execCommand('paste') (closest to real user Cmd+V)
+    try {
+      console.log('[BOLTHAVEN] Channel 0: Writing image to clipboard and executing paste...');
+      inputEl.focus();
+      const item = new ClipboardItem({ [file.type]: file });
+      await navigator.clipboard.write([item]);
+      document.execCommand('paste');
+      console.log('[BOLTHAVEN] Executed document.execCommand("paste")');
+    } catch (e) {
+      console.log('[BOLTHAVEN] Channel 0 clipboard notice:', e.message);
+    }
+
+    let attached = await waitForImageAttached(inputEl, 2500);
+    if (attached) {
+      console.log('[BOLTHAVEN] ✓ Image attachment confirmed via system clipboard paste');
+      await pruneExcessAttachments(inputEl, 1);
+      return true;
+    }
+
+    // Channel 1: Native <input type="file"> search across the entire document
+    // In ChatGPT, the hidden file input is often placed in document.body or a root portal
+    try {
+      console.log('[BOLTHAVEN] Channel 1: Searching document for input[type="file"]...');
+      let fileInputs = Array.from(document.querySelectorAll('input[type="file"], input[accept*="image"]'));
+      
+      if (fileInputs.length === 0) {
+        const plusBtn = findAttachmentButton(composer);
+        if (plusBtn) {
+          console.log('[BOLTHAVEN] Clicking attachment (+) button to mount file input...');
+          clickElementSafely(plusBtn);
+          await new Promise((r) => setTimeout(r, 400));
+          fileInputs = Array.from(document.querySelectorAll('input[type="file"], input[accept*="image"]'));
+        }
       }
 
-      const mimeType = blob.type || 'image/jpeg';
-      const file = new File([blob], filename, { type: mimeType });
+      if (fileInputs.length > 0) {
+        console.log(`[BOLTHAVEN] Found ${fileInputs.length} file input(s). Injecting File via DataTransfer...`);
+        const dt = new DataTransfer();
+        dt.items.add(file);
 
-      // Create DataTransfer with EXACTLY ONE image file
+        for (const input of fileInputs) {
+          try {
+            const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'files')?.set;
+            if (nativeSetter) {
+              nativeSetter.call(input, dt.files);
+            } else {
+              input.files = dt.files;
+            }
+          } catch (e) {
+            input.files = dt.files;
+          }
+
+          input.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+          input.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+        }
+
+        console.log('[BOLTHAVEN] Dispatched file change events to input[type="file"]');
+        await new Promise((r) => setTimeout(r, 400));
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }));
+      }
+    } catch (e) {
+      console.log('[BOLTHAVEN] Channel 1 file input notice:', e.message);
+    }
+
+    // Check if attachment appeared in composer
+    attached = await waitForImageAttached(inputEl, 3000);
+    if (attached) {
+      console.log('[BOLTHAVEN] ✓ Image attachment confirmed via file input');
+      await pruneExcessAttachments(inputEl, 1);
+      return true;
+    }
+
+    // Channel 2: ClipboardEvent paste with Object.defineProperty (works with ProseMirror)
+    try {
+      console.log('[BOLTHAVEN] Channel 2: Dispatching ClipboardEvent paste with DataTransfer...');
+      inputEl.focus();
       const dt = new DataTransfer();
       dt.items.add(file);
-
-      // Primary: Dispatch ClipboardEvent paste on prompt input (ChatGPT attaches exactly 1 image)
-      let attached = false;
-      try {
-        const pasteEvent = new ClipboardEvent('paste', {
-          bubbles: true,
-          cancelable: true,
-          clipboardData: dt,
-        });
-        inputEl.focus();
-        inputEl.dispatchEvent(pasteEvent);
-        attached = true;
-        console.log('[BOLTHAVEN] Attached single image via ClipboardEvent paste');
-      } catch (e) {
-        console.warn('[BOLTHAVEN] ClipboardEvent paste error:', e);
+      const pasteEvent = new ClipboardEvent('paste', {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+      });
+      Object.defineProperty(pasteEvent, 'clipboardData', {
+        value: dt,
+        writable: false,
+        configurable: true,
+      });
+      inputEl.dispatchEvent(pasteEvent);
+      if (document.activeElement && document.activeElement !== inputEl) {
+        document.activeElement.dispatchEvent(pasteEvent);
       }
-
-      // Fallback only if ClipboardEvent failed completely
-      if (!attached) {
-        let fileInputs = document.querySelectorAll('input[type="file"]');
-        if (fileInputs.length === 0) {
-          const plusBtn = document.querySelector('button[aria-label*="Attach"], button[data-testid*="attachment"], button[aria-label*="Upload"], button[aria-label*="Add photos"]') ||
-            Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === '+' || b.querySelector('svg.icon-plus'));
-          if (plusBtn) {
-            plusBtn.click();
-            await new Promise((r) => setTimeout(r, 200));
-            fileInputs = document.querySelectorAll('input[type="file"]');
-          }
-        }
-        if (fileInputs.length > 0) {
-          fileInputs[0].files = dt.files;
-          fileInputs[0].dispatchEvent(new Event('change', { bubbles: true }));
-          console.log('[BOLTHAVEN] Attached single image via fallback file input');
-        }
+      const promptArea = document.querySelector('#prompt-textarea');
+      if (promptArea && promptArea !== inputEl) {
+        promptArea.dispatchEvent(pasteEvent);
       }
+    } catch (e) {
+      console.log('[BOLTHAVEN] Channel 2 ClipboardEvent notice:', e.message);
+    }
 
+    attached = await waitForImageAttached(inputEl, 2500);
+    if (attached) {
+      console.log('[BOLTHAVEN] ✓ Image attachment confirmed via ClipboardEvent paste');
+      await pruneExcessAttachments(inputEl, 1);
       return true;
-    } catch (err) {
-      console.warn('[BOLTHAVEN] Image attachment warning:', err);
+    }
+
+    // Channel 3: Drag & Drop (last resort)
+    try {
+      console.log('[BOLTHAVEN] Channel 3: Dispatching DragEvent drop fallback...');
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      const dragOver = new DragEvent('dragover', { bubbles: true, cancelable: true });
+      Object.defineProperty(dragOver, 'dataTransfer', { value: dt, writable: false });
+      const dropEvt = new DragEvent('drop', { bubbles: true, cancelable: true });
+      Object.defineProperty(dropEvt, 'dataTransfer', { value: dt, writable: false });
+      const target = composer || inputEl;
+      target.dispatchEvent(dragOver);
+      target.dispatchEvent(dropEvt);
+      inputEl.dispatchEvent(dragOver);
+      inputEl.dispatchEvent(dropEvt);
+    } catch (e) {
+      console.log('[BOLTHAVEN] Channel 3 DragEvent notice:', e.message);
+    }
+
+    attached = await waitForImageAttached(inputEl, 3000);
+    if (attached) {
+      console.log('[BOLTHAVEN] ✓ Image attachment confirmed via DragEvent drop');
+      await pruneExcessAttachments(inputEl, 1);
+      return true;
+    }
+
+    return isImageAttachedInComposer(inputEl);
+  }
+
+  // Attach image via data URL or web URL cleanly
+  async function attachImageViaPaste(inputEl, imgUrl, fileName = 'attachment.png') {
+    if (!imgUrl) return false;
+    try {
+      const blob = await fetchImageBlob(imgUrl, '');
+      const mimeType = blob.type || 'image/png';
+      const file = new File([blob], fileName, { type: mimeType });
+      return await attachImageFileToComposer(inputEl, file);
+    } catch (e) {
+      console.warn('[BOLTHAVEN] attachImageViaPaste error:', e);
       return false;
     }
   }
@@ -330,7 +696,7 @@
   // Process a single job in this tab
   async function processJobInTab(job) {
     activeJobAborted = false;
-    console.log('[BOLTHAVEN] Starting job in tab:', job.job_id, 'Image #' + job.original_position);
+    console.log('[BOLTHAVEN] Starting job in tab:', job.job_id, 'Image #' + (job.original_position || 1));
 
     const input = await waitForElement('#prompt-textarea, div[contenteditable="true"], textarea', 25000);
     if (!input) {
@@ -347,67 +713,139 @@
     });
     console.log(`[BOLTHAVEN] Pre-existing images in chat before send: ${preExistingImageUrls.size}`);
 
-    // 1. Attach single image FIRST so the thumbnail is placed above the prompt
-    const imgUrl = job.source_file_url || job.source_file_path;
-    if (imgUrl) {
-      await attachImageViaPaste(input, imgUrl, `property_image_${job.original_position}.jpg`);
-      // Wait for image thumbnail card to mount into the chat box
-      await new Promise((r) => setTimeout(r, 2000));
+    // 1. Attach single image FIRST and strictly verify that it appears in composer!
+    const localPath = job.source_file_path || '';
+    const remoteUrl = job.source_file_url || '';
+    let primaryUrl = '';
+    let fallbackUrl = '';
+
+    // ALWAYS prioritize local storage: fast (5ms) & guaranteed on local disk
+    if (localPath && localPath.startsWith('/storage/')) {
+      primaryUrl = `http://localhost:8085${localPath}`;
+      fallbackUrl = remoteUrl;
+    } else if (remoteUrl) {
+      primaryUrl = remoteUrl;
+      fallbackUrl = localPath ? `http://localhost:8085${localPath}` : '';
+    } else {
+      primaryUrl = localPath;
     }
 
-    if (activeJobAborted) throw new Error('Job stopped by user');
+    let attached = false;
+    if (primaryUrl || fallbackUrl) {
+      const filename = `property_image_${job.original_position || 1}.jpg`;
+      console.log(`[BOLTHAVEN] Fetching image for attachment: ${primaryUrl}`);
+      const blob = await fetchImageBlob(primaryUrl, fallbackUrl);
+      const mimeType = blob.type || 'image/jpeg';
+      const file = new File([blob], filename, { type: mimeType });
+
+      console.log(`[BOLTHAVEN] Attaching image #${job.original_position || 1}...`);
+      attached = await attachImageFileToComposer(input, file);
+      if (!attached) {
+        console.log(`[BOLTHAVEN] Attachment not confirmed on initial attempt, retrying once...`);
+        await new Promise((r) => setTimeout(r, 1000));
+        attached = await attachImageFileToComposer(input, file);
+      }
+    }
+
+    // STRICT SAFETY GUARD: Do NOT submit prompt if image failed to attach!
+    if (!attached) {
+      console.log('[BOLTHAVEN] ⚠️ Image failed to attach. Aborting to avoid sending text without image.');
+      return {
+        success: false,
+        error: `Image #${job.original_position || 1} could not be attached to ChatGPT composer. Aborting to avoid sending text without photo.`,
+      };
+    }
+
+    if (activeJobAborted) return { success: false, error: 'Job stopped by user' };
+
+    // Ensure exactly 1 image thumbnail is present before setting prompt (prunes any accidental duplicate)
+    await pruneExcessAttachments(input, 1);
 
     // 2. Set the clean prompt text BELOW the attached image (clearing any old text)
-    setPromptText(input, job.resolved_prompt || 'Enhance the attached architectural photo');
-    await new Promise((r) => setTimeout(r, 800));
+    const promptText = (job.resolved_prompt || 'Enhance the attached architectural photo').trim();
+    setPromptText(input, promptText);
+    await new Promise((r) => setTimeout(r, 600));
 
-    if (activeJobAborted) throw new Error('Job stopped by user');
+    if (activeJobAborted) return { success: false, error: 'Job stopped by user' };
 
-    // 3. Wait until Send button is enabled and click Send
-    let sendBtn = findSendButton();
-    let attempts = 0;
-    while ((!sendBtn || sendBtn.disabled) && attempts < 25) {
-      if (activeJobAborted) throw new Error('Job stopped by user');
-      await new Promise((r) => setTimeout(r, 400));
-      sendBtn = findSendButton();
-      attempts++;
+    // Guarantee that exactly 1 image is STILL present before sending!
+    await pruneExcessAttachments(input, 1);
+    if (!isImageAttachedInComposer(input)) {
+      console.log('[BOLTHAVEN] ⚠️ Image disappeared from composer after setting prompt text. Aborting send!');
+      return {
+        success: false,
+        error: `Image #${job.original_position || 1} was not found in composer before send. Aborting to protect job.`,
+      };
     }
 
-    if (activeJobAborted) throw new Error('Job stopped by user');
+    // 3. Wait for attachment upload to ChatGPT server to fully complete (no progress spinner on thumbnail)
+    await waitForAttachmentUploadComplete(getComposerContainer(input) || document, 25000);
 
-    if (sendBtn && !sendBtn.disabled) {
-      sendBtn.click();
-      console.log('[BOLTHAVEN] Clicked ChatGPT Send button');
-    } else {
-      // Fallback: press Enter on the input
-      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
-      console.log('[BOLTHAVEN] Dispatched Enter key on prompt input');
-    }
+    // Record pre-existing assistant turn count and existing images BEFORE sending
+    const preAssistantCount = document.querySelectorAll(
+      'div[data-message-author-role="assistant"], article[data-testid*="conversation-turn"]'
+    ).length;
+    const preExistingImageUrls = new Set();
+    document.querySelectorAll('img').forEach((img) => {
+      const src = img.src || img.getAttribute('src') || '';
+      if (src) preExistingImageUrls.add(src);
+    });
+    console.log(`[BOLTHAVEN] Pre-existing assistant turns: ${preAssistantCount}, pre-existing images: ${preExistingImageUrls.size}`);
 
-    // 4. Wait for generation to actively START (ChatGPT takes 1-5s to switch from input to thinking)
-    console.log('[BOLTHAVEN] Waiting for ChatGPT generation to start...');
-    let generationStarted = false;
-    const startDeadline = Date.now() + 15000;
-    while (Date.now() < startDeadline) {
-      if (activeJobAborted) throw new Error('Job stopped by user');
-      if (isThinkingOrGenerating()) {
-        generationStarted = true;
-        console.log('[BOLTHAVEN] Generation actively running (thinking/generating confirmed)!');
+    // 4. Click Send button and VERIFY that the message actually sends and leaves the composer
+    console.log('[BOLTHAVEN] Sending prompt + image to ChatGPT...');
+    let messageSent = false;
+    const sendDeadline = Date.now() + 25000;
+    let sendAttempt = 0;
+
+    while (Date.now() < sendDeadline) {
+      if (activeJobAborted) return { success: false, error: 'Job stopped by user' };
+
+      const sendBtn = findSendButton();
+      sendAttempt++;
+      console.log(`[BOLTHAVEN] Send attempt ${sendAttempt} (sendBtn ready: ${isSendButtonReady(sendBtn)})...`);
+
+      if (sendBtn && isSendButtonReady(sendBtn)) {
+        clickElementSafely(sendBtn);
+      }
+      // Also dispatch Enter key on input as reliable primary/fallback
+      input.focus();
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true, composed: true }));
+      input.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true, composed: true }));
+
+      await new Promise((r) => setTimeout(r, 1200));
+
+      // Verify if message was successfully dispatched:
+      const currentComposerText = (input.innerText || input.textContent || '').trim();
+      const stillHasAttachedImg = isImageAttachedInComposer(input);
+      const isGeneratingNow = isThinkingOrGenerating();
+      const currentTurns = document.querySelectorAll(
+        'div[data-message-author-role="assistant"], article[data-testid*="conversation-turn"]'
+      );
+
+      // A message is confirmed sent when:
+      // (a) composer input has cleared AND image thumbnail is no longer in composer
+      // OR (b) stop button / thinking indicator is active
+      // OR (c) assistant turn count increased
+      if ((!stillHasAttachedImg && currentComposerText === '') || isGeneratingNow || currentTurns.length > preAssistantCount) {
+        messageSent = true;
+        console.log('[BOLTHAVEN] ✓ Message confirmed sent to ChatGPT! (composer cleared / generation actively running)');
         break;
       }
-      const earlyRetryBtn = findRetryButton();
-      if (earlyRetryBtn) {
-        console.log('[BOLTHAVEN] ⚠️ Error banner detected before generation started. Auto-clicking "Retry"...');
-        earlyRetryBtn.click();
-        await new Promise((r) => setTimeout(r, 2000));
-        break;
-      }
-      await new Promise((r) => setTimeout(r, 500));
     }
 
-    // 5. Monitor for generation to COMPLETELY FINISH (poll every 1.5s)
+    if (!messageSent) {
+      console.log('[BOLTHAVEN] ⚠️ Message could not be sent after 25s. Composer still holds prompt/image. Aborting.');
+      return {
+        success: false,
+        error: `Image #${job.original_position || 1} failed to send to ChatGPT (message remained in composer).`,
+      };
+    }
+
+    // 5. Monitor for generation to COMPLETELY FINISH (poll every 1.5s, up to 5 min)
+    console.log('[BOLTHAVEN] Waiting for ChatGPT generation of Image #' + (job.original_position || 1) + ' to complete...');
     const startTime = Date.now();
-    const maxWaitMs = 300000; // 5 minutes timeout per image
+    const maxWaitMs = 300000;
     let consecutiveCalmChecks = 0;
     let detectedNewImage = null;
     let streamRetryCount = 0;
@@ -418,19 +856,18 @@
       const checkInterval = setInterval(async () => {
         if (activeJobAborted) {
           clearInterval(checkInterval);
-          return reject(new Error('Job stopped by user'));
+          return resolve({ success: false, error: 'Job stopped by user' });
         }
 
         const elapsed = Date.now() - startTime;
         if (elapsed > maxWaitMs) {
           clearInterval(checkInterval);
-          return reject(new Error('ChatGPT image generation timed out (5 min)'));
+          return resolve({ success: false, error: 'ChatGPT image generation timed out (5 min)' });
         }
 
         const currentlyGenerating = isThinkingOrGenerating();
 
         // ── AUTO-RETRY DETECTION ──────────────────────────────────────────
-        // If ChatGPT displays "Error in message stream", automatically click "Retry"
         const now = Date.now();
         if (!currentlyGenerating && now - lastRetryClickTime > 4000) {
           const retryBtn = findRetryButton();
@@ -446,21 +883,28 @@
               return;
             } else {
               clearInterval(checkInterval);
-              return reject(new Error('ChatGPT generation failed: "Error in message stream" persisted after 3 retries.'));
+              return resolve({ success: false, error: 'ChatGPT generation failed: "Error in message stream" persisted after 3 retries.' });
             }
           }
         }
 
-        // Search for ANY image on the page that was NOT present before send
-        let candidateImg = null;
-        let candidateUrl = '';
+        // Locate the NEW assistant turn (must be strictly after preAssistantCount)
+        const allAssistantTurns = document.querySelectorAll(
+          'div[data-message-author-role="assistant"], article[data-testid*="conversation-turn"]'
+        );
 
-        const allImgs = Array.from(document.querySelectorAll('img'));
-        for (let i = allImgs.length - 1; i >= 0; i--) {
-          const img = allImgs[i];
-          const src = img.src || img.currentSrc || img.getAttribute('src') || '';
-          if (!src || preExistingImageUrls.has(src)) continue;
+        if (allAssistantTurns.length <= preAssistantCount) {
+          // New turn hasn't appeared yet
+          consecutiveCalmChecks = 0;
+          return;
+        }
 
+        const latestTurn = allAssistantTurns[allAssistantTurns.length - 1];
+
+        // Search ONLY inside the latest assistant turn for a newly created image!
+        const turnImgs = Array.from(latestTurn.querySelectorAll('img')).filter((img) => {
+          const src = img.src || img.getAttribute('src') || '';
+          if (!src || preExistingImageUrls.has(src)) return false;
           const s = src.toLowerCase();
           if (
             s.includes('avatar') ||
@@ -469,13 +913,10 @@
             s.includes('emoji') ||
             s.includes('favicon')
           ) {
-            continue;
+            return false;
           }
-
-          candidateImg = img;
-          candidateUrl = src;
-          break;
-        }
+          return true;
+        });
 
         // If STILL thinking or generating: do NOT complete, reset calm counter!
         if (currentlyGenerating) {
@@ -483,36 +924,26 @@
           return;
         }
 
-        // ChatGPT is NOT generating. If candidate image found, mark it!
-        if (candidateImg && candidateUrl) {
-          detectedNewImage = { img: candidateImg, url: candidateUrl };
-          consecutiveCalmChecks++;
-        } else if (!currentlyGenerating) {
-          // If not generating, check if the latest assistant turn contains an image
-          const lastTurn = document.querySelector(
-            'article:last-of-type, div[data-message-author-role="assistant"]:last-of-type, div.agent-turn:last-of-type'
-          );
-          if (lastTurn) {
-            const turnImg = lastTurn.querySelector('img');
-            if (turnImg && turnImg.src && !preExistingImageUrls.has(turnImg.src)) {
-              detectedNewImage = { img: turnImg, url: turnImg.src };
-              consecutiveCalmChecks++;
-            }
+        // ChatGPT is NOT generating. If a new image is present in the latest turn, mark it!
+        if (turnImgs.length > 0) {
+          const bestImg = turnImgs[turnImgs.length - 1];
+          const finalUrl = bestImg.src || bestImg.getAttribute('src') || '';
+          if (finalUrl) {
+            detectedNewImage = { img: bestImg, url: finalUrl };
+            consecutiveCalmChecks++;
           }
         }
 
-        // Once ChatGPT is done and new image is detected (no waiting too long!)
+        // Once ChatGPT is done and new image is detected
         if (consecutiveCalmChecks >= 1 && detectedNewImage) {
           clearInterval(checkInterval);
           const finalUrl = detectedNewImage.url;
-          console.log('[BOLTHAVEN] ✓ Generation fully finished! New image detected:', finalUrl);
+          console.log('[BOLTHAVEN] ✓ Generation fully finished! New image detected in latest turn:', finalUrl);
 
-          // Add this new image URL to preExistingImageUrls so future turns won't mistake it
           preExistingImageUrls.add(finalUrl);
-
           const fileName = `enhanced_${job.original_position}_${job.job_id}.png`;
 
-          // Trigger single download via background chrome.downloads API (with fallback only on error)
+          // Trigger single download via background chrome.downloads API
           chrome.runtime.sendMessage(
             {
               action: 'DOWNLOAD_IMAGE',
@@ -521,7 +952,6 @@
             },
             (resp) => {
               if (chrome.runtime.lastError || (resp && !resp.success)) {
-                console.warn('[BOLTHAVEN] Background download error, trying direct fallback:', chrome.runtime.lastError);
                 try {
                   const a = document.createElement('a');
                   a.href = finalUrl;
@@ -531,7 +961,7 @@
                   document.body.removeChild(a);
                 } catch (e) {}
               } else {
-                console.log('[BOLTHAVEN] ✓ Successfully initiated single download for image #' + job.original_position);
+                console.log('[BOLTHAVEN] ✓ Successfully initiated download for image #' + job.original_position);
               }
             }
           );
@@ -762,6 +1192,29 @@
       })
         .then((result) => sendResponse(result))
         .catch((err) => sendResponse({ success: false, error: err.message }));
+      return true;
+    }
+
+    if (request.action === 'INSPECT_CHATGPT') {
+      const fileInputs = Array.from(document.querySelectorAll('input[type="file"], input[accept*="image"]')).map((i) => ({
+        id: i.id,
+        name: i.name,
+        accept: i.accept,
+        multiple: i.multiple,
+        style: i.getAttribute('style'),
+        parentTag: i.parentElement?.tagName,
+        parentClass: i.parentElement?.className,
+      }));
+      const composer = getComposerContainer() || document.querySelector('form') || document.body;
+      const buttons = Array.from(composer.querySelectorAll('button')).map((b) => ({
+        aria: b.getAttribute('aria-label'),
+        testid: b.getAttribute('data-testid'),
+        id: b.id,
+        text: (b.innerText || '').slice(0, 30),
+        rect: { w: Math.round(b.getBoundingClientRect().width), h: Math.round(b.getBoundingClientRect().height) },
+        svgHtml: (b.querySelector('svg')?.outerHTML || '').slice(0, 100),
+      }));
+      sendResponse({ fileInputs, buttons, url: window.location.href });
       return true;
     }
 

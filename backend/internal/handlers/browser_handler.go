@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 
 	"github.com/gofiber/fiber/v2"
@@ -581,12 +582,14 @@ func CompanionSync(c *fiber.Ctx) error {
 
 // StartAutomation handles POST /api/browser/automation/start
 // Accepts: property_id, profile_key, tab_ids ([]int — Chrome tab IDs from the extension)
-// Fetches pending queue jobs, then calls the companion service to kick off the extension worker.
 func StartAutomation(c *fiber.Ctx) error {
 	var body struct {
-		PropertyID string `json:"property_id"`
-		ProfileKey string `json:"profile_key"`
-		TabIDs     []int  `json:"tab_ids"`
+		PropertyID       string `json:"property_id"`
+		ProfileKey       string `json:"profile_key"`
+		TabIDs           []int  `json:"tab_ids"`
+		TabMode          string `json:"tab_mode"`
+		WorkerCount      int    `json:"worker_count"`
+		ReuseSessionTabs *bool  `json:"reuse_session_tabs"`
 	}
 	if err := c.BodyParser(&body); err != nil || body.PropertyID == "" {
 		return c.Status(http.StatusBadRequest).JSON(fiber.Map{
@@ -605,11 +608,23 @@ func StartAutomation(c *fiber.Ctx) error {
 		})
 	}
 
-	pendingJobs := make([]models.ImageProcessingJob, 0, len(jobs))
+	// Strictly deduplicate jobs by OriginalPosition to ensure exactly 1 job per photo
+	posMap := make(map[int]models.ImageProcessingJob)
+	var orderedPositions []int
 	for _, j := range jobs {
 		if j.Status == models.ImgJobStatusPending || j.Status == models.ImgJobStatusReadyForUser {
-			pendingJobs = append(pendingJobs, j)
+			pos := j.OriginalPosition
+			if _, exists := posMap[pos]; !exists {
+				orderedPositions = append(orderedPositions, pos)
+			}
+			posMap[pos] = j
 		}
+	}
+	sort.Ints(orderedPositions)
+
+	pendingJobs := make([]models.ImageProcessingJob, 0, len(orderedPositions))
+	for _, pos := range orderedPositions {
+		pendingJobs = append(pendingJobs, posMap[pos])
 	}
 
 	if len(pendingJobs) == 0 {
@@ -621,7 +636,7 @@ func StartAutomation(c *fiber.Ctx) error {
 
 	// Call the companion service which queues a START_AUTOMATION command for the extension
 	browserSvc := services.GetBrowserProfileService()
-	result, err := browserSvc.StartAutomationViaCompanion(body.ProfileKey, body.PropertyID, body.TabIDs, pendingJobs)
+	result, err := browserSvc.StartAutomationViaCompanion(body.ProfileKey, body.PropertyID, body.TabIDs, pendingJobs, body.TabMode, body.WorkerCount, body.ReuseSessionTabs)
 	if err != nil {
 		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
 			"status":  "error",

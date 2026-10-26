@@ -23,10 +23,10 @@ import {
   restoreDefaultWorkflowFormats,
   type WorkflowFormat,
 } from './workflowFormats';
-import { isWatermarkAIBox, isTextFormatAIBox, isN8NAIBox, isExternalBrowserAIBox } from '../facebook-import/aiModelUtils';
+import { isWatermarkAIBox, isTextFormatAIBox, isN8NAIBox, isExternalBrowserAIBox, isChromeProfileAIBox, isChromeTabGroupAIBox } from '../facebook-import/aiModelUtils';
 import { runN8NWorkflow } from '../../services/n8nService';
 import { createBatchImageQueue, startImageQueue, focusBrowserTabGroup, openBrowserProfile, fetchTabGroups, waitForBrowserTabsReady, startAutomation, stopAutomation, getAutomationStatus, fetchImageQueue } from '../browser-processing/browserAutomationService';
-import { resolvePromptForBrowserNode } from '../browser-processing/browserPromptUtils';
+import { resolvePromptForBrowserNode, getPersistedPromptKey } from '../browser-processing/browserPromptUtils';
 import { getSavedCropFormats, formatImageWithCropFormat, type CropStudioFormat } from '../watermark/cropFormats';
 import { loadActiveWatermarkConfig } from '../autopost/watermarkStorage';
 import {
@@ -1189,6 +1189,8 @@ export const CreateWorkflowView: React.FC = () => {
       const isTextFormat = isTextFormatAIBox(box);
       const isN8N = isN8NAIBox(box);
       const isExternalBrowser = isExternalBrowserAIBox(box);
+      let connectedProfileBox: any = null;
+      let tabGroupNodeId: string = box.id;
 
       setExecutionState((prev) => ({
         ...prev!,
@@ -1310,26 +1312,89 @@ export const CreateWorkflowView: React.FC = () => {
         const propId = (propData as any)?.id || `PROP-${Date.now()}`;
         const propName = projName || (propData as any)?.project_name || 'Featured Property Listing';
 
-        const profId = (box as any).browserProfileId || 14;
-        const profKey = (box as any).browserProfileKey || (box as any).browserProfileName || 'Profile 14';
-        const groupName = (box as any).browserGroupName || 'Enhance IMG';
-        const targetTabId = (box as any).browserTabId || (box as any).browserPromptTabId || (box as any).browserGenerateTabId || '';
+        const areBoxesConnected = (idA: string, idB: string) => {
+          return (cfg.connections || []).some(
+            (c: any) => (c.fromNodeId === idA && c.toNodeId === idB) || (c.fromNodeId === idB && c.toNodeId === idA)
+          );
+        };
 
+        // 1. Follow wires to find the connected chrome_profile node
+        connectedProfileBox = (cfg.aiBoxes || []).find(
+          (b: any) => areBoxesConnected(box.id, b.id) && (isChromeProfileAIBox(b) || (b as any).processType === 'chrome_profile')
+        );
+        if (!connectedProfileBox && isChromeProfileAIBox(box)) {
+          connectedProfileBox = box;
+        }
+        if (!connectedProfileBox) {
+          connectedProfileBox = (cfg.aiBoxes || []).find(
+            (b: any) => (isChromeProfileAIBox(b) || (b as any).processType === 'chrome_profile') && b.enabled !== false
+          );
+        }
+
+        // 2. Follow wires to find the connected chrome_tab_group node
+        const connectedTabGroupBox = (cfg.aiBoxes || []).find(
+          (b: any) =>
+            (areBoxesConnected(box.id, b.id) || (connectedProfileBox && areBoxesConnected(connectedProfileBox.id, b.id))) &&
+            (isChromeTabGroupAIBox(b) || (b as any).processType === 'chrome_tab_group')
+        ) || (isChromeTabGroupAIBox(box) ? box : null) || (cfg.aiBoxes || []).find(
+          (b: any) => (isChromeTabGroupAIBox(b) || (b as any).processType === 'chrome_tab_group') && b.enabled !== false
+        );
+
+        const profId = connectedProfileBox?.browserProfileId || (box as any).browserProfileId || 11;
+        const profKey = connectedProfileBox?.browserProfileKey || connectedProfileBox?.browserProfileName || (box as any).browserProfileKey || 'Profile 14';
+        const profName = connectedProfileBox?.title || connectedProfileBox?.browserProfileName || 'Hsu';
+
+        const groupName = connectedTabGroupBox?.browserGroupName || connectedTabGroupBox?.title || (box as any).browserGroupName || 'Enhance IMG';
+        const targetTabId = (connectedTabGroupBox as any)?.browserTabId || (box as any).browserTabId || (box as any).browserPromptTabId || (box as any).browserGenerateTabId || '';
+
+        tabGroupNodeId = connectedTabGroupBox?.id || box.id;
+
+        // ── Step 1: External Browser Node ──
         setExecutionState((prev) => ({
           ...prev!,
           activeNodeIds: [box.id],
-          currentStepMessage: `🌐 Opening Chrome [${profKey}] & focusing Tab Group [${groupName}]...`,
+          currentStepMessage: `🌐 Connecting to External Browser Engine [${box.title || 'External Browser'}]...`,
           stepIndex: 4,
           propertyId: propId,
         }));
+        await delay(450);
 
-        let targetUrls = (box as any).browserGroupTabUrls ||
-          ((box as any)._liveGroupTabs || []).map((t: any) => t.url).filter(Boolean);
+        // ── Step 2: Chrome Profile Node ──
+        if (connectedProfileBox) {
+          setExecutionState((prev) => ({
+            ...prev!,
+            completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), box.id])),
+            activeNodeIds: [connectedProfileBox.id],
+            currentStepMessage: `👤 Connecting to Chrome Profile [${profName}]...`,
+          }));
+          try {
+            await openBrowserProfile(profId, profKey);
+          } catch (pErr) {
+            console.warn('Profile open warning:', pErr);
+          }
+          await delay(600);
+        }
+
+        // ── Step 3: Chrome Tab Group Node ──
+        setExecutionState((prev) => ({
+          ...prev!,
+          completedNodeIds: Array.from(new Set([
+            ...(prev?.completedNodeIds || []),
+            box.id,
+            ...(connectedProfileBox ? [connectedProfileBox.id] : []),
+          ])),
+          activeNodeIds: [tabGroupNodeId],
+          currentStepMessage: `📂 Opening Tab Group [${groupName}] (4 Tabs)...`,
+        }));
+
+        let targetUrls = connectedTabGroupBox?.browserGroupTabUrls ||
+          ((connectedTabGroupBox as any)?._liveGroupTabs || []).map((t: any) => t.url).filter(Boolean) ||
+          (box as any).browserGroupTabUrls;
 
         if (!targetUrls || targetUrls.length === 0) {
           try {
-            const fetched = await fetchTabGroups(profId, profKey, (box as any).browserProfileName);
-            const m = fetched.find((g) => g.name.toLowerCase() === groupName.toLowerCase()) || fetched[0];
+            const fetched = await fetchTabGroups(profId, profKey, profName);
+            const m = fetched.find((g) => g.name.toLowerCase() === groupName.toLowerCase());
             if (m && m.tabs && m.tabs.length > 0) {
               targetUrls = m.tabs.map((t) => t.url).filter(Boolean);
             }
@@ -1347,6 +1412,10 @@ export const CreateWorkflowView: React.FC = () => {
           }
         }
 
+        const tabMode = ((connectedTabGroupBox as any)?.workerTabMode || (connectedTabGroupBox as any)?.boxConfig?.workerTabMode || (box as any).workerTabMode || 'existing_tabs') as 'existing_tabs' | 'new_tabs';
+        const workerCount = ((connectedTabGroupBox as any)?.workerTabCount || (connectedTabGroupBox as any)?.boxConfig?.workerTabCount || (box as any).workerTabCount || 4) as number;
+        const reuseSession = ((connectedTabGroupBox as any)?.reuseSessionTabs ?? (connectedTabGroupBox as any)?.boxConfig?.reuseSessionTabs ?? (box as any).reuseSessionTabs ?? true) as boolean;
+
         try {
           await focusBrowserTabGroup({
             profileId: profId,
@@ -1354,7 +1423,10 @@ export const CreateWorkflowView: React.FC = () => {
             groupName: groupName,
             tabId: targetTabId,
             groupTabUrls: targetUrls,
-            url: targetUrls[0],
+            url: targetUrls?.[0],
+            tabMode: tabMode,
+            workerCount: workerCount,
+            reuseSessionTabs: reuseSession,
             force: true,
           });
 
@@ -1363,11 +1435,13 @@ export const CreateWorkflowView: React.FC = () => {
             profileKey: profKey,
             groupName: groupName,
             expectedUrls: targetUrls,
+            tabMode: tabMode,
+            workerCount: workerCount,
             maxWaitMs: 15000,
             onProgress: (msg) => {
               setExecutionState((prev) => ({
                 ...prev!,
-                activeNodeIds: [box.id],
+                activeNodeIds: [tabGroupNodeId],
                 currentStepMessage: msg,
               }));
             },
@@ -1376,17 +1450,29 @@ export const CreateWorkflowView: React.FC = () => {
           if (readyResult.verified) {
             setExecutionState((prev) => ({
               ...prev!,
-              activeNodeIds: [box.id],
-              currentStepMessage: `✓ Chrome open & Tab Group [${groupName}] (${targetUrls.length || 4} tabs) confirmed active in browser!`,
+              activeNodeIds: [tabGroupNodeId],
+              currentStepMessage: `✓ Tab Group [${groupName}] confirmed active in browser!`,
             }));
-            await delay(600);
+            await delay(500);
           }
         } catch (openErr) {
           console.warn('Could not auto-open Chrome profile and tab group:', openErr);
         }
 
-        const runEnhance = (box as any).enableEnhanceGroup !== false && !!groupName && imageList.length > 0;
-        const runStaging = (box as any).enableStagingGroup !== false && !!((box as any).stagingGroupName || (box as any).browserProcessingMode === 'two_stage_staging');
+        const isStagingGroup = groupName.toLowerCase().includes('hero') || groupName.toLowerCase().includes('stage');
+        const isEnhanceGroup = groupName.toLowerCase().includes('enhance') || !isStagingGroup;
+
+        const runEnhance = isEnhanceGroup && imageList.length > 0;
+        const runStaging = isStagingGroup;
+
+        if (isEnhanceGroup && imageList.length === 0) {
+          setExecutionState((prev) => ({
+            ...prev!,
+            activeNodeIds: [tabGroupNodeId],
+            currentStepMessage: `⚠️ [${groupName}] Tab group open in Chrome. (0 photos to enhance)`,
+          }));
+          await delay(800);
+        }
 
         // ── PHASE 1: PHOTO ENHANCEMENT ACROSS 4 TABS (Enhance IMG) ──
         if (runEnhance) {
@@ -1417,7 +1503,7 @@ export const CreateWorkflowView: React.FC = () => {
             property_id: propId,
             property_name: propName,
             prompt_template_text: enhancePrompt,
-            prompt_template_id: (box as any).browserPromptTemplateKey || 'photo_retouch',
+            prompt_template_id: (box as any).browserPromptTemplateKey || getPersistedPromptKey() || 'photo_retouch',
             images: rawImgs,
             processing_mode: (box as any).browserProcessingMode || 'chrome_assisted',
             lane_id: (box as any).browserLaneKey || 'lane-1',
@@ -1436,14 +1522,17 @@ export const CreateWorkflowView: React.FC = () => {
           setExecutionState((prev) => ({
             ...prev!,
             activeNodeIds: [box.id],
-            currentStepMessage: `⚡ Phase 1: Distributing ${totalImages} images across 4 ChatGPT tabs [${groupName}]...`,
+            currentStepMessage: `⚡ Phase 1: Distributing ${totalImages} images across ${workerCount} ChatGPT tabs [${groupName}]...`,
           }));
 
           try {
             await startAutomation({
               property_id: propId,
               profile_key: profKey,
-              tab_ids: [1, 2, 3, 4],
+              tab_ids: Array.from({ length: workerCount }, (_, i) => i + 1),
+              tab_mode: tabMode,
+              worker_count: workerCount,
+              reuse_session_tabs: reuseSession,
             });
           } catch (autoErr) {
             console.warn('Automation start error:', autoErr);
@@ -1487,7 +1576,7 @@ export const CreateWorkflowView: React.FC = () => {
 
               setExecutionState((prev) => ({
                 ...prev!,
-                activeNodeIds: [box.id],
+                activeNodeIds: [tabGroupNodeId],
                 currentStepMessage: `⚡ Phase 1: Enhancing images across 4 ChatGPT tabs: ${completedCount}/${totalImages} completed...`,
               }));
 
@@ -1502,7 +1591,7 @@ export const CreateWorkflowView: React.FC = () => {
 
           setExecutionState((prev) => ({
             ...prev!,
-            activeNodeIds: [box.id],
+            activeNodeIds: [tabGroupNodeId],
             currentStepMessage: `✓ Phase 1 complete: All ${totalImages} images enhanced and downloaded!`,
           }));
           await delay(600);
@@ -1535,7 +1624,11 @@ export const CreateWorkflowView: React.FC = () => {
                 group_name: stagingGroupTarget,
                 condo_name: (box as any).browserCondoName || propName,
                 initial_prompt: initialPrompt,
-                reference_image: (box as any).referenceImage || null,
+                reference_image: (box as any).useReferenceImage !== false ? ((box as any).referenceImage || null) : null,
+                target_folder: (box as any).targetFolder || localStorage.getItem('bolthaven_condo_target_folder') || '',
+                use_condo_images: (box as any).useCondoImages !== false,
+                use_reference_image: (box as any).useReferenceImage !== false,
+                skip_tab1: (box as any).stagingMode === 'direct_tab2' || (box as any).skipTab1 === true,
               }),
             });
 
@@ -1661,9 +1754,14 @@ export const CreateWorkflowView: React.FC = () => {
         await delay(500);
       }
 
+      const completedBranchIds = [
+        box.id,
+        ...(isExternalBrowser ? [tabGroupNodeId, ...(connectedProfileBox ? [connectedProfileBox.id] : [])] : []),
+      ];
+
       setExecutionState((prev) => ({
         ...prev!,
-        completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), box.id])),
+        completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), ...completedBranchIds])),
         activeNodeIds: [],
         currentStepMessage: `✓ [${box.title || 'Node'}] executed successfully!`,
       }));

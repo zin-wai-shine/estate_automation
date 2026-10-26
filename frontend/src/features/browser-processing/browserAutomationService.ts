@@ -147,6 +147,9 @@ export const focusBrowserTabGroup = async (params: {
   tabId?: string;
   url?: string;
   groupTabUrls?: string[];
+  tabMode?: 'existing_tabs' | 'new_tabs';
+  workerCount?: number;
+  reuseSessionTabs?: boolean;
   force?: boolean;
 }): Promise<{ success: boolean; message?: string }> => {
   const callKey = `${params.profileKey || params.profileId || 'Profile 14'}-${params.groupName || 'Enhance IMG'}`;
@@ -166,6 +169,9 @@ export const focusBrowserTabGroup = async (params: {
     url: params.url,
     group_tab_urls: params.groupTabUrls,
     groupTabUrls: params.groupTabUrls,
+    tab_mode: params.tabMode || 'existing_tabs',
+    worker_count: params.workerCount || 4,
+    reuse_session_tabs: params.reuseSessionTabs !== false,
     force: params.force,
   };
 
@@ -362,6 +368,9 @@ export const startAutomation = async (params: {
   property_id: string;
   profile_key?: string;
   tab_ids: number[];
+  tab_mode?: 'existing_tabs' | 'new_tabs';
+  worker_count?: number;
+  reuse_session_tabs?: boolean;
 }): Promise<{ success: boolean; message: string; job_count?: number }> => {
   try {
     const res = await fetch(`${API_BASE}/automation/start`, {
@@ -419,6 +428,8 @@ export const checkBrowserReadiness = async (params: {
   profileKey?: string;
   groupName?: string;
   expectedUrls?: string[];
+  tabMode?: 'existing_tabs' | 'new_tabs';
+  workerCount?: number;
   autoLaunch?: boolean;
 }): Promise<TabReadinessResult> => {
   const profileKey = params.profileKey || 'Profile 14';
@@ -433,6 +444,8 @@ export const checkBrowserReadiness = async (params: {
         profile_key: profileKey,
         group_name: groupName,
         group_tab_urls: expectedUrls,
+        tab_mode: params.tabMode || 'existing_tabs',
+        worker_count: params.workerCount || 4,
         auto_launch: params.autoLaunch,
       }),
     });
@@ -443,7 +456,7 @@ export const checkBrowserReadiness = async (params: {
         chromeRunning: !!data.chrome_running,
         windowCount: Number(data.window_count || 0),
         matchedCount: Number(data.matched_count || 0),
-        totalExpected: Number(data.total_expected || expectedUrls.length || 4),
+        totalExpected: Number(data.total_expected || expectedUrls.length || params.workerCount || 4),
         message: data.message || '',
       };
     }
@@ -456,7 +469,7 @@ export const checkBrowserReadiness = async (params: {
     chromeRunning: false,
     windowCount: 0,
     matchedCount: 0,
-    totalExpected: expectedUrls.length || 4,
+    totalExpected: expectedUrls.length || params.workerCount || 4,
     message: 'Connecting to companion...',
   };
 };
@@ -465,6 +478,8 @@ export const waitForBrowserTabsReady = async (params: {
   profileKey?: string;
   groupName?: string;
   expectedUrls?: string[];
+  tabMode?: 'existing_tabs' | 'new_tabs';
+  workerCount?: number;
   maxWaitMs?: number;
   onProgress?: (message: string, matchedCount: number, totalExpected: number) => void;
 }): Promise<{ verified: boolean; message: string }> => {
@@ -478,6 +493,8 @@ export const waitForBrowserTabsReady = async (params: {
       profileKey: params.profileKey,
       groupName: params.groupName,
       expectedUrls: params.expectedUrls,
+      tabMode: params.tabMode,
+      workerCount: params.workerCount,
       autoLaunch: false, // Never re-launch Chrome while verifying tabs to prevent opening multiple windows
     });
 

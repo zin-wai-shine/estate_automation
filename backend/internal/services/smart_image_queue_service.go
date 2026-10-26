@@ -60,6 +60,9 @@ func (s *SmartImageQueueService) CreateBatchJobs(req BatchCreateJobRequest) ([]m
 
 	if req.PropertyID == "" {
 		req.PropertyID = fmt.Sprintf("PROP-%d", time.Now().Unix())
+	} else {
+		// Delete previous jobs for this property to avoid duplicate runs or accumulated stale jobs
+		_ = database.DB.Where("property_id = ?", req.PropertyID).Delete(&models.ImageProcessingJob{}).Error
 	}
 	if req.OutputWidth <= 0 {
 		req.OutputWidth = 1080

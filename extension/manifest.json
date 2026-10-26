@@ -16,8 +16,11 @@
   ],
   "host_permissions": [
     "http://localhost:8085/*",
+    "http://127.0.0.1:8085/*",
     "http://127.0.0.1:9224/*",
-    "https://chatgpt.com/*"
+    "http://localhost:9224/*",
+    "https://chatgpt.com/*",
+    "https://*.chatgpt.com/*"
   ],
   "action": {
     "default_popup": "popup.html",
@@ -28,7 +31,10 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://chatgpt.com/*"],
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://*.chatgpt.com/*"
+      ],
       "js": ["content.js"],
       "run_at": "document_idle"
     }

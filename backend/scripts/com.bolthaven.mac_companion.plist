@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.bolthaven.mac_companion</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/zinwaishine/Library/Application Support/Herd/config/nvm/versions/node/v24.11.1/bin/node</string>
+        <string>/Users/zinwaishine/Desktop/Project_EA/backend/scripts/mac_companion.js</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/zinwaishine/Desktop/Project_EA</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/zinwaishine/Desktop/Project_EA/backend/scripts/companion.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/zinwaishine/Desktop/Project_EA/backend/scripts/companion.error.log</string>
+</dict>
+</plist>

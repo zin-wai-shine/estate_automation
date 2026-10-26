@@ -45,6 +45,24 @@ const INITIAL_DEFAULT_TEMPLATES: PromptTemplate[] = [
     templateText:
       'Write a professional sales copy for property sale: {title}.\nHighlight investment yield, BTS access, and price {price}.',
   },
+  {
+    id: 4,
+    name: 'FB Hero Prompt Template',
+    category: 'GENERATE_IMAGE',
+    version: 'V1.0',
+    active: true,
+    templateText:
+      'Generate a hero real estate listing image based on condo unit context and reference styling. Maintain realistic architectural aesthetics, high dynamic range, and authentic materials.',
+  },
+  {
+    id: 5,
+    name: 'Enhance Image (Photo Retouch)',
+    category: 'IMAGE_ENHANCE',
+    version: 'V1.0',
+    active: true,
+    templateText:
+      'Edit the attached interior photograph into a clean, detailed, professional architectural real-estate image. Preserve the real interior while correcting camera roll, lighting, and geometric alignment.',
+  },
 ];
 
 export const PromptTemplatesView: React.FC = () => {
@@ -53,7 +71,14 @@ export const PromptTemplatesView: React.FC = () => {
       const saved = localStorage.getItem('estate_prompt_templates');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map((item: any) => {
+            if ((item.category === 'IMAGE_ENHANCE' || item.category === 'ENHANCE_IMAGE') && item.name && /hero/i.test(item.name)) {
+              return { ...item, category: 'GENERATE_IMAGE' };
+            }
+            return item;
+          });
+        }
       }
     } catch (e) {}
     return INITIAL_DEFAULT_TEMPLATES;
@@ -123,7 +148,8 @@ export const PromptTemplatesView: React.FC = () => {
   };
 
   const formatCategoryLabel = (category: string) => {
-    switch (category) {
+    const upper = (category || '').toUpperCase();
+    switch (upper) {
       case 'FACEBOOK_SALE':
         return 'Facebook Sale';
       case 'FACEBOOK_RENT':
@@ -133,7 +159,15 @@ export const PromptTemplatesView: React.FC = () => {
       case 'EN_TRANSLATION':
         return 'English Translation';
       case 'IMAGE_ENHANCE':
-        return 'Image Enhance';
+      case 'ENHANCE_IMAGE':
+      case 'ENHANCE IMAGE':
+      case 'IMAGE ENHANCE':
+        return 'Enhance Image';
+      case 'GENERATE_IMAGE':
+      case 'IMAGE_GENERATE':
+      case 'GENERATE IMAGE':
+      case 'IMAGE GENERATE':
+        return 'Generate Image';
       default:
         return category;
     }
@@ -142,6 +176,8 @@ export const PromptTemplatesView: React.FC = () => {
   const getCategoryBadgeVariant = (category: string): 'info' | 'warning' | 'default' => {
     if (category.includes('FACEBOOK')) return 'info';
     if (category.includes('TIKTOK')) return 'warning';
+    if (category === 'GENERATE_IMAGE') return 'warning';
+    if (category === 'IMAGE_ENHANCE') return 'info';
     return 'default';
   };
 
@@ -151,7 +187,8 @@ export const PromptTemplatesView: React.FC = () => {
     { value: 'FACEBOOK_RENT', label: 'Facebook Rent' },
     { value: 'TIKTOK', label: 'TikTok' },
     { value: 'EN_TRANSLATION', label: 'English Translation' },
-    { value: 'IMAGE_ENHANCE', label: 'Image Enhance' },
+    { value: 'IMAGE_ENHANCE', label: 'Enhance Image' },
+    { value: 'GENERATE_IMAGE', label: 'Generate Image' },
   ];
 
   const categoryFormOptions: DropdownOption[] = [
@@ -159,7 +196,8 @@ export const PromptTemplatesView: React.FC = () => {
     { value: 'FACEBOOK_RENT', label: 'Facebook Rent' },
     { value: 'TIKTOK', label: 'TikTok' },
     { value: 'EN_TRANSLATION', label: 'English Translation' },
-    { value: 'IMAGE_ENHANCE', label: 'Image Enhance' },
+    { value: 'IMAGE_ENHANCE', label: 'Enhance Image' },
+    { value: 'GENERATE_IMAGE', label: 'Generate Image' },
   ];
 
   const filteredPrompts = prompts.filter((p) => {

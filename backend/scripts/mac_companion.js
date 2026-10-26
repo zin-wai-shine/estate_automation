@@ -46,8 +46,20 @@ let automationState = {
   updated_at: null,
 };
 
-// Pending command for extension to pick up via /poll-command
-let pendingAutomationCommand = null;
+// Pending commands queue for extension to pick up via /poll-command
+let pendingAutomationCommands = [];
+
+function pushPendingCommand(cmd) {
+  if (cmd && cmd.action === 'START_AUTOMATION') {
+    // If a START_AUTOMATION command is already queued, replace it with the latest one to prevent duplicate runs
+    const beforeCount = pendingAutomationCommands.length;
+    pendingAutomationCommands = pendingAutomationCommands.filter((c) => c.action !== 'START_AUTOMATION');
+    if (beforeCount !== pendingAutomationCommands.length) {
+      console.log('[COMPANION] ℹ️ Replaced previous pending START_AUTOMATION with latest command.');
+    }
+  }
+  pendingAutomationCommands.push(cmd);
+}
 
 // 1. Read Chrome profiles directly from macOS Local State
 function getLocalChromeProfiles() {
@@ -293,17 +305,103 @@ function getRunningChromePid() {
     if (stat.isSymbolicLink()) {
       const target = fs.readlinkSync(lockPath);
       const m = target.match(/-(\d+)$/);
-      if (m) return parseInt(m[1], 10);
+      if (m) {
+        const pid = parseInt(m[1], 10);
+        try {
+          process.kill(pid, 0);
+          return pid;
+        } catch (e) {
+          // Stale link pointing to terminated process - clean up locks
+          try {
+            fs.unlinkSync(lockPath);
+            fs.unlinkSync(path.join(CHROME_USER_DATA_DIR, 'SingletonSocket'));
+            fs.unlinkSync(path.join(CHROME_USER_DATA_DIR, 'SingletonCookie'));
+          } catch (delErr) {}
+        }
+      }
+    }
+  } catch (e) {}
+
+  // Fallback: inspect running Google Chrome processes (excluding remote debugging test instances)
+  try {
+    const pgrep = execSync('pgrep -x "Google Chrome" 2>/dev/null', { encoding: 'utf8' }).trim();
+    if (pgrep) {
+      const pids = pgrep.split('\n').map((p) => parseInt(p.trim(), 10)).filter(Boolean);
+      for (const p of pids) {
+        try {
+          const ps = execSync(`ps -p ${p} -o command= 2>/dev/null`, { encoding: 'utf8' });
+          if (!ps.includes('remote-debugging-port')) {
+            return p;
+          }
+        } catch (e) {}
+      }
+      return pids[pids.length - 1];
     }
   } catch (e) {}
   return null;
 }
 
-function activateChromeWindow(pid) {
-  if (pid) {
-    exec(`swift -e 'import AppKit; NSRunningApplication(processIdentifier: ${pid})?.activate()' 2>/dev/null`, () => {});
+function isChromeRunning() {
+  const pid = getRunningChromePid();
+  if (pid) return true;
+  try {
+    const pgrep = execSync('pgrep -x "Google Chrome" 2>/dev/null', { encoding: 'utf8' }).trim();
+    return Boolean(pgrep);
+  } catch (e) {
+    return false;
   }
-  exec(`osascript -e 'tell application "Google Chrome" to activate' 2>/dev/null`, () => {});
+}
+
+// Check if THAT SPECIFIC Chrome profile is currently open and active
+function isChromeProfileOpen(profileKey, profileName) {
+  const normKey = normalizeProfileKey(profileKey, profileName);
+  if (!isChromeRunning()) {
+    return false;
+  }
+
+  // 1. Check live extension heartbeats / pair records for this specific profile
+  if (liveTabGroupsByKey[normKey] && liveTabGroupsByKey[normKey].length > 0) {
+    const recent = registeredProfiles.slice().reverse().find((p) => {
+      const k = (p.profileKey || p.profile_key || '').toLowerCase();
+      return k === normKey.toLowerCase();
+    });
+    if (recent && recent.paired_at) {
+      const age = Date.now() - new Date(recent.paired_at).getTime();
+      if (age < 45000) return true;
+    }
+  }
+
+  return false;
+}
+
+function activateChromeWindow(pid, fallbackUrl = 'https://chatgpt.com/', matchQuery = 'chatgpt.com') {
+  const targetPid = pid || getRunningChromePid();
+  if (targetPid) {
+    exec(`swift -e 'import AppKit; NSRunningApplication(processIdentifier: ${targetPid})?.activate(options: .activateIgnoringOtherApps)' 2>/dev/null`, () => {});
+  }
+  const cleanMatch = (matchQuery || 'chatgpt.com').replace(/"/g, '');
+  const cleanFallback = (fallbackUrl || 'https://chatgpt.com/').replace(/"/g, '');
+  const asScript = `
+tell application "Google Chrome"
+  activate
+  if (count of windows) = 0 then
+    open location "${cleanFallback}"
+  else
+    repeat with w in windows
+      set tabIdx to 1
+      repeat with t in tabs of w
+        if URL of t contains "${cleanMatch}" then
+          set active tab index of w to tabIdx
+          set index of w to 1
+          return
+        end if
+        set tabIdx to tabIdx + 1
+      end repeat
+    end repeat
+  end if
+end tell
+`;
+  execFile('osascript', ['-e', asScript], () => {});
 }
 
 // 2. Focus / Open Chrome Profile on macOS
@@ -328,34 +426,50 @@ function normalizeProfileKey(profileKey, profileName) {
   return 'Profile 14';
 }
 
-function focusChromeProfile(profileKey) {
-  return new Promise((resolve, reject) => {
-    const resolvedKey = normalizeProfileKey(profileKey);
-    console.log(`[COMPANION] Focusing Chrome profile: "${resolvedKey}"`);
-    const pid = getRunningChromePid();
+let lastLaunchedProfile = '';
+let lastLaunchTime = 0;
+
+function launchChromeProfileOnce(resolvedKey, targetUrls = []) {
+  const now = Date.now();
+  if (lastLaunchedProfile === resolvedKey && (now - lastLaunchTime < 3000)) {
+    activateChromeWindow(undefined, 'https://chatgpt.com/', 'chatgpt.com');
+    return Promise.resolve(true);
+  }
+  lastLaunchedProfile = resolvedKey;
+  lastLaunchTime = now;
+
+  return new Promise((resolve) => {
+    console.log(`[COMPANION] Launching Chrome for profile "${resolvedKey}"...`);
+    // Launch Chrome profile cleanly with extension attached.
+    // Do not pass worker URLs on CLI to prevent creating duplicate loose tabs outside the tab group!
     const args = [
       `--profile-directory=${resolvedKey}`,
       `--load-extension=/Users/zinwaishine/Desktop/Project_EA/extension`,
     ];
-
     try {
-      const child = spawn(CHROME_BINARY, args, {
-        detached: true,
-        stdio: 'ignore',
-      });
+      const child = spawn(CHROME_BINARY, args, { detached: true, stdio: 'ignore' });
       child.unref();
-
-      setTimeout(() => {
-        const updatedPid = getRunningChromePid() || pid;
-        activateChromeWindow(updatedPid);
-        console.log(`[COMPANION] Successfully focused profile "${resolvedKey}" (PID: ${updatedPid})`);
-        resolve(true);
-      }, 350);
     } catch (err) {
-      console.error(`[COMPANION] Error focusing profile "${resolvedKey}":`, err.message);
-      reject(err);
+      console.warn('[COMPANION] Error launching Chrome with profile:', err.message);
     }
+
+    setTimeout(() => {
+      activateChromeWindow(undefined, 'https://chatgpt.com/', 'chatgpt.com');
+      resolve(true);
+    }, 450);
   });
+}
+
+function focusChromeProfile(profileKey) {
+  const resolvedKey = normalizeProfileKey(profileKey);
+  console.log(`[COMPANION] Focusing Chrome profile: "${resolvedKey}"`);
+  if (isChromeProfileOpen(resolvedKey)) {
+    console.log(`[COMPANION] Profile "${resolvedKey}" is already open. Activating window.`);
+    activateChromeWindow();
+    return Promise.resolve(true);
+  }
+  console.log(`[COMPANION] Profile "${resolvedKey}" is not open. Launching profile browser...`);
+  return launchChromeProfileOnce(resolvedKey);
 }
 
 function openChromeUrl(profileKey, targetURL) {
@@ -363,11 +477,24 @@ function openChromeUrl(profileKey, targetURL) {
     const resolvedKey = normalizeProfileKey(profileKey);
     const urls = Array.isArray(targetURL) ? targetURL : [targetURL || 'https://chatgpt.com/'];
     console.log(`[COMPANION] Opening URLs in profile "${resolvedKey}":`, urls);
+
+    // If THAT SAME PROFILE is already open, queue for extension in that profile to open URL
+    if (isChromeProfileOpen(resolvedKey)) {
+      activateChromeWindow();
+      pushPendingCommand({
+        action: 'OPEN_URL',
+        payload: { url: urls[0], profileKey: resolvedKey },
+        created_at: new Date().toISOString(),
+      });
+      return resolve(true);
+    }
+
+    // Profile is NOT open -> must launch Chrome with that profile cleanly (no CLI urls to avoid duplicate tabs)
+    console.log(`[COMPANION] Profile "${resolvedKey}" is not open. Launching profile browser cleanly...`);
     const pid = getRunningChromePid();
     const args = [
       `--profile-directory=${resolvedKey}`,
       `--load-extension=/Users/zinwaishine/Desktop/Project_EA/extension`,
-      ...urls,
     ];
 
     try {
@@ -377,12 +504,19 @@ function openChromeUrl(profileKey, targetURL) {
       });
       child.unref();
 
+      // Queue command for extension to handle once it connects
+      pushPendingCommand({
+        action: 'OPEN_URL',
+        payload: { url: urls[0], profileKey: resolvedKey },
+        created_at: new Date().toISOString(),
+      });
+
       setTimeout(() => {
         const updatedPid = getRunningChromePid() || pid;
-        activateChromeWindow(updatedPid);
-        console.log(`[COMPANION] Successfully opened URL in profile "${resolvedKey}" (PID: ${updatedPid})`);
+        activateChromeWindow(updatedPid, urls[0]);
+        console.log(`[COMPANION] Successfully launched Chrome cleanly in profile "${resolvedKey}"`);
         resolve(true);
-      }, 350);
+      }, 450);
     } catch (err) {
       console.error(`[COMPANION] Error opening URL in profile "${resolvedKey}":`, err.message);
       reject(err);
@@ -394,57 +528,25 @@ let lastFocusTabGroupTime = 0;
 let lastFocusTabGroupKey = '';
 
 function openOrFocusChromeTabs(profileKey, groupName, targetUrls) {
-  return new Promise((resolve) => {
-    const resolvedKey = normalizeProfileKey(profileKey);
-    let urls = (targetUrls || []).filter(Boolean);
-    if (urls.length === 0) {
-      if ((groupName || '').toLowerCase().includes('enhance')) {
-        urls = [
-          'https://chatgpt.com/c/6ad49918-a4f0-83ec-acf5-efb0ef516adc',
-          'https://chatgpt.com/c/6ad49924-7dd0-83ec-8205-768c67420600',
-          'https://chatgpt.com/c/6ad4992a-66e8-83ec-9b11-c5e727e258d9',
-          'https://chatgpt.com/c/6ad4992b-135c-83ec-b042-8c92220921d7',
-        ];
-      } else {
-        urls.push('https://chatgpt.com/');
-      }
-    }
-
-    console.log(`[COMPANION] openOrFocusChromeTabs: profile="${resolvedKey}", group="${groupName}", urls=${urls.length}`);
-
-    const args = [
-      `--profile-directory=${resolvedKey}`,
-      `--load-extension=/Users/zinwaishine/Desktop/Project_EA/extension`,
-      ...urls,
-    ];
-
-    try {
-      const child = spawn(CHROME_BINARY, args, { detached: true, stdio: 'ignore' });
-      child.unref();
-    } catch (err) {
-      console.warn('[COMPANION] Error launching Chrome with profile:', err.message);
-    }
-
-    setTimeout(() => {
-      activateChromeWindow();
-      resolve(true);
-    }, 400);
-  });
-}
-
-function focusChromeTabGroup(profileKey, groupName, tabId, defaultUrl, explicitTabUrls, force) {
   const resolvedKey = normalizeProfileKey(profileKey);
-  const now = Date.now();
-  const cacheKey = `${resolvedKey}-${groupName}`;
-  if (!force && cacheKey === lastFocusTabGroupKey && now - lastFocusTabGroupTime < 2500) {
-    console.log(`[COMPANION] Debouncing duplicate focus request for "${cacheKey}"`);
+  console.log(`[COMPANION] openOrFocusChromeTabs: profile="${resolvedKey}", group="${groupName}"`);
+  if (isChromeProfileOpen(resolvedKey)) {
+    activateChromeWindow();
     return Promise.resolve(true);
   }
+  return launchChromeProfileOnce(resolvedKey, targetUrls);
+}
+
+function focusChromeTabGroup(profileKey, groupName, tabId, defaultUrl, explicitTabUrls, force, tabMode = 'existing_tabs', workerCount = 4, reuseSessionTabs = true) {
+  const resolvedKey = normalizeProfileKey(profileKey);
+  const now = Date.now();
+  const cacheKey = `${resolvedKey}-${groupName}-${tabMode}-${workerCount}`;
+  const shouldSkipWindowLaunch = (!force && cacheKey === lastFocusTabGroupKey && (now - lastFocusTabGroupTime < 2500));
   lastFocusTabGroupTime = now;
   lastFocusTabGroupKey = cacheKey;
 
   return new Promise(async (resolve) => {
-    console.log(`[COMPANION] Auto-focusing Chrome profile "${resolvedKey}" & Tab Group "${groupName}"...`);
+    console.log(`[COMPANION] Auto-focusing Chrome profile "${resolvedKey}" & Tab Group "${groupName}" (mode: ${tabMode}, workers: ${workerCount})...`);
 
     // 1. Determine all distinct tab URLs for this group
     let groupTabUrls = Array.isArray(explicitTabUrls) && explicitTabUrls.length > 0 ? explicitTabUrls : [];
@@ -485,21 +587,31 @@ function focusChromeTabGroup(profileKey, groupName, tabId, defaultUrl, explicitT
     }
 
     // 2. Queue command for Chrome Extension to expand and focus all tabs in group
-    pendingAutomationCommand = {
+    pushPendingCommand({
       action: 'FOCUS_GROUP',
-      payload: { groupName, tabId, profileKey: resolvedKey, targetUrl, groupTabUrls },
+      payload: { groupName, tabId, profileKey: resolvedKey, targetUrl, groupTabUrls, tabMode, workerCount, reuseSessionTabs },
       created_at: new Date().toISOString(),
-    };
+    });
 
-    // 3. Open or focus Chrome with all distinct group tabs in the same window (no duplicates)
-    await openOrFocusChromeTabs(resolvedKey, groupName, groupTabUrls);
+    // 3. Activate window and bring the matching tab to the front
+    const matchTarget = (groupTabUrls[0] || targetUrl || 'chatgpt.com');
+    if (isChromeProfileOpen(resolvedKey)) {
+      console.log(`[COMPANION] Profile "${resolvedKey}" is already open. Activating window & matching tab.`);
+      activateChromeWindow(undefined, targetUrl, matchTarget);
+    } else if (!shouldSkipWindowLaunch) {
+      console.log(`[COMPANION] Profile "${resolvedKey}" is not open. Launching profile browser with group URLs...`);
+      await launchChromeProfileOnce(resolvedKey, groupTabUrls.length > 0 ? groupTabUrls : [targetUrl]);
+    } else {
+      activateChromeWindow(undefined, targetUrl, matchTarget);
+    }
 
     resolve(true);
   });
 }
 
-function verifyChromeTabsOpen(profileKey, groupName, expectedUrls = []) {
+function verifyChromeTabsOpen(profileKey, groupName, expectedUrls = [], tabMode = 'existing_tabs', workerCount = 4) {
   return new Promise((resolve) => {
+    const effectiveCount = Math.max(1, Math.min(8, parseInt(workerCount, 10) || 4));
     let targets = (expectedUrls || []).filter(Boolean);
     if (targets.length === 0) {
       if ((groupName || '').toLowerCase().includes('enhance')) {
@@ -513,6 +625,7 @@ function verifyChromeTabsOpen(profileKey, groupName, expectedUrls = []) {
         targets = ['https://chatgpt.com/'];
       }
     }
+    targets = targets.slice(0, effectiveCount);
 
     const userPid = getRunningChromePid();
     let isChromeRunning = Boolean(userPid);
@@ -534,6 +647,37 @@ function verifyChromeTabsOpen(profileKey, groupName, expectedUrls = []) {
       });
     }
 
+    // Check if Chrome has windows open
+    let winCount = 0;
+    try {
+      const cnt = execSync(`osascript -e 'tell application "Google Chrome" to count windows' 2>/dev/null`, { encoding: 'utf8' }).trim();
+      winCount = parseInt(cnt, 10) || 0;
+    } catch (e) {}
+
+    if (winCount === 0) {
+      activateChromeWindow(undefined, targets[0] || 'https://chatgpt.com/', targets[0] || 'chatgpt.com');
+    }
+
+    // 1. First priority: Check live tab groups reported directly by Chrome Extension
+    const normKey = normalizeProfileKey(profileKey);
+    const liveGroups = liveTabGroupsByKey[profileKey] || liveTabGroupsByKey[normKey] || [];
+    const liveMatch = liveGroups.find((g) =>
+      (g.title || g.name || '').toLowerCase().includes((groupName || 'enhance').toLowerCase())
+    );
+    if (liveMatch && Array.isArray(liveMatch.tabs) && liveMatch.tabs.length > 0) {
+      const liveUrls = liveMatch.tabs.map((t) => t.url).filter(Boolean);
+      return resolve({
+        verified: true,
+        chrome_running: true,
+        window_count: Math.max(1, winCount),
+        matched_count: liveUrls.length,
+        total_expected: targets.length,
+        matched_urls: liveUrls,
+        missing_urls: [],
+        message: `Tab group "${groupName}" confirmed active with ${liveUrls.length} tabs`,
+      });
+    }
+
     const script = `
       tell application "Google Chrome"
         set winCount to count of windows
@@ -541,39 +685,17 @@ function verifyChromeTabsOpen(profileKey, groupName, expectedUrls = []) {
           return "0||NO_WINDOWS"
         end if
         
-        -- Check front window tabs
-        set fwUrls to {}
-        repeat with t in tabs of front window
-          set end of fwUrls to (URL of t as text)
-        end repeat
-        
-        -- Check if any other window has the target tabs
-        set foundIdx to 0
-        set wIdx to 1
+        -- Collect all URLs from all windows
+        set allUrls to {}
         repeat with w in windows
           repeat with t in tabs of w
-            set tUrl to (URL of t as text)
-            if tUrl contains "6ad49918-a4f0-83ec-acf5-efb0ef516adc" or tUrl contains "6ad49924-7dd0-83ec-8205-768c67420600" then
-              set foundIdx to wIdx
-              exit repeat
-            end if
+            set end of allUrls to (URL of t as text)
           end repeat
-          if foundIdx > 0 then exit repeat
-          set wIdx to wIdx + 1
         end repeat
-        
-        -- If another window has them and front window does not, focus it!
-        if foundIdx > 1 then
-          set index of window foundIdx to 1
-          set fwUrls to {}
-          repeat with t in tabs of front window
-            set end of fwUrls to (URL of t as text)
-          end repeat
-        end if
         
         -- Return formatted list
         set AppleScript's text item delimiters to "||"
-        set urlsStr to fwUrls as text
+        set urlsStr to allUrls as text
         set AppleScript's text item delimiters to ""
         return (winCount as text) & "||" & urlsStr
       end tell
@@ -587,6 +709,21 @@ function verifyChromeTabsOpen(profileKey, groupName, expectedUrls = []) {
         const parts = stdout.trim().split('||');
         winCount = parseInt(parts[0], 10) || 0;
         activeUrls = parts.slice(1).map((u) => u.trim());
+      }
+
+      if (tabMode === 'new_tabs') {
+        const chatgptTabs = activeUrls.filter((u) => u.toLowerCase().includes('chatgpt.com'));
+        const matchedCount = Math.min(chatgptTabs.length, effectiveCount);
+        return resolve({
+          verified: matchedCount >= 1,
+          chrome_running: true,
+          window_count: winCount,
+          matched_count: matchedCount,
+          total_expected: effectiveCount,
+          matched_urls: chatgptTabs.slice(0, effectiveCount),
+          missing_urls: [],
+          message: `${matchedCount} ChatGPT worker tabs confirmed active`,
+        });
       }
 
       const matchedUrls = [];
@@ -610,14 +747,7 @@ function verifyChromeTabsOpen(profileKey, groupName, expectedUrls = []) {
         }
       });
 
-      // If active window does not have the worker tabs yet, actively open them!
-      if (matchedUrls.length === 0) {
-        try {
-          await openOrFocusChromeTabs(profileKey, groupName, targets);
-        } catch (e) {}
-      }
-
-      const isVerified = matchedUrls.length >= Math.min(targets.length, 1);
+      const isVerified = matchedUrls.length >= 1;
 
       resolve({
         verified: isVerified,
@@ -629,7 +759,7 @@ function verifyChromeTabsOpen(profileKey, groupName, expectedUrls = []) {
         missing_urls: missingUrls,
         message: isVerified
           ? `Verified ${matchedUrls.length}/${targets.length} worker tabs open in Google Chrome`
-          : `Opening and loading ${targets.length} tabs in Chrome window (${matchedUrls.length}/${targets.length} ready)...`,
+          : `Waiting for Chrome tabs to finish loading (${matchedUrls.length}/${targets.length} ready)...`,
       });
     });
   });
@@ -732,7 +862,7 @@ function handleDetectedDownload(filePath, fileName, size) {
 }
 
 // 4. HTTP Service for BoltHaven Frontend & Chrome Extension Pairing
-const server = http.createServer((req, res) => {
+const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -770,6 +900,7 @@ const server = http.createServer((req, res) => {
     return str
       .normalize('NFKD')
       .replace(/[\u0300-\u036f]/g, '')
+      .replace(/^(ให้เช่า|เช่า|ขาย|คอนโด|for rent|for sale|\(owner post\)|owner post)[\s:]*/i, '')
       // Convert mathematical bold, italic, and sans-serif Unicode to standard ASCII
       .replace(/[\u{1D400}-\u{1D7FF}]/gu, (c) => {
         const code = c.codePointAt(0);
@@ -781,14 +912,16 @@ const server = http.createServer((req, res) => {
         return c;
       })
       .toLowerCase()
+      .replace(/^(ให้เช่า|เช่า|ขาย|คอนโด|for rent|for sale|\(owner post\)|owner post)[\s:]*/i, '')
       .replace(/[:\/_\-\(\)]/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
   }
 
-  function findCondoDirectory(query) {
-    if (!fs.existsSync(CONDO_BASE_DIR)) return null;
-    const dirs = fs.readdirSync(CONDO_BASE_DIR, { withFileTypes: true })
+  function findCondoDirectory(query, customBaseDir) {
+    const baseDir = (customBaseDir && fs.existsSync(customBaseDir)) ? customBaseDir : CONDO_BASE_DIR;
+    if (!fs.existsSync(baseDir)) return null;
+    const dirs = fs.readdirSync(baseDir, { withFileTypes: true })
       .filter((d) => d.isDirectory())
       .map((d) => d.name);
 
@@ -822,25 +955,46 @@ const server = http.createServer((req, res) => {
     return bestScore >= Math.min(2, qTokens.length) ? best : null;
   }
 
+  // Native macOS folder chooser dialog via osascript
+  if (url.pathname === '/choose-folder' && (req.method === 'POST' || req.method === 'GET')) {
+    try {
+      const appleScript = `POSIX path of (choose folder with prompt "Select Condo Buildings Base Directory")`;
+      execFile('osascript', ['-e', appleScript], (err, stdout) => {
+        if (err) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ status: 'cancelled', error: err.message }));
+        }
+        const selectedPath = (stdout || '').trim().replace(/\/$/, '');
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ status: 'success', selected_path: selectedPath }));
+      });
+    } catch (e) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ status: 'error', message: e.message }));
+    }
+    return;
+  }
+
   if (url.pathname === '/condo-images') {
-    const handleCondoRequest = (condoName) => {
+    const handleCondoRequest = (condoName, customBaseDir) => {
       try {
-        if (!fs.existsSync(CONDO_BASE_DIR)) {
+        const baseDir = (customBaseDir && fs.existsSync(customBaseDir)) ? customBaseDir : CONDO_BASE_DIR;
+        if (!fs.existsSync(baseDir)) {
           res.writeHead(404, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ status: 'error', message: 'Condo Building directory not found on Desktop' }));
+          return res.end(JSON.stringify({ status: 'error', message: `Condo directory not found: ${baseDir}`, base_dir: baseDir }));
         }
 
-        const matchedDir = findCondoDirectory(condoName);
+        const matchedDir = findCondoDirectory(condoName, baseDir);
         if (!matchedDir) {
           res.writeHead(404, { 'Content-Type': 'application/json' });
           return res.end(JSON.stringify({
             status: 'error',
-            message: `No matching condo directory found for "${condoName}"`,
-            base_dir: CONDO_BASE_DIR,
+            message: `No matching condo directory found for "${condoName}" in ${baseDir}`,
+            base_dir: baseDir,
           }));
         }
 
-        const folderPath = path.join(CONDO_BASE_DIR, matchedDir);
+        const folderPath = path.join(baseDir, matchedDir);
         const entries = fs.readdirSync(folderPath, { withFileTypes: true });
 
         // Strictly locate image files named 1, 2, 3 (ignoring subdirectories like D or watermark)
@@ -866,12 +1020,35 @@ const server = http.createServer((req, res) => {
           }
         });
 
+        // Fallback: If 1.png, 2.png, 3.png not explicitly numbered, pick the top 3 image files
+        if (images.length === 0) {
+          const validEntries = entries
+            .filter((f) => f.isFile() && /\.(png|jpg|jpeg|webp)$/i.test(f.name) && !f.name.startsWith('.'))
+            .slice(0, 3);
+          validEntries.forEach((file, idx) => {
+            const filePath = path.join(folderPath, file.name);
+            const ext = path.extname(file.name).toLowerCase().replace('.', '') || 'png';
+            const mime = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+            const fileBuf = fs.readFileSync(filePath);
+            const b64 = fileBuf.toString('base64');
+            images.push({
+              index: idx + 1,
+              filename: file.name,
+              mime_type: mime,
+              full_path: filePath,
+              size_bytes: fileBuf.length,
+              data_url: `data:${mime};base64,${b64}`,
+            });
+          });
+        }
+
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({
           status: 'success',
           condo_query: condoName,
           matched_folder: matchedDir,
           folder_path: folderPath,
+          base_dir: baseDir,
           images_found: images.length,
           images: images,
         }));
@@ -888,7 +1065,7 @@ const server = http.createServer((req, res) => {
       req.on('end', () => {
         try {
           const parsed = JSON.parse(body || '{}');
-          handleCondoRequest(parsed.condo_name || parsed.condoName || parsed.title || '');
+          handleCondoRequest(parsed.condo_name || parsed.condoName || parsed.title || '', parsed.base_dir || parsed.target_folder);
         } catch (e) {
           handleCondoRequest('');
         }
@@ -896,23 +1073,26 @@ const server = http.createServer((req, res) => {
       return;
     } else {
       const q = url.searchParams.get('condo_name') || url.searchParams.get('condoName') || url.searchParams.get('q') || '';
-      return handleCondoRequest(q);
+      const customBase = url.searchParams.get('base_dir') || url.searchParams.get('target_folder') || '';
+      return handleCondoRequest(q, customBase);
     }
   }
 
   // Preview all indexed condo directories
-  if (url.pathname === '/scan-condos' && req.method === 'GET') {
-    if (!fs.existsSync(CONDO_BASE_DIR)) {
+  if (url.pathname === '/scan-condos' && (req.method === 'GET' || req.method === 'POST')) {
+    const customBase = url.searchParams.get('base_dir') || url.searchParams.get('target_folder') || '';
+    const baseDir = (customBase && fs.existsSync(customBase)) ? customBase : CONDO_BASE_DIR;
+    if (!fs.existsSync(baseDir)) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ status: 'success', total_condos: 0, folders: [] }));
+      return res.end(JSON.stringify({ status: 'success', total_condos: 0, folders: [], base_dir: baseDir }));
     }
-    const dirs = fs.readdirSync(CONDO_BASE_DIR, { withFileTypes: true })
+    const dirs = fs.readdirSync(baseDir, { withFileTypes: true })
       .filter((d) => d.isDirectory())
       .map((d) => d.name);
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({
       status: 'success',
-      base_dir: CONDO_BASE_DIR,
+      base_dir: baseDir,
       total_condos: dirs.length,
       folders: dirs,
     }));
@@ -981,9 +1161,11 @@ const server = http.createServer((req, res) => {
         const tabId = payload.tab_id || '';
         const groupTabUrls = payload.group_tab_urls || payload.groupTabUrls || [];
         const force = !!payload.force;
-        const defaultUrl = payload.url || payload.default_url || '';
+        const tabMode = payload.tab_mode || 'existing_tabs';
+        const workerCount = parseInt(payload.worker_count, 10) || 4;
+        const reuseSessionTabs = payload.reuse_session_tabs !== false;
 
-        await focusChromeTabGroup(profileKey, groupName, tabId, defaultUrl, groupTabUrls, force);
+        await focusChromeTabGroup(profileKey, groupName, tabId, defaultUrl, groupTabUrls, force, tabMode, workerCount, reuseSessionTabs);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
           status: 'success',
@@ -1009,8 +1191,10 @@ const server = http.createServer((req, res) => {
           const groupName = payload.group_name || payload.groupName || 'Enhance IMG';
           const expectedUrls = payload.group_tab_urls || payload.groupTabUrls || payload.expected_urls || [];
           const autoLaunch = !!payload.auto_launch;
+          const tabMode = payload.tab_mode || 'existing_tabs';
+          const workerCount = parseInt(payload.worker_count, 10) || 4;
 
-          let checkResult = await verifyChromeTabsOpen(profileKey, groupName, expectedUrls);
+          let checkResult = await verifyChromeTabsOpen(profileKey, groupName, expectedUrls, tabMode, workerCount);
 
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ status: 'success', ...checkResult }));
@@ -1259,12 +1443,31 @@ function mergeTabGroups(scannedGroups, liveGroups) {
         // the NativeMessaging bridge. As a simpler approach that works without native
         // messaging setup, we expose a /relay-to-extension API endpoint that the
         // popup.html / background.js polls every few seconds via fetch.
+        let safeGroupTabUrls = payload.group_tab_urls || payload.groupTabUrls || [];
+        if (!safeGroupTabUrls || safeGroupTabUrls.length === 0) {
+          safeGroupTabUrls = [
+            'https://chatgpt.com/c/6ad49918-a4f0-83ec-acf5-efb0ef516adc',
+            'https://chatgpt.com/c/6ad49924-7dd0-83ec-8205-768c67420600',
+            'https://chatgpt.com/c/6ad4992a-66e8-83ec-9b11-c5e727e258d9',
+            'https://chatgpt.com/c/6ad4992b-135c-83ec-b042-8c92220921d7',
+          ];
+        }
+
         // Store the pending command for the extension to pick up when it polls.
-        pendingAutomationCommand = {
+        pushPendingCommand({
           action: 'START_AUTOMATION',
-          payload: { tabIds: safeTabIds, jobs: jobs || [], propertyId: property_id },
+          payload: {
+            tabIds: safeTabIds,
+            jobs: jobs || [],
+            propertyId: property_id,
+            groupName: payload.group_name || payload.groupName || 'Enhance IMG',
+            groupTabUrls: safeGroupTabUrls,
+            tabMode: payload.tab_mode || payload.tabMode || 'existing_tabs',
+            workerCount: payload.worker_count || payload.workerCount || safeTabIds.length || 4,
+            reuseSessionTabs: payload.reuse_session_tabs !== undefined ? payload.reuse_session_tabs : (payload.reuseSessionTabs !== undefined ? payload.reuseSessionTabs : true),
+          },
           created_at: new Date().toISOString(),
-        };
+        });
 
         // Bring Chrome window to front to trigger tab activation and extension wake-up
         activateChromeWindow();
@@ -1290,10 +1493,52 @@ function mergeTabGroups(scannedGroups, liveGroups) {
   // ── Stop Automation ─────────────────────────────────────────────────────────
   if (url.pathname === '/stop-automation' && req.method === 'POST') {
     automationState = { ...automationState, is_running: false };
-    pendingAutomationCommand = { action: 'STOP_AUTOMATION', payload: {}, created_at: new Date().toISOString() };
+    pushPendingCommand({ action: 'STOP_AUTOMATION', payload: {}, created_at: new Date().toISOString() });
     console.log('[COMPANION] Stop automation command queued');
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ status: 'ok' }));
+  }
+
+  // ── Inspect ChatGPT DOM ──────────────────────────────────────────────────
+  if (url.pathname === '/last-inspect' && req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify(global.lastInspectResult || { status: 'none' }));
+  }
+
+  if (url.pathname === '/inspect-chatgpt' && req.method === 'GET') {
+    pushPendingCommand({ action: 'INSPECT_CHATGPT', payload: {}, created_at: new Date().toISOString() });
+    console.log('[COMPANION] Inspect ChatGPT command queued');
+    let attempts = 0;
+    while (attempts < 60 && !global.lastInspectResult) {
+      await new Promise((r) => setTimeout(r, 200));
+      attempts++;
+    }
+    const result = global.lastInspectResult || { error: 'Timeout waiting for inspect result' };
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify(result));
+  }
+
+  if (url.pathname === '/report-inspect' && req.method === 'POST') {
+    let body = '';
+    req.on('data', (c) => (body += c));
+    req.on('end', () => {
+      try {
+        global.lastInspectResult = JSON.parse(body || '{}');
+      } catch (e) {
+        global.lastInspectResult = { raw: body };
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'ok' }));
+    });
+    return;
+  }
+
+  // ── Reload Extension ─────────────────────────────────────────────────────────
+  if (url.pathname === '/reload-extension' && req.method === 'POST') {
+    pushPendingCommand({ action: 'RELOAD_EXTENSION', payload: {}, created_at: new Date().toISOString() });
+    console.log('[COMPANION] Reload extension command queued');
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ status: 'ok', message: 'Reload queued' }));
   }
 
   // ── Two-Stage Staging Automation (Group 2: Tab 1 Prompt Extractor -> Tab 2 Staging) ──
@@ -1319,15 +1564,20 @@ function mergeTabGroups(scannedGroups, liveGroups) {
         const groupName = payload.group_name || 'FB Hero';
         const condoName = payload.condo_name || payload.title || '';
         const initialPrompt = payload.initial_prompt || payload.prompt || '';
-        const referenceImage = payload.reference_image || null; // Manually uploaded example image (pasted 1st)
+        const useRef = payload.use_reference_image !== false;
+        const referenceImage = useRef ? (payload.reference_image || null) : null;
+        const useCondoImgs = payload.use_condo_images !== false;
+        const customBase = payload.target_folder || payload.base_dir;
+        const baseDir = (customBase && fs.existsSync(customBase)) ? customBase : CONDO_BASE_DIR;
+        const skipTab1 = !!payload.skip_tab1 || payload.staging_mode === 'direct_tab2';
 
         // Read local condo images 1, 2, 3 (Strictly Read-Only!)
         let condoImages = [];
         let matchedDir = '';
-        if (condoName && fs.existsSync(CONDO_BASE_DIR)) {
-          matchedDir = findCondoDirectory(condoName);
+        if (useCondoImgs && condoName && fs.existsSync(baseDir)) {
+          matchedDir = findCondoDirectory(condoName, baseDir);
           if (matchedDir) {
-            const folderPath = path.join(CONDO_BASE_DIR, matchedDir);
+            const folderPath = path.join(baseDir, matchedDir);
             const entries = fs.readdirSync(folderPath, { withFileTypes: true });
             [1, 2, 3].forEach((num) => {
               const match = entries.find(
@@ -1345,6 +1595,24 @@ function mergeTabGroups(scannedGroups, liveGroups) {
                 });
               }
             });
+
+            // Fallback: If 1.png, 2.png, 3.png not explicitly numbered, pick the top 3 image files
+            if (condoImages.length === 0) {
+              const validEntries = entries
+                .filter((f) => f.isFile() && /\.(png|jpg|jpeg|webp)$/i.test(f.name) && !f.name.startsWith('.'))
+                .slice(0, 3);
+              validEntries.forEach((file, idx) => {
+                const filePath = path.join(folderPath, file.name);
+                const ext = path.extname(file.name).toLowerCase().replace('.', '') || 'png';
+                const mime = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+                const buf = fs.readFileSync(filePath);
+                condoImages.push({
+                  index: idx + 1,
+                  filename: file.name,
+                  data_url: `data:${mime};base64,${buf.toString('base64')}`,
+                });
+              });
+            }
           }
         }
 
@@ -1360,7 +1628,7 @@ function mergeTabGroups(scannedGroups, liveGroups) {
           updated_at: new Date().toISOString(),
         };
 
-        pendingAutomationCommand = {
+        pushPendingCommand({
           action: 'START_TWO_STAGE_STAGING',
           payload: {
             profileKey,
@@ -1370,9 +1638,10 @@ function mergeTabGroups(scannedGroups, liveGroups) {
             condoImages,    // 1.png, 2.png, 3.png pasted right after
             condoName,
             matchedFolder: matchedDir,
+            skipTab1,
           },
           created_at: new Date().toISOString(),
-        };
+        });
 
         activateChromeWindow();
 
@@ -1417,9 +1686,8 @@ function mergeTabGroups(scannedGroups, liveGroups) {
 
   // ── Poll for Pending Extension Command (called by the extension background on an interval) ─
   if (url.pathname === '/poll-command' && req.method === 'GET') {
-    if (pendingAutomationCommand) {
-      const cmd = pendingAutomationCommand;
-      pendingAutomationCommand = null; // consume it
+    if (pendingAutomationCommands.length > 0) {
+      const cmd = pendingAutomationCommands.shift();
       res.writeHead(200, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify({ status: 'command', command: cmd }));
     }
