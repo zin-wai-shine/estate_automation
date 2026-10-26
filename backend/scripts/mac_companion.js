@@ -1506,6 +1506,7 @@ function mergeTabGroups(scannedGroups, liveGroups) {
   }
 
   if (url.pathname === '/inspect-chatgpt' && req.method === 'GET') {
+    global.lastInspectResult = null;
     pushPendingCommand({ action: 'INSPECT_CHATGPT', payload: {}, created_at: new Date().toISOString() });
     console.log('[COMPANION] Inspect ChatGPT command queued');
     let attempts = 0;

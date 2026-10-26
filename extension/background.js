@@ -1063,6 +1063,7 @@ async function pollCompanion() {
         const tabs = await chrome.tabs.query({});
         const chatTab = tabs.find((t) => (t.url || '').includes('chatgpt.com'));
         if (chatTab) {
+          await ensureContentScriptInjected(chatTab.id);
           chrome.tabs.sendMessage(chatTab.id, { action: 'INSPECT_CHATGPT' }, (resp) => {
             fetch(`${COMPANION_URL}/report-inspect`, {
               method: 'POST',
@@ -1070,6 +1071,12 @@ async function pollCompanion() {
               body: JSON.stringify(resp || { error: 'No response from tab' }),
             }).catch(() => {});
           });
+        } else {
+          fetch(`${COMPANION_URL}/report-inspect`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ error: 'No chatgpt.com tab found in this Chrome profile' }),
+          }).catch(() => {});
         }
       } else if (action === 'START_AUTOMATION') {
         const result = await startAutomation(payload);
