@@ -1,5 +1,5 @@
 {
-  "timestamp": 1793008203695,
+  "timestamp": 1793052317819,
   "workflow_formats": [
     {
       "config": {
@@ -316,8 +316,8 @@
             "browserProfileId": 11,
             "browserProfileKey": "Profile 14",
             "browserProfileName": "Hsu",
-            "browserPromptTemplateKey": "photo_retouch",
-            "browserPromptText": "Professionally retouch this property photograph: enhance sharpness, clarity, dynamic range, window sky dehazing, and authentic true-daylight color accuracy. Preserve exactly the original room layout, furniture, walls, floor, and architecture without alteration.",
+            "browserPromptTemplateKey": "1792793637553",
+            "browserPromptText": "Edit the attached original interior photograph into ONE clean, detailed, professional architectural real-estate image.\n\nOUTPUT TARGET\n\n- Exact 4:5 vertical aspect ratio.\n- 1080 × 1350 pixels.\n- sRGB.\n- One continuous photograph filling the entire canvas edge to edge.\n- No blurred fill, background duplicate, borders, padding, or inset photograph.\n\nUse the original photograph as the sole source of truth. Preserve the actual interior while correcting photographic defects and choosing a professional crop.\n\nMANDATORY RESULT\n\nPerform ALL THREE:\n\n1. Architectural straightening and geometric balance correction.\n2. Restrained, realistic image-quality enhancement.\n3. Subject-aware cropping to fill the entire 4:5 canvas with a balanced, intentional composition.\n\nCropping is required whenever the corrected source does not match 4:5. Do not shrink the photograph inside the canvas to preserve its complete original framing.\n\nPRIORITY ORDER\n\n1. Preserve the real appearance, proportions, and spatial relationships of the interior within the selected crop.\n2. Correct camera roll, leaning architectural verticals, and visible lens distortion.\n3. Choose the strongest balanced 4:5 composition around the photograph’s main subject.\n4. Preserve the original lighting, colors, brightness, and atmosphere.\n5. Improve clarity and technical quality conservatively.\n\nPreserving the actual interior does not require keeping every object inside the final frame. Peripheral content may fall outside the crop. Do not erase, move, resize, or reconstruct objects to make them fit.\n\nSTEP 1 — IDENTIFY THE MAIN SUBJECT\n\nBefore editing, inspect the photograph and identify:\n\n- The main furniture item, architectural feature, or functional area.\n- Supporting features that make the scene understandable.\n- The visual weight of furniture, décor, openings, and empty space.\n- Distracting or excessive space near the edges.\n- Existing cut-off objects and the best places for the final frame boundaries.\n\nChoose the focal area according to the photograph itself.\n\nExamples:\n\n- Bedroom: prioritize the bed and its immediate architectural context.\n- Living room: prioritize the main seating arrangement.\n- Kitchen: prioritize the principal cabinetry, countertop, and working area.\n- Detail photograph: prioritize the featured furniture or decorative arrangement.\n\nDo not automatically center the crop on the geometric center of the source image. Position it around the strongest visual subject.\n\nSTEP 2 — ARCHITECTURAL STRAIGHTENING\n\nInspect and correct:\n\n- Left or right camera tilt.\n- Leaning upright architectural edges.\n- Vertical keystone convergence.\n- Visible lens distortion.\n\nUse reliable upright references such as wall corners, cabinet seams, doorframes, window jambs, and built-in furniture edges.\n\nApply one coherent photographic correction across the entire scene.\n\n- Make genuinely upright architectural edges vertical.\n- Preserve natural perspective in lines receding into depth.\n- Maintain believable furniture proportions and room depth.\n- Keep floor planes, wall junctions, and furniture bases consistent.\n- Retain the original viewing direction and visible faces of furniture.\n- Do not independently warp, rotate, stretch, or reposition individual objects.\n- Do not simulate a new camera location or wider lens.\n- Do not hide unresolved tilt through cropping alone.\n\nIf correction creates empty edges, exclude them through the final crop. Do not generate replacement room details.\n\nSTEP 3 — CHOOSE A PROFESSIONAL 4:5 CROP\n\nAfter geometric correction, evaluate several possible 4:5 crop positions internally and select the strongest composition.\n\nUse uniform scaling to cover the entire canvas, then crop the excess. Never stretch or squeeze the photograph.\n\nCOMPOSITION REQUIREMENTS\n\n- Keep the main subject prominent and comfortably framed.\n- Maintain enough surrounding context to understand the scene.\n- Balance the visual weight across the frame.\n- Avoid excessive empty wall, ceiling, or floor when it weakens the composition.\n- Preserve useful negative space where it supports the subject.\n- Avoid leaving the main subject awkwardly crowded against an edge.\n- Avoid thin slivers of objects or distracting fragments at the frame boundaries.\n- Avoid cutting immediately beside a distinctive edge when a slightly different crop would look cleaner.\n- Preserve important subject features wherever the source and target ratio allow.\n- Use natural asymmetry when appropriate; do not force artificial symmetry.\n- Allow the crop to shift horizontally and vertically according to the subject.\n\nDo not apply a fixed centered crop to every photograph.\n\nWHEN CONTENT MUST BE CROPPED\n\n- First remove less useful peripheral space.\n- Then sacrifice secondary edge content before the main subject’s defining features.\n- If a large furniture item cannot fit completely, choose a deliberate, coherent partial view.\n- Make necessary cuts look intentional.\n- Do not zoom in more than needed to achieve the ratio and a strong composition.\n- Do not attempt to show the entire original photograph at the expense of full-canvas presentation.\n\nFOR A CABINET-AND-VASE DETAIL LIKE THE ATTACHED EXAMPLE\n\nTreat the cabinet and tabletop arrangement as the focal group.\n\n- Balance the leafy vase on the left with the tabletop objects and cabinet on the right.\n- Reduce surplus blank wall where useful.\n- Retain enough cabinetry to make the furniture readable.\n- Choose the top and bottom boundaries together so the arrangement feels grounded.\n- Preserve the open cabinet door in its actual position wherever included.\n- Do not close doors, move decorations, add shelves, or invent missing furniture edges.\n- Do not add surrounding room area to make the composition fit.\n\nFULL-CANVAS RULE\n\nThe final photograph must reach all four canvas edges. There must be no separate background layer or smaller photograph placed within the canvas.\n\nSTEP 4 — PRESERVE THE ACTUAL INTERIOR\n\nWithin the selected crop, preserve the original:\n\n- Architecture and openings.\n- Furniture and built-in elements.\n- Appliances and fixtures.\n- Handles, switches, sockets, and fittings.\n- Decorations and small objects.\n- Plants and visible exterior details.\n- Materials, finishes, colors, and patterns.\n\nKeep their physical locations, sizes, shapes, and relationships unchanged.\n\nChanges in image coordinates caused by global perspective correction and cropping are permitted.\n\nDo not redesign, stage, tidy, replace, duplicate, recolor, or reposition anything.\n\nDo not erase objects because they appear untidy.\n\nDo not invent text, labels, decorative patterns, or texture details.\n\nContent outside the crop is simply excluded from the frame; it must not be removed from within the visible scene.\n\nSTEP 5 — PRESERVE LIGHTING AND COLOR\n\nKeep the source photograph’s:\n\n- Overall exposure and brightness.\n- White balance and color temperature.\n- Color palette and saturation.\n- Lighting direction.\n- Shadow placement and depth.\n- Highlights and reflections.\n- Mood and atmosphere.\n\nMake only restrained tonal corrections needed for a clean, natural result.\n\nDo not automatically brighten, warm, or recolor the room.\n\nKeep warm rooms warm, cool rooms cool, and neutral rooms neutral.\n\nRecover highlight and shadow detail only where supported by the source.\n\nDo not add artificial sunlight, glowing fixtures, switched-on lights, dramatic relighting, HDR effects, or cinematic grading.\n\nSTEP 6 — RESTRAINED TECHNICAL ENHANCEMENT\n\nImprove conservatively:\n\n- Fine edge definition.\n- Supported texture detail.\n- Mild softness.\n- Compression artifacts.\n- Digital and color noise.\n\nPreserve natural texture in wood, fabric, glass, metal, stone, walls, and flooring.\n\nAvoid:\n\n- Sharpening halos.\n- Crunchy edges.\n- Plastic surfaces.\n- Excessive smoothing.\n- Exaggerated contrast.\n- Fabricated texture or unreadable text transformed into invented lettering.\n\nRetain realistic source depth of field. Do not add artificial blur.\n\nSTEP 7 — HUMAN OR CAMERA PRESENCE\n\nIf people, body parts, photographer reflections, camera reflections, or tripod reflections are visible, remove only those elements.\n\nReconstruct only the immediately obscured background conservatively, using surrounding evidence.\n\nPreserve unrelated objects, reflections, and architectural shadows.\n\nIf no human or camera presence is visible, make no removal edits.\n\nSTEP 8 — FINAL VERIFICATION\n\nConfirm that:\n\n- The output has an exact 4:5 vertical ratio.\n- The photograph fills the canvas edge to edge.\n- The focal subject is clear and appropriately prominent.\n- The crop feels balanced and intentional.\n- Empty space supports the composition rather than overwhelming it.\n- Necessary partial-object cuts look deliberate.\n- Architectural verticals are corrected.\n- Receding lines retain natural perspective.\n- Furniture proportions and room depth remain believable.\n- Visible objects retain their actual appearance and relationships.\n- Lighting, materials, colors, and atmosphere remain faithful.\n- Enhancement looks realistic and restrained.\n- No empty correction edges remain.\n- No stretching, padding, inset image, or background layer is present.\n\nSTRICT NEGATIVE INSTRUCTIONS\n\nNo blurred background fill.\nNo duplicated photograph behind the main image.\nNo picture-in-picture presentation.\nNo shrinking the photograph to fit inside the canvas.\nNo solid-color bars, gradients, blank padding, borders, frames, or decorative shadows.\nNo mirrored fill, tiled strips, or stretched edge pixels.\nNo generative expansion or invented room area.\nNo virtual staging or interior redesign.\nNo added, moved, replaced, duplicated, or resized objects.\nNo artificial symmetry or changed camera viewpoint.\nNo warped furniture or stretched room proportions.\nNo fabricated textures, labels, or architectural details.\nNo artificial lighting, excessive warmth, HDR, or CGI appearance.\nNo text, graphics, logos, or watermarks.\n\nFINAL OUTPUT\n\nReturn ONE finished 1080 × 1350 image only.\n\nThe result must be a single continuous, professionally cropped 4:5 photograph that fills the entire frame, with corrected architectural alignment, balanced subject placement, and restrained realistic enhancement.",
             "browserTabId": "tab-enh-1",
             "browserTabTitle": "Enhance Interior Photograph — Worker #1",
             "customPrompt": "Professionally retouch this property photograph: enhance sharpness, clarity, dynamic range, window sky dehazing, and authentic true-daylight color accuracy. Preserve exactly the original room layout, furniture, walls, floor, and architecture without alteration.",
@@ -429,8 +429,52 @@
             "title": "Enhance IMG",
             "usePromptConfig": true,
             "workerTabCount": 4,
-            "workerTabMode": "existing_tabs",
-            "x": 592,
+            "workerTabMode": "new_tabs",
+            "x": 520,
+            "y": 670
+          },
+          {
+            "_liveGroupTabs": [
+              {
+                "id": "tab-fb -1",
+                "title": "Prompt analysis — Worker #1",
+                "url": "https://chatgpt.com/c/6ad49862-4bb0-83ec-969a-1a85cf694b6b"
+              },
+              {
+                "id": "tab-fb -2",
+                "title": "Create Facebook Advertisement — Worker #2",
+                "url": "https://chatgpt.com/c/6ad49a3b-f934-83ec-a7c3-ed5f0977c9f6"
+              }
+            ],
+            "browserGroupName": "FB Hero",
+            "browserGroupTabUrls": [
+              "https://chatgpt.com/c/6ad49862-4bb0-83ec-969a-1a85cf694b6b",
+              "https://chatgpt.com/c/6ad49a3b-f934-83ec-a7c3-ed5f0977c9f6"
+            ],
+            "browserProfileId": 11,
+            "browserProfileKey": "Profile 14",
+            "browserProfileName": "Hsu",
+            "browserTabId": "tab-fb -1",
+            "browserTabTitle": "Prompt analysis — Worker #1",
+            "customPrompt": "",
+            "enabled": true,
+            "id": "ai-box-tabgroup-fb-hero-1793050402048",
+            "model": "chrome-tab-group",
+            "processKind": "generate_image",
+            "processType": "chrome_tab_group",
+            "promptSourceMode": "custom",
+            "provider": "external_browser",
+            "showEnhancementPrompt": true,
+            "showImagesToEnhance": false,
+            "skipTab1": false,
+            "stagingMode": "two_stage_tabs",
+            "subtitle": "2 Tabs",
+            "tabGroupMode": "generate",
+            "templateId": "chrome-tab-group",
+            "templateText": "Tab Group: FB Hero",
+            "title": "FB Hero",
+            "usePromptConfig": true,
+            "x": 664,
             "y": 670
           }
         ],
@@ -468,6 +512,11 @@
             "fromNodeId": "get-content",
             "id": "conn-get-content-output",
             "toNodeId": "combine-box-1792697914542"
+          },
+          {
+            "fromNodeId": "ai-box-chrome-11-1792896035919",
+            "id": "wire-ai-box-chrome-11-1792896035919-ai-box-tabgroup-fb-hero-1793050402048-1793050402048",
+            "toNodeId": "ai-box-tabgroup-fb-hero-1793050402048"
           }
         ],
         "destination": {
@@ -490,8 +539,8 @@
           "storeInDatabase": true,
           "targetMode": "hybrid",
           "title": "Social \u0026 Database Storage",
-          "x": 1070,
-          "y": 215
+          "x": 960,
+          "y": 248
         },
         "destinations": [
           {
@@ -539,12 +588,12 @@
           "enabled": false,
           "id": "output",
           "title": "Final Content \u0026 Images",
-          "x": 592,
+          "x": 664,
           "y": 215
         },
         "panOffset": {
-          "x": 292,
-          "y": 65
+          "x": 158,
+          "y": 32
         },
         "trigger": {
           "autoClassifyProperty": true,
@@ -566,7 +615,7 @@
       "description": "Custom Facebook import extraction with dynamic AI prompt generator",
       "id": "format-1792648980268",
       "name": "Download FB Post",
-      "updatedAt": 1793008203682
+      "updatedAt": 1793052317816
     },
     {
       "config": {

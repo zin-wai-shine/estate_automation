@@ -1184,13 +1184,75 @@ export const CreateWorkflowView: React.FC = () => {
     let primaryCopy = '';
 
     for (const box of aiBoxes) {
-      if (!box.enabled) continue;
+      // Chrome Profile and Chrome Tab Group nodes are subordinate nodes managed by External Browser
+      if (isChromeProfileAIBox(box) || isChromeTabGroupAIBox(box)) {
+        continue;
+      }
+
       const isWatermark = isWatermarkAIBox(box);
       const isTextFormat = isTextFormatAIBox(box);
       const isN8N = isN8NAIBox(box);
       const isExternalBrowser = isExternalBrowserAIBox(box);
       let connectedProfileBox: any = null;
       let tabGroupNodeId: string = box.id;
+
+      // Check if external browser and its subordinate tab group are enabled
+      let connectedTabGroupBox: any = null;
+      if (isExternalBrowser) {
+        const areBoxesConnected = (idA: string, idB: string) => {
+          return (cfg.connections || []).some(
+            (c: any) => (c.fromNodeId === idA && c.toNodeId === idB) || (c.fromNodeId === idB && c.toNodeId === idA)
+          );
+        };
+
+        connectedProfileBox = (cfg.aiBoxes || []).find(
+          (b: any) => areBoxesConnected(box.id, b.id) && (isChromeProfileAIBox(b) || (b as any).processType === 'chrome_profile')
+        ) || (isChromeProfileAIBox(box) ? box : null) || (cfg.aiBoxes || []).find(
+          (b: any) => (isChromeProfileAIBox(b) || (b as any).processType === 'chrome_profile') && b.enabled !== false
+        );
+
+        connectedTabGroupBox = (cfg.aiBoxes || []).find(
+          (b: any) =>
+            (areBoxesConnected(box.id, b.id) || (connectedProfileBox && areBoxesConnected(connectedProfileBox.id, b.id))) &&
+            (isChromeTabGroupAIBox(b) || (b as any).processType === 'chrome_tab_group')
+        ) || (isChromeTabGroupAIBox(box) ? box : null) || (cfg.aiBoxes || []).find(
+          (b: any) => (isChromeTabGroupAIBox(b) || (b as any).processType === 'chrome_tab_group')
+        );
+      }
+
+      const isBoxDirectlyEnabled = box.enabled !== false;
+      const isTabGroupEnabled = connectedTabGroupBox ? connectedTabGroupBox.enabled !== false : true;
+      const isStepActive = isExternalBrowser
+        ? (isBoxDirectlyEnabled && isTabGroupEnabled)
+        : isBoxDirectlyEnabled;
+
+      if (!isStepActive) {
+        // Step is disabled: bypass execution and forward inputs downstream!
+        const skippedIds = [
+          box.id,
+          ...(isExternalBrowser ? [
+            ...(connectedTabGroupBox ? [connectedTabGroupBox.id] : []),
+            ...(connectedProfileBox ? [connectedProfileBox.id] : []),
+          ] : []),
+        ];
+
+        setExecutionState((prev) => ({
+          ...prev!,
+          activeNodeIds: skippedIds,
+          currentStepMessage: `⏭️ [${box.title || 'Step'}] is disabled — bypassed during run (forwarding inputs)...`,
+          stepIndex: 4,
+        }));
+        await delay(450);
+
+        setExecutionState((prev) => ({
+          ...prev!,
+          completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), ...skippedIds])),
+          activeNodeIds: [],
+          currentStepMessage: `✓ [${box.title || 'Step'}] bypassed (inputs ready for next step)`,
+        }));
+        await delay(250);
+        continue;
+      }
 
       setExecutionState((prev) => ({
         ...prev!,
@@ -1462,10 +1524,10 @@ export const CreateWorkflowView: React.FC = () => {
         const isStagingGroup = groupName.toLowerCase().includes('hero') || groupName.toLowerCase().includes('stage');
         const isEnhanceGroup = groupName.toLowerCase().includes('enhance') || !isStagingGroup;
 
-        const runEnhance = isEnhanceGroup && imageList.length > 0;
-        const runStaging = isStagingGroup;
+        const runEnhance = isEnhanceGroup && imageList.length > 0 && isTabGroupEnabled;
+        const runStaging = isStagingGroup && isTabGroupEnabled;
 
-        if (isEnhanceGroup && imageList.length === 0) {
+        if (isEnhanceGroup && imageList.length === 0 && isTabGroupEnabled) {
           setExecutionState((prev) => ({
             ...prev!,
             activeNodeIds: [tabGroupNodeId],

@@ -5809,7 +5809,7 @@ export const FacebookWorkflowCanvas = forwardRef<
   // Toggle Box Enabled
   const handleToggleAIBox = (id: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    const newBoxes = config.aiBoxes.map((b) => (b.id === id ? { ...b, enabled: !b.enabled } : b));
+    const newBoxes = config.aiBoxes.map((b) => (b.id === id ? { ...b, enabled: b.enabled === false ? true : false } : b));
     updateConfig({ ...config, aiBoxes: newBoxes });
   };
 
@@ -7520,13 +7520,16 @@ export const FacebookWorkflowCanvas = forwardRef<
               (activeConnectingTargetId && isValidConnection(box.id, activeConnectingTargetId))
             );
             const boxStatus = getNodeExecutionStatus(box.id);
+            const isDirectlyEnabled = box.enabled !== false;
             const strokeColor =
-              isSelected
+              !isEffectiveEnabled
+                ? (isSelected ? (isDark ? '#64748B' : '#94A3B8') : (isDark ? '#334155' : '#CBD5E1'))
+                : isSelected
                 ? PRIMARY_NODE_COLOR
                 : isBoxReceptive
                 ? RECEPTIVE_COLOR
                 : (isDark ? '#30363D' : '#D0D7DE');
-            const strokeDasharray = !isSelected && !isEffectiveEnabled && boxStatus === 'idle' ? '4, 4' : 'none';
+            const strokeDasharray = !isEffectiveEnabled ? '5, 4' : 'none';
             const isEnhance = (isEnhanceAIBox(box) || isImageAIBox(box, config.connections) || isExternalBrowserAIBox(box)) && !isWatermark;
             const isBoxInputConnected = (config.connections || []).some((c) => c.toNodeId === box.id);
             const isBoxOutputConnected = (config.connections || []).some((c) => c.fromNodeId === box.id);
@@ -7562,15 +7565,79 @@ export const FacebookWorkflowCanvas = forwardRef<
                   height: `${CIRCLE_SIZE}px`,
                   ['--ring' as any]: isBoxReceptive ? RECEPTIVE_COLOR : (isDark ? '#30363D' : '#D0D7DE'),
                   ['--receptive-color' as any]: RECEPTIVE_COLOR,
-                  opacity: isEffectiveEnabled ? 1 : 0.6,
+                  opacity: isEffectiveEnabled ? 1 : 0.52,
+                  filter: isEffectiveEnabled ? 'none' : 'grayscale(0.65)',
                   zIndex: isSelected ? 30 : isBoxReceptive ? 35 : hoveredNodeId === box.id ? 25 : 15,
                   cursor: isBoxReceptive ? 'crosshair' : 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  transition: 'transform 0.2s ease',
+                  transition: 'transform 0.2s ease, opacity 0.2s ease',
                 }}
               >
+                {/* Bypassed Badge when disabled */}
+                {!isEffectiveEnabled && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: '-10px',
+                      right: isExternalBrowser ? '14px' : '-4px',
+                      backgroundColor: isDark ? '#334155' : '#E2E8F0',
+                      color: isDark ? '#94A3B8' : '#475569',
+                      fontSize: '0.5625rem',
+                      fontWeight: 700,
+                      letterSpacing: '0.04em',
+                      textTransform: 'uppercase',
+                      padding: '2px 7px',
+                      borderRadius: '10px',
+                      border: isDark ? '1px solid #475569' : '1px solid #CBD5E1',
+                      boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+                      zIndex: 14,
+                      pointerEvents: 'none',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                    }}
+                  >
+                    <span style={{ width: '5px', height: '5px', borderRadius: '50%', backgroundColor: '#64748B' }} />
+                    <span>Bypassed</span>
+                  </div>
+                )}
+
+                {/* Canvas Quick Enable/Disable Toggle */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleToggleAIBox(box.id, e);
+                  }}
+                  title={isDirectlyEnabled ? 'Disable step (bypass during workflow run)' : 'Enable step'}
+                  style={{
+                    position: 'absolute',
+                    top: '-8px',
+                    left: isExternalBrowser ? '14px' : '-4px',
+                    height: '19px',
+                    padding: '0 6px',
+                    borderRadius: '10px',
+                    backgroundColor: isDirectlyEnabled
+                      ? (isDark ? 'rgba(16, 185, 129, 0.25)' : '#DCFCE7')
+                      : (isDark ? 'rgba(239, 68, 68, 0.25)' : '#FEE2E2'),
+                    border: `1px solid ${isDirectlyEnabled ? '#10B981' : '#EF4444'}`,
+                    color: isDirectlyEnabled ? '#10B981' : '#EF4444',
+                    fontSize: '0.5625rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '3px',
+                    zIndex: 14,
+                    opacity: hoveredNodeId === box.id || !isDirectlyEnabled ? 1 : 0,
+                    transition: 'opacity 0.15s ease',
+                  }}
+                >
+                  <span style={{ width: '4px', height: '4px', borderRadius: '50%', backgroundColor: isDirectlyEnabled ? '#10B981' : '#EF4444' }} />
+                  <span>{isDirectlyEnabled ? 'Active' : 'Disabled'}</span>
+                </button>
                 <MergedNodeShape
                   sockets={isChromeProfile || isChromeTabGroup ? 'none' : 'both'}
                   hasTopSocket={isChromeProfile || isChromeTabGroup}
@@ -9523,7 +9590,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                           Node Status
                         </div>
                         <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                          {currentModalAIBox.enabled ? 'Executing during workflow run' : 'Node is bypassed'}
+                          {currentModalAIBox.enabled !== false
+                            ? 'Executing during workflow run'
+                            : 'Node is bypassed (will skip during workflow run)'}
                         </div>
                       </div>
                       <button
@@ -9536,12 +9605,13 @@ export const FacebookWorkflowCanvas = forwardRef<
                           alignItems: 'center',
                           gap: '0.375rem',
                           borderRadius: '6px',
-                          border: `1px solid ${currentModalAIBox.enabled ? 'rgba(16, 185, 129, 0.4)' : isDark ? '#30363D' : '#CBD5E1'}`,
-                          backgroundColor: currentModalAIBox.enabled ? 'rgba(16, 185, 129, 0.12)' : 'transparent',
-                          color: currentModalAIBox.enabled ? '#34D399' : 'var(--text-muted)',
+                          border: `1px solid ${currentModalAIBox.enabled !== false ? 'rgba(16, 185, 129, 0.4)' : isDark ? '#4B5563' : '#CBD5E1'}`,
+                          backgroundColor: currentModalAIBox.enabled !== false ? 'rgba(16, 185, 129, 0.12)' : isDark ? 'rgba(107, 114, 128, 0.15)' : '#F1F5F9',
+                          color: currentModalAIBox.enabled !== false ? '#34D399' : 'var(--text-muted)',
                           fontSize: '0.75rem',
                           fontWeight: 600,
                           cursor: 'pointer',
+                          transition: 'all 0.15s ease',
                         }}
                       >
                         <span
@@ -9549,12 +9619,35 @@ export const FacebookWorkflowCanvas = forwardRef<
                             width: '6px',
                             height: '6px',
                             borderRadius: '50%',
-                            backgroundColor: currentModalAIBox.enabled ? '#10B981' : '#6B7280',
+                            backgroundColor: currentModalAIBox.enabled !== false ? '#10B981' : '#6B7280',
                           }}
                         />
-                        <span>{currentModalAIBox.enabled ? 'Active' : 'Disabled'}</span>
+                        <span>{currentModalAIBox.enabled !== false ? 'Active' : 'Disabled'}</span>
                       </button>
                     </div>
+
+                    {currentModalAIBox.enabled === false && (
+                      <div
+                        style={{
+                          marginTop: '0.5rem',
+                          padding: '0.625rem 0.75rem',
+                          borderRadius: '6px',
+                          backgroundColor: isDark ? 'rgba(239, 68, 68, 0.08)' : '#FEF2F2',
+                          border: isDark ? '1px solid rgba(239, 68, 68, 0.2)' : '1px solid #FCA5A5',
+                          color: isDark ? '#FCA5A5' : '#B91C1C',
+                          fontSize: '0.6875rem',
+                          lineHeight: 1.4,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                        }}
+                      >
+                        <span>⚠️</span>
+                        <span>
+                          This step is <strong>disabled</strong>. When you click <strong>Run</strong>, this step will be skipped and its inputs will pass directly to downstream nodes without running.
+                        </span>
+                      </div>
+                    )}
 
                     {isN8NAIBox(currentModalAIBox) ? (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>

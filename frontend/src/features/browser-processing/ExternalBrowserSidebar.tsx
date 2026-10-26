@@ -822,7 +822,6 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       property_id: propId,
       profile_key: profKey,
       tab_ids: finalTabIds,
-      jobs: imgs,
     });
 
     if (!res.success) {

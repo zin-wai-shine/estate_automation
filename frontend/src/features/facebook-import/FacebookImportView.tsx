@@ -1527,24 +1527,9 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
         }
 
         // 2c. External Browser Node Execution (Auto-open Chrome profile and tab group)
-        let extBrowserBoxes = (workflowConfig.aiBoxes || []).filter(
-          (b) => (isExternalBrowserAIBox(b) || (b as any).processType === 'external_browser') && b.enabled !== false
+        const allExtBrowserBoxes = (workflowConfig.aiBoxes || []).filter(
+          (b) => (isExternalBrowserAIBox(b) || (b as any).processType === 'external_browser')
         );
-        if (extBrowserBoxes.length === 0) {
-          const tabGroupBox = (workflowConfig.aiBoxes || []).find(
-            (b) => (isChromeTabGroupAIBox(b) || (b as any).processType === 'chrome_tab_group') && b.enabled !== false
-          );
-          if (tabGroupBox) {
-            extBrowserBoxes = [tabGroupBox];
-          } else {
-            const profileBox = (workflowConfig.aiBoxes || []).find(
-              (b) => (isChromeProfileAIBox(b) || (b as any).processType === 'chrome_profile') && b.enabled !== false
-            );
-            if (profileBox) {
-              extBrowserBoxes = [profileBox];
-            }
-          }
-        }
 
         const areBoxesConnected = (idA: string, idB: string) => {
           return (workflowConfig.connections || []).some(
@@ -1552,7 +1537,7 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
           );
         };
 
-        for (const extBox of extBrowserBoxes) {
+        for (const extBox of allExtBrowserBoxes) {
           // 1. Follow wires bidirectionally to find the connected chrome_profile node
           let connectedProfileBox = workflowConfig.aiBoxes.find(
             (b) => areBoxesConnected(extBox.id, b.id) && (isChromeProfileAIBox(b) || (b as any).processType === 'chrome_profile')
@@ -1577,8 +1562,28 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
           }
           if (!connectedTabGroupBox) {
             connectedTabGroupBox = workflowConfig.aiBoxes.find(
-              (b) => (isChromeTabGroupAIBox(b) || (b as any).processType === 'chrome_tab_group') && b.enabled !== false
+              (b) => (isChromeTabGroupAIBox(b) || (b as any).processType === 'chrome_tab_group')
             );
+          }
+
+          const isExtDirectlyEnabled = extBox.enabled !== false;
+          const isTabGroupEnabled = connectedTabGroupBox ? connectedTabGroupBox.enabled !== false : true;
+
+          if (!isExtDirectlyEnabled || !isTabGroupEnabled) {
+            const skippedIds = [
+              extBox.id,
+              ...(connectedTabGroupBox ? [connectedTabGroupBox.id] : []),
+              ...(connectedProfileBox ? [connectedProfileBox.id] : []),
+            ];
+            addLog(`⏭️ [${extBox.title || 'Chrome Automation'}] is disabled — bypassed during import (original photos forwarded).`, 'info');
+            setWorkflowExecutionState((prev) => ({
+              ...prev,
+              completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), ...skippedIds])),
+              activeNodeIds: [],
+              currentStepMessage: `✓ [${extBox.title || 'Chrome Automation'}] bypassed`,
+            }));
+            await delay(300);
+            continue;
           }
 
           const profId = connectedProfileBox?.browserProfileId || (extBox as any).browserProfileId || 11;
@@ -1719,10 +1724,10 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
             }));
           }
 
-          const runEnhance = isEnhanceGroup && effectivePhotos.length > 0;
-          const runStaging = isStagingGroup;
+          const runEnhance = isEnhanceGroup && effectivePhotos.length > 0 && isTabGroupEnabled;
+          const runStaging = isStagingGroup && isTabGroupEnabled;
 
-          if (isEnhanceGroup && effectivePhotos.length === 0) {
+          if (isEnhanceGroup && effectivePhotos.length === 0 && isTabGroupEnabled) {
             addLog(`⚠️ [${groupName}] No photos detected for enhancement. Chrome tab group [${groupName}] is verified and ready.`, 'warn');
             setWorkflowExecutionState((prev) => ({
               ...prev,
