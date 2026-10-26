@@ -265,35 +265,49 @@
     return false;
   }
 
-  // Trigger reliable multi-channel image download to browser downloads directory
-  async function downloadEnhancedImage(imgEl, finalUrl, fileName) {
-    console.log('[BOLTHAVEN] Triggering download of enhanced image:', fileName, finalUrl);
+  // Set to prevent duplicate downloads of the exact same image/filename in this tab session
+  const downloadedFileNames = new Set();
 
-    // 1. Try clicking ChatGPT native download button on the image card / container
+  // Trigger reliable single image download to browser downloads directory
+  async function downloadEnhancedImage(imgEl, finalUrl, fileName) {
+    if (!finalUrl || !fileName) return false;
+
+    // Deduplication guard: ensure this exact file is never downloaded twice
+    if (downloadedFileNames.has(fileName)) {
+      console.log('[BOLTHAVEN] Skipping duplicate download for:', fileName);
+      return true;
+    }
+    downloadedFileNames.add(fileName);
+
+    console.log('[BOLTHAVEN] Triggering single download of enhanced image:', fileName, finalUrl);
+
+    // Primary method: background chrome.downloads API (cleanest, handles cross-origin, custom filename)
     try {
-      const container = imgEl.closest('article, div[data-message-author-role="assistant"], div[class*="group"], div[class*="relative"]') || imgEl.parentElement;
-      if (container) {
-        const btns = Array.from(container.querySelectorAll('button'));
-        const downloadBtn = btns.find((b) => {
-          const aria = (b.getAttribute('aria-label') || '').toLowerCase();
-          const title = (b.getAttribute('title') || '').toLowerCase();
-          const txt = (b.textContent || '').trim().toLowerCase();
-          return aria.includes('download') || title.includes('download') || txt.includes('download') ||
-                 aria.includes('save image') || title.includes('save image');
-        });
-        if (downloadBtn) {
-          console.log('[BOLTHAVEN] Clicking native ChatGPT download button on image card...', downloadBtn);
-          clickElementSafely(downloadBtn);
-          await new Promise((r) => setTimeout(r, 600));
-        }
+      const response = await new Promise((resolve) => {
+        chrome.runtime.sendMessage(
+          { action: 'DOWNLOAD_IMAGE', url: finalUrl, filename: fileName },
+          (res) => {
+            if (chrome.runtime.lastError) {
+              resolve({ success: false, error: chrome.runtime.lastError.message });
+            } else {
+              resolve(res || { success: true });
+            }
+          }
+        );
+      });
+
+      if (response && response.success) {
+        console.log('[BOLTHAVEN] ✓ Successfully downloaded via chrome.downloads:', fileName);
+        return true;
       }
+      console.warn('[BOLTHAVEN] chrome.downloads reported failure, attempting fallback...', response?.error);
     } catch (e) {
-      console.warn('[BOLTHAVEN] Native download button warning:', e.message);
+      console.warn('[BOLTHAVEN] chrome.downloads sendMessage failed:', e.message);
     }
 
-    // 2. Fetch image as blob directly in the tab and trigger same-origin anchor download
+    // Fallback: Direct in-tab blob anchor download (ONLY IF primary method fails!)
     try {
-      console.log('[BOLTHAVEN] Fetching blob for direct browser download...');
+      console.log('[BOLTHAVEN] Fallback: Fetching blob for direct browser download...');
       const resp = await fetch(finalUrl, { mode: 'cors' });
       if (resp.ok) {
         const blob = await resp.blob();
@@ -309,18 +323,14 @@
             URL.revokeObjectURL(blobUrl);
           } catch (e) {}
         }, 8000);
-        console.log('[BOLTHAVEN] ✓ Triggered direct anchor download for:', fileName);
+        console.log('[BOLTHAVEN] ✓ Fallback direct anchor download triggered for:', fileName);
+        return true;
       }
     } catch (e) {
-      console.warn('[BOLTHAVEN] Direct blob download warning:', e.message);
+      console.warn('[BOLTHAVEN] Fallback blob download failed:', e.message);
     }
 
-    // 3. Background chrome.downloads fallback
-    chrome.runtime.sendMessage({
-      action: 'DOWNLOAD_IMAGE',
-      url: finalUrl,
-      filename: fileName,
-    }).catch(() => {});
+    return false;
   }
 
   // Detect ChatGPT error banner and locate the Retry button

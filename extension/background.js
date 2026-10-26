@@ -734,7 +734,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         url: request.url,
         filename: request.filename || `enhanced_${Date.now()}.png`,
         saveAs: false,
-        conflictAction: 'uniquify',
+        conflictAction: 'overwrite',
       },
       (downloadId) => {
         if (chrome.runtime.lastError) {
