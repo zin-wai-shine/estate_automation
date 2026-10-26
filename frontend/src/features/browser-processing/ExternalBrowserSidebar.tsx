@@ -917,11 +917,23 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     return first ? { url: first.url, label: `Photo #${first.index || 1}`, index: first.index || 1 } : null;
   }, [referenceImageMode, referenceImage, receivedImages, selectedReferenceIndex, matchedCondoInfo]);
 
+  // Effective Upstream AI Prompts
+  const effectiveUpstreamPrompts = useMemo(() => {
+    const list = propertyContext?.upstreamPrompts || [];
+    if (list.length > 0) return list;
+    return [
+      {
+        id: 'fb_hero_prompt_ai',
+        title: 'FB Hero Prompt',
+        text: 'Generate a hero real estate listing image based on condo unit context and reference styling. Maintain realistic architectural aesthetics, high dynamic range, and authentic materials.',
+      },
+    ];
+  }, [propertyContext?.upstreamPrompts]);
+
   // Upstream AI Node Prompt Object
   const selectedUpstreamPromptObj = useMemo(() => {
-    if (!propertyContext?.upstreamPrompts || propertyContext.upstreamPrompts.length === 0) return null;
-    return propertyContext.upstreamPrompts.find((p) => p.id === selectedUpstreamAiId) || propertyContext.upstreamPrompts[0];
-  }, [propertyContext?.upstreamPrompts, selectedUpstreamAiId]);
+    return effectiveUpstreamPrompts.find((p) => p.id === selectedUpstreamAiId) || effectiveUpstreamPrompts[0];
+  }, [effectiveUpstreamPrompts, selectedUpstreamAiId]);
 
   // Effective prompt key guaranteed to exist within current category options
   const effectivePromptKey = useMemo(() => {
@@ -3045,25 +3057,175 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                   )}
                 </div>
 
-                <Select
-                  options={promptOptions.map((p) => ({
-                    value: p.id,
-                    label: p.name,
-                  }))}
-                  value={effectivePromptKey}
-                  onChange={(val) => {
-                    const strVal = String(val);
-                    setSelectedPromptKey(strVal);
-                    const found = promptOptions.find(
-                      (p) => String(p.id).trim().toLowerCase() === strVal.trim().toLowerCase() || p.name.trim().toLowerCase() === strVal.trim().toLowerCase()
-                    );
-                    const txt = found ? found.instructions : '';
-                    updateMultiConfig({
-                      browserPromptTemplateKey: strVal,
-                      ...(txt ? { browserPromptText: txt } : {}),
-                    });
+                {/* Prompt Type Selection Pills */}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    marginTop: '2px',
+                    marginBottom: '4px',
                   }}
-                />
+                >
+                  <span style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                    Prompt Type:
+                  </span>
+                  <div
+                    style={{
+                      display: 'flex',
+                      padding: '2px',
+                      borderRadius: '8px',
+                      backgroundColor: isDark ? 'rgba(0,0,0,0.35)' : '#E2E8F0',
+                      border: '1px solid var(--border-color)',
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPromptSourceMode('preset');
+                        updateConfig('promptSourceMode', 'preset');
+                      }}
+                      style={{
+                        padding: '2px 7px',
+                        borderRadius: '6px',
+                        border: 'none',
+                        fontSize: '0.5625rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        backgroundColor: promptSourceMode === 'preset'
+                          ? (isDark ? '#3B82F6' : '#FFFFFF')
+                          : 'transparent',
+                        color: promptSourceMode === 'preset'
+                          ? (isDark ? '#FFFFFF' : '#1E293B')
+                          : 'var(--text-muted)',
+                        boxShadow: promptSourceMode === 'preset' ? '0 1px 3px rgba(0,0,0,0.15)' : 'none',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      Prompt Template
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPromptSourceMode('upstream_ai');
+                        updateMultiConfig({
+                          promptSourceMode: 'upstream_ai',
+                          selectedUpstreamAiId: selectedUpstreamAiId || effectiveUpstreamPrompts[0]?.id,
+                        });
+                      }}
+                      style={{
+                        padding: '2px 7px',
+                        borderRadius: '6px',
+                        border: 'none',
+                        fontSize: '0.5625rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        backgroundColor: promptSourceMode === 'upstream_ai'
+                          ? (isDark ? '#3B82F6' : '#FFFFFF')
+                          : 'transparent',
+                        color: promptSourceMode === 'upstream_ai'
+                          ? (isDark ? '#FFFFFF' : '#1E293B')
+                          : 'var(--text-muted)',
+                        boxShadow: promptSourceMode === 'upstream_ai' ? '0 1px 3px rgba(0,0,0,0.15)' : 'none',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      AI Generate
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPromptSourceMode('custom');
+                        updateConfig('promptSourceMode', 'custom');
+                      }}
+                      style={{
+                        padding: '2px 7px',
+                        borderRadius: '6px',
+                        border: 'none',
+                        fontSize: '0.5625rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        backgroundColor: promptSourceMode === 'custom'
+                          ? (isDark ? '#3B82F6' : '#FFFFFF')
+                          : 'transparent',
+                        color: promptSourceMode === 'custom'
+                          ? (isDark ? '#FFFFFF' : '#1E293B')
+                          : 'var(--text-muted)',
+                        boxShadow: promptSourceMode === 'custom' ? '0 1px 3px rgba(0,0,0,0.15)' : 'none',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      Custom
+                    </button>
+                  </div>
+                </div>
+
+                {/* 1. Prompt Template Mode */}
+                {promptSourceMode === 'preset' && (
+                  <Select
+                    options={promptOptions.map((p) => ({
+                      value: p.id,
+                      label: p.name,
+                    }))}
+                    value={effectivePromptKey}
+                    onChange={(val) => {
+                      const strVal = String(val);
+                      setSelectedPromptKey(strVal);
+                      const found = promptOptions.find(
+                        (p) => String(p.id).trim().toLowerCase() === strVal.trim().toLowerCase() || p.name.trim().toLowerCase() === strVal.trim().toLowerCase()
+                      );
+                      const txt = found ? found.instructions : '';
+                      updateMultiConfig({
+                        browserPromptTemplateKey: strVal,
+                        ...(txt ? { browserPromptText: txt } : {}),
+                      });
+                    }}
+                  />
+                )}
+
+                {/* 2. AI Generate (Upstream AI Node) Mode */}
+                {promptSourceMode === 'upstream_ai' && (
+                  <Select
+                    options={effectiveUpstreamPrompts.map((p) => ({
+                      value: p.id,
+                      label: `🤖 ${p.title} (AI Model)`,
+                    }))}
+                    value={selectedUpstreamAiId || effectiveUpstreamPrompts[0]?.id}
+                    onChange={(val) => {
+                      const strVal = String(val);
+                      setSelectedUpstreamAiId(strVal);
+                      updateMultiConfig({
+                        selectedUpstreamAiId: strVal,
+                      });
+                    }}
+                  />
+                )}
+
+                {/* 3. Custom Prompt Mode */}
+                {promptSourceMode === 'custom' && (
+                  <textarea
+                    rows={2}
+                    value={customPromptText}
+                    onChange={(e) => {
+                      setCustomPromptText(e.target.value);
+                      updateMultiConfig({
+                        browserCustomPrompt: e.target.value,
+                        customPrompt: e.target.value,
+                      });
+                    }}
+                    placeholder="Enter custom image generation instructions..."
+                    style={{
+                      width: '100%',
+                      padding: '6px 8px',
+                      fontSize: '0.6875rem',
+                      borderRadius: '6px',
+                      border: '1px solid var(--border-color)',
+                      backgroundColor: isDark ? 'rgba(0,0,0,0.25)' : '#FFFFFF',
+                      color: 'var(--text-primary)',
+                      resize: 'vertical',
+                    }}
+                  />
+                )}
 
                 {/* View Prompt Button & Quick Copy Button */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
@@ -3090,8 +3252,18 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                       transition: 'all 0.15s ease',
                     }}
                   >
-                    <FiFileText size={13} style={{ color: '#3B82F6' }} />
-                    <span>View Prompt Template</span>
+                    {promptSourceMode === 'upstream_ai' ? (
+                      <FiZap size={13} style={{ color: '#10B981' }} />
+                    ) : (
+                      <FiFileText size={13} style={{ color: '#3B82F6' }} />
+                    )}
+                    <span>
+                      {promptSourceMode === 'upstream_ai'
+                        ? 'View AI Generated Prompt'
+                        : promptSourceMode === 'custom'
+                        ? 'View Custom Prompt'
+                        : 'View Prompt Template'}
+                    </span>
                   </button>
 
                   <button

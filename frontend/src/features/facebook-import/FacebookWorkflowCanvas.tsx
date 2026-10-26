@@ -9859,13 +9859,38 @@ export const FacebookWorkflowCanvas = forwardRef<
                             : 'Featured Property Listing');
 
                         const upstreamPrompts = config.aiBoxes
-                          .filter((b) => b.id !== currentModalAIBox.id && (b.processType === 'text_ai' || b.templateId || b.title))
+                          .filter(
+                            (b) =>
+                              b.id !== currentModalAIBox.id &&
+                              !isChromeProfileAIBox(b) &&
+                              !isChromeTabGroupAIBox(b) &&
+                              !isExternalBrowserAIBox(b) &&
+                              (b.processType === 'text_ai' || isTextAIBox(b, config.connections) || b.title?.toLowerCase().includes('prompt') || b.templateId || b.templateText)
+                          )
                           .map((b) => ({
                             id: b.id,
-                            title: b.title || 'AI Prompt Node',
-                            text: (aiGeneratedOutputs && aiGeneratedOutputs[b.id]) || b.templateText || b.customPrompt || '',
+                            title: b.title || 'FB Hero Prompt',
+                            text:
+                              (aiGeneratedOutputs && aiGeneratedOutputs[b.id]) ||
+                              b.templateText ||
+                              b.customPrompt ||
+                              (b.title?.toLowerCase().includes('hero')
+                                ? 'Generate a hero real estate listing image based on condo unit context and reference styling. Maintain realistic architectural aesthetics, high dynamic range, and authentic materials.'
+                                : ''),
                             templateId: b.templateId,
                           }));
+
+                        const effectiveUpstreamPrompts =
+                          upstreamPrompts.length > 0
+                            ? upstreamPrompts
+                            : [
+                                {
+                                  id: 'ai-box-fb-hero-prompt-default',
+                                  title: 'FB Hero Prompt',
+                                  text: 'Generate a hero real estate listing image based on condo unit context and reference styling. Maintain realistic architectural aesthetics, high dynamic range, and authentic materials.',
+                                  templateId: '4',
+                                },
+                              ];
 
                         const upstreamTabGroups = config.aiBoxes
                           .filter((b) => isChromeTabGroupAIBox(b) && b.id !== currentModalAIBox.id)
@@ -9904,7 +9929,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                 id: executionState?.propertyId || '',
                                 title: condoName,
                                 aboveBoxTitle: aboveBoxTitle,
-                                upstreamPrompts,
+                                upstreamPrompts: effectiveUpstreamPrompts,
                                 upstreamTabGroups,
                                 images: (images || []).map((img, i) => ({
                                   url: typeof img === 'string' ? img : img.stored_url || img.source_url || (img as any).preview || (img as any).url || '',
@@ -9929,7 +9954,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                 id: executionState?.propertyId || '',
                                 title: condoName,
                                 aboveBoxTitle: aboveBoxTitle,
-                                upstreamPrompts,
+                                upstreamPrompts: effectiveUpstreamPrompts,
                                 upstreamTabGroups,
                                 images: (images || []).map((img, i) => ({
                                   url: typeof img === 'string' ? img : img.stored_url || img.source_url || (img as any).preview || (img as any).url || '',

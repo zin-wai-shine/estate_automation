@@ -263,10 +263,23 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
     return filteredPresetOptions[0]?.value || (isHero ? 'fb_hero_master' : 'photo_retouch');
   }, [filteredPresetOptions, selectedPresetId, isHero]);
 
+  // ── Effective Upstream AI Prompts (e.g. FB Hero Prompt) ────────────────────
+  const effectiveUpstreamPrompts = React.useMemo(() => {
+    const list = propertyContext?.upstreamPrompts || [];
+    if (list.length > 0) return list;
+    return [
+      {
+        id: 'fb_hero_prompt_ai',
+        title: 'FB Hero Prompt',
+        text: 'Generate a hero real estate listing image based on condo unit context and reference styling. Maintain realistic architectural aesthetics, high dynamic range, and authentic materials.',
+      },
+    ];
+  }, [propertyContext?.upstreamPrompts]);
+
   // ── Resolve Active Prompt ─────────────────────────────────────────────────
   const activePromptText = React.useMemo(() => {
     if (promptSourceMode === 'upstream_ai') {
-      const match = propertyContext?.upstreamPrompts?.find((p) => p.id === selectedUpstreamAiId);
+      const match = effectiveUpstreamPrompts.find((p) => p.id === selectedUpstreamAiId) || effectiveUpstreamPrompts[0];
       if (match?.text) return match.text;
       return (
         boxConfig.resolvedPrompt ||
@@ -281,7 +294,7 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
       (p) => String(p.id) === effectivePresetId || p.name.toLowerCase() === effectivePresetId.toLowerCase()
     );
     return (preset as any)?.instructions || preset?.templateText || boxConfig.resolvedPrompt || 'Professional architectural condo enhancement prompt';
-  }, [promptSourceMode, selectedUpstreamAiId, effectivePresetId, customPrompt, propertyContext?.upstreamPrompts, boxConfig, promptList]);
+  }, [promptSourceMode, selectedUpstreamAiId, effectivePresetId, customPrompt, effectiveUpstreamPrompts, boxConfig, promptList]);
 
   // ── Scan Condo Directory from Target Folder ───────────────────────────────
   const scanCondoDirectory = async (q?: string, folder?: string) => {
@@ -975,32 +988,60 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
                 </div>
               )}
 
-                  {/* Prompt Source Mode */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-muted)' }}>
-                      Prompt Mode:
-                    </span>
-                    <div
-                      style={{
-                        display: 'flex',
-                        padding: '2px',
-                        borderRadius: '10px',
-                        backgroundColor: isDark ? 'rgba(0,0,0,0.35)' : '#E2E8F0',
-                        border: '1px solid var(--border-color)',
-                      }}
-                    >
-                      {propertyContext?.upstreamPrompts && propertyContext.upstreamPrompts.length > 0 && (
+                  {/* Prompt Type Selection */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                        Prompt Type:
+                      </span>
+                      <div
+                        style={{
+                          display: 'flex',
+                          padding: '2px',
+                          borderRadius: '10px',
+                          backgroundColor: isDark ? 'rgba(0,0,0,0.35)' : '#E2E8F0',
+                          border: '1px solid var(--border-color)',
+                        }}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPromptSourceMode('preset');
+                            updateSettings({ promptSourceMode: 'preset' });
+                          }}
+                          style={{
+                            padding: '3px 9px',
+                            borderRadius: '8px',
+                            border: 'none',
+                            fontSize: '0.625rem',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            backgroundColor: promptSourceMode === 'preset'
+                              ? (isDark ? '#3B82F6' : '#FFFFFF')
+                              : 'transparent',
+                            color: promptSourceMode === 'preset'
+                              ? (isDark ? '#FFFFFF' : '#1E293B')
+                              : 'var(--text-muted)',
+                            boxShadow: promptSourceMode === 'preset' ? '0 1px 3px rgba(0,0,0,0.15)' : 'none',
+                            transition: 'all 0.15s ease',
+                          }}
+                        >
+                          Prompt Template
+                        </button>
                         <button
                           type="button"
                           onClick={() => {
                             setPromptSourceMode('upstream_ai');
-                            updateSettings({ promptSourceMode: 'upstream_ai' });
+                            updateSettings({
+                              promptSourceMode: 'upstream_ai',
+                              selectedUpstreamAiId: selectedUpstreamAiId || effectiveUpstreamPrompts[0]?.id,
+                            });
                           }}
                           style={{
-                            padding: '2px 8px',
+                            padding: '3px 9px',
                             borderRadius: '8px',
                             border: 'none',
-                            fontSize: '0.5625rem',
+                            fontSize: '0.625rem',
                             fontWeight: 700,
                             cursor: 'pointer',
                             backgroundColor: promptSourceMode === 'upstream_ai'
@@ -1009,114 +1050,168 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
                             color: promptSourceMode === 'upstream_ai'
                               ? (isDark ? '#FFFFFF' : '#1E293B')
                               : 'var(--text-muted)',
+                            boxShadow: promptSourceMode === 'upstream_ai' ? '0 1px 3px rgba(0,0,0,0.15)' : 'none',
                             transition: 'all 0.15s ease',
                           }}
                         >
-                          Upstream AI
+                          AI Generate
                         </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setPromptSourceMode('preset');
-                          updateSettings({ promptSourceMode: 'preset' });
-                        }}
-                        style={{
-                          padding: '2px 8px',
-                          borderRadius: '8px',
-                          border: 'none',
-                          fontSize: '0.5625rem',
-                          fontWeight: 700,
-                          cursor: 'pointer',
-                          backgroundColor: promptSourceMode === 'preset'
-                            ? (isDark ? '#3B82F6' : '#FFFFFF')
-                            : 'transparent',
-                          color: promptSourceMode === 'preset'
-                            ? (isDark ? '#FFFFFF' : '#1E293B')
-                            : 'var(--text-muted)',
-                          transition: 'all 0.15s ease',
-                        }}
-                      >
-                        Preset
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setPromptSourceMode('custom');
-                          updateSettings({ promptSourceMode: 'custom' });
-                        }}
-                        style={{
-                          padding: '2px 8px',
-                          borderRadius: '8px',
-                          border: 'none',
-                          fontSize: '0.5625rem',
-                          fontWeight: 700,
-                          cursor: 'pointer',
-                          backgroundColor: promptSourceMode === 'custom'
-                            ? (isDark ? '#3B82F6' : '#FFFFFF')
-                            : 'transparent',
-                          color: promptSourceMode === 'custom'
-                            ? (isDark ? '#FFFFFF' : '#1E293B')
-                            : 'var(--text-muted)',
-                          transition: 'all 0.15s ease',
-                        }}
-                      >
-                        Custom
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPromptSourceMode('custom');
+                            updateSettings({ promptSourceMode: 'custom' });
+                          }}
+                          style={{
+                            padding: '3px 9px',
+                            borderRadius: '8px',
+                            border: 'none',
+                            fontSize: '0.625rem',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            backgroundColor: promptSourceMode === 'custom'
+                              ? (isDark ? '#3B82F6' : '#FFFFFF')
+                              : 'transparent',
+                            color: promptSourceMode === 'custom'
+                              ? (isDark ? '#FFFFFF' : '#1E293B')
+                              : 'var(--text-muted)',
+                            boxShadow: promptSourceMode === 'custom' ? '0 1px 3px rgba(0,0,0,0.15)' : 'none',
+                            transition: 'all 0.15s ease',
+                          }}
+                        >
+                          Custom
+                        </button>
+                      </div>
                     </div>
+
+                    <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', lineHeight: 1.35 }}>
+                      {promptSourceMode === 'preset'
+                        ? 'Uses a curated prompt template preset from library (e.g. FB Hero Prompt Template).'
+                        : promptSourceMode === 'upstream_ai'
+                        ? 'Gets prompt dynamically from upstream AI model (e.g. FB Hero Prompt) on canvas.'
+                        : 'Uses custom manual instructions entered below.'}
+                    </div>
+
+                    {/* 1. Prompt Template Option */}
+                    {promptSourceMode === 'preset' && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '2px' }}>
+                        <span style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                          Select Prompt Template:
+                        </span>
+                        <Select
+                          value={effectivePresetId}
+                          onChange={(val) => {
+                            setSelectedPresetId(val);
+                            const chosen = promptList.find((p) => String(p.id) === val || p.name === val);
+                            updateSettings({
+                              browserPromptTemplateKey: val,
+                              browserPromptTemplateId: chosen?.id,
+                              browserPromptText: (chosen as any)?.instructions || chosen?.templateText,
+                            });
+                          }}
+                          options={filteredPresetOptions}
+                        />
+                        {activePromptText && (
+                          <div
+                            style={{
+                              marginTop: '2px',
+                              padding: '6px 8px',
+                              borderRadius: '6px',
+                              backgroundColor: isDark ? 'rgba(0,0,0,0.25)' : '#F8FAFC',
+                              border: '1px solid var(--border-color)',
+                              fontSize: '0.625rem',
+                              color: 'var(--text-secondary)',
+                              maxHeight: '68px',
+                              overflowY: 'auto',
+                              whiteSpace: 'pre-wrap',
+                              lineHeight: 1.4,
+                            }}
+                          >
+                            {activePromptText}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* 2. AI Generate (Upstream AI Model) Option */}
+                    {promptSourceMode === 'upstream_ai' && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '2px' }}>
+                        <span style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                          Select AI Generator Node (Canvas):
+                        </span>
+                        <Select
+                          value={selectedUpstreamAiId || effectiveUpstreamPrompts[0]?.id}
+                          onChange={(val) => {
+                            setSelectedUpstreamAiId(val);
+                            updateSettings({ selectedUpstreamAiId: val });
+                          }}
+                          options={effectiveUpstreamPrompts.map((p) => ({
+                            label: `🤖 ${p.title} (AI Model)`,
+                            value: p.id,
+                          }))}
+                        />
+                        <div
+                          style={{
+                            marginTop: '2px',
+                            padding: '6px 8px',
+                            borderRadius: '6px',
+                            backgroundColor: isDark ? 'rgba(59, 130, 246, 0.08)' : 'rgba(59, 130, 246, 0.05)',
+                            border: '1px solid rgba(59, 130, 246, 0.25)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '4px',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                            <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10B981' }} />
+                            <span style={{ fontSize: '0.625rem', fontWeight: 600, color: '#3B82F6' }}>
+                              Linked AI Node: {effectiveUpstreamPrompts.find((p) => p.id === (selectedUpstreamAiId || effectiveUpstreamPrompts[0]?.id))?.title || 'FB Hero Prompt'}
+                            </span>
+                          </div>
+                          <div
+                            style={{
+                              fontSize: '0.625rem',
+                              color: 'var(--text-secondary)',
+                              maxHeight: '68px',
+                              overflowY: 'auto',
+                              whiteSpace: 'pre-wrap',
+                              lineHeight: 1.4,
+                            }}
+                          >
+                            {activePromptText}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 3. Custom Prompt Option */}
+                    {promptSourceMode === 'custom' && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '2px' }}>
+                        <span style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                          Custom Instructions:
+                        </span>
+                        <textarea
+                          rows={3}
+                          value={customPrompt}
+                          onChange={(e) => {
+                            setCustomPrompt(e.target.value);
+                            updateSettings({ browserCustomPrompt: e.target.value, customPrompt: e.target.value });
+                          }}
+                          placeholder="Enter custom image generation instructions..."
+                          style={{
+                            width: '100%',
+                            padding: '6px 8px',
+                            fontSize: '0.6875rem',
+                            borderRadius: '6px',
+                            border: '1px solid var(--border-color)',
+                            backgroundColor: isDark ? 'rgba(0,0,0,0.25)' : '#FFFFFF',
+                            color: 'var(--text-primary)',
+                            resize: 'vertical',
+                          }}
+                        />
+                      </div>
+                    )}
                   </div>
-
-                  {promptSourceMode === 'preset' && (
-                    <Select
-                      value={effectivePresetId}
-                      onChange={(val) => {
-                        setSelectedPresetId(val);
-                        const chosen = promptList.find((p) => String(p.id) === val || p.name === val);
-                        updateSettings({
-                          browserPromptTemplateKey: val,
-                          browserPromptTemplateId: chosen?.id,
-                          browserPromptText: (chosen as any)?.instructions || chosen?.templateText,
-                        });
-                      }}
-                      options={filteredPresetOptions}
-                    />
-                  )}
-
-                  {promptSourceMode === 'custom' && (
-                    <textarea
-                      rows={3}
-                      value={customPrompt}
-                      onChange={(e) => {
-                        setCustomPrompt(e.target.value);
-                        updateSettings({ browserCustomPrompt: e.target.value, customPrompt: e.target.value });
-                      }}
-                      placeholder="Enter custom image generation instructions..."
-                      style={{
-                        width: '100%',
-                        padding: '6px 8px',
-                        fontSize: '0.6875rem',
-                        borderRadius: '6px',
-                        border: '1px solid var(--border-color)',
-                        backgroundColor: isDark ? 'rgba(0,0,0,0.25)' : '#FFFFFF',
-                        color: 'var(--text-primary)',
-                        resize: 'vertical',
-                      }}
-                    />
-                  )}
-
-                  {promptSourceMode === 'upstream_ai' && propertyContext?.upstreamPrompts && (
-                    <Select
-                      value={selectedUpstreamAiId}
-                      onChange={(val) => {
-                        setSelectedUpstreamAiId(val);
-                        updateSettings({ selectedUpstreamAiId: val });
-                      }}
-                      options={propertyContext.upstreamPrompts.map((p) => ({
-                        label: `🔗 ${p.title}`,
-                        value: p.id,
-                      }))}
-                    />
-                  )}
                 </div>
               )}
             </div>
