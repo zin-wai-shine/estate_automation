@@ -440,7 +440,7 @@
         src.includes('icon') ||
         src.includes('emoji') ||
         src.includes('logo') ||
-        src.includes('user')
+        src.includes('favicon')
       ) {
         continue;
       }
@@ -1142,16 +1142,17 @@
         const candidateImgs = Array.from(document.querySelectorAll('img')).filter((img) => {
           const src = img.src || img.getAttribute('src') || '';
           if (!src || preExistingImageUrls.has(src)) return false;
-          // Must not be inside composer form or navigation
-          if (img.closest('form, div[class*="composer"], nav, header')) return false;
+          // Must not be inside composer form, navigation, header, or user message bubble
+          if (img.closest('form, div[class*="composer"], nav, header, [data-message-author-role="user"]')) return false;
           const s = src.toLowerCase();
+          // Exclude icons, avatars, emoji (do NOT check 'user' since OpenAI domain is oaiusercontent.com!)
           if (
             s.includes('avatar') ||
             s.includes('profile') ||
-            s.includes('user') ||
             s.includes('icon') ||
             s.includes('emoji') ||
-            s.includes('favicon')
+            s.includes('favicon') ||
+            s.includes('logo')
           ) {
             return false;
           }
@@ -1160,18 +1161,22 @@
           return hasSize || s.includes('oaiusercontent.com') || s.includes('file-service');
         });
 
-        // Also specifically inspect the latest assistant turn for generated images
+        // Also specifically inspect all assistant turns (latest first) for generated images
         const assistantTurns = Array.from(
-          document.querySelectorAll('div[data-message-author-role="assistant"], article[data-testid*="conversation-turn"]')
+          document.querySelectorAll('div[data-message-author-role="assistant"]')
         );
         let turnImgs = [];
-        if (assistantTurns.length > preAssistantCount) {
-          const latestTurn = assistantTurns[assistantTurns.length - 1];
-          turnImgs = Array.from(latestTurn.querySelectorAll('img')).filter((img) => {
+        for (let i = assistantTurns.length - 1; i >= 0; i--) {
+          const turn = assistantTurns[i];
+          const imgs = Array.from(turn.querySelectorAll('img')).filter((img) => {
             const src = img.src || img.getAttribute('src') || '';
             const s = src.toLowerCase();
-            return src && !preExistingImageUrls.has(src) && !s.includes('avatar') && !s.includes('profile') && !s.includes('icon');
+            return src && !preExistingImageUrls.has(src) && !s.includes('avatar') && !s.includes('profile') && !s.includes('icon') && !s.includes('emoji');
           });
+          if (imgs.length > 0) {
+            turnImgs = imgs;
+            break;
+          }
         }
 
         const foundImages = candidateImgs.length > 0 ? candidateImgs : turnImgs;
