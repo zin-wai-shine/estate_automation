@@ -353,20 +353,55 @@
     return null;
   }
 
+  // Get all individual attachment thumbnail card containers in the composer (located above prompt textarea)
+  function getAttachmentThumbnailCards(inputEl) {
+    const composer = getComposerContainer(inputEl);
+    if (!composer) return [];
+    const promptArea = composer.querySelector('#prompt-textarea') || inputEl;
+    const promptTop = promptArea ? promptArea.getBoundingClientRect().top : Infinity;
+
+    const allDescendants = Array.from(composer.querySelectorAll('div, li, span')).filter((el) => {
+      if (el.closest('#prompt-textarea, [contenteditable="true"], article, [data-message-author-role], nav, header')) {
+        return false;
+      }
+      const rect = el.getBoundingClientRect();
+      // Must be above or at the very top of prompt area and have thumbnail-like size
+      if (rect.bottom > promptTop + 15 || rect.width < 25 || rect.height < 25 || rect.width > 260 || rect.height > 260) {
+        return false;
+      }
+      const hasImg = el.querySelector('img') !== null;
+      const hasCanvas = el.querySelector('canvas') !== null;
+      const hasSpinner = el.querySelector('circle, svg, [role="progressbar"], [class*="spin"]') !== null;
+      const hasBg = (el.getAttribute('style') || '').includes('url(');
+
+      return (hasImg || hasCanvas || hasSpinner || hasBg);
+    });
+
+    // Keep only outermost containers of each individual thumbnail card
+    const cards = [];
+    for (const el of allDescendants) {
+      if (!allDescendants.some((other) => other !== el && el.contains(other))) {
+        cards.push(el);
+      }
+    }
+    return cards;
+  }
+
   // Find thumbnail delete / remove buttons strictly inside the composer (excluding attach/plus button!)
   function findAttachmentRemoveButtons(composer) {
     const root = composer || getComposerContainer();
     if (!root) return [];
+    const promptArea = root.querySelector('#prompt-textarea');
+    const promptTop = promptArea ? promptArea.getBoundingClientRect().top : Infinity;
 
     const allButtons = Array.from(root.querySelectorAll('button:not(:disabled)'));
 
     return allButtons.filter((btn) => {
-      // Must not be in conversation turns or sidebar nav
-      if (btn.closest('article, [data-message-author-role], nav, header')) return false;
+      // Must not be in conversation turns or sidebar nav or prompt textarea
+      if (btn.closest('article, [data-message-author-role], nav, header, #prompt-textarea')) return false;
 
       const aria = (btn.getAttribute('aria-label') || '').toLowerCase();
       const testid = (btn.getAttribute('data-testid') || '').toLowerCase();
-      const title = (btn.getAttribute('title') || '').toLowerCase();
 
       // STRICT EXCLUSIONS: Never confuse the attach (+) button, send button, mic, etc. with a remove button!
       if (
@@ -393,52 +428,33 @@
 
       // Check if button has explicit remove label
       if (
-        aria.includes('remove image') ||
-        aria.includes('remove file') ||
-        aria.includes('remove attachment') ||
-        testid.includes('remove-upload') ||
-        testid.includes('remove-file')
-      ) {
-        return true;
-      }
-
-      // Or if button is inside an attachment thumbnail wrapper and has remove/delete/close
-      if (
         aria.includes('remove') ||
         aria.includes('delete') ||
         aria.includes('close') ||
         testid.includes('remove') ||
-        title.includes('remove')
+        testid.includes('close') ||
+        testid.includes('delete')
       ) {
-        if (btn.closest('div[class*="thumbnail"], div[class*="upload-item"], div[class*="file-item"], div[class*="image-preview"]')) {
-          return true;
-        }
+        return true;
+      }
+
+      // Any small button located ABOVE the prompt textarea (thumbnail close buttons live here!)
+      const rect = btn.getBoundingClientRect();
+      if (rect.bottom <= promptTop + 15 && rect.width <= 44 && rect.height <= 44) {
+        return true;
       }
 
       return false;
     });
   }
 
-  // Detect whether an image thumbnail/attachment is actively present in the ChatGPT composer
-  function isImageAttachedInComposer(inputEl) {
-    // 1. Check for genuine preview thumbnail image strictly in composer
-    const thumb = getComposerAttachmentThumbnail(inputEl);
-    if (thumb) return true;
-
-    // 2. Check for explicit remove button on attachment card in composer
-    const composer = getComposerContainer(inputEl);
-    if (composer) {
-      const removeBtns = findAttachmentRemoveButtons(composer);
-      if (removeBtns.length > 0) return true;
-    }
-
-    return false;
-  }
-
   // Count distinct image attachment cards or remove buttons in the composer
   function getAttachedImagesCount(inputEl) {
     const composer = getComposerContainer(inputEl);
     if (!composer) return 0;
+
+    const cards = getAttachmentThumbnailCards(inputEl);
+    if (cards.length > 0) return cards.length;
 
     const removeBtns = findAttachmentRemoveButtons(composer);
     if (removeBtns.length > 0) return removeBtns.length;
@@ -447,19 +463,47 @@
     return thumb ? 1 : 0;
   }
 
+  // Detect whether an image thumbnail/attachment is actively present in the ChatGPT composer
+  function isImageAttachedInComposer(inputEl) {
+    return getAttachedImagesCount(inputEl) > 0;
+  }
+
   // If more than maxExpected images are attached, remove the extra duplicate ones
   async function pruneExcessAttachments(inputEl, maxExpected = 1) {
     const composer = getComposerContainer(inputEl);
     if (!composer) return;
 
-    let removeBtns = findAttachmentRemoveButtons(composer);
-    while (removeBtns.length > maxExpected) {
-      console.warn(`[BOLTHAVEN] Detected ${removeBtns.length} attached images (expected ${maxExpected}). Pruning duplicate thumbnail...`);
-      const btnToRemove = removeBtns[removeBtns.length - 1];
-      clickElementSafely(btnToRemove);
-      await new Promise((r) => setTimeout(r, 400));
-      removeBtns = findAttachmentRemoveButtons(composer);
+    let count = getAttachedImagesCount(inputEl);
+    let attempts = 0;
+
+    while (count > maxExpected && attempts < 15) {
+      attempts++;
+      console.warn(`[BOLTHAVEN] Detected ${count} attached images (target: ${maxExpected}). Pruning duplicate #${attempts}...`);
+
+      let removeBtns = findAttachmentRemoveButtons(composer);
+      if (removeBtns.length > 0) {
+        const btnToRemove = removeBtns[removeBtns.length - 1];
+        clickElementSafely(btnToRemove);
+        await new Promise((r) => setTimeout(r, 400));
+      } else {
+        const cards = getAttachmentThumbnailCards(inputEl);
+        if (cards.length > maxExpected) {
+          const card = cards[cards.length - 1];
+          card.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+          card.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+          await new Promise((r) => setTimeout(r, 150));
+          const btn = card.querySelector('button') || card.parentElement?.querySelector('button');
+          if (btn) {
+            clickElementSafely(btn);
+          }
+          await new Promise((r) => setTimeout(r, 400));
+        }
+      }
+
+      count = getAttachedImagesCount(inputEl);
     }
+
+    console.log(`[BOLTHAVEN] Current attached images in composer: ${count} (expected: ${maxExpected})`);
   }
 
   // Wait until image attachment is genuinely detected in composer
@@ -615,9 +659,16 @@
   async function attachImageFileToComposer(inputEl, file) {
     const composer = getComposerContainer(inputEl);
 
-    // Channel 1: Native <input type="file"> search across composer and document
+    // If an image is already attached, prune down to exactly 1 and do NOT attach another!
+    if (getAttachedImagesCount(inputEl) >= 1) {
+      console.log('[BOLTHAVEN] Image already attached in composer. Pruning to exactly 1...');
+      await pruneExcessAttachments(inputEl, 1);
+      return true;
+    }
+
+    // Channel 1: Native <input type="file"> (PRIMARY - targets EXACTLY ONE input)
     try {
-      console.log('[BOLTHAVEN] Channel 1: Searching for input[type="file"]...');
+      console.log('[BOLTHAVEN] Channel 1: Searching for single input[type="file"]...');
       let fileInputs = Array.from(document.querySelectorAll('input[type="file"], input[accept*="image"]'));
 
       if (fileInputs.length === 0) {
@@ -627,7 +678,6 @@
           clickElementSafely(plusBtn);
           await new Promise((r) => setTimeout(r, 350));
 
-          // Check if a dropdown menu appeared (e.g. "Upload from computer")
           const menuItems = Array.from(
             document.querySelectorAll('[role="menuitem"], [role="menu"] button, div[class*="popover"] button')
           );
@@ -646,77 +696,78 @@
       }
 
       if (fileInputs.length > 0) {
-        console.log(`[BOLTHAVEN] Found ${fileInputs.length} file input(s). Injecting File via DataTransfer...`);
+        // PICK EXACTLY ONE FILE INPUT (the first one) - NEVER LOOP OVER MULTIPLE INPUTS!
+        const targetInput = fileInputs[0];
+        console.log('[BOLTHAVEN] Injecting File into ONE file input via DataTransfer...');
         const dt = new DataTransfer();
         dt.items.add(file);
 
-        for (const input of fileInputs) {
-          try {
-            const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'files')?.set;
-            if (nativeSetter) {
-              nativeSetter.call(input, dt.files);
-            } else {
-              input.files = dt.files;
-            }
-          } catch (e) {
-            input.files = dt.files;
+        try {
+          const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'files')?.set;
+          if (nativeSetter) {
+            nativeSetter.call(targetInput, dt.files);
+          } else {
+            targetInput.files = dt.files;
           }
-
-          input.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
-          input.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+        } catch (e) {
+          targetInput.files = dt.files;
         }
 
-        console.log('[BOLTHAVEN] Dispatched file change events to input[type="file"]');
-        await new Promise((r) => setTimeout(r, 400));
+        targetInput.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+        targetInput.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+
+        console.log('[BOLTHAVEN] Dispatched file change event to single file input');
+        await new Promise((r) => setTimeout(r, 350));
         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }));
+
+        // Wait up to 5s to confirm attachment
+        const attached = await waitForImageAttached(inputEl, 5000);
+        if (attached) {
+          console.log('[BOLTHAVEN] ✓ Image attachment confirmed via single file input');
+          await pruneExcessAttachments(inputEl, 1);
+          return true;
+        }
       }
     } catch (e) {
       console.warn('[BOLTHAVEN] Channel 1 file input notice:', e.message);
     }
 
-    let attached = await waitForImageAttached(inputEl, 3500);
-    if (attached) {
-      console.log('[BOLTHAVEN] ✓ Image attachment confirmed via file input');
+    // If an image appeared during or after Channel 1, STOP! Do NOT run subsequent channels!
+    if (getAttachedImagesCount(inputEl) >= 1) {
       await pruneExcessAttachments(inputEl, 1);
       return true;
     }
 
-    // Channel 2: Drag & Drop (ChatGPT listens on #prompt-textarea and composer form)
+    // Channel 2: Drag & Drop (ONLY on #prompt-textarea, NEVER on multiple targets!)
     try {
-      console.log('[BOLTHAVEN] Channel 2: Dispatching DragEvent drop fallback...');
+      console.log('[BOLTHAVEN] Channel 2: Dispatching DragEvent drop fallback on #prompt-textarea only...');
       const dt = new DataTransfer();
       dt.items.add(file);
+      const target = document.querySelector('#prompt-textarea') || inputEl;
 
-      const targets = [
-        inputEl,
-        composer,
-        document.querySelector('#prompt-textarea'),
-        document.querySelector('main'),
-        document.body,
-      ].filter(Boolean);
+      target.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true, composed: true, dataTransfer: dt }));
+      target.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, composed: true, dataTransfer: dt }));
+      target.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, composed: true, dataTransfer: dt }));
 
-      for (const target of targets) {
-        const dragEnter = new DragEvent('dragenter', { bubbles: true, cancelable: true, composed: true, dataTransfer: dt });
-        target.dispatchEvent(dragEnter);
-        const dragOver = new DragEvent('dragover', { bubbles: true, cancelable: true, composed: true, dataTransfer: dt });
-        target.dispatchEvent(dragOver);
-        const dropEvt = new DragEvent('drop', { bubbles: true, cancelable: true, composed: true, dataTransfer: dt });
-        target.dispatchEvent(dropEvt);
+      const attached = await waitForImageAttached(inputEl, 4000);
+      if (attached) {
+        console.log('[BOLTHAVEN] ✓ Image attachment confirmed via DragEvent drop');
+        await pruneExcessAttachments(inputEl, 1);
+        return true;
       }
     } catch (e) {
       console.warn('[BOLTHAVEN] Channel 2 DragEvent notice:', e.message);
     }
 
-    attached = await waitForImageAttached(inputEl, 3000);
-    if (attached) {
-      console.log('[BOLTHAVEN] ✓ Image attachment confirmed via DragEvent drop');
+    // If an image appeared, STOP!
+    if (getAttachedImagesCount(inputEl) >= 1) {
       await pruneExcessAttachments(inputEl, 1);
       return true;
     }
 
-    // Channel 3: ClipboardEvent paste with DataTransfer
+    // Channel 3: ClipboardEvent paste on #prompt-textarea ONLY
     try {
-      console.log('[BOLTHAVEN] Channel 3: Dispatching ClipboardEvent paste with DataTransfer...');
+      console.log('[BOLTHAVEN] Channel 3: Dispatching ClipboardEvent paste on #prompt-textarea only...');
       inputEl.focus();
       const dt = new DataTransfer();
       dt.items.add(file);
@@ -740,44 +791,24 @@
       } catch (e) {}
 
       inputEl.dispatchEvent(pasteEvent);
-      if (document.activeElement && document.activeElement !== inputEl) {
-        document.activeElement.dispatchEvent(pasteEvent);
-      }
-      const promptArea = document.querySelector('#prompt-textarea');
-      if (promptArea && promptArea !== inputEl) {
-        promptArea.dispatchEvent(pasteEvent);
+
+      const attached = await waitForImageAttached(inputEl, 3000);
+      if (attached) {
+        console.log('[BOLTHAVEN] ✓ Image attachment confirmed via ClipboardEvent paste');
+        await pruneExcessAttachments(inputEl, 1);
+        return true;
       }
     } catch (e) {
       console.warn('[BOLTHAVEN] Channel 3 ClipboardEvent notice:', e.message);
     }
 
-    attached = await waitForImageAttached(inputEl, 2500);
-    if (attached) {
-      console.log('[BOLTHAVEN] ✓ Image attachment confirmed via ClipboardEvent paste');
+    // Final check and pruning
+    if (getAttachedImagesCount(inputEl) >= 1) {
       await pruneExcessAttachments(inputEl, 1);
       return true;
     }
 
-    // Channel 4: System Clipboard write + execCommand('paste') (closest to real user Cmd+V, requires focus)
-    try {
-      console.log('[BOLTHAVEN] Channel 4: Writing image to system clipboard and executing paste...');
-      inputEl.focus();
-      const item = new ClipboardItem({ [file.type]: file });
-      await navigator.clipboard.write([item]);
-      document.execCommand('paste');
-      console.log('[BOLTHAVEN] Executed document.execCommand("paste")');
-    } catch (e) {
-      console.log('[BOLTHAVEN] Channel 4 clipboard notice (expected if tab unfocused):', e.message);
-    }
-
-    attached = await waitForImageAttached(inputEl, 2500);
-    if (attached) {
-      console.log('[BOLTHAVEN] ✓ Image attachment confirmed via system clipboard paste');
-      await pruneExcessAttachments(inputEl, 1);
-      return true;
-    }
-
-    return isImageAttachedInComposer(inputEl);
+    return false;
   }
 
   // Attach image via data URL or web URL cleanly
@@ -809,13 +840,19 @@
       throw new Error('Job stopped by user');
     }
 
-    // 0. Snapshot ALL existing images currently in this chat tab BEFORE doing anything
+    // 0. RESET COMPOSER: Clean out any leftover attachments and text from previous runs completely
+    console.log('[BOLTHAVEN] Resetting composer: removing all leftover attachments and residual text...');
+    await pruneExcessAttachments(input, 0);
+    clearPromptText(input);
+    await new Promise((r) => setTimeout(r, 400));
+
+    // Snapshot pre-existing assistant images currently in this chat history before send
     const preExistingImageUrls = new Set();
     document.querySelectorAll('img').forEach((img) => {
       const src = img.src || '';
       if (src) preExistingImageUrls.add(src);
     });
-    console.log(`[BOLTHAVEN] Pre-existing images in chat before send: ${preExistingImageUrls.size}`);
+    console.log(`[BOLTHAVEN] Pre-existing images in chat history: ${preExistingImageUrls.size}`);
 
     // 1. Attach single image FIRST and strictly verify that it appears in composer!
     const localPath = job.source_file_path || '';
@@ -842,13 +879,8 @@
       const mimeType = blob.type || 'image/jpeg';
       const file = new File([blob], filename, { type: mimeType });
 
-      console.log(`[BOLTHAVEN] Attaching image #${job.original_position || 1}...`);
+      console.log(`[BOLTHAVEN] Attaching single image #${job.original_position || 1}...`);
       attached = await attachImageFileToComposer(input, file);
-      if (!attached) {
-        console.log(`[BOLTHAVEN] Attachment not confirmed on initial attempt, retrying once...`);
-        await new Promise((r) => setTimeout(r, 1000));
-        attached = await attachImageFileToComposer(input, file);
-      }
     }
 
     // STRICT SAFETY GUARD: Do NOT submit prompt if image failed to attach!

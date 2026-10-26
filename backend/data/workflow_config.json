@@ -1,5 +1,5 @@
 {
-  "timestamp": 1793005354644,
+  "timestamp": 1793006126944,
   "workflow_formats": [
     {
       "config": {
@@ -566,7 +566,7 @@
       "description": "Custom Facebook import extraction with dynamic AI prompt generator",
       "id": "format-1792648980268",
       "name": "Download FB Post",
-      "updatedAt": 1793005354631
+      "updatedAt": 1793006126937
     },
     {
       "config": {
