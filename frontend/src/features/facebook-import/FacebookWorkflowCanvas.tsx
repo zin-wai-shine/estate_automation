@@ -1601,14 +1601,18 @@ export const sanitizeAndResolveCollisions = (
   const hasCombineBoxes = activeCombineBoxIds.length > 0;
   const isOutputEnabled = !hasCombineBoxes && conf.outputNode?.enabled !== false;
 
+  const allDestIds = rawDests.map((d) => d.id);
+  const allCombineBoxIds = (conf.combineBoxes || []).map((cb) => cb.id);
+
+  // Preserve wires to all existing nodes in the canvas (even if toggled off/disabled)
   const validNodeIds = new Set([
     'trigger',
-    ...(conf.getContent?.enabled !== false ? ['get-content'] : []),
-    ...(conf.getImages?.enabled !== false ? ['get-images'] : []),
-    ...(isOutputEnabled ? ['output'] : []),
-    ...activeDestIds,
-    ...activeCombineBoxIds,
-    ...updatedAiBoxes.filter((b: any) => b.enabled !== false).map((b: any) => b.id),
+    'get-content',
+    'get-images',
+    'output',
+    ...allDestIds,
+    ...allCombineBoxIds,
+    ...updatedAiBoxes.map((b: any) => b.id),
   ]);
 
   let connections = Array.isArray(conf.connections)
@@ -1634,6 +1638,27 @@ export const sanitizeAndResolveCollisions = (
             c.fromNodeId !== c.toNodeId
         )
     : [];
+
+  // Ensure every Chrome tab group node is connected from its parent Chrome profile (even if previously purged)
+  const chromeProfileBoxes = updatedAiBoxes.filter((b) => isChromeProfileAIBox(b));
+  const chromeTabGroupBoxes = updatedAiBoxes.filter((b) => isChromeTabGroupAIBox(b));
+  if (chromeProfileBoxes.length > 0 && chromeTabGroupBoxes.length > 0) {
+    chromeTabGroupBoxes.forEach((tg) => {
+      const hasParentWire = connections.some(
+        (c: any) => chromeProfileBoxes.some((p) => p.id === c.fromNodeId) && c.toNodeId === tg.id
+      );
+      if (!hasParentWire) {
+        const matchingProfile =
+          chromeProfileBoxes.find((p) => p.browserProfileId && p.browserProfileId === tg.browserProfileId) ||
+          chromeProfileBoxes[0];
+        connections.push({
+          id: `wire-${matchingProfile.id}-${tg.id}`,
+          fromNodeId: matchingProfile.id,
+          toNodeId: tg.id,
+        });
+      }
+    });
+  }
 
   connections = dedupeConnections(connections);
 
@@ -3312,14 +3337,12 @@ export const FacebookWorkflowCanvas = forwardRef<
       return { x: config.trigger.x + 75, y: config.trigger.y + HALF_CIRCLE };
     }
     if (nodeId === 'get-content') {
-      if (config.getContent?.enabled === false) return null;
       const hasAddBtn = Boolean(config.getContent.enabled);
       return socketType === 'output'
         ? { x: config.getContent.x + (hasAddBtn ? 109 : 71), y: config.getContent.y + HALF_CIRCLE }
         : { x: config.getContent.x + 1, y: config.getContent.y + HALF_CIRCLE };
     }
     if (nodeId === 'get-images') {
-      if (config.getImages?.enabled === false) return null;
       const hasAddBtn = Boolean(config.getImages.enabled);
       return socketType === 'output'
         ? { x: config.getImages.x + (hasAddBtn ? 109 : 71), y: config.getImages.y + HALF_CIRCLE }
@@ -3329,7 +3352,7 @@ export const FacebookWorkflowCanvas = forwardRef<
       const hasCombineBoxes = (config.combineBoxes || []).some((b) => b && b.enabled !== false);
       if (hasCombineBoxes) return null;
       const outNode = config.outputNode;
-      if (!outNode || outNode.enabled === false) return null;
+      if (!outNode) return null;
       const outX = outNode.x ?? 620;
       const outY = outNode.y ?? 248;
       const hasAddBtn = isNodeEffectivelyEnabled('output');
@@ -3339,7 +3362,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     }
     if (nodeId === 'destination' || nodeId.startsWith('dest-')) {
       const allDests = getNormalizedDestinations(config);
-      const dest = allDests.find((d) => d.id === nodeId && d.enabled !== false);
+      const dest = allDests.find((d) => d.id === nodeId);
       if (!dest) {
         return null;
       }
@@ -3349,13 +3372,13 @@ export const FacebookWorkflowCanvas = forwardRef<
         ? { x: destX + 71, y: destY + HALF_CIRCLE }
         : { x: destX + 1, y: destY + HALF_CIRCLE };
     }
-    const cb = (config.combineBoxes || []).find((b) => b.id === nodeId && b.enabled !== false);
+    const cb = (config.combineBoxes || []).find((b) => b.id === nodeId);
     if (cb) {
       return socketType === 'output'
         ? { x: cb.x + 109, y: cb.y + HALF_CIRCLE }
         : { x: cb.x + 1, y: cb.y + HALF_CIRCLE };
     }
-    const box = config.aiBoxes.find((b) => b.id === nodeId && b.enabled !== false);
+    const box = config.aiBoxes.find((b) => b.id === nodeId);
     if (box) {
       const isProf = isChromeProfileAIBox(box);
       const isTabGroup = isChromeTabGroupAIBox(box);
@@ -3445,7 +3468,7 @@ export const FacebookWorkflowCanvas = forwardRef<
 
     const box = config.aiBoxes.find((b) => b.id === nodeId);
     if (!box) return false;
-    if (!box.enabled) return false;
+    if (box.enabled === false) return false;
 
     // Relative node must have active upstream inputs:
     // If incoming connections exist, all upstream branches must not be disabled.
@@ -6848,7 +6871,12 @@ export const FacebookWorkflowCanvas = forwardRef<
                     setHoveredWireId(null);
                     setHoveredXId(null);
                   }}
-                  style={{ pointerEvents: isBaseVerticalWire ? 'none' : 'auto', cursor: 'default' }}
+                  style={{
+                    pointerEvents: isBaseVerticalWire ? 'none' : 'auto',
+                    cursor: 'default',
+                    opacity: !isConnectedAndEnabled ? 0.35 : 1,
+                    transition: 'opacity 0.2s ease',
+                  }}
                 >
                   {/* Invisible thicker hit-path for hovering to reveal the disconnect (x) button */}
                   {!isBaseVerticalWire && (
@@ -6865,8 +6893,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                     d={path}
                     fill="none"
                     stroke={wireStrokeColor}
-                    strokeWidth={isXHovered ? '2.5' : isExecActive ? '2.5' : isConnectedAndEnabled ? '2.2' : isWireHovered ? '2.2' : '2'}
-                    strokeDasharray={isExecActive ? '4, 4' : 'none'}
+                    strokeWidth={isXHovered ? '2.5' : isExecActive ? '2.5' : isConnectedAndEnabled ? '2.2' : isWireHovered ? '2.2' : '1.8'}
+                    strokeDasharray={isExecActive ? '4, 4' : !isConnectedAndEnabled ? '4, 4' : 'none'}
                     strokeLinecap="round"
                     style={{
                       animation: isExecActive ? (isFastFlow ? 'n8nFlow 0.8s linear infinite' : 'n8nFlow 1.2s linear infinite') : 'none',
