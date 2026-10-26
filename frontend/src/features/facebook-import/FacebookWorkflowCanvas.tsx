@@ -7575,69 +7575,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                   transition: 'transform 0.2s ease, opacity 0.2s ease',
                 }}
               >
-                {/* Bypassed Badge when disabled */}
-                {!isEffectiveEnabled && (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      top: '-10px',
-                      right: isExternalBrowser ? '14px' : '-4px',
-                      backgroundColor: isDark ? '#334155' : '#E2E8F0',
-                      color: isDark ? '#94A3B8' : '#475569',
-                      fontSize: '0.5625rem',
-                      fontWeight: 700,
-                      letterSpacing: '0.04em',
-                      textTransform: 'uppercase',
-                      padding: '2px 7px',
-                      borderRadius: '10px',
-                      border: isDark ? '1px solid #475569' : '1px solid #CBD5E1',
-                      boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-                      zIndex: 14,
-                      pointerEvents: 'none',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                    }}
-                  >
-                    <span style={{ width: '5px', height: '5px', borderRadius: '50%', backgroundColor: '#64748B' }} />
-                    <span>Bypassed</span>
-                  </div>
-                )}
-
-                {/* Canvas Quick Enable/Disable Toggle */}
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleToggleAIBox(box.id, e);
-                  }}
-                  title={isDirectlyEnabled ? 'Disable step (bypass during workflow run)' : 'Enable step'}
-                  style={{
-                    position: 'absolute',
-                    top: '-8px',
-                    left: isExternalBrowser ? '14px' : '-4px',
-                    height: '19px',
-                    padding: '0 6px',
-                    borderRadius: '10px',
-                    backgroundColor: isDirectlyEnabled
-                      ? (isDark ? 'rgba(16, 185, 129, 0.25)' : '#DCFCE7')
-                      : (isDark ? 'rgba(239, 68, 68, 0.25)' : '#FEE2E2'),
-                    border: `1px solid ${isDirectlyEnabled ? '#10B981' : '#EF4444'}`,
-                    color: isDirectlyEnabled ? '#10B981' : '#EF4444',
-                    fontSize: '0.5625rem',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '3px',
-                    zIndex: 14,
-                    opacity: hoveredNodeId === box.id || !isDirectlyEnabled ? 1 : 0,
-                    transition: 'opacity 0.15s ease',
-                  }}
-                >
-                  <span style={{ width: '4px', height: '4px', borderRadius: '50%', backgroundColor: isDirectlyEnabled ? '#10B981' : '#EF4444' }} />
-                  <span>{isDirectlyEnabled ? 'Active' : 'Disabled'}</span>
-                </button>
                 <MergedNodeShape
                   sockets={isChromeProfile || isChromeTabGroup ? 'none' : 'both'}
                   hasTopSocket={isChromeProfile || isChromeTabGroup}
@@ -9595,35 +9532,34 @@ export const FacebookWorkflowCanvas = forwardRef<
                             : 'Node is bypassed (will skip during workflow run)'}
                         </div>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => handleToggleAIBox(currentModalAIBox.id)}
-                        style={{
-                          height: '28px',
-                          padding: '0 0.625rem',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '0.375rem',
-                          borderRadius: '6px',
-                          border: `1px solid ${currentModalAIBox.enabled !== false ? 'rgba(16, 185, 129, 0.4)' : isDark ? '#4B5563' : '#CBD5E1'}`,
-                          backgroundColor: currentModalAIBox.enabled !== false ? 'rgba(16, 185, 129, 0.12)' : isDark ? 'rgba(107, 114, 128, 0.15)' : '#F1F5F9',
-                          color: currentModalAIBox.enabled !== false ? '#34D399' : 'var(--text-muted)',
-                          fontSize: '0.75rem',
-                          fontWeight: 600,
-                          cursor: 'pointer',
-                          transition: 'all 0.15s ease',
-                        }}
-                      >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
                         <span
                           style={{
-                            width: '6px',
-                            height: '6px',
-                            borderRadius: '50%',
-                            backgroundColor: currentModalAIBox.enabled !== false ? '#10B981' : '#6B7280',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            color: currentModalAIBox.enabled !== false ? '#10B981' : 'var(--text-muted)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
                           }}
+                        >
+                          <span
+                            style={{
+                              width: '6px',
+                              height: '6px',
+                              borderRadius: '50%',
+                              backgroundColor: currentModalAIBox.enabled !== false ? '#10B981' : '#6B7280',
+                            }}
+                          />
+                          <span>{currentModalAIBox.enabled !== false ? 'Active' : 'Disabled'}</span>
+                        </span>
+                        <ToggleSwitch
+                          checked={currentModalAIBox.enabled !== false}
+                          onChange={() => handleToggleAIBox(currentModalAIBox.id)}
+                          activeColor="#10B981"
+                          size="md"
                         />
-                        <span>{currentModalAIBox.enabled !== false ? 'Active' : 'Disabled'}</span>
-                      </button>
+                      </div>
                     </div>
 
                     {currentModalAIBox.enabled === false && (

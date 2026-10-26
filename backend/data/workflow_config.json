@@ -1,5 +1,5 @@
 {
-  "timestamp": 1793052317819,
+  "timestamp": 1793053134612,
   "workflow_formats": [
     {
       "config": {
@@ -504,11 +504,6 @@
             "toNodeId": "ai-box-chrome-11-1792896035919"
           },
           {
-            "fromNodeId": "ai-box-chrome-11-1792896035919",
-            "id": "wire-ai-box-chrome-11-1792896035919-ai-box-tabgroup-enhance-img-1792898266622-1792898266622",
-            "toNodeId": "ai-box-tabgroup-enhance-img-1792898266622"
-          },
-          {
             "fromNodeId": "get-content",
             "id": "conn-get-content-output",
             "toNodeId": "combine-box-1792697914542"
@@ -615,7 +610,7 @@
       "description": "Custom Facebook import extraction with dynamic AI prompt generator",
       "id": "format-1792648980268",
       "name": "Download FB Post",
-      "updatedAt": 1793052317816
+      "updatedAt": 1793053134602
     },
     {
       "config": {
