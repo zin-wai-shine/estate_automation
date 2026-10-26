@@ -94,28 +94,54 @@
       composer.querySelector('button[aria-label="Send message"]') ||
       composer.querySelector('button[aria-label="Send"]') ||
       composer.querySelector('button[aria-label*="Send" i]') ||
-      composer.querySelector('button[data-testid*="send" i]') ||
-      document.querySelector('button[data-testid="send-button"]') ||
-      document.querySelector('button[data-testid="composer-send-button"]') ||
-      document.querySelector('button[aria-label="Send prompt"]') ||
-      document.querySelector('button[aria-label*="Send" i]')
+      composer.querySelector('button[data-testid*="send" i]')
     );
     if (explicit) return explicit;
 
     // 2. Search composer toolbar for the send button (with SVG up-arrow)
-    const buttons = Array.from(composer.querySelectorAll('button'));
-    for (const b of buttons) {
+    // EXCLUDE model pickers, attach button, mic, voice, reason, etc.!
+    const buttons = Array.from(composer.querySelectorAll('button:not(:disabled)')).filter((b) => {
       const aria = (b.getAttribute('aria-label') || '').toLowerCase();
-      if (aria.includes('voice') || aria.includes('dictate') || aria.includes('record') || aria.includes('attach') || aria.includes('plus')) {
-        continue;
+      const testid = (b.getAttribute('data-testid') || '').toLowerCase();
+      const text = (b.innerText || b.textContent || '').toLowerCase();
+
+      // Exclude model picker (contains "gpt", "sol", "light", "medium", "o1", "o3", "4o", "model")
+      if (
+        text.includes('gpt') ||
+        text.includes('sol') ||
+        text.includes('light') ||
+        text.includes('medium') ||
+        text.includes('model') ||
+        aria.includes('model') ||
+        aria.includes('switch') ||
+        testid.includes('model')
+      ) {
+        return false;
       }
-      const svg = b.querySelector('svg');
-      if (svg) {
-        const rect = b.getBoundingClientRect();
-        if (rect.width >= 24 && rect.height >= 24) {
-          return b;
-        }
+
+      // Exclude attachment, mic, voice, search, reason
+      if (
+        aria.includes('voice') ||
+        aria.includes('dictate') ||
+        aria.includes('record') ||
+        aria.includes('attach') ||
+        aria.includes('plus') ||
+        aria.includes('search') ||
+        aria.includes('reason') ||
+        aria.includes('canvas') ||
+        testid.includes('attach') ||
+        testid.includes('voice') ||
+        testid.includes('mic')
+      ) {
+        return false;
       }
+      return true;
+    });
+
+    if (buttons.length > 0) {
+      // Sort buttons by rect.right descending: The send button is ALWAYS the rightmost circular button on the toolbar!
+      buttons.sort((a, b) => b.getBoundingClientRect().right - a.getBoundingClientRect().right);
+      return buttons[0];
     }
 
     return null;
@@ -131,30 +157,38 @@
   }
 
   // Wait for the attachment thumbnail in composer to finish uploading to OpenAI server
-  async function waitForAttachmentUploadComplete(composerEl, maxWaitMs = 25000) {
+  async function waitForAttachmentUploadComplete(composerEl, maxWaitMs = 15000) {
     const deadline = Date.now() + maxWaitMs;
     console.log('[BOLTHAVEN] Checking attachment upload status in composer...');
     while (Date.now() < deadline) {
       if (activeJobAborted) return false;
       const composer = composerEl || getComposerContainer() || document.querySelector('form') || document;
-      // Look for upload progress spinner (circle, spinner, or progressbar) on the thumbnail
-      const hasSpinner = composer.querySelector(
-        'circle, svg.animate-spin, [class*="animate-spin"], [role="progressbar"], [class*="loading"], [class*="progress"]'
-      );
+
+      // Look for upload progress spinner ONLY inside thumbnail cards above prompt area
+      const cards = getAttachmentThumbnailCards(composer.querySelector('#prompt-textarea') || composer);
+      let cardUploading = false;
+      for (const card of cards) {
+        const spinner = card.querySelector('circle, svg.animate-spin, [class*="animate-spin"], [role="progressbar"], [class*="loading"]');
+        if (spinner) {
+          cardUploading = true;
+          break;
+        }
+      }
+
       const sendBtn = findSendButton();
       const sendReady = isSendButtonReady(sendBtn);
 
-      // If no upload spinner is present AND the send button is ready, the attachment is 100% processed!
-      if (!hasSpinner && sendReady) {
+      // If cards are not actively spinning AND the send button is ready, attachment is complete!
+      if (!cardUploading && sendReady) {
         await new Promise((r) => setTimeout(r, 400));
         console.log('[BOLTHAVEN] ✓ Attachment upload fully complete and Send button is active!');
         return true;
       }
 
-      await new Promise((r) => setTimeout(r, 350));
+      await new Promise((r) => setTimeout(r, 300));
     }
-    console.warn('[BOLTHAVEN] Attachment upload wait timeout reached, proceeding to send attempt...');
-    return false;
+    console.log('[BOLTHAVEN] Attachment upload wait settled, proceeding to send...');
+    return true;
   }
 
   // Find stop button (indicates generation is actively running)
@@ -193,37 +227,80 @@
   }
 
   // Detect whether ChatGPT is actively thinking, reasoning, or generating
-  // Detect whether ChatGPT is actively thinking, reasoning, or generating
   function isThinkingOrGenerating() {
     // 1. Stop button present
     if (findStopButton()) return true;
 
-    // 2. Active "Working for Xs" text or thinking indicators (notice "Working" in present continuous, not "Worked")
-    const bodyText = document.body.innerText || '';
-    if (/\bWorking for \d+s\b/i.test(bodyText) || /\bThinking\.\.\./i.test(bodyText) || /\bGenerating\b/i.test(bodyText)) {
-      return true;
-    }
-
-    // 3. Pulsing dots, spinning loader, or reasoning container
-    const thinkingEls = document.querySelectorAll(
-      'div[class*="thinking"], ' +
-      'div[class*="reasoning"], ' +
-      'div[data-testid*="thinking"], ' +
-      '.result-thinking, ' +
-      'svg.animate-spin, ' +
-      '.animate-pulse, ' +
-      'div[class*="animate-spin"]'
+    // 2. Look for active thinking indicators strictly inside the latest assistant turn (never whole body text!)
+    const allAssistantTurns = document.querySelectorAll(
+      'div[data-message-author-role="assistant"], article[data-testid*="conversation-turn"]'
     );
-    for (const el of thinkingEls) {
-      if (el.textContent && /Working for/i.test(el.textContent)) {
-        return true;
-      }
-      if (el.classList && (el.classList.contains('animate-pulse') || el.classList.contains('animate-spin'))) {
+    if (allAssistantTurns.length > 0) {
+      const lastTurn = allAssistantTurns[allAssistantTurns.length - 1];
+      const hasSpinner = lastTurn.querySelector('svg.animate-spin, div[class*="spin"], .result-thinking');
+      if (hasSpinner) return true;
+
+      const txt = (lastTurn.textContent || '').slice(-300);
+      if (/\bWorking for \d+s\b/i.test(txt) || /\bThinking\.\.\./i.test(txt)) {
         return true;
       }
     }
 
     return false;
+  }
+
+  // Trigger reliable multi-channel image download to browser downloads directory
+  async function downloadEnhancedImage(imgEl, finalUrl, fileName) {
+    console.log('[BOLTHAVEN] Triggering download of enhanced image:', fileName, finalUrl);
+
+    // 1. Try clicking ChatGPT native download button on the image container if present
+    try {
+      const imageContainer = imgEl.closest('div[class*="group"], article, div');
+      if (imageContainer) {
+        const btns = Array.from(imageContainer.querySelectorAll('button'));
+        const downloadBtn = btns.find((b) => {
+          const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+          const title = (b.getAttribute('title') || '').toLowerCase();
+          return aria.includes('download') || title.includes('download') || (b.innerHTML || '').includes('download');
+        });
+        if (downloadBtn) {
+          console.log('[BOLTHAVEN] Clicking native ChatGPT download button on image card...');
+          clickElementSafely(downloadBtn);
+          await new Promise((r) => setTimeout(r, 600));
+        }
+      }
+    } catch (e) {}
+
+    // 2. Fetch image as blob directly in the tab and trigger same-origin anchor download
+    try {
+      console.log('[BOLTHAVEN] Fetching blob for direct browser download...');
+      const resp = await fetch(finalUrl);
+      if (resp.ok) {
+        const blob = await resp.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => {
+          try {
+            document.body.removeChild(a);
+            URL.revokeObjectURL(blobUrl);
+          } catch (e) {}
+        }, 8000);
+        console.log('[BOLTHAVEN] ✓ Triggered direct anchor download for:', fileName);
+      }
+    } catch (e) {
+      console.warn('[BOLTHAVEN] Direct blob download warning:', e.message);
+    }
+
+    // 3. Background chrome.downloads fallback
+    chrome.runtime.sendMessage({
+      action: 'DOWNLOAD_IMAGE',
+      url: finalUrl,
+      filename: fileName,
+    }).catch(() => {});
   }
 
   // Detect ChatGPT error banner and locate the Retry button
@@ -986,17 +1063,16 @@
       };
     }
 
-    // 5. Monitor for generation to COMPLETELY FINISH (poll every 1.5s, up to 5 min)
+    // 5. Monitor for generation to COMPLETELY FINISH (poll every 1s, up to 5 min)
     console.log('[BOLTHAVEN] Waiting for ChatGPT generation of Image #' + (job.original_position || 1) + ' to complete...');
     const startTime = Date.now();
     const maxWaitMs = 300000;
     let consecutiveCalmChecks = 0;
-    let detectedNewImage = null;
     let streamRetryCount = 0;
     const MAX_STREAM_RETRIES = 3;
     let lastRetryClickTime = 0;
 
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       const checkInterval = setInterval(async () => {
         if (activeJobAborted) {
           clearInterval(checkInterval);
@@ -1032,34 +1108,25 @@
           }
         }
 
-        // Locate the NEW assistant turn (must be strictly after preAssistantCount)
-        const allAssistantTurns = document.querySelectorAll(
-          'div[data-message-author-role="assistant"], article[data-testid*="conversation-turn"]'
-        );
-
-        if (allAssistantTurns.length <= preAssistantCount) {
-          // New turn hasn't appeared yet
-          consecutiveCalmChecks = 0;
-          return;
-        }
-
-        const latestTurn = allAssistantTurns[allAssistantTurns.length - 1];
-
-        // Search ONLY inside the latest assistant turn for a newly created image!
-        const turnImgs = Array.from(latestTurn.querySelectorAll('img')).filter((img) => {
+        // Search for newly created image across the page that wasn't present before send
+        const candidateImgs = Array.from(document.querySelectorAll('img')).filter((img) => {
           const src = img.src || img.getAttribute('src') || '';
           if (!src || preExistingImageUrls.has(src)) return false;
+          // Must not be inside composer form or navigation
+          if (img.closest('form, div[class*="composer"], nav, header')) return false;
           const s = src.toLowerCase();
           if (
             s.includes('avatar') ||
             s.includes('profile') ||
             s.includes('user') ||
+            s.includes('icon') ||
             s.includes('emoji') ||
             s.includes('favicon')
           ) {
             return false;
           }
-          return true;
+          const rect = img.getBoundingClientRect();
+          return rect.width >= 60 && rect.height >= 60;
         });
 
         // If STILL thinking or generating: do NOT complete, reset calm counter!
@@ -1068,59 +1135,33 @@
           return;
         }
 
-        // ChatGPT is NOT generating. If a new image is present in the latest turn, mark it!
-        if (turnImgs.length > 0) {
-          const bestImg = turnImgs[turnImgs.length - 1];
-          const finalUrl = bestImg.src || bestImg.getAttribute('src') || '';
-          if (finalUrl) {
-            detectedNewImage = { img: bestImg, url: finalUrl };
-            consecutiveCalmChecks++;
+        // ChatGPT is NOT generating. If a new image is present, trigger download and complete!
+        if (candidateImgs.length > 0) {
+          consecutiveCalmChecks++;
+          if (consecutiveCalmChecks >= 1) {
+            clearInterval(checkInterval);
+            const bestImg = candidateImgs[candidateImgs.length - 1];
+            const finalUrl = bestImg.src || bestImg.getAttribute('src') || '';
+            console.log('[BOLTHAVEN] ✓ Generation fully finished! New image detected:', finalUrl);
+
+            preExistingImageUrls.add(finalUrl);
+            const fileName = `enhanced_${job.original_position || 1}_${job.job_id || Date.now()}.png`;
+
+            // Download using our 3-tier reliable downloader (native click + direct blob anchor + background)
+            await downloadEnhancedImage(bestImg, finalUrl, fileName);
+
+            // Wait 2.5s for download to register before resolving slot
+            await new Promise((r) => setTimeout(r, 2500));
+
+            return resolve({
+              success: true,
+              job_id: job.job_id,
+              original_position: job.original_position,
+              result_url: finalUrl,
+            });
           }
         }
-
-        // Once ChatGPT is done and new image is detected
-        if (consecutiveCalmChecks >= 1 && detectedNewImage) {
-          clearInterval(checkInterval);
-          const finalUrl = detectedNewImage.url;
-          console.log('[BOLTHAVEN] ✓ Generation fully finished! New image detected in latest turn:', finalUrl);
-
-          preExistingImageUrls.add(finalUrl);
-          const fileName = `enhanced_${job.original_position}_${job.job_id}.png`;
-
-          // Trigger single download via background chrome.downloads API
-          chrome.runtime.sendMessage(
-            {
-              action: 'DOWNLOAD_IMAGE',
-              url: finalUrl,
-              filename: fileName,
-            },
-            (resp) => {
-              if (chrome.runtime.lastError || (resp && !resp.success)) {
-                try {
-                  const a = document.createElement('a');
-                  a.href = finalUrl;
-                  a.download = fileName;
-                  document.body.appendChild(a);
-                  a.click();
-                  document.body.removeChild(a);
-                } catch (e) {}
-              } else {
-                console.log('[BOLTHAVEN] ✓ Successfully initiated download for image #' + job.original_position);
-              }
-            }
-          );
-
-          // Wait 2s for download to start and chat to fully settle BEFORE resolving
-          await new Promise((r) => setTimeout(r, 2000));
-
-          resolve({
-            success: true,
-            job_id: job.job_id,
-            original_position: job.original_position,
-            result_url: finalUrl,
-          });
-        }
-      }, 1500);
+      }, 1000);
     });
   }
 
