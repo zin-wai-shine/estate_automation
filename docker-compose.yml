@@ -207,7 +207,7 @@ services:
       - --protocol
       - http2
       - --retries
-      - "10"
+      - "1000"
       - --metrics
       - 0.0.0.0:2000
       - run
@@ -215,11 +215,11 @@ services:
       - 1.1.1.1
       - 8.8.8.8
     healthcheck:
-      test: ["CMD", "cloudflared", "--version"]
+      test: ["CMD", "cloudflared", "tunnel", "--metrics", "127.0.0.1:2000", "ready"]
       interval: 10s
       timeout: 5s
       retries: 3
-      start_period: 5s
+      start_period: 10s
     depends_on:
       proxy:
         condition: service_healthy

@@ -24,6 +24,12 @@ import { Button } from '../../components/ui/Button';
 import { ToggleSwitch } from '../../components/ui/ToggleSwitch';
 import { loadAvailablePromptTemplates } from '../facebook-import/FacebookWorkflowCanvas';
 import { isEnhanceCategory, isGenerateCategory } from './browserPromptUtils';
+import {
+  getPersistedReferenceImage,
+  loadPersistedReferenceImageAsync,
+  savePersistedReferenceImage,
+  clearPersistedReferenceImage,
+} from './referenceImageStorage';
 
 interface FBHeroSettingsSideboxProps {
   isOpen: boolean;
@@ -61,8 +67,11 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
   });
 
 
+  const latestBoxConfigRef = useRef(boxConfig);
+  latestBoxConfigRef.current = boxConfig;
+
   const [referenceImageData, setReferenceImageData] = useState<string>(() => {
-    return boxConfig.referenceImage || '';
+    return boxConfig.referenceImage || getPersistedReferenceImage(boxConfig.id) || '';
   });
 
   // ── 3. Prompt Configuration & Preview State ───────────────────────────────
@@ -180,7 +189,16 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
     const resolvedPrompt = boxConfig.usePromptConfig !== false && boxConfig.showEnhancementPrompt !== false;
 
     setUseReferenceImage(resolvedRef);
-    setReferenceImageData(boxConfig.referenceImage || '');
+    const initialRefImg = boxConfig.referenceImage || getPersistedReferenceImage(boxConfig.id) || '';
+    setReferenceImageData(initialRefImg);
+    if (!initialRefImg && isHero) {
+      loadPersistedReferenceImageAsync(boxConfig.id).then((persisted) => {
+        if (persisted) {
+          setReferenceImageData(persisted);
+          updateSettings({ referenceImage: persisted, useReferenceImage: true, referenceImageMode: 'custom_upload' });
+        }
+      });
+    }
     setPromptSourceMode(
       boxConfig.promptSourceMode ||
       (propertyContext?.upstreamPrompts && propertyContext.upstreamPrompts.length > 0 ? 'upstream_ai' : 'preset')
@@ -207,10 +225,25 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
 
   // ── Sync Helper ───────────────────────────────────────────────────────────
   const updateSettings = (updates: Record<string, any>) => {
-    onUpdateBoxConfig({
-      ...boxConfig,
+    const current = latestBoxConfigRef.current || boxConfig;
+    const preservedRefImg =
+      'referenceImage' in updates
+        ? updates.referenceImage
+        : (current.referenceImage || referenceImageData || getPersistedReferenceImage(current.id) || undefined);
+    const nextConfig = {
+      ...current,
+      ...(preservedRefImg !== undefined ? { referenceImage: preservedRefImg } : {}),
       ...updates,
-    });
+    };
+    if (!('enabled' in updates) && typeof boxConfig.enabled === 'boolean') {
+      nextConfig.enabled = boxConfig.enabled;
+    }
+    latestBoxConfigRef.current = nextConfig;
+    const payload = { ...nextConfig };
+    if (!('enabled' in updates)) {
+      delete (payload as any).enabled;
+    }
+    onUpdateBoxConfig(payload);
   };
 
   // ── Available Prompts Fallback ──────────────────────────────────────────
@@ -379,12 +412,15 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (event) => {
-      const dataUrl = event.target?.result as string;
-      setReferenceImageData(dataUrl);
-      updateSettings({ referenceImage: dataUrl, useReferenceImage: true });
+    reader.onload = async (event) => {
+      const rawDataUrl = event.target?.result as string;
+      if (!rawDataUrl) return;
+      const savedDataUrl = await savePersistedReferenceImage(rawDataUrl, boxConfig.id);
+      setReferenceImageData(savedDataUrl);
+      updateSettings({ referenceImage: savedDataUrl, useReferenceImage: true, referenceImageMode: 'custom_upload' });
     };
     reader.readAsDataURL(file);
+    e.target.value = '';
   };
 
   const handleCopyPrompt = () => {
@@ -699,9 +735,10 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
                         </label>
                         <button
                           type="button"
-                          onClick={() => {
+                          onClick={async () => {
+                            await clearPersistedReferenceImage(boxConfig.id);
                             setReferenceImageData('');
-                            updateSettings({ referenceImage: '' });
+                            updateSettings({ referenceImage: '', referenceImageMode: 'photo_1' });
                           }}
                           style={{
                             fontSize: '0.625rem',

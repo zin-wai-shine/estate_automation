@@ -29,6 +29,44 @@ if (!fs.existsSync(defaultProcessingDir)) {
   } catch (e) {}
 }
 
+const REFERENCE_IMAGE_CACHE_FILE = path.join(defaultProcessingDir, '.fb_hero_reference_image.json');
+
+function loadPersistedReferenceImageFromDisk() {
+  try {
+    if (fs.existsSync(REFERENCE_IMAGE_CACHE_FILE)) {
+      const parsed = JSON.parse(fs.readFileSync(REFERENCE_IMAGE_CACHE_FILE, 'utf8'));
+      if (parsed && typeof parsed.reference_image === 'string' && parsed.reference_image.length > 0) {
+        return parsed.reference_image;
+      }
+    }
+  } catch (e) {}
+  return null;
+}
+
+function savePersistedReferenceImageToDisk(dataUrl, boxId) {
+  try {
+    fs.writeFileSync(
+      REFERENCE_IMAGE_CACHE_FILE,
+      JSON.stringify({
+        reference_image: dataUrl || '',
+        box_id: boxId || '',
+        updated_at: new Date().toISOString(),
+      }),
+      'utf8'
+    );
+  } catch (e) {
+    console.warn('[COMPANION] Could not persist reference image to disk:', e.message);
+  }
+}
+
+function deletePersistedReferenceImageFromDisk() {
+  try {
+    if (fs.existsSync(REFERENCE_IMAGE_CACHE_FILE)) {
+      fs.unlinkSync(REFERENCE_IMAGE_CACHE_FILE);
+    }
+  } catch (e) {}
+}
+
 let activeWatchDir = defaultProcessingDir;
 let processedFiles = new Set();
 let registeredProfiles = [];   // [{ profileKey, profileName, tabGroups, paired_at }]
@@ -42,6 +80,19 @@ let automationState = {
   completed: 0,
   failed: 0,
   remaining: 0,
+  started_at: null,
+  updated_at: null,
+};
+
+// Two-Stage Staging state (shared across HTTP handlers)
+let twoStageState = {
+  is_running: false,
+  step: 'idle',
+  extracted_prompt: '',
+  condo_name: '',
+  matched_folder: '',
+  images_attached: 0,
+  error: null,
   started_at: null,
   updated_at: null,
 };
@@ -1492,9 +1543,21 @@ function mergeTabGroups(scannedGroups, liveGroups) {
 
   // ── Stop Automation ─────────────────────────────────────────────────────────
   if (url.pathname === '/stop-automation' && req.method === 'POST') {
-    automationState = { ...automationState, is_running: false };
+    pendingAutomationCommands = [];
+    automationState = {
+      ...automationState,
+      is_running: false,
+      updated_at: new Date().toISOString(),
+    };
+    twoStageState = {
+      ...twoStageState,
+      is_running: false,
+      step: 'stopped',
+      error: 'Stopped by user',
+      updated_at: new Date().toISOString(),
+    };
     pushPendingCommand({ action: 'STOP_AUTOMATION', payload: {}, created_at: new Date().toISOString() });
-    console.log('[COMPANION] Stop automation command queued');
+    console.log('[COMPANION] Stop automation command queued (cleared pending queue and stopped twoStageState)');
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ status: 'ok' }));
   }
@@ -1542,19 +1605,43 @@ function mergeTabGroups(scannedGroups, liveGroups) {
     return res.end(JSON.stringify({ status: 'ok', message: 'Reload queued' }));
   }
 
-  // ── Two-Stage Staging Automation (Group 2: Tab 1 Prompt Extractor -> Tab 2 Staging) ──
-  let twoStageState = {
-    is_running: false,
-    step: 'idle',
-    extracted_prompt: '',
-    condo_name: '',
-    matched_folder: '',
-    images_attached: 0,
-    error: null,
-    started_at: null,
-    updated_at: null,
-  };
+  // ── Persistent Reference Image Storage (GET / POST / DELETE) ───────────────
+  if (url.pathname === '/reference-image') {
+    if (req.method === 'GET') {
+      const refImg = loadPersistedReferenceImageFromDisk();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ status: 'ok', reference_image: refImg || '' }));
+    }
+    if (req.method === 'POST') {
+      let body = '';
+      req.on('data', (c) => (body += c));
+      req.on('end', () => {
+        try {
+          const payload = JSON.parse(body || '{}');
+          if (payload.reference_image) {
+            savePersistedReferenceImageToDisk(payload.reference_image, payload.box_id || '');
+            console.log(`[COMPANION] 🖼️ Saved persistent FB Hero Reference Image (${Math.round(payload.reference_image.length / 1024)} KB)`);
+          } else {
+            deletePersistedReferenceImageFromDisk();
+          }
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ status: 'ok' }));
+        } catch (err) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: err.message }));
+        }
+      });
+      return;
+    }
+    if (req.method === 'DELETE') {
+      deletePersistedReferenceImageFromDisk();
+      console.log('[COMPANION] 🗑️ Cleared persistent FB Hero Reference Image');
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ status: 'ok' }));
+    }
+  }
 
+  // ── Two-Stage Staging Automation (Group 2: Tab 1 Prompt Extractor -> Tab 2 Staging) ──
   if (url.pathname === '/start-two-stage-staging' && req.method === 'POST') {
     let body = '';
     req.on('data', (c) => (body += c));
@@ -1566,7 +1653,12 @@ function mergeTabGroups(scannedGroups, liveGroups) {
         const condoName = payload.condo_name || payload.title || '';
         const initialPrompt = payload.initial_prompt || payload.prompt || '';
         const useRef = payload.use_reference_image !== false;
-        const referenceImage = useRef ? (payload.reference_image || null) : null;
+        if (payload.reference_image && typeof payload.reference_image === 'string') {
+          savePersistedReferenceImageToDisk(payload.reference_image, payload.box_id || '');
+        }
+        const referenceImage = useRef
+          ? (payload.reference_image || loadPersistedReferenceImageFromDisk() || null)
+          : null;
         const useCondoImgs = payload.use_condo_images !== false;
         const customBase = payload.target_folder || payload.base_dir;
         const baseDir = (customBase && fs.existsSync(customBase)) ? customBase : CONDO_BASE_DIR;

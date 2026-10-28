@@ -1402,6 +1402,13 @@
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'STOP_TAB_JOB' || request.action === 'ABORT_TAB_JOB') {
       activeJobAborted = true;
+      try {
+        const stopBtn = findStopButton();
+        if (stopBtn) {
+          clickElementSafely(stopBtn);
+          console.log('[BOLTHAVEN] Clicked ChatGPT Stop button to halt active generation');
+        }
+      } catch (e) {}
       console.log('[BOLTHAVEN] Tab job aborted on user command');
       sendResponse({ success: true, aborted: true });
       return true;

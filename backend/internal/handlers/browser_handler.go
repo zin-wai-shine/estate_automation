@@ -9,6 +9,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/zinwaishine/estate-automate/backend/internal/models"
 	"github.com/zinwaishine/estate-automate/backend/internal/services"
+	"github.com/zinwaishine/estate-automate/backend/internal/utils"
 )
 
 // ListBrowserProfiles handles GET /api/browser/profiles
@@ -655,11 +656,34 @@ func StartAutomation(c *fiber.Ctx) error {
 
 // StopAutomation handles POST /api/browser/automation/stop
 func StopAutomation(c *fiber.Ctx) error {
+	var body struct {
+		PropertyID string `json:"property_id"`
+	}
+	_ = c.BodyParser(&body)
+
+	// 1. Cancel active/pending image queue jobs so no leftover jobs keep dispatching
+	cancelledCount := services.GetSmartImageQueueService().CancelAllActiveJobs(body.PropertyID)
+
+	// 2. Stop companion automation & two-stage staging
 	browserSvc := services.GetBrowserProfileService()
 	_ = browserSvc.StopAutomationViaCompanion()
+
+	// 3. Also stop any active OpenClaw browser link extraction
+	go func() {
+		workerURL := fmt.Sprintf("%s/stop-extract", utils.GetBrowserWorkerURL())
+		req, err := http.NewRequest("POST", workerURL, nil)
+		if err == nil {
+			resp, err := http.DefaultClient.Do(req)
+			if err == nil && resp != nil {
+				_ = resp.Body.Close()
+			}
+		}
+	}()
+
 	return c.JSON(fiber.Map{
-		"status":  "success",
-		"message": "Stop automation command sent",
+		"status":         "success",
+		"message":        "Stop automation command sent",
+		"jobs_cancelled": cancelledCount,
 	})
 }
 

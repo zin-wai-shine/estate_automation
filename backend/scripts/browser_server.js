@@ -18,6 +18,8 @@ function generateImageHash(url, index = 0) {
 let currentBrowserContext = null;
 let currentBrowserPage = null;
 let activeLock = false;
+let cancelCurrentExtraction = false;
+let liveExtractionProgress = { phase: 'idle', url: '', caption: '', updatedAt: 0 };
 let sessionState = 'LOGIN_REQUIRED'; // DISCONNECTED, CONNECTING, LOGIN_REQUIRED, AUTHENTICATING, CONNECTED, EXPIRED, RECONNECT_REQUIRED, BLOCKED, ERROR
 let lastHealthCheck = new Date().toISOString();
 
@@ -1667,7 +1669,12 @@ async function extractGalleryFromTargetPost(page, targetPostContext, maxImages =
   let duplicateTries = 0;
 
   while (count < effectiveMax && !isFinished) {
+    if (cancelCurrentExtraction) {
+      console.log('[TARGET_POST] Extraction cancelled by user — stopping gallery loop immediately.');
+      break;
+    }
     await page.waitForTimeout(350);
+    if (cancelCurrentExtraction) break;
     const imageResource = await getActiveViewerImage(20);
 
     if (!imageResource || !imageResource.source_url) {
@@ -1765,7 +1772,9 @@ async function extractGalleryFromTargetPost(page, targetPostContext, maxImages =
     // Wait for the viewer to show a DIFFERENT image
     let transitioned = false;
     for (let w = 0; w < 12; w++) {
+      if (cancelCurrentExtraction) break;
       await page.waitForTimeout(250);
+      if (cancelCurrentExtraction) break;
       const nowRes = await getActiveViewerImage(1);
       if (nowRes && nowRes.source_url) {
         const nowUrl = nowRes.source_url.split('?')[0];
@@ -2529,8 +2538,33 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (url === '/stop-extract' && req.method === 'POST') {
+    cancelCurrentExtraction = true;
+    liveExtractionProgress = { phase: 'stopped', url: '', caption: '', updatedAt: Date.now() };
+    console.log('[BROWSER_SERVER] Received /stop-extract — aborting active extraction');
+    if (currentBrowserPage && !currentBrowserPage.isClosed()) {
+      currentBrowserPage.keyboard.press('Escape').catch(() => {});
+    }
+    res.writeHead(200);
+    res.end(JSON.stringify({ status: 'ok', message: 'Extraction stopped' }));
+    return;
+  }
+
+  if (url === '/facebook-extract-progress' && req.method === 'GET') {
+    res.writeHead(200);
+    res.end(JSON.stringify(liveExtractionProgress || { phase: 'idle', caption: '' }));
+    return;
+  }
+
   // Dedicated Complete Facebook Post Extractor Endpoint — TargetPostContext-scoped
   if (url === '/facebook-post-extract' && req.method === 'POST') {
+    cancelCurrentExtraction = false;
+    req.on('aborted', () => {
+      if (!res.writableEnded) {
+        console.log('[FACEBOOK_EXTRACT] Client aborted request — cancelling active extraction');
+        cancelCurrentExtraction = true;
+      }
+    });
     let body = '';
     req.on('data', (chunk) => (body += chunk));
     req.on('end', async () => {
@@ -2546,8 +2580,23 @@ const server = http.createServer(async (req, res) => {
           return;
         }
 
+        liveExtractionProgress = {
+          phase: 'navigating',
+          url: targetUrl,
+          caption: '',
+          author: '',
+          postId: '',
+          estimatedTotalImages: 0,
+          updatedAt: Date.now(),
+        };
+
         // 1. Launch or ensure persistent browser
         const launchRes = await launchPersistentBrowser(userId);
+        if (cancelCurrentExtraction) {
+          res.writeHead(200);
+          res.end(JSON.stringify({ success: false, error_code: 'CANCELLED', error_message: 'Cancelled by user' }));
+          return;
+        }
         if (!launchRes.success || !currentBrowserPage) {
           res.writeHead(500);
           res.end(JSON.stringify({ success: false, error_code: 'BROWSER_TIMEOUT', error_message: 'Could not initialize browser' }));
@@ -2560,9 +2609,20 @@ const server = http.createServer(async (req, res) => {
         console.log(`[FACEBOOK_EXTRACT] Navigating to: ${targetUrl}`);
         try {
           await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 35000 });
+          if (cancelCurrentExtraction) {
+            res.writeHead(200);
+            res.end(JSON.stringify({ success: false, error_code: 'CANCELLED', error_message: 'Cancelled by user' }));
+            return;
+          }
           await page.waitForTimeout(3000);
         } catch (err) {
           console.warn(`[FACEBOOK_EXTRACT] Navigation warning: ${err.message}`);
+        }
+
+        if (cancelCurrentExtraction) {
+          res.writeHead(200);
+          res.end(JSON.stringify({ success: false, error_code: 'CANCELLED', error_message: 'Cancelled by user' }));
+          return;
         }
 
         const currentUrl = page.url();
@@ -2894,6 +2954,23 @@ const server = http.createServer(async (req, res) => {
           console.log(`[FACEBOOK_EXTRACT] Estimated total gallery: ${postInfo.estimatedTotal}`);
         }
 
+        liveExtractionProgress = {
+          phase: 'caption_ready',
+          url: targetUrl,
+          canonicalUrl: currentUrl,
+          caption: postInfo.caption || '',
+          author: postInfo.author || '',
+          postId: postInfo.detectedPostId || '',
+          estimatedTotalImages: postInfo.estimatedTotal || postInfo.visibleCollageCount || 0,
+          updatedAt: Date.now(),
+        };
+
+        if (cancelCurrentExtraction) {
+          res.writeHead(200);
+          res.end(JSON.stringify({ success: false, error_code: 'CANCELLED', error_message: 'Cancelled by user' }));
+          return;
+        }
+
         // 6. Extract images using TargetPostContext — scoped entirely to the confirmed post
         console.log('[FACEBOOK_EXTRACT] Beginning VERIFYING PHOTOS step...');
         const targetPostContext = {
@@ -2905,9 +2982,20 @@ const server = http.createServer(async (req, res) => {
         };
 
         const imageResult = await extractGalleryFromTargetPost(page, targetPostContext, maxImages);
+        if (cancelCurrentExtraction) {
+          res.writeHead(200);
+          res.end(JSON.stringify({ success: false, error_code: 'CANCELLED', error_message: 'Cancelled by user' }));
+          return;
+        }
         const images = imageResult && imageResult.images ? imageResult.images : [];
 
         console.log(`[FACEBOOK_EXTRACT] ${images.length} target photos downloaded & stored locally`);
+        liveExtractionProgress = {
+          ...liveExtractionProgress,
+          phase: 'completed',
+          imagesCount: images.length,
+          updatedAt: Date.now(),
+        };
 
         res.writeHead(200);
         res.end(
@@ -2963,6 +3051,16 @@ const server = http.createServer(async (req, res) => {
           res.end(JSON.stringify({ success: false, error_code: 'INVALID_URL', error_message: 'No URL provided' }));
           return;
         }
+
+        liveExtractionProgress = {
+          phase: 'navigating',
+          url: targetUrl,
+          caption: '',
+          author: '',
+          postId: '',
+          estimatedTotalImages: 0,
+          updatedAt: Date.now(),
+        };
 
         const launchRes = await launchPersistentBrowser(userId);
         if (!launchRes.success || !currentBrowserPage) {

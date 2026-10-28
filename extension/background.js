@@ -81,6 +81,38 @@ const automation = {
   onComplete: null,  // optional callback
 };
 
+let automationSessionId = 0;
+let twoStageAborted = false;
+
+async function stopAllExtensionAutomation() {
+  automationSessionId += 1;
+  twoStageAborted = true;
+  automation.isRunning = false;
+  automation.queue = [];
+
+  const notifiedTabIds = new Set();
+  if (Array.isArray(automation.tabSlots)) {
+    for (const slot of automation.tabSlots) {
+      if (slot && slot.tabId) {
+        notifiedTabIds.add(slot.tabId);
+        chrome.tabs.sendMessage(slot.tabId, { action: 'STOP_TAB_JOB' }).catch(() => {});
+      }
+    }
+  }
+
+  try {
+    const allTabs = await chrome.tabs.query({});
+    for (const t of allTabs) {
+      if (t && t.id && (t.url || '').includes('chatgpt.com') && !notifiedTabIds.has(t.id)) {
+        notifiedTabIds.add(t.id);
+        chrome.tabs.sendMessage(t.id, { action: 'STOP_TAB_JOB' }).catch(() => {});
+      }
+    }
+  } catch (e) {}
+
+  console.log(`[BOLTHAVEN EXT] Stopped all automation across ${notifiedTabIds.size} ChatGPT tab(s).`);
+}
+
 /** Send a job to a specific ChatGPT tab via the content script. */
 function dispatchJobToTab(tabId, job) {
   return new Promise((resolve) => {
@@ -198,12 +230,13 @@ async function reportJobFailed(jobId, reason) {
  * When done (success or fail), automatically picks the next pending job
  * from the shared queue and processes it on the same slot.
  */
-async function processSlot(slotIndex) {
+async function processSlot(slotIndex, sessionId) {
   const slot = automation.tabSlots[slotIndex];
   if (!slot) return;
 
-  while (automation.queue.length > 0 && automation.isRunning) {
+  while (automation.queue.length > 0 && automation.isRunning && sessionId === automationSessionId) {
     const job = automation.queue.shift(); // take the next pending job
+    if (!job) break;
     slot.busy = true;
     slot.currentJob = job;
 
@@ -213,12 +246,27 @@ async function processSlot(slotIndex) {
 
     // Focus this tab
     await focusTab(slot.tabId);
+    if (!automation.isRunning || sessionId !== automationSessionId) {
+      slot.busy = false;
+      slot.currentJob = null;
+      return;
+    }
 
     // Make sure content script is injected
     await ensureContentScriptInjected(slot.tabId);
+    if (!automation.isRunning || sessionId !== automationSessionId) {
+      slot.busy = false;
+      slot.currentJob = null;
+      return;
+    }
 
     try {
       const result = await dispatchJobToTab(slot.tabId, job);
+      if (!automation.isRunning || sessionId !== automationSessionId) {
+        slot.busy = false;
+        slot.currentJob = null;
+        return;
+      }
 
       if (result && result.success && result.result?.success !== false) {
         automation.completedCount++;
@@ -234,6 +282,11 @@ async function processSlot(slotIndex) {
         console.log(`[BOLTHAVEN EXT] ✗ Job ${job.job_id} failed:`, reason);
       }
     } catch (err) {
+      if (!automation.isRunning || sessionId !== automationSessionId) {
+        slot.busy = false;
+        slot.currentJob = null;
+        return;
+      }
       automation.failedCount++;
       await reportJobFailed(job.job_id, err.message);
       console.warn(`[BOLTHAVEN EXT] Warning processing job ${job.job_id}:`, err.message);
@@ -248,7 +301,7 @@ async function processSlot(slotIndex) {
 
   // This slot has finished; check if all slots are done
   const allDone = automation.tabSlots.every((s) => !s.busy && automation.queue.length === 0);
-  if (allDone && automation.isRunning) {
+  if (allDone && automation.isRunning && sessionId === automationSessionId) {
     finishAutomation();
   }
 }
@@ -575,8 +628,14 @@ async function startAutomation(payload) {
     return { success: false, error: 'Automation already running' };
   }
 
+  const mySessionId = ++automationSessionId;
+  twoStageAborted = false;
+
   // 1. Immediately ensure the worker tabs are open, expanded, and focused
   await ensureTabGroupOpen(groupName || 'Enhance IMG', groupTabUrls, tabMode, maxWorkers, reuseSessionTabs).catch(() => {});
+  if (mySessionId !== automationSessionId) {
+    return { success: false, error: 'Automation cancelled by user' };
+  }
 
   // 2. Wait for ChatGPT worker tabs to be ready (up to 30s)
   let activeTabIds = [];
@@ -584,6 +643,9 @@ async function startAutomation(payload) {
   console.log(`[BOLTHAVEN EXT] Resolving open ChatGPT worker tabs for automation (maxWorkers: ${maxWorkers})...`);
 
   while (Date.now() < waitDeadline) {
+    if (mySessionId !== automationSessionId) {
+      return { success: false, error: 'Automation cancelled by user' };
+    }
     try {
       // Priority 0: If tabMode === 'new_tabs', use sessionWorkerTabIds or general ChatGPT tabs
       if (tabMode === 'new_tabs') {
@@ -655,6 +717,10 @@ async function startAutomation(payload) {
     await delay(1000);
   }
 
+  if (mySessionId !== automationSessionId) {
+    return { success: false, error: 'Automation cancelled by user' };
+  }
+
   activeTabIds = activeTabIds.slice(0, maxWorkers);
 
   if (activeTabIds.length === 0) {
@@ -676,6 +742,10 @@ async function startAutomation(payload) {
     } catch (fetchErr) {
       console.warn('[BOLTHAVEN EXT] Could not fetch queue from backend:', fetchErr);
     }
+  }
+
+  if (mySessionId !== automationSessionId) {
+    return { success: false, error: 'Automation cancelled by user' };
   }
 
   if (!jobs || jobs.length === 0) {
@@ -718,7 +788,7 @@ async function startAutomation(payload) {
 
   // Launch one concurrent worker per tab slot (up to 4 parallel tabs)
   for (let i = 0; i < automation.tabSlots.length; i++) {
-    processSlot(i); // intentionally NOT awaited — all slots run in parallel
+    processSlot(i, mySessionId); // intentionally NOT awaited — all slots run in parallel
   }
 
   return { success: true, message: `Automation started: ${jobs.length} jobs on ${activeTabIds.length} tabs` };
@@ -841,9 +911,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   // ── Stop running automation ─────────────────────────────────────────
   if (request.action === 'STOP_AUTOMATION') {
-    automation.isRunning = false;
-    automation.queue = [];
-    sendResponse({ success: true, message: 'Automation stopped' });
+    stopAllExtensionAutomation().then(() => {
+      sendResponse({ success: true, message: 'Automation stopped' });
+    });
     return true;
   }
 
@@ -906,6 +976,10 @@ chrome.windows.onFocusChanged.addListener((windowId) => {
 // ── Two-Stage Staging Orchestration (Group 2: Tab 1 Prompt -> Tab 2 Staging) ──
 async function executeTwoStageStaging(payload) {
   const { profileKey, groupName, initialPrompt, referenceImage, condoImages, condoName } = payload;
+  const mySessionId = ++automationSessionId;
+  twoStageAborted = false;
+  const isTwoStageStopped = () => twoStageAborted || mySessionId !== automationSessionId;
+
   console.log(`[BOLTHAVEN EXT] 🚀 Starting Two-Stage Staging for "${condoName}" in group "${groupName}"...`);
 
   await fetch(`${COMPANION_URL}/two-stage-status`, {
@@ -914,8 +988,11 @@ async function executeTwoStageStaging(payload) {
     body: JSON.stringify({ is_running: true, step: 'locating_tab_group', condo_name: condoName }),
   }).catch(() => {});
 
+  if (isTwoStageStopped()) return;
+
   // 1. Locate the target tab group (e.g. "FB Hero")
   const groups = await new Promise((r) => chrome.tabGroups.query({}, r));
+  if (isTwoStageStopped()) return;
   const cleanTarget = (groupName || 'fb hero').toLowerCase().trim();
   const matchGroup = (groups || []).find((g) => {
     const t = (g.title || '').toLowerCase().trim();
@@ -928,6 +1005,7 @@ async function executeTwoStageStaging(payload) {
 
   // 2. Query tabs in this group
   const tabs = await new Promise((r) => chrome.tabs.query({ groupId: matchGroup.id }, r));
+  if (isTwoStageStopped()) return;
   if (!tabs || tabs.length < 2) {
     throw new Error(`Tab group "${groupName}" must contain at least 2 tabs (found ${tabs ? tabs.length : 0}).`);
   }
@@ -950,9 +1028,11 @@ async function executeTwoStageStaging(payload) {
       }),
     }).catch(() => {});
   } else {
+    if (isTwoStageStopped()) return;
     console.log('[BOLTHAVEN EXT] Focusing Tab 1:', tab1.id, tab1.title);
     await focusTab(tab1.id);
     await new Promise((r) => setTimeout(r, 600));
+    if (isTwoStageStopped()) return;
 
     await fetch(`${COMPANION_URL}/two-stage-status`, {
       method: 'POST',
@@ -971,6 +1051,8 @@ async function executeTwoStageStaging(payload) {
       });
     });
 
+    if (isTwoStageStopped()) return;
+
     extractedPrompt = stage1Response.extractedPrompt || '';
     console.log('[BOLTHAVEN EXT] ✓ Stage 1 prompt extracted, length:', extractedPrompt.length);
 
@@ -985,10 +1067,13 @@ async function executeTwoStageStaging(payload) {
     }).catch(() => {});
   }
 
+  if (isTwoStageStopped()) return;
+
   // 4. Step 2: Focus Tab 2 and assemble images + prompt
   console.log('[BOLTHAVEN EXT] Focusing Tab 2:', tab2.id, tab2.title);
   await focusTab(tab2.id);
   await new Promise((r) => setTimeout(r, 800));
+  if (isTwoStageStopped()) return;
 
   await fetch(`${COMPANION_URL}/two-stage-status`, {
     method: 'POST',
@@ -1011,6 +1096,8 @@ async function executeTwoStageStaging(payload) {
       resolve(res);
     });
   });
+
+  if (isTwoStageStopped()) return;
 
   console.log('[BOLTHAVEN EXT] ✓ Stage 2 completed successfully!');
   await fetch(`${COMPANION_URL}/two-stage-status`, {
@@ -1085,10 +1172,12 @@ async function pollCompanion() {
           }).catch(() => {});
         }
       } else if (action === 'START_AUTOMATION') {
-        const result = await startAutomation(payload);
-        console.log('[BOLTHAVEN EXT] Automation start:', result);
+        startAutomation(payload)
+          .then((result) => console.log('[BOLTHAVEN EXT] Automation start:', result))
+          .catch((err) => console.warn('[BOLTHAVEN EXT] Automation start error:', err));
       } else if (action === 'START_TWO_STAGE_STAGING') {
         executeTwoStageStaging(payload).catch((err) => {
+          if (twoStageAborted) return;
           console.warn('[BOLTHAVEN EXT] Two-stage staging warning:', err.message);
           fetch(`${COMPANION_URL}/two-stage-status`, {
             method: 'POST',
@@ -1097,15 +1186,7 @@ async function pollCompanion() {
           }).catch(() => {});
         });
       } else if (action === 'STOP_AUTOMATION') {
-        automation.isRunning = false;
-        automation.queue = [];
-        if (Array.isArray(automation.tabSlots)) {
-          automation.tabSlots.forEach((slot) => {
-            if (slot.tabId) {
-              chrome.tabs.sendMessage(slot.tabId, { action: 'STOP_TAB_JOB' }).catch(() => {});
-            }
-          });
-        }
+        await stopAllExtensionAutomation();
         console.log('[BOLTHAVEN EXT] Automation stopped by companion: all tabs aborted');
       } else if (action === 'FOCUS_GROUP') {
         const { groupName, tabId, groupTabUrls, tabMode, workerCount, reuseSessionTabs } = payload || {};

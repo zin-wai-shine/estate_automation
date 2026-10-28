@@ -394,9 +394,12 @@ export const startAutomation = async (params: {
 
 export const stopAutomation = async (): Promise<boolean> => {
   try {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('ea_workflow_stop_all'));
+    }
     // 1. Direct companion call on host for instantaneous stop response
     fetch('http://127.0.0.1:9224/stop-automation', { method: 'POST' }).catch(() => {});
-    // 2. Go backend API
+    // 2. Go backend API (stops companion, active image queue jobs, and OpenClaw extractor)
     const res = await fetch(`${API_BASE}/automation/stop`, { method: 'POST' });
     return res.ok;
   } catch {
@@ -481,13 +484,19 @@ export const waitForBrowserTabsReady = async (params: {
   tabMode?: 'existing_tabs' | 'new_tabs';
   workerCount?: number;
   maxWaitMs?: number;
+  shouldCancel?: () => boolean;
+  signal?: AbortSignal;
   onProgress?: (message: string, matchedCount: number, totalExpected: number) => void;
 }): Promise<{ verified: boolean; message: string }> => {
   const maxWait = params.maxWaitMs || 15000;
   const startTime = Date.now();
   let attempt = 0;
+  const isCancelled = () => Boolean(params.shouldCancel?.() || params.signal?.aborted);
 
   while (Date.now() - startTime < maxWait) {
+    if (isCancelled()) {
+      return { verified: false, message: 'Cancelled by user' };
+    }
     attempt++;
     const check = await checkBrowserReadiness({
       profileKey: params.profileKey,
@@ -497,6 +506,10 @@ export const waitForBrowserTabsReady = async (params: {
       workerCount: params.workerCount,
       autoLaunch: false, // Never re-launch Chrome while verifying tabs to prevent opening multiple windows
     });
+
+    if (isCancelled()) {
+      return { verified: false, message: 'Cancelled by user' };
+    }
 
     if (check.verified) {
       params.onProgress?.(
@@ -514,7 +527,19 @@ export const waitForBrowserTabsReady = async (params: {
 
     params.onProgress?.(progressMsg, check.matchedCount, check.totalExpected);
 
-    await new Promise((r) => setTimeout(r, 600));
+    await new Promise<void>((r) => {
+      const timer = setTimeout(r, 600);
+      if (params.signal) {
+        params.signal.addEventListener(
+          'abort',
+          () => {
+            clearTimeout(timer);
+            r();
+          },
+          { once: true }
+        );
+      }
+    });
   }
 
   return { verified: false, message: 'Timed out waiting for tabs to confirm' };

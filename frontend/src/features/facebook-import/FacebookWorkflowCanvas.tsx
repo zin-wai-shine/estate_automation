@@ -63,6 +63,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { getAIModelDisplayName, isImageAIBox, isImageModel, isWatermarkAIBox, isEnhanceAIBox, isAIBoxConnected, isTextFormatAIBox, isTextAIBox, isN8NAIBox, isExternalBrowserAIBox, isChromeProfileAIBox, isChromeTabGroupAIBox } from './aiModelUtils';
 import { AIImageStudio } from './AIImageStudio';
 import { ExternalBrowserSidebar } from '../browser-processing/ExternalBrowserSidebar';
+import { getPersistedReferenceImage } from '../browser-processing/referenceImageStorage';
 import { FBHeroSettingsSidebox } from '../browser-processing/FBHeroSettingsSidebox';
 import { focusBrowserTabGroup, fetchBrowserProfiles, fetchTabGroups } from '../browser-processing/browserAutomationService';
 import type { BrowserProfile, BrowserGroupItem } from '../browser-processing/types';
@@ -1317,10 +1318,10 @@ export const buildAlignedLayout = (
   const triggerY = hasContent && hasImages
     ? Math.round((getContentY + getImagesY) / 2)
     : hasContent
-    ? getContentY
-    : hasImages
-    ? getImagesY
-    : 200;
+      ? getContentY
+      : hasImages
+        ? getImagesY
+        : 200;
 
   const isOutputActive = base.outputNode?.enabled !== false;
   const activeCombineBoxes = (base.combineBoxes || []).filter((cb) => cb && cb.enabled !== false);
@@ -1562,13 +1563,128 @@ export const buildAlignedLayout = (
   };
 };
 
+export const NODE_ENABLED_STORAGE_KEY = 'bolthaven_node_enabled_map_v1';
+let inMemoryNodeEnabledMap: Record<string, boolean> = {};
+
+export const getPersistedNodeEnabledMap = (): Record<string, boolean> => {
+  try {
+    const raw = localStorage.getItem(NODE_ENABLED_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        inMemoryNodeEnabledMap = { ...parsed, ...inMemoryNodeEnabledMap };
+        return inMemoryNodeEnabledMap;
+      }
+    }
+  } catch (e) { }
+  return inMemoryNodeEnabledMap;
+};
+
+export const setPersistedNodeEnabled = (nodeId: string, enabled: boolean): void => {
+  if (!nodeId) return;
+  const current = getPersistedNodeEnabledMap();
+  const next = { ...current, [nodeId]: Boolean(enabled) };
+  inMemoryNodeEnabledMap = next;
+  try {
+    localStorage.setItem(NODE_ENABLED_STORAGE_KEY, JSON.stringify(next));
+  } catch (e) {
+    // If localStorage is near quota, evict large non-essential cached keys and retry
+    try {
+      localStorage.removeItem('estate_facebook_workflow_deleted_boxes_v1');
+      localStorage.setItem(NODE_ENABLED_STORAGE_KEY, JSON.stringify(next));
+    } catch { }
+  }
+};
+
+export const applyPersistedNodeEnabledToConfig = (
+  conf: FacebookWorkflowConfig
+): FacebookWorkflowConfig => {
+  if (!conf) return conf;
+  const enabledMap = getPersistedNodeEnabledMap();
+  if (!enabledMap || Object.keys(enabledMap).length === 0) return conf;
+
+  const nextAiBoxes = Array.isArray(conf.aiBoxes)
+    ? conf.aiBoxes.map((b) =>
+      b && b.id in enabledMap ? { ...b, enabled: enabledMap[b.id] } : b
+    )
+    : conf.aiBoxes;
+
+  const nextGetContent =
+    conf.getContent && 'get-content' in enabledMap
+      ? { ...conf.getContent, enabled: enabledMap['get-content'] }
+      : conf.getContent;
+
+  const nextGetImages =
+    conf.getImages && 'get-images' in enabledMap
+      ? { ...conf.getImages, enabled: enabledMap['get-images'] }
+      : conf.getImages;
+
+  const nextOutputNode =
+    conf.outputNode && 'output' in enabledMap
+      ? { ...conf.outputNode, enabled: enabledMap['output'] }
+      : conf.outputNode;
+
+  const nextCombineBoxes = Array.isArray(conf.combineBoxes)
+    ? conf.combineBoxes.map((cb) =>
+      cb && cb.id in enabledMap ? { ...cb, enabled: enabledMap[cb.id] } : cb
+    )
+    : conf.combineBoxes;
+
+  const nextDestinations = Array.isArray(conf.destinations)
+    ? conf.destinations.map((d) =>
+      d && d.id in enabledMap ? { ...d, enabled: enabledMap[d.id] } : d
+    )
+    : conf.destinations;
+
+  return {
+    ...conf,
+    getContent: nextGetContent,
+    getImages: nextGetImages,
+    outputNode: nextOutputNode,
+    combineBoxes: nextCombineBoxes,
+    destinations: nextDestinations,
+    aiBoxes: nextAiBoxes,
+  };
+};
+
+export const stripLargeBase64FromWorkflowConfig = (
+  conf: FacebookWorkflowConfig
+): FacebookWorkflowConfig => {
+  if (!conf) return conf;
+  return {
+    ...conf,
+    aiBoxes: (conf.aiBoxes || []).map((b) => {
+      let nextBox = b;
+      if (nextBox.referenceImage && nextBox.referenceImage.length > 80000) {
+        const { referenceImage: _omitRef, ...rest } = nextBox;
+        nextBox = rest as DynamicAIBoxConfig;
+      }
+      if (
+        nextBox.watermarkConfig &&
+        typeof (nextBox.watermarkConfig as any).imageDataUrl === 'string' &&
+        (nextBox.watermarkConfig as any).imageDataUrl.length > 80000
+      ) {
+        nextBox = {
+          ...nextBox,
+          watermarkConfig: {
+            ...nextBox.watermarkConfig,
+            imageDataUrl: '',
+          } as any,
+        };
+      }
+      return nextBox;
+    }),
+  };
+};
+
 /**
  * Resolves node collisions and ensures clean non-overlapping coordinates for all workflow nodes.
  */
 export const sanitizeAndResolveCollisions = (
-  conf: FacebookWorkflowConfig
+  rawConf: FacebookWorkflowConfig
 ): FacebookWorkflowConfig => {
-  if (!conf) return DEFAULT_FB_WORKFLOW_CONFIG;
+  if (!rawConf) return DEFAULT_FB_WORKFLOW_CONFIG;
+  const conf = applyPersistedNodeEnabledToConfig(rawConf);
 
   const rawAiBoxes = Array.isArray(conf.aiBoxes) ? conf.aiBoxes : [];
   const updatedAiBoxes = rawAiBoxes.map((b) => {
@@ -1617,26 +1733,26 @@ export const sanitizeAndResolveCollisions = (
 
   let connections = Array.isArray(conf.connections)
     ? conf.connections
-        .map((c: any) => {
-          if (!c) return null;
-          // Auto-migrate connections from 'output' to the primary combine box if combine boxes are present
-          if (hasCombineBoxes) {
-            const primaryCombineId = activeCombineBoxIds[0];
-            return {
-              ...c,
-              fromNodeId: c.fromNodeId === 'output' ? primaryCombineId : c.fromNodeId,
-              toNodeId: c.toNodeId === 'output' ? primaryCombineId : c.toNodeId,
-            };
-          }
-          return c;
-        })
-        .filter(
-          (c: any) =>
-            c &&
-            validNodeIds.has(c.fromNodeId) &&
-            validNodeIds.has(c.toNodeId) &&
-            c.fromNodeId !== c.toNodeId
-        )
+      .map((c: any) => {
+        if (!c) return null;
+        // Auto-migrate connections from 'output' to the primary combine box if combine boxes are present
+        if (hasCombineBoxes) {
+          const primaryCombineId = activeCombineBoxIds[0];
+          return {
+            ...c,
+            fromNodeId: c.fromNodeId === 'output' ? primaryCombineId : c.fromNodeId,
+            toNodeId: c.toNodeId === 'output' ? primaryCombineId : c.toNodeId,
+          };
+        }
+        return c;
+      })
+      .filter(
+        (c: any) =>
+          c &&
+          validNodeIds.has(c.fromNodeId) &&
+          validNodeIds.has(c.toNodeId) &&
+          c.fromNodeId !== c.toNodeId
+      )
     : [];
 
   // Ensure every Chrome tab group node is connected from its parent Chrome profile (even if previously purged)
@@ -1667,21 +1783,21 @@ export const sanitizeAndResolveCollisions = (
   const nextConnections = Array.isArray(conf.connections)
     ? connections
     : dedupeConnections(
-        isDestEnabled
-          ? autoConnectWorkflow(
-              updatedAiBoxes,
-              connections,
-              conf.getContent?.enabled !== false,
-              conf.getImages?.enabled !== false,
-              isDestEnabled,
-              isOutputEnabled,
-              rawDests,
-              conf.combineBoxes || []
-            )
-          : connections.filter(
-              (c) => c.toNodeId !== 'destination' && !c.toNodeId.startsWith('dest-')
-            )
-      );
+      isDestEnabled
+        ? autoConnectWorkflow(
+          updatedAiBoxes,
+          connections,
+          conf.getContent?.enabled !== false,
+          conf.getImages?.enabled !== false,
+          isDestEnabled,
+          isOutputEnabled,
+          rawDests,
+          conf.combineBoxes || []
+        )
+        : connections.filter(
+          (c) => c.toNodeId !== 'destination' && !c.toNodeId.startsWith('dest-')
+        )
+    );
 
   const baseConfig: FacebookWorkflowConfig = {
     ...DEFAULT_FB_WORKFLOW_CONFIG,
@@ -2044,14 +2160,14 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
   const outputDotColor = isReceptiveOutput
     ? RECEPTIVE_COLOR
     : hoveredSocket === 'output'
-    ? (isDark ? '#38BDF8' : '#0284C7')
-    : (socketDotColor || (isDark ? '#94A3B8' : '#64748B'));
+      ? (isDark ? '#38BDF8' : '#0284C7')
+      : (socketDotColor || (isDark ? '#94A3B8' : '#64748B'));
 
   const inputDotColor = isReceptiveInput
     ? RECEPTIVE_COLOR
     : hoveredSocket === 'input'
-    ? (isDark ? '#38BDF8' : '#0284C7')
-    : (socketDotColor || (isDark ? '#94A3B8' : '#64748B'));
+      ? (isDark ? '#38BDF8' : '#0284C7')
+      : (socketDotColor || (isDark ? '#94A3B8' : '#64748B'));
 
   return (
     <div
@@ -2361,7 +2477,7 @@ export const loadSavedDeletedBoxes = (): DeletedAIBoxRecord[] => {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) return parsed;
     }
-  } catch {}
+  } catch { }
   return [];
 };
 
@@ -2630,10 +2746,32 @@ export const FacebookWorkflowCanvas = forwardRef<
       panOffset: centeredPan,
     };
   });
+  const latestConfigRef = useRef<FacebookWorkflowConfig>(config);
+  latestConfigRef.current = config;
 
   const [locallyRunningNodeId, setLocallyRunningNodeId] = useState<string | null>(null);
 
+  useEffect(() => {
+    const handleStopAll = () => {
+      setLocallyRunningNodeId(null);
+      setIsSimulating(false);
+      setSimulationStep(-1);
+      setSimulationMessage(null);
+    };
+    window.addEventListener('ea_workflow_stop_all', handleStopAll);
+    return () => window.removeEventListener('ea_workflow_stop_all', handleStopAll);
+  }, []);
+
+  useEffect(() => {
+    if (!executionState || !executionState.isRunning) {
+      setLocallyRunningNodeId(null);
+    }
+  }, [executionState?.isRunning]);
+
   const getNodeExecutionStatus = (nodeId: string): 'idle' | 'running' | 'success' | 'error' => {
+    if (!isNodeEffectivelyEnabled(nodeId)) {
+      return 'idle';
+    }
     if (locallyRunningNodeId) {
       if (locallyRunningNodeId === nodeId) return 'running';
     }
@@ -2668,11 +2806,42 @@ export const FacebookWorkflowCanvas = forwardRef<
       const panOffset = hasActivePan ? prev.panOffset : centeredPan;
       const zoom = prev && typeof prev.zoom === 'number' && prev.zoom > 0 ? prev.zoom : optimalZoom;
 
-      return {
+      // Preserve any uploaded referenceImage and user-toggled enabled state on aiBoxes when syncing initialConfig from backend/formats
+      const enabledMap = getPersistedNodeEnabledMap();
+      const prevBoxesById = new Map((prev?.aiBoxes || []).map((b) => [b.id, b]));
+      const mergedAiBoxes = (sanitized.aiBoxes || []).map((b) => {
+        const prevBox = prevBoxesById.get(b.id);
+        const persistedEnabled =
+          b.id in enabledMap
+            ? enabledMap[b.id]
+            : prevBox && typeof prevBox.enabled === 'boolean'
+              ? prevBox.enabled
+              : b.enabled;
+        const persistedRef = b.referenceImage || prevBox?.referenceImage || (
+          (b.title?.toLowerCase().includes('hero') || b.browserGroupName?.toLowerCase().includes('hero'))
+            ? getPersistedReferenceImage(b.id)
+            : ''
+        );
+        let nextBox = b.enabled !== persistedEnabled ? { ...b, enabled: persistedEnabled } : b;
+        if (persistedRef && !nextBox.referenceImage) {
+          nextBox = {
+            ...nextBox,
+            referenceImage: persistedRef,
+            useReferenceImage: nextBox.useReferenceImage !== false,
+            referenceImageMode: nextBox.referenceImageMode || 'custom_upload',
+          };
+        }
+        return nextBox;
+      });
+
+      const nextCfg = applyPersistedNodeEnabledToConfig({
         ...sanitized,
+        aiBoxes: mergedAiBoxes,
         zoom,
         panOffset,
-      };
+      });
+      latestConfigRef.current = nextCfg;
+      return nextCfg;
     });
   }, [initialConfig]);
 
@@ -2713,7 +2882,7 @@ export const FacebookWorkflowCanvas = forwardRef<
   useEffect(() => {
     try {
       localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(config));
-    } catch (e) {}
+    } catch (e) { }
   }, []);
 
   const [isPanning, setIsPanning] = useState(false);
@@ -3284,18 +3453,18 @@ export const FacebookWorkflowCanvas = forwardRef<
 
     let conns = Array.isArray(newConfig.connections)
       ? newConfig.connections
-          .map((c) => {
-            if (!c) return null;
-            if (hasCombineBoxes && primaryCombineId) {
-              return {
-                ...c,
-                fromNodeId: c.fromNodeId === 'output' ? primaryCombineId : c.fromNodeId,
-                toNodeId: c.toNodeId === 'output' ? primaryCombineId : c.toNodeId,
-              };
-            }
-            return c;
-          })
-          .filter((c) => c && c.fromNodeId !== c.toNodeId && c.fromNodeId !== 'trigger')
+        .map((c) => {
+          if (!c) return null;
+          if (hasCombineBoxes && primaryCombineId) {
+            return {
+              ...c,
+              fromNodeId: c.fromNodeId === 'output' ? primaryCombineId : c.fromNodeId,
+              toNodeId: c.toNodeId === 'output' ? primaryCombineId : c.toNodeId,
+            };
+          }
+          return c;
+        })
+        .filter((c) => c && c.fromNodeId !== c.toNodeId && c.fromNodeId !== 'trigger')
       : [];
 
     const sanitizedConfig = {
@@ -3303,26 +3472,44 @@ export const FacebookWorkflowCanvas = forwardRef<
       connections: dedupeConnections(conns as WorkflowWireConnection[]),
     };
 
+    latestConfigRef.current = sanitizedConfig;
     setConfig(sanitizedConfig);
     try {
       localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(sanitizedConfig));
-    } catch (e) {}
+    } catch (e) {
+      try {
+        localStorage.setItem(
+          LOCAL_STORAGE_KEY,
+          JSON.stringify(stripLargeBase64FromWorkflowConfig(sanitizedConfig))
+        );
+      } catch { }
+    }
     if (onConfigChange) onConfigChange(sanitizedConfig);
   };
 
   const handleSaveConfig = async () => {
     try {
-      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(config));
+      const currentCfg = latestConfigRef.current || config;
+      try {
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(currentCfg));
+      } catch {
+        try {
+          localStorage.setItem(
+            LOCAL_STORAGE_KEY,
+            JSON.stringify(stripLargeBase64FromWorkflowConfig(currentCfg))
+          );
+        } catch { }
+      }
       try {
         await fetch('http://localhost:8085/api/workflow/config', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            facebook_import_workflow: config,
+            facebook_import_workflow: currentCfg,
             timestamp: Date.now(),
           }),
         });
-      } catch (err) {}
+      } catch (err) { }
 
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 2500);
@@ -3388,8 +3575,8 @@ export const FacebookWorkflowCanvas = forwardRef<
       return socketType === 'output'
         ? { x: box.x + (hasAddBtn ? boxW + 37 : boxW - 1), y: box.y + HALF_CIRCLE }
         : (isProf || isTabGroup)
-        ? { x: box.x + HALF_CIRCLE, y: box.y + 1 }
-        : { x: box.x + 1, y: box.y + HALF_CIRCLE };
+          ? { x: box.x + HALF_CIRCLE, y: box.y + 1 }
+          : { x: box.x + 1, y: box.y + HALF_CIRCLE };
     }
     return null;
   };
@@ -3648,8 +3835,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                     provider: 'runware_ai',
                     model:
                       b.model?.startsWith('runware:') ||
-                      b.model?.startsWith('google:nano-banana') ||
-                      b.model?.startsWith('civitai:')
+                        b.model?.startsWith('google:nano-banana') ||
+                        b.model?.startsWith('civitai:')
                         ? b.model
                         : 'google:nano-banana@2.1',
                   };
@@ -3765,8 +3952,8 @@ export const FacebookWorkflowCanvas = forwardRef<
               provider: 'runware_ai',
               model:
                 b.model?.startsWith('runware:') ||
-                b.model?.startsWith('google:nano-banana') ||
-                b.model?.startsWith('civitai:')
+                  b.model?.startsWith('google:nano-banana') ||
+                  b.model?.startsWith('civitai:')
                   ? b.model
                   : 'google:nano-banana@2.1',
             };
@@ -3838,7 +4025,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     setDeletedBoxes(nextDeleted);
     try {
       localStorage.setItem(LOCAL_STORAGE_DELETED_KEY, JSON.stringify(nextDeleted));
-    } catch {}
+    } catch { }
 
     const newConf: FacebookWorkflowConfig = {
       ...config,
@@ -3905,7 +4092,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     setDeletedBoxes(nextDeleted);
     try {
       localStorage.setItem(LOCAL_STORAGE_DELETED_KEY, JSON.stringify(nextDeleted));
-    } catch {}
+    } catch { }
 
     const newConf: FacebookWorkflowConfig = {
       ...config,
@@ -4049,7 +4236,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     setDeletedBoxes(nextDeleted);
     try {
       localStorage.setItem(LOCAL_STORAGE_DELETED_KEY, JSON.stringify(nextDeleted));
-    } catch {}
+    } catch { }
 
     const newConf: FacebookWorkflowConfig = {
       ...config,
@@ -4147,18 +4334,21 @@ export const FacebookWorkflowCanvas = forwardRef<
   };
 
   const handleToggleDestinationNode = (destId: string) => {
-    const currentDests = getNormalizedDestinations(config);
+    const currentCfg = latestConfigRef.current || config;
+    const currentDests = getNormalizedDestinations(currentCfg);
     const updatedDests = currentDests.map((d) => {
       if (d.id === destId) {
+        const nextEnabled = d.enabled === false ? true : false;
+        setPersistedNodeEnabled(destId, nextEnabled);
         return {
           ...d,
-          enabled: d.enabled === false ? true : false,
+          enabled: nextEnabled,
         };
       }
       return d;
     });
     updateConfig({
-      ...config,
+      ...currentCfg,
       destination: updatedDests[0],
       destinations: updatedDests,
     });
@@ -4178,8 +4368,8 @@ export const FacebookWorkflowCanvas = forwardRef<
     const title = targetMode === 'remaining_posts'
       ? 'Remaining Posts Database'
       : targetMode === 'social_media'
-      ? (targetPage?.name || 'Facebook Post')
-      : 'Social & Database Storage';
+        ? (targetPage?.name || 'Facebook Post')
+        : 'Social & Database Storage';
 
     const newDest: DestinationNodeConfig = {
       id: newId,
@@ -4371,13 +4561,13 @@ export const FacebookWorkflowCanvas = forwardRef<
       const newConnections = existingConn
         ? config.connections || []
         : [
-            ...(config.connections || []),
-            {
-              id: `conn-${fromNodeId}-${destId}-${Date.now()}`,
-              fromNodeId,
-              toNodeId: destId,
-            },
-          ];
+          ...(config.connections || []),
+          {
+            id: `conn-${fromNodeId}-${destId}-${Date.now()}`,
+            fromNodeId,
+            toNodeId: destId,
+          },
+        ];
 
       updateConfig({
         ...config,
@@ -4419,10 +4609,10 @@ export const FacebookWorkflowCanvas = forwardRef<
           platform === 'facebook'
             ? 'Facebook'
             : platform === 'instagram'
-            ? 'Instagram'
-            : platform === 'tiktok'
-            ? 'TikTok'
-            : 'Social Media';
+              ? 'Instagram'
+              : platform === 'tiktok'
+                ? 'TikTok'
+                : 'Social Media';
 
         const newDest: DestinationNodeConfig = {
           id: destId,
@@ -4448,13 +4638,13 @@ export const FacebookWorkflowCanvas = forwardRef<
       const newConnections = existingConn
         ? config.connections || []
         : [
-            ...(config.connections || []),
-            {
-              id: `conn-${fromNodeId}-${destId}-${Date.now()}`,
-              fromNodeId,
-              toNodeId: destId,
-            },
-          ];
+          ...(config.connections || []),
+          {
+            id: `conn-${fromNodeId}-${destId}-${Date.now()}`,
+            fromNodeId,
+            toNodeId: destId,
+          },
+        ];
 
       updateConfig({
         ...config,
@@ -4488,8 +4678,8 @@ export const FacebookWorkflowCanvas = forwardRef<
         targetMode === 'remaining_posts'
           ? 'Remaining Posts Database'
           : targetMode === 'social_media'
-          ? 'Social Media'
-          : 'Social & Database Storage';
+            ? 'Social Media'
+            : 'Social & Database Storage';
 
       const newDest: DestinationNodeConfig = {
         id: destId,
@@ -4523,13 +4713,13 @@ export const FacebookWorkflowCanvas = forwardRef<
     const newConnections = existingConn
       ? config.connections || []
       : [
-          ...(config.connections || []),
-          {
-            id: `conn-${fromNodeId}-${destId}-${Date.now()}`,
-            fromNodeId,
-            toNodeId: destId,
-          },
-        ];
+        ...(config.connections || []),
+        {
+          id: `conn-${fromNodeId}-${destId}-${Date.now()}`,
+          fromNodeId,
+          toNodeId: destId,
+        },
+      ];
 
     const nextConfig = buildAlignedLayout(config.aiBoxes, newConnections, {
       ...config,
@@ -4562,7 +4752,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     };
 
     let conns = [...(config.connections || [])];
-    
+
     // Auto-connect content and image nodes to output
     const contentBoxes = config.aiBoxes.filter((b) => !isWatermarkAIBox(b) && !isEnhanceAIBox(b, conns));
     const imageBoxes = config.aiBoxes.filter((b) => isWatermarkAIBox(b) || isEnhanceAIBox(b, conns));
@@ -4683,7 +4873,7 @@ export const FacebookWorkflowCanvas = forwardRef<
         }
         setDeleteConfirmTarget(null);
       },
-     });
+    });
   };
 
   const handleConnectOrCreateGetContent = (fromNodeId: string) => {
@@ -5465,7 +5655,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     setDeletedBoxes(nextDeleted);
     try {
       localStorage.setItem(LOCAL_STORAGE_DELETED_KEY, JSON.stringify(nextDeleted));
-    } catch {}
+    } catch { }
 
     const newBoxes = config.aiBoxes.filter((b) => b.id !== id);
     const unassociatedConnections = (config.connections || []).filter(
@@ -5595,7 +5785,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     setDeletedBoxes(remaining);
     try {
       localStorage.setItem(LOCAL_STORAGE_DELETED_KEY, JSON.stringify(remaining));
-    } catch {}
+    } catch { }
 
     setSelectRecoverIds(new Set());
   };
@@ -5675,7 +5865,7 @@ export const FacebookWorkflowCanvas = forwardRef<
       setDeletedBoxes(nextDeleted);
       try {
         localStorage.setItem(LOCAL_STORAGE_DELETED_KEY, JSON.stringify(nextDeleted));
-      } catch {}
+      } catch { }
     }
 
     const remainingAiBoxes = config.aiBoxes.filter((b) => !idsToDelete.has(b.id));
@@ -5832,15 +6022,39 @@ export const FacebookWorkflowCanvas = forwardRef<
   // Toggle Box Enabled
   const handleToggleAIBox = (id: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    const newBoxes = config.aiBoxes.map((b) => (b.id === id ? { ...b, enabled: b.enabled === false ? true : false } : b));
-    updateConfig({ ...config, aiBoxes: newBoxes });
+    const currentCfg = latestConfigRef.current || config;
+    const newBoxes = currentCfg.aiBoxes.map((b) => {
+      if (b.id === id) {
+        const nextEnabled = b.enabled === false ? true : false;
+        setPersistedNodeEnabled(id, nextEnabled);
+        return { ...b, enabled: nextEnabled };
+      }
+      return b;
+    });
+    updateConfig({ ...currentCfg, aiBoxes: newBoxes });
   };
 
   // Update AI Box Details
   const handleUpdateAIBox = (id: string, partial: Partial<DynamicAIBoxConfig>) => {
-    const newBoxes = config.aiBoxes.map((b) => (b.id === id ? { ...b, ...partial } : b));
+    const currentCfg = latestConfigRef.current || config;
+    const enabledMap = getPersistedNodeEnabledMap();
+    if ('enabled' in partial && typeof partial.enabled === 'boolean') {
+      setPersistedNodeEnabled(id, partial.enabled);
+    }
+    const newBoxes = currentCfg.aiBoxes.map((b) => {
+      if (b.id === id) {
+        const preservedEnabled =
+          'enabled' in partial && typeof partial.enabled === 'boolean'
+            ? partial.enabled
+            : id in enabledMap
+              ? enabledMap[id]
+              : b.enabled;
+        return { ...b, ...partial, enabled: preservedEnabled };
+      }
+      return b;
+    });
     updateConfig({
-      ...config,
+      ...currentCfg,
       aiBoxes: newBoxes,
     });
   };
@@ -6175,7 +6389,7 @@ export const FacebookWorkflowCanvas = forwardRef<
         setConfig((latest) => {
           try {
             localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(latest));
-          } catch (e) {}
+          } catch (e) { }
           if (onConfigChange) {
             onConfigChange(latest);
           }
@@ -6336,13 +6550,13 @@ export const FacebookWorkflowCanvas = forwardRef<
         position: 'relative',
         ...(isFullscreen
           ? {
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              width: '100vw',
-              height: '100vh',
-              zIndex: 999999,
-            }
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100vw',
+            height: '100vh',
+            zIndex: 999999,
+          }
           : {}),
       }}
     >
@@ -6549,12 +6763,9 @@ export const FacebookWorkflowCanvas = forwardRef<
               const connId = 'conn-trigger-content';
               const isRunning = Boolean(executionState?.isRunning);
               const isExec = Boolean(executionState?.isRunning || executionState?.isComplete);
-              const isWireActive = isExec
-                ? Boolean(executionState?.completedNodeIds?.includes('trigger') || executionState?.activeNodeIds?.includes('get-content'))
-                : config.getContent.enabled;
               const isCompleted = isExec && Boolean(executionState?.completedNodeIds?.includes('get-content'));
               const isFastFlow = isRunning && Boolean(executionState?.activeNodeIds?.includes('get-content'));
-              const isRunningFlow = isRunning && isWireActive;
+              const isRunningFlow = isFastFlow;
 
               const isWireHovered = hoveredWireId === connId;
               const isXHovered = hoveredXId === connId;
@@ -6562,8 +6773,8 @@ export const FacebookWorkflowCanvas = forwardRef<
               const strokeColor = isXHovered
                 ? '#F85149'
                 : isRunningFlow
-                ? (isDark ? '#60A5FA' : '#2563EB')
-                : (isDark ? '#4B5563' : '#8B949E');
+                  ? (isDark ? '#60A5FA' : '#2563EB')
+                  : (isDark ? '#4B5563' : '#8B949E');
 
               const midX = (triggerOut.x + contentIn.x) / 2;
               const midY = (triggerOut.y + contentIn.y) / 2;
@@ -6673,12 +6884,9 @@ export const FacebookWorkflowCanvas = forwardRef<
               const connId = 'conn-trigger-images';
               const isRunning = Boolean(executionState?.isRunning);
               const isExec = Boolean(executionState?.isRunning || executionState?.isComplete);
-              const isWireActive = isExec
-                ? Boolean(executionState?.completedNodeIds?.includes('trigger') || executionState?.activeNodeIds?.includes('get-images'))
-                : config.getImages.enabled;
               const isCompleted = isExec && Boolean(executionState?.completedNodeIds?.includes('get-images'));
               const isFastFlow = isRunning && Boolean(executionState?.activeNodeIds?.includes('get-images'));
-              const isRunningFlow = isRunning && isWireActive;
+              const isRunningFlow = isFastFlow;
 
               const isWireHovered = hoveredWireId === connId;
               const isXHovered = hoveredXId === connId;
@@ -6686,8 +6894,8 @@ export const FacebookWorkflowCanvas = forwardRef<
               const strokeColor = isXHovered
                 ? '#F85149'
                 : isRunningFlow
-                ? (isDark ? '#60A5FA' : '#2563EB')
-                : (isDark ? '#4B5563' : '#94A3B8');
+                  ? (isDark ? '#60A5FA' : '#2563EB')
+                  : (isDark ? '#4B5563' : '#94A3B8');
 
               const midX = (triggerOut.x + imagesIn.x) / 2;
               const midY = (triggerOut.y + imagesIn.y) / 2;
@@ -6842,9 +7050,9 @@ export const FacebookWorkflowCanvas = forwardRef<
               const toActive = Boolean(executionState?.activeNodeIds?.includes(conn.toNodeId));
               const toCompleted = Boolean(executionState?.completedNodeIds?.includes(conn.toNodeId));
 
-              const isExecActive = isRunning && (fromCompleted || toActive);
-              const isExecDone = isExec && toCompleted;
-              const isFastFlow = isRunning && toActive;
+              const isExecActive = isConnectedAndEnabled && isRunning && toActive;
+              const isExecDone = isConnectedAndEnabled && isExec && toCompleted;
+              const isFastFlow = isConnectedAndEnabled && isRunning && toActive;
 
               const isWireHovered = !isBaseVerticalWire && hoveredWireId === conn.id;
               const isXHovered = !isBaseVerticalWire && hoveredXId === conn.id;
@@ -6852,8 +7060,8 @@ export const FacebookWorkflowCanvas = forwardRef<
               const wireStrokeColor = isXHovered
                 ? '#F85149'
                 : isExecActive
-                ? (isDark ? '#60A5FA' : '#2563EB')
-                : (isDark ? '#4B5563' : '#94A3B8');
+                  ? (isDark ? '#60A5FA' : '#2563EB')
+                  : (isDark ? '#4B5563' : '#94A3B8');
 
               const midX = (fromPos.x + toPos.x) / 2;
               const midY = (fromPos.y + toPos.y) / 2;
@@ -7189,18 +7397,18 @@ export const FacebookWorkflowCanvas = forwardRef<
                           backgroundColor: isDark ? '#38BDF8' : '#0284C7',
                         }}
                       />
-                      <span>Ingesting Link...</span>
+                      <span>Extracting Link...</span>
                     </span>
                   )}
                   {triggerStatus === 'success' && (
                     <span
                       style={{
                         fontSize: '0.6875rem',
-                        color: 'var(--text-muted)',
+                        color: '#10B981',
                         fontWeight: 500,
                       }}
                     >
-                      ✓ Link Located
+                      ✓ Link Extracted
                     </span>
                   )}
                 </div>
@@ -7252,15 +7460,15 @@ export const FacebookWorkflowCanvas = forwardRef<
                     activeModalNode?.type === 'get-content'
                       ? PRIMARY_NODE_COLOR
                       : isContentReceptive
-                      ? RECEPTIVE_COLOR
-                      : (isDark ? '#30363D' : '#D0D7DE')
+                        ? RECEPTIVE_COLOR
+                        : (isDark ? '#30363D' : '#D0D7DE')
                   }
                   socketDotColor={
                     activeModalNode?.type === 'get-content'
                       ? PRIMARY_NODE_COLOR
                       : isContentReceptive
-                      ? RECEPTIVE_COLOR
-                      : (isDark ? '#8B949E' : '#64748B')
+                        ? RECEPTIVE_COLOR
+                        : (isDark ? '#8B949E' : '#64748B')
                   }
                   isConnectedInput={true}
                   isConnectedOutput={isContentOutputConnected}
@@ -7342,25 +7550,27 @@ export const FacebookWorkflowCanvas = forwardRef<
                           backgroundColor: isDark ? '#38BDF8' : '#0284C7',
                         }}
                       />
-                      <span>Extracting Text...</span>
+                      <span>Extracting Content...</span>
                     </span>
                   ) : (
                     <span
                       style={{
                         fontSize: '0.6875rem',
-                        color: isContentReceptive
-                          ? RECEPTIVE_COLOR
-                          : 'var(--text-muted)',
-                        fontWeight: isContentReceptive ? 600 : 400,
+                        color: contentStatus === 'success'
+                          ? '#10B981'
+                          : isContentReceptive
+                            ? RECEPTIVE_COLOR
+                            : 'var(--text-muted)',
+                        fontWeight: isContentReceptive || contentStatus === 'success' ? 600 : 400,
                       }}
                     >
                       {contentStatus === 'success'
-                        ? (rawContent ? `✓ ${rawContent.length} chars` : '✓ Caption Extracted')
+                        ? (rawContent ? `✓ ${rawContent.length} chars` : '✓ Content Ready')
                         : isContentReceptive
-                        ? 'Connect Back Here'
-                        : config.getContent.enabled
-                        ? 'Full Content'
-                        : 'Disabled'}
+                          ? 'Connect Back Here'
+                          : config.getContent.enabled
+                            ? 'Full Content'
+                            : 'Disabled'}
                     </span>
                   )}
                 </div>
@@ -7412,15 +7622,15 @@ export const FacebookWorkflowCanvas = forwardRef<
                     activeModalNode?.type === 'get-images'
                       ? PRIMARY_NODE_COLOR
                       : isImagesReceptive
-                      ? RECEPTIVE_COLOR
-                      : (isDark ? '#30363D' : '#D0D7DE')
+                        ? RECEPTIVE_COLOR
+                        : (isDark ? '#30363D' : '#D0D7DE')
                   }
                   socketDotColor={
                     activeModalNode?.type === 'get-images'
                       ? PRIMARY_NODE_COLOR
                       : isImagesReceptive
-                      ? RECEPTIVE_COLOR
-                      : (isDark ? '#8B949E' : '#64748B')
+                        ? RECEPTIVE_COLOR
+                        : (isDark ? '#8B949E' : '#64748B')
                   }
                   isConnectedInput={true}
                   isConnectedOutput={isImagesOutputConnected}
@@ -7458,75 +7668,77 @@ export const FacebookWorkflowCanvas = forwardRef<
                 />
                 <NodeExecutionBadge status={imagesStatus} />
 
-            {/* Label below circle */}
-            <div
-              style={{
-                position: 'absolute',
-                top: `${CIRCLE_SIZE + 8}px`,
-                left: '50%',
-                transform: 'translateX(-50%)',
-                width: 'max-content',
-                maxWidth: '150px',
-                textAlign: 'center',
-                whiteSpace: 'normal',
-                lineHeight: '1.25',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                gap: '2px',
-                pointerEvents: 'auto',
-                cursor: 'pointer',
-                zIndex: 2,
-              }}
-              onClick={(e) => handleNodeClick({ type: 'get-images' }, e)}
-            >
-              <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)', wordBreak: 'break-word', textAlign: 'center' }}>
-                Get Images
-              </span>
-              {imagesStatus === 'running' ? (
-                <span
+                {/* Label below circle */}
+                <div
                   style={{
-                    fontSize: '0.6875rem',
-                    fontWeight: 500,
-                    color: isDark ? '#38BDF8' : '#0284C7',
-                    display: 'inline-flex',
+                    position: 'absolute',
+                    top: `${CIRCLE_SIZE + 8}px`,
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    width: 'max-content',
+                    maxWidth: '150px',
+                    textAlign: 'center',
+                    whiteSpace: 'normal',
+                    lineHeight: '1.25',
+                    display: 'flex',
+                    flexDirection: 'column',
                     alignItems: 'center',
-                    gap: '4px',
+                    gap: '2px',
+                    pointerEvents: 'auto',
+                    cursor: 'pointer',
+                    zIndex: 2,
                   }}
+                  onClick={(e) => handleNodeClick({ type: 'get-images' }, e)}
                 >
-                  <span
-                    style={{
-                      width: '5px',
-                      height: '5px',
-                      borderRadius: '50%',
-                      backgroundColor: isDark ? '#38BDF8' : '#0284C7',
-                    }}
-                  />
-                  <span>Downloading Photos...</span>
-                </span>
-              ) : (
-                <span
-                  style={{
-                    fontSize: '0.6875rem',
-                    color: isImagesReceptive
-                      ? RECEPTIVE_COLOR
-                      : 'var(--text-muted)',
-                    fontWeight: isImagesReceptive ? 600 : 400,
-                  }}
-                >
-                  {imagesStatus === 'success'
-                    ? '✓ Photos Ready'
-                    : isImagesReceptive
-                    ? 'Connect Back Here'
-                    : config.getImages.enabled
-                    ? 'All Media'
-                    : 'Disabled'}
-                </span>
-              )}
-            </div>
-          </div>
-        );
-      })()}
+                  <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)', wordBreak: 'break-word', textAlign: 'center' }}>
+                    Get Images
+                  </span>
+                  {imagesStatus === 'running' ? (
+                    <span
+                      style={{
+                        fontSize: '0.6875rem',
+                        fontWeight: 500,
+                        color: isDark ? '#38BDF8' : '#0284C7',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: '5px',
+                          height: '5px',
+                          borderRadius: '50%',
+                          backgroundColor: isDark ? '#34D399' : '#10B981',
+                        }}
+                      />
+                      <span style={{ color: isDark ? '#34D399' : '#059669' }}>Extracting Images...</span>
+                    </span>
+                  ) : (
+                    <span
+                      style={{
+                        fontSize: '0.6875rem',
+                        color: imagesStatus === 'success'
+                          ? '#10B981'
+                          : isImagesReceptive
+                            ? RECEPTIVE_COLOR
+                            : 'var(--text-muted)',
+                        fontWeight: isImagesReceptive || imagesStatus === 'success' ? 600 : 400,
+                      }}
+                    >
+                      {imagesStatus === 'success'
+                        ? (images && images.length > 0 ? `✓ ${images.length} Photos` : '✓ Photos Ready')
+                        : isImagesReceptive
+                          ? 'Connect Back Here'
+                          : config.getImages.enabled
+                            ? 'All Media'
+                            : 'Disabled'}
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
 
           {/* ======================================================== */}
           {/* NODE 3: DYNAMIC MULTI-BOX AI PROCESSORS (CIRCLES)        */}
@@ -7553,10 +7765,10 @@ export const FacebookWorkflowCanvas = forwardRef<
               !isEffectiveEnabled
                 ? (isSelected ? (isDark ? '#64748B' : '#94A3B8') : (isDark ? '#334155' : '#CBD5E1'))
                 : isSelected
-                ? PRIMARY_NODE_COLOR
-                : isBoxReceptive
-                ? RECEPTIVE_COLOR
-                : (isDark ? '#30363D' : '#D0D7DE');
+                  ? PRIMARY_NODE_COLOR
+                  : isBoxReceptive
+                    ? RECEPTIVE_COLOR
+                    : (isDark ? '#30363D' : '#D0D7DE');
             const strokeDasharray = !isEffectiveEnabled ? '5, 4' : 'none';
             const isEnhance = (isEnhanceAIBox(box) || isImageAIBox(box, config.connections) || isExternalBrowserAIBox(box)) && !isWatermark;
             const isBoxInputConnected = (config.connections || []).some((c) => c.toNodeId === box.id);
@@ -7759,9 +7971,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                   ) : (() => {
                     const matchingCropFormat = isWatermark
                       ? (savedCropFormatsList.find((f) => f.id === box.cropFormatId || f.id === box.templateId || f.id === box.watermarkPresetId) ||
-                         savedCropFormatsList.find((f) => box.templateText && f.name.toLowerCase() === box.templateText.toLowerCase()) ||
-                         savedCropFormatsList.find((f) => box.title && f.name && box.title.toLowerCase().includes(f.name.toLowerCase())) ||
-                         ((box.title?.toLowerCase().includes('fb') || box.templateText?.toLowerCase().includes('fb')) ? savedCropFormatsList.find((f) => f.name.toLowerCase().includes('fb')) : null))
+                        savedCropFormatsList.find((f) => box.templateText && f.name.toLowerCase() === box.templateText.toLowerCase()) ||
+                        savedCropFormatsList.find((f) => box.title && f.name && box.title.toLowerCase().includes(f.name.toLowerCase())) ||
+                        ((box.title?.toLowerCase().includes('fb') || box.templateText?.toLowerCase().includes('fb')) ? savedCropFormatsList.find((f) => f.name.toLowerCase().includes('fb')) : null))
                       : null;
 
                     const displayNodeTitle = box.title || (isWatermark && matchingCropFormat ? `Format: ${matchingCropFormat.name}` : (isWatermark ? 'Format Preset' : 'AI Node'));
@@ -7826,16 +8038,16 @@ export const FacebookWorkflowCanvas = forwardRef<
                         {isChromeTabGroup
                           ? 'Processing in Tabs...'
                           : isChromeProfile
-                          ? 'Active Profile...'
-                          : isExternalBrowser
-                          ? 'Chrome Automating...'
-                          : isWatermark
-                          ? 'Processing...'
-                          : isRunware
-                          ? 'Enhancing...'
-                          : isTextFormatAIBox(box)
-                          ? 'Formatting...'
-                          : 'Generating...'}
+                            ? 'Active Profile...'
+                            : isExternalBrowser
+                              ? 'Chrome Automating...'
+                              : isWatermark
+                                ? 'Processing...'
+                                : isRunware
+                                  ? 'Enhancing...'
+                                  : isTextFormatAIBox(box)
+                                    ? 'Formatting...'
+                                    : 'Generating...'}
                       </span>
                     </span>
                   ) : isChromeTabGroup ? (
@@ -7861,24 +8073,24 @@ export const FacebookWorkflowCanvas = forwardRef<
                     >
                       {isWatermark
                         ? (() => {
-                            const matchingCropFormat =
-                              savedCropFormatsList.find((f) => f.id === box.cropFormatId || f.id === box.templateId || f.id === box.watermarkPresetId) ||
-                              savedCropFormatsList.find((f) => box.templateText && f.name.toLowerCase() === box.templateText.toLowerCase()) ||
-                              savedCropFormatsList.find((f) => box.title && f.name && box.title.toLowerCase().includes(f.name.toLowerCase())) ||
-                              ((box.title?.toLowerCase().includes('fb') || box.templateText?.toLowerCase().includes('fb')) ? savedCropFormatsList.find((f) => f.name.toLowerCase().includes('fb')) : null);
-                            return matchingCropFormat
-                              ? `${matchingCropFormat.targetWidth}×${matchingCropFormat.targetHeight} (${matchingCropFormat.aspect || '1:1'})`
-                              : (box.subtitle || 'Crop & Watermark');
-                          })()
+                          const matchingCropFormat =
+                            savedCropFormatsList.find((f) => f.id === box.cropFormatId || f.id === box.templateId || f.id === box.watermarkPresetId) ||
+                            savedCropFormatsList.find((f) => box.templateText && f.name.toLowerCase() === box.templateText.toLowerCase()) ||
+                            savedCropFormatsList.find((f) => box.title && f.name && box.title.toLowerCase().includes(f.name.toLowerCase())) ||
+                            ((box.title?.toLowerCase().includes('fb') || box.templateText?.toLowerCase().includes('fb')) ? savedCropFormatsList.find((f) => f.name.toLowerCase().includes('fb')) : null);
+                          return matchingCropFormat
+                            ? `${matchingCropFormat.targetWidth}×${matchingCropFormat.targetHeight} (${matchingCropFormat.aspect || '1:1'})`
+                            : (box.subtitle || 'Crop & Watermark');
+                        })()
                         : isExternalBrowserAIBox(box) ? (
                           'Chrome Automation'
                         ) : (isRunware || isEnhance)
-                        ? 'Image Enhancer'
-                        : isTextFormatAIBox(box)
-                        ? 'Format Preset'
-                        : isTextAIBox(box, config.connections)
-                        ? 'AI Model'
-                        : 'Copywriter'}
+                          ? 'Image Enhancer'
+                          : isTextFormatAIBox(box)
+                            ? 'Format Preset'
+                            : isTextAIBox(box, config.connections)
+                              ? 'AI Model'
+                              : 'Copywriter'}
                     </span>
                   ) : null}
 
@@ -7975,8 +8187,8 @@ export const FacebookWorkflowCanvas = forwardRef<
               cbIsSelected
                 ? '#F59E0B'
                 : isCbReceptive
-                ? RECEPTIVE_COLOR
-                : (isDark ? '#30363D' : '#D0D7DE');
+                  ? RECEPTIVE_COLOR
+                  : (isDark ? '#30363D' : '#D0D7DE');
             return (
               <div
                 key={`node-combine-${cb.id}`}
@@ -8080,20 +8292,22 @@ export const FacebookWorkflowCanvas = forwardRef<
             const destY = destNode.y ?? (248 + destIdx * 150);
             const isSelected =
               (activeModalNode?.type === 'destination' &&
-              (activeModalNode.destinationId ? activeModalNode.destinationId === destId : destIdx === 0)) ||
+                (activeModalNode.destinationId ? activeModalNode.destinationId === destId : destIdx === 0)) ||
               selectedNodeIds.has(destId);
             const isDestReceptive = Boolean(
               dragWire && dragWire.fromType === 'output' && isValidConnection(dragWire.fromNodeId, destId)
             );
+            const isEffectiveEnabled = isNodeEffectivelyEnabled(destId);
             const isDestRunning = Boolean(
+              isEffectiveEnabled &&
               executionState?.isRunning &&
-                (executionState?.activeNodeIds?.includes(destId) ||
-                  executionState?.activeNodeIds?.includes('destination'))
+              (executionState?.activeNodeIds?.includes(destId) ||
+                executionState?.activeNodeIds?.includes('destination'))
             );
             const isDestSuccess = Boolean(
-              executionState?.isComplete ||
-                executionState?.completedNodeIds?.includes(destId) ||
-                executionState?.completedNodeIds?.includes('destination')
+              isEffectiveEnabled &&
+              (executionState?.completedNodeIds?.includes(destId) ||
+                executionState?.completedNodeIds?.includes('destination'))
             );
             const isDbNode = destNode.targetMode === 'remaining_posts' || destNode.platform === 'database';
             const isHybrid = (destNode.storeInDatabase && destNode.postToSocialMedia) || destNode.targetMode === 'hybrid';
@@ -8108,7 +8322,7 @@ export const FacebookWorkflowCanvas = forwardRef<
 
             const targetPage = isAccountNode
               ? (managedPages.find((p) => p.page_id === (destNode.accountId || destNode.selectedPageId || destNode.selectedPageIds?.[0])) ||
-                 (destNode.accountName ? { page_id: destNode.accountId || '', name: destNode.accountName, picture_url: destNode.accountAvatar, slot: 1 } : undefined))
+                (destNode.accountName ? { page_id: destNode.accountId || '', name: destNode.accountName, picture_url: destNode.accountAvatar, slot: 1 } : undefined))
               : undefined;
 
             const targetTitle =
@@ -8116,46 +8330,43 @@ export const FacebookWorkflowCanvas = forwardRef<
               (isPlatformHub
                 ? (isFb ? 'Facebook' : isIg ? 'Instagram' : isTiktok ? 'TikTok' : destNode.title || 'Social Media')
                 : destNode.title ||
-                  (isFb ? targetPage?.name || 'Facebook Page' : isIg ? 'Instagram' : isTiktok ? 'TikTok' : isDbNode ? 'Remaining Posts' : 'Social Media'));
+                (isFb ? targetPage?.name || 'Facebook Page' : isIg ? 'Instagram' : isTiktok ? 'TikTok' : isDbNode ? 'Remaining Posts' : 'Social Media'));
 
             const targetSubtitle =
               isPlatformHub
                 ? (isFb ? 'Pages Hub' : isIg ? 'Accounts Hub' : isTiktok ? 'Accounts Hub' : 'Platform')
                 : destNode.accountUsername
-                ? (destNode.accountUsername.startsWith('@') ? destNode.accountUsername : `@${destNode.accountUsername}`)
-                : isFb
-                ? targetPage?.name ? `Page · Slot ${targetPage.slot || 1}` : 'Facebook Page'
-                : isIg
-                ? 'Feed & Reels'
-                : isTiktok
-                ? 'Video & Slides'
-                : isDbNode
-                ? 'Database Queue'
-                : 'Active';
+                  ? (destNode.accountUsername.startsWith('@') ? destNode.accountUsername : `@${destNode.accountUsername}`)
+                  : isFb
+                    ? targetPage?.name ? `Page · Slot ${targetPage.slot || 1}` : 'Facebook Page'
+                    : isIg
+                      ? 'Feed & Reels'
+                      : isTiktok
+                        ? 'Video & Slides'
+                        : isDbNode
+                          ? 'Database Queue'
+                          : 'Active';
 
             const strokeThemeColor =
               isSelected
                 ? isFb
                   ? '#1877F2'
                   : isIg
-                  ? '#E1306C'
-                  : isTiktok
-                  ? '#06B6D4'
-                  : isDbNode
-                  ? '#0EA5E9'
-                  : '#8B5CF6'
+                    ? '#E1306C'
+                    : isTiktok
+                      ? '#06B6D4'
+                      : isDbNode
+                        ? '#0EA5E9'
+                        : '#8B5CF6'
                 : isDark
-                ? '#30363D'
-                : '#D0D7DE';
-
-            const isEffectiveEnabled = isNodeEffectivelyEnabled(destId);
+                  ? '#30363D'
+                  : '#D0D7DE';
 
             return (
               <div
                 key={`node-dest-${destId}`}
-                className={`canvas-node ${isAccountNode ? 'is-circle' : ''} ${isSelected ? 'is-selected' : ''} ${hoveredNodeId === destId ? 'is-hovered' : ''} ${
-                  isDestReceptive ? 'is-receptive' : ''
-                } ${isDestRunning ? 'is-running' : ''} ${isDestSuccess ? 'is-completed' : ''}`}
+                className={`canvas-node ${isAccountNode ? 'is-circle' : ''} ${isSelected ? 'is-selected' : ''} ${hoveredNodeId === destId ? 'is-hovered' : ''} ${isDestReceptive ? 'is-receptive' : ''
+                  } ${isDestRunning ? 'is-running' : ''} ${isDestSuccess ? 'is-completed' : ''}`}
                 onMouseEnter={() => handleNodeMouseEnter(destId)}
                 onMouseLeave={() => handleNodeMouseLeave(destId)}
                 onMouseDown={(e) => startDragNode(destId, e)}
@@ -8175,10 +8386,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                   ['--ring' as any]: isDestReceptive
                     ? RECEPTIVE_COLOR
                     : isDestRunning
-                    ? '#0284C7'
-                    : isDark
-                    ? '#30363D'
-                    : '#D0D7DE',
+                      ? '#0284C7'
+                      : isDark
+                        ? '#30363D'
+                        : '#D0D7DE',
                   ['--receptive-color' as any]: RECEPTIVE_COLOR,
                   opacity: isEffectiveEnabled ? 1 : 0.6,
                   zIndex: isSelected ? 30 : isDestReceptive ? 35 : hoveredNodeId === destId ? 25 : 15,
@@ -8808,16 +9019,16 @@ export const FacebookWorkflowCanvas = forwardRef<
                       backgroundColor: isTrigger
                         ? 'rgba(24, 119, 242, 0.12)'
                         : isContent
-                        ? 'rgba(59, 130, 246, 0.12)'
-                        : isImages
-                        ? 'rgba(16, 185, 129, 0.12)'
-                        : isCombine
-                        ? 'rgba(245, 158, 11, 0.12)'
-                        : isOutput
-                        ? 'rgba(16, 185, 129, 0.12)'
-                        : currentModalAIBox?.provider === 'google_ai'
-                        ? 'rgba(96, 165, 250, 0.15)'
-                        : 'rgba(16, 185, 129, 0.15)',
+                          ? 'rgba(59, 130, 246, 0.12)'
+                          : isImages
+                            ? 'rgba(16, 185, 129, 0.12)'
+                            : isCombine
+                              ? 'rgba(245, 158, 11, 0.12)'
+                              : isOutput
+                                ? 'rgba(16, 185, 129, 0.12)'
+                                : currentModalAIBox?.provider === 'google_ai'
+                                  ? 'rgba(96, 165, 250, 0.15)'
+                                  : 'rgba(16, 185, 129, 0.15)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -8911,37 +9122,37 @@ export const FacebookWorkflowCanvas = forwardRef<
                     currentModalAIBox.title?.toLowerCase().includes('hero') ||
                     currentModalAIBox.title?.toLowerCase().includes('fb')
                   ) && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setShowFBHeroSettingsSidebox((prev) => !prev);
-                      }}
-                      onMouseDown={(e) => e.stopPropagation()}
-                      title="FB Hero Settings (Reference Image, Prompt & Condo 1,2,3)"
-                      aria-label="FB Hero Settings"
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        width: '28px',
-                        height: '28px',
-                        borderRadius: '6px',
-                        border: showFBHeroSettingsSidebox
-                          ? '1px solid #F59E0B'
-                          : isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                        backgroundColor: showFBHeroSettingsSidebox
-                          ? 'rgba(245, 158, 11, 0.15)'
-                          : isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
-                        color: showFBHeroSettingsSidebox ? '#F59E0B' : 'var(--text-secondary)',
-                        cursor: 'pointer',
-                        flexShrink: 0,
-                        transition: 'all 0.15s ease',
-                      }}
-                    >
-                      <FiSettings size={15} />
-                    </button>
-                  )}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowFBHeroSettingsSidebox((prev) => !prev);
+                        }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        title="FB Hero Settings (Reference Image, Prompt & Condo 1,2,3)"
+                        aria-label="FB Hero Settings"
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          width: '28px',
+                          height: '28px',
+                          borderRadius: '6px',
+                          border: showFBHeroSettingsSidebox
+                            ? '1px solid #F59E0B'
+                            : isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                          backgroundColor: showFBHeroSettingsSidebox
+                            ? 'rgba(245, 158, 11, 0.15)'
+                            : isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+                          color: showFBHeroSettingsSidebox ? '#F59E0B' : 'var(--text-secondary)',
+                          cursor: 'pointer',
+                          flexShrink: 0,
+                          transition: 'all 0.15s ease',
+                        }}
+                      >
+                        <FiSettings size={15} />
+                      </button>
+                    )}
 
                   <button
                     type="button"
@@ -9032,35 +9243,80 @@ export const FacebookWorkflowCanvas = forwardRef<
                       {/* Connect Next Step Quick Button (top) */}
                       {renderCenteredConnectButton('get-content', 'get-content', 'Get Content')}
 
-                      {/* Execution Result Box */}
+                      {/* Clean Apple-Style Extracted Post Content View (No Nested Box, Site Border Radius) */}
                       <div
                         style={{
                           display: 'flex',
                           flexDirection: 'column',
-                          gap: '0.45rem',
-                          padding: '0.625rem',
                           borderRadius: '8px',
                           border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#F8FAFC',
+                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF',
+                          overflow: 'hidden',
                           marginTop: '0.25rem',
                         }}
                       >
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                              Extracted Post Content
-                            </span>
-                            {rawContent ? (
-                              <span style={{ fontSize: '0.625rem', fontWeight: 600, color: '#10B981', backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#DCFCE7', padding: '1px 5px', borderRadius: '4px' }}>
-                                ✓ Ready
+                        {/* Header Bar */}
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '10px 12px',
+                            borderBottom: isDark
+                              ? '1px solid rgba(255, 255, 255, 0.06)'
+                              : '1px solid rgba(15, 23, 42, 0.06)',
+                          }}
+                        >
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span
+                                style={{
+                                  fontSize: '0.8125rem',
+                                  fontWeight: 600,
+                                  letterSpacing: '-0.01em',
+                                  color: 'var(--text-primary)',
+                                  fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif',
+                                }}
+                              >
+                                Post Content
                               </span>
-                            ) : contentStatus === 'running' ? (
-                              <span style={{ fontSize: '0.625rem', fontWeight: 600, color: '#0284C7', backgroundColor: isDark ? 'rgba(2, 132, 199, 0.15)' : '#E0F2FE', padding: '1px 5px', borderRadius: '4px' }}>
-                                ● Extracting...
-                              </span>
-                            ) : (
-                              <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
-                                (Idle)
+                              {rawContent ? (
+                                <span
+                                  style={{
+                                    fontSize: '0.625rem',
+                                    fontWeight: 600,
+                                    color: '#10B981',
+                                    backgroundColor: isDark ? 'rgba(16, 185, 129, 0.14)' : '#DCFCE7',
+                                    padding: '1px 6px',
+                                    borderRadius: '6px',
+                                  }}
+                                >
+                                  ✓ Ready
+                                </span>
+                              ) : contentStatus === 'running' ? (
+                                <span
+                                  style={{
+                                    fontSize: '0.625rem',
+                                    fontWeight: 600,
+                                    color: '#38BDF8',
+                                    backgroundColor: isDark ? 'rgba(56, 189, 248, 0.14)' : '#E0F2FE',
+                                    padding: '1px 6px',
+                                    borderRadius: '6px',
+                                  }}
+                                >
+                                  ● Extracting...
+                                </span>
+                              ) : null}
+                            </div>
+                            {rawContent && (
+                              <span
+                                style={{
+                                  fontSize: '0.6875rem',
+                                  color: 'var(--text-muted)',
+                                  fontWeight: 400,
+                                }}
+                              >
+                                {rawContent.length} characters · {rawContent.trim().split(/\s+/).filter(Boolean).length} words
                               </span>
                             )}
                           </div>
@@ -9074,63 +9330,73 @@ export const FacebookWorkflowCanvas = forwardRef<
                                 setTimeout(() => setCopiedTextSuccess(false), 2000);
                               }}
                               style={{
-                                display: 'flex',
+                                display: 'inline-flex',
                                 alignItems: 'center',
-                                gap: '3px',
-                                background: 'none',
-                                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                                borderRadius: '4px',
-                                padding: '2px 6px',
-                                fontSize: '0.625rem',
-                                color: copiedTextSuccess ? '#10B981' : 'var(--text-secondary)',
+                                gap: '5px',
+                                backgroundColor: copiedTextSuccess
+                                  ? (isDark ? 'rgba(16, 185, 129, 0.16)' : '#DCFCE7')
+                                  : (isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9'),
+                                border: copiedTextSuccess
+                                  ? '1px solid rgba(16, 185, 129, 0.35)'
+                                  : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
+                                borderRadius: '6px',
+                                padding: '4px 10px',
+                                fontSize: '0.71875rem',
+                                fontWeight: 600,
+                                fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif',
+                                color: copiedTextSuccess ? '#10B981' : 'var(--text-primary)',
                                 cursor: 'pointer',
+                                transition: 'all 0.15s ease',
                               }}
                             >
-                              {copiedTextSuccess ? <FiCheck size={11} /> : <FiCopy size={11} />}
+                              {copiedTextSuccess ? <FiCheck size={12} /> : <FiCopy size={12} />}
                               <span>{copiedTextSuccess ? 'Copied' : 'Copy'}</span>
                             </button>
                           )}
                         </div>
 
+                        {/* Direct Clean Reading Area (No Inner Box) */}
                         {rawContent ? (
-                          <>
-                            <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', display: 'flex', gap: '8px' }}>
-                              <span>{rawContent.length} characters</span>
-                              <span>•</span>
-                              <span>{rawContent.trim().split(/\s+/).filter(Boolean).length} words</span>
-                            </div>
-                            <div
-                              style={{
-                                maxHeight: '180px',
-                                overflowY: 'auto',
-                                padding: '0.5rem',
-                                borderRadius: '6px',
-                                backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
-                                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                                fontSize: '0.75rem',
-                                lineHeight: 1.5,
-                                color: 'var(--text-primary)',
-                                whiteSpace: 'pre-wrap',
-                                wordBreak: 'break-word',
-                              }}
-                            >
-                              {rawContent}
-                            </div>
-                          </>
+                          <div
+                            style={{
+                              maxHeight: '420px',
+                              overflowY: 'auto',
+                              padding: '12px 14px',
+                              fontSize: '0.8125rem',
+                              lineHeight: 1.65,
+                              letterSpacing: '-0.005em',
+                              fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif',
+                              color: isDark ? '#E6EDF3' : '#1E293B',
+                              whiteSpace: 'pre-wrap',
+                              wordBreak: 'break-word',
+                            }}
+                          >
+                            {rawContent}
+                          </div>
                         ) : contentStatus === 'running' ? (
-                          <div style={{ padding: '1rem', textAlign: 'center', fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-                            Extracting post text and caption from link...
+                          <div
+                            style={{
+                              padding: '24px 14px',
+                              textAlign: 'center',
+                              fontSize: '0.75rem',
+                              color: 'var(--text-muted)',
+                            }}
+                          >
+                            Extracting post content...
                           </div>
                         ) : (
-                          <div style={{ padding: '0.875rem 0.5rem', textAlign: 'center', fontSize: '0.6875rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                            No content extracted yet. Run workflow with a Facebook URL to view live result here.
+                          <div
+                            style={{
+                              padding: '24px 14px',
+                              textAlign: 'center',
+                              fontSize: '0.75rem',
+                              color: 'var(--text-muted)',
+                            }}
+                          >
+                            Run the workflow with a post link to view extracted content here.
                           </div>
                         )}
                       </div>
-
-                      <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.5 }}>
-                        When enabled, the full raw text caption and specifications are extracted directly from the post and piped simultaneously into all active AI copywriter nodes.
-                      </p>
                     </>
                   );
                 })()}
@@ -9143,77 +9409,184 @@ export const FacebookWorkflowCanvas = forwardRef<
                       {/* Connect Next Step Quick Button (top) */}
                       {renderCenteredConnectButton('get-images', 'get-images', 'Get Images')}
 
-                      {/* Media Gallery Execution Result Box */}
+                      {/* Media Gallery Execution Result Card */}
                       <div
                         style={{
                           display: 'flex',
                           flexDirection: 'column',
-                          gap: '0.45rem',
-                          padding: '0.625rem',
                           borderRadius: '8px',
                           border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#F8FAFC',
+                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF',
+                          overflow: 'hidden',
                           marginTop: '0.25rem',
                         }}
                       >
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                            Extracted Media ({compiledImages.length})
-                          </span>
-                          {compiledImages.length > 0 ? (
-                            <span style={{ fontSize: '0.625rem', fontWeight: 600, color: '#10B981', backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#DCFCE7', padding: '1px 5px', borderRadius: '4px' }}>
-                              ✓ Photos Ready
-                            </span>
-                          ) : imagesStatus === 'running' ? (
-                            <span style={{ fontSize: '0.625rem', fontWeight: 600, color: '#0284C7', backgroundColor: isDark ? 'rgba(2, 132, 199, 0.15)' : '#E0F2FE', padding: '1px 5px', borderRadius: '4px' }}>
-                              ● Downloading...
-                            </span>
-                          ) : (
-                            <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
-                              (Idle)
-                            </span>
-                          )}
+                        {/* Header Bar */}
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '10px 12px',
+                            borderBottom: isDark
+                              ? '1px solid rgba(255, 255, 255, 0.06)'
+                              : '1px solid rgba(15, 23, 42, 0.06)',
+                          }}
+                        >
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span
+                                style={{
+                                  fontSize: '0.8125rem',
+                                  fontWeight: 600,
+                                  letterSpacing: '-0.01em',
+                                  color: 'var(--text-primary)',
+                                  fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif',
+                                }}
+                              >
+                                Extracted Media
+                              </span>
+                              {compiledImages.length > 0 ? (
+                                <span
+                                  style={{
+                                    fontSize: '0.625rem',
+                                    fontWeight: 600,
+                                    color: '#10B981',
+                                    backgroundColor: isDark ? 'rgba(16, 185, 129, 0.14)' : '#DCFCE7',
+                                    padding: '1px 6px',
+                                    borderRadius: '6px',
+                                  }}
+                                >
+                                  ✓ {compiledImages.length} Photos Ready
+                                </span>
+                              ) : imagesStatus === 'running' ? (
+                                <span
+                                  style={{
+                                    fontSize: '0.625rem',
+                                    fontWeight: 600,
+                                    color: '#38BDF8',
+                                    backgroundColor: isDark ? 'rgba(56, 189, 248, 0.14)' : '#E0F2FE',
+                                    padding: '1px 6px',
+                                    borderRadius: '6px',
+                                  }}
+                                >
+                                  ● Downloading...
+                                </span>
+                              ) : null}
+                            </div>
+                            {compiledImages.length > 0 && (
+                              <span
+                                style={{
+                                  fontSize: '0.6875rem',
+                                  color: 'var(--text-muted)',
+                                  fontWeight: 400,
+                                }}
+                              >
+                                Click any photo to preview full size ({compiledImages.length} total)
+                              </span>
+                            )}
+                          </div>
                         </div>
 
                         {compiledImages.length > 0 ? (
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.35rem', maxHeight: '200px', overflowY: 'auto' }}>
+                          <div
+                            style={{
+                              display: 'grid',
+                              gridTemplateColumns: 'repeat(3, 1fr)',
+                              gridAutoRows: 'max-content',
+                              gap: '8px',
+                              maxHeight: '360px',
+                              overflowY: 'auto',
+                              padding: '10px',
+                            }}
+                          >
                             {compiledImages.map((img, i) => (
                               <div
                                 key={img.index ?? i}
                                 onClick={() => handleOpenLightbox(i)}
                                 style={{
                                   position: 'relative',
-                                  aspectRatio: '1',
+                                  width: '100%',
+                                  paddingTop: '100%',
                                   borderRadius: '6px',
                                   overflow: 'hidden',
                                   cursor: 'pointer',
+                                  backgroundColor: isDark ? '#0D1117' : '#F1F5F9',
                                   border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                  transition: 'transform 0.15s ease, border-color 0.15s ease',
                                 }}
-                                title="Click to preview full photo"
+                                title={`Click to preview Photo #${i + 1}`}
                               >
-                                <img
-                                  src={img.finalUrl}
-                                  alt={`Photo ${i + 1}`}
-                                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                                />
-                                {img.isEnhanced && (
-                                  <span style={{ position: 'absolute', top: 2, left: 2, fontSize: '0.5rem', fontWeight: 700, backgroundColor: '#EC4899', color: '#FFFFFF', padding: '1px 3px', borderRadius: '2px' }}>
-                                    HD
-                                  </span>
-                                )}
-                                {img.isWatermarked && (
-                                  <span style={{ position: 'absolute', bottom: 2, right: 2, width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10B981' }} />
-                                )}
+                                <div style={{ position: 'absolute', inset: 0 }}>
+                                  <img
+                                    src={img.finalUrl}
+                                    alt={`Photo ${i + 1}`}
+                                    style={{
+                                      width: '100%',
+                                      height: '100%',
+                                      objectFit: 'cover',
+                                      display: 'block',
+                                    }}
+                                  />
+                                  <div
+                                    style={{
+                                      position: 'absolute',
+                                      bottom: '4px',
+                                      left: '4px',
+                                      fontSize: '0.5625rem',
+                                      fontWeight: 600,
+                                      padding: '1px 5px',
+                                      borderRadius: '4px',
+                                      backgroundColor: 'rgba(0, 0, 0, 0.65)',
+                                      backdropFilter: 'blur(4px)',
+                                      color: '#FFFFFF',
+                                      lineHeight: 1.3,
+                                    }}
+                                  >
+                                    #{i + 1}
+                                  </div>
+                                  {img.isEnhanced && (
+                                    <span
+                                      style={{
+                                        position: 'absolute',
+                                        top: '4px',
+                                        left: '4px',
+                                        fontSize: '0.5rem',
+                                        fontWeight: 700,
+                                        backgroundColor: '#EC4899',
+                                        color: '#FFFFFF',
+                                        padding: '1px 4px',
+                                        borderRadius: '4px',
+                                      }}
+                                    >
+                                      HD
+                                    </span>
+                                  )}
+                                  {img.isWatermarked && (
+                                    <span
+                                      style={{
+                                        position: 'absolute',
+                                        bottom: '5px',
+                                        right: '5px',
+                                        width: '7px',
+                                        height: '7px',
+                                        borderRadius: '50%',
+                                        backgroundColor: '#10B981',
+                                        boxShadow: '0 0 0 1.5px rgba(0,0,0,0.6)',
+                                      }}
+                                    />
+                                  )}
+                                </div>
                               </div>
                             ))}
                           </div>
                         ) : imagesStatus === 'running' ? (
-                          <div style={{ padding: '1rem', textAlign: 'center', fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                          <div style={{ padding: '24px 14px', textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                             Downloading high-resolution photos...
                           </div>
                         ) : (
-                          <div style={{ padding: '0.875rem 0.5rem', textAlign: 'center', fontSize: '0.6875rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                            No photos downloaded yet. Run workflow with Facebook URL to fetch media gallery.
+                          <div style={{ padding: '24px 14px', textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                            Run the workflow with a post link to view extracted photos here.
                           </div>
                         )}
                       </div>
@@ -9292,8 +9665,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   c.fromNodeId === 'get-content'
                                     ? 'Get Content'
                                     : c.fromNodeId === 'get-images'
-                                    ? 'Get Images'
-                                    : fromBox?.title || c.fromNodeId;
+                                      ? 'Get Images'
+                                      : fromBox?.title || c.fromNodeId;
                                 return (
                                   <div
                                     key={c.id}
@@ -9432,8 +9805,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                                 style={{
                                   display: 'grid',
                                   gridTemplateColumns: 'repeat(3, 1fr)',
+                                  gridAutoRows: 'max-content',
                                   gap: '6px',
-                                  maxHeight: '220px',
+                                  maxHeight: '260px',
                                   overflowY: 'auto',
                                   padding: '6px',
                                   borderRadius: '6px',
@@ -9810,7 +10184,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                 (c.fromNodeId === currentModalAIBox.id && c.toNodeId === b.id) ||
                                 (c.fromNodeId === b.id && c.toNodeId === currentModalAIBox.id)
                             ) ||
-                            (isTabGroupNode && b.browserProfileId && b.browserProfileId === currentModalAIBox.browserProfileId))
+                              (isTabGroupNode && b.browserProfileId && b.browserProfileId === currentModalAIBox.browserProfileId))
                         );
 
                         const connectedTabGroupNodes = config.aiBoxes
@@ -9818,7 +10192,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                             (b) =>
                               isChromeTabGroupAIBox(b) &&
                               (config.connections?.some((c) => c.fromNodeId === currentModalAIBox.id && c.toNodeId === b.id) ||
-                               (b.browserProfileId && b.browserProfileId === currentModalAIBox.browserProfileId))
+                                (b.browserProfileId && b.browserProfileId === currentModalAIBox.browserProfileId))
                           )
                           .map((b) => ({
                             id: b.id,
@@ -9836,13 +10210,17 @@ export const FacebookWorkflowCanvas = forwardRef<
                         const resolvedGroupName = isEnhanceTitle
                           ? 'Enhance IMG'
                           : isHeroTitle
-                          ? 'FB Hero'
-                          : (isTabGroupNode
+                            ? 'FB Hero'
+                            : (isTabGroupNode
                               ? (currentModalAIBox.title && currentModalAIBox.title !== 'Tab Group' ? currentModalAIBox.title : (currentModalAIBox.browserGroupName || currentModalAIBox.title || 'Tab Group'))
                               : currentModalAIBox.browserGroupName);
 
                         const effectiveBoxConfig = {
                           ...currentModalAIBox,
+                          referenceImage:
+                            currentModalAIBox.referenceImage ||
+                            (isHeroTitle ? getPersistedReferenceImage(currentModalAIBox.id) : '') ||
+                            currentModalAIBox.referenceImage,
                           tabGroupMode: isEnhanceTitle ? 'enhance' : isHeroTitle ? 'generate' : currentModalAIBox.tabGroupMode,
                           processKind: isEnhanceTitle ? 'enhance_images' : isHeroTitle ? 'generate_image' : currentModalAIBox.processKind,
                           browserProfileId: currentModalAIBox.browserProfileId || connectedProfileBox?.browserProfileId,
@@ -9884,13 +10262,13 @@ export const FacebookWorkflowCanvas = forwardRef<
                           upstreamPrompts.length > 0
                             ? upstreamPrompts
                             : [
-                                {
-                                  id: 'ai-box-fb-hero-prompt-default',
-                                  title: 'FB Hero Prompt',
-                                  text: 'Generate a hero real estate listing image based on condo unit context and reference styling. Maintain realistic architectural aesthetics, high dynamic range, and authentic materials.',
-                                  templateId: '4',
-                                },
-                              ];
+                              {
+                                id: 'ai-box-fb-hero-prompt-default',
+                                title: 'FB Hero Prompt',
+                                text: 'Generate a hero real estate listing image based on condo unit context and reference styling. Maintain realistic architectural aesthetics, high dynamic range, and authentic materials.',
+                                templateId: '4',
+                              },
+                            ];
 
                         const upstreamTabGroups = config.aiBoxes
                           .filter((b) => isChromeTabGroupAIBox(b) && b.id !== currentModalAIBox.id)
@@ -9923,7 +10301,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   tabs_count: tabsCount,
                                 });
                               }}
-                              onUpdateBoxConfig={(updated) => handleUpdateAIBox(currentModalAIBox.id, updated)}
+                              onUpdateBoxConfig={(updated) => {
+                                const { enabled: _ignoreEnabled, ...rest } = (updated || {}) as any;
+                                handleUpdateAIBox(currentModalAIBox.id, rest);
+                              }}
                               availablePrompts={availablePrompts as any}
                               propertyContext={{
                                 id: executionState?.propertyId || '',
@@ -9948,7 +10329,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                               onClose={() => setShowFBHeroSettingsSidebox(false)}
                               isDark={isDark}
                               boxConfig={effectiveBoxConfig}
-                              onUpdateBoxConfig={(updated) => handleUpdateAIBox(currentModalAIBox.id, updated)}
+                              onUpdateBoxConfig={(updated) => {
+                                const { enabled: _ignoreEnabled, ...rest } = (updated || {}) as any;
+                                handleUpdateAIBox(currentModalAIBox.id, rest);
+                              }}
                               availablePrompts={availablePrompts as any}
                               propertyContext={{
                                 id: executionState?.propertyId || '',
@@ -9993,10 +10377,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                               availablePrompts.some((p) => String(p.id) === String(currentModalAIBox.templateId))
                                 ? String(currentModalAIBox.templateId)
                                 : availablePrompts.some((p) => p.name === currentModalAIBox.title)
-                                ? String(availablePrompts.find((p) => p.name === currentModalAIBox.title)!.id)
-                                : currentModalAIBox.templateId === 'custom'
-                                ? 'custom'
-                                : availablePrompts[0]?.id ? String(availablePrompts[0].id) : 'custom'
+                                  ? String(availablePrompts.find((p) => p.name === currentModalAIBox.title)!.id)
+                                  : currentModalAIBox.templateId === 'custom'
+                                    ? 'custom'
+                                    : availablePrompts[0]?.id ? String(availablePrompts[0].id) : 'custom'
                             }
                             onChange={(val) => {
                               if (val === 'custom') {
@@ -10074,13 +10458,12 @@ export const FacebookWorkflowCanvas = forwardRef<
                           style={{
                             display: 'flex',
                             flexDirection: 'column',
-                            gap: '0.5rem',
-                            padding: '0.75rem',
                             borderRadius: '8px',
                             border: isNodeFailed && !hasValidContent
                               ? '1px solid #EF4444'
                               : isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#F8FAFC',
+                            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF',
+                            overflow: 'hidden',
                           }}
                         >
                           {/* Failure Alert Banner */}
@@ -10090,6 +10473,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                 display: 'flex',
                                 alignItems: 'flex-start',
                                 gap: '0.5rem',
+                                margin: '10px 12px 0 12px',
                                 padding: '0.5rem 0.625rem',
                                 borderRadius: '6px',
                                 backgroundColor: isDark ? 'rgba(239, 68, 68, 0.12)' : '#FEF2F2',
@@ -10111,22 +10495,72 @@ export const FacebookWorkflowCanvas = forwardRef<
                             </div>
                           )}
 
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '4px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                                Generated Output Copy
+                          {/* Header Bar */}
+                          <div
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              gap: '8px',
+                              padding: '10px 12px',
+                              borderBottom: isDark
+                                ? '1px solid rgba(255, 255, 255, 0.06)'
+                                : '1px solid rgba(15, 23, 42, 0.06)',
+                            }}
+                          >
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                <span
+                                  style={{
+                                    fontSize: '0.8125rem',
+                                    fontWeight: 600,
+                                    letterSpacing: '-0.01em',
+                                    color: 'var(--text-primary)',
+                                    fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif',
+                                  }}
+                                >
+                                  Generated Output Copy
+                                </span>
+                                {hasValidContent ? (
+                                  <span
+                                    style={{
+                                      fontSize: '0.625rem',
+                                      fontWeight: 600,
+                                      color: '#10B981',
+                                      backgroundColor: isDark ? 'rgba(16, 185, 129, 0.14)' : '#DCFCE7',
+                                      padding: '1px 6px',
+                                      borderRadius: '6px',
+                                    }}
+                                  >
+                                    ✓ Ready
+                                  </span>
+                                ) : isNodeFailed ? (
+                                  <span
+                                    style={{
+                                      fontSize: '0.625rem',
+                                      fontWeight: 600,
+                                      color: '#EF4444',
+                                      backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : '#FEE2E2',
+                                      padding: '1px 6px',
+                                      borderRadius: '6px',
+                                    }}
+                                  >
+                                    ⚠️ Input Required
+                                  </span>
+                                ) : null}
+                              </div>
+                              <span
+                                style={{
+                                  fontSize: '0.6875rem',
+                                  color: 'var(--text-muted)',
+                                  fontWeight: 400,
+                                }}
+                              >
+                                {boxOutput.length} characters · {boxOutput.trim().split(/\s+/).filter(Boolean).length} words
                               </span>
-                              {hasValidContent ? (
-                                <span style={{ fontSize: '0.625rem', fontWeight: 600, color: '#10B981', backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#DCFCE7', padding: '1px 5px', borderRadius: '4px' }}>
-                                  ✓ Ready
-                                </span>
-                              ) : isNodeFailed ? (
-                                <span style={{ fontSize: '0.625rem', fontWeight: 600, color: '#EF4444', backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : '#FEE2E2', padding: '1px 5px', borderRadius: '4px' }}>
-                                  ⚠️ Input Required
-                                </span>
-                              ) : null}
                             </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
                               {onRegenerateBoxOutput && (
                                 <button
                                   type="button"
@@ -10142,21 +10576,23 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   disabled={isRegeneratingAI}
                                   title="Re-generate content with AI"
                                   style={{
-                                    display: 'flex',
+                                    display: 'inline-flex',
                                     alignItems: 'center',
-                                    gap: '3px',
-                                    background: isDark ? '#21262D' : '#F1F5F9',
+                                    gap: '4px',
+                                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
                                     border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                                    borderRadius: '4px',
-                                    padding: '2px 7px',
-                                    fontSize: '0.625rem',
+                                    borderRadius: '6px',
+                                    padding: '4px 9px',
+                                    fontSize: '0.71875rem',
                                     fontWeight: 600,
+                                    fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif',
                                     color: 'var(--text-primary)',
                                     cursor: isRegeneratingAI ? 'not-allowed' : 'pointer',
                                     opacity: isRegeneratingAI ? 0.7 : 1,
+                                    transition: 'all 0.15s ease',
                                   }}
                                 >
-                                  <FiRefreshCw size={11} style={{ animation: isRegeneratingAI ? 'spin 1s linear infinite' : 'none' }} />
+                                  <FiRefreshCw size={12} style={{ animation: isRegeneratingAI ? 'spin 1s linear infinite' : 'none' }} />
                                   <span>{isRegeneratingAI ? 'Generating...' : 'Re-generate'}</span>
                                 </button>
                               )}
@@ -10169,100 +10605,103 @@ export const FacebookWorkflowCanvas = forwardRef<
                                     setTimeout(() => setCopiedTextSuccess(false), 2000);
                                   }}
                                   style={{
-                                    display: 'flex',
+                                    display: 'inline-flex',
                                     alignItems: 'center',
-                                    gap: '3px',
-                                    background: 'none',
-                                    border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                                    borderRadius: '4px',
-                                    padding: '2px 6px',
-                                    fontSize: '0.625rem',
-                                    color: copiedTextSuccess ? '#10B981' : 'var(--text-secondary)',
+                                    gap: '5px',
+                                    backgroundColor: copiedTextSuccess
+                                      ? (isDark ? 'rgba(16, 185, 129, 0.16)' : '#DCFCE7')
+                                      : (isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9'),
+                                    border: copiedTextSuccess
+                                      ? '1px solid rgba(16, 185, 129, 0.35)'
+                                      : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
+                                    borderRadius: '6px',
+                                    padding: '4px 10px',
+                                    fontSize: '0.71875rem',
+                                    fontWeight: 600,
+                                    fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif',
+                                    color: copiedTextSuccess ? '#10B981' : 'var(--text-primary)',
                                     cursor: 'pointer',
+                                    transition: 'all 0.15s ease',
                                   }}
                                 >
-                                  {copiedTextSuccess ? <FiCheck size={11} /> : <FiCopy size={11} />}
+                                  {copiedTextSuccess ? <FiCheck size={12} /> : <FiCopy size={12} />}
                                   <span>{copiedTextSuccess ? 'Copied' : 'Copy'}</span>
                                 </button>
                               )}
                             </div>
                           </div>
 
-                          {/* Character & Word Counts */}
-                          <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', display: 'flex', gap: '8px' }}>
-                            <span>{boxOutput.length} characters</span>
-                            <span>•</span>
-                            <span>{boxOutput.trim().split(/\s+/).filter(Boolean).length} words</span>
-                          </div>
-
-                          {/* Editable Textarea so user can write/fix/paste format directly */}
+                          {/* Direct Clean Editable Reading Area (No Inner Box) */}
                           <textarea
                             value={boxOutput}
                             onChange={(e) => {
                               onUpdateBoxOutput?.(currentModalAIBox.id, e.target.value);
                             }}
                             placeholder="Enter or paste formatted real estate listing copy here..."
-                            rows={6}
+                            rows={8}
                             style={{
                               width: '100%',
-                              minHeight: '130px',
-                              maxHeight: '260px',
-                              padding: '0.5rem 0.625rem',
-                              borderRadius: '6px',
-                              backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
-                              border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                              fontSize: '0.75rem',
-                              lineHeight: 1.5,
-                              color: 'var(--text-primary)',
+                              minHeight: '180px',
+                              maxHeight: '360px',
+                              padding: '12px 14px',
+                              border: 'none',
+                              backgroundColor: 'transparent',
+                              fontSize: '0.8125rem',
+                              lineHeight: 1.65,
+                              letterSpacing: '-0.005em',
+                              fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif',
+                              color: isDark ? '#E6EDF3' : '#1E293B',
                               resize: 'vertical',
-                              fontFamily: 'inherit',
                               boxSizing: 'border-box',
                               outline: 'none',
                             }}
                           />
 
-                          {/* Continue Workflow Button (Prominent when node failed or paused) */}
-                          {onContinueWorkflow && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (!hasValidContent) {
-                                  alert('Please enter or generate formatted content before continuing.');
-                                  return;
-                                }
-                                onContinueWorkflow(currentModalAIBox.id);
-                              }}
-                              disabled={!hasValidContent || executionState?.isRunning}
+                          {/* Continue Workflow Button */}
+                          {onContinueWorkflow && isNodeFailed && (
+                            <div
                               style={{
-                                marginTop: '0.25rem',
-                                width: '100%',
-                                height: '34px',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                gap: '6px',
-                                borderRadius: '6px',
-                                border: 'none',
-                                backgroundColor: !hasValidContent
-                                  ? (isDark ? '#21262D' : '#E2E8F0')
-                                  : isNodeFailed
-                                  ? '#10B981'
-                                  : (isDark ? '#2563EB' : '#3B82F6'),
-                                color: !hasValidContent
-                                  ? 'var(--text-muted)'
-                                  : '#FFFFFF',
-                                fontSize: '0.75rem',
-                                fontWeight: 600,
-                                cursor: !hasValidContent || executionState?.isRunning ? 'not-allowed' : 'pointer',
-                                transition: 'all 0.15s ease',
-                                boxShadow: hasValidContent && isNodeFailed
-                                  ? '0 2px 8px rgba(16, 185, 129, 0.35)'
-                                  : 'none',
+                                padding: '8px 12px 12px 12px',
+                                borderTop: isDark
+                                  ? '1px solid rgba(255, 255, 255, 0.06)'
+                                  : '1px solid rgba(15, 23, 42, 0.06)',
                               }}
                             >
-                              <FiPlay size={12} style={{ fill: hasValidContent ? '#FFFFFF' : 'none' }} />
-                              <span>Continue Workflow from This Step</span>
-                            </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (!hasValidContent) {
+                                    alert('Please enter or generate formatted content before continuing.');
+                                    return;
+                                  }
+                                  onContinueWorkflow(currentModalAIBox.id);
+                                }}
+                                disabled={!hasValidContent || executionState?.isRunning}
+                                style={{
+                                  width: '100%',
+                                  height: '34px',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '6px',
+                                  borderRadius: '6px',
+                                  border: 'none',
+                                  backgroundColor: !hasValidContent
+                                    ? (isDark ? '#21262D' : '#E2E8F0')
+                                    : '#10B981',
+                                  color: !hasValidContent
+                                    ? 'var(--text-muted)'
+                                    : '#FFFFFF',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 600,
+                                  cursor: !hasValidContent || executionState?.isRunning ? 'not-allowed' : 'pointer',
+                                  transition: 'all 0.15s ease',
+                                }}
+                              >
+                                <FiPlay size={12} style={{ fill: hasValidContent ? '#FFFFFF' : 'none' }} />
+                                <span>Continue Workflow from This Step</span>
+                              </button>
+                            </div>
                           )}
                         </div>
                       );

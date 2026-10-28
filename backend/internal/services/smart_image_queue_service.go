@@ -487,6 +487,27 @@ func (s *SmartImageQueueService) CancelJob(jobID string) error {
 	return nil
 }
 
+// CancelAllActiveJobs cancels all pending/ready/processing jobs (optionally scoped to a propertyID).
+func (s *SmartImageQueueService) CancelAllActiveJobs(propertyID string) int64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	query := database.DB.Model(&models.ImageProcessingJob{}).Where("status IN ?", []models.ImageJobStatus{
+		models.ImgJobStatusPending,
+		models.ImgJobStatusReadyForUser,
+		models.ImgJobStatusProcessingLocal,
+		models.ImgJobStatusProcessingAPI,
+	})
+	if propertyID != "" {
+		query = query.Where("property_id = ?", propertyID)
+	}
+	res := query.Updates(map[string]interface{}{
+		"status":        models.ImgJobStatusCancelled,
+		"error_message": "Stopped by user",
+	})
+	return res.RowsAffected
+}
+
 func (s *SmartImageQueueService) GetQueue(propertyID string) ([]models.ImageProcessingJob, error) {
 	if propertyID == "" {
 		return []models.ImageProcessingJob{}, nil

@@ -8,6 +8,8 @@ import {
   FacebookWorkflowCanvas,
   DEFAULT_FB_WORKFLOW_CONFIG,
   loadAvailablePromptTemplates,
+  applyPersistedNodeEnabledToConfig,
+  stripLargeBase64FromWorkflowConfig,
   type FacebookWorkflowConfig,
   type FacebookWorkflowCanvasRef,
   type WorkflowExecutionState,
@@ -27,6 +29,7 @@ import { isWatermarkAIBox, isTextFormatAIBox, isN8NAIBox, isExternalBrowserAIBox
 import { runN8NWorkflow } from '../../services/n8nService';
 import { createBatchImageQueue, startImageQueue, focusBrowserTabGroup, openBrowserProfile, fetchTabGroups, waitForBrowserTabsReady, startAutomation, stopAutomation, getAutomationStatus, fetchImageQueue } from '../browser-processing/browserAutomationService';
 import { resolvePromptForBrowserNode, getPersistedPromptKey } from '../browser-processing/browserPromptUtils';
+import { getPersistedReferenceImage, loadPersistedReferenceImageAsync } from '../browser-processing/referenceImageStorage';
 import { getSavedCropFormats, formatImageWithCropFormat, type CropStudioFormat } from '../watermark/cropFormats';
 import { loadActiveWatermarkConfig } from '../autopost/watermarkStorage';
 import {
@@ -73,19 +76,34 @@ export const CreateWorkflowView: React.FC = () => {
     setHeaderCenterEl(document.getElementById('header-center-portal'));
     setHeaderActionEl(document.getElementById('header-action-portal'));
 
+    const applyPersistedEnabledToFormats = (list: WorkflowFormat[]): WorkflowFormat[] =>
+      list.map((f) =>
+        f && f.config ? { ...f, config: applyPersistedNodeEnabledToConfig(f.config) } : f
+      );
+
     // Sync latest workflow formats from backend API
     fetch('http://localhost:8085/api/workflow/config')
       .then((res) => res.json())
       .then((data) => {
         if (data && Array.isArray(data.workflow_formats) && data.workflow_formats.length > 0) {
-          setFormats(data.workflow_formats);
-          localStorage.setItem('estate_saved_workflow_formats_v2', JSON.stringify(data.workflow_formats));
+          const syncedFormats = applyPersistedEnabledToFormats(data.workflow_formats);
+          setFormats(syncedFormats);
+          try {
+            localStorage.setItem('estate_saved_workflow_formats_v2', JSON.stringify(syncedFormats));
+          } catch {
+            try {
+              const compact = syncedFormats.map((f) =>
+                f.config ? { ...f, config: stripLargeBase64FromWorkflowConfig(f.config) } : f
+              );
+              localStorage.setItem('estate_saved_workflow_formats_v2', JSON.stringify(compact));
+            } catch {}
+          }
           setEditingFormat((prev) => {
             const sp = new URLSearchParams(window.location.search);
             const urlId = sp.get('id') || sp.get('format');
             const targetId = urlId || prev?.id;
-            const found = data.workflow_formats.find((f: WorkflowFormat) => f.id === targetId);
-            return found || data.workflow_formats[0];
+            const found = syncedFormats.find((f: WorkflowFormat) => f.id === targetId);
+            return found || syncedFormats[0];
           });
         }
       })
@@ -96,11 +114,21 @@ export const CreateWorkflowView: React.FC = () => {
         .then((res) => res.json())
         .then((data) => {
           if (data && Array.isArray(data.workflow_formats) && data.workflow_formats.length > 0) {
-            setFormats(data.workflow_formats);
-            localStorage.setItem('estate_saved_workflow_formats_v2', JSON.stringify(data.workflow_formats));
+            const syncedFormats = applyPersistedEnabledToFormats(data.workflow_formats);
+            setFormats(syncedFormats);
+            try {
+              localStorage.setItem('estate_saved_workflow_formats_v2', JSON.stringify(syncedFormats));
+            } catch {
+              try {
+                const compact = syncedFormats.map((f) =>
+                  f.config ? { ...f, config: stripLargeBase64FromWorkflowConfig(f.config) } : f
+                );
+                localStorage.setItem('estate_saved_workflow_formats_v2', JSON.stringify(compact));
+              } catch {}
+            }
             setEditingFormat((prev) => {
               const targetId = prev?.id;
-              const found = data.workflow_formats.find((f: WorkflowFormat) => f.id === targetId);
+              const found = syncedFormats.find((f: WorkflowFormat) => f.id === targetId);
               return found || prev;
             });
           }
@@ -200,6 +228,52 @@ export const CreateWorkflowView: React.FC = () => {
   const [showLeaveConfirmModal, setShowLeaveConfirmModal] = useState<boolean>(false);
   const [pendingLeaveAction, setPendingLeaveAction] = useState<(() => void) | null>(null);
   const isCancelledRef = useRef<boolean>(false);
+  const runIdRef = useRef<number>(0);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  const isRunStopped = (myRunId?: number) => {
+    if (isCancelledRef.current) return true;
+    if (myRunId !== undefined && runIdRef.current !== myRunId) return true;
+    if (abortControllerRef.current?.signal.aborted) return true;
+    return false;
+  };
+
+  const cancellableDelay = (ms: number, myRunId?: number) =>
+    new Promise<void>((resolve) => {
+      if (isRunStopped(myRunId)) {
+        resolve();
+        return;
+      }
+      const sig = abortControllerRef.current?.signal;
+      const timer = setTimeout(() => {
+        resolve();
+      }, ms);
+      if (sig) {
+        sig.addEventListener(
+          'abort',
+          () => {
+            clearTimeout(timer);
+            resolve();
+          },
+          { once: true }
+        );
+      }
+    });
+
+  const safeSetExecutionState = (
+    myRunId: number,
+    updater:
+      | WorkflowExecutionState
+      | undefined
+      | ((prev: WorkflowExecutionState | undefined) => WorkflowExecutionState | undefined)
+  ) => {
+    if (isRunStopped(myRunId)) return;
+    setExecutionState((prev) => {
+      if (isRunStopped(myRunId)) return undefined;
+      return typeof updater === 'function' ? updater(prev) : updater;
+    });
+  };
+
   const workflowContextRef = useRef<{
     rawCaption: string;
     imageList: any[];
@@ -313,12 +387,18 @@ export const CreateWorkflowView: React.FC = () => {
 
   // Confirm leave while workflow is actively processing
   const handleConfirmLeave = () => {
+    runIdRef.current += 1;
     isCancelledRef.current = true;
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
     setIsRunningWorkflow(false);
     (window as any).__isWorkflowProcessing = false;
     (window as any).__workflowConfirmLeave = null;
     setExecutionState(undefined);
     setShowLeaveConfirmModal(false);
+    stopAutomation().catch((e) => console.warn('Failed to stop automation:', e));
 
     if (pendingLeaveAction) {
       const action = pendingLeaveAction;
@@ -337,12 +417,17 @@ export const CreateWorkflowView: React.FC = () => {
 
   // Stop workflow execution immediately on demand
   const handleStopWorkflow = () => {
+    runIdRef.current += 1;
     isCancelledRef.current = true;
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
     setIsRunningWorkflow(false);
     (window as any).__isWorkflowProcessing = false;
     (window as any).__workflowConfirmLeave = null;
     setExecutionState(undefined);
-    // Halt external browser processing and queue dispatch immediately
+    // Halt external browser processing, companion, OpenClaw extractor, and queue dispatch immediately
     stopAutomation().catch((e) => console.warn('Failed to stop automation:', e));
   };
 
@@ -366,7 +451,12 @@ export const CreateWorkflowView: React.FC = () => {
   // Restore sidebar and cleanup if component unmounts
   useEffect(() => {
     return () => {
+      runIdRef.current += 1;
       isCancelledRef.current = true;
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
       (window as any).__isWorkflowProcessing = false;
       (window as any).__workflowConfirmLeave = null;
       window.dispatchEvent(new CustomEvent('ea_set_canvas_mode', { detail: { active: false } }));
@@ -492,13 +582,11 @@ export const CreateWorkflowView: React.FC = () => {
       updatedAt: Date.now(),
     };
     setEditingFormat(updated);
-    if (autoSave) {
-      setFormats((prevFormats) => {
-        const updatedList = prevFormats.map((f) => (f.id === editingFormat.id ? updated : f));
-        saveWorkflowFormatsList(updatedList);
-        return updatedList;
-      });
-    }
+    setFormats((prevFormats) => {
+      const updatedList = prevFormats.map((f) => (f.id === editingFormat.id ? updated : f));
+      saveWorkflowFormatsList(updatedList);
+      return updatedList;
+    });
   };
 
   // Undo last canvas change
@@ -550,6 +638,8 @@ export const CreateWorkflowView: React.FC = () => {
     generatedOutputsMap,
     primaryCopy: initialPrimaryCopy,
     targetUrl,
+    myRunId,
+    signal,
   }: {
     cfg: FacebookWorkflowConfig;
     rawCaption: string;
@@ -560,24 +650,30 @@ export const CreateWorkflowView: React.FC = () => {
     generatedOutputsMap: Record<string, string>;
     primaryCopy: string;
     targetUrl: string;
+    myRunId?: number;
+    signal?: AbortSignal;
   }) => {
-    const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+    const activeRunId = myRunId ?? runIdRef.current;
+    const delay = (ms: number) => cancellableDelay(ms, activeRunId);
     let primaryCopy = initialPrimaryCopy;
+
+    if (isRunStopped(activeRunId)) return;
 
     // Phase 4: Combine Boxes (Merge Parallel Branches)
     const activeCombineBoxes = (cfg.combineBoxes || []).filter((cb) => cb && cb.enabled !== false);
     const combinedOutputsMap: Record<string, { text: string; images: string[] }> = {};
 
     for (const cb of activeCombineBoxes) {
-      if (isCancelledRef.current) return;
+      if (isRunStopped(activeRunId)) return;
 
-      setExecutionState((prev) => ({
+      safeSetExecutionState(activeRunId, (prev) => ({
         ...prev!,
         activeNodeIds: [cb.id],
         currentStepMessage: `⚡ Merging content & formatted images in [${cb.title || 'Combine Box'}]...`,
         stepIndex: 5,
       }));
       await delay(500);
+      if (isRunStopped(activeRunId)) return;
 
       const inConns = (cfg.connections || []).filter((c) => c.toNodeId === cb.id);
       const inFromIds = inConns.map((c) => c.fromNodeId);
@@ -603,32 +699,36 @@ export const CreateWorkflowView: React.FC = () => {
       primaryCopy = cbText;
       setAiGeneratedCopy(cbText);
 
-      setExecutionState((prev) => ({
+      safeSetExecutionState(activeRunId, (prev) => ({
         ...prev!,
         completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), cb.id])),
         activeNodeIds: [],
         currentStepMessage: `✓ [${cb.title || 'Combine Box'}] merged ${inConns.length || 2} inputs successfully!`,
       }));
       await delay(300);
+      if (isRunStopped(activeRunId)) return;
     }
 
     // Phase 5: Post Output (Compile Assets)
     if (cfg.outputNode?.enabled !== false) {
-      setExecutionState((prev) => ({
+      if (isRunStopped(activeRunId)) return;
+      safeSetExecutionState(activeRunId, (prev) => ({
         ...prev!,
         activeNodeIds: ['output'],
         currentStepMessage: '⚡ Compiling Final Content & Media package for dispatch...',
         stepIndex: 5,
       }));
       await delay(500);
+      if (isRunStopped(activeRunId)) return;
 
-      setExecutionState((prev) => ({
+      safeSetExecutionState(activeRunId, (prev) => ({
         ...prev!,
         completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), 'output'])),
         activeNodeIds: [],
         currentStepMessage: '✓ Final Content & Images compiled successfully!',
       }));
       await delay(300);
+      if (isRunStopped(activeRunId)) return;
     }
 
     // Phase 6: Destinations (Direct Social Channels & Remaining Posts Database)
@@ -660,13 +760,16 @@ export const CreateWorkflowView: React.FC = () => {
       (d) => (d.storeInDatabase ?? (d.targetMode !== 'social_media'))
     );
 
-    setExecutionState((prev) => ({
+    if (isRunStopped(activeRunId)) return;
+
+    safeSetExecutionState(activeRunId, (prev) => ({
       ...prev!,
       activeNodeIds: destIds,
       currentStepMessage: '🚀 Delivering to destinations in background (Social Post & Remaining Posts Database)...',
       stepIndex: 6,
     }));
     await delay(350);
+    if (isRunStopped(activeRunId)) return;
 
     let anyFacebookPosted = false;
     let lastFbPostId = '';
@@ -674,7 +777,7 @@ export const CreateWorkflowView: React.FC = () => {
 
     // 1. Process Direct Social Media Posting
     for (const socialDest of socialDestinations) {
-      if (isCancelledRef.current) return;
+      if (isRunStopped(activeRunId)) return;
 
       const targetPageId = socialDest.accountId || socialDest.selectedPageId || socialDest.selectedPageIds?.[0] || '1546086342286604';
       const destTitle = socialDest.accountName || socialDest.title || 'Facebook Page';
@@ -685,13 +788,14 @@ export const CreateWorkflowView: React.FC = () => {
         (c) => c.fromNodeId === socialDest.id && allDestinations.some((d) => d.id === c.toNodeId)
       );
       if (isHubWithChildren) {
-        setExecutionState((prev) => ({
+        safeSetExecutionState(activeRunId, (prev) => ({
           ...prev!,
           completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), socialDest.id])),
           activeNodeIds: [],
           currentStepMessage: `✓ [${destTitle}] routed to connected Facebook Page.`,
         }));
         await delay(200);
+        if (isRunStopped(activeRunId)) return;
         continue;
       }
 
@@ -700,7 +804,7 @@ export const CreateWorkflowView: React.FC = () => {
         ? new Date((socialDest as any).scheduledAt).toISOString()
         : new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
 
-      setExecutionState((prev) => ({
+      safeSetExecutionState(activeRunId, (prev) => ({
         ...prev!,
         activeNodeIds: [socialDest.id],
         currentStepMessage: isSchedule
@@ -761,9 +865,12 @@ export const CreateWorkflowView: React.FC = () => {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(schedPayload),
+            signal,
           });
+          if (isRunStopped(activeRunId)) return;
 
           const data = await res.json().catch(() => ({}));
+          if (isRunStopped(activeRunId)) return;
           if (res.ok && data.status === 'success') {
             publishedSuccess = true;
             anyFacebookPosted = true;
@@ -826,9 +933,12 @@ export const CreateWorkflowView: React.FC = () => {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(fbPayload),
+            signal,
           });
+          if (isRunStopped(activeRunId)) return;
 
           const data = await res.json().catch(() => ({}));
+          if (isRunStopped(activeRunId)) return;
           if (res.ok && data.status === 'success') {
             publishedSuccess = true;
             anyFacebookPosted = true;
@@ -879,11 +989,14 @@ export const CreateWorkflowView: React.FC = () => {
           }
         }
       } catch (err: any) {
+        if (isRunStopped(activeRunId)) return;
         errorMsg = err.message || 'Network error publishing to Facebook';
       }
 
+      if (isRunStopped(activeRunId)) return;
+
       if (!publishedSuccess) {
-        setExecutionState((prev) => ({
+        safeSetExecutionState(activeRunId, (prev) => ({
           ...prev!,
           isRunning: false,
           hasError: true,
@@ -894,7 +1007,7 @@ export const CreateWorkflowView: React.FC = () => {
         return;
       }
 
-      setExecutionState((prev) => ({
+      safeSetExecutionState(activeRunId, (prev) => ({
         ...prev!,
         completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), socialDest.id])),
         activeNodeIds: [],
@@ -904,13 +1017,14 @@ export const CreateWorkflowView: React.FC = () => {
       }));
 
       await delay(400);
+      if (isRunStopped(activeRunId)) return;
     }
 
     // 2. Process Remaining Posts Database Storage
     for (const dbDest of dbDestinations) {
-      if (isCancelledRef.current) return;
+      if (isRunStopped(activeRunId)) return;
 
-      setExecutionState((prev) => ({
+      safeSetExecutionState(activeRunId, (prev) => ({
         ...prev!,
         activeNodeIds: [dbDest.id],
         currentStepMessage: `💾 Storing in [${dbDest.title || 'Remaining Posts Database'}]...`,
@@ -978,7 +1092,7 @@ export const CreateWorkflowView: React.FC = () => {
           autoProcessed: true,
         });
 
-        setExecutionState((prev) => ({
+        safeSetExecutionState(activeRunId, (prev) => ({
           ...prev!,
           completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), dbDest.id])),
           activeNodeIds: [],
@@ -989,24 +1103,22 @@ export const CreateWorkflowView: React.FC = () => {
       }
 
       await delay(300);
+      if (isRunStopped(activeRunId)) return;
     }
 
-    if (isCancelledRef.current) return;
+    if (isRunStopped(activeRunId)) return;
 
-    // Final Completion
-    setExecutionState({
+    // Final Completion (only mark nodes that were actually enabled and executed as completed)
+    safeSetExecutionState(activeRunId, (prev) => ({
+      ...prev!,
       isRunning: false,
       isComplete: true,
       hasError: false,
       activeNodeIds: [],
       completedNodeIds: Array.from(
         new Set([
-          'trigger',
-          'get-content',
-          'get-images',
-          ...(cfg.aiBoxes || []).map((b) => b.id),
+          ...(prev?.completedNodeIds || ['trigger']),
           ...activeCombineBoxes.map((cb) => cb.id),
-          'output',
           ...destIds,
         ])
       ),
@@ -1015,837 +1127,1075 @@ export const CreateWorkflowView: React.FC = () => {
         : `✓ Workflow completed! "${projName || 'Listing'}" delivered to all destinations.`,
       stepIndex: 6,
       totalSteps: 6,
-    });
+    }));
   };
 
   // Run Workflow directly on this Canvas screen smoothly
   const executeCanvasWorkflow = async (targetUrl: string) => {
     if (!editingFormat) return;
     const cfg = editingFormat.config;
+
+    // Cancel any previous run and start a fresh run ID + AbortController
+    runIdRef.current += 1;
+    const myRunId = runIdRef.current;
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    const signal = controller.signal;
+
     setIsRunningWorkflow(true);
     isCancelledRef.current = false;
     (window as any).__isWorkflowProcessing = true;
 
-    const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+    const delay = (ms: number) => cancellableDelay(ms, myRunId);
 
     try {
       // Reset previous run outputs
-    setExtractedContent('');
-    setExtractedImages([]);
-    setWatermarkedPhotos({});
-    setEnhancedPhotos({});
-    setAiGeneratedOutputs({});
-    setAiGeneratedCopy('');
-    setProjectName('');
+      setExtractedContent('');
+      setExtractedImages([]);
+      setWatermarkedPhotos({});
+      setEnhancedPhotos({});
+      setAiGeneratedOutputs({});
+      setAiGeneratedCopy('');
+      setProjectName('');
 
-    const platform = checkSocialPlatform(targetUrl);
-    if (platform === 'unknown') {
-      setExecutionState({
-        isRunning: false,
+      const platform = checkSocialPlatform(targetUrl);
+      if (platform === 'unknown') {
+        safeSetExecutionState(myRunId, {
+          isRunning: false,
+          isComplete: false,
+          hasError: true,
+          activeNodeIds: [],
+          completedNodeIds: [],
+          failedNodeIds: ['trigger'],
+          currentStepMessage: '❌ Invalid URL. Please provide a valid Facebook or TikTok post link.',
+          stepIndex: 1,
+          totalSteps: 6,
+        });
+        setIsRunningWorkflow(false);
+        (window as any).__isWorkflowProcessing = false;
+        return;
+      }
+      const platformLabel = platform === 'tiktok' ? 'TikTok' : 'Facebook';
+
+      const contentEnabled = cfg.getContent?.enabled !== false;
+      const imagesEnabled = cfg.getImages?.enabled !== false;
+
+      // Phase 1: Trigger (Extract Link)
+      safeSetExecutionState(myRunId, {
+        isRunning: true,
         isComplete: false,
-        hasError: true,
-        activeNodeIds: [],
+        hasError: false,
+        activeNodeIds: ['trigger'],
         completedNodeIds: [],
-        failedNodeIds: ['trigger'],
-        currentStepMessage: '❌ Invalid URL. Please provide a valid Facebook or TikTok post link.',
+        failedNodeIds: [],
+        currentStepMessage: `Resolving ${platformLabel} post link and isolating listing...`,
         stepIndex: 1,
         totalSteps: 6,
       });
-      setIsRunningWorkflow(false);
-      (window as any).__isWorkflowProcessing = false;
-      return;
-    }
-    const platformLabel = platform === 'tiktok' ? 'TikTok' : 'Facebook';
 
-    // Phase 1: Trigger (Extract Link)
-    setExecutionState({
-      isRunning: true,
-      isComplete: false,
-      hasError: false,
-      activeNodeIds: ['trigger'],
-      completedNodeIds: [],
-      failedNodeIds: [],
-      currentStepMessage: `Resolving ${platformLabel} post link and isolating listing...`,
-      stepIndex: 1,
-      totalSteps: 6,
-    });
+      let rawCaption = '';
+      let imageList: any[] = [];
+      let propData: any = null;
+      let projName = '';
+      let extractFinished = false;
+      let extractFailed = false;
+      const extractStartTime = Date.now();
 
-    let rawCaption = '';
-    let imageList: any[] = [];
-    let propData: any = null;
-    let projName = '';
-
-    try {
-      const extractResp = await fetch('http://localhost:8085/api/facebook-import/extract', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          url: targetUrl,
-          preferred_method: 'browser',
-          max_images: 25,
-        }),
-      });
-
-      if (extractResp.ok) {
-        const extractData = await extractResp.json();
-        if (extractData.success && extractData.result) {
-          const res = extractData.result;
-          rawCaption = res.caption?.original || '';
-          imageList = (res.images || []).map((img: any, idx: number) => ({
-            index: idx,
-            facebook_photo_id: img.facebook_photo_id,
-            source_url: img.source_url,
-            stored_url: img.stored_url,
-            status: img.status || 'verified',
-            width: img.width,
-            height: img.height,
-          }));
-          propData = res.property || null;
-          projName = propData?.project_name || '';
-        }
-      }
-    } catch (err) {
-      console.warn('Backend live extract call threw:', err);
-    }
-
-    // If extraction produced no content (neither caption nor images), stop with an error
-    if ((!rawCaption || rawCaption.trim().length === 0) && imageList.length === 0) {
-      setExecutionState((prev) => ({
-        ...prev!,
-        isRunning: false,
-        hasError: true,
-        activeNodeIds: [],
-        failedNodeIds: ['trigger'],
-        currentStepMessage: '❌ Could not extract content or images from the provided link. Please check the URL and try again.',
-      }));
-      setIsRunningWorkflow(false);
-      (window as any).__isWorkflowProcessing = false;
-      return;
-    }
-
-    if (!rawCaption || rawCaption.trim().length === 0) {
-      rawCaption = projName || 'Property listing media extracted';
-    }
-
-    setExtractedContent(rawCaption);
-    setExtractedImages(imageList);
-    setProjectName(projName);
-    setPropertyData(propData);
-
-    // Save into workflow context for downstream resume capability
-    workflowContextRef.current = {
-      rawCaption,
-      imageList,
-      propData,
-      projName,
-      localWatermarkedMap: {},
-      generatedOutputsMap: {},
-      primaryCopy: '',
-      targetUrl,
-    };
-
-    setExecutionState((prev) => ({
-      ...prev!,
-      completedNodeIds: ['trigger'],
-      activeNodeIds: ['trigger'],
-      currentStepMessage: `✓ Facebook link resolved (${imageList.length} photos, ${rawCaption.length} chars)`,
-      stepIndex: 2,
-    }));
-    await delay(500);
-
-    // Phase 2: Ingestion Nodes (Get Content & Get Images)
-    const contentEnabled = cfg.getContent?.enabled !== false;
-    const imagesEnabled = cfg.getImages?.enabled !== false;
-    const activeIngestion = [
-      ...(contentEnabled ? ['get-content'] : []),
-      ...(imagesEnabled ? ['get-images'] : []),
-    ];
-
-    setExecutionState((prev) => ({
-      ...prev!,
-      activeNodeIds: activeIngestion,
-      currentStepMessage: 'Extracting content attributes and downloading photo gallery...',
-      stepIndex: 3,
-    }));
-    await delay(700);
-
-    setExecutionState((prev) => ({
-      ...prev!,
-      completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), ...activeIngestion])),
-      activeNodeIds: [],
-      currentStepMessage: `✓ Content and ${imageList.length} photos parsed and ready for processing`,
-    }));
-    await delay(400);
-
-    // Phase 3: AI Copywriting & Image Format Processing
-    const aiBoxes = cfg.aiBoxes || [];
-    const generatedOutputsMap: Record<string, string> = {};
-    const localWatermarkedMap: Record<number, string> = {};
-    let primaryCopy = '';
-
-    for (const box of aiBoxes) {
-      // Chrome Profile and Chrome Tab Group nodes are subordinate nodes managed by External Browser
-      if (isChromeProfileAIBox(box) || isChromeTabGroupAIBox(box)) {
-        continue;
-      }
-
-      const isWatermark = isWatermarkAIBox(box);
-      const isTextFormat = isTextFormatAIBox(box);
-      const isN8N = isN8NAIBox(box);
-      const isExternalBrowser = isExternalBrowserAIBox(box);
-      let connectedProfileBox: any = null;
-      let tabGroupNodeId: string = box.id;
-
-      // Check if external browser and its subordinate tab group are enabled
-      let connectedTabGroupBox: any = null;
-      if (isExternalBrowser) {
-        const areBoxesConnected = (idA: string, idB: string) => {
-          return (cfg.connections || []).some(
-            (c: any) => (c.fromNodeId === idA && c.toNodeId === idB) || (c.fromNodeId === idB && c.toNodeId === idA)
+      // Helper to update active/completed nodes for a branch without overwriting parallel branches
+      const updateBranchNodes = (
+        removeActiveIds: string[],
+        addActiveIds: string[],
+        addCompletedIds: string[],
+        message?: string,
+        extra?: Partial<WorkflowExecutionState>
+      ) => {
+        safeSetExecutionState(myRunId, (prev) => {
+          const nextCompleted = Array.from(
+            new Set([...(prev?.completedNodeIds || []), ...addCompletedIds])
           );
-        };
+          const nextActive = Array.from(
+            new Set([
+              ...(prev?.activeNodeIds || []).filter(
+                (id) => !removeActiveIds.includes(id) && ! nextCompleted.includes(id)
+              ),
+              ...addActiveIds,
+            ])
+          );
+          return {
+            ...prev!,
+            completedNodeIds: nextCompleted,
+            activeNodeIds: nextActive,
+            ...(message ? { currentStepMessage: message } : {}),
+            ...(extra || {}),
+          };
+        });
+      };
 
-        connectedProfileBox = (cfg.aiBoxes || []).find(
-          (b: any) => areBoxesConnected(box.id, b.id) && (isChromeProfileAIBox(b) || (b as any).processType === 'chrome_profile')
-        ) || (isChromeProfileAIBox(box) ? box : null) || (cfg.aiBoxes || []).find(
-          (b: any) => (isChromeProfileAIBox(b) || (b as any).processType === 'chrome_profile') && b.enabled !== false
-        );
+      // Initialize workflow context so parallel branches can populate outputs as they finish
+      workflowContextRef.current = {
+        rawCaption: '',
+        imageList: [],
+        propData: null,
+        projName: '',
+        localWatermarkedMap: {},
+        generatedOutputsMap: {},
+        primaryCopy: '',
+        targetUrl,
+      };
 
-        connectedTabGroupBox = (cfg.aiBoxes || []).find(
-          (b: any) =>
-            (areBoxesConnected(box.id, b.id) || (connectedProfileBox && areBoxesConnected(connectedProfileBox.id, b.id))) &&
-            (isChromeTabGroupAIBox(b) || (b as any).processType === 'chrome_tab_group')
-        ) || (isChromeTabGroupAIBox(box) ? box : null) || (cfg.aiBoxes || []).find(
-          (b: any) => (isChromeTabGroupAIBox(b) || (b as any).processType === 'chrome_tab_group')
-        );
-      }
+      const generatedOutputsMap: Record<string, string> = {};
+      const localWatermarkedMap: Record<number, string> = {};
+      let primaryCopy = '';
+      let branchFatalError = false;
 
-      const isBoxDirectlyEnabled = box.enabled !== false;
-      const isTabGroupEnabled = connectedTabGroupBox ? connectedTabGroupBox.enabled !== false : true;
-      const isStepActive = isExternalBrowser
-        ? (isBoxDirectlyEnabled && isTabGroupEnabled)
-        : isBoxDirectlyEnabled;
-
-      if (!isStepActive) {
-        // Step is disabled: bypass execution and forward inputs downstream!
-        const skippedIds = [
-          box.id,
-          ...(isExternalBrowser ? [
-            ...(connectedTabGroupBox ? [connectedTabGroupBox.id] : []),
-            ...(connectedProfileBox ? [connectedProfileBox.id] : []),
-          ] : []),
-        ];
-
-        setExecutionState((prev) => ({
-          ...prev!,
-          activeNodeIds: skippedIds,
-          currentStepMessage: `⏭️ [${box.title || 'Step'}] is disabled — bypassed during run (forwarding inputs)...`,
-          stepIndex: 4,
-        }));
-        await delay(450);
-
-        setExecutionState((prev) => ({
-          ...prev!,
-          completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), ...skippedIds])),
-          activeNodeIds: [],
-          currentStepMessage: `✓ [${box.title || 'Step'}] bypassed (inputs ready for next step)`,
-        }));
-        await delay(250);
-        continue;
-      }
-
-      setExecutionState((prev) => ({
-        ...prev!,
-        activeNodeIds: [box.id],
-        currentStepMessage: isWatermark
-          ? `✂️ Applying photo crop & frame preset [${box.title || 'Format'}]...`
-          : isExternalBrowser
-          ? `🌐 Coordinating External Browser & Image Queue [${box.title || 'External Browser'}]...`
-          : isTextFormat
-          ? `📝 Formatting AI copy with [${box.title || 'Format Preset'}]...`
-          : isN8N
-          ? `🔄 Executing n8n Automation Engine [${box.title || 'n8n Workflow'}]...`
-          : `⚡ Generating AI copy with [${box.title || 'AI Model'}] (${box.model || 'Gemini 2.5 Flash'})...`,
-        stepIndex: 4,
-      }));
-
-      if (isWatermark) {
-        const savedFormats = getSavedCropFormats();
-        const baseFormat =
-          savedFormats.find((f) => f.id === box.cropFormatId || f.id === box.templateId || f.id === box.watermarkPresetId) ||
-          savedFormats.find((f) => box.templateText && f.name.toLowerCase() === box.templateText.toLowerCase()) ||
-          savedFormats.find((f) => box.title && f.name && box.title.toLowerCase().includes(f.name.toLowerCase())) ||
-          ((box.title?.toLowerCase().includes('fb') || box.templateText?.toLowerCase().includes('fb'))
-            ? savedFormats.find((f) => f.name.toLowerCase().includes('fb'))
-            : null) ||
-          savedFormats[0];
-
-        const activeWk = typeof window !== 'undefined' ? loadActiveWatermarkConfig() : null;
-        const targetFormat: CropStudioFormat = {
-          ...baseFormat,
-          targetWidth: box.targetWidth || baseFormat?.targetWidth || 1080,
-          targetHeight: box.targetHeight || baseFormat?.targetHeight || 1350,
-          aspect: box.aspect || baseFormat?.aspect || '4:5',
-          fitMode: (box.fitMode || baseFormat?.fitMode || 'cover') as any,
-          focusPosition: (box.focusPosition || baseFormat?.focusPosition || 'center') as any,
-          cropZoom: box.cropZoom || baseFormat?.cropZoom || 1,
-          watermarkConfig:
-            box.watermarkConfig ||
-            baseFormat?.watermarkConfig ||
-            (activeWk?.config?.enabled ? activeWk.config : undefined),
-        };
-
-        for (let i = 0; i < imageList.length; i++) {
-          const img = imageList[i];
-          const rawUrl = img.stored_url
-            ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
-            : img.source_url;
-          try {
-            const formattedDataUrl = await formatImageWithCropFormat(rawUrl, targetFormat);
-            localWatermarkedMap[img.index] = formattedDataUrl;
-          } catch (err) {
-            console.warn('Failed to format image with crop format', err);
-            localWatermarkedMap[img.index] = rawUrl;
-          }
-        }
-        setWatermarkedPhotos((prev) => ({ ...prev, ...localWatermarkedMap }));
-        setEnhancedPhotos((prev) => ({ ...prev, ...localWatermarkedMap }));
-        workflowContextRef.current.localWatermarkedMap = { ...workflowContextRef.current.localWatermarkedMap, ...localWatermarkedMap };
-        await delay(400);
-      } else if (isN8N) {
-        // Resolve upstream text / property for this n8n automation node
-        const inConns = (cfg.connections || []).filter((c) => c.toNodeId === box.id);
-        const upstreamBoxId = inConns[0]?.fromNodeId;
-        const upstreamText =
-          (upstreamBoxId && generatedOutputsMap[upstreamBoxId]) ||
-          (upstreamBoxId === 'get-content' ? rawCaption : '') ||
-          primaryCopy ||
-          rawCaption;
-
-        const webhookPath = (box as any).n8nWebhookPath || 'property-content-processing';
-        const workflowId = (box as any).n8nWorkflowId || 'Dtjq2OPmO1SqiXm4';
-        let n8nCopyText = '';
-
+      // Start full extraction request in background (returns both caption + downloaded images)
+      const extractFetchPromise = (async () => {
         try {
-          const runRes = await runN8NWorkflow(workflowId, webhookPath, {
-            execution_id: `corr-${Date.now()}`,
-            source: 'BoltHavenProperty',
-            event: 'property.process',
-            property: {
-              id: (propData as any)?.id || 'listing-01',
-              project_name: projName || (propData as any)?.project_name || 'Featured Property Listing',
-              bedrooms: (propData as any)?.bedrooms || 1,
-              area_sqm: (propData as any)?.area_sqm || (propData as any)?.sizeSqm || 35,
-              monthly_rent_thb: (propData as any)?.monthly_rent_thb || (propData as any)?.rentPrice || 35000,
-              caption: upstreamText || rawCaption,
-              images: imageList.map((img) => img.stored_url || img.source_url),
-            },
+          const extractResp = await fetch('http://localhost:8085/api/facebook-import/extract', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              url: targetUrl,
+              preferred_method: 'browser',
+              max_images: 25,
+            }),
+            signal,
           });
 
-          const respObj = runRes.webhook_response as Record<string, any>;
-          if (respObj) {
-            n8nCopyText = respObj.formatted_summary || respObj.summary || (typeof respObj === 'string' ? respObj : JSON.stringify(respObj, null, 2));
+          if (isRunStopped(myRunId)) return null;
+
+          if (extractResp.ok) {
+            const extractData = await extractResp.json();
+            if (isRunStopped(myRunId)) return null;
+            if (extractData.success && extractData.result) {
+              const res = extractData.result;
+              if (res.caption?.original) {
+                rawCaption = res.caption.original;
+              }
+              imageList = (res.images || []).map((img: any, idx: number) => ({
+                index: idx,
+                facebook_photo_id: img.facebook_photo_id,
+                source_url: img.source_url,
+                stored_url: img.stored_url,
+                status: img.status || 'verified',
+                width: img.width,
+                height: img.height,
+              }));
+              propData = res.property || null;
+              projName = propData?.project_name || '';
+              setProjectName(projName);
+              setPropertyData(propData);
+              workflowContextRef.current.propData = propData;
+              workflowContextRef.current.projName = projName;
+              workflowContextRef.current.imageList = imageList;
+              if (rawCaption) {
+                workflowContextRef.current.rawCaption = rawCaption;
+              }
+              return res;
+            }
           }
-        } catch (err: any) {
-          console.warn('n8n automation step error:', err);
-          if (!(box as any).n8nContinueOnFailure) {
-            setExecutionState((prev) => ({
+          extractFailed = true;
+          return null;
+        } catch (err) {
+          if (!isRunStopped(myRunId)) {
+            console.warn('Backend live extract call threw:', err);
+          }
+          extractFailed = true;
+          return null;
+        } finally {
+          extractFinished = true;
+        }
+      })();
+
+      // Step 1: Brief Trigger link resolution before fanning out to Get Content & Get Images in parallel
+      await delay(1100);
+      if (isRunStopped(myRunId)) return;
+
+      const initialParallelBranches = [
+        ...(contentEnabled ? ['get-content'] : []),
+        ...(imagesEnabled ? ['get-images'] : []),
+      ];
+      updateBranchNodes(
+        ['trigger'],
+        initialParallelBranches,
+        ['trigger'],
+        contentEnabled && imagesEnabled
+          ? 'Extracting post content & downloading high-resolution photos in parallel...'
+          : contentEnabled
+          ? 'Extracting post content, description & property attributes...'
+          : 'Extracting & downloading high-resolution property photos...',
+        { stepIndex: 2 }
+      );
+
+      // Helper to resolve caption as soon as browser_server.js extracts postInfo.caption (before image gallery finishes)
+      const waitForCaptionReady = async (): Promise<string> => {
+        while (!extractFinished && !isRunStopped(myRunId)) {
+          try {
+            const progResp = await fetch('http://localhost:9223/facebook-extract-progress', { signal });
+            if (progResp.ok) {
+              const prog = await progResp.json();
+              if (
+                prog &&
+                (prog.phase === 'caption_ready' || prog.phase === 'completed') &&
+                prog.updatedAt >= extractStartTime - 2000 &&
+                prog.caption &&
+                prog.caption.trim().length > 0
+              ) {
+                rawCaption = prog.caption;
+                workflowContextRef.current.rawCaption = rawCaption;
+                return rawCaption;
+              }
+            }
+          } catch {}
+          await delay(450);
+        }
+        await extractFetchPromise;
+        return rawCaption;
+      };
+
+      // Partition AI boxes into Content Branch vs Images Branch so they execute in parallel
+      const topLevelAiBoxes = (cfg.aiBoxes || []).filter(
+        (box) => !isChromeProfileAIBox(box) && !isChromeTabGroupAIBox(box)
+      );
+
+      const isImageBranchBox = (box: any): boolean => {
+        if (
+          isWatermarkAIBox(box) ||
+          isExternalBrowserAIBox(box) ||
+          box.processType === 'image_enhance' ||
+          box.processType === 'image_upscale' ||
+          box.provider === 'runware_ai'
+        ) {
+          return true;
+        }
+        const inConns = (cfg.connections || []).filter((c) => c.toNodeId === box.id);
+        return inConns.some((c) => c.fromNodeId === 'get-images');
+      };
+
+      const contentBranchBoxes = topLevelAiBoxes.filter((b) => !isImageBranchBox(b));
+      const imageBranchBoxes = topLevelAiBoxes.filter((b) => isImageBranchBox(b));
+
+      // Execute a single AI / Automation / Image box (safe for concurrent parallel branch execution)
+      const executeSingleAIBox = async (box: any): Promise<boolean> => {
+        if (isRunStopped(myRunId) || branchFatalError) return false;
+
+        const isWatermark = isWatermarkAIBox(box);
+        const isTextFormat = isTextFormatAIBox(box);
+        const isN8N = isN8NAIBox(box);
+        const isExternalBrowser = isExternalBrowserAIBox(box);
+        let connectedProfileBox: any = null;
+        let tabGroupNodeId: string = box.id;
+
+        // Check if external browser and its subordinate tab group are enabled
+        let connectedTabGroupBox: any = null;
+        if (isExternalBrowser) {
+          const areBoxesConnected = (idA: string, idB: string) => {
+            return (cfg.connections || []).some(
+              (c: any) => (c.fromNodeId === idA && c.toNodeId === idB) || (c.fromNodeId === idB && c.toNodeId === idA)
+            );
+          };
+
+          connectedProfileBox = (cfg.aiBoxes || []).find(
+            (b: any) => areBoxesConnected(box.id, b.id) && (isChromeProfileAIBox(b) || (b as any).processType === 'chrome_profile')
+          ) || (isChromeProfileAIBox(box) ? box : null) || (cfg.aiBoxes || []).find(
+            (b: any) => (isChromeProfileAIBox(b) || (b as any).processType === 'chrome_profile') && b.enabled !== false
+          );
+
+          const candidateTabGroups = (cfg.aiBoxes || []).filter(
+            (b: any) =>
+              (areBoxesConnected(box.id, b.id) || (connectedProfileBox && areBoxesConnected(connectedProfileBox.id, b.id))) &&
+              (isChromeTabGroupAIBox(b) || (b as any).processType === 'chrome_tab_group')
+          );
+
+          connectedTabGroupBox =
+            candidateTabGroups.find((b: any) => b.enabled !== false) ||
+            candidateTabGroups[0] ||
+            (isChromeTabGroupAIBox(box) ? box : null) ||
+            (cfg.aiBoxes || []).find(
+              (b: any) => (isChromeTabGroupAIBox(b) || (b as any).processType === 'chrome_tab_group') && b.enabled !== false
+            ) ||
+            (cfg.aiBoxes || []).find(
+              (b: any) => isChromeTabGroupAIBox(b) || (b as any).processType === 'chrome_tab_group'
+            );
+        }
+
+        const isBoxDirectlyEnabled = box.enabled !== false;
+        const isProfileEnabled = connectedProfileBox ? connectedProfileBox.enabled !== false : true;
+        const isTabGroupEnabled = connectedTabGroupBox ? connectedTabGroupBox.enabled !== false : true;
+        const isStepActive = isExternalBrowser
+          ? (isBoxDirectlyEnabled && isProfileEnabled && isTabGroupEnabled)
+          : isBoxDirectlyEnabled;
+
+        if (!isStepActive) {
+          // Step is disabled: skip completely without showing loading or done badges
+          return true;
+        }
+
+        updateBranchNodes(
+          [],
+          [box.id],
+          [],
+          isWatermark
+            ? `✂️ Applying photo crop & frame preset [${box.title || 'Format'}]...`
+            : isExternalBrowser
+            ? `🌐 Coordinating External Browser & Image Queue [${box.title || 'External Browser'}]...`
+            : isTextFormat
+            ? `📝 Formatting AI copy with [${box.title || 'Format Preset'}]...`
+            : isN8N
+            ? `🔄 Executing n8n Automation Engine [${box.title || 'n8n Workflow'}]...`
+            : `⚡ Generating AI copy with [${box.title || 'AI Model'}] (${box.model || 'Gemini 2.5 Flash'})...`,
+          { stepIndex: 4 }
+        );
+
+        if (isWatermark) {
+          const savedFormats = getSavedCropFormats();
+          const baseFormat =
+            savedFormats.find((f) => f.id === box.cropFormatId || f.id === box.templateId || f.id === box.watermarkPresetId) ||
+            savedFormats.find((f) => box.templateText && f.name.toLowerCase() === box.templateText.toLowerCase()) ||
+            savedFormats.find((f) => box.title && f.name && box.title.toLowerCase().includes(f.name.toLowerCase())) ||
+            ((box.title?.toLowerCase().includes('fb') || box.templateText?.toLowerCase().includes('fb'))
+              ? savedFormats.find((f) => f.name.toLowerCase().includes('fb'))
+              : null) ||
+            savedFormats[0];
+
+          const activeWk = typeof window !== 'undefined' ? loadActiveWatermarkConfig() : null;
+          const targetFormat: CropStudioFormat = {
+            ...baseFormat,
+            targetWidth: box.targetWidth || baseFormat?.targetWidth || 1080,
+            targetHeight: box.targetHeight || baseFormat?.targetHeight || 1350,
+            aspect: box.aspect || baseFormat?.aspect || '4:5',
+            fitMode: (box.fitMode || baseFormat?.fitMode || 'cover') as any,
+            focusPosition: (box.focusPosition || baseFormat?.focusPosition || 'center') as any,
+            cropZoom: box.cropZoom || baseFormat?.cropZoom || 1,
+            watermarkConfig:
+              box.watermarkConfig ||
+              baseFormat?.watermarkConfig ||
+              (activeWk?.config?.enabled ? activeWk.config : undefined),
+          };
+
+          for (let i = 0; i < imageList.length; i++) {
+            if (isRunStopped(myRunId) || branchFatalError) return false;
+            const img = imageList[i];
+            const rawUrl = img.stored_url
+              ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
+              : img.source_url;
+            try {
+              const formattedDataUrl = await formatImageWithCropFormat(rawUrl, targetFormat);
+              if (isRunStopped(myRunId) || branchFatalError) return false;
+              localWatermarkedMap[img.index] = formattedDataUrl;
+            } catch (err) {
+              console.warn('Failed to format image with crop format', err);
+              localWatermarkedMap[img.index] = rawUrl;
+            }
+          }
+          if (isRunStopped(myRunId) || branchFatalError) return false;
+          setWatermarkedPhotos((prev) => ({ ...prev, ...localWatermarkedMap }));
+          setEnhancedPhotos((prev) => ({ ...prev, ...localWatermarkedMap }));
+          workflowContextRef.current.localWatermarkedMap = { ...workflowContextRef.current.localWatermarkedMap, ...localWatermarkedMap };
+          await delay(400);
+          if (isRunStopped(myRunId) || branchFatalError) return false;
+        } else if (isN8N) {
+          // Resolve upstream text / property for this n8n automation node
+          const inConns = (cfg.connections || []).filter((c) => c.toNodeId === box.id);
+          const upstreamBoxId = inConns[0]?.fromNodeId;
+          const upstreamText =
+            (upstreamBoxId && generatedOutputsMap[upstreamBoxId]) ||
+            (upstreamBoxId === 'get-content' ? rawCaption : '') ||
+            primaryCopy ||
+            rawCaption;
+
+          const webhookPath = (box as any).n8nWebhookPath || 'property-content-processing';
+          const workflowId = (box as any).n8nWorkflowId || 'Dtjq2OPmO1SqiXm4';
+          let n8nCopyText = '';
+
+          try {
+            const runRes = await runN8NWorkflow(workflowId, webhookPath, {
+              execution_id: `corr-${Date.now()}`,
+              source: 'BoltHavenProperty',
+              event: 'property.process',
+              property: {
+                id: (propData as any)?.id || 'listing-01',
+                project_name: projName || (propData as any)?.project_name || 'Featured Property Listing',
+                bedrooms: (propData as any)?.bedrooms || 1,
+                area_sqm: (propData as any)?.area_sqm || (propData as any)?.sizeSqm || 35,
+                monthly_rent_thb: (propData as any)?.monthly_rent_thb || (propData as any)?.rentPrice || 35000,
+                caption: upstreamText || rawCaption,
+                images: imageList.map((img) => img.stored_url || img.source_url),
+              },
+            });
+            if (isRunStopped(myRunId) || branchFatalError) return false;
+
+            const respObj = runRes.webhook_response as Record<string, any>;
+            if (respObj) {
+              n8nCopyText = respObj.formatted_summary || respObj.summary || (typeof respObj === 'string' ? respObj : JSON.stringify(respObj, null, 2));
+            }
+          } catch (err: any) {
+            if (isRunStopped(myRunId) || branchFatalError) return false;
+            console.warn('n8n automation step error:', err);
+            if (!(box as any).n8nContinueOnFailure) {
+              branchFatalError = true;
+              safeSetExecutionState(myRunId, (prev) => ({
+                ...prev!,
+                isRunning: false,
+                hasError: true,
+                activeNodeIds: [box.id],
+                failedNodeIds: [box.id],
+                currentStepMessage: `❌ n8n Automation failed for [${box.title || 'n8n Node'}]: ${err.message || 'Workflow execution error'}.`,
+              }));
+              setIsRunningWorkflow(false);
+              (window as any).__isWorkflowProcessing = false;
+              canvasRef.current?.openNodeDrawer(box.id);
+              return false;
+            }
+          }
+
+          if (isRunStopped(myRunId) || branchFatalError) return false;
+          const finalText = n8nCopyText || upstreamText;
+          generatedOutputsMap[box.id] = finalText;
+          if (!primaryCopy) primaryCopy = finalText;
+          setAiGeneratedOutputs((prev) => ({ ...prev, [box.id]: finalText }));
+          await delay(400);
+          if (isRunStopped(myRunId) || branchFatalError) return false;
+        } else if (isExternalBrowser) {
+          // External Browser Processing Node — Auto Open Selected Profile & Tab Group
+          const propId = (propData as any)?.id || `PROP-${Date.now()}`;
+          const propName = projName || (propData as any)?.project_name || 'Featured Property Listing';
+
+          const areBoxesConnected = (idA: string, idB: string) => {
+            return (cfg.connections || []).some(
+              (c: any) => (c.fromNodeId === idA && c.toNodeId === idB) || (c.fromNodeId === idB && c.toNodeId === idA)
+            );
+          };
+
+          // 1. Follow wires to find the connected chrome_profile node
+          connectedProfileBox = (cfg.aiBoxes || []).find(
+            (b: any) => areBoxesConnected(box.id, b.id) && (isChromeProfileAIBox(b) || (b as any).processType === 'chrome_profile')
+          );
+          if (!connectedProfileBox && isChromeProfileAIBox(box)) {
+            connectedProfileBox = box;
+          }
+          if (!connectedProfileBox) {
+            connectedProfileBox = (cfg.aiBoxes || []).find(
+              (b: any) => (isChromeProfileAIBox(b) || (b as any).processType === 'chrome_profile') && b.enabled !== false
+            );
+          }
+
+          // 2. Follow wires to find the connected chrome_tab_group node (prefer enabled ones)
+          const candidateTabGroups = (cfg.aiBoxes || []).filter(
+            (b: any) =>
+              (areBoxesConnected(box.id, b.id) || (connectedProfileBox && areBoxesConnected(connectedProfileBox.id, b.id))) &&
+              (isChromeTabGroupAIBox(b) || (b as any).processType === 'chrome_tab_group')
+          );
+          const connectedTabGroupBox =
+            candidateTabGroups.find((b: any) => b.enabled !== false) ||
+            candidateTabGroups[0] ||
+            (isChromeTabGroupAIBox(box) ? box : null) ||
+            (cfg.aiBoxes || []).find(
+              (b: any) => (isChromeTabGroupAIBox(b) || (b as any).processType === 'chrome_tab_group') && b.enabled !== false
+            );
+
+          const profId = connectedProfileBox?.browserProfileId || (box as any).browserProfileId || 11;
+          const profKey = connectedProfileBox?.browserProfileKey || connectedProfileBox?.browserProfileName || (box as any).browserProfileKey || 'Profile 14';
+          const profName = connectedProfileBox?.title || connectedProfileBox?.browserProfileName || 'Hsu';
+
+          const groupName = connectedTabGroupBox?.browserGroupName || connectedTabGroupBox?.title || (box as any).browserGroupName || 'Enhance IMG';
+          const targetTabId = (connectedTabGroupBox as any)?.browserTabId || (box as any).browserTabId || (box as any).browserPromptTabId || (box as any).browserGenerateTabId || '';
+
+          tabGroupNodeId = connectedTabGroupBox?.id || box.id;
+
+          // ── Step 1: External Browser Node ──
+          updateBranchNodes(
+            [],
+            [box.id],
+            [],
+            `🌐 Connecting to External Browser Engine [${box.title || 'External Browser'}]...`,
+            { stepIndex: 4, propertyId: propId }
+          );
+          await delay(450);
+          if (isRunStopped(myRunId) || branchFatalError) return false;
+
+          // ── Step 2: Chrome Profile Node ──
+          if (connectedProfileBox) {
+            updateBranchNodes(
+              [box.id],
+              [connectedProfileBox.id],
+              [box.id],
+              `👤 Connecting to Chrome Profile [${profName}]...`
+            );
+            try {
+              await openBrowserProfile(profId, profKey);
+            } catch (pErr) {
+              console.warn('Profile open warning:', pErr);
+            }
+            if (isRunStopped(myRunId) || branchFatalError) return false;
+            await delay(600);
+            if (isRunStopped(myRunId) || branchFatalError) return false;
+          }
+
+          // ── Step 3: Chrome Tab Group Node ──
+          updateBranchNodes(
+            [box.id, ...(connectedProfileBox ? [connectedProfileBox.id] : [])],
+            [tabGroupNodeId],
+            [box.id, ...(connectedProfileBox ? [connectedProfileBox.id] : [])],
+            `📂 Opening Tab Group [${groupName}]...`
+          );
+
+          let targetUrls = connectedTabGroupBox?.browserGroupTabUrls ||
+            ((connectedTabGroupBox as any)?._liveGroupTabs || []).map((t: any) => t.url).filter(Boolean) ||
+            (box as any).browserGroupTabUrls;
+
+          if (!targetUrls || targetUrls.length === 0) {
+            try {
+              const fetched = await fetchTabGroups(profId, profKey, profName);
+              if (isRunStopped(myRunId) || branchFatalError) return false;
+              const m = fetched.find((g) => g.name.toLowerCase() === groupName.toLowerCase());
+              if (m && m.tabs && m.tabs.length > 0) {
+                targetUrls = m.tabs.map((t) => t.url).filter(Boolean);
+              }
+            } catch (e) {}
+          }
+          if (isRunStopped(myRunId) || branchFatalError) return false;
+
+          if (!targetUrls || targetUrls.length === 0) {
+            if (groupName.toLowerCase().includes('enhance')) {
+              targetUrls = [
+                'https://chatgpt.com/c/6ad49918-a4f0-83ec-acf5-efb0ef516adc',
+                'https://chatgpt.com/c/6ad49924-7dd0-83ec-8205-768c67420600',
+                'https://chatgpt.com/c/6ad4992a-66e8-83ec-9b11-c5e727e258d9',
+                'https://chatgpt.com/c/6ad4992b-135c-83ec-b042-8c92220921d7',
+              ];
+            }
+          }
+
+          const tabMode = ((connectedTabGroupBox as any)?.workerTabMode || (connectedTabGroupBox as any)?.boxConfig?.workerTabMode || (box as any).workerTabMode || 'existing_tabs') as 'existing_tabs' | 'new_tabs';
+          const workerCount = ((connectedTabGroupBox as any)?.workerTabCount || (connectedTabGroupBox as any)?.boxConfig?.workerTabCount || (box as any).workerTabCount || 4) as number;
+          const reuseSession = ((connectedTabGroupBox as any)?.reuseSessionTabs ?? (connectedTabGroupBox as any)?.boxConfig?.reuseSessionTabs ?? (box as any).reuseSessionTabs ?? true) as boolean;
+
+          try {
+            if (isRunStopped(myRunId) || branchFatalError) return false;
+            await focusBrowserTabGroup({
+              profileId: profId,
+              profileKey: profKey,
+              groupName: groupName,
+              tabId: targetTabId,
+              groupTabUrls: targetUrls,
+              url: targetUrls?.[0],
+              tabMode: tabMode,
+              workerCount: workerCount,
+              reuseSessionTabs: reuseSession,
+              force: true,
+            });
+            if (isRunStopped(myRunId) || branchFatalError) return false;
+
+            // Actively verify and wait until Chrome and selected tab group are verified open in browser
+            const readyResult = await waitForBrowserTabsReady({
+              profileKey: profKey,
+              groupName: groupName,
+              expectedUrls: targetUrls,
+              tabMode: tabMode,
+              workerCount: workerCount,
+              maxWaitMs: 15000,
+              shouldCancel: () => isRunStopped(myRunId) || branchFatalError,
+              signal,
+              onProgress: (msg) => {
+                updateBranchNodes([], [tabGroupNodeId], [], msg);
+              },
+            });
+            if (isRunStopped(myRunId) || branchFatalError) return false;
+
+            if (readyResult.verified) {
+              updateBranchNodes(
+                [],
+                [tabGroupNodeId],
+                [],
+                `✓ Tab Group [${groupName}] confirmed active in browser!`
+              );
+              await delay(500);
+              if (isRunStopped(myRunId) || branchFatalError) return false;
+            }
+          } catch (openErr) {
+            if (isRunStopped(myRunId) || branchFatalError) return false;
+            console.warn('Could not auto-open Chrome profile and tab group:', openErr);
+          }
+
+          if (isRunStopped(myRunId) || branchFatalError) return false;
+
+          const isStagingGroup = groupName.toLowerCase().includes('hero') || groupName.toLowerCase().includes('stage');
+          const isEnhanceGroup = groupName.toLowerCase().includes('enhance') || !isStagingGroup;
+
+          const runEnhance = isEnhanceGroup && imageList.length > 0 && isTabGroupEnabled;
+          const runStaging = isStagingGroup && isTabGroupEnabled;
+
+          if (isEnhanceGroup && imageList.length === 0 && isTabGroupEnabled) {
+            updateBranchNodes(
+              [],
+              [tabGroupNodeId],
+              [],
+              `⚠️ [${groupName}] Tab group open in Chrome. (0 photos to enhance)`
+            );
+            await delay(800);
+            if (isRunStopped(myRunId) || branchFatalError) return false;
+          }
+
+          // ── PHASE 1: PHOTO ENHANCEMENT ACROSS 4 TABS (Enhance IMG) ──
+          if (runEnhance) {
+            if (isRunStopped(myRunId) || branchFatalError) return false;
+            const totalImages = imageList.length;
+            const extPhotosMap: Record<number, string> = {};
+            imageList.forEach((img, idx) => {
+              extPhotosMap[idx] = img.stored_url || img.source_url;
+            });
+
+            const enhancePrompt = resolvePromptForBrowserNode(box, {
+              title: propName,
+              width: (box as any).outputWidth || (box as any).targetWidth || 1080,
+              height: (box as any).outputHeight || (box as any).targetHeight || 1350,
+            });
+
+            const rawImgs = imageList.map((img, i) => ({
+              index: i + 1,
+              source_url: img.source_url || img.stored_url,
+              stored_url: img.stored_url || img.source_url,
+              local_path: (img as any).local_path || '',
+              sha256: (img as any).sha256 || '',
+              width: (box as any).outputWidth || (box as any).targetWidth || 1080,
+              height: (box as any).outputHeight || (box as any).targetHeight || 1350,
+              resolved_prompt: enhancePrompt,
+            }));
+
+            const queuePayload = {
+              property_id: propId,
+              property_name: propName,
+              prompt_template_text: enhancePrompt,
+              prompt_template_id: (box as any).browserPromptTemplateKey || getPersistedPromptKey() || 'photo_retouch',
+              images: rawImgs,
+              processing_mode: (box as any).browserProcessingMode || 'chrome_assisted',
+              lane_id: (box as any).browserLaneKey || 'lane-1',
+              output_width: (box as any).outputWidth || (box as any).targetWidth || 1080,
+              output_height: (box as any).outputHeight || (box as any).targetHeight || 1350,
+              strict_preservation_active: (box as any).strictPreservationActive !== false,
+            };
+
+            try {
+              await createBatchImageQueue(queuePayload);
+              if (isRunStopped(myRunId) || branchFatalError) {
+                await stopAutomation().catch(() => {});
+                return false;
+              }
+              await startImageQueue(propId);
+            } catch (e) {
+              console.warn('External browser queue start notice:', e);
+            }
+            if (isRunStopped(myRunId) || branchFatalError) {
+              await stopAutomation().catch(() => {});
+              return false;
+            }
+
+            updateBranchNodes(
+              [],
+              [box.id],
+              [],
+              `⚡ Phase 1: Distributing ${totalImages} images across ${workerCount} ChatGPT tabs [${groupName}]...`
+            );
+
+            try {
+              await startAutomation({
+                property_id: propId,
+                profile_key: profKey,
+                tab_ids: Array.from({ length: workerCount }, (_, i) => i + 1),
+                tab_mode: tabMode,
+                worker_count: workerCount,
+                reuse_session_tabs: reuseSession,
+              });
+            } catch (autoErr) {
+              console.warn('Automation start error:', autoErr);
+            }
+            if (isRunStopped(myRunId) || branchFatalError) {
+              await stopAutomation().catch(() => {});
+              return false;
+            }
+
+            let pollAttempts = 0;
+            const maxPollAttempts = 150;
+            let isDone = false;
+
+            while (!isDone && pollAttempts < maxPollAttempts) {
+              if (isRunStopped(myRunId) || branchFatalError) {
+                await stopAutomation().catch(() => {});
+                return false;
+              }
+              pollAttempts++;
+              await delay(2000);
+              if (isRunStopped(myRunId) || branchFatalError) {
+                await stopAutomation().catch(() => {});
+                return false;
+              }
+
+              try {
+                const queueJobs = await fetchImageQueue(propId);
+                if (isRunStopped(myRunId) || branchFatalError) {
+                  await stopAutomation().catch(() => {});
+                  return false;
+                }
+                const status = await getAutomationStatus();
+                if (isRunStopped(myRunId) || branchFatalError) {
+                  await stopAutomation().catch(() => {});
+                  return false;
+                }
+
+                let completedCount = 0;
+                if (queueJobs && queueJobs.length > 0) {
+                  queueJobs.forEach((job) => {
+                    const isJobDone = job.status === 'COMPLETED' || (job.status as string) === 'completed' || (job as any).is_completed;
+                    const resUrl = job.output_file_url || (job as any).result_file_url;
+                    if (isJobDone && resUrl) {
+                      completedCount++;
+                      const pos = (job.original_position || 1) - 1;
+                      extPhotosMap[pos] = resUrl;
+                    }
+                  });
+                }
+
+                if (status && status.completed !== undefined) {
+                  completedCount = Math.max(completedCount, status.completed);
+                }
+
+                setEnhancedPhotos((prev) => ({ ...prev, ...extPhotosMap }));
+                workflowContextRef.current.localWatermarkedMap = { ...workflowContextRef.current.localWatermarkedMap, ...extPhotosMap };
+
+                updateBranchNodes(
+                  [box.id],
+                  [tabGroupNodeId],
+                  [],
+                  `⚡ Phase 1: Enhancing images across 4 ChatGPT tabs: ${completedCount}/${totalImages} completed...`
+                );
+
+                if (completedCount >= totalImages || (status && !status.is_running && (status.completed || 0) >= totalImages)) {
+                  isDone = true;
+                  break;
+                }
+              } catch (pollErr) {
+                console.warn('Enhancement status check warning:', pollErr);
+              }
+            }
+
+            if (isRunStopped(myRunId) || branchFatalError) {
+              await stopAutomation().catch(() => {});
+              return false;
+            }
+
+            updateBranchNodes(
+              [],
+              [tabGroupNodeId],
+              [],
+              `✓ Phase 1 complete: All ${totalImages} images enhanced and downloaded!`
+            );
+            await delay(600);
+            if (isRunStopped(myRunId) || branchFatalError) return false;
+
+            setEnhancedPhotos((prev) => ({ ...prev, ...extPhotosMap }));
+            workflowContextRef.current.localWatermarkedMap = { ...workflowContextRef.current.localWatermarkedMap, ...extPhotosMap };
+          }
+
+          // ── PHASE 2: STAGING & AD CREATION (2 TABS e.g. FB Hero) ──
+          if (runStaging) {
+            if (isRunStopped(myRunId) || branchFatalError) return false;
+            const stagingBox: any = connectedTabGroupBox || box;
+            const stagingGroupTarget = stagingBox.stagingGroupName || (box as any).stagingGroupName || groupName || 'FB Hero';
+            const initialPrompt = resolvePromptForBrowserNode(stagingBox, {
+              title: propName,
+              width: stagingBox.outputWidth || (box as any).outputWidth || (box as any).targetWidth || 1080,
+              height: stagingBox.outputHeight || (box as any).outputHeight || (box as any).targetHeight || 1350,
+            });
+            const useRefImg = stagingBox.useReferenceImage !== false && (box as any).useReferenceImage !== false;
+            const resolvedRefImage = useRefImg
+              ? (stagingBox.referenceImage ||
+                 (box as any).referenceImage ||
+                 getPersistedReferenceImage(connectedTabGroupBox?.id) ||
+                 (await loadPersistedReferenceImageAsync(connectedTabGroupBox?.id)) ||
+                 null)
+              : null;
+
+            updateBranchNodes(
+              [],
+              [tabGroupNodeId],
+              [],
+              `🚀 Phase 2 (Tab 1): Pasting & generating prompt for ${propName} in [${stagingGroupTarget}]...`
+            );
+
+            try {
+              await fetch('http://127.0.0.1:9224/start-two-stage-staging', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  profile_key: profKey,
+                  group_name: stagingGroupTarget,
+                  condo_name: stagingBox.browserCondoName || (box as any).browserCondoName || propName,
+                  initial_prompt: initialPrompt,
+                  reference_image: resolvedRefImage,
+                  target_folder: stagingBox.targetFolder || (box as any).targetFolder || localStorage.getItem('bolthaven_condo_target_folder') || '',
+                  use_condo_images: stagingBox.useCondoImages !== false && (box as any).useCondoImages !== false,
+                  use_reference_image: useRefImg,
+                  skip_tab1: stagingBox.stagingMode === 'direct_tab2' || stagingBox.skipTab1 === true || (box as any).stagingMode === 'direct_tab2' || (box as any).skipTab1 === true,
+                }),
+                signal,
+              });
+              if (isRunStopped(myRunId) || branchFatalError) {
+                await stopAutomation().catch(() => {});
+                return false;
+              }
+
+              let twoStageDone = false;
+              let attempts = 0;
+              while (!twoStageDone && attempts < 150) {
+                if (isRunStopped(myRunId) || branchFatalError) {
+                  await stopAutomation().catch(() => {});
+                  return false;
+                }
+                attempts++;
+                await delay(2000);
+                if (isRunStopped(myRunId) || branchFatalError) {
+                  await stopAutomation().catch(() => {});
+                  return false;
+                }
+                try {
+                  const st = await fetch('http://127.0.0.1:9224/two-stage-status', { signal }).then((r) => r.json());
+                  if (isRunStopped(myRunId) || branchFatalError) {
+                    await stopAutomation().catch(() => {});
+                    return false;
+                  }
+                  if (st && st.state) {
+                    if (st.state.step === 'stopped') {
+                      return false;
+                    } else if (st.state.step === 'stage1_running') {
+                      updateBranchNodes([], [tabGroupNodeId], [], `⏳ Phase 2 (Tab 1): Generating & extracting prompt copy...`);
+                    } else if (st.state.step === 'stage1_completed') {
+                      updateBranchNodes([], [tabGroupNodeId], [], `✓ Phase 2 (Tab 1) extracted! Switching to Tab 2...`);
+                    } else if (st.state.step === 'stage2_running') {
+                      updateBranchNodes([], [tabGroupNodeId], [], `🖼️ Phase 2 (Tab 2): Pasting reference photo, condo images 1, 2, 3 & prompt...`);
+                    } else if (st.state.step === 'completed') {
+                      twoStageDone = true;
+                      updateBranchNodes([], [tabGroupNodeId], [], `✓ Phase 2 complete: Tab 2 submitted in [${stagingGroupTarget}] with reference & condo images!`);
+                    } else if (st.state.step === 'error') {
+                      break;
+                    }
+                  }
+                } catch (e) {
+                  if (isRunStopped(myRunId) || branchFatalError) return false;
+                }
+              }
+            } catch (twoStageErr: any) {
+              if (isRunStopped(myRunId) || branchFatalError) return false;
+              console.warn('Two-stage staging execution error:', twoStageErr);
+            }
+          }
+        } else {
+          // Resolve upstream text for this text AI or format node
+          const inConns = (cfg.connections || []).filter((c) => c.toNodeId === box.id);
+          const upstreamBoxId = inConns[0]?.fromNodeId;
+          const upstreamText =
+            (upstreamBoxId && generatedOutputsMap[upstreamBoxId]) ||
+            (upstreamBoxId === 'get-content' ? rawCaption : '') ||
+            primaryCopy ||
+            rawCaption;
+
+          let copyText = '';
+          const aiProvider = box.provider || (box.model?.startsWith('gpt-') ? 'openai' : 'google_ai');
+          const aiModel = box.model || (aiProvider === 'openai' ? 'gpt-4o' : 'gemini-2.5-flash');
+          const aiStart = Date.now();
+          try {
+            const aiResp = await fetch('http://localhost:8085/api/facebook-import/generate-ai', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                provider: aiProvider,
+                model: aiModel,
+                template_id: box.templateId || '',
+                template_name: box.title || 'Dynamic Real Estate Copywriter',
+                template_text: box.templateText || '',
+                raw_content: upstreamText,
+                custom_prompt:
+                  box.customPrompt ||
+                  (isTextFormat
+                    ? `Format this real estate listing according to the ${box.title || 'preset'} style. Maintain all property details, price, contact numbers, and formatting clean and attractive.`
+                    : ''),
+              }),
+              signal,
+            });
+            if (isRunStopped(myRunId) || branchFatalError) return false;
+            if (aiResp.ok) {
+              const aiData = await aiResp.json();
+              if (isRunStopped(myRunId) || branchFatalError) return false;
+              if (aiData.success && aiData.generated_content) {
+                copyText = aiData.generated_content;
+              }
+            }
+          } catch (err) {
+            if (isRunStopped(myRunId) || branchFatalError) return false;
+            console.warn('AI API call threw:', err);
+          }
+
+          if (isRunStopped(myRunId) || branchFatalError) return false;
+
+          addAIHistoryEntry({
+            provider: aiProvider,
+            model: aiModel,
+            taskType: 'text',
+            prompt: box.title || 'AI Box',
+            inputPreview: String(upstreamText || '').slice(0, 200),
+            outputPreview: copyText || 'Generation failed',
+            status: copyText ? 'success' : 'failed',
+            durationMs: Date.now() - aiStart,
+            sourceWorkflow: 'Create Workflow',
+          });
+
+          // If formatting failed or returned empty: ABSOLUTE STOP AT THIS STEP!
+          // Do NOT fall back to unformatted raw content and do NOT continue downstream!
+          if (!copyText || copyText.trim().length === 0) {
+            branchFatalError = true;
+            safeSetExecutionState(myRunId, (prev) => ({
               ...prev!,
               isRunning: false,
               hasError: true,
               activeNodeIds: [box.id],
               failedNodeIds: [box.id],
-              currentStepMessage: `❌ n8n Automation failed for [${box.title || 'n8n Node'}]: ${err.message || 'Workflow execution error'}.`,
+              currentStepMessage: `❌ AI generation failed for [${box.title || 'Formatted Content'}]. Please write/fix content or re-generate to continue.`,
             }));
             setIsRunningWorkflow(false);
             (window as any).__isWorkflowProcessing = false;
+            // Automatically open this node's drawer so user can inspect and fix directly
             canvasRef.current?.openNodeDrawer(box.id);
-            return;
+            return false;
           }
+
+          generatedOutputsMap[box.id] = copyText;
+          workflowContextRef.current.generatedOutputsMap[box.id] = copyText;
+          if (!primaryCopy || isTextFormat) {
+            primaryCopy = copyText;
+            workflowContextRef.current.primaryCopy = copyText;
+          }
+          setAiGeneratedOutputs((prev) => ({ ...prev, [box.id]: copyText }));
+          setAiGeneratedCopy(copyText);
+          await delay(500);
+          if (isRunStopped(myRunId) || branchFatalError) return false;
         }
 
-        const finalText = n8nCopyText || upstreamText;
-        generatedOutputsMap[box.id] = finalText;
-        if (!primaryCopy) primaryCopy = finalText;
-        setAiGeneratedOutputs((prev) => ({ ...prev, [box.id]: finalText }));
-        await delay(400);
-      } else if (isExternalBrowser) {
-        // External Browser Processing Node — Auto Open Selected Profile & Tab Group
-        const propId = (propData as any)?.id || `PROP-${Date.now()}`;
-        const propName = projName || (propData as any)?.project_name || 'Featured Property Listing';
+        if (isRunStopped(myRunId) || branchFatalError) return false;
 
-        const areBoxesConnected = (idA: string, idB: string) => {
-          return (cfg.connections || []).some(
-            (c: any) => (c.fromNodeId === idA && c.toNodeId === idB) || (c.fromNodeId === idB && c.toNodeId === idA)
-          );
-        };
+        const completedBranchIds = [
+          box.id,
+          ...(isExternalBrowser ? [tabGroupNodeId, ...(connectedProfileBox ? [connectedProfileBox.id] : [])] : []),
+        ];
 
-        // 1. Follow wires to find the connected chrome_profile node
-        connectedProfileBox = (cfg.aiBoxes || []).find(
-          (b: any) => areBoxesConnected(box.id, b.id) && (isChromeProfileAIBox(b) || (b as any).processType === 'chrome_profile')
+        updateBranchNodes(
+          completedBranchIds,
+          [],
+          completedBranchIds,
+          `✓ [${box.title || 'Node'}] executed successfully!`
         );
-        if (!connectedProfileBox && isChromeProfileAIBox(box)) {
-          connectedProfileBox = box;
-        }
-        if (!connectedProfileBox) {
-          connectedProfileBox = (cfg.aiBoxes || []).find(
-            (b: any) => (isChromeProfileAIBox(b) || (b as any).processType === 'chrome_profile') && b.enabled !== false
-          );
-        }
+        await delay(250);
+        if (isRunStopped(myRunId) || branchFatalError) return false;
+        return true;
+      };
 
-        // 2. Follow wires to find the connected chrome_tab_group node
-        const connectedTabGroupBox = (cfg.aiBoxes || []).find(
-          (b: any) =>
-            (areBoxesConnected(box.id, b.id) || (connectedProfileBox && areBoxesConnected(connectedProfileBox.id, b.id))) &&
-            (isChromeTabGroupAIBox(b) || (b as any).processType === 'chrome_tab_group')
-        ) || (isChromeTabGroupAIBox(box) ? box : null) || (cfg.aiBoxes || []).find(
-          (b: any) => (isChromeTabGroupAIBox(b) || (b as any).processType === 'chrome_tab_group') && b.enabled !== false
+      const runContentBranch = async () => {
+        if (!contentEnabled) return;
+        const captionText = await waitForCaptionReady();
+        if (isRunStopped(myRunId) || branchFatalError) return;
+        if (!captionText && extractFailed) return;
+
+        const resolvedCaption = captionText || projName || 'Property listing media extracted';
+        rawCaption = resolvedCaption;
+        workflowContextRef.current.rawCaption = resolvedCaption;
+        setExtractedContent(resolvedCaption);
+
+        const hasEnabledContentBox = contentBranchBoxes.some((b) => b.enabled !== false);
+        updateBranchNodes(
+          ['get-content'],
+          [],
+          ['get-content'],
+          hasEnabledContentBox
+            ? '✓ Content extracted — continuing Content branch in parallel...'
+            : '✓ Post content extracted!',
+          { stepIndex: 3 }
         );
 
-        const profId = connectedProfileBox?.browserProfileId || (box as any).browserProfileId || 11;
-        const profKey = connectedProfileBox?.browserProfileKey || connectedProfileBox?.browserProfileName || (box as any).browserProfileKey || 'Profile 14';
-        const profName = connectedProfileBox?.title || connectedProfileBox?.browserProfileName || 'Hsu';
+        for (const box of contentBranchBoxes) {
+          if (isRunStopped(myRunId) || branchFatalError) return;
+          const ok = await executeSingleAIBox(box);
+          if (!ok || branchFatalError) return;
+        }
+      };
 
-        const groupName = connectedTabGroupBox?.browserGroupName || connectedTabGroupBox?.title || (box as any).browserGroupName || 'Enhance IMG';
-        const targetTabId = (connectedTabGroupBox as any)?.browserTabId || (box as any).browserTabId || (box as any).browserPromptTabId || (box as any).browserGenerateTabId || '';
+      const runImagesBranch = async () => {
+        await extractFetchPromise;
+        if (isRunStopped(myRunId) || branchFatalError) return;
+        if (!imagesEnabled) return;
+        if (imageList.length === 0 && (!rawCaption || !rawCaption.trim())) return;
 
-        tabGroupNodeId = connectedTabGroupBox?.id || box.id;
+        setExtractedImages(imageList);
+        workflowContextRef.current.imageList = imageList;
 
-        // ── Step 1: External Browser Node ──
-        setExecutionState((prev) => ({
+        updateBranchNodes(
+          ['get-images'],
+          [],
+          ['get-images'],
+          `✓ ${imageList.length} photos extracted & downloaded!`,
+          { stepIndex: 3 }
+        );
+
+        for (const box of imageBranchBoxes) {
+          if (isRunStopped(myRunId) || branchFatalError) return;
+          const ok = await executeSingleAIBox(box);
+          if (!ok || branchFatalError) return;
+        }
+      };
+
+      await Promise.all([runContentBranch(), runImagesBranch()]);
+      if (isRunStopped(myRunId) || branchFatalError) return;
+
+      // Ensure full extract response metadata (propData, projName) has settled
+      await extractFetchPromise;
+      if (isRunStopped(myRunId) || branchFatalError) return;
+
+      if ((!rawCaption || rawCaption.trim().length === 0) && imageList.length === 0) {
+        safeSetExecutionState(myRunId, (prev) => ({
           ...prev!,
-          activeNodeIds: [box.id],
-          currentStepMessage: `🌐 Connecting to External Browser Engine [${box.title || 'External Browser'}]...`,
-          stepIndex: 4,
-          propertyId: propId,
+          isRunning: false,
+          hasError: true,
+          activeNodeIds: [],
+          completedNodeIds: [],
+          failedNodeIds: ['trigger'],
+          currentStepMessage: '❌ Could not extract content or images from the provided link. Please check the URL and try again.',
         }));
-        await delay(450);
-
-        // ── Step 2: Chrome Profile Node ──
-        if (connectedProfileBox) {
-          setExecutionState((prev) => ({
-            ...prev!,
-            completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), box.id])),
-            activeNodeIds: [connectedProfileBox.id],
-            currentStepMessage: `👤 Connecting to Chrome Profile [${profName}]...`,
-          }));
-          try {
-            await openBrowserProfile(profId, profKey);
-          } catch (pErr) {
-            console.warn('Profile open warning:', pErr);
-          }
-          await delay(600);
-        }
-
-        // ── Step 3: Chrome Tab Group Node ──
-        setExecutionState((prev) => ({
-          ...prev!,
-          completedNodeIds: Array.from(new Set([
-            ...(prev?.completedNodeIds || []),
-            box.id,
-            ...(connectedProfileBox ? [connectedProfileBox.id] : []),
-          ])),
-          activeNodeIds: [tabGroupNodeId],
-          currentStepMessage: `📂 Opening Tab Group [${groupName}] (4 Tabs)...`,
-        }));
-
-        let targetUrls = connectedTabGroupBox?.browserGroupTabUrls ||
-          ((connectedTabGroupBox as any)?._liveGroupTabs || []).map((t: any) => t.url).filter(Boolean) ||
-          (box as any).browserGroupTabUrls;
-
-        if (!targetUrls || targetUrls.length === 0) {
-          try {
-            const fetched = await fetchTabGroups(profId, profKey, profName);
-            const m = fetched.find((g) => g.name.toLowerCase() === groupName.toLowerCase());
-            if (m && m.tabs && m.tabs.length > 0) {
-              targetUrls = m.tabs.map((t) => t.url).filter(Boolean);
-            }
-          } catch (e) {}
-        }
-
-        if (!targetUrls || targetUrls.length === 0) {
-          if (groupName.toLowerCase().includes('enhance')) {
-            targetUrls = [
-              'https://chatgpt.com/c/6ad49918-a4f0-83ec-acf5-efb0ef516adc',
-              'https://chatgpt.com/c/6ad49924-7dd0-83ec-8205-768c67420600',
-              'https://chatgpt.com/c/6ad4992a-66e8-83ec-9b11-c5e727e258d9',
-              'https://chatgpt.com/c/6ad4992b-135c-83ec-b042-8c92220921d7',
-            ];
-          }
-        }
-
-        const tabMode = ((connectedTabGroupBox as any)?.workerTabMode || (connectedTabGroupBox as any)?.boxConfig?.workerTabMode || (box as any).workerTabMode || 'existing_tabs') as 'existing_tabs' | 'new_tabs';
-        const workerCount = ((connectedTabGroupBox as any)?.workerTabCount || (connectedTabGroupBox as any)?.boxConfig?.workerTabCount || (box as any).workerTabCount || 4) as number;
-        const reuseSession = ((connectedTabGroupBox as any)?.reuseSessionTabs ?? (connectedTabGroupBox as any)?.boxConfig?.reuseSessionTabs ?? (box as any).reuseSessionTabs ?? true) as boolean;
-
-        try {
-          await focusBrowserTabGroup({
-            profileId: profId,
-            profileKey: profKey,
-            groupName: groupName,
-            tabId: targetTabId,
-            groupTabUrls: targetUrls,
-            url: targetUrls?.[0],
-            tabMode: tabMode,
-            workerCount: workerCount,
-            reuseSessionTabs: reuseSession,
-            force: true,
-          });
-
-          // Actively verify and wait until Chrome and selected tab group are verified open in browser
-          const readyResult = await waitForBrowserTabsReady({
-            profileKey: profKey,
-            groupName: groupName,
-            expectedUrls: targetUrls,
-            tabMode: tabMode,
-            workerCount: workerCount,
-            maxWaitMs: 15000,
-            onProgress: (msg) => {
-              setExecutionState((prev) => ({
-                ...prev!,
-                activeNodeIds: [tabGroupNodeId],
-                currentStepMessage: msg,
-              }));
-            },
-          });
-
-          if (readyResult.verified) {
-            setExecutionState((prev) => ({
-              ...prev!,
-              activeNodeIds: [tabGroupNodeId],
-              currentStepMessage: `✓ Tab Group [${groupName}] confirmed active in browser!`,
-            }));
-            await delay(500);
-          }
-        } catch (openErr) {
-          console.warn('Could not auto-open Chrome profile and tab group:', openErr);
-        }
-
-        const isStagingGroup = groupName.toLowerCase().includes('hero') || groupName.toLowerCase().includes('stage');
-        const isEnhanceGroup = groupName.toLowerCase().includes('enhance') || !isStagingGroup;
-
-        const runEnhance = isEnhanceGroup && imageList.length > 0 && isTabGroupEnabled;
-        const runStaging = isStagingGroup && isTabGroupEnabled;
-
-        if (isEnhanceGroup && imageList.length === 0 && isTabGroupEnabled) {
-          setExecutionState((prev) => ({
-            ...prev!,
-            activeNodeIds: [tabGroupNodeId],
-            currentStepMessage: `⚠️ [${groupName}] Tab group open in Chrome. (0 photos to enhance)`,
-          }));
-          await delay(800);
-        }
-
-        // ── PHASE 1: PHOTO ENHANCEMENT ACROSS 4 TABS (Enhance IMG) ──
-        if (runEnhance) {
-          const totalImages = imageList.length;
-          const extPhotosMap: Record<number, string> = {};
-          imageList.forEach((img, idx) => {
-            extPhotosMap[idx] = img.stored_url || img.source_url;
-          });
-
-          const enhancePrompt = resolvePromptForBrowserNode(box, {
-            title: propName,
-            width: (box as any).outputWidth || (box as any).targetWidth || 1080,
-            height: (box as any).outputHeight || (box as any).targetHeight || 1350,
-          });
-
-          const rawImgs = imageList.map((img, i) => ({
-            index: i + 1,
-            source_url: img.source_url || img.stored_url,
-            stored_url: img.stored_url || img.source_url,
-            local_path: (img as any).local_path || '',
-            sha256: (img as any).sha256 || '',
-            width: (box as any).outputWidth || (box as any).targetWidth || 1080,
-            height: (box as any).outputHeight || (box as any).targetHeight || 1350,
-            resolved_prompt: enhancePrompt,
-          }));
-
-          const queuePayload = {
-            property_id: propId,
-            property_name: propName,
-            prompt_template_text: enhancePrompt,
-            prompt_template_id: (box as any).browserPromptTemplateKey || getPersistedPromptKey() || 'photo_retouch',
-            images: rawImgs,
-            processing_mode: (box as any).browserProcessingMode || 'chrome_assisted',
-            lane_id: (box as any).browserLaneKey || 'lane-1',
-            output_width: (box as any).outputWidth || (box as any).targetWidth || 1080,
-            output_height: (box as any).outputHeight || (box as any).targetHeight || 1350,
-            strict_preservation_active: (box as any).strictPreservationActive !== false,
-          };
-
-          try {
-            await createBatchImageQueue(queuePayload);
-            await startImageQueue(propId);
-          } catch (e) {
-            console.warn('External browser queue start notice:', e);
-          }
-
-          setExecutionState((prev) => ({
-            ...prev!,
-            activeNodeIds: [box.id],
-            currentStepMessage: `⚡ Phase 1: Distributing ${totalImages} images across ${workerCount} ChatGPT tabs [${groupName}]...`,
-          }));
-
-          try {
-            await startAutomation({
-              property_id: propId,
-              profile_key: profKey,
-              tab_ids: Array.from({ length: workerCount }, (_, i) => i + 1),
-              tab_mode: tabMode,
-              worker_count: workerCount,
-              reuse_session_tabs: reuseSession,
-            });
-          } catch (autoErr) {
-            console.warn('Automation start error:', autoErr);
-          }
-
-          let pollAttempts = 0;
-          const maxPollAttempts = 150;
-          let isDone = false;
-
-          while (!isDone && pollAttempts < maxPollAttempts) {
-            if (isCancelledRef.current) {
-              await stopAutomation().catch(() => {});
-              break;
-            }
-            pollAttempts++;
-            await delay(2000);
-
-            try {
-              const queueJobs = await fetchImageQueue(propId);
-              const status = await getAutomationStatus();
-
-              let completedCount = 0;
-              if (queueJobs && queueJobs.length > 0) {
-                queueJobs.forEach((job) => {
-                  const isJobDone = job.status === 'COMPLETED' || (job.status as string) === 'completed' || (job as any).is_completed;
-                  const resUrl = job.output_file_url || (job as any).result_file_url;
-                  if (isJobDone && resUrl) {
-                    completedCount++;
-                    const pos = (job.original_position || 1) - 1;
-                    extPhotosMap[pos] = resUrl;
-                  }
-                });
-              }
-
-              if (status && status.completed !== undefined) {
-                completedCount = Math.max(completedCount, status.completed);
-              }
-
-              setEnhancedPhotos((prev) => ({ ...prev, ...extPhotosMap }));
-              workflowContextRef.current.localWatermarkedMap = { ...workflowContextRef.current.localWatermarkedMap, ...extPhotosMap };
-
-              setExecutionState((prev) => ({
-                ...prev!,
-                activeNodeIds: [tabGroupNodeId],
-                currentStepMessage: `⚡ Phase 1: Enhancing images across 4 ChatGPT tabs: ${completedCount}/${totalImages} completed...`,
-              }));
-
-              if (completedCount >= totalImages || (status && !status.is_running && (status.completed || 0) >= totalImages)) {
-                isDone = true;
-                break;
-              }
-            } catch (pollErr) {
-              console.warn('Enhancement status check warning:', pollErr);
-            }
-          }
-
-          setExecutionState((prev) => ({
-            ...prev!,
-            activeNodeIds: [tabGroupNodeId],
-            currentStepMessage: `✓ Phase 1 complete: All ${totalImages} images enhanced and downloaded!`,
-          }));
-          await delay(600);
-
-          setEnhancedPhotos((prev) => ({ ...prev, ...extPhotosMap }));
-          workflowContextRef.current.localWatermarkedMap = { ...workflowContextRef.current.localWatermarkedMap, ...extPhotosMap };
-        }
-
-        // ── PHASE 2: STAGING & AD CREATION (2 TABS e.g. FB Hero) ──
-        if (runStaging) {
-          const stagingGroupTarget = (box as any).stagingGroupName || 'FB Hero';
-          const initialPrompt = resolvePromptForBrowserNode(box, {
-            title: propName,
-            width: (box as any).outputWidth || (box as any).targetWidth || 1080,
-            height: (box as any).outputHeight || (box as any).targetHeight || 1350,
-          });
-
-          setExecutionState((prev) => ({
-            ...prev!,
-            activeNodeIds: [box.id],
-            currentStepMessage: `🚀 Phase 2 (Tab 1): Pasting & generating prompt for ${propName} in [${stagingGroupTarget}]...`,
-          }));
-
-          try {
-            await fetch('http://127.0.0.1:9224/start-two-stage-staging', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                profile_key: profKey,
-                group_name: stagingGroupTarget,
-                condo_name: (box as any).browserCondoName || propName,
-                initial_prompt: initialPrompt,
-                reference_image: (box as any).useReferenceImage !== false ? ((box as any).referenceImage || null) : null,
-                target_folder: (box as any).targetFolder || localStorage.getItem('bolthaven_condo_target_folder') || '',
-                use_condo_images: (box as any).useCondoImages !== false,
-                use_reference_image: (box as any).useReferenceImage !== false,
-                skip_tab1: (box as any).stagingMode === 'direct_tab2' || (box as any).skipTab1 === true,
-              }),
-            });
-
-            let twoStageDone = false;
-            let attempts = 0;
-            while (!twoStageDone && attempts < 150) {
-              if (isCancelledRef.current) break;
-              attempts++;
-              await delay(2000);
-              try {
-                const st = await fetch('http://127.0.0.1:9224/two-stage-status').then((r) => r.json());
-                if (st && st.state) {
-                  if (st.state.step === 'stage1_running') {
-                    setExecutionState((prev) => ({
-                      ...prev!,
-                      currentStepMessage: `⏳ Phase 2 (Tab 1): Generating & extracting prompt copy...`,
-                    }));
-                  } else if (st.state.step === 'stage1_completed') {
-                    setExecutionState((prev) => ({
-                      ...prev!,
-                      currentStepMessage: `✓ Phase 2 (Tab 1) extracted! Switching to Tab 2...`,
-                    }));
-                  } else if (st.state.step === 'stage2_running') {
-                    setExecutionState((prev) => ({
-                      ...prev!,
-                      currentStepMessage: `🖼️ Phase 2 (Tab 2): Pasting reference photo, condo images 1, 2, 3 & prompt...`,
-                    }));
-                  } else if (st.state.step === 'completed') {
-                    twoStageDone = true;
-                    setExecutionState((prev) => ({
-                      ...prev!,
-                      currentStepMessage: `✓ Phase 2 complete: Tab 2 submitted in [${stagingGroupTarget}] with reference & condo images!`,
-                    }));
-                  } else if (st.state.step === 'error') {
-                    break;
-                  }
-                }
-              } catch (e) {}
-            }
-          } catch (twoStageErr: any) {
-            console.warn('Two-stage staging execution error:', twoStageErr);
-          }
-        }
-      } else {
-        // Resolve upstream text for this text AI or format node
-        const inConns = (cfg.connections || []).filter((c) => c.toNodeId === box.id);
-        const upstreamBoxId = inConns[0]?.fromNodeId;
-        const upstreamText =
-          (upstreamBoxId && generatedOutputsMap[upstreamBoxId]) ||
-          (upstreamBoxId === 'get-content' ? rawCaption : '') ||
-          primaryCopy ||
-          rawCaption;
-
-        let copyText = '';
-        const aiProvider = box.provider || (box.model?.startsWith('gpt-') ? 'openai' : 'google_ai');
-        const aiModel = box.model || (aiProvider === 'openai' ? 'gpt-4o' : 'gemini-2.5-flash');
-        const aiStart = Date.now();
-        try {
-          const aiResp = await fetch('http://localhost:8085/api/facebook-import/generate-ai', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              provider: aiProvider,
-              model: aiModel,
-              template_id: box.templateId || '',
-              template_name: box.title || 'Dynamic Real Estate Copywriter',
-              template_text: box.templateText || '',
-              raw_content: upstreamText,
-              custom_prompt:
-                box.customPrompt ||
-                (isTextFormat
-                  ? `Format this real estate listing according to the ${box.title || 'preset'} style. Maintain all property details, price, contact numbers, and formatting clean and attractive.`
-                  : ''),
-            }),
-          });
-          if (aiResp.ok) {
-            const aiData = await aiResp.json();
-            if (aiData.success && aiData.generated_content) {
-              copyText = aiData.generated_content;
-            }
-          }
-        } catch (err) {
-          console.warn('AI API call threw:', err);
-        }
-        addAIHistoryEntry({
-          provider: aiProvider,
-          model: aiModel,
-          taskType: 'text',
-          prompt: box.title || 'AI Box',
-          inputPreview: String(upstreamText || '').slice(0, 200),
-          outputPreview: copyText || 'Generation failed',
-          status: copyText ? 'success' : 'failed',
-          durationMs: Date.now() - aiStart,
-          sourceWorkflow: 'Create Workflow',
-        });
-
-        // If formatting failed or returned empty: ABSOLUTE STOP AT THIS STEP!
-        // Do NOT fall back to unformatted raw content and do NOT continue downstream!
-        if (!copyText || copyText.trim().length === 0) {
-          setExecutionState((prev) => ({
-            ...prev!,
-            isRunning: false,
-            hasError: true,
-            activeNodeIds: [box.id],
-            failedNodeIds: [box.id],
-            currentStepMessage: `❌ AI generation failed for [${box.title || 'Formatted Content'}]. Please write/fix content or re-generate to continue.`,
-          }));
-          setIsRunningWorkflow(false);
-          (window as any).__isWorkflowProcessing = false;
-          // Automatically open this node's drawer so user can inspect and fix directly
-          canvasRef.current?.openNodeDrawer(box.id);
-          return;
-        }
-
-        generatedOutputsMap[box.id] = copyText;
-        workflowContextRef.current.generatedOutputsMap[box.id] = copyText;
-        if (!primaryCopy || isTextFormat) {
-          primaryCopy = copyText;
-          workflowContextRef.current.primaryCopy = copyText;
-        }
-        setAiGeneratedOutputs((prev) => ({ ...prev, [box.id]: copyText }));
-        setAiGeneratedCopy(copyText);
-        await delay(500);
+        setIsRunningWorkflow(false);
+        (window as any).__isWorkflowProcessing = false;
+        return;
       }
 
-      const completedBranchIds = [
-        box.id,
-        ...(isExternalBrowser ? [tabGroupNodeId, ...(connectedProfileBox ? [connectedProfileBox.id] : [])] : []),
-      ];
-
-      setExecutionState((prev) => ({
-        ...prev!,
-        completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), ...completedBranchIds])),
-        activeNodeIds: [],
-        currentStepMessage: `✓ [${box.title || 'Node'}] executed successfully!`,
-      }));
-      await delay(250);
-    }
-
-    // Execute downstream: Combine Boxes, Output, Destinations
-    await executeDownstreamWorkflow({
-      cfg,
-      rawCaption,
-      imageList,
-      propData,
-      projName,
-      localWatermarkedMap,
-      generatedOutputsMap,
-      primaryCopy,
-      targetUrl,
-    });
+      // Execute downstream: Combine Boxes, Output, Destinations
+      await executeDownstreamWorkflow({
+        cfg,
+        rawCaption,
+        imageList,
+        propData,
+        projName,
+        localWatermarkedMap,
+        generatedOutputsMap,
+        primaryCopy,
+        targetUrl,
+        myRunId,
+        signal,
+      });
     } finally {
-      setIsRunningWorkflow(false);
-      (window as any).__isWorkflowProcessing = false;
-      (window as any).__workflowConfirmLeave = null;
+      if (runIdRef.current === myRunId) {
+        setIsRunningWorkflow(false);
+        (window as any).__isWorkflowProcessing = false;
+        (window as any).__workflowConfirmLeave = null;
+      }
     }
   };
 
@@ -1959,6 +2309,15 @@ export const CreateWorkflowView: React.FC = () => {
     if (!ctx.primaryCopy) ctx.primaryCopy = currentCopy;
     setAiGeneratedCopy(currentCopy);
 
+    runIdRef.current += 1;
+    const myRunId = runIdRef.current;
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    const signal = controller.signal;
+
     setIsRunningWorkflow(true);
     isCancelledRef.current = false;
     (window as any).__isWorkflowProcessing = true;
@@ -1966,7 +2325,7 @@ export const CreateWorkflowView: React.FC = () => {
     const updatedFailed = (executionState?.failedNodeIds || []).filter((id) => id !== targetBoxId);
     const updatedCompleted = Array.from(new Set([...(executionState?.completedNodeIds || []), targetBoxId]));
 
-    setExecutionState((prev) => ({
+    safeSetExecutionState(myRunId, (prev) => ({
       ...prev!,
       isRunning: true,
       hasError: updatedFailed.length > 0,
@@ -1976,18 +2335,19 @@ export const CreateWorkflowView: React.FC = () => {
       currentStepMessage: `▶ Resuming workflow from [${cfg.aiBoxes.find((b) => b.id === targetBoxId)?.title || 'Node'}]...`,
     }));
 
-    const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+    const delay = (ms: number) => cancellableDelay(ms, myRunId);
 
     try {
       const targetIdx = cfg.aiBoxes.findIndex((b) => b.id === targetBoxId);
       const remainingAiBoxes = targetIdx >= 0 ? cfg.aiBoxes.slice(targetIdx + 1) : [];
 
       for (const nextBox of remainingAiBoxes) {
+        if (isRunStopped(myRunId)) return;
         if (!nextBox.enabled || updatedCompleted.includes(nextBox.id)) continue;
         const isWatermark = isWatermarkAIBox(nextBox);
         const isTextFormat = isTextFormatAIBox(nextBox);
 
-        setExecutionState((prev) => ({
+        safeSetExecutionState(myRunId, (prev) => ({
           ...prev!,
           activeNodeIds: [nextBox.id],
           currentStepMessage: isWatermark
@@ -2024,20 +2384,24 @@ export const CreateWorkflowView: React.FC = () => {
           };
 
           for (let i = 0; i < ctx.imageList.length; i++) {
+            if (isRunStopped(myRunId)) return;
             const img = ctx.imageList[i];
             const rawUrl = img.stored_url
               ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
               : img.source_url;
             try {
               const formattedDataUrl = await formatImageWithCropFormat(rawUrl, targetFormat);
+              if (isRunStopped(myRunId)) return;
               ctx.localWatermarkedMap[img.index] = formattedDataUrl;
             } catch (err) {
               ctx.localWatermarkedMap[img.index] = rawUrl;
             }
           }
+          if (isRunStopped(myRunId)) return;
           setWatermarkedPhotos((prev) => ({ ...prev, ...ctx.localWatermarkedMap }));
           setEnhancedPhotos((prev) => ({ ...prev, ...ctx.localWatermarkedMap }));
           await delay(400);
+          if (isRunStopped(myRunId)) return;
         } else {
           const inConns = (cfg.connections || []).filter((c) => c.toNodeId === nextBox.id);
           const upstreamBoxId = inConns[0]?.fromNodeId;
@@ -2067,19 +2431,25 @@ export const CreateWorkflowView: React.FC = () => {
                     ? `Format this real estate listing according to the ${nextBox.title || 'preset'} style. Maintain all property details, price, contact numbers, and formatting clean and attractive.`
                     : ''),
               }),
+              signal,
             });
+            if (isRunStopped(myRunId)) return;
             if (aiResp.ok) {
               const aiData = await aiResp.json();
+              if (isRunStopped(myRunId)) return;
               if (aiData.success && aiData.generated_content) {
                 nextCopy = aiData.generated_content;
               }
             }
           } catch (err) {
+            if (isRunStopped(myRunId)) return;
             console.warn('Next AI step threw:', err);
           }
 
+          if (isRunStopped(myRunId)) return;
+
           if (!nextCopy || nextCopy.trim().length === 0) {
-            setExecutionState((prev) => ({
+            safeSetExecutionState(myRunId, (prev) => ({
               ...prev!,
               isRunning: false,
               hasError: true,
@@ -2097,14 +2467,17 @@ export const CreateWorkflowView: React.FC = () => {
           if (!ctx.primaryCopy || isTextFormat) ctx.primaryCopy = nextCopy;
           setAiGeneratedOutputs((prev) => ({ ...prev, [nextBox.id]: nextCopy }));
           setAiGeneratedCopy(nextCopy);
-          setExecutionState((prev) => ({
+          safeSetExecutionState(myRunId, (prev) => ({
             ...prev!,
             completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), nextBox.id])),
             activeNodeIds: [],
           }));
           await delay(300);
+          if (isRunStopped(myRunId)) return;
         }
       }
+
+      if (isRunStopped(myRunId)) return;
 
       await executeDownstreamWorkflow({
         cfg,
@@ -2116,11 +2489,15 @@ export const CreateWorkflowView: React.FC = () => {
         generatedOutputsMap: { ...aiGeneratedOutputs, ...ctx.generatedOutputsMap },
         primaryCopy: ctx.primaryCopy || aiGeneratedCopy,
         targetUrl: ctx.targetUrl || runFacebookUrl,
+        myRunId,
+        signal,
       });
     } finally {
-      setIsRunningWorkflow(false);
-      (window as any).__isWorkflowProcessing = false;
-      (window as any).__workflowConfirmLeave = null;
+      if (runIdRef.current === myRunId) {
+        setIsRunningWorkflow(false);
+        (window as any).__isWorkflowProcessing = false;
+        (window as any).__workflowConfirmLeave = null;
+      }
     }
   };
 

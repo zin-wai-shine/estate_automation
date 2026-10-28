@@ -38,6 +38,13 @@ import { Button } from '../../components/ui/Button';
 import { Select } from '../../components/ui/Select';
 import { ToggleSwitch } from '../../components/ui/ToggleSwitch';
 import {
+  getPersistedReferenceImage,
+  loadPersistedReferenceImageAsync,
+  savePersistedReferenceImage,
+  clearPersistedReferenceImage,
+  isReferenceImageExplicitlyDeleted,
+} from './referenceImageStorage';
+import {
   fetchBrowserProfiles,
   openBrowserProfile,
   openBrowserTab,
@@ -341,15 +348,15 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   const [automationStatus, setAutomationStatus] = useState<AutomationStatusResponse | null>(null);
   const [automationMessage, setAutomationMessage] = useState<string | null>(null);
 
-  // ── Auto-Run State & Preferences (Auto-run when ready without manual click) ──
+  // ── Auto-Run State & Preferences (Disabled on sidebar open — only runs via Workflow Run or explicit button click) ──
   const [autoRunEnabled, setAutoRunEnabled] = useState<boolean>(() => {
     if (typeof boxConfig.autoRun === 'boolean') return boxConfig.autoRun;
-    const saved = localStorage.getItem('bolthaven_browser_auto_run');
-    if (saved !== null) return saved === 'true';
-    return true; // Default ON: auto-runs automatically
+    return false;
   });
   const hasAutoStartedRef = useRef<boolean>(false);
   const autoRunTimerRef = useRef<any>(null);
+  const twoStageIntervalRef = useRef<any>(null);
+  const isSidebarStoppedRef = useRef<boolean>(false);
   const [autoRunCountdown, setAutoRunCountdown] = useState<number | null>(null);
 
   const handleToggleAutoRun = (val: boolean) => {
@@ -377,7 +384,12 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   };
 
   // 6. Two-Stage Tab Group Staging & Local Condo Building Image State
-  const [referenceImage, setReferenceImage] = useState<string>(() => boxConfig.referenceImage || '');
+  const latestBoxConfigRef = useRef(boxConfig);
+  latestBoxConfigRef.current = boxConfig;
+
+  const [referenceImage, setReferenceImage] = useState<string>(
+    () => boxConfig.referenceImage || getPersistedReferenceImage(boxConfig.id) || ''
+  );
   const [condoSearchQuery, setCondoSearchQuery] = useState<string>(
     () => boxConfig.browserCondoName || propertyContext?.title || 'Regent Home Bangna'
   );
@@ -386,6 +398,30 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   const [twoStageStatus, setTwoStageStatus] = useState<any>(null);
   const [isRunningTwoStage, setIsRunningTwoStage] = useState<boolean>(false);
   const [twoStageMessage, setTwoStageMessage] = useState<string | null>(null);
+
+  // Restore persisted reference image on mount or box change (and keep it until changed or deleted)
+  useEffect(() => {
+    let cancelled = false;
+    if (boxConfig.referenceImage) {
+      savePersistedReferenceImage(boxConfig.referenceImage, boxConfig.id);
+      setReferenceImage(boxConfig.referenceImage);
+      setReferenceImageMode('custom_upload');
+      return;
+    }
+    loadPersistedReferenceImageAsync(boxConfig.id).then((persisted) => {
+      if (cancelled || !persisted) return;
+      setReferenceImage(persisted);
+      setReferenceImageMode('custom_upload');
+      updateMultiConfig({
+        referenceImage: persisted,
+        useReferenceImage: true,
+        referenceImageMode: 'custom_upload',
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [boxConfig.id]);
 
   // Scan condo directory from local Mac companion (Strictly Read-Only!)
   const handleScanCondo = async (queryToSearch?: string, folderToUse?: string) => {
@@ -428,10 +464,23 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
 
   // Synchronize state when boxConfig is updated from FBHeroSettingsSidebox
   useEffect(() => {
-    if (boxConfig.referenceImage !== undefined && boxConfig.referenceImage !== referenceImage) {
-      setReferenceImage(boxConfig.referenceImage);
+    if (boxConfig.referenceImage) {
+      if (boxConfig.referenceImage !== referenceImage) {
+        setReferenceImage(boxConfig.referenceImage);
+        setReferenceImageMode('custom_upload');
+      }
+    } else if (boxConfig.referenceImage === '' && isReferenceImageExplicitlyDeleted()) {
+      if (referenceImage !== '') {
+        setReferenceImage('');
+      }
+    } else {
+      const persisted = getPersistedReferenceImage(boxConfig.id);
+      if (persisted && persisted !== referenceImage) {
+        setReferenceImage(persisted);
+        setReferenceImageMode('custom_upload');
+      }
     }
-  }, [boxConfig.referenceImage]);
+  }, [boxConfig.referenceImage, boxConfig.id]);
 
   useEffect(() => {
     if (boxConfig.promptSourceMode && boxConfig.promptSourceMode !== promptSourceMode) {
@@ -455,24 +504,46 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (event) => {
-      const dataUrl = event.target?.result as string;
-      setReferenceImage(dataUrl);
-      updateConfig('referenceImage', dataUrl);
+    reader.onload = async (event) => {
+      const rawDataUrl = event.target?.result as string;
+      if (!rawDataUrl) return;
+      const savedDataUrl = await savePersistedReferenceImage(rawDataUrl, boxConfig.id);
+      setReferenceImage(savedDataUrl);
+      setReferenceImageMode('custom_upload');
+      updateMultiConfig({
+        referenceImage: savedDataUrl,
+        useReferenceImage: true,
+        referenceImageMode: 'custom_upload',
+      });
     };
     reader.readAsDataURL(file);
+    e.target.value = '';
   };
 
-  const handleRemoveReferenceImage = () => {
+  const handleRemoveReferenceImage = async () => {
+    await clearPersistedReferenceImage(boxConfig.id);
     setReferenceImage('');
-    updateConfig('referenceImage', '');
+    setReferenceImageMode('photo_1');
+    updateMultiConfig({
+      referenceImage: '',
+      referenceImageMode: 'photo_1',
+    });
   };
 
   const handleRunTwoStageTest = async () => {
+    if (boxConfig.enabled === false) {
+      setTwoStageMessage('⚠️ This step is disabled. Enable Node Status above to run it.');
+      return;
+    }
     if (autoRunTimerRef.current) {
       clearTimeout(autoRunTimerRef.current);
       autoRunTimerRef.current = null;
     }
+    if (twoStageIntervalRef.current) {
+      clearInterval(twoStageIntervalRef.current);
+      twoStageIntervalRef.current = null;
+    }
+    isSidebarStoppedRef.current = false;
     hasAutoStartedRef.current = true;
     setAutoRunCountdown(null);
     setIsRunningTwoStage(true);
@@ -505,14 +576,21 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
         }),
       });
       const data = await resp.json();
+      if (isSidebarStoppedRef.current) return;
       if (data.status === 'success') {
         setTwoStageMessage(`🚀 Two-Stage Staging started: Tab 1 generating prompt for "${data.matched_folder}"...`);
 
         let pollCount = 0;
         const interval = setInterval(async () => {
+          if (isSidebarStoppedRef.current) {
+            clearInterval(interval);
+            twoStageIntervalRef.current = null;
+            return;
+          }
           pollCount++;
           if (pollCount > 100) {
             clearInterval(interval);
+            twoStageIntervalRef.current = null;
             setIsRunningTwoStage(false);
             setTwoStageMessage('Two-stage staging completed or timed out.');
             return;
@@ -520,9 +598,19 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
           try {
             const stResp = await fetch('http://127.0.0.1:9224/two-stage-status');
             const stData = await stResp.json();
+            if (isSidebarStoppedRef.current) {
+              clearInterval(interval);
+              twoStageIntervalRef.current = null;
+              return;
+            }
             if (stData && stData.state) {
               setTwoStageStatus(stData.state);
-              if (stData.state.step === 'stage1_running') {
+              if (stData.state.step === 'stopped') {
+                clearInterval(interval);
+                twoStageIntervalRef.current = null;
+                setIsRunningTwoStage(false);
+                setTwoStageMessage('Automation stopped.');
+              } else if (stData.state.step === 'stage1_running') {
                 setTwoStageMessage('⏳ Tab 1: Pasted prompt, generating & extracting output...');
               } else if (stData.state.step === 'stage1_completed') {
                 setTwoStageMessage('✓ Tab 1: Extracted prompt! Focusing Tab 2...');
@@ -530,16 +618,19 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                 setTwoStageMessage('🖼️ Tab 2: Pasting reference image, condo images 1, 2, 3 & prompt...');
               } else if (stData.state.step === 'completed') {
                 clearInterval(interval);
+                twoStageIntervalRef.current = null;
                 setIsRunningTwoStage(false);
                 setTwoStageMessage(`🎉 Complete! Tab 2 submitted with ${stData.state.images_attached || 4} images and extracted prompt.`);
               } else if (stData.state.step === 'error') {
                 clearInterval(interval);
+                twoStageIntervalRef.current = null;
                 setIsRunningTwoStage(false);
                 setTwoStageMessage(`⚠️ Error: ${stData.state.error}`);
               }
             }
           } catch (e) {}
         }, 2000);
+        twoStageIntervalRef.current = interval;
       } else {
         setIsRunningTwoStage(false);
         setTwoStageMessage(`Error starting: ${data.message || 'Unknown error'}`);
@@ -550,12 +641,27 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     }
   };
 
-  // Sync state back to canvas box config
+  // Sync state back to canvas box config (using latestBoxConfigRef so async effects never overwrite referenceImage or enabled with a stale closure)
   const updateMultiConfig = (updates: Record<string, any>) => {
-    onUpdateBoxConfig({
-      ...boxConfig,
+    const current = latestBoxConfigRef.current || boxConfig;
+    const preservedRefImg =
+      'referenceImage' in updates
+        ? updates.referenceImage
+        : (current.referenceImage || referenceImage || getPersistedReferenceImage(current.id) || undefined);
+    const nextConfig = {
+      ...current,
+      ...(preservedRefImg !== undefined ? { referenceImage: preservedRefImg } : {}),
       ...updates,
-    });
+    };
+    if (!('enabled' in updates) && typeof boxConfig.enabled === 'boolean') {
+      nextConfig.enabled = boxConfig.enabled;
+    }
+    latestBoxConfigRef.current = nextConfig;
+    const payload = { ...nextConfig };
+    if (!('enabled' in updates)) {
+      delete (payload as any).enabled;
+    }
+    onUpdateBoxConfig(payload);
   };
 
   const updateConfig = (key: string, value: any) => {
@@ -707,17 +813,22 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     };
   }, [isAutomating]);
 
-  // Notify parent of running state changes
+  // Notify parent of running state changes (never report running if this step is disabled)
   useEffect(() => {
-    onRunningChange?.(isAutomating || isRunningTwoStage);
-  }, [isAutomating, isRunningTwoStage, onRunningChange]);
+    onRunningChange?.(boxConfig.enabled !== false && (isAutomating || isRunningTwoStage));
+  }, [boxConfig.enabled, isAutomating, isRunningTwoStage, onRunningChange]);
 
   // Handler: Start Multi-Tab Automated Queue across all tabs in selected group
   const handleStartGroupAutomation = async () => {
+    if (boxConfig.enabled === false) {
+      setAutomationMessage('⚠️ This step is disabled. Enable Node Status above to run it.');
+      return;
+    }
     if (autoRunTimerRef.current) {
       clearTimeout(autoRunTimerRef.current);
       autoRunTimerRef.current = null;
     }
+    isSidebarStoppedRef.current = false;
     hasAutoStartedRef.current = true;
     setAutoRunCountdown(null);
     const profId = activeProfile?.id || selectedProfileId;
@@ -731,6 +842,8 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       setAutomationMessage('⚠️ No images selected for this run. Please select photos or check image source.');
       return;
     }
+
+    setIsAutomating(true);
 
     // Always use the prompt selected in the template preview / dropdown
     const promptToUse = enablePromptEnhance
@@ -774,12 +887,16 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
           output_height: outputHeight,
           strict_preservation_active: strictPreservation,
         });
+        if (isSidebarStoppedRef.current) return;
         await startImageQueue(propId);
+        if (isSidebarStoppedRef.current) return;
         await loadQueue();
       } catch (err) {
         console.warn('Queue init error:', err);
       }
     }
+
+    if (isSidebarStoppedRef.current) return;
 
     // Auto-open and focus the selected browser profile & selected tab group with all worker tabs!
     try {
@@ -791,6 +908,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
         url: targetUrls[0],
         force: true,
       });
+      if (isSidebarStoppedRef.current) return;
 
       setAutomationMessage(`Opening Chrome [${profKey}] & Tab Group [${effectiveGroupName}]... Waiting for tabs to be ready...`);
       await waitForBrowserTabsReady({
@@ -798,11 +916,16 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
         groupName: effectiveGroupName,
         expectedUrls: targetUrls,
         maxWaitMs: 15000,
-        onProgress: (msg) => setAutomationMessage(msg),
+        shouldCancel: () => isSidebarStoppedRef.current,
+        onProgress: (msg) => {
+          if (!isSidebarStoppedRef.current) setAutomationMessage(msg);
+        },
       });
     } catch (e) {
       console.warn('Could not auto-open browser tab group:', e);
     }
+
+    if (isSidebarStoppedRef.current) return;
 
     // Collect numeric tab IDs from groupTabs
     const tabIds: number[] = groupTabs
@@ -823,6 +946,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       profile_key: profKey,
       tab_ids: finalTabIds,
     });
+    if (isSidebarStoppedRef.current) return;
 
     if (!res.success) {
       setIsAutomating(false);
@@ -836,18 +960,53 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
 
   // Handler: Stop Multi-Tab Automation
   const handleStopGroupAutomation = async () => {
+    isSidebarStoppedRef.current = true;
     if (autoRunTimerRef.current) {
       clearTimeout(autoRunTimerRef.current);
       autoRunTimerRef.current = null;
     }
+    if (twoStageIntervalRef.current) {
+      clearInterval(twoStageIntervalRef.current);
+      twoStageIntervalRef.current = null;
+    }
     hasAutoStartedRef.current = true;
     setAutoRunCountdown(null);
-    await stopAutomation();
     setIsAutomating(false);
+    setIsRunningTwoStage(false);
+    setTwoStageMessage('Automation stopped.');
+    await stopAutomation();
     setAutomationMessage('Automation stopped.');
     loadQueue();
     setTimeout(() => setAutomationMessage(null), 3000);
   };
+
+  useEffect(() => {
+    const onStopAll = () => {
+      isSidebarStoppedRef.current = true;
+      if (autoRunTimerRef.current) {
+        clearTimeout(autoRunTimerRef.current);
+        autoRunTimerRef.current = null;
+      }
+      if (twoStageIntervalRef.current) {
+        clearInterval(twoStageIntervalRef.current);
+        twoStageIntervalRef.current = null;
+      }
+      hasAutoStartedRef.current = true;
+      setAutoRunCountdown(null);
+      setIsAutomating(false);
+      setIsRunningTwoStage(false);
+      setAutomationMessage('Automation stopped.');
+      setTwoStageMessage('Automation stopped.');
+    };
+    window.addEventListener('ea_workflow_stop_all', onStopAll);
+    return () => {
+      window.removeEventListener('ea_workflow_stop_all', onStopAll);
+      if (twoStageIntervalRef.current) {
+        clearInterval(twoStageIntervalRef.current);
+        twoStageIntervalRef.current = null;
+      }
+    };
+  }, []);
 
 
   // Standard Image Prompt Templates + Custom Library Prompts
@@ -897,7 +1056,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
 
   // Selected Reference Image for Generation
   const activeReferenceImage = useMemo(() => {
-    if (referenceImageMode === 'custom_upload' && referenceImage) {
+    if (referenceImage) {
       return { url: referenceImage, label: 'Custom Upload File', index: 0 };
     }
     if (referenceImageMode === 'picked') {
@@ -1120,58 +1279,6 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   useEffect(() => {
     hasAutoStartedRef.current = false;
   }, [propertyContext?.id]);
-
-  // ── Auto-Run Trigger: Automatically execute when inputs & tabs are ready ──
-  useEffect(() => {
-    if (!autoRunEnabled || isAutomating || isRunningTwoStage || hasAutoStartedRef.current) {
-      return;
-    }
-
-    const hasImages = activeImages.length > 0 || queueJobs.length > 0;
-    if (!hasImages) {
-      return;
-    }
-
-    const targetUrls = groupTabs.map((t) => t.url).filter(Boolean);
-    const hasTabs = targetUrls.length > 0 || (currentGroup && (currentGroup.tabs_count || currentGroup.tabs?.length || 0) > 0);
-    if (!hasTabs) {
-      return;
-    }
-
-    const grpName = currentGroup?.name || targetGroupName || (isHeroNode ? 'FB Hero' : 'Enhance IMG');
-    setAutoRunCountdown(1);
-    setAutomationMessage(`⚡ Auto-run active: Starting "${grpName}" across tabs in 1s...`);
-
-    autoRunTimerRef.current = setTimeout(() => {
-      if (hasAutoStartedRef.current || isAutomating || isRunningTwoStage) return;
-      hasAutoStartedRef.current = true;
-      setAutoRunCountdown(null);
-      if (isHeroNode) {
-        handleRunTwoStageTest();
-      } else {
-        if (currentGroup?.name) {
-          setSelectedGroupName(currentGroup.name);
-        }
-        handleStartGroupAutomation();
-      }
-    }, 1200);
-
-    return () => {
-      if (autoRunTimerRef.current) {
-        clearTimeout(autoRunTimerRef.current);
-        autoRunTimerRef.current = null;
-      }
-    };
-  }, [
-    autoRunEnabled,
-    isAutomating,
-    isRunningTwoStage,
-    activeImages.length,
-    queueJobs.length,
-    groupTabs.length,
-    currentGroup.name,
-    isHeroNode,
-  ]);
 
   // Copy prompt to clipboard
   const handleCopyPrompt = () => {

@@ -1,5 +1,9 @@
 import type { FacebookWorkflowConfig, DynamicAIBoxConfig } from '../facebook-import/FacebookWorkflowCanvas';
-import { DEFAULT_FB_WORKFLOW_CONFIG, sanitizeAndResolveCollisions } from '../facebook-import/FacebookWorkflowCanvas';
+import {
+  DEFAULT_FB_WORKFLOW_CONFIG,
+  sanitizeAndResolveCollisions,
+  stripLargeBase64FromWorkflowConfig,
+} from '../facebook-import/FacebookWorkflowCanvas';
 
 export interface WorkflowFormat {
   id: string;
@@ -270,19 +274,27 @@ export const restoreDefaultWorkflowFormats = (): WorkflowFormat[] => {
 };
 
 export const saveWorkflowFormatsList = (formats: WorkflowFormat[]) => {
+  // Always sync with backend API regardless of localStorage quota
+  fetch('http://localhost:8085/api/workflow/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      workflow_formats: formats,
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+
   try {
     localStorage.setItem(STORAGE_FORMATS_KEY, JSON.stringify(formats));
-    // Sync with backend API
-    fetch('http://localhost:8085/api/workflow/config', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        workflow_formats: formats,
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
   } catch (e) {
-    console.error('Failed to save workflow formats', e);
+    try {
+      const compactFormats = formats.map((f) =>
+        f.config ? { ...f, config: stripLargeBase64FromWorkflowConfig(f.config) } : f
+      );
+      localStorage.setItem(STORAGE_FORMATS_KEY, JSON.stringify(compactFormats));
+    } catch (err) {
+      console.error('Failed to save workflow formats to localStorage', err);
+    }
   }
 };
 

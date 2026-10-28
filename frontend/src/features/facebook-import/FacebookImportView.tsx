@@ -1567,22 +1567,11 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
           }
 
           const isExtDirectlyEnabled = extBox.enabled !== false;
+          const isProfileEnabled = connectedProfileBox ? connectedProfileBox.enabled !== false : true;
           const isTabGroupEnabled = connectedTabGroupBox ? connectedTabGroupBox.enabled !== false : true;
 
-          if (!isExtDirectlyEnabled || !isTabGroupEnabled) {
-            const skippedIds = [
-              extBox.id,
-              ...(connectedTabGroupBox ? [connectedTabGroupBox.id] : []),
-              ...(connectedProfileBox ? [connectedProfileBox.id] : []),
-            ];
-            addLog(`⏭️ [${extBox.title || 'Chrome Automation'}] is disabled — bypassed during import (original photos forwarded).`, 'info');
-            setWorkflowExecutionState((prev) => ({
-              ...prev,
-              completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), ...skippedIds])),
-              activeNodeIds: [],
-              currentStepMessage: `✓ [${extBox.title || 'Chrome Automation'}] bypassed`,
-            }));
-            await delay(300);
+          if (!isExtDirectlyEnabled || !isProfileEnabled || !isTabGroupEnabled) {
+            addLog(`⏭️ [${extBox.title || 'Chrome Automation'}] is disabled — skipped during import.`, 'info');
             continue;
           }
 
@@ -1854,13 +1843,22 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
 
           // ── PHASE 2: STAGING & AD CREATION (2 TABS e.g. FB Hero) ──
           if (runStaging) {
-            const stagingGroupTarget = (extBox as any).stagingGroupName || 'FB Hero';
+            const stagingBox: any = connectedTabGroupBox || extBox;
+            const stagingGroupTarget = stagingBox.stagingGroupName || (extBox as any).stagingGroupName || 'FB Hero';
             const propTitle = (result.property as any)?.project_name || (result.property as any)?.title || 'Featured Property Listing';
-            const initialPrompt = resolvePromptForBrowserNode(extBox, {
+            const initialPrompt = resolvePromptForBrowserNode(stagingBox, {
               title: propTitle,
-              width: (extBox as any).outputWidth || 1080,
-              height: (extBox as any).outputHeight || 1350,
+              width: stagingBox.outputWidth || (extBox as any).outputWidth || 1080,
+              height: stagingBox.outputHeight || (extBox as any).outputHeight || 1350,
             });
+            const useRefImg = stagingBox.useReferenceImage !== false && (extBox as any).useReferenceImage !== false;
+            const resolvedRefImage = useRefImg
+              ? (stagingBox.referenceImage ||
+                 (extBox as any).referenceImage ||
+                 localStorage.getItem(`bolthaven_ref_img_${connectedTabGroupBox?.id}`) ||
+                 localStorage.getItem('bolthaven_ref_img_global_fb_hero') ||
+                 null)
+              : null;
 
             addLog(`🚀 Phase 2: Starting Two-Stage Staging for "${propTitle}" in group [${stagingGroupTarget}]...`, 'info');
             setWorkflowExecutionState((prev) => ({
@@ -1876,13 +1874,13 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
                 body: JSON.stringify({
                   profile_key: profKey,
                   group_name: stagingGroupTarget,
-                  condo_name: (extBox as any).browserCondoName || propTitle,
+                  condo_name: stagingBox.browserCondoName || (extBox as any).browserCondoName || propTitle,
                   initial_prompt: initialPrompt,
-                  reference_image: (extBox as any).useReferenceImage !== false ? ((extBox as any).referenceImage || null) : null,
-                  target_folder: (extBox as any).targetFolder || localStorage.getItem('bolthaven_condo_target_folder') || '',
-                  use_condo_images: (extBox as any).useCondoImages !== false,
-                  use_reference_image: (extBox as any).useReferenceImage !== false,
-                  skip_tab1: (extBox as any).stagingMode === 'direct_tab2' || (extBox as any).skipTab1 === true,
+                  reference_image: resolvedRefImage,
+                  target_folder: stagingBox.targetFolder || (extBox as any).targetFolder || localStorage.getItem('bolthaven_condo_target_folder') || '',
+                  use_condo_images: stagingBox.useCondoImages !== false && (extBox as any).useCondoImages !== false,
+                  use_reference_image: useRefImg,
+                  skip_tab1: stagingBox.stagingMode === 'direct_tab2' || stagingBox.skipTab1 === true || (extBox as any).stagingMode === 'direct_tab2' || (extBox as any).skipTab1 === true,
                 }),
               });
 
