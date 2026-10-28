@@ -30,6 +30,7 @@ import { runN8NWorkflow } from '../../services/n8nService';
 import { createBatchImageQueue, startImageQueue, focusBrowserTabGroup, openBrowserProfile, fetchTabGroups, waitForBrowserTabsReady, startAutomation, stopAutomation, getAutomationStatus, fetchImageQueue } from '../browser-processing/browserAutomationService';
 import { resolvePromptForBrowserNode, getPersistedPromptKey } from '../browser-processing/browserPromptUtils';
 import { getPersistedReferenceImage, loadPersistedReferenceImageAsync } from '../browser-processing/referenceImageStorage';
+import { extractCleanCondoNameFromAiText } from '../browser-processing/FBHeroSettingsSidebox';
 import { getSavedCropFormats, formatImageWithCropFormat, type CropStudioFormat } from '../watermark/cropFormats';
 import { loadActiveWatermarkConfig } from '../autopost/watermarkStorage';
 import {
@@ -1905,11 +1906,59 @@ export const CreateWorkflowView: React.FC = () => {
             if (isRunStopped(myRunId) || branchFatalError) return false;
             const stagingBox: any = connectedTabGroupBox || box;
             const stagingGroupTarget = stagingBox.stagingGroupName || (box as any).stagingGroupName || groupName || 'FB Hero';
-            const initialPrompt = resolvePromptForBrowserNode(stagingBox, {
-              title: propName,
-              width: stagingBox.outputWidth || (box as any).outputWidth || (box as any).targetWidth || 1080,
-              height: stagingBox.outputHeight || (box as any).outputHeight || (box as any).targetHeight || 1350,
-            });
+
+            // Resolve Condo Name AI Box (wait briefly if parallel Content branch is still generating it)
+            const targetCondoAiBoxId =
+              stagingBox.condoNameAiBoxId ||
+              (box as any).condoNameAiBoxId ||
+              contentBranchBoxes.find(
+                (b: any) =>
+                  b.enabled !== false &&
+                  (b.title?.toLowerCase().includes('condo') || b.title?.toLowerCase().includes('name'))
+              )?.id;
+
+            if (targetCondoAiBoxId && contentEnabled) {
+              const condoBoxObj = contentBranchBoxes.find((b: any) => b.id === targetCondoAiBoxId);
+              if (condoBoxObj && condoBoxObj.enabled !== false) {
+                let waitCondoTicks = 0;
+                while (!generatedOutputsMap[targetCondoAiBoxId] && waitCondoTicks < 40 && !branchFatalError && !isRunStopped(myRunId)) {
+                  await delay(400);
+                  waitCondoTicks++;
+                }
+              }
+            }
+
+            const aiExtractedCondo =
+              targetCondoAiBoxId && generatedOutputsMap[targetCondoAiBoxId]
+                ? extractCleanCondoNameFromAiText(generatedOutputsMap[targetCondoAiBoxId])
+                : '';
+
+            const effectiveCondoName =
+              aiExtractedCondo ||
+              stagingBox.browserCondoName ||
+              (box as any).browserCondoName ||
+              propName;
+
+            // Also resolve upstream AI prompt if promptSourceMode is upstream_ai
+            const targetPromptAiId = stagingBox.selectedUpstreamAiId || (box as any).selectedUpstreamAiId;
+            if (targetPromptAiId && contentEnabled) {
+              const promptBoxObj = contentBranchBoxes.find((b: any) => b.id === targetPromptAiId);
+              if (promptBoxObj && promptBoxObj.enabled !== false) {
+                let waitPromptTicks = 0;
+                while (!generatedOutputsMap[targetPromptAiId] && waitPromptTicks < 40 && !branchFatalError && !isRunStopped(myRunId)) {
+                  await delay(400);
+                  waitPromptTicks++;
+                }
+              }
+            }
+
+            const initialPrompt =
+              (targetPromptAiId && generatedOutputsMap[targetPromptAiId]) ||
+              resolvePromptForBrowserNode(stagingBox, {
+                title: effectiveCondoName,
+                width: stagingBox.outputWidth || (box as any).outputWidth || (box as any).targetWidth || 1080,
+                height: stagingBox.outputHeight || (box as any).outputHeight || (box as any).targetHeight || 1350,
+              });
             const useRefImg = stagingBox.useReferenceImage !== false && (box as any).useReferenceImage !== false;
             const resolvedRefImage = useRefImg
               ? (stagingBox.referenceImage ||
@@ -1923,7 +1972,7 @@ export const CreateWorkflowView: React.FC = () => {
               [],
               [tabGroupNodeId],
               [],
-              `🚀 Phase 2 (Tab 1): Pasting & generating prompt for ${propName} in [${stagingGroupTarget}]...`
+              `🚀 Phase 2 (Tab 1): Pasting & generating prompt for ${effectiveCondoName} in [${stagingGroupTarget}]...`
             );
 
             try {
@@ -1933,7 +1982,7 @@ export const CreateWorkflowView: React.FC = () => {
                 body: JSON.stringify({
                   profile_key: profKey,
                   group_name: stagingGroupTarget,
-                  condo_name: stagingBox.browserCondoName || (box as any).browserCondoName || propName,
+                  condo_name: effectiveCondoName,
                   initial_prompt: initialPrompt,
                   reference_image: resolvedRefImage,
                   target_folder: stagingBox.targetFolder || (box as any).targetFolder || localStorage.getItem('bolthaven_condo_target_folder') || '',
@@ -2073,12 +2122,24 @@ export const CreateWorkflowView: React.FC = () => {
 
           generatedOutputsMap[box.id] = copyText;
           workflowContextRef.current.generatedOutputsMap[box.id] = copyText;
-          if (!primaryCopy || isTextFormat) {
+          const isCondoNameBox =
+            box.title?.toLowerCase().includes('condo') ||
+            box.title?.toLowerCase().includes('project name');
+          if (isCondoNameBox) {
+            const cleanedCondo = extractCleanCondoNameFromAiText(copyText);
+            if (cleanedCondo) {
+              projName = cleanedCondo;
+              workflowContextRef.current.projName = cleanedCondo;
+              setProjectName(cleanedCondo);
+            }
+          } else if (!primaryCopy || isTextFormat) {
             primaryCopy = copyText;
             workflowContextRef.current.primaryCopy = copyText;
           }
           setAiGeneratedOutputs((prev) => ({ ...prev, [box.id]: copyText }));
-          setAiGeneratedCopy(copyText);
+          if (!isCondoNameBox) {
+            setAiGeneratedCopy(copyText);
+          }
           await delay(500);
           if (isRunStopped(myRunId) || branchFatalError) return false;
         }

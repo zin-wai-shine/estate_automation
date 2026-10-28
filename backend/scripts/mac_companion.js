@@ -948,10 +948,11 @@ const server = http.createServer(async (req, res) => {
 
   function normalizeCondoName(str) {
     if (!str) return '';
-    return str
+    return String(str)
+      .split('\n')[0]
       .normalize('NFKD')
       .replace(/[\u0300-\u036f]/g, '')
-      .replace(/^(ให้เช่า|เช่า|ขาย|คอนโด|for rent|for sale|\(owner post\)|owner post)[\s:]*/i, '')
+      .replace(/^(condo name|project name|condominium|project|ชื่อโครงการ|โครงการ|ให้เช่า|เช่า|ขาย|คอนโด|for rent|for sale|\(owner post\)|owner post)[\s:：\-–—]*/i, '')
       // Convert mathematical bold, italic, and sans-serif Unicode to standard ASCII
       .replace(/[\u{1D400}-\u{1D7FF}]/gu, (c) => {
         const code = c.codePointAt(0);
@@ -963,8 +964,13 @@ const server = http.createServer(async (req, res) => {
         return c;
       })
       .toLowerCase()
-      .replace(/^(ให้เช่า|เช่า|ขาย|คอนโด|for rent|for sale|\(owner post\)|owner post)[\s:]*/i, '')
-      .replace(/[:\/_\-\(\)]/g, ' ')
+      .replace(/^(condo name|project name|condominium|project|ชื่อโครงการ|โครงการ|ให้เช่า|เช่า|ขาย|คอนโด|for rent|for sale|\(owner post\)|owner post)[\s:：\-–—]*/i, '')
+      .replace(/[:\/_,\.\(\)\[\]"'`\*#•\-\u2010-\u2015\u2212]/g, ' ')
+      .replace(/\bon\s+nut\b/g, 'onnut')
+      .replace(/\bhuai\s+kh?wang\b/g, 'huaikhwang')
+      .replace(/\blat\s+phrao\b/g, 'ladprao')
+      .replace(/\bphrama\b/g, 'rama')
+      .replace(/\bsrinagarindra\b/g, 'srinakarin')
       .replace(/\s+/g, ' ')
       .trim();
   }
@@ -976,34 +982,141 @@ const server = http.createServer(async (req, res) => {
       .filter((d) => d.isDirectory())
       .map((d) => d.name);
 
-    const normQ = normalizeCondoName(query);
-    if (!normQ) return null;
-
-    // 1. Exact normalized match
-    for (const d of dirs) {
-      if (normalizeCondoName(d) === normQ) return d;
+    const rawTrimmed = String(query || '').trim();
+    if (!rawTrimmed || rawTrimmed.toLowerCase() === 'featured property listing' || rawTrimmed.toLowerCase() === 'not_found') {
+      return null;
     }
-    // 2. Substring match
+
+    // 0. Direct exact folder name match
+    const exactRaw = dirs.find((d) => d.trim().toLowerCase() === rawTrimmed.toLowerCase());
+    if (exactRaw) return exactRaw;
+
+    const normQ = normalizeCondoName(rawTrimmed);
+    if (!normQ) return null;
+    const compactQ = normQ.replace(/\s+/g, '');
+
+    // 1. Exact normalized or compact match
     for (const d of dirs) {
       const nd = normalizeCondoName(d);
-      if (nd && (nd.includes(normQ) || normQ.includes(nd))) return d;
+      if (nd === normQ || (compactQ.length >= 4 && nd.replace(/\s+/g, '') === compactQ)) {
+        return d;
+      }
     }
-    // 3. Token overlap match (e.g. "Regent Home Bangna" vs "Regent Home Bangna")
-    const qTokens = normQ.split(' ').filter((t) => t.length > 2);
+
+    // 2. Scored substring & token similarity match (picks the closest/most specific match)
+    const qTokens = normQ.split(' ').filter((t) => t.length >= 2);
     let best = null;
     let bestScore = 0;
+
     for (const d of dirs) {
       const nd = normalizeCondoName(d);
+      if (!nd) continue;
+      const dTokens = nd.split(' ').filter((t) => t.length >= 2);
       let score = 0;
-      for (const t of qTokens) {
-        if (nd.includes(t)) score++;
+
+      // Full phrase containment bonus
+      if (nd.includes(normQ) || normQ.includes(nd)) {
+        score += 5;
       }
-      if (score > bestScore) {
-        bestScore = score;
+
+      // Token match scoring (exact token + prefix/substring token similarity)
+      for (const qt of qTokens) {
+        if (dTokens.includes(qt)) {
+          score += 3;
+        } else if (qt.length >= 3 && dTokens.some((dt) => dt.includes(qt) || qt.includes(dt))) {
+          score += 1.5;
+        }
+      }
+
+      // Penalize extra unmatched words slightly so specific matches win over generic ones
+      const extraTokens = Math.abs(dTokens.length - qTokens.length);
+      const finalScore = score - extraTokens * 0.15;
+
+      if (finalScore > bestScore) {
+        bestScore = finalScore;
         best = d;
       }
     }
-    return bestScore >= Math.min(2, qTokens.length) ? best : null;
+
+    const minRequired = qTokens.length === 1 ? 2.5 : 3.5;
+    return bestScore >= minRequired ? best : null;
+  }
+
+  function extractCondoImages123(folderPath) {
+    const entries = fs.readdirSync(folderPath, { withFileTypes: true });
+    const subDirs = entries
+      .filter((d) => d.isDirectory() && !d.name.startsWith('.'))
+      .map((d) => path.join(folderPath, d.name));
+
+    const toImageEntry = (filePath, filename, num) => {
+      const ext = path.extname(filename).toLowerCase().replace('.', '') || 'png';
+      const mime = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+      const fileBuf = fs.readFileSync(filePath);
+      const b64 = fileBuf.toString('base64');
+      return {
+        index: num,
+        filename,
+        mime_type: mime,
+        full_path: filePath,
+        size_bytes: fileBuf.length,
+        data_url: `data:${mime};base64,${b64}`,
+      };
+    };
+
+    const imagesBySlot = new Map();
+    const usedPaths = new Set();
+
+    // 1. Check root folder for 1.(png|jpg|jpeg|webp), 2.(...), 3.(...)
+    [1, 2, 3].forEach((num) => {
+      const match = entries.find(
+        (f) => f.isFile() && new RegExp(`^0?${num}\\.(png|jpg|jpeg|webp)$`, 'i').test(f.name)
+      );
+      if (match) {
+        const fp = path.join(folderPath, match.name);
+        imagesBySlot.set(num, toImageEntry(fp, match.name, num));
+        usedPaths.add(fp);
+      }
+    });
+
+    // 2. If any slot 1, 2, 3 is missing in root, check immediate subfolders (e.g. watermark/) for 1.png, 2.png, 3.png
+    if (imagesBySlot.size < 3 && subDirs.length > 0) {
+      [1, 2, 3].forEach((num) => {
+        if (imagesBySlot.has(num)) return;
+        for (const sd of subDirs) {
+          try {
+            const subEntries = fs.readdirSync(sd, { withFileTypes: true });
+            const match = subEntries.find(
+              (f) => f.isFile() && new RegExp(`^0?${num}\\.(png|jpg|jpeg|webp)$`, 'i').test(f.name)
+            );
+            if (match) {
+              const fp = path.join(sd, match.name);
+              imagesBySlot.set(num, toImageEntry(fp, match.name, num));
+              usedPaths.add(fp);
+              break;
+            }
+          } catch (e) {}
+        }
+      });
+    }
+
+    // 3. Fallback: fill any remaining empty slots (1, 2, 3) from top image files in the condo folder
+    if (imagesBySlot.size < 3) {
+      const validRootImages = entries
+        .filter((f) => f.isFile() && /\.(png|jpg|jpeg|webp)$/i.test(f.name) && !f.name.startsWith('.'))
+        .map((f) => ({ name: f.name, fullPath: path.join(folderPath, f.name) }))
+        .filter((f) => !usedPaths.has(f.fullPath));
+
+      let fallbackIdx = 0;
+      [1, 2, 3].forEach((num) => {
+        if (!imagesBySlot.has(num) && fallbackIdx < validRootImages.length) {
+          const picked = validRootImages[fallbackIdx++];
+          imagesBySlot.set(num, toImageEntry(picked.fullPath, picked.name, num));
+          usedPaths.add(picked.fullPath);
+        }
+      });
+    }
+
+    return [1, 2, 3].map((n) => imagesBySlot.get(n)).filter(Boolean);
   }
 
   // Native macOS folder chooser dialog via osascript
@@ -1046,52 +1159,7 @@ const server = http.createServer(async (req, res) => {
         }
 
         const folderPath = path.join(baseDir, matchedDir);
-        const entries = fs.readdirSync(folderPath, { withFileTypes: true });
-
-        // Strictly locate image files named 1, 2, 3 (ignoring subdirectories like D or watermark)
-        const images = [];
-        [1, 2, 3].forEach((num) => {
-          const match = entries.find(
-            (f) => f.isFile() && new RegExp(`^${num}\\.(png|jpg|jpeg|webp)$`, 'i').test(f.name)
-          );
-          if (match) {
-            const filePath = path.join(folderPath, match.name);
-            const ext = path.extname(match.name).toLowerCase().replace('.', '') || 'png';
-            const mime = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
-            const fileBuf = fs.readFileSync(filePath);
-            const b64 = fileBuf.toString('base64');
-            images.push({
-              index: num,
-              filename: match.name,
-              mime_type: mime,
-              full_path: filePath,
-              size_bytes: fileBuf.length,
-              data_url: `data:${mime};base64,${b64}`,
-            });
-          }
-        });
-
-        // Fallback: If 1.png, 2.png, 3.png not explicitly numbered, pick the top 3 image files
-        if (images.length === 0) {
-          const validEntries = entries
-            .filter((f) => f.isFile() && /\.(png|jpg|jpeg|webp)$/i.test(f.name) && !f.name.startsWith('.'))
-            .slice(0, 3);
-          validEntries.forEach((file, idx) => {
-            const filePath = path.join(folderPath, file.name);
-            const ext = path.extname(file.name).toLowerCase().replace('.', '') || 'png';
-            const mime = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
-            const fileBuf = fs.readFileSync(filePath);
-            const b64 = fileBuf.toString('base64');
-            images.push({
-              index: idx + 1,
-              filename: file.name,
-              mime_type: mime,
-              full_path: filePath,
-              size_bytes: fileBuf.length,
-              data_url: `data:${mime};base64,${b64}`,
-            });
-          });
-        }
+        const images = extractCondoImages123(folderPath);
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({
@@ -1671,41 +1739,11 @@ function mergeTabGroups(scannedGroups, liveGroups) {
           matchedDir = findCondoDirectory(condoName, baseDir);
           if (matchedDir) {
             const folderPath = path.join(baseDir, matchedDir);
-            const entries = fs.readdirSync(folderPath, { withFileTypes: true });
-            [1, 2, 3].forEach((num) => {
-              const match = entries.find(
-                (f) => f.isFile() && new RegExp(`^${num}\\.(png|jpg|jpeg|webp)$`, 'i').test(f.name)
-              );
-              if (match) {
-                const filePath = path.join(folderPath, match.name);
-                const ext = path.extname(match.name).toLowerCase().replace('.', '') || 'png';
-                const mime = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
-                const buf = fs.readFileSync(filePath);
-                condoImages.push({
-                  index: num,
-                  filename: match.name,
-                  data_url: `data:${mime};base64,${buf.toString('base64')}`,
-                });
-              }
-            });
-
-            // Fallback: If 1.png, 2.png, 3.png not explicitly numbered, pick the top 3 image files
-            if (condoImages.length === 0) {
-              const validEntries = entries
-                .filter((f) => f.isFile() && /\.(png|jpg|jpeg|webp)$/i.test(f.name) && !f.name.startsWith('.'))
-                .slice(0, 3);
-              validEntries.forEach((file, idx) => {
-                const filePath = path.join(folderPath, file.name);
-                const ext = path.extname(file.name).toLowerCase().replace('.', '') || 'png';
-                const mime = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
-                const buf = fs.readFileSync(filePath);
-                condoImages.push({
-                  index: idx + 1,
-                  filename: file.name,
-                  data_url: `data:${mime};base64,${buf.toString('base64')}`,
-                });
-              });
-            }
+            condoImages = extractCondoImages123(folderPath).map((img) => ({
+              index: img.index,
+              filename: img.filename,
+              data_url: img.data_url,
+            }));
           }
         }
 

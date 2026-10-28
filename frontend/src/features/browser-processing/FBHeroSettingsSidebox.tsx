@@ -41,12 +41,38 @@ interface FBHeroSettingsSideboxProps {
     id?: string;
     title?: string;
     aboveBoxTitle?: string;
-    upstreamPrompts?: Array<{ id: string; title: string; text?: string; templateId?: string }>;
+    upstreamPrompts?: Array<{ id: string; title: string; text?: string; generatedOutput?: string; templateId?: string }>;
     upstreamTabGroups?: Array<{ id: string; title: string; browserGroupName?: string }>;
     images?: Array<{ url: string; index: number; filename?: string }>;
     rawPostContent?: string;
   };
   availablePrompts?: Array<{ id: string | number; name: string; category?: string; instructions?: string; templateText?: string }>;
+}
+
+export function extractCleanCondoNameFromAiText(raw?: string): string {
+  if (!raw) return '';
+  const trimmed = String(raw).trim();
+  if (!trimmed || trimmed.length > 260) return '';
+  if (
+    trimmed.includes('UNIVERSAL FACEBOOK') ||
+    trimmed.includes('STRICT RULES:') ||
+    trimmed.includes('Convert the raw property data') ||
+    trimmed.includes('Generate a hero real estate')
+  ) {
+    return '';
+  }
+  const firstLine =
+    trimmed
+      .split(/\r?\n/)
+      .map((l) =>
+        l
+          .replace(/^[\s\*#\-•`"'"]+/, '')
+          .replace(/[\s\*`"'"]+$/, '')
+          .replace(/^(condo name|project name|condominium|project|ชื่อโครงการ|โครงการ)[\s:：\-–—]+/i, '')
+          .trim()
+      )
+      .find((l) => l.length > 0 && l.toUpperCase() !== 'NOT_FOUND') || '';
+  return firstLine;
 }
 
 export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
@@ -165,6 +191,18 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
     );
   });
 
+  const defaultCondoAiBoxId = React.useMemo(() => {
+    const list = propertyContext?.upstreamPrompts || [];
+    const match = list.find(
+      (p) => p.title.toLowerCase().includes('condo') || p.title.toLowerCase().includes('name') || p.title.toLowerCase().includes('project')
+    );
+    return match?.id || list[0]?.id || '';
+  }, [propertyContext?.upstreamPrompts]);
+
+  const [condoNameAiBoxId, setCondoNameAiBoxId] = useState<string>(() => {
+    return boxConfig.condoNameAiBoxId || defaultCondoAiBoxId;
+  });
+
   const [condoSearchQuery, setCondoSearchQuery] = useState<string>(() => {
     return boxConfig.browserCondoName || propertyContext?.title || '';
   });
@@ -173,6 +211,7 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
   const [isChoosingFolder, setIsChoosingFolder] = useState(false);
   const [matchedCondoInfo, setMatchedCondoInfo] = useState<any>(null);
   const [totalIndexedCondos, setTotalIndexedCondos] = useState<number | null>(null);
+  const [indexedCondoFolders, setIndexedCondoFolders] = useState<string[]>([]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -220,6 +259,7 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
       (boxConfig.id ? localStorage.getItem(`bolthaven_condo_target_folder_${boxConfig.id}`) : null) ||
       defaultBaseDir
     );
+    setCondoNameAiBoxId(boxConfig.condoNameAiBoxId || defaultCondoAiBoxId);
     setCondoSearchQuery(boxConfig.browserCondoName || propertyContext?.title || '');
   }, [boxConfig.id, isHero, isOpen]);
 
@@ -329,11 +369,48 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
     return (preset as any)?.instructions || preset?.templateText || boxConfig.resolvedPrompt || 'Professional architectural condo enhancement prompt';
   }, [promptSourceMode, selectedUpstreamAiId, effectivePresetId, customPrompt, effectiveUpstreamPrompts, boxConfig, promptList]);
 
+  // ── Resolve Active Condo Name from Selected AI Box (e.g. "Condo Name") ───
+  const effectiveCondoAiBoxId = React.useMemo(() => {
+    if (condoNameAiBoxId && effectiveUpstreamPrompts.some((p) => p.id === condoNameAiBoxId)) {
+      return condoNameAiBoxId;
+    }
+    const byName = effectiveUpstreamPrompts.find(
+      (p) => p.title.toLowerCase().includes('condo') || p.title.toLowerCase().includes('name') || p.title.toLowerCase().includes('project')
+    );
+    return byName?.id || effectiveUpstreamPrompts[0]?.id || '';
+  }, [condoNameAiBoxId, effectiveUpstreamPrompts]);
+
+  const selectedCondoAiBox = React.useMemo(() => {
+    return effectiveUpstreamPrompts.find((p) => p.id === effectiveCondoAiBoxId) || null;
+  }, [effectiveUpstreamPrompts, effectiveCondoAiBoxId]);
+
+  const aiExtractedCondoName = React.useMemo(() => {
+    if (!selectedCondoAiBox) return '';
+    return (
+      extractCleanCondoNameFromAiText(selectedCondoAiBox.generatedOutput) ||
+      extractCleanCondoNameFromAiText(selectedCondoAiBox.text)
+    );
+  }, [selectedCondoAiBox]);
+
+  const resolvedCondoName = React.useMemo(() => {
+    if (aiExtractedCondoName) return aiExtractedCondoName;
+    if (boxConfig.browserCondoName && boxConfig.browserCondoName !== 'Featured Property Listing') {
+      return boxConfig.browserCondoName;
+    }
+    if (propertyContext?.title && propertyContext.title !== 'Featured Property Listing') {
+      return propertyContext.title;
+    }
+    return matchedCondoInfo?.matched_folder || 'Featured Property Listing';
+  }, [aiExtractedCondoName, boxConfig.browserCondoName, propertyContext?.title, matchedCondoInfo?.matched_folder]);
+
   // ── Scan Condo Directory from Target Folder ───────────────────────────────
   const scanCondoDirectory = async (q?: string, folder?: string) => {
-    const query = q !== undefined ? q : condoSearchQuery;
+    const query = (q !== undefined ? q : (aiExtractedCondoName || condoSearchQuery)).trim();
     const baseDir = folder !== undefined ? folder : targetFolder;
-    if (!query) return;
+    if (!query || query === 'Featured Property Listing') {
+      setMatchedCondoInfo(null);
+      return;
+    }
 
     setIsScanningFolder(true);
     try {
@@ -344,6 +421,7 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
       if (data && data.status === 'success') {
         setMatchedCondoInfo(data);
         updateSettings({
+          condoNameAiBoxId: effectiveCondoAiBoxId,
           browserCondoName: query,
           targetFolder: baseDir,
           browserMatchedFolder: data.matched_folder,
@@ -363,25 +441,28 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
   // ── Scan Total Folders in Target Directory ────────────────────────────────
   const scanTotalFolders = async (dir: string) => {
     try {
-      const resp = await fetch(`http://127.0.0.1:9224/scan-condos?base_dir=${encodeURIComponent(dir)}`);
+      const resp = await fetch(`http://127.0.0.1:9224/condo-folders?base_dir=${encodeURIComponent(dir)}`);
       const data = await resp.json();
       if (data && data.status === 'success') {
-        setTotalIndexedCondos(data.total_condos || 0);
+        setTotalIndexedCondos(data.total || data.total_condos || 0);
+        if (Array.isArray(data.folders)) {
+          setIndexedCondoFolders(data.folders);
+        }
       }
     } catch (e) {}
   };
 
-  // Initial Scan
+  // Automatically scan when Target Folder or AI-extracted Condo Name changes
   useEffect(() => {
     if (targetFolder) {
       scanTotalFolders(targetFolder);
     }
-    const q = boxConfig.browserCondoName || propertyContext?.title;
-    if (q) {
+    const q = aiExtractedCondoName || boxConfig.browserCondoName || propertyContext?.title || '';
+    if (q && q !== 'Featured Property Listing') {
       setCondoSearchQuery(q);
       scanCondoDirectory(q, targetFolder);
     }
-  }, [propertyContext?.title, targetFolder]);
+  }, [aiExtractedCondoName, propertyContext?.title, targetFolder]);
 
   // ── Native macOS Folder Chooser ───────────────────────────────────────────
   const handleChooseFolder = async () => {
@@ -597,7 +678,7 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
                       1. Condo / Project Name
                     </div>
                     <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
-                      From FB Hero Prompt / Active Project
+                      {selectedCondoAiBox ? `From ${selectedCondoAiBox.title} (AI Box)` : 'From AI Box / Active Project'}
                     </div>
                   </div>
                 </div>
@@ -614,26 +695,90 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
               </div>
 
               <div style={{ fontSize: '0.6875rem', color: 'var(--text-secondary)', lineHeight: 1.35 }}>
-                Display the property context header card in the inspector.
+                Select the AI Box on canvas that extracts the Condo Name and display it in the inspector.
               </div>
 
               {showCondoProjectCard && (
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '6px 10px',
-                    borderRadius: '8px',
-                    backgroundColor: isDark ? 'rgba(0,0,0,0.2)' : '#F1F5F9',
-                    border: '1px solid var(--border-color)',
-                    marginTop: '2px',
-                  }}
-                >
-                  <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>Current Context:</span>
-                  <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                    {boxConfig.browserCondoName || propertyContext?.title || 'Featured Property Listing'}
-                  </span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px', paddingTop: '8px', borderTop: '1px solid var(--border-color)' }}>
+                  {/* Select AI Box for Condo Name */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                        Select AI Box (Condo Name Source):
+                      </span>
+                      {aiExtractedCondoName && (
+                        <span
+                          style={{
+                            fontSize: '0.5625rem',
+                            fontWeight: 700,
+                            padding: '1px 6px',
+                            borderRadius: '999px',
+                            backgroundColor: 'rgba(16, 185, 129, 0.14)',
+                            color: '#10B981',
+                          }}
+                        >
+                          ✓ Extracted
+                        </span>
+                      )}
+                    </div>
+                    <Select
+                      value={effectiveCondoAiBoxId}
+                      onChange={(val) => {
+                        setCondoNameAiBoxId(val);
+                        const box = effectiveUpstreamPrompts.find((p) => p.id === val);
+                        const extracted = box?.generatedOutput
+                          ? extractCleanCondoNameFromAiText(box.generatedOutput)
+                          : '';
+                        if (extracted) {
+                          setCondoSearchQuery(extracted);
+                          updateSettings({ condoNameAiBoxId: val, browserCondoName: extracted });
+                          scanCondoDirectory(extracted);
+                        } else {
+                          updateSettings({ condoNameAiBoxId: val });
+                        }
+                      }}
+                      options={
+                        effectiveUpstreamPrompts.length > 0
+                          ? effectiveUpstreamPrompts.map((p) => ({
+                              label: `🤖 ${p.title} (AI Box)`,
+                              value: p.id,
+                            }))
+                          : [{ label: '🤖 Condo Name (AI Box)', value: '' }]
+                      }
+                    />
+                  </div>
+
+                  {/* Current Context Pill */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '8px',
+                      padding: '6px 10px',
+                      borderRadius: '8px',
+                      backgroundColor: isDark ? 'rgba(0,0,0,0.2)' : '#F1F5F9',
+                      border: '1px solid var(--border-color)',
+                    }}
+                  >
+                    <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)', flexShrink: 0 }}>
+                      Current Context:
+                    </span>
+                    <span
+                      style={{
+                        fontSize: '0.6875rem',
+                        fontWeight: 600,
+                        color: aiExtractedCondoName ? '#10B981' : 'var(--text-primary)',
+                        textAlign: 'right',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                      title={resolvedCondoName}
+                    >
+                      {resolvedCondoName}
+                    </span>
+                  </div>
                 </div>
               )}
             </div>
@@ -832,41 +977,184 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
               </div>
 
               {useCondoImages && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginTop: '4px', paddingTop: '8px', borderTop: '1px solid var(--border-color)' }}>
-                  <span style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-muted)' }}>
-                    Target Folder for Condo Subfolders:
-                  </span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <input
-                      type="text"
-                      value={targetFolder}
-                      onChange={(e) => {
-                        setTargetFolder(e.target.value);
-                        if (boxConfig.id) {
-                          localStorage.setItem(`bolthaven_condo_target_folder_${boxConfig.id}`, e.target.value);
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px', paddingTop: '8px', borderTop: '1px solid var(--border-color)' }}>
+                  {/* 1. Base Patch / Target Folder */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <span style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                      Target Folder for Condo Subfolders:
+                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <input
+                        type="text"
+                        value={targetFolder}
+                        onChange={(e) => {
+                          setTargetFolder(e.target.value);
+                          if (boxConfig.id) {
+                            localStorage.setItem(`bolthaven_condo_target_folder_${boxConfig.id}`, e.target.value);
+                          }
+                          updateSettings({ targetFolder: e.target.value });
+                        }}
+                        onBlur={() => {
+                          scanTotalFolders(targetFolder);
+                          scanCondoDirectory(condoSearchQuery || resolvedCondoName, targetFolder);
+                        }}
+                        placeholder="/Users/.../Desktop/Condo Building"
+                        style={{
+                          flex: 1,
+                          fontSize: '0.6875rem',
+                          padding: '5px 8px',
+                          borderRadius: '6px',
+                          border: '1px solid var(--border-color)',
+                          backgroundColor: isDark ? 'rgba(0,0,0,0.25)' : '#F8FAFC',
+                          color: 'var(--text-primary)',
+                        }}
+                      />
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={handleChooseFolder}
+                        disabled={isChoosingFolder}
+                        style={{ fontSize: '0.625rem', padding: '4px 9px', whiteSpace: 'nowrap' }}
+                      >
+                        {isChoosingFolder ? 'Choosing...' : 'Browse...'}
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* 2. Select / Auto-Match Condo Subfolder */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                        Condo Subfolder (Same / Similar to Condo Name):
+                      </span>
+                      <span
+                        style={{
+                          fontSize: '0.5625rem',
+                          fontWeight: 700,
+                          padding: '1px 6px',
+                          borderRadius: '999px',
+                          backgroundColor: matchedCondoInfo?.matched_folder
+                            ? 'rgba(16, 185, 129, 0.14)'
+                            : 'rgba(239, 68, 68, 0.12)',
+                          color: matchedCondoInfo?.matched_folder ? '#10B981' : '#EF4444',
+                        }}
+                      >
+                        {isScanningFolder
+                          ? 'Scanning...'
+                          : matchedCondoInfo?.matched_folder
+                            ? `✓ ${matchedCondoInfo?.images?.length || matchedCondoInfo?.images_found || 0} Images`
+                            : 'Not Found'}
+                      </span>
+                    </div>
+                    <Select
+                      value={matchedCondoInfo?.matched_folder || '__auto__'}
+                      onChange={(val) => {
+                        if (val === '__auto__') {
+                          const autoName =
+                            aiExtractedCondoName ||
+                            (propertyContext?.title &&
+                            propertyContext.title !== 'Featured Property Listing'
+                              ? propertyContext.title
+                              : '') ||
+                            condoSearchQuery;
+                          setCondoSearchQuery(autoName);
+                          updateSettings({ browserCondoName: autoName });
+                          scanCondoDirectory(autoName, targetFolder);
+                        } else {
+                          setCondoSearchQuery(val);
+                          updateSettings({ browserCondoName: val });
+                          scanCondoDirectory(val, targetFolder);
                         }
-                        updateSettings({ targetFolder: e.target.value });
                       }}
-                      placeholder="/Users/.../Desktop/Condo Building"
-                      style={{
-                        flex: 1,
-                        fontSize: '0.6875rem',
-                        padding: '5px 8px',
-                        borderRadius: '6px',
-                        border: '1px solid var(--border-color)',
-                        backgroundColor: isDark ? 'rgba(0,0,0,0.25)' : '#F8FAFC',
-                        color: 'var(--text-primary)',
-                      }}
+                      options={[
+                        {
+                          label: matchedCondoInfo?.matched_folder
+                            ? `✨ Auto-Matched: ${matchedCondoInfo.matched_folder}`
+                            : `✨ Auto-Match (${resolvedCondoName})`,
+                          value: '__auto__',
+                        },
+                        ...indexedCondoFolders.map((f) => ({
+                          label: `📁 ${f}`,
+                          value: f,
+                        })),
+                      ]}
                     />
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={handleChooseFolder}
-                      disabled={isChoosingFolder}
-                      style={{ fontSize: '0.625rem', padding: '4px 9px', whiteSpace: 'nowrap' }}
-                    >
-                      {isChoosingFolder ? 'Choosing...' : 'Browse...'}
-                    </Button>
+                  </div>
+
+                  {/* 3. Preview Slots 1, 2, 3 with Image Names */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', marginTop: '2px' }}>
+                    {[1, 2, 3].map((slotIdx) => {
+                      const img =
+                        matchedCondoInfo?.images?.find((i: any) => i.index === slotIdx) ||
+                        matchedCondoInfo?.images?.[slotIdx - 1];
+                      const imgSrc = img?.data_url || img?.dataUrl;
+                      return (
+                        <div
+                          key={slotIdx}
+                          style={{
+                            position: 'relative',
+                            height: '58px',
+                            borderRadius: '7px',
+                            overflow: 'hidden',
+                            border: imgSrc ? '1.5px solid #10B981' : '1px solid var(--border-color)',
+                            backgroundColor: isDark ? 'rgba(0,0,0,0.28)' : '#F1F5F9',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                          title={img ? `${img.filename} (${img.path || ''})` : `Slot ${slotIdx}`}
+                        >
+                          {imgSrc ? (
+                            <>
+                              <img
+                                src={imgSrc}
+                                alt={img.filename}
+                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                              />
+                              <div
+                                style={{
+                                  position: 'absolute',
+                                  bottom: 0,
+                                  left: 0,
+                                  right: 0,
+                                  backgroundColor: 'rgba(0, 0, 0, 0.72)',
+                                  color: '#FFFFFF',
+                                  fontSize: '0.5625rem',
+                                  fontWeight: 600,
+                                  padding: '2px 4px',
+                                  textAlign: 'center',
+                                  whiteSpace: 'nowrap',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                }}
+                              >
+                                {img.filename}
+                              </div>
+                            </>
+                          ) : (
+                            <span style={{ fontSize: '0.5625rem', color: 'var(--text-muted)' }}>
+                              Slot {slotIdx}
+                            </span>
+                          )}
+                          <div
+                            style={{
+                              position: 'absolute',
+                              top: '3px',
+                              left: '3px',
+                              backgroundColor: imgSrc ? '#10B981' : 'rgba(0,0,0,0.68)',
+                              color: '#fff',
+                              fontSize: '0.5rem',
+                              fontWeight: 700,
+                              padding: '1px 4px',
+                              borderRadius: '3px',
+                            }}
+                          >
+                            #{slotIdx}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}

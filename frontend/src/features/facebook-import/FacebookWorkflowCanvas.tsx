@@ -64,7 +64,7 @@ import { getAIModelDisplayName, isImageAIBox, isImageModel, isWatermarkAIBox, is
 import { AIImageStudio } from './AIImageStudio';
 import { ExternalBrowserSidebar } from '../browser-processing/ExternalBrowserSidebar';
 import { getPersistedReferenceImage } from '../browser-processing/referenceImageStorage';
-import { FBHeroSettingsSidebox } from '../browser-processing/FBHeroSettingsSidebox';
+import { FBHeroSettingsSidebox, extractCleanCondoNameFromAiText } from '../browser-processing/FBHeroSettingsSidebox';
 import { focusBrowserTabGroup, fetchBrowserProfiles, fetchTabGroups } from '../browser-processing/browserAutomationService';
 import type { BrowserProfile, BrowserGroupItem } from '../browser-processing/types';
 import { WatermarkNodeModal } from './WatermarkNodeModal';
@@ -197,6 +197,9 @@ export interface DynamicAIBoxConfig {
   tabGroupMode?: 'enhance' | 'generate' | string;
   processKind?: 'generate_image' | 'enhance_images' | 'create_prompt' | string;
   useReferenceImage?: boolean;
+  referenceImage?: string;
+  condoNameAiBoxId?: string;
+  browserCondoName?: string;
   useCondoImages?: boolean;
   showImagesToEnhance?: boolean;
   showCondoProjectCard?: boolean;
@@ -10230,8 +10233,24 @@ export const FacebookWorkflowCanvas = forwardRef<
                         };
 
                         const aboveBoxTitle = candidateAbove ? candidateAbove.title : 'Format: Enhance Image';
+                        const condoAiBox =
+                          (currentModalAIBox.condoNameAiBoxId &&
+                            config.aiBoxes.find((b) => b.id === currentModalAIBox.condoNameAiBoxId)) ||
+                          config.aiBoxes.find(
+                            (b) =>
+                              !isChromeProfileAIBox(b) &&
+                              !isChromeTabGroupAIBox(b) &&
+                              !isExternalBrowserAIBox(b) &&
+                              (b.title?.toLowerCase().includes('condo') || b.title?.toLowerCase().includes('name'))
+                          );
+                        const aiCondoOutput =
+                          condoAiBox && aiGeneratedOutputs && aiGeneratedOutputs[condoAiBox.id]
+                            ? extractCleanCondoNameFromAiText(aiGeneratedOutputs[condoAiBox.id])
+                            : '';
                         const condoName =
+                          aiCondoOutput ||
                           _projectName ||
+                          currentModalAIBox.browserCondoName ||
                           (candidateAbove && candidateAbove.processType !== 'text_ai' && !candidateAbove.title.toLowerCase().includes('prompt')
                             ? candidateAbove.title
                             : 'Featured Property Listing');
@@ -10243,7 +10262,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                               !isChromeProfileAIBox(b) &&
                               !isChromeTabGroupAIBox(b) &&
                               !isExternalBrowserAIBox(b) &&
-                              (b.processType === 'text_ai' || isTextAIBox(b, config.connections) || b.title?.toLowerCase().includes('prompt') || b.templateId || b.templateText)
+                              (b.processType === 'text_ai' || isTextAIBox(b, config.connections) || b.title?.toLowerCase().includes('prompt') || b.title?.toLowerCase().includes('condo') || b.templateId || b.templateText)
                           )
                           .map((b) => ({
                             id: b.id,
@@ -10255,6 +10274,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                               (b.title?.toLowerCase().includes('hero')
                                 ? 'Generate a hero real estate listing image based on condo unit context and reference styling. Maintain realistic architectural aesthetics, high dynamic range, and authentic materials.'
                                 : ''),
+                            generatedOutput: (aiGeneratedOutputs && aiGeneratedOutputs[b.id]) || '',
                             templateId: b.templateId,
                           }));
 

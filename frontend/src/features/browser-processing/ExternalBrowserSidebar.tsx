@@ -81,6 +81,7 @@ import {
   isGenerateCategory,
 } from './browserPromptUtils';
 import { loadAvailablePromptTemplates } from '../facebook-import/FacebookWorkflowCanvas';
+import { extractCleanCondoNameFromAiText } from './FBHeroSettingsSidebox';
 import type {
   BrowserProfile,
   BrowserGroupItem,
@@ -102,7 +103,7 @@ interface ExternalBrowserSidebarProps {
     aboveBoxTitle?: string;
     price?: string;
     images?: Array<{ url: string; index?: number; filename?: string }>;
-    upstreamPrompts?: Array<{ id: string; title: string; text?: string; templateId?: string }>;
+    upstreamPrompts?: Array<{ id: string; title: string; text?: string; templateId?: string; generatedOutput?: string }>;
     upstreamTabGroups?: Array<{ id: string; title: string; browserGroupName?: string }>;
   };
   isProfileNode?: boolean;
@@ -152,7 +153,25 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     propIsProfileNode ?? (boxConfig.processType === 'chrome_profile' || boxConfig.id?.includes('ai-box-chrome-'))
   );
 
-  const condoName = propertyContext?.title || boxConfig.browserCondoName || 'Featured Property Listing';
+  // Resolve Condo Name from selected Condo Name AI Box (or auto-detected 'Condo Name' AI box)
+  const aiExtractedCondoName = useMemo(() => {
+    const prompts = propertyContext?.upstreamPrompts || [];
+    const targetBox =
+      (boxConfig.condoNameAiBoxId && prompts.find((p) => p.id === boxConfig.condoNameAiBoxId)) ||
+      prompts.find((p) => p.title.toLowerCase().includes('condo') || p.title.toLowerCase().includes('name'));
+    if (targetBox?.generatedOutput) {
+      return extractCleanCondoNameFromAiText(targetBox.generatedOutput);
+    }
+    return '';
+  }, [propertyContext?.upstreamPrompts, boxConfig.condoNameAiBoxId]);
+
+  const condoName =
+    aiExtractedCondoName ||
+    (propertyContext?.title && propertyContext.title !== 'Featured Property Listing'
+      ? propertyContext.title
+      : '') ||
+    boxConfig.browserCondoName ||
+    'Featured Property Listing';
   const aboveBoxTitle = propertyContext?.aboveBoxTitle || 'Format: Enhance Image';
 
   const receivedImages = useMemo(() => {
@@ -391,9 +410,16 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     () => boxConfig.referenceImage || getPersistedReferenceImage(boxConfig.id) || ''
   );
   const [condoSearchQuery, setCondoSearchQuery] = useState<string>(
-    () => boxConfig.browserCondoName || propertyContext?.title || 'Regent Home Bangna'
+    () =>
+      aiExtractedCondoName ||
+      boxConfig.browserCondoName ||
+      (propertyContext?.title && propertyContext.title !== 'Featured Property Listing'
+        ? propertyContext.title
+        : '') ||
+      'Regent Home Bangna'
   );
   const [matchedCondoInfo, setMatchedCondoInfo] = useState<any>(null);
+  const [indexedCondoFolders, setIndexedCondoFolders] = useState<string[]>([]);
   const [isScanningCondo, setIsScanningCondo] = useState<boolean>(false);
   const [twoStageStatus, setTwoStageStatus] = useState<any>(null);
   const [isRunningTwoStage, setIsRunningTwoStage] = useState<boolean>(false);
@@ -422,6 +448,27 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       cancelled = true;
     };
   }, [boxConfig.id]);
+
+  // Fetch all available condo subfolders in the target directory
+  const fetchCondoFolderList = async (folderToUse?: string) => {
+    const baseDir =
+      folderToUse !== undefined
+        ? folderToUse
+        : boxConfig.targetFolder || localStorage.getItem('bolthaven_condo_target_folder') || '';
+    try {
+      const resp = await fetch(
+        `http://127.0.0.1:9224/condo-folders?base_dir=${encodeURIComponent(baseDir)}`
+      );
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data && data.status === 'success' && Array.isArray(data.folders)) {
+          setIndexedCondoFolders(data.folders);
+        }
+      }
+    } catch {
+      // ignore if companion offline
+    }
+  };
 
   // Scan condo directory from local Mac companion (Strictly Read-Only!)
   const handleScanCondo = async (queryToSearch?: string, folderToUse?: string) => {
@@ -454,13 +501,20 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   };
 
   useEffect(() => {
-    const q = boxConfig.browserCondoName || propertyContext?.title || 'Regent Home Bangna';
     const folder = boxConfig.targetFolder || localStorage.getItem('bolthaven_condo_target_folder') || '';
+    fetchCondoFolderList(folder);
+    const q =
+      aiExtractedCondoName ||
+      boxConfig.browserCondoName ||
+      (propertyContext?.title && propertyContext.title !== 'Featured Property Listing'
+        ? propertyContext.title
+        : '') ||
+      'Regent Home Bangna';
     if (q) {
       setCondoSearchQuery(q);
       handleScanCondo(q, folder);
     }
-  }, [propertyContext?.title, boxConfig.browserCondoName, boxConfig.targetFolder]);
+  }, [aiExtractedCondoName, propertyContext?.title, boxConfig.browserCondoName, boxConfig.targetFolder]);
 
   // Synchronize state when boxConfig is updated from FBHeroSettingsSidebox
   useEffect(() => {
@@ -564,7 +618,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
         body: JSON.stringify({
           profile_key: profKey,
           group_name: effectiveHeroGroupName,
-          condo_name: condoSearchQuery,
+          condo_name: matchedCondoInfo?.matched_folder || aiExtractedCondoName || condoSearchQuery || condoName,
           initial_prompt: promptToUse,
           reference_image: refImgToUse,
           reference_image_index: activeReferenceImage?.index || 1,
@@ -1615,7 +1669,23 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
             <div style={{ fontSize: '0.78125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
               Condo Photos (1, 2, 3)
             </div>
-            <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '170px' }} title={boxConfig.targetFolder || localStorage.getItem('bolthaven_condo_target_folder') || '~/Desktop/Condo Building'}>
+            <div
+              style={{
+                fontSize: '0.625rem',
+                color: matchedCondoInfo?.matched_folder ? '#10B981' : 'var(--text-muted)',
+                fontWeight: matchedCondoInfo?.matched_folder ? 600 : 400,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                maxWidth: '175px',
+              }}
+              title={
+                matchedCondoInfo?.matched_folder ||
+                boxConfig.targetFolder ||
+                localStorage.getItem('bolthaven_condo_target_folder') ||
+                '~/Desktop/Condo Building'
+              }
+            >
               {matchedCondoInfo?.matched_folder ? `✓ ${matchedCondoInfo.matched_folder}` : 'Target: Condo Building'}
             </div>
           </div>
@@ -1637,7 +1707,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
           </span>
           <button
             type="button"
-            onClick={() => handleScanCondo(condoSearchQuery)}
+            onClick={() => handleScanCondo(aiExtractedCondoName || condoSearchQuery)}
             disabled={isScanningCondo}
             title="Scan target folder"
             style={{
@@ -1660,17 +1730,56 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
         </div>
       </div>
 
+      {/* Subfolder Selector (Auto-Matched from Condo Name or Manual Folder Selection) */}
+      {indexedCondoFolders.length > 0 && (
+        <Select
+          value={matchedCondoInfo?.matched_folder || '__auto__'}
+          onChange={(val) => {
+            if (val === '__auto__') {
+              const autoQuery =
+                aiExtractedCondoName ||
+                (propertyContext?.title && propertyContext.title !== 'Featured Property Listing'
+                  ? propertyContext.title
+                  : '') ||
+                condoName;
+              setCondoSearchQuery(autoQuery);
+              updateMultiConfig({ browserCondoName: autoQuery });
+              handleScanCondo(autoQuery);
+            } else {
+              setCondoSearchQuery(val);
+              updateMultiConfig({ browserCondoName: val });
+              handleScanCondo(val);
+            }
+          }}
+          options={[
+            {
+              label: matchedCondoInfo?.matched_folder
+                ? `✨ Matched: ${matchedCondoInfo.matched_folder}`
+                : `✨ Auto-Match (${condoName})`,
+              value: '__auto__',
+            },
+            ...indexedCondoFolders.map((f) => ({
+              label: `📁 ${f}`,
+              value: f,
+            })),
+          ]}
+        />
+      )}
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.55rem', marginTop: '2px' }}>
         {[1, 2, 3].map((num) => {
-          const img = matchedCondoInfo?.images?.find((i: any) => i.index === num);
+          const img =
+            matchedCondoInfo?.images?.find((i: any) => i.index === num) ||
+            matchedCondoInfo?.images?.[num - 1];
           return (
             <div
               key={num}
+              title={img?.filename ? `${img.filename} (${img.path || ''})` : `Slot ${num}`}
               style={{
                 position: 'relative',
                 borderRadius: '8px',
                 overflow: 'hidden',
-                height: '74px',
+                height: '78px',
                 backgroundColor: isDark ? 'rgba(0,0,0,0.3)' : '#F8FAFC',
                 border: img ? '1.5px solid #10B981' : '1px solid var(--border-color)',
                 display: 'flex',
@@ -1703,7 +1812,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                 <>
                   <img
                     src={img.data_url}
-                    alt={`Condo ${num}`}
+                    alt={img.filename || `Condo ${num}`}
                     style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                   />
                   <span
@@ -1724,6 +1833,27 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                   >
                     <FiCheckCircle size={11} color="#10B981" />
                   </span>
+                  <div
+                    style={{
+                      position: 'absolute',
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      backgroundColor: 'rgba(0, 0, 0, 0.72)',
+                      backdropFilter: 'blur(3px)',
+                      color: '#FFFFFF',
+                      fontSize: '0.5625rem',
+                      fontWeight: 600,
+                      padding: '2px 5px',
+                      textAlign: 'center',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      zIndex: 2,
+                    }}
+                  >
+                    {img.filename || `${num}.png`}
+                  </div>
                 </>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}>
