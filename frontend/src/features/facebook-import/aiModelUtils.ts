@@ -159,11 +159,20 @@ export const isTextFormatAIBox = (
   if (isChromeProfileAIBox(box) || isChromeTabGroupAIBox(box)) return false;
   if (isN8NAIBox(box) || isExternalBrowserAIBox(box)) return false;
   if (isWatermarkAIBox(box)) return false;
-  if (box.processType === 'image_enhance' || box.provider === 'runware_ai' || box.processType === 'text_ai') return false;
-  return (
-    box.processType === 'text_format' ||
-    Boolean(box.title?.toLowerCase().startsWith('format:'))
-  );
+  if (box.processType === 'image_enhance' || box.provider === 'runware_ai') return false;
+  if (box.processType === 'text_format') return true;
+  if (box.title?.toLowerCase().startsWith('format:') || box.title?.toLowerCase().startsWith('ai format')) return true;
+  // Specific prompt template boxes (e.g. BoltHaven-FB Hero Prompt, Get Condo Name, etc.) are prompt format presets
+  if (
+    Boolean(box.templateId && box.templateId !== '' && box.templateId !== 'custom') &&
+    box.title !== 'AI Model' &&
+    box.title !== 'AI Processor' &&
+    box.title !== 'Prompt Generator' &&
+    box.subtitle !== 'AI Processor'
+  ) {
+    return true;
+  }
+  return false;
 };
 
 /**

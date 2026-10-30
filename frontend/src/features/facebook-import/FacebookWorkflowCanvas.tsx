@@ -70,7 +70,7 @@ import type { BrowserProfile, BrowserGroupItem } from '../browser-processing/typ
 import { WatermarkNodeModal } from './WatermarkNodeModal';
 import { ToggleSwitch } from '../../components/ui/ToggleSwitch';
 import { loadWatermarkPresets, DEFAULT_WATERMARK_CONFIG, DEFAULT_PRESETS, type WatermarkConfig } from '../autopost/watermarkStorage';
-import { getSavedCropFormats, type CropStudioFormat } from '../watermark/cropFormats';
+import { getSavedCropFormats, type CropStudioFormat, formatImageWithCropFormatSlices, type FormattedCropSlice } from '../watermark/cropFormats';
 import { getStoredManagedPages, saveStoredManagedPage, DEFAULT_MANAGED_FB_PAGES, type ManagedPageMeta } from '../autopost/autoPostStorage';
 
 export { getAIModelDisplayName, isWatermarkAIBox, isEnhanceAIBox, isTextFormatAIBox, isTextAIBox };
@@ -210,6 +210,8 @@ export interface DynamicAIBoxConfig {
   selectedUpstreamAiId?: string;
   referenceImageMode?: 'photo_1' | 'picked' | 'custom_upload' | 'condo_scan';
   selectedReferenceIndex?: number;
+  imageSource?: 'get_images' | 'enhance' | 'generate' | 'all';
+  selectedImageIndices?: number[];
 }
 
 export interface WorkflowWireConnection {
@@ -776,16 +778,41 @@ export const autoConnectWorkflow = (
 
   // 3. Connect Endpoints to Merger (Combine Box OR Output Node) -> Destinations
   if (hasCombine && primaryCombineId) {
-    // 3A. Combine Box Mode: All text & image endpoints flow into primaryCombineId
-    const textEndpoints = textFormatBoxes.length > 0 ? textFormatBoxes : textAIBoxes;
-    if (textEndpoints.length > 0) {
-      // Remove shortcut from textAIBoxes to combine box when textFormatBoxes exist
+    // 3A. Combine Box Mode: AI Box and Image endpoints flow into primaryCombineId
+    // AI Formats feed vertically into AI Box, and AI Box connects to Combine Box (matching user design)
+    if (textAIBoxes.length > 0) {
+      // AI Formats connect to AI Box only, never directly to combine box, output, or destinations
       if (textFormatBoxes.length > 0) {
+        const fmtIds = new Set(textFormatBoxes.map((f) => f.id));
         conns = conns.filter(
-          (c) => !(textAIBoxes.some((a) => a.id === c.fromNodeId) && activeCombineBoxes.some((b) => b.id === c.toNodeId))
+          (c) =>
+            !(
+              fmtIds.has(c.fromNodeId) &&
+              (activeCombineBoxes.some((b) => b.id === c.toNodeId) ||
+                c.toNodeId === 'output' ||
+                c.toNodeId === 'destination' ||
+                c.toNodeId.startsWith('dest-'))
+            )
         );
       }
-      textEndpoints.forEach((cb) => {
+      textAIBoxes.forEach((aiBox) => {
+        const alreadyConnected = conns.some(
+          (c) =>
+            c.fromNodeId === aiBox.id &&
+            (activeCombineBoxes.some((b) => b.id === c.toNodeId) ||
+              c.toNodeId.startsWith('dest-') ||
+              c.toNodeId === 'destination')
+        );
+        if (!alreadyConnected) {
+          conns.push({
+            id: `conn-${aiBox.id}-${primaryCombineId}`,
+            fromNodeId: aiBox.id,
+            toNodeId: primaryCombineId,
+          });
+        }
+      });
+    } else if (textFormatBoxes.length > 0) {
+      textFormatBoxes.forEach((cb) => {
         const alreadyConnected = conns.some(
           (c) =>
             c.fromNodeId === cb.id &&
@@ -1036,6 +1063,11 @@ export const autoConnectWorkflow = (
     }
   }
 
+  // Remove any wires targeting destinations if destination is not enabled
+  if (!destinationEnabled) {
+    conns = conns.filter((c) => c.toNodeId !== 'destination' && !c.toNodeId.startsWith('dest-'));
+  }
+
   return dedupeConnections(conns);
 };
 
@@ -1102,41 +1134,14 @@ export const buildAlignedLayout = (
   const COL_AI_X = 520;         // Column 2: Content AI Models & Image Enhancers / External Browser (gap = 220px)
   const COL_FORMAT_X = 740;     // Column 3: Formats & Watermark Nodes (gap = 220px)
 
-  // Dynamic clearance for wide nodes (e.g. External Browser with 216px width vs standard 72px)
-  const hasWideCol2 = boxes.some((b) => isExternalBrowserAIBox(b));
+  // Dynamic clearance for wide nodes (e.g. External Browser or Text AI Box with 216px width vs standard 72px)
+  const hasWideCol2 = boxes.some((b) => isExternalBrowserAIBox(b) || isTextAIBox(b, conns));
   const effectiveColFormatX = hasWideCol2 ? 900 : COL_FORMAT_X;
 
   const yById: Record<string, number> = {};
   const xById: Record<string, number> = {};
 
-  // 1. Content AI Branch (Dynamic height, fanning out symmetrically)
-  const numTextAI = textAIBoxes.length;
-  const numTextFormat = textFormatBoxes.length;
-  const hasTextAI = numTextAI > 0;
-  const textFormatColX = hasTextAI ? effectiveColFormatX : COL_AI_X;
-
-  // Position Text AI Boxes (Column 2: 520) with equal vertical step
-  if (numTextAI === 1) {
-    xById[textAIBoxes[0].id] = COL_AI_X;
-    yById[textAIBoxes[0].id] = TOP_MARGIN;
-  } else if (numTextAI > 1) {
-    textAIBoxes.forEach((b, idx) => {
-      xById[b.id] = COL_AI_X;
-      yById[b.id] = TOP_MARGIN + idx * NODE_V_STEP;
-    });
-  }
-
-  // Get Content Y:
-  // If multiple text AI boxes exist, center Get Content exactly halfway between top and bottom text AI boxes
-  // (e.g. Gemini at 140 and FB Hero at 290 -> Get Content is at 215, curving up and down symmetrically!)
-  const getContentY = numTextAI >= 2
-    ? Math.round((TOP_MARGIN + (TOP_MARGIN + (numTextAI - 1) * NODE_V_STEP)) / 2)
-    : TOP_MARGIN;
-
   // Optimize format box order to eliminate crossing wires:
-  // Sort boxes based on their downstream destination/combine box targets.
-  // Format presets connecting to higher targets (e.g. top combine box) are placed at the top.
-  // Format presets connecting to lower targets or branching to multiple combine boxes are placed lower.
   const activeCbList = (base.combineBoxes || []).filter((cb) => cb && cb.enabled !== false);
   const activeDestList = getNormalizedDestinations(base);
 
@@ -1163,24 +1168,60 @@ export const buildAlignedLayout = (
     return textFormatBoxes.indexOf(a) - textFormatBoxes.indexOf(b);
   });
 
-  // Position Text Format Boxes (Column 3: 740/900, or Column 2 if no text AI)
-  if (numTextFormat === 1) {
-    xById[sortedTextFormatBoxes[0].id] = textFormatColX;
-    yById[sortedTextFormatBoxes[0].id] = getContentY;
-  } else if (numTextFormat > 1) {
-    const formatTopY = Math.round(getContentY - ((numTextFormat - 1) * NODE_V_STEP) / 2);
-    sortedTextFormatBoxes.forEach((b, idx) => {
-      xById[b.id] = textFormatColX;
-      yById[b.id] = formatTopY + idx * NODE_V_STEP;
+  // 1. Content AI Branch: AI Box (Column 2) with AI Format Boxes positioned ABOVE it
+  const numTextAI = textAIBoxes.length;
+  const numTextFormat = sortedTextFormatBoxes.length;
+  const hasTextAI = numTextAI > 0;
+
+  // If AI Format boxes exist above the AI Box, push AI Box down to Y = 260 so formats have room above (Y = 100)
+  const aiBoxBaseY = numTextFormat > 0 ? 260 : 180;
+
+  if (numTextAI === 1) {
+    xById[textAIBoxes[0].id] = COL_AI_X;
+    yById[textAIBoxes[0].id] = aiBoxBaseY;
+  } else if (numTextAI > 1) {
+    textAIBoxes.forEach((b, idx) => {
+      xById[b.id] = COL_AI_X;
+      yById[b.id] = aiBoxBaseY + idx * NODE_V_STEP;
     });
   }
 
+  // Get Content Y: aligns with the primary AI Box (or center if multiple)
+  const getContentY = numTextAI >= 1 ? aiBoxBaseY : 180;
+
+  // Position AI Format Boxes ABOVE the AI Box (matching user design: AI Format 1, AI Format 2 -> above AI Box)
+  if (hasTextAI && numTextFormat > 0) {
+    const primaryAiBox = textAIBoxes[0];
+    const aiBoxCenterX = (xById[primaryAiBox.id] ?? COL_AI_X) + 108; // Center of 216px wide AI Box = 628
+    const FORMAT_COL_WIDTH = 135; // width 72px + 63px gap
+    const totalFormatWidth = (numTextFormat - 1) * FORMAT_COL_WIDTH;
+    const formatStartLeft = aiBoxCenterX - totalFormatWidth / 2;
+
+    sortedTextFormatBoxes.forEach((b, idx) => {
+      xById[b.id] = Math.round(formatStartLeft + idx * FORMAT_COL_WIDTH - 36);
+      yById[b.id] = aiBoxBaseY - 160; // Positioned 160px above AI Box (y = 100)
+    });
+  } else if (!hasTextAI && numTextFormat > 0) {
+    // If no AI Box exists, fallback to standard column layout
+    if (numTextFormat === 1) {
+      xById[sortedTextFormatBoxes[0].id] = COL_AI_X;
+      yById[sortedTextFormatBoxes[0].id] = getContentY;
+    } else {
+      const formatTopY = Math.round(getContentY - ((numTextFormat - 1) * NODE_V_STEP) / 2);
+      sortedTextFormatBoxes.forEach((b, idx) => {
+        xById[b.id] = COL_AI_X;
+        yById[b.id] = formatTopY + idx * NODE_V_STEP;
+      });
+    }
+  }
+
   // 2. Image Pipeline Branch (Column 2)
-  // Equal vertical step continuation below the text lane:
-  // When 2 text AI nodes exist (Row 0 at 140, Row 1 at 290):
-  // Image branch sits at Row 2 (140 + 2 * 150 = 440), giving identical 150px gap!
-  const textRowsCount = Math.max(numTextAI, (numTextAI === 0 ? numTextFormat : 1), 1);
-  const imageTopY = TOP_MARGIN + textRowsCount * NODE_V_STEP;
+  // Must start with clear vertical clearance below Content branch to prevent ANY overlap!
+  const lastTextRowY = hasTextAI
+    ? aiBoxBaseY + Math.max(numTextAI - 1, 0) * NODE_V_STEP
+    : (numTextFormat > 0 ? aiBoxBaseY : TOP_MARGIN);
+
+  const imageTopY = Math.max(lastTextRowY + 220, 480);
 
   const imageCol2Boxes = externalBrowserBoxes.length > 0
     ? [...externalBrowserBoxes, ...enhanceBoxes.filter((b) => !externalBrowserBoxes.some((eb) => eb.id === b.id))]
@@ -1781,15 +1822,101 @@ export const sanitizeAndResolveCollisions = (
 
   connections = dedupeConnections(connections);
 
+  // Check if we have prompt format boxes but no central wide AI Box ("AI Model")
+  const existingFormatBoxes = updatedAiBoxes.filter((b) => isTextFormatAIBox(b));
+  const existingTextAIBoxes = updatedAiBoxes.filter((b) => isTextAIBox(b, connections) && !isTextFormatAIBox(b));
+
+  let finalAiBoxes = [...updatedAiBoxes];
+  let finalConnections = [...connections];
+  let didSynthesizeCentralBox = false;
+
+  if (existingFormatBoxes.length > 0 && existingTextAIBoxes.length === 0) {
+    didSynthesizeCentralBox = true;
+    // Automatically synthesize the central wide AI Box ("AI Model" container)
+    const centralAiBox: DynamicAIBoxConfig = {
+      id: 'ai-box-content-main',
+      title: 'AI Model',
+      subtitle: 'AI Processor',
+      processType: 'text_ai',
+      provider: 'google_ai',
+      model: 'gemini-2.5-flash',
+      templateId: '',
+      templateText: '',
+      customPrompt: '',
+      enabled: true,
+      x: 520,
+      y: 250,
+    };
+    finalAiBoxes.unshift(centralAiBox);
+
+    // Rewire: get-content -> centralAiBox
+    // centralAiBox -> each format box (positioned in branch above)
+    // centralAiBox -> combine box
+    const formatIds = new Set(existingFormatBoxes.map((f) => f.id));
+    finalConnections = finalConnections.filter(
+      (c) =>
+        !(c.fromNodeId === 'get-content' && formatIds.has(c.toNodeId)) &&
+        !(formatIds.has(c.fromNodeId) && (c.toNodeId === 'output' || activeCombineBoxIds.includes(c.toNodeId)))
+    );
+
+    if (!finalConnections.some((c) => c.fromNodeId === 'get-content' && c.toNodeId === centralAiBox.id)) {
+      finalConnections.push({
+        id: `conn-get-content-${centralAiBox.id}`,
+        fromNodeId: 'get-content',
+        toNodeId: centralAiBox.id,
+      });
+    }
+
+    existingFormatBoxes.forEach((f) => {
+      if (!finalConnections.some((c) => c.fromNodeId === centralAiBox.id && c.toNodeId === f.id)) {
+        finalConnections.push({
+          id: `conn-${centralAiBox.id}-${f.id}`,
+          fromNodeId: centralAiBox.id,
+          toNodeId: f.id,
+        });
+      }
+    });
+
+    if (activeCombineBoxIds.length > 0) {
+      const primaryCb = activeCombineBoxIds[0];
+      if (!finalConnections.some((c) => c.fromNodeId === centralAiBox.id && c.toNodeId === primaryCb)) {
+        finalConnections.push({
+          id: `conn-${centralAiBox.id}-${primaryCb}`,
+          fromNodeId: centralAiBox.id,
+          toNodeId: primaryCb,
+        });
+      }
+    }
+  }
+
+  // Clean up any invalid or unnecessary wires:
+  // 1. Format presets sit vertically attached above AI Box only; they must never have outgoing wires to combine boxes, output, or destinations
+  const allFormatIds = new Set(finalAiBoxes.filter((b) => isTextFormatAIBox(b)).map((b) => b.id));
+  const hasCentralAI = finalAiBoxes.some((b) => isTextAIBox(b, finalConnections) && !isTextFormatAIBox(b));
+  if (hasCentralAI && allFormatIds.size > 0) {
+    finalConnections = finalConnections.filter(
+      (c) =>
+        !(c.fromNodeId === 'get-content' && allFormatIds.has(c.toNodeId)) &&
+        !(allFormatIds.has(c.fromNodeId) && (c.toNodeId === 'output' || allCombineBoxIds.includes(c.toNodeId) || c.toNodeId === 'destination' || c.toNodeId.startsWith('dest-')))
+    );
+  }
+
+  // 2. Remove dangling/ghost wires to destination if no destination is active on canvas
+  if (!isDestEnabled) {
+    finalConnections = finalConnections.filter(
+      (c) => c.toNodeId !== 'destination' && !c.toNodeId.startsWith('dest-')
+    );
+  }
+
   // If user or workflow already has connections specified, preserve them exactly!
   // Only run autoConnectWorkflow if connections were not provided at all (undefined)
   const nextConnections = Array.isArray(conf.connections)
-    ? connections
+    ? finalConnections
     : dedupeConnections(
       isDestEnabled
         ? autoConnectWorkflow(
-          updatedAiBoxes,
-          connections,
+          finalAiBoxes,
+          finalConnections,
           conf.getContent?.enabled !== false,
           conf.getImages?.enabled !== false,
           isDestEnabled,
@@ -1797,7 +1924,7 @@ export const sanitizeAndResolveCollisions = (
           rawDests,
           conf.combineBoxes || []
         )
-        : connections.filter(
+        : finalConnections.filter(
           (c) => c.toNodeId !== 'destination' && !c.toNodeId.startsWith('dest-')
         )
     );
@@ -1818,20 +1945,21 @@ export const sanitizeAndResolveCollisions = (
     combineBoxes: conf.combineBoxes || [],
     destination: activeDests[0] || { ...DEFAULT_FB_WORKFLOW_CONFIG.destination, enabled: false },
     destinations: rawDests,
-    aiBoxes: updatedAiBoxes,
+    aiBoxes: finalAiBoxes,
     connections: nextConnections,
   };
 
-  // If boxes already have valid user coordinates, preserve their exact positions!
+  // If boxes already have valid user coordinates and did not need format branch synthesis, preserve positions
   const hasExistingPositions =
-    (updatedAiBoxes.length === 0 || updatedAiBoxes.every((b) => typeof b.x === 'number' && typeof b.y === 'number')) &&
+    !didSynthesizeCentralBox &&
+    (finalAiBoxes.length === 0 || finalAiBoxes.every((b) => typeof b.x === 'number' && typeof b.y === 'number')) &&
     (conf.combineBoxes || []).every((cb) => typeof cb.x === 'number' && typeof cb.y === 'number');
 
   if (hasExistingPositions && conf.aiBoxes && conf.aiBoxes.length > 0) {
     return baseConfig;
   }
 
-  return buildAlignedLayout(updatedAiBoxes, nextConnections, baseConfig);
+  return buildAlignedLayout(finalAiBoxes, nextConnections, baseConfig);
 };
 
 export const loadSavedFacebookWorkflowConfig = (): FacebookWorkflowConfig => {
@@ -1863,6 +1991,7 @@ const OpenAIIcon: React.FC<{ size?: number; color?: string }> = ({ size = 26, co
 export interface MergedNodeShapeProps {
   sockets: 'left' | 'right' | 'both' | 'none';
   hasTopSocket?: boolean;
+  hasBottomSocket?: boolean;
   width?: number;
   height?: number;
   strokeColor: string;
@@ -1880,8 +2009,10 @@ export interface MergedNodeShapeProps {
   isCircle?: boolean;    // Circular account/end node
   showAddButton?: boolean;
   showBottomAddButton?: boolean;
+  showTopAddButton?: boolean;
   onAddClick?: (e: React.MouseEvent) => void;
   onBottomAddClick?: (e: React.MouseEvent) => void;
+  onTopAddClick?: (e: React.MouseEvent) => void;
   onSocketMouseDown?: (type: 'input' | 'output', e: React.MouseEvent) => void;
   onSocketMouseUp?: (type: 'input' | 'output', e: React.MouseEvent) => void;
   onSocketMouseEnter?: (type: 'input' | 'output') => void;
@@ -1971,6 +2102,93 @@ const CANVAS_NODE_ACTION_CSS = `
 .node-action:hover{opacity:1;transform:scale(1) translateX(0);pointer-events:auto !important}
 .canvas-node .node-action:hover,
 .node-action:hover{background:var(--na-color);color:#fff;box-shadow:0 4px 12px rgba(0,0,0,.28);transform:scale(1.15)}
+
+.node-play-button-wrapper {
+  position: absolute;
+  top: -38px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  z-index: 50;
+  pointer-events: auto;
+}
+
+.node-step-play-btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--play-btn-bg, #1F2937);
+  border: 1.5px solid var(--play-btn-border, #4B5563);
+  color: var(--play-btn-color, #9CA3AF);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.22);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  outline: none;
+  user-select: none;
+  position: relative;
+  z-index: 2;
+}
+
+.node-step-play-btn:hover {
+  border-color: var(--play-btn-accent, #388BFD) !important;
+  background-color: var(--play-btn-hover-bg, #263342) !important;
+  color: var(--play-btn-accent, #388BFD) !important;
+  transform: scale(1.08);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.32);
+}
+
+.node-step-play-btn:hover svg {
+  fill: var(--play-btn-accent, #388BFD) !important;
+  color: var(--play-btn-accent, #388BFD) !important;
+}
+
+.node-play-hit-bridge {
+  width: 56px;
+  height: 18px;
+  margin-top: -3px;
+  background: transparent;
+  pointer-events: auto;
+  cursor: default;
+  position: relative;
+  z-index: 1;
+}
+
+.node-play-button-wrapper.is-right {
+  top: 50% !important;
+  left: 100% !important;
+  transform: translateY(-50%) !important;
+  margin-left: 8px !important;
+  flex-direction: row-reverse !important;
+}
+
+.node-play-button-wrapper.is-right .node-play-hit-bridge {
+  width: 14px !important;
+  height: 48px !important;
+  margin-top: 0 !important;
+  margin-right: -2px !important;
+}
+
+.node-play-button-wrapper.is-left {
+  top: 50% !important;
+  right: 100% !important;
+  left: auto !important;
+  transform: translateY(-50%) !important;
+  margin-right: 8px !important;
+  flex-direction: row !important;
+}
+
+.node-play-button-wrapper.is-left .node-play-hit-bridge {
+  width: 14px !important;
+  height: 48px !important;
+  margin-top: 0 !important;
+  margin-left: -2px !important;
+}
 `;
 
 const NodeActionButton: React.FC<{
@@ -2120,6 +2338,7 @@ export const NodeExecutionBadge: React.FC<{
 export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
   sockets,
   hasTopSocket = false,
+  hasBottomSocket = false,
   width: customWidth,
   height: customHeight,
   strokeColor,
@@ -2137,8 +2356,10 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
   isCircle = false,
   showAddButton = false,
   showBottomAddButton = false,
+  showTopAddButton = false,
   onAddClick,
-  onBottomAddClick: _onBottomAddClick,
+  onBottomAddClick,
+  onTopAddClick,
   onSocketMouseDown,
   onSocketMouseUp,
   onSocketMouseEnter,
@@ -2259,6 +2480,26 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
           </g>
         )}
 
+        {/* BOTTOM INPUT PORT (for vertically connected top nodes like AI Formats) */}
+        {hasBottomSocket && (
+          <g>
+            <rect
+              x={nodeWidth / 2 - 8}
+              y={nodeHeight - 4}
+              width="16"
+              height="8"
+              rx="2.5"
+              fill={inputDotColor}
+              stroke={inputDotColor}
+              strokeWidth="1.5"
+            />
+            <polygon
+              points={`${nodeWidth / 2 - 4},${nodeHeight + 1} ${nodeWidth / 2},${nodeHeight - 3} ${nodeWidth / 2 + 4},${nodeHeight + 1}`}
+              fill={isDark ? '#1C2128' : '#FFFFFF'}
+            />
+          </g>
+        )}
+
         {/* LEFT INPUT PORT (n8n grey notch/tab on left border at x = 1, y = 36) */}
         {(sockets === 'left' || sockets === 'both') && (
           <g>
@@ -2322,19 +2563,41 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
           </g>
         )}
 
+        {/* TOP BASE OUTPUT PORT (n8n solid circle on top border at x = nodeWidth / 2, y = 1) */}
+        {showTopAddButton && (
+          <g>
+            <line
+              x1={nodeWidth / 2}
+              y1={1}
+              x2={nodeWidth / 2}
+              y2={-16}
+              stroke={isDark ? '#4B5563' : '#94A3B8'}
+              strokeWidth="1.75"
+            />
+            <circle
+              cx={nodeWidth / 2}
+              cy={1}
+              r={5}
+              fill={outputDotColor}
+              stroke={outputDotColor}
+              strokeWidth="1.5"
+            />
+          </g>
+        )}
+
         {/* BOTTOM BASE OUTPUT PORT (n8n solid circle on bottom border at x = nodeWidth / 2, y = nodeHeight - 1) */}
         {showBottomAddButton && (
           <g>
-            {/* Top vertical line from bottom dot to top of text label - rendered FIRST so circle dot sits cleanly on top of line */}
+            {/* Top vertical line from bottom dot */}
             <line
               x1={nodeWidth / 2}
               y1={nodeHeight - 1}
               x2={nodeWidth / 2}
-              y2={nodeHeight + 22}
+              y2={nodeHeight + 16}
               stroke={isDark ? '#4B5563' : '#94A3B8'}
               strokeWidth="1.75"
             />
-            {/* Base circle dot rendered SECOND so it sits cleanly on top of the line */}
+            {/* Base circle dot */}
             <circle
               cx={nodeWidth / 2}
               cy={nodeHeight - 1}
@@ -2418,6 +2681,114 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
           onMouseEnter={(e) => {
             e.currentTarget.style.borderColor = isDark ? '#60A5FA' : '#2563EB';
             e.currentTarget.style.backgroundColor = isDark ? '#263342' : '#EFF6FF';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.borderColor = isDark ? '#4B5563' : '#94A3B8';
+            e.currentTarget.style.backgroundColor = isDark ? '#1F2937' : '#FFFFFF';
+          }}
+        >
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+            <path
+              d="M 6 2 L 6 10 M 2 6 L 10 6"
+              stroke={isDark ? '#9CA3AF' : '#64748B'}
+              strokeWidth="1.75"
+              strokeLinecap="round"
+            />
+          </svg>
+        </button>
+      )}
+
+      {/* [+] ADD STEP BUTTON on top */}
+      {showTopAddButton && onTopAddClick && (
+        <button
+          type="button"
+          className="merged-node-top-add-btn"
+          title="Connect AI Format Above"
+          onMouseDown={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+          }}
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            onTopAddClick(e);
+          }}
+          style={{
+            position: 'absolute',
+            left: `${nodeWidth / 2 - 11}px`,
+            top: '-38px',
+            width: '22px',
+            height: '22px',
+            borderRadius: '6px',
+            border: isDark ? '1.5px solid #4B5563' : '1.5px solid #94A3B8',
+            backgroundColor: isDark ? '#1F2937' : '#FFFFFF',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 0,
+            cursor: 'pointer',
+            pointerEvents: 'auto',
+            zIndex: 40,
+            boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+            transition: 'all 0.15s ease',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.borderColor = isDark ? '#C084FC' : '#7C3AED';
+            e.currentTarget.style.backgroundColor = isDark ? '#2D1F3F' : '#F5F3FF';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.borderColor = isDark ? '#4B5563' : '#94A3B8';
+            e.currentTarget.style.backgroundColor = isDark ? '#1F2937' : '#FFFFFF';
+          }}
+        >
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+            <path
+              d="M 6 2 L 6 10 M 2 6 L 10 6"
+              stroke={isDark ? '#9CA3AF' : '#64748B'}
+              strokeWidth="1.75"
+              strokeLinecap="round"
+            />
+          </svg>
+        </button>
+      )}
+
+      {/* [+] ADD STEP BUTTON on bottom */}
+      {showBottomAddButton && onBottomAddClick && (
+        <button
+          type="button"
+          className="merged-node-bottom-add-btn"
+          title="Add AI Model Below"
+          onMouseDown={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+          }}
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            onBottomAddClick(e);
+          }}
+          style={{
+            position: 'absolute',
+            left: `${nodeWidth / 2 - 11}px`,
+            top: `${nodeHeight + 16}px`,
+            width: '22px',
+            height: '22px',
+            borderRadius: '6px',
+            border: isDark ? '1.5px solid #4B5563' : '1.5px solid #94A3B8',
+            backgroundColor: isDark ? '#1F2937' : '#FFFFFF',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 0,
+            cursor: 'pointer',
+            pointerEvents: 'auto',
+            zIndex: 40,
+            boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+            transition: 'all 0.15s ease',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.borderColor = isDark ? '#C084FC' : '#7C3AED';
+            e.currentTarget.style.backgroundColor = isDark ? '#2D1F3F' : '#F5F3FF';
           }}
           onMouseLeave={(e) => {
             e.currentTarget.style.borderColor = isDark ? '#4B5563' : '#94A3B8';
@@ -2550,6 +2921,7 @@ export interface FacebookWorkflowCanvasProps {
   onUpdateBoxOutput?: (boxId: string, outputText: string) => void;
   onRegenerateBoxOutput?: (boxId: string) => Promise<string | void>;
   onContinueWorkflow?: (fromBoxId?: string) => void;
+  onRunFromStep?: (nodeId: string) => void;
 }
 
 /**
@@ -2725,6 +3097,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     onUpdateBoxOutput,
     onRegenerateBoxOutput,
     onContinueWorkflow,
+    onRunFromStep,
   },
   ref
 ) {
@@ -3031,7 +3404,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     nodeId: string;
     nodeType: string;
     title: string;
-    platform?: 'facebook' | 'instagram' | 'tiktok' | 'database' | 'chrome-profile' | 'chrome-tab-group';
+    platform?: 'facebook' | 'instagram' | 'tiktok' | 'database' | 'chrome-profile' | 'chrome-tab-group' | 'ai-format';
   } | null>(null);
 
   const [browserProfilesList, setBrowserProfilesList] = useState<BrowserProfile[]>([]);
@@ -3065,6 +3438,69 @@ export const FacebookWorkflowCanvas = forwardRef<
   const [postCardExpanded, setPostCardExpanded] = useState<boolean>(false);
   const [selectedCombineFormatId, setSelectedCombineFormatId] = useState<string>('all');
   const [copiedCombineSuccess, setCopiedCombineSuccess] = useState<boolean>(false);
+  const [combineCropSlices, setCombineCropSlices] = useState<FormattedCropSlice[]>([]);
+
+  useEffect(() => {
+    const watermarkBoxes = (config.aiBoxes || []).filter((b) => isWatermarkAIBox(b) && b.enabled !== false);
+    if (watermarkBoxes.length === 0) {
+      setCombineCropSlices([]);
+      return;
+    }
+
+    const cropBox = watermarkBoxes[0];
+    const formats = getSavedCropFormats();
+    const fmt =
+      formats.find((f) => f.id === cropBox.cropFormatId || f.id === cropBox.templateId || f.id === cropBox.watermarkPresetId) ||
+      formats.find((f) => cropBox.title && f.name.toLowerCase().includes(cropBox.title.toLowerCase())) ||
+      formats[0];
+
+    if (!fmt) return;
+
+    let targetImgUrl = '';
+    if (cropBox.imageSource === 'generate') {
+      try {
+        const savedHero = localStorage.getItem('bolthaven_last_hero_image');
+        if (savedHero) {
+          const parsed = JSON.parse(savedHero);
+          if (parsed?.url) targetImgUrl = parsed.url;
+        }
+      } catch (e) {}
+    } else if (cropBox.imageSource === 'enhance') {
+      targetImgUrl = enhancedPhotos?.[0] || images?.[0]?.stored_url || images?.[0]?.source_url || '';
+    } else if (cropBox.imageSource === 'get_images' || (cropBox.imageSource as string) === 'get-images') {
+      targetImgUrl = images?.[0]?.stored_url || images?.[0]?.source_url || '';
+    } else {
+      try {
+        const savedHero = localStorage.getItem('bolthaven_last_hero_image');
+        if (savedHero) {
+          const parsed = JSON.parse(savedHero);
+          if (parsed?.url) targetImgUrl = parsed.url;
+        }
+      } catch (e) {}
+      if (!targetImgUrl && images && images.length > 0) {
+        targetImgUrl = enhancedPhotos?.[0] || images[0].stored_url || images[0].source_url || '';
+      }
+    }
+
+    if (!targetImgUrl) return;
+
+    let isCancelled = false;
+    const effectiveFmt = cropBox.watermarkConfig
+      ? { ...fmt, watermarkConfig: { ...(fmt.watermarkConfig || {}), ...cropBox.watermarkConfig } }
+      : fmt;
+
+    formatImageWithCropFormatSlices(targetImgUrl, effectiveFmt)
+      .then((slices) => {
+        if (!isCancelled && slices && slices.length > 0) {
+          setCombineCropSlices(slices);
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [config.aiBoxes, config.connections, images, enhancedPhotos]);
 
   const activeCopy: string = useMemo(() => {
     if (outputSelectedCopyKey === 'original') return rawContent || '';
@@ -3087,7 +3523,23 @@ export const FacebookWorkflowCanvas = forwardRef<
   }
 
   const compiledImages: CompiledImageItem[] = useMemo(() => {
-    return (images || []).map((img) => {
+    const list: CompiledImageItem[] = [];
+
+    if (combineCropSlices && combineCropSlices.length > 0) {
+      combineCropSlices.forEach((slice, sIdx) => {
+        list.push({
+          index: sIdx,
+          facebook_photo_id: `crop-tile-${slice.tileIndex}`,
+          source_url: slice.url,
+          stored_url: slice.url,
+          finalUrl: slice.url,
+          isWatermarked: true,
+          isEnhanced: false,
+        });
+      });
+    }
+
+    (images || []).forEach((img) => {
       const isWatermarked = Boolean(watermarkedPhotos[img.index]);
       const isEnhanced = Boolean(enhancedPhotos[img.index]);
       const finalUrl =
@@ -3098,14 +3550,16 @@ export const FacebookWorkflowCanvas = forwardRef<
             ? img.stored_url
             : `http://localhost:8085${img.stored_url}`
           : img.source_url);
-      return {
+      list.push({
         ...img,
         finalUrl,
         isWatermarked,
         isEnhanced,
-      };
+      });
     });
-  }, [images, watermarkedPhotos, enhancedPhotos]);
+
+    return list;
+  }, [images, watermarkedPhotos, enhancedPhotos, combineCropSlices]);
 
   const handleOpenLightbox = (indexOrUrl: number | string) => {
     if (typeof indexOrUrl === 'number') {
@@ -3148,7 +3602,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     nodeId: string,
     nodeType: string,
     title: string,
-    platform?: 'facebook' | 'instagram' | 'tiktok' | 'database' | 'chrome-profile' | 'chrome-tab-group',
+    platform?: 'facebook' | 'instagram' | 'tiktok' | 'database' | 'chrome-profile' | 'chrome-tab-group' | 'ai-format',
   ) => {
     setActiveModalNode(null);
     setSelectedBoxId(null);
@@ -3164,6 +3618,8 @@ export const FacebookWorkflowCanvas = forwardRef<
       fetchTabGroups(fromBox?.browserProfileId || 14, fromBox?.browserProfileKey, fromBox?.browserProfileName).then((res) => {
         if (res && res.length > 0) setBrowserTabGroupsList(res);
       });
+    } else if (platform === 'ai-format') {
+      setAvailablePrompts(loadAvailablePromptTemplates());
     }
     setConnectDrawerNode({ nodeId, nodeType, title, platform });
   };
@@ -3172,7 +3628,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     nodeId: string,
     nodeType: string,
     nodeTitle?: string,
-    platform?: 'facebook' | 'instagram' | 'tiktok' | 'database' | 'chrome-profile' | 'chrome-tab-group',
+    platform?: 'facebook' | 'instagram' | 'tiktok' | 'database' | 'chrome-profile' | 'chrome-tab-group' | 'ai-format',
   ) => (
     <button
       type="button"
@@ -3228,6 +3684,107 @@ export const FacebookWorkflowCanvas = forwardRef<
       </span>
     </button>
   );
+
+  // Floating "Run Step" Play Button displayed above (or beside) node when hovered or clicked/selected
+  const renderNodePlayButton = (
+    nodeId: string,
+    color: string,
+    positionStyle?: React.CSSProperties,
+    label: string = 'Run',
+    side: 'top' | 'right' | 'left' = 'top'
+  ) => {
+    if (executionState?.isRunning || !onRunFromStep) return null;
+    if (nodeId.startsWith('combine') || nodeId.includes('combine')) return null;
+
+    const isSideRight = side === 'right';
+    const isSideLeft = side === 'left';
+
+    return (
+      <div
+        className={`node-play-button-wrapper canvas-control ${isSideRight ? 'is-right' : isSideLeft ? 'is-left' : ''}`}
+        onMouseEnter={() => handleNodeMouseEnter(nodeId)}
+        onMouseLeave={() => handleNodeMouseLeave(nodeId)}
+        style={{
+          ...(isSideRight
+            ? {
+                top: '50%',
+                left: '100%',
+                transform: 'translateY(-50%)',
+                marginLeft: '8px',
+                flexDirection: 'row-reverse',
+              }
+            : isSideLeft
+            ? {
+                top: '50%',
+                right: '100%',
+                left: 'auto',
+                transform: 'translateY(-50%)',
+                marginRight: '8px',
+                flexDirection: 'row',
+              }
+            : {}),
+          ...positionStyle,
+        }}
+      >
+        <button
+          type="button"
+          className="canvas-control node-step-play-btn"
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            onRunFromStep(nodeId);
+          }}
+          onMouseDown={(e) => {
+            e.stopPropagation();
+          }}
+          onMouseEnter={() => handleNodeMouseEnter(nodeId)}
+          onMouseLeave={() => handleNodeMouseLeave(nodeId)}
+          title={`Run from this step (${label})`}
+          style={{
+            ['--play-btn-accent' as any]: color,
+            ['--play-btn-bg' as any]: isDark ? '#1F2937' : '#FFFFFF',
+            ['--play-btn-border' as any]: isDark ? '#4B5563' : '#94A3B8',
+            ['--play-btn-color' as any]: isDark ? '#9CA3AF' : '#64748B',
+            ['--play-btn-hover-bg' as any]: isDark ? '#263342' : '#F1F5F9',
+          }}
+        >
+          <FiPlay
+            size={12}
+            style={{
+              fill: isDark ? '#9CA3AF' : '#64748B',
+              color: 'inherit',
+              marginLeft: '2px',
+              transition: 'all 0.15s ease',
+            }}
+          />
+        </button>
+
+        {/* Seamless Hover Bridge: Fills the entire gap between button and node */}
+        <div
+          className="canvas-control node-play-hit-bridge"
+          onMouseEnter={() => handleNodeMouseEnter(nodeId)}
+          onMouseLeave={() => handleNodeMouseLeave(nodeId)}
+          style={{
+            ...(isSideRight
+              ? {
+                  width: '14px',
+                  height: '48px',
+                  marginTop: 0,
+                  marginRight: '-2px',
+                }
+              : isSideLeft
+              ? {
+                  width: '14px',
+                  height: '48px',
+                  marginTop: 0,
+                  marginLeft: '-2px',
+                }
+              : {}),
+          }}
+        />
+      </div>
+    );
+  };
   const dragStartCoord = useRef({ x: 0, y: 0 });
   const hasMoved = useRef(false);
   const canvasMouseDownCoord = useRef<{ x: number; y: number } | null>(null);
@@ -3242,6 +3799,17 @@ export const FacebookWorkflowCanvas = forwardRef<
   }
   const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<DeleteConfirmTarget | null>(null);
 
+  // Prompt Template Viewer Slide-Over State
+  const [viewingPromptTemplate, setViewingPromptTemplate] = useState<{
+    id: string;
+    name: string;
+    templateText: string;
+    headerTitle?: string;
+    copyButtonLabel?: string;
+  } | null>(null);
+  const [copiedPromptId, setCopiedPromptId] = useState<string | null>(null);
+  const [isViewerPromptCopied, setIsViewerPromptCopied] = useState(false);
+
   const handleCloseModal = () => {
     setActiveModalNode(null);
     setConnectDrawerNode(null);
@@ -3249,12 +3817,19 @@ export const FacebookWorkflowCanvas = forwardRef<
     setShowFBHeroSettingsSidebox(false);
     setSelectedNodeIds(new Set());
     setSelectedBoxId(null);
+    setViewingPromptTemplate(null);
   };
 
   // Comprehensive Escape Key Listener to dismiss any active drawer, modal, or popover
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        if (viewingPromptTemplate) {
+          e.stopImmediatePropagation();
+          e.stopPropagation();
+          setViewingPromptTemplate(null);
+          return;
+        }
         if (deleteConfirmTarget) {
           e.stopImmediatePropagation();
           e.stopPropagation();
@@ -3368,7 +3943,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     syncPrompts();
     window.addEventListener('storage', syncPrompts);
     return () => window.removeEventListener('storage', syncPrompts);
-  }, [activeModalNode]);
+  }, []);
 
   // Saved Crop Studio Formats (synced with Crop & Cut Studio)
   const [savedCropFormatsList, setSavedCropFormatsList] = useState<CropStudioFormat[]>(() => getSavedCropFormats());
@@ -3445,7 +4020,7 @@ export const FacebookWorkflowCanvas = forwardRef<
       window.removeEventListener('ea_crop_formats_updated', syncFormats);
       window.removeEventListener('ea_active_crop_format_changed', syncFormats);
     };
-  }, [activeModalNode]);
+  }, []);
 
   // Sync to parent and localStorage
   const updateConfig = (newConfig: FacebookWorkflowConfig) => {
@@ -3573,13 +4148,17 @@ export const FacebookWorkflowCanvas = forwardRef<
       const isProf = isChromeProfileAIBox(box);
       const isTabGroup = isChromeTabGroupAIBox(box);
       const isExt = isExternalBrowserAIBox(box) && !isProf && !isTabGroup;
-      const boxW = isExt ? 216 : CIRCLE_SIZE;
-      const hasAddBtn = isNodeEffectivelyEnabled(box.id) && !isProf && !isTabGroup;
+      const isTxt = isTextAIBox(box, config.connections);
+      const isFormat = isTextFormatAIBox(box);
+      const boxW = (isExt || isTxt) ? 216 : CIRCLE_SIZE;
+      const hasAddBtn = isNodeEffectivelyEnabled(box.id) && !isProf && !isTabGroup && !isFormat;
       return socketType === 'output'
         ? { x: box.x + (hasAddBtn ? boxW + 37 : boxW - 1), y: box.y + HALF_CIRCLE }
         : (isProf || isTabGroup)
           ? { x: box.x + HALF_CIRCLE, y: box.y + 1 }
-          : { x: box.x + 1, y: box.y + HALF_CIRCLE };
+          : isFormat
+            ? { x: box.x + HALF_CIRCLE, y: box.y + 71 }
+            : { x: box.x + 1, y: box.y + HALF_CIRCLE };
     }
     return null;
   };
@@ -3687,15 +4266,28 @@ export const FacebookWorkflowCanvas = forwardRef<
     const isTargetCombine = toId.startsWith('combine-box') || (config.combineBoxes || []).some((b) => b.id === toId);
     const isSourceCombine = fromId.startsWith('combine-box') || (config.combineBoxes || []).some((b) => b.id === fromId);
 
-    // Target is a Combine Box: can receive from content, images, any AI box, or another Combine Box
+    const fromBox = config.aiBoxes.find((b) => b.id === fromId);
+    const toBox = config.aiBoxes.find((b) => b.id === toId);
+
+    // AI Format boxes only connect with AI Model container above it; never to Combine Box, output, or destinations
+    if (fromBox && isTextFormatAIBox(fromBox)) {
+      return Boolean(toBox && isTextAIBox(toBox, config.connections));
+    }
+    if (toBox && isTextFormatAIBox(toBox)) {
+      return Boolean(fromBox && isTextAIBox(fromBox, config.connections));
+    }
+
+    // Target is a Combine Box: can receive from content, images, central AI Model box, watermark, or another Combine Box
     if (isTargetCombine) {
       if (fromId === 'trigger' || fromId === toId) return false;
+      if (fromBox && isTextFormatAIBox(fromBox)) return false;
       return true;
     }
 
     // Source is a Combine Box: can connect to destinations or another Combine Box
     if (isSourceCombine) {
-      if (toId === 'destination' || toId.startsWith('dest-')) return true;
+      const activeDests = getNormalizedDestinations(config).filter((d) => d.enabled !== false);
+      if (toId === 'destination' || toId.startsWith('dest-')) return activeDests.length > 0;
       if (isTargetCombine && toId !== fromId) return true;
       return false;
     }
@@ -5155,13 +5747,18 @@ export const FacebookWorkflowCanvas = forwardRef<
   };
 
   // Add Dynamic Text AI Model Box (Gemini, OpenAI, Claude, LaoZhang)
-  const handleAddTextAIBox = (fromNodeId: string = 'get-content'): string => {
+  const handleAddTextAIBox = (
+    fromNodeId: string = 'get-content',
+    position: 'above' | 'below' = 'below',
+    targetBoxId?: string
+  ): string => {
     const textAIBoxes = config.aiBoxes.filter((b) => isTextAIBox(b, config.connections));
     const newCount = textAIBoxes.length + 1;
     const newId = `ai-box-${Date.now()}`;
     const newBox: DynamicAIBoxConfig = {
       id: newId,
-      title: 'Gemini 2.5 Flash',
+      title: 'AI Model',
+      subtitle: 'AI Processor',
       processType: 'text_ai',
       provider: 'google_ai',
       model: 'gemini-2.5-flash',
@@ -5170,7 +5767,7 @@ export const FacebookWorkflowCanvas = forwardRef<
       customPrompt: '',
       enabled: true,
       x: 520,
-      y: 80 + (newCount - 1) * 120,
+      y: 250,
     };
 
     const newConn: WorkflowWireConnection = {
@@ -5179,10 +5776,59 @@ export const FacebookWorkflowCanvas = forwardRef<
       toNodeId: newId,
     };
 
-    const nextBoxes = [...config.aiBoxes, newBox];
+    // If active Combine Box exists, automatically connect AI Box right socket to Combine Box!
+    const activeCb = (config.combineBoxes || []).find((cb) => cb && cb.enabled !== false);
+    const extraConns: WorkflowWireConnection[] = [];
+    if (activeCb) {
+      extraConns.push({
+        id: `conn-${newId}-${activeCb.id}`,
+        fromNodeId: newId,
+        toNodeId: activeCb.id,
+      });
+    } else {
+      const combineConns = (config.connections || []).filter((c) => {
+        const isTargetCombine = (config.combineBoxes || []).some((cb) => cb.id === c.toNodeId) || c.toNodeId === 'output';
+        return isTargetCombine && textAIBoxes.some((tb) => tb.id === c.fromNodeId);
+      });
+      if (combineConns.length > 0) {
+        extraConns.push({
+          id: `conn-${newId}-${combineConns[0].toNodeId}`,
+          fromNodeId: newId,
+          toNodeId: combineConns[0].toNodeId,
+        });
+      }
+    }
+
+    let nextBoxes: DynamicAIBoxConfig[];
+    if (position === 'above' && targetBoxId) {
+      const targetIdx = config.aiBoxes.findIndex((b) => b.id === targetBoxId);
+      if (targetIdx >= 0) {
+        nextBoxes = [
+          ...config.aiBoxes.slice(0, targetIdx),
+          newBox,
+          ...config.aiBoxes.slice(targetIdx),
+        ];
+      } else {
+        nextBoxes = [newBox, ...config.aiBoxes];
+      }
+    } else if (position === 'below' && targetBoxId) {
+      const targetIdx = config.aiBoxes.findIndex((b) => b.id === targetBoxId);
+      if (targetIdx >= 0) {
+        nextBoxes = [
+          ...config.aiBoxes.slice(0, targetIdx + 1),
+          newBox,
+          ...config.aiBoxes.slice(targetIdx + 1),
+        ];
+      } else {
+        nextBoxes = [...config.aiBoxes, newBox];
+      }
+    } else {
+      nextBoxes = [...config.aiBoxes, newBox];
+    }
+
     const nextConns = autoConnectWorkflow(
       nextBoxes,
-      [...(config.connections || []), newConn],
+      [...(config.connections || []), newConn, ...extraConns],
       config.getContent.enabled,
       config.getImages.enabled,
       config.destination?.enabled !== false,
@@ -5211,7 +5857,8 @@ export const FacebookWorkflowCanvas = forwardRef<
     const newId = `ai-box-format-${Date.now()}`;
     const newBox: DynamicAIBoxConfig = {
       id: newId,
-      title: chosenTemplate ? `Format: ${chosenTemplate.name}` : `Format Preset #${newCount}`,
+      title: chosenTemplate ? chosenTemplate.name : `AI Format ${newCount}`,
+      subtitle: 'AI Format',
       processType: 'text_format',
       provider: sourceBox?.provider || 'google_ai',
       model: sourceBox?.model || 'gemini-flash-latest',
@@ -5221,8 +5868,8 @@ export const FacebookWorkflowCanvas = forwardRef<
         : 'Generate optimized marketing copy for this property listing.\nHighlight rent/sale price, transit access, and clear call-to-action.',
       customPrompt: '',
       enabled: true,
-      x: 740,
-      y: 80 + (newCount - 1) * 120,
+      x: 520,
+      y: 80,
     };
 
     const newConn: WorkflowWireConnection = {
@@ -7007,13 +7654,32 @@ export const FacebookWorkflowCanvas = forwardRef<
               if (conn.fromNodeId === 'trigger') return null;
               const fromBox = config.aiBoxes.find((b) => b.id === conn.fromNodeId);
               const toBox = config.aiBoxes.find((b) => b.id === conn.toNodeId);
+
+              // 1. Format presets are vertically attached above AI Model only;
+              // Never render outgoing wires from format presets to combine boxes, output, or destinations!
+              const hasCentralTextAI = config.aiBoxes.some((b) => isTextAIBox(b, config.connections) && !isTextFormatAIBox(b));
+              if (fromBox && isTextFormatAIBox(fromBox) && hasCentralTextAI) {
+                const isVerticalToAi = Boolean(toBox && isTextAIBox(toBox, config.connections));
+                if (!isVerticalToAi) return null;
+              }
+
+              // 2. Do not render dangling wires to destinations if no destination is active on canvas
+              const activeDests = getNormalizedDestinations(config).filter((d) => d && d.enabled !== false);
+              if ((conn.toNodeId === 'destination' || conn.toNodeId.startsWith('dest-')) && activeDests.length === 0) {
+                return null;
+              }
+
               const isExternalToProfileWire = Boolean(
                 fromBox && isExternalBrowserAIBox(fromBox) && toBox && isChromeProfileAIBox(toBox)
               );
               const isProfileToTabGroupWire = Boolean(
                 fromBox && isChromeProfileAIBox(fromBox) && toBox && isChromeTabGroupAIBox(toBox)
               );
-              const isBaseVerticalWire = isExternalToProfileWire || isProfileToTabGroupWire;
+              const isAIToFormatWire = Boolean(
+                (fromBox && isTextAIBox(fromBox, config.connections) && toBox && isTextFormatAIBox(toBox)) ||
+                (toBox && isTextAIBox(toBox, config.connections) && fromBox && isTextFormatAIBox(fromBox))
+              );
+              const isBaseVerticalWire = isExternalToProfileWire || isProfileToTabGroupWire || isAIToFormatWire;
 
               let fromPos = getNodeSocketPos(conn.fromNodeId, 'output');
               let toPos = getNodeSocketPos(conn.toNodeId, 'input');
@@ -7024,6 +7690,11 @@ export const FacebookWorkflowCanvas = forwardRef<
               } else if (isProfileToTabGroupWire && fromBox && toBox) {
                 fromPos = { x: fromBox.x + 36, y: fromBox.y + 144 };
                 toPos = { x: toBox.x + 36, y: toBox.y + 1 };
+              } else if (isAIToFormatWire && fromBox && toBox) {
+                const aiBox = isTextAIBox(fromBox, config.connections) ? fromBox : toBox;
+                const formatBox = isTextFormatAIBox(toBox) ? toBox : fromBox;
+                fromPos = { x: aiBox.x + 108, y: aiBox.y - 38 };
+                toPos = { x: formatBox.x + 36, y: formatBox.y + 71 };
               }
 
               // Safety check: skip any wire with unresolved coordinates to prevent broken loops to (0, 0)
@@ -7035,13 +7706,17 @@ export const FacebookWorkflowCanvas = forwardRef<
               ) {
                 return null;
               }
-              const path = isBaseVerticalWire
+              const path = isExternalToProfileWire || isProfileToTabGroupWire
                 ? Math.abs(fromPos.x - toPos.x) < 5
                   ? `M ${fromPos.x} ${fromPos.y} L ${toPos.x} ${toPos.y}`
                   : `M ${fromPos.x} ${fromPos.y} C ${fromPos.x} ${fromPos.y + Math.max((toPos.y - fromPos.y) * 0.45, 20)}, ${toPos.x} ${toPos.y - Math.max((toPos.y - fromPos.y) * 0.45, 20)}, ${toPos.x} ${toPos.y}`
-                : conn.fromNodeId === 'get-images' && (conn.toNodeId === 'destination' || conn.toNodeId.startsWith('dest-'))
-                  ? createBaseChannelPath(fromPos, toPos)
-                  : createBezierPath(fromPos, toPos);
+                : isAIToFormatWire
+                  ? Math.abs(fromPos.x - toPos.x) < 5
+                    ? `M ${fromPos.x} ${fromPos.y} L ${toPos.x} ${toPos.y}`
+                    : `M ${fromPos.x} ${fromPos.y} C ${fromPos.x} ${fromPos.y - Math.max((fromPos.y - toPos.y) * 0.45, 20)}, ${toPos.x} ${toPos.y + Math.max((fromPos.y - toPos.y) * 0.45, 20)}, ${toPos.x} ${toPos.y}`
+                  : conn.fromNodeId === 'get-images' && (conn.toNodeId === 'destination' || conn.toNodeId.startsWith('dest-'))
+                    ? createBaseChannelPath(fromPos, toPos)
+                    : createBezierPath(fromPos, toPos);
 
               const fromEnabled = isNodeEffectivelyEnabled(conn.fromNodeId);
               const toEnabled = isNodeEffectivelyEnabled(conn.toNodeId);
@@ -7233,7 +7908,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                     top: `${config.trigger?.y || 200}px`,
                     width: `${CIRCLE_SIZE}px`,
                     height: `${CIRCLE_SIZE}px`,
-                    zIndex: 15,
+                    zIndex: hoveredNodeId === 'trigger' || selectedNodeIds.has('trigger') ? 25 : 15,
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
@@ -7321,7 +7996,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   top: `${config.trigger.y}px`,
                   width: `${CIRCLE_SIZE}px`,
                   height: `${CIRCLE_SIZE}px`,
-                  zIndex: 15,
+                  zIndex: hoveredNodeId === 'trigger' || selectedNodeIds.has('trigger') ? 25 : 15,
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
@@ -7355,6 +8030,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                 />
                 <FiLink style={{ fontSize: '28px', color: '#1877F2', position: 'relative', zIndex: 2, pointerEvents: 'none' }} />
                 <NodeExecutionBadge status={triggerStatus} />
+                {config.trigger.enabled !== false && (hoveredNodeId === 'trigger' || activeModalNode?.type === 'trigger' || selectedNodeIds.has('trigger')) &&
+                  renderNodePlayButton('trigger', '#3B82F6', undefined, 'Link Importer')}
 
                 {/* Label below circle */}
                 <div
@@ -7449,7 +8126,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   ['--ring' as any]: isContentReceptive ? RECEPTIVE_COLOR : contentStatus === 'running' ? '#0284C7' : '#388BFD',
                   ['--receptive-color' as any]: RECEPTIVE_COLOR,
                   opacity: config.getContent.enabled ? 1 : 0.6,
-                  zIndex: isContentReceptive ? 35 : hoveredNodeId === 'get-content' ? 25 : 15,
+                  zIndex: isContentReceptive ? 35 : (hoveredNodeId === 'get-content' || selectedNodeIds.has('get-content')) ? 25 : 15,
                   cursor: isContentReceptive ? 'crosshair' : 'pointer',
                   display: 'flex',
                   alignItems: 'center',
@@ -7479,7 +8156,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   highlightOutput={isContentReceptive}
                   hasReceiver={contentHasReceiver}
                   hasSource={false}
-                  showAddButton={Boolean(config.getContent.enabled)}
+                  showAddButton={true}
                   onAddClick={(e) => {
                     e.stopPropagation();
                     setDragWire(null);
@@ -7508,6 +8185,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                   }}
                 />
                 <NodeExecutionBadge status={contentStatus} />
+                {Boolean(config.getContent.enabled) && (hoveredNodeId === 'get-content' || activeModalNode?.type === 'get-content' || selectedNodeIds.has('get-content')) &&
+                  renderNodePlayButton('get-content', '#06B6D4', undefined, 'Get Content')}
 
                 {/* Label below circle */}
                 <div
@@ -7611,7 +8290,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   ['--ring' as any]: isImagesReceptive ? RECEPTIVE_COLOR : imagesStatus === 'running' ? '#10B981' : '#2EA043',
                   ['--receptive-color' as any]: RECEPTIVE_COLOR,
                   opacity: config.getImages.enabled ? 1 : 0.6,
-                  zIndex: isImagesReceptive ? 35 : hoveredNodeId === 'get-images' ? 25 : 15,
+                  zIndex: isImagesReceptive ? 35 : (hoveredNodeId === 'get-images' || selectedNodeIds.has('get-images')) ? 25 : 15,
                   cursor: isImagesReceptive ? 'crosshair' : 'pointer',
                   display: 'flex',
                   alignItems: 'center',
@@ -7641,7 +8320,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   highlightOutput={isImagesReceptive}
                   hasReceiver={imagesHasReceiver}
                   hasSource={false}
-                  showAddButton={Boolean(config.getImages.enabled)}
+                  showAddButton={true}
                   onAddClick={(e) => {
                     e.stopPropagation();
                     setDragWire(null);
@@ -7670,6 +8349,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                   }}
                 />
                 <NodeExecutionBadge status={imagesStatus} />
+                {Boolean(config.getImages.enabled) && (hoveredNodeId === 'get-images' || activeModalNode?.type === 'get-images' || selectedNodeIds.has('get-images')) &&
+                  renderNodePlayButton('get-images', '#10B981', undefined, 'Get Images')}
 
                 {/* Label below circle */}
                 <div
@@ -7783,7 +8464,12 @@ export const FacebookWorkflowCanvas = forwardRef<
             const isChromeProfile = isChromeProfileAIBox(box);
             const isChromeTabGroup = isChromeTabGroupAIBox(box);
             const isExternalBrowser = isExternalBrowserAIBox(box) && !isChromeProfile && !isChromeTabGroup;
-            const nodeWidth = isExternalBrowser ? 216 : CIRCLE_SIZE;
+            const isTextFormat = isTextFormatAIBox(box);
+            const textAIBoxes = config.aiBoxes.filter((b) => isTextAIBox(b, config.connections));
+            const textAIIndex = textAIBoxes.findIndex((b) => b.id === box.id);
+            const isTextAI = textAIIndex !== -1 && !isTextFormat;
+            const isWideNode = isExternalBrowser || isTextAI;
+            const nodeWidth = isWideNode ? 216 : CIRCLE_SIZE;
 
             return (
               <div
@@ -7819,8 +8505,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                 }}
               >
                 <MergedNodeShape
-                  sockets={isChromeProfile || isChromeTabGroup ? 'none' : 'both'}
+                  sockets={isChromeProfile || isChromeTabGroup || isTextFormat ? 'none' : 'both'}
                   hasTopSocket={isChromeProfile || isChromeTabGroup}
+                  hasBottomSocket={isTextFormat}
                   width={nodeWidth}
                   height={CIRCLE_SIZE}
                   strokeColor={strokeColor}
@@ -7832,14 +8519,19 @@ export const FacebookWorkflowCanvas = forwardRef<
                   highlightOutput={dragWire?.fromType === 'input' && isValidConnection(box.id, dragWire.fromNodeId)}
                   hasReceiver={boxHasReceiver}
                   hasSource={boxHasSource}
-                  showAddButton={!isChromeProfile && !isChromeTabGroup && Boolean(isEffectiveEnabled)}
-                  showBottomAddButton={isExternalBrowser && Boolean(isEffectiveEnabled)}
+                  showAddButton={!isChromeProfile && !isChromeTabGroup && !isTextFormat}
+                  showTopAddButton={isTextAI}
+                  showBottomAddButton={isExternalBrowser}
                   onAddClick={(e) => {
                     e.stopPropagation();
                     setDragWire(null);
                     setDragWire(null);
                     handleOpenConnectDrawer(box.id, 'ai-box', box.title || 'AI Processor');
                   }}
+                  onTopAddClick={isTextAI ? (e) => {
+                    e.stopPropagation();
+                    handleOpenConnectDrawer(box.id, 'ai-box', box.title || 'AI Model', 'ai-format');
+                  } : undefined}
                   onSocketMouseDown={(type, e) => handleSocketMouseDown(box.id, type, e)}
                   onSocketMouseUp={(type, e) => handleSocketMouseUp(box.id, type, e)}
                   onSocketMouseEnter={(type) => {
@@ -7865,10 +8557,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                     zIndex: 2,
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: isExternalBrowser ? 'flex-start' : 'center',
-                    paddingLeft: isExternalBrowser ? '20px' : '0px',
-                    paddingRight: isExternalBrowser ? '20px' : '0px',
-                    gap: isExternalBrowser ? '14px' : '0px',
+                    justifyContent: isWideNode ? 'flex-start' : 'center',
+                    paddingLeft: isWideNode ? '20px' : '0px',
+                    paddingRight: isWideNode ? '20px' : '0px',
+                    gap: isWideNode ? '14px' : '0px',
                     pointerEvents: 'none',
                     userSelect: 'none',
                     width: '100%',
@@ -7889,6 +8581,99 @@ export const FacebookWorkflowCanvas = forwardRef<
                         </span>
                       </div>
                     </>
+                  ) : isTextAI ? (
+                    <>
+                      <div
+                        style={{
+                          width: '36px',
+                          height: '36px',
+                          borderRadius: '10px',
+                          backgroundColor: isDark ? 'rgba(168, 85, 247, 0.16)' : 'rgba(168, 85, 247, 0.12)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                        }}
+                      >
+                        <HiSparkles style={{ fontSize: '22px', color: isEffectiveEnabled ? (isDark ? '#C084FC' : '#9333EA') : '#8B949E', transition: 'color 0.2s ease' }} />
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.25, minWidth: 0, flex: 1, pointerEvents: 'auto' }}>
+                        {editingCanvasBoxId === box.id ? (
+                          <input
+                            autoFocus
+                            type="text"
+                            value={editingCanvasBoxTitle}
+                            onChange={(e) => setEditingCanvasBoxTitle(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                if (editingCanvasBoxTitle.trim()) {
+                                  handleUpdateAIBox(box.id, { title: editingCanvasBoxTitle.trim() });
+                                }
+                                setEditingCanvasBoxId(null);
+                              } else if (e.key === 'Escape') {
+                                setEditingCanvasBoxId(null);
+                              }
+                            }}
+                            onBlur={() => {
+                              if (editingCanvasBoxTitle.trim()) {
+                                handleUpdateAIBox(box.id, { title: editingCanvasBoxTitle.trim() });
+                              }
+                              setEditingCanvasBoxId(null);
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            style={{
+                              fontSize: '0.8125rem',
+                              fontWeight: 700,
+                              color: isDark ? '#F1F5F9' : '#0F172A',
+                              backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
+                              border: '1px solid #A855F7',
+                              borderRadius: '4px',
+                              padding: '1px 6px',
+                              outline: 'none',
+                              width: '125px',
+                              maxWidth: '125px',
+                              boxShadow: '0 2px 8px rgba(0,0,0,0.18)',
+                            }}
+                          />
+                        ) : (
+                          <span
+                            style={{
+                              fontSize: '0.875rem',
+                              fontWeight: 700,
+                              color: isEffectiveEnabled ? (isDark ? '#F1F5F9' : '#0F172A') : '#8B949E',
+                              letterSpacing: '-0.01em',
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              maxWidth: '125px',
+                              cursor: 'text',
+                            }}
+                            title={box.title || 'AI Model'}
+                            onDoubleClick={(e) => {
+                              e.stopPropagation();
+                              setEditingCanvasBoxId(box.id);
+                              setEditingCanvasBoxTitle(box.title || 'AI Model');
+                            }}
+                          >
+                            {box.title || 'AI Model'}
+                          </span>
+                        )}
+                        <span
+                          style={{
+                            fontSize: '0.6875rem',
+                            color: isDark ? '#C084FC' : '#7C3AED',
+                            fontWeight: 600,
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            maxWidth: '125px',
+                          }}
+                        >
+                          {box.subtitle || 'AI Model'}
+                        </span>
+                      </div>
+                    </>
                   ) : isChromeProfile ? (
                     <FaChrome style={{ fontSize: '32px', color: isEffectiveEnabled ? (isDark ? '#38BDF8' : '#0284C7') : '#8B949E', transition: 'color 0.2s ease' }} />
                   ) : isChromeTabGroup ? (
@@ -7905,25 +8690,31 @@ export const FacebookWorkflowCanvas = forwardRef<
                 </div>
                 <NodeExecutionBadge status={boxStatus} />
 
-                {/* Label below circle */}
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: isExternalBrowser ? `${CIRCLE_SIZE + 24}px` : `${CIRCLE_SIZE + 8}px`,
-                    left: '50%',
-                    transform: 'translateX(-50%)',
-                    width: 'max-content',
-                    maxWidth: isExternalBrowser ? '240px' : '160px',
-                    textAlign: 'center',
-                    whiteSpace: 'normal',
-                    lineHeight: '1.25',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: '2px',
-                    pointerEvents: 'auto',
-                    zIndex: 2,
-                  }}
+                {/* Label positioning:
+                    - Format nodes (in branch ABOVE AI Box) place label ABOVE (bottom: CIRCLE_SIZE + 8px)
+                      so upward connector wires never cross through the text!
+                    - Other nodes place label below (top: CIRCLE_SIZE + 8px)
+                */}
+                {!isTextAI && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: isTextFormat ? 'auto' : isExternalBrowser ? `${CIRCLE_SIZE + 24}px` : `${CIRCLE_SIZE + 8}px`,
+                      bottom: isTextFormat ? `${CIRCLE_SIZE + 8}px` : 'auto',
+                      left: '50%',
+                      transform: 'translateX(-50%)',
+                      width: 'max-content',
+                      maxWidth: isExternalBrowser ? '240px' : isTextFormat ? '135px' : '160px',
+                      textAlign: 'center',
+                      whiteSpace: 'normal',
+                      lineHeight: '1.25',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '2px',
+                      pointerEvents: 'auto',
+                      zIndex: 2,
+                    }}
                   onClick={(e) => {
                     if (editingCanvasBoxId === box.id) {
                       e.stopPropagation();
@@ -8169,9 +8960,30 @@ export const FacebookWorkflowCanvas = forwardRef<
                     </div>
                   )}
                 </div>
-              </div>
-            );
-          })}
+              )}
+
+              {/* Floating Run Step Play Button */}
+              {Boolean(isEffectiveEnabled) && (hoveredNodeId === box.id || isSelected) &&
+                renderNodePlayButton(
+                  box.id,
+                  isTextFormat
+                    ? '#6366F1'
+                    : isExternalBrowser
+                    ? '#0EA5E9'
+                    : isWatermark
+                    ? '#8B5CF6'
+                    : isTextAI
+                    ? '#A855F7'
+                    : isChromeProfile || isChromeTabGroup
+                    ? '#38BDF8'
+                    : '#A855F7',
+                  isTextAI ? { left: '24px', top: '-38px', transform: 'none' } : undefined,
+                  box.title || 'Step',
+                  isTextFormat ? 'right' : 'top'
+                )}
+            </div>
+          );
+        })}
 
           {/* DESTINATION / OUTPUT NODES (Supports Multiple Independent Nodes: Database, Social Media, or Hybrid) */}
           {/* COMBINE BOX NODES */}
@@ -8181,7 +8993,8 @@ export const FacebookWorkflowCanvas = forwardRef<
               selectedNodeIds.has(cb.id);
             const cbConnsIn = dedupeConnections(config.connections || []).filter((c) => c.toNodeId === cb.id);
             const cbConnsOut = dedupeConnections(config.connections || []).filter((c) => c.fromNodeId === cb.id);
-            const uniqueCbInputs = Array.from(new Set(cbConnsIn.map((c) => c.fromNodeId)));
+            const activeCbConnsIn = cbConnsIn.filter((c) => isNodeEffectivelyEnabled(c.fromNodeId));
+            const uniqueCbInputs = Array.from(new Set(activeCbConnsIn.map((c) => c.fromNodeId)));
             const isCbReceptive = Boolean(
               dragWire && dragWire.fromType === 'output' && isValidConnection(dragWire.fromNodeId, cb.id)
             );
@@ -8635,6 +9448,14 @@ export const FacebookWorkflowCanvas = forwardRef<
                     {targetSubtitle}
                   </span>
                 </div>
+
+                {Boolean(isEffectiveEnabled) && (hoveredNodeId === destId || isSelected) &&
+                  renderNodePlayButton(
+                    destId,
+                    isFb ? '#1877F2' : isIg ? '#E1306C' : isTiktok ? '#00F2FE' : '#3B82F6',
+                    undefined,
+                    targetTitle
+                  )}
               </div>
             );
           })}
@@ -8990,10 +9811,15 @@ export const FacebookWorkflowCanvas = forwardRef<
                 width: '380px',
                 maxWidth: '100%',
                 backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
-                borderLeft: '1px solid var(--border-color)',
-                boxShadow: isDark
+                borderLeft: viewingPromptTemplate
+                  ? '1px solid transparent'
+                  : '1px solid var(--border-color)',
+                boxShadow: viewingPromptTemplate
+                  ? 'none'
+                  : isDark
                   ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
                   : '-3px 0 16px rgba(0, 0, 0, 0.06)',
+                transition: 'box-shadow 0.28s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.28s ease',
                 zIndex: 170,
                 display: 'flex',
                 flexDirection: 'column',
@@ -9670,6 +10496,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                     : c.fromNodeId === 'get-images'
                                       ? 'Get Images'
                                       : fromBox?.title || c.fromNodeId;
+                                const isFromEnabled = isNodeEffectivelyEnabled(c.fromNodeId);
                                 return (
                                   <div
                                     key={c.id}
@@ -9682,10 +10509,13 @@ export const FacebookWorkflowCanvas = forwardRef<
                                       border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
                                       backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF',
                                       fontSize: '0.75rem',
+                                      opacity: isFromEnabled ? 1 : 0.5,
                                     }}
                                   >
                                     <span style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{fromTitle}</span>
-                                    <span style={{ color: '#F59E0B', fontSize: '0.7rem' }}>Connected</span>
+                                    <span style={{ color: isFromEnabled ? '#F59E0B' : 'var(--text-muted)', fontSize: '0.7rem' }}>
+                                      {isFromEnabled ? 'Connected' : 'Bypassed'}
+                                    </span>
                                   </div>
                                 );
                               })}
@@ -9772,8 +10602,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                             </div>
                           )}
 
-                          {/* Merged Media Assets (Photos Ready) */}
-                          {hasImagesIn && images && images.length > 0 && (
+                          {/* Merged Media Assets (Photos & Slices Ready) */}
+                          {hasImagesIn && (combineCropSlices.length > 0 || (images && images.length > 0)) && (
                             <div
                               style={{
                                 display: 'flex',
@@ -9800,14 +10630,16 @@ export const FacebookWorkflowCanvas = forwardRef<
                                       borderRadius: '4px',
                                     }}
                                   >
-                                    ✓ {images.length} Photos Ready
+                                    ✓ {combineCropSlices.length > 0
+                                      ? `${combineCropSlices.length} ${combineCropSlices.length > 1 ? 'Cut Tiles' : 'Photos'} Ready · 1:1`
+                                      : `${images.length} Photos Ready`}
                                   </span>
                                 </div>
                               </div>
                               <div
                                 style={{
                                   display: 'grid',
-                                  gridTemplateColumns: 'repeat(3, 1fr)',
+                                  gridTemplateColumns: combineCropSlices.length === 2 ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
                                   gridAutoRows: 'max-content',
                                   gap: '6px',
                                   maxHeight: '260px',
@@ -9818,54 +10650,113 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
                                 }}
                               >
-                                {images.map((img, idx) => {
-                                  const url =
-                                    watermarkedPhotos?.[img.index] ||
-                                    enhancedPhotos?.[img.index] ||
-                                    img.stored_url ||
-                                    img.source_url;
-                                  return (
-                                    <div
-                                      key={`combine-img-${img.index}`}
-                                      onClick={() => handleOpenLightbox(idx)}
-                                      style={{
-                                        position: 'relative',
-                                        width: '100%',
-                                        paddingTop: '100%',
-                                        borderRadius: '6px',
-                                        overflow: 'hidden',
-                                        backgroundColor: '#000000',
-                                        border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                                        cursor: 'pointer',
-                                        transition: 'transform 0.15s ease',
-                                      }}
-                                      title={`Click to view Photo #${idx + 1} full size`}
-                                    >
-                                      <div style={{ position: 'absolute', inset: 0 }}>
-                                        <img
-                                          src={url}
-                                          alt={`Merged #${img.index + 1}`}
-                                          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                                        />
-                                        <div
-                                          style={{
-                                            position: 'absolute',
-                                            bottom: '2px',
-                                            left: '2px',
-                                            fontSize: '0.5rem',
-                                            fontWeight: 700,
-                                            padding: '1px 4px',
-                                            borderRadius: '2px',
-                                            backgroundColor: 'rgba(0,0,0,0.7)',
-                                            color: '#FFFFFF',
-                                          }}
-                                        >
-                                          #{idx + 1}
+                                {combineCropSlices.length > 0
+                                  ? combineCropSlices.map((slice, idx) => (
+                                      <div
+                                        key={`combine-slice-${slice.tileIndex}-${idx}`}
+                                        onClick={() => handleOpenLightbox(idx)}
+                                        style={{
+                                          position: 'relative',
+                                          width: '100%',
+                                          paddingTop: '100%',
+                                          borderRadius: '6px',
+                                          overflow: 'hidden',
+                                          backgroundColor: '#000000',
+                                          border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                          cursor: 'pointer',
+                                          transition: 'transform 0.15s ease',
+                                        }}
+                                        title={`Click to view Tile #${slice.tileIndex} (${slice.label}) full size`}
+                                      >
+                                        <div style={{ position: 'absolute', inset: 0 }}>
+                                          <img
+                                            src={slice.url}
+                                            alt={slice.label}
+                                            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                                          />
+                                          <div
+                                            style={{
+                                              position: 'absolute',
+                                              bottom: '2px',
+                                              left: '2px',
+                                              fontSize: '0.5rem',
+                                              fontWeight: 700,
+                                              padding: '1px 4px',
+                                              borderRadius: '2px',
+                                              backgroundColor: 'rgba(0,0,0,0.7)',
+                                              color: '#FFFFFF',
+                                            }}
+                                          >
+                                            Tile #{slice.tileIndex}
+                                          </div>
+                                          {slice.totalTiles > 1 && (
+                                            <div
+                                              style={{
+                                                position: 'absolute',
+                                                top: '2px',
+                                                right: '2px',
+                                                fontSize: '0.45rem',
+                                                fontWeight: 700,
+                                                padding: '1px 4px',
+                                                borderRadius: '2px',
+                                                backgroundColor: 'rgba(139, 92, 246, 0.9)',
+                                                color: '#FFFFFF',
+                                              }}
+                                            >
+                                              {slice.tileIndex}/{slice.totalTiles}
+                                            </div>
+                                          )}
                                         </div>
                                       </div>
-                                    </div>
-                                  );
-                                })}
+                                    ))
+                                  : images.map((img, idx) => {
+                                      const url =
+                                        watermarkedPhotos?.[img.index] ||
+                                        enhancedPhotos?.[img.index] ||
+                                        img.stored_url ||
+                                        img.source_url;
+                                      return (
+                                        <div
+                                          key={`combine-img-${img.index}`}
+                                          onClick={() => handleOpenLightbox(idx)}
+                                          style={{
+                                            position: 'relative',
+                                            width: '100%',
+                                            paddingTop: '100%',
+                                            borderRadius: '6px',
+                                            overflow: 'hidden',
+                                            backgroundColor: '#000000',
+                                            border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                            cursor: 'pointer',
+                                            transition: 'transform 0.15s ease',
+                                          }}
+                                          title={`Click to view Photo #${idx + 1} full size`}
+                                        >
+                                          <div style={{ position: 'absolute', inset: 0 }}>
+                                            <img
+                                              src={url}
+                                              alt={`Merged #${img.index + 1}`}
+                                              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                                            />
+                                            <div
+                                              style={{
+                                                position: 'absolute',
+                                                bottom: '2px',
+                                                left: '2px',
+                                                fontSize: '0.5rem',
+                                                fontWeight: 700,
+                                                padding: '1px 4px',
+                                                borderRadius: '2px',
+                                                backgroundColor: 'rgba(0,0,0,0.7)',
+                                                color: '#FFFFFF',
+                                              }}
+                                            >
+                                              #{idx + 1}
+                                            </div>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
                               </div>
                             </div>
                           )}
@@ -10370,7 +11261,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                           </>
                         );
                       })()
-                    ) : (
+                    ) : isTextFormatAIBox(currentModalAIBox) ? (
                       <>
                         {/* Select Prompt Template */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
@@ -10407,6 +11298,13 @@ export const FacebookWorkflowCanvas = forwardRef<
                                 handleUpdateAIBox(currentModalAIBox.id, {
                                   templateId: 'custom',
                                 });
+                                if (viewingPromptTemplate) {
+                                  setViewingPromptTemplate({
+                                    id: 'custom',
+                                    name: 'Custom Prompt',
+                                    templateText: currentModalAIBox.templateText || '',
+                                  });
+                                }
                                 return;
                               }
                               const matched = availablePrompts.find((p) => String(p.id) === String(val));
@@ -10426,11 +11324,120 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   templateText: matched.templateText,
                                   title: isGenericTitle ? matched.name : currentModalAIBox.title,
                                 });
+                                if (viewingPromptTemplate) {
+                                  setViewingPromptTemplate({
+                                    id: String(matched.id),
+                                    name: matched.name,
+                                    templateText: matched.templateText || '',
+                                  });
+                                }
                               }
                             }}
                             height="34px"
                             placeholder="Select prompt template..."
                           />
+
+                          {/* View Prompt Button & Quick Copy Button */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const activePrompt =
+                                  availablePrompts.find((p) => String(p.id) === String(currentModalAIBox.templateId)) ||
+                                  availablePrompts.find((p) => p.name === currentModalAIBox.title) ||
+                                  (currentModalAIBox.templateText
+                                    ? {
+                                        id: currentModalAIBox.templateId || 'custom',
+                                        name: currentModalAIBox.title || 'Prompt Template',
+                                        templateText: currentModalAIBox.templateText,
+                                      }
+                                    : null) ||
+                                  availablePrompts[0];
+
+                                if (activePrompt) {
+                                  setViewingPromptTemplate({
+                                    id: String(activePrompt.id),
+                                    name: activePrompt.name,
+                                    templateText: activePrompt.templateText || currentModalAIBox.templateText || '',
+                                  });
+                                }
+                              }}
+                              style={{
+                                flex: 1,
+                                height: '32px',
+                                borderRadius: '6px',
+                                border: '1px solid var(--border-color)',
+                                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC',
+                                color: 'var(--text-primary)',
+                                fontSize: '0.6875rem',
+                                fontWeight: 600,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '6px',
+                                cursor: 'pointer',
+                                transition: 'all 0.15s ease',
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.borderColor = 'var(--accent-primary, #3B82F6)';
+                                e.currentTarget.style.backgroundColor = isDark ? 'rgba(59, 130, 246, 0.08)' : '#EFF6FF';
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.borderColor = 'var(--border-color)';
+                                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC';
+                              }}
+                            >
+                              <FiEye size={13} style={{ color: '#3B82F6' }} />
+                              <span>View Prompt Template</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const textToCopy =
+                                  currentModalAIBox.templateText ||
+                                  availablePrompts.find((p) => String(p.id) === String(currentModalAIBox.templateId))?.templateText ||
+                                  availablePrompts.find((p) => p.name === currentModalAIBox.title)?.templateText ||
+                                  '';
+                                if (textToCopy) {
+                                  navigator.clipboard.writeText(textToCopy);
+                                  setCopiedPromptId(currentModalAIBox.id);
+                                  setTimeout(() => setCopiedPromptId(null), 2000);
+                                }
+                              }}
+                              title="Copy full prompt text"
+                              style={{
+                                height: '32px',
+                                padding: '0 10px',
+                                borderRadius: '6px',
+                                border: '1px solid var(--border-color)',
+                                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC',
+                                color: 'var(--text-secondary)',
+                                fontSize: '0.6875rem',
+                                fontWeight: 600,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                cursor: 'pointer',
+                                transition: 'all 0.15s ease',
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.borderColor = 'var(--border-hover, #64748B)';
+                                e.currentTarget.style.color = 'var(--text-primary)';
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.borderColor = 'var(--border-color)';
+                                e.currentTarget.style.color = 'var(--text-secondary)';
+                              }}
+                            >
+                              {copiedPromptId === currentModalAIBox.id ? (
+                                <FiCheck size={12} style={{ color: '#10B981' }} />
+                              ) : (
+                                <FiCopy size={12} />
+                              )}
+                              <span>{copiedPromptId === currentModalAIBox.id ? 'Copied' : 'Copy'}</span>
+                            </button>
+                          </div>
                         </div>
 
                         {/* AI Engine & Model */}
@@ -10453,12 +11460,368 @@ export const FacebookWorkflowCanvas = forwardRef<
                           />
                         </div>
                       </>
+                    ) : (
+                      /* MAIN AI PROCESSOR BOX SIDEBAR ("AI Model" / "Prompt Generator") */
+                      (() => {
+                        const boxOutput =
+                          aiGeneratedOutputs?.[currentModalAIBox.id] ??
+                          (currentModalAIBox.id === config.aiBoxes[0]?.id ? (aiGeneratedCopy ?? '') : '');
+                        const hasMyOutput = Boolean(boxOutput && boxOutput.trim().length > 0);
+                        const isNodeFailed = Boolean(executionState?.failedNodeIds?.includes(currentModalAIBox.id));
+
+                        // Find all directly connected upstream nodes that have generated results
+                        const connectedNodesWithOutput = config.aiBoxes
+                          .filter((b) => b.id !== currentModalAIBox.id && Boolean(aiGeneratedOutputs?.[b.id]?.trim()))
+                          .filter((b) => {
+                            return (config.connections || []).some(
+                              (c) =>
+                                (c.fromNodeId === b.id && c.toNodeId === currentModalAIBox.id) ||
+                                (c.toNodeId === b.id && c.fromNodeId === currentModalAIBox.id)
+                            );
+                          });
+
+                        const hasAnyResults = hasMyOutput || connectedNodesWithOutput.length > 0;
+
+                        return (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
+                            {/* Failure Alert Banner if any */}
+                            {isNodeFailed && (
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'flex-start',
+                                  gap: '0.5rem',
+                                  padding: '0.5rem 0.625rem',
+                                  borderRadius: '6px',
+                                  backgroundColor: isDark ? 'rgba(239, 68, 68, 0.12)' : '#FEF2F2',
+                                  border: '1px solid rgba(239, 68, 68, 0.35)',
+                                  color: isDark ? '#FCA5A5' : '#DC2626',
+                                  fontSize: '0.71875rem',
+                                  lineHeight: 1.4,
+                                }}
+                              >
+                                <FiAlertTriangle size={15} style={{ flexShrink: 0, marginTop: '2px', color: '#EF4444' }} />
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ fontWeight: 700 }}>Processing Failed at this Step</div>
+                                  <div style={{ fontSize: '0.6875rem', marginTop: '2px' }}>
+                                    AI generation did not complete. Check connected prompt inputs or re-generate.
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* 1. GENERATED RESULT CARD (if that have result) */}
+                            {hasMyOutput ? (
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  gap: '0.5rem',
+                                  padding: '0.75rem',
+                                  borderRadius: '8px',
+                                  border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#F8FAFC',
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <HiSparkles style={{ fontSize: '14px', color: '#8B5CF6' }} />
+                                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                      Generated Result
+                                    </span>
+                                    <span
+                                      style={{
+                                        fontSize: '0.625rem',
+                                        fontWeight: 600,
+                                        color: '#10B981',
+                                        backgroundColor: isDark ? 'rgba(16, 185, 129, 0.14)' : '#DCFCE7',
+                                        padding: '1px 6px',
+                                        borderRadius: '6px',
+                                      }}
+                                    >
+                                      ✓ Ready
+                                    </span>
+                                  </div>
+
+                                  <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
+                                    {boxOutput.length} chars
+                                  </span>
+                                </div>
+
+                                {/* Action Buttons: View Result & Copy */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setViewingPromptTemplate({
+                                        id: currentModalAIBox.id,
+                                        name: `${currentModalAIBox.title || 'AI Model'} Result`,
+                                        templateText: boxOutput,
+                                        headerTitle: 'AI Generated Result',
+                                        copyButtonLabel: 'Copy Result',
+                                      });
+                                    }}
+                                    style={{
+                                      flex: 1,
+                                      height: '32px',
+                                      borderRadius: '6px',
+                                      border: '1px solid var(--border-color)',
+                                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF',
+                                      color: 'var(--text-primary)',
+                                      fontSize: '0.6875rem',
+                                      fontWeight: 600,
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      gap: '6px',
+                                      cursor: 'pointer',
+                                      transition: 'all 0.15s ease',
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      e.currentTarget.style.borderColor = 'var(--accent-primary, #3B82F6)';
+                                      e.currentTarget.style.backgroundColor = isDark ? 'rgba(59, 130, 246, 0.08)' : '#EFF6FF';
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      e.currentTarget.style.borderColor = 'var(--border-color)';
+                                      e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF';
+                                    }}
+                                  >
+                                    <FiEye size={13} style={{ color: '#8B5CF6' }} />
+                                    <span>View Result</span>
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(boxOutput);
+                                      setCopiedPromptId(currentModalAIBox.id);
+                                      setTimeout(() => setCopiedPromptId(null), 2000);
+                                    }}
+                                    title="Copy full result"
+                                    style={{
+                                      height: '32px',
+                                      padding: '0 12px',
+                                      borderRadius: '6px',
+                                      border: '1px solid var(--border-color)',
+                                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF',
+                                      color: 'var(--text-secondary)',
+                                      fontSize: '0.6875rem',
+                                      fontWeight: 600,
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '4px',
+                                      cursor: 'pointer',
+                                      transition: 'all 0.15s ease',
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      e.currentTarget.style.borderColor = 'var(--border-hover, #64748B)';
+                                      e.currentTarget.style.color = 'var(--text-primary)';
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      e.currentTarget.style.borderColor = 'var(--border-color)';
+                                      e.currentTarget.style.color = 'var(--text-secondary)';
+                                    }}
+                                  >
+                                    {copiedPromptId === currentModalAIBox.id ? (
+                                      <FiCheck size={12} style={{ color: '#10B981' }} />
+                                    ) : (
+                                      <FiCopy size={12} />
+                                    )}
+                                    <span>{copiedPromptId === currentModalAIBox.id ? 'Copied' : 'Copy'}</span>
+                                  </button>
+                                </div>
+
+                                {/* Result Preview Box */}
+                                <div
+                                  style={{
+                                    padding: '8px 10px',
+                                    borderRadius: '6px',
+                                    backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
+                                    border: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
+                                    fontSize: '0.6875rem',
+                                    lineHeight: '1.5',
+                                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                                    color: 'var(--text-secondary)',
+                                    maxHeight: '90px',
+                                    overflowY: 'auto',
+                                    whiteSpace: 'pre-wrap',
+                                    wordBreak: 'break-word',
+                                  }}
+                                >
+                                  {boxOutput}
+                                </div>
+                              </div>
+                            ) : null}
+
+                            {/* 2. CONNECTED STEP RESULTS (if upstream connected nodes have outputs) */}
+                            {connectedNodesWithOutput.length > 0 && (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                                  <HiSparkles style={{ fontSize: '12px', color: '#8B5CF6' }} />
+                                  Connected Step Results
+                                </label>
+                                {connectedNodesWithOutput.map((node) => {
+                                  const nodeOutput = aiGeneratedOutputs?.[node.id] || '';
+                                  return (
+                                    <div
+                                      key={node.id}
+                                      style={{
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: '0.45rem',
+                                        padding: '0.65rem 0.75rem',
+                                        borderRadius: '8px',
+                                        border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF',
+                                      }}
+                                    >
+                                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                          <FiFileText style={{ fontSize: '13px', color: '#6366F1' }} />
+                                          <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                            {node.title || 'Connected Step'}
+                                          </span>
+                                        </div>
+                                        <span
+                                          style={{
+                                            fontSize: '0.5625rem',
+                                            fontWeight: 600,
+                                            padding: '1px 5px',
+                                            borderRadius: '4px',
+                                            backgroundColor: isDark ? 'rgba(16, 185, 129, 0.14)' : '#DCFCE7',
+                                            color: '#10B981',
+                                          }}
+                                        >
+                                          ✓ Ready
+                                        </span>
+                                      </div>
+
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setViewingPromptTemplate({
+                                              id: node.id,
+                                              name: `${node.title || 'Step'} Result`,
+                                              templateText: nodeOutput,
+                                              headerTitle: 'Connected Result',
+                                              copyButtonLabel: 'Copy Result',
+                                            });
+                                          }}
+                                          style={{
+                                            flex: 1,
+                                            height: '28px',
+                                            borderRadius: '5px',
+                                            border: '1px solid var(--border-color)',
+                                            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC',
+                                            color: 'var(--text-primary)',
+                                            fontSize: '0.6875rem',
+                                            fontWeight: 600,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            gap: '5px',
+                                            cursor: 'pointer',
+                                            transition: 'all 0.15s ease',
+                                          }}
+                                        >
+                                          <FiEye size={12} style={{ color: '#8B5CF6' }} />
+                                          <span>View Result</span>
+                                        </button>
+
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            navigator.clipboard.writeText(nodeOutput);
+                                            setCopiedPromptId(node.id);
+                                            setTimeout(() => setCopiedPromptId(null), 2000);
+                                          }}
+                                          title="Copy result"
+                                          style={{
+                                            height: '28px',
+                                            padding: '0 10px',
+                                            borderRadius: '5px',
+                                            border: '1px solid var(--border-color)',
+                                            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC',
+                                            color: 'var(--text-secondary)',
+                                            fontSize: '0.6875rem',
+                                            fontWeight: 600,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '4px',
+                                            cursor: 'pointer',
+                                          }}
+                                        >
+                                          {copiedPromptId === node.id ? (
+                                            <FiCheck size={11} style={{ color: '#10B981' }} />
+                                          ) : (
+                                            <FiCopy size={11} />
+                                          )}
+                                          <span>{copiedPromptId === node.id ? 'Copied' : 'Copy'}</span>
+                                        </button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+
+                            {/* 3. EMPTY STATE (if not have show empty) */}
+                            {!hasAnyResults && (
+                              <div
+                                style={{
+                                  padding: '2.5rem 1.25rem',
+                                  borderRadius: '8px',
+                                  border: isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1',
+                                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.01)' : '#F8FAFC',
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  textAlign: 'center',
+                                  gap: '0.75rem',
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    width: '42px',
+                                    height: '42px',
+                                    borderRadius: '10px',
+                                    backgroundColor: isDark ? 'rgba(139, 92, 246, 0.12)' : '#F3E8FF',
+                                    color: '#8B5CF6',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                  }}
+                                >
+                                  <HiSparkles size={20} />
+                                </div>
+                                <div>
+                                  <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                    No Result Yet
+                                  </div>
+                                  <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '4px', lineHeight: 1.45, maxWidth: '240px' }}>
+                                    Execute this node or run the workflow to generate output.
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()
                     )}
 
 
 
-                    {/* Generated Output Preview & Editor Box */}
+                    {/* Generated Output Preview & Editor Box (for format preset nodes with output) */}
                     {(() => {
+                      const isMainTextAI =
+                        !isTextFormatAIBox(currentModalAIBox) &&
+                        (isTextAIBox(currentModalAIBox, config.connections) ||
+                          currentModalAIBox.subtitle === 'AI Processor' ||
+                          currentModalAIBox.processType === 'text_ai');
+                      if (isMainTextAI) return null;
+
                       const isNodeFailed = Boolean(executionState?.failedNodeIds?.includes(currentModalAIBox.id));
                       const boxOutput = aiGeneratedOutputs?.[currentModalAIBox.id] ?? (currentModalAIBox.id === config.aiBoxes[0]?.id ? (aiGeneratedCopy ?? '') : '');
                       const hasExecutionOrOutput = Boolean(
@@ -10771,6 +12134,133 @@ export const FacebookWorkflowCanvas = forwardRef<
           );
         })()}
 
+      {/* ── PROMPT TEMPLATE VIEWER SLIDE-OVER (SLIDES OUT NEXT TO 380px SIDEBAR) ── */}
+      {viewingPromptTemplate && (
+        <div
+          className="workflow-sidebar"
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            position: 'fixed',
+            top: 0,
+            bottom: 0,
+            right: '380px', // sits smoothly right alongside the 380px main sidebar inspector
+            width: '440px',
+            maxWidth: 'calc(100vw - 420px)',
+            backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
+            borderLeft: '1px solid var(--border-color)',
+            borderRight: 'none',
+            boxShadow: isDark ? '-12px 0 35px rgba(0, 0, 0, 0.75)' : '-6px 0 24px rgba(0, 0, 0, 0.08)',
+            zIndex: 169,
+            display: 'flex',
+            flexDirection: 'column',
+            animation: 'sidebarSlideIn 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+          }}
+        >
+          {/* Top Header */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '0.875rem 1.125rem',
+              borderBottom: 'none',
+              backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+              <div
+                style={{
+                  width: '30px',
+                  height: '30px',
+                  borderRadius: '8px',
+                  backgroundColor: 'rgba(59, 130, 246, 0.12)',
+                  color: '#3B82F6',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <FiFileText size={15} />
+              </div>
+              <div>
+                <div style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.2 }}>
+                  {viewingPromptTemplate.headerTitle || 'Prompt Template Viewer'}
+                </div>
+                <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  ✨ {viewingPromptTemplate.name}
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setViewingPromptTemplate(null)}
+              title="Close Viewer"
+              style={{
+                width: '28px',
+                height: '28px',
+                borderRadius: '6px',
+                border: '1px solid var(--border-color)',
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF',
+                color: 'var(--text-secondary)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+              }}
+            >
+              <FiX size={15} />
+            </button>
+          </div>
+
+          {/* Body: Main Scrollable Body with Direct Text */}
+          <div
+            style={{
+              flex: 1,
+              overflowY: 'auto',
+              padding: '1rem 1.25rem',
+              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+              fontSize: '0.75rem',
+              lineHeight: '1.65',
+              color: 'var(--text-primary)',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+            }}
+          >
+            {viewingPromptTemplate.templateText || 'No content available.'}
+          </div>
+
+          {/* Footer */}
+          <div
+            style={{
+              padding: '0.75rem 1.125rem',
+              borderTop: 'none',
+              backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'flex-end',
+            }}
+          >
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={() => {
+                if (viewingPromptTemplate.templateText) {
+                  navigator.clipboard.writeText(viewingPromptTemplate.templateText);
+                  setIsViewerPromptCopied(true);
+                  setTimeout(() => setIsViewerPromptCopied(false), 2000);
+                }
+              }}
+              style={{ fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '5px' }}
+            >
+              {isViewerPromptCopied ? <FiCheck size={13} /> : <FiCopy size={13} />}
+              <span>{isViewerPromptCopied ? 'Copied' : (viewingPromptTemplate.copyButtonLabel || 'Copy Prompt')}</span>
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* ======================================================== */}
       {/* PHOTO FORMAT & WATERMARK SLIDE-OVER SIDEBOX              */}
       {/* ======================================================== */}
@@ -10792,10 +12282,15 @@ export const FacebookWorkflowCanvas = forwardRef<
                 width: '380px',
                 maxWidth: '100%',
                 backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
-                borderLeft: '1px solid var(--border-color)',
-                boxShadow: isDark
+                borderLeft: viewingPromptTemplate
+                  ? '1px solid transparent'
+                  : '1px solid var(--border-color)',
+                boxShadow: viewingPromptTemplate
+                  ? 'none'
+                  : isDark
                   ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
                   : '-3px 0 16px rgba(0, 0, 0, 0.06)',
+                transition: 'box-shadow 0.28s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.28s ease',
                 zIndex: 170,
                 display: 'flex',
                 flexDirection: 'column',
@@ -10878,6 +12373,78 @@ export const FacebookWorkflowCanvas = forwardRef<
               >
                 {/* Connect Next Step Quick Button (top) */}
                 {renderCenteredConnectButton(currentModalAIBox.id, 'ai-box', currentModalAIBox.title || 'Format Preset')}
+
+                {/* Node Status Toggle Card */}
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '0.75rem 0.875rem',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-color)',
+                    backgroundColor: isDark ? 'var(--bg-surface)' : '#F8FAFC',
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                      Node Status
+                    </div>
+                    <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                      {currentModalAIBox.enabled !== false
+                        ? 'Executing during workflow run'
+                        : 'Node is bypassed (will skip during workflow run)'}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+                    <span
+                      style={{
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        color: currentModalAIBox.enabled !== false ? '#10B981' : 'var(--text-muted)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: '6px',
+                          height: '6px',
+                          borderRadius: '50%',
+                          backgroundColor: currentModalAIBox.enabled !== false ? '#10B981' : '#6B7280',
+                        }}
+                      />
+                      <span>{currentModalAIBox.enabled !== false ? 'Active' : 'Disabled'}</span>
+                    </span>
+                    <ToggleSwitch
+                      checked={currentModalAIBox.enabled !== false}
+                      onChange={() => handleToggleAIBox(currentModalAIBox.id)}
+                      activeColor="#10B981"
+                      size="md"
+                    />
+                  </div>
+                </div>
+
+                {currentModalAIBox.enabled === false && (
+                  <div
+                    style={{
+                      padding: '0.625rem 0.75rem',
+                      borderRadius: '6px',
+                      backgroundColor: isDark ? 'rgba(239, 68, 68, 0.08)' : '#FEF2F2',
+                      border: isDark ? '1px solid rgba(239, 68, 68, 0.2)' : '1px solid #FCA5A5',
+                      color: isDark ? '#FCA5A5' : '#B91C1C',
+                      fontSize: '0.6875rem',
+                      lineHeight: 1.4,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                    }}
+                  >
+                    <FiAlertTriangle size={13} style={{ flexShrink: 0 }} />
+                    <span>Photo Format & Crop is disabled. This step will be bypassed during workflow runs.</span>
+                  </div>
+                )}
 
                 <WatermarkNodeModal
                   box={currentModalAIBox}
@@ -11499,10 +13066,15 @@ export const FacebookWorkflowCanvas = forwardRef<
                 width: '380px',
                 maxWidth: '100%',
                 backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
-                borderLeft: '1px solid var(--border-color)',
-                boxShadow: isDark
+                borderLeft: viewingPromptTemplate
+                  ? '1px solid transparent'
+                  : '1px solid var(--border-color)',
+                boxShadow: viewingPromptTemplate
+                  ? 'none'
+                  : isDark
                   ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
                   : '-3px 0 16px rgba(0, 0, 0, 0.06)',
+                transition: 'box-shadow 0.28s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.28s ease',
                 zIndex: 170,
                 display: 'flex',
                 flexDirection: 'column',
@@ -11757,10 +13329,15 @@ export const FacebookWorkflowCanvas = forwardRef<
                 width: '380px',
                 maxWidth: '100%',
                 backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
-                borderLeft: '1px solid var(--border-color)',
-                boxShadow: isDark
+                borderLeft: viewingPromptTemplate
+                  ? '1px solid transparent'
+                  : '1px solid var(--border-color)',
+                boxShadow: viewingPromptTemplate
+                  ? 'none'
+                  : isDark
                   ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
                   : '-3px 0 16px rgba(0, 0, 0, 0.06)',
+                transition: 'box-shadow 0.28s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.28s ease',
                 zIndex: 170,
                 display: 'flex',
                 flexDirection: 'column',
@@ -11984,6 +13561,413 @@ export const FacebookWorkflowCanvas = forwardRef<
           );
         }
 
+        // If clicking [+] above AI Box:
+        // Show dedicated AI Formats & saved prompt templates to attach vertically above AI Box!
+        if (connectDrawerNode.platform === 'ai-format') {
+          const connectedFormats = config.aiBoxes.filter(
+            (b) =>
+              isTextFormatAIBox(b) &&
+              (config.connections || []).some(
+                (c) =>
+                  (c.fromNodeId === fromNodeId && c.toNodeId === b.id) ||
+                  (c.fromNodeId === b.id && c.toNodeId === fromNodeId)
+              )
+          );
+
+          return (
+            <aside
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                position: 'absolute',
+                top: 0,
+                right: 0,
+                bottom: 0,
+                width: '380px',
+                maxWidth: '100%',
+                backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
+                borderLeft: viewingPromptTemplate
+                  ? '1px solid transparent'
+                  : '1px solid var(--border-color)',
+                boxShadow: viewingPromptTemplate
+                  ? 'none'
+                  : isDark
+                  ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
+                  : '-3px 0 16px rgba(0, 0, 0, 0.06)',
+                transition: 'box-shadow 0.28s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.28s ease',
+                zIndex: 170,
+                display: 'flex',
+                flexDirection: 'column',
+                animation: 'sidebarSlideIn 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
+              }}
+            >
+              {/* Header */}
+              <div
+                style={{
+                  padding: '0.875rem 1rem',
+                  borderBottom: '1px solid var(--border-color)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  background: isDark
+                    ? 'linear-gradient(180deg, #161B22 0%, #0D1117 100%)'
+                    : '#FFFFFF',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+                  <div
+                    style={{
+                      width: '32px',
+                      height: '32px',
+                      borderRadius: '8px',
+                      background: 'linear-gradient(135deg, #8B5CF6, #7C3AED)',
+                      color: '#FFFFFF',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      boxShadow: '0 2px 6px rgba(139, 92, 246, 0.35)',
+                    }}
+                  >
+                    <HiSparkles size={18} />
+                  </div>
+                  <div style={{ minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: '0.8125rem',
+                        fontWeight: 700,
+                        color: isDark ? '#F0F6FC' : '#0F172A',
+                        lineHeight: 1.2,
+                      }}
+                    >
+                      Connect AI Format
+                    </div>
+                    <div
+                      style={{
+                        fontSize: '0.625rem',
+                        color: '#A855F7',
+                        fontWeight: 600,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      Attach format above: {fromTitle}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setConnectDrawerNode(null);
+                    setActiveModalNode(null);
+                  }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  title="Close (Esc)"
+                  aria-label="Close"
+                  style={{
+                    width: '24px',
+                    height: '24px',
+                    borderRadius: '6px',
+                    border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                    backgroundColor: 'transparent',
+                    color: isDark ? '#8B949E' : '#64748B',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    flexShrink: 0,
+                  }}
+                >
+                  <FiX size={14} />
+                </button>
+              </div>
+
+              {/* Scrollable Content Body */}
+              <div
+                style={{
+                  flex: 1,
+                  overflowY: 'auto',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.875rem',
+                  padding: '0.875rem',
+                }}
+              >
+                {/* Quick Add Custom AI Format */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const newId = handleAddTextFormatBox(fromNodeId);
+                    setConnectDrawerNode(null);
+                    setActiveModalNode({ type: 'ai-box', boxId: newId });
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    padding: '0.65rem 0.75rem',
+                    borderRadius: '8px',
+                    border: '1.5px dashed #8B5CF6',
+                    backgroundColor: isDark ? 'rgba(139, 92, 246, 0.12)' : '#F5F3FF',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(139, 92, 246, 0.2)' : '#EDE9FE';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(139, 92, 246, 0.12)' : '#F5F3FF';
+                  }}
+                >
+                  <div
+                    style={{
+                      width: '28px',
+                      height: '28px',
+                      borderRadius: '6px',
+                      backgroundColor: '#8B5CF6',
+                      color: '#FFFFFF',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <FiPlus size={16} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: '0.78125rem', fontWeight: 700, color: isDark ? '#F5F3FF' : '#6D28D9' }}>
+                      + Custom AI Format
+                    </div>
+                    <div style={{ fontSize: '0.625rem', color: isDark ? '#C4B5FD' : '#7C3AED' }}>
+                      Create a new blank prompt format rule
+                    </div>
+                  </div>
+                </button>
+
+                {/* Active Connected AI Formats */}
+                {connectedFormats.length > 0 && (
+                  <div>
+                    <div
+                      style={{
+                        fontSize: '0.6875rem',
+                        fontWeight: 600,
+                        color: isDark ? '#8B949E' : '#64748B',
+                        marginBottom: '0.35rem',
+                      }}
+                    >
+                      Connected Formats ({connectedFormats.length})
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                      {connectedFormats.map((fmt) => (
+                        <div
+                          key={fmt.id}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '0.5rem 0.65rem',
+                            borderRadius: '6px',
+                            backgroundColor: isDark ? 'rgba(16, 185, 129, 0.08)' : '#ECFDF5',
+                            border: '1px solid rgba(16, 185, 129, 0.25)',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, flex: 1 }}>
+                            <FiCheck size={12} style={{ color: '#10B981', flexShrink: 0 }} />
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                              <div
+                                style={{
+                                  fontSize: '0.71875rem',
+                                  fontWeight: 600,
+                                  color: isDark ? '#E6EDF3' : '#0F172A',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                {fmt.title || 'AI Format'}
+                              </div>
+                              <div style={{ fontSize: '0.5625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                                Positioned above {fromTitle}
+                              </div>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteAIBox(fmt.id);
+                            }}
+                            title="Disconnect Format"
+                            style={{
+                              background: 'transparent',
+                              border: 'none',
+                              color: isDark ? '#F87171' : '#EF4444',
+                              cursor: 'pointer',
+                              padding: '2px 4px',
+                              borderRadius: '4px',
+                              display: 'flex',
+                              alignItems: 'center',
+                            }}
+                          >
+                            <FiTrash2 size={13} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Choose From Saved Prompt Templates */}
+                <div>
+                  <div
+                    style={{
+                      fontSize: '0.6875rem',
+                      fontWeight: 600,
+                      color: isDark ? '#8B949E' : '#64748B',
+                      marginBottom: '0.35rem',
+                    }}
+                  >
+                    Choose Saved Prompt Template
+                  </div>
+                  <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', marginBottom: '0.65rem' }}>
+                    Click a template below to connect it directly above {fromTitle}:
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                    {availablePrompts.map((tmpl) => (
+                      <div
+                        key={tmpl.id}
+                        onClick={() => {
+                          const newId = handleAddTextFormatBox(fromNodeId, tmpl);
+                          setConnectDrawerNode(null);
+                          setActiveModalNode({ type: 'ai-box', boxId: newId });
+                        }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '0.6rem 0.7rem',
+                          borderRadius: '8px',
+                          border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                          backgroundColor: isDark ? '#1C2128' : '#F8FAFC',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = '#8B5CF6';
+                          e.currentTarget.style.backgroundColor = isDark ? 'rgba(139, 92, 246, 0.12)' : '#F5F3FF';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
+                          e.currentTarget.style.backgroundColor = isDark ? '#1C2128' : '#F8FAFC';
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', minWidth: 0, flex: 1 }}>
+                          <div
+                            style={{
+                              width: '30px',
+                              height: '30px',
+                              borderRadius: '6px',
+                              background: 'linear-gradient(135deg, #8B5CF6, #7C3AED)',
+                              color: '#FFFFFF',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <FiFileText size={15} />
+                          </div>
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                              <span
+                                style={{
+                                  fontSize: '0.78125rem',
+                                  fontWeight: 700,
+                                  color: 'var(--text-primary)',
+                                  whiteSpace: 'nowrap',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                }}
+                              >
+                                {tmpl.name}
+                              </span>
+                              {tmpl.category && (
+                                <span
+                                  style={{
+                                    fontSize: '0.5625rem',
+                                    padding: '1px 5px',
+                                    borderRadius: '4px',
+                                    backgroundColor: isDark ? '#374151' : '#E2E8F0',
+                                    color: isDark ? '#9CA3AF' : '#64748B',
+                                    fontWeight: 600,
+                                    flexShrink: 0,
+                                    textTransform: 'uppercase',
+                                  }}
+                                >
+                                  {tmpl.category}
+                                </span>
+                              )}
+                            </div>
+                            {tmpl.templateText && (
+                              <div
+                                style={{
+                                  fontSize: '0.625rem',
+                                  color: 'var(--text-muted)',
+                                  whiteSpace: 'nowrap',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  marginTop: '2px',
+                                }}
+                              >
+                                {tmpl.templateText.replace(/\n+/g, ' ').slice(0, 60)}...
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        <span
+                          style={{
+                            fontSize: '0.625rem',
+                            fontWeight: 600,
+                            padding: '3px 8px',
+                            borderRadius: '4px',
+                            backgroundColor: isDark ? 'rgba(139, 92, 246, 0.2)' : '#EDE9FE',
+                            color: isDark ? '#C4B5FD' : '#6D28D9',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            flexShrink: 0,
+                          }}
+                        >
+                          <FiPlus size={11} /> Connect Format
+                        </span>
+                      </div>
+                    ))}
+
+                    {availablePrompts.length === 0 && (
+                      <div
+                        style={{
+                          fontSize: '0.6875rem',
+                          color: 'var(--text-muted)',
+                          textAlign: 'center',
+                          padding: '1.5rem',
+                          border: '1px dashed var(--border-color)',
+                          borderRadius: '8px',
+                        }}
+                      >
+                        No saved prompt templates found. Use "+ Custom AI Format" above.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </aside>
+          );
+        }
+
         // If clicking [+] from a specific Social Media node (Facebook, Instagram, TikTok):
         // Show ONLY the accounts relative to that specific social media platform!
         if (isDestination && destinationPlatform && destinationPlatform !== 'database') {
@@ -12005,10 +13989,15 @@ export const FacebookWorkflowCanvas = forwardRef<
                 width: '380px',
                 maxWidth: '100%',
                 backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
-                borderLeft: '1px solid var(--border-color)',
-                boxShadow: isDark
+                borderLeft: viewingPromptTemplate
+                  ? '1px solid transparent'
+                  : '1px solid var(--border-color)',
+                boxShadow: viewingPromptTemplate
+                  ? 'none'
+                  : isDark
                   ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
                   : '-3px 0 16px rgba(0, 0, 0, 0.06)',
+                transition: 'box-shadow 0.28s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.28s ease',
                 zIndex: 170,
                 display: 'flex',
                 flexDirection: 'column',
@@ -12761,11 +14750,11 @@ export const FacebookWorkflowCanvas = forwardRef<
                           flexShrink: 0,
                         }}
                       >
-                        <FiMessageSquare size={14} />
+                        <HiSparkles size={16} />
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: '0.71875rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
-                          + AI Model
+                          + Connect AI
                         </div>
                         <div style={{ fontSize: '0.5625rem', color: isDark ? '#8B949E' : '#64748B' }}>
                           Format text with Gemini or OpenAI models
@@ -12775,8 +14764,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                     </button>
                   )}
 
-                  {/* Text Format Preset */}
-                  {(isContent || isFromTextAI) && (
+                  {/* Text Format Preset (available from AI Box) */}
+                  {isFromTextAI && (
                     <button
                       type="button"
                       onClick={() => {

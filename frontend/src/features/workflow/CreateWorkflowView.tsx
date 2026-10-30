@@ -25,7 +25,7 @@ import {
   restoreDefaultWorkflowFormats,
   type WorkflowFormat,
 } from './workflowFormats';
-import { isWatermarkAIBox, isTextFormatAIBox, isN8NAIBox, isExternalBrowserAIBox, isChromeProfileAIBox, isChromeTabGroupAIBox } from '../facebook-import/aiModelUtils';
+import { isWatermarkAIBox, isTextFormatAIBox, isTextAIBox, isN8NAIBox, isExternalBrowserAIBox, isChromeProfileAIBox, isChromeTabGroupAIBox } from '../facebook-import/aiModelUtils';
 import { runN8NWorkflow } from '../../services/n8nService';
 import { createBatchImageQueue, startImageQueue, focusBrowserTabGroup, openBrowserProfile, fetchTabGroups, waitForBrowserTabsReady, startAutomation, stopAutomation, getAutomationStatus, fetchImageQueue } from '../browser-processing/browserAutomationService';
 import { resolvePromptForBrowserNode, getPersistedPromptKey } from '../browser-processing/browserPromptUtils';
@@ -1379,6 +1379,45 @@ export const CreateWorkflowView: React.FC = () => {
       const contentBranchBoxes = topLevelAiBoxes.filter((b) => !isImageBranchBox(b));
       const imageBranchBoxes = topLevelAiBoxes.filter((b) => isImageBranchBox(b));
 
+      // Group branch boxes into dependency waves so independent parallel nodes execute concurrently at the same time
+      const buildExecutionWaves = (boxes: any[]): any[][] => {
+        const boxIds = new Set(boxes.map((b) => b.id));
+        const conns = cfg.connections || [];
+
+        // For each box, find which OTHER boxes in this branch it directly depends on (incoming wires)
+        const depsMap = new Map<string, Set<string>>();
+        boxes.forEach((b) => {
+          const directUpstream = conns
+            .filter((c) => c.toNodeId === b.id && boxIds.has(c.fromNodeId))
+            .map((c) => c.fromNodeId);
+          depsMap.set(b.id, new Set(directUpstream));
+        });
+
+        const waves: any[][] = [];
+        const completedIds = new Set<string>();
+        let remainingBoxes = [...boxes];
+
+        while (remainingBoxes.length > 0) {
+          // Current wave: any box whose dependencies in this branch are all completed
+          const currentWave = remainingBoxes.filter((b) => {
+            const deps = depsMap.get(b.id) || new Set();
+            return Array.from(deps).every((dId) => completedIds.has(dId));
+          });
+
+          // Safeguard against circular dependencies
+          if (currentWave.length === 0) {
+            waves.push(remainingBoxes);
+            break;
+          }
+
+          waves.push(currentWave);
+          currentWave.forEach((b) => completedIds.add(b.id));
+          remainingBoxes = remainingBoxes.filter((b) => !completedIds.has(b.id));
+        }
+
+        return waves;
+      };
+
       // Execute a single AI / Automation / Image box (safe for concurrent parallel branch execution)
       const executeSingleAIBox = async (box: any): Promise<boolean> => {
         if (isRunStopped(myRunId) || branchFatalError) return false;
@@ -1387,47 +1426,45 @@ export const CreateWorkflowView: React.FC = () => {
         const isTextFormat = isTextFormatAIBox(box);
         const isN8N = isN8NAIBox(box);
         const isExternalBrowser = isExternalBrowserAIBox(box);
-        let connectedProfileBox: any = null;
-        let tabGroupNodeId: string = box.id;
+        const executedProfileIds: string[] = [];
+        const executedTabGroupIds: string[] = [];
 
-        // Check if external browser and its subordinate tab group are enabled
-        let connectedTabGroupBox: any = null;
+        // External Browser is active only if the node itself is enabled AND at least one ENABLED
+        // Chrome profile has at least one ENABLED tab group. Disabled profiles are simply skipped.
+        let hasRunnableBrowserTarget = true;
         if (isExternalBrowser) {
-          const areBoxesConnected = (idA: string, idB: string) => {
-            return (cfg.connections || []).some(
+          const areBoxesConnectedPre = (idA: string, idB: string) =>
+            (cfg.connections || []).some(
               (c: any) => (c.fromNodeId === idA && c.toNodeId === idB) || (c.fromNodeId === idB && c.toNodeId === idA)
             );
-          };
-
-          connectedProfileBox = (cfg.aiBoxes || []).find(
-            (b: any) => areBoxesConnected(box.id, b.id) && (isChromeProfileAIBox(b) || (b as any).processType === 'chrome_profile')
-          ) || (isChromeProfileAIBox(box) ? box : null) || (cfg.aiBoxes || []).find(
-            (b: any) => (isChromeProfileAIBox(b) || (b as any).processType === 'chrome_profile') && b.enabled !== false
-          );
-
-          const candidateTabGroups = (cfg.aiBoxes || []).filter(
+          const isTabGroupBox = (b: any) => isChromeTabGroupAIBox(b) || (b as any).processType === 'chrome_tab_group';
+          const isProfileBox = (b: any) => isChromeProfileAIBox(b) || (b as any).processType === 'chrome_profile';
+          const isBoxAutoRunPre = box.autoRun !== false && (box as any).enableAutoRun !== false;
+          const enabledProfilesPre = (cfg.aiBoxes || []).filter(
             (b: any) =>
-              (areBoxesConnected(box.id, b.id) || (connectedProfileBox && areBoxesConnected(connectedProfileBox.id, b.id))) &&
-              (isChromeTabGroupAIBox(b) || (b as any).processType === 'chrome_tab_group')
+              areBoxesConnectedPre(box.id, b.id) &&
+              isProfileBox(b) &&
+              b.enabled !== false &&
+              b.autoRun !== false &&
+              (b as any).enableAutoRun !== false
           );
-
-          connectedTabGroupBox =
-            candidateTabGroups.find((b: any) => b.enabled !== false) ||
-            candidateTabGroups[0] ||
-            (isChromeTabGroupAIBox(box) ? box : null) ||
-            (cfg.aiBoxes || []).find(
-              (b: any) => (isChromeTabGroupAIBox(b) || (b as any).processType === 'chrome_tab_group') && b.enabled !== false
-            ) ||
-            (cfg.aiBoxes || []).find(
-              (b: any) => isChromeTabGroupAIBox(b) || (b as any).processType === 'chrome_tab_group'
+          hasRunnableBrowserTarget =
+            isBoxAutoRunPre &&
+            enabledProfilesPre.some((pb: any) =>
+              (cfg.aiBoxes || []).some(
+                (b: any) =>
+                  (areBoxesConnectedPre(pb.id, b.id) || areBoxesConnectedPre(box.id, b.id)) &&
+                  isTabGroupBox(b) &&
+                  b.enabled !== false &&
+                  b.autoRun !== false &&
+                  (b as any).enableAutoRun !== false
+              )
             );
         }
 
         const isBoxDirectlyEnabled = box.enabled !== false;
-        const isProfileEnabled = connectedProfileBox ? connectedProfileBox.enabled !== false : true;
-        const isTabGroupEnabled = connectedTabGroupBox ? connectedTabGroupBox.enabled !== false : true;
         const isStepActive = isExternalBrowser
-          ? (isBoxDirectlyEnabled && isProfileEnabled && isTabGroupEnabled)
+          ? (isBoxDirectlyEnabled && hasRunnableBrowserTarget)
           : isBoxDirectlyEnabled;
 
         if (!isStepActive) {
@@ -1561,8 +1598,9 @@ export const CreateWorkflowView: React.FC = () => {
           await delay(400);
           if (isRunStopped(myRunId) || branchFatalError) return false;
         } else if (isExternalBrowser) {
-          // External Browser Processing Node — Auto Open Selected Profile & Tab Group
-          const propId = (propData as any)?.id || `PROP-${Date.now()}`;
+          // Collect ALL enabled chrome_profile nodes wired to this External Browser node.
+          // Each enabled profile runs in PARALLEL (like parallel AI Model nodes); disabled profiles are skipped.
+          const propIdBase = (propData as any)?.id || `PROP-${Date.now()}`;
           const propName = projName || (propData as any)?.project_name || 'Featured Property Listing';
 
           const areBoxesConnected = (idA: string, idB: string) => {
@@ -1571,476 +1609,634 @@ export const CreateWorkflowView: React.FC = () => {
             );
           };
 
-          // 1. Follow wires to find the connected chrome_profile node
-          connectedProfileBox = (cfg.aiBoxes || []).find(
-            (b: any) => areBoxesConnected(box.id, b.id) && (isChromeProfileAIBox(b) || (b as any).processType === 'chrome_profile')
-          );
-          if (!connectedProfileBox && isChromeProfileAIBox(box)) {
-            connectedProfileBox = box;
-          }
-          if (!connectedProfileBox) {
-            connectedProfileBox = (cfg.aiBoxes || []).find(
-              (b: any) => (isChromeProfileAIBox(b) || (b as any).processType === 'chrome_profile') && b.enabled !== false
-            );
-          }
-
-          // 2. Follow wires to find the connected chrome_tab_group node (prefer enabled ones)
-          const candidateTabGroups = (cfg.aiBoxes || []).filter(
+          let enabledProfiles: any[] = (cfg.aiBoxes || []).filter(
             (b: any) =>
-              (areBoxesConnected(box.id, b.id) || (connectedProfileBox && areBoxesConnected(connectedProfileBox.id, b.id))) &&
-              (isChromeTabGroupAIBox(b) || (b as any).processType === 'chrome_tab_group')
+              areBoxesConnected(box.id, b.id) &&
+              (isChromeProfileAIBox(b) || (b as any).processType === 'chrome_profile') &&
+              b.enabled !== false
           );
-          const connectedTabGroupBox =
-            candidateTabGroups.find((b: any) => b.enabled !== false) ||
-            candidateTabGroups[0] ||
-            (isChromeTabGroupAIBox(box) ? box : null) ||
-            (cfg.aiBoxes || []).find(
-              (b: any) => (isChromeTabGroupAIBox(b) || (b as any).processType === 'chrome_tab_group') && b.enabled !== false
-            );
-
-          const profId = connectedProfileBox?.browserProfileId || (box as any).browserProfileId || 11;
-          const profKey = connectedProfileBox?.browserProfileKey || connectedProfileBox?.browserProfileName || (box as any).browserProfileKey || 'Profile 14';
-          const profName = connectedProfileBox?.title || connectedProfileBox?.browserProfileName || 'Hsu';
-
-          const groupName = connectedTabGroupBox?.browserGroupName || connectedTabGroupBox?.title || (box as any).browserGroupName || 'Enhance IMG';
-          const targetTabId = (connectedTabGroupBox as any)?.browserTabId || (box as any).browserTabId || (box as any).browserPromptTabId || (box as any).browserGenerateTabId || '';
-
-          tabGroupNodeId = connectedTabGroupBox?.id || box.id;
-
-          // ── Step 1: External Browser Node ──
-          updateBranchNodes(
-            [],
-            [box.id],
-            [],
-            `🌐 Connecting to External Browser Engine [${box.title || 'External Browser'}]...`,
-            { stepIndex: 4, propertyId: propId }
-          );
-          await delay(450);
-          if (isRunStopped(myRunId) || branchFatalError) return false;
-
-          // ── Step 2: Chrome Profile Node ──
-          if (connectedProfileBox) {
-            updateBranchNodes(
-              [box.id],
-              [connectedProfileBox.id],
-              [box.id],
-              `👤 Connecting to Chrome Profile [${profName}]...`
-            );
-            try {
-              await openBrowserProfile(profId, profKey);
-            } catch (pErr) {
-              console.warn('Profile open warning:', pErr);
-            }
-            if (isRunStopped(myRunId) || branchFatalError) return false;
-            await delay(600);
-            if (isRunStopped(myRunId) || branchFatalError) return false;
+          if (enabledProfiles.length === 0 && isChromeProfileAIBox(box) && box.enabled !== false) {
+            enabledProfiles = [box];
           }
 
-          // ── Step 3: Chrome Tab Group Node ──
-          updateBranchNodes(
-            [box.id, ...(connectedProfileBox ? [connectedProfileBox.id] : [])],
-            [tabGroupNodeId],
-            [box.id, ...(connectedProfileBox ? [connectedProfileBox.id] : [])],
-            `📂 Opening Tab Group [${groupName}]...`
-          );
+          const runBrowserTarget = async (
+            connectedProfileBox: any,
+            connectedTabGroupBox: any,
+            propId: string
+          ): Promise<boolean> => {
+            const isTabGroupEnabled = connectedTabGroupBox ? connectedTabGroupBox.enabled !== false : true;
+            const isTabGroupAutoRun = connectedTabGroupBox
+              ? connectedTabGroupBox.autoRun !== false && (connectedTabGroupBox as any).enableAutoRun !== false
+              : true;
+            const isProfileAutoRun = connectedProfileBox
+              ? connectedProfileBox.autoRun !== false && (connectedProfileBox as any).enableAutoRun !== false
+              : true;
+            const isBoxAutoRun = box.autoRun !== false && (box as any).enableAutoRun !== false;
 
-          let targetUrls = connectedTabGroupBox?.browserGroupTabUrls ||
-            ((connectedTabGroupBox as any)?._liveGroupTabs || []).map((t: any) => t.url).filter(Boolean) ||
-            (box as any).browserGroupTabUrls;
+            const groupName = connectedTabGroupBox?.browserGroupName || connectedTabGroupBox?.title || (box as any).browserGroupName || 'Enhance IMG';
+            const tabGroupNodeId: string = connectedTabGroupBox?.id || box.id;
 
-          if (!targetUrls || targetUrls.length === 0) {
-            try {
-              const fetched = await fetchTabGroups(profId, profKey, profName);
-              if (isRunStopped(myRunId) || branchFatalError) return false;
-              const m = fetched.find((g) => g.name.toLowerCase() === groupName.toLowerCase());
-              if (m && m.tabs && m.tabs.length > 0) {
-                targetUrls = m.tabs.map((t) => t.url).filter(Boolean);
-              }
-            } catch (e) {}
-          }
-          if (isRunStopped(myRunId) || branchFatalError) return false;
-
-          if (!targetUrls || targetUrls.length === 0) {
-            if (groupName.toLowerCase().includes('enhance')) {
-              targetUrls = [
-                'https://chatgpt.com/c/6ad49918-a4f0-83ec-acf5-efb0ef516adc',
-                'https://chatgpt.com/c/6ad49924-7dd0-83ec-8205-768c67420600',
-                'https://chatgpt.com/c/6ad4992a-66e8-83ec-9b11-c5e727e258d9',
-                'https://chatgpt.com/c/6ad4992b-135c-83ec-b042-8c92220921d7',
-              ];
-            }
-          }
-
-          const tabMode = ((connectedTabGroupBox as any)?.workerTabMode || (connectedTabGroupBox as any)?.boxConfig?.workerTabMode || (box as any).workerTabMode || 'existing_tabs') as 'existing_tabs' | 'new_tabs';
-          const workerCount = ((connectedTabGroupBox as any)?.workerTabCount || (connectedTabGroupBox as any)?.boxConfig?.workerTabCount || (box as any).workerTabCount || 4) as number;
-          const reuseSession = ((connectedTabGroupBox as any)?.reuseSessionTabs ?? (connectedTabGroupBox as any)?.boxConfig?.reuseSessionTabs ?? (box as any).reuseSessionTabs ?? true) as boolean;
-
-          try {
-            if (isRunStopped(myRunId) || branchFatalError) return false;
-            await focusBrowserTabGroup({
-              profileId: profId,
-              profileKey: profKey,
-              groupName: groupName,
-              tabId: targetTabId,
-              groupTabUrls: targetUrls,
-              url: targetUrls?.[0],
-              tabMode: tabMode,
-              workerCount: workerCount,
-              reuseSessionTabs: reuseSession,
-              force: true,
-            });
-            if (isRunStopped(myRunId) || branchFatalError) return false;
-
-            // Actively verify and wait until Chrome and selected tab group are verified open in browser
-            const readyResult = await waitForBrowserTabsReady({
-              profileKey: profKey,
-              groupName: groupName,
-              expectedUrls: targetUrls,
-              tabMode: tabMode,
-              workerCount: workerCount,
-              maxWaitMs: 15000,
-              shouldCancel: () => isRunStopped(myRunId) || branchFatalError,
-              signal,
-              onProgress: (msg) => {
-                updateBranchNodes([], [tabGroupNodeId], [], msg);
-              },
-            });
-            if (isRunStopped(myRunId) || branchFatalError) return false;
-
-            if (readyResult.verified) {
+            if (!isTabGroupEnabled || !isTabGroupAutoRun || !isProfileAutoRun || !isBoxAutoRun) {
+              console.log(
+                `[Workflow] Tab Group [${groupName}] auto-run is disabled (enabled=${isTabGroupEnabled}, tabGroupAutoRun=${isTabGroupAutoRun}, profileAutoRun=${isProfileAutoRun}, boxAutoRun=${isBoxAutoRun}). Skipping browser execution.`
+              );
               updateBranchNodes(
                 [],
                 [tabGroupNodeId],
                 [],
-                `✓ Tab Group [${groupName}] confirmed active in browser!`
+                `⏸️ Auto-run disabled for [${groupName}]. Skipped.`
               );
-              await delay(500);
-              if (isRunStopped(myRunId) || branchFatalError) return false;
-            }
-          } catch (openErr) {
-            if (isRunStopped(myRunId) || branchFatalError) return false;
-            console.warn('Could not auto-open Chrome profile and tab group:', openErr);
-          }
-
-          if (isRunStopped(myRunId) || branchFatalError) return false;
-
-          const isStagingGroup = groupName.toLowerCase().includes('hero') || groupName.toLowerCase().includes('stage');
-          const isEnhanceGroup = groupName.toLowerCase().includes('enhance') || !isStagingGroup;
-
-          const runEnhance = isEnhanceGroup && imageList.length > 0 && isTabGroupEnabled;
-          const runStaging = isStagingGroup && isTabGroupEnabled;
-
-          if (isEnhanceGroup && imageList.length === 0 && isTabGroupEnabled) {
-            updateBranchNodes(
-              [],
-              [tabGroupNodeId],
-              [],
-              `⚠️ [${groupName}] Tab group open in Chrome. (0 photos to enhance)`
-            );
-            await delay(800);
-            if (isRunStopped(myRunId) || branchFatalError) return false;
-          }
-
-          // ── PHASE 1: PHOTO ENHANCEMENT ACROSS 4 TABS (Enhance IMG) ──
-          if (runEnhance) {
-            if (isRunStopped(myRunId) || branchFatalError) return false;
-            const totalImages = imageList.length;
-            const extPhotosMap: Record<number, string> = {};
-            imageList.forEach((img, idx) => {
-              extPhotosMap[idx] = img.stored_url || img.source_url;
-            });
-
-            const enhancePrompt = resolvePromptForBrowserNode(box, {
-              title: propName,
-              width: (box as any).outputWidth || (box as any).targetWidth || 1080,
-              height: (box as any).outputHeight || (box as any).targetHeight || 1350,
-            });
-
-            const rawImgs = imageList.map((img, i) => ({
-              index: i + 1,
-              source_url: img.source_url || img.stored_url,
-              stored_url: img.stored_url || img.source_url,
-              local_path: (img as any).local_path || '',
-              sha256: (img as any).sha256 || '',
-              width: (box as any).outputWidth || (box as any).targetWidth || 1080,
-              height: (box as any).outputHeight || (box as any).targetHeight || 1350,
-              resolved_prompt: enhancePrompt,
-            }));
-
-            const queuePayload = {
-              property_id: propId,
-              property_name: propName,
-              prompt_template_text: enhancePrompt,
-              prompt_template_id: (box as any).browserPromptTemplateKey || getPersistedPromptKey() || 'photo_retouch',
-              images: rawImgs,
-              processing_mode: (box as any).browserProcessingMode || 'chrome_assisted',
-              lane_id: (box as any).browserLaneKey || 'lane-1',
-              output_width: (box as any).outputWidth || (box as any).targetWidth || 1080,
-              output_height: (box as any).outputHeight || (box as any).targetHeight || 1350,
-              strict_preservation_active: (box as any).strictPreservationActive !== false,
-            };
-
-            try {
-              await createBatchImageQueue(queuePayload);
-              if (isRunStopped(myRunId) || branchFatalError) {
-                await stopAutomation().catch(() => {});
-                return false;
-              }
-              await startImageQueue(propId);
-            } catch (e) {
-              console.warn('External browser queue start notice:', e);
-            }
-            if (isRunStopped(myRunId) || branchFatalError) {
-              await stopAutomation().catch(() => {});
-              return false;
+              await delay(200);
+              return true;
             }
 
+            const profId = connectedProfileBox?.browserProfileId || (box as any).browserProfileId;
+            const profKey = connectedProfileBox?.browserProfileKey || connectedProfileBox?.browserProfileName || (box as any).browserProfileKey || '';
+            const profName = connectedProfileBox?.title || connectedProfileBox?.browserProfileName || '';
+
+            const targetTabId = (connectedTabGroupBox as any)?.browserTabId || (box as any).browserTabId || (box as any).browserPromptTabId || (box as any).browserGenerateTabId || '';
+
+            if (connectedTabGroupBox?.id) executedTabGroupIds.push(connectedTabGroupBox.id);
+            if (connectedProfileBox?.id) executedProfileIds.push(connectedProfileBox.id);
+
+            // ── Step 1: External Browser Node ──
             updateBranchNodes(
               [],
               [box.id],
               [],
-              `⚡ Phase 1: Distributing ${totalImages} images across ${workerCount} ChatGPT tabs [${groupName}]...`
+              `🌐 Connecting to External Browser Engine [${box.title || 'External Browser'}]...`,
+              { stepIndex: 4, propertyId: propId }
+            );
+            await delay(450);
+            if (isRunStopped(myRunId) || branchFatalError) return false;
+
+            // ── Step 2: Chrome Profile Node ──
+            if (connectedProfileBox) {
+              updateBranchNodes(
+                [box.id],
+                [connectedProfileBox.id],
+                [box.id],
+                `👤 Connecting to Chrome Profile [${profName}]...`
+              );
+              try {
+                await openBrowserProfile(profId, profKey);
+              } catch (pErr) {
+                console.warn('Profile open warning:', pErr);
+              }
+              if (isRunStopped(myRunId) || branchFatalError) return false;
+              await delay(600);
+              if (isRunStopped(myRunId) || branchFatalError) return false;
+            }
+
+            // ── Step 3: Chrome Tab Group Node ──
+            updateBranchNodes(
+              [box.id, ...(connectedProfileBox ? [connectedProfileBox.id] : [])],
+              [tabGroupNodeId],
+              [box.id, ...(connectedProfileBox ? [connectedProfileBox.id] : [])],
+              `📂 Opening Tab Group [${groupName}]...`
             );
 
-            try {
-              await startAutomation({
-                property_id: propId,
-                profile_key: profKey,
-                tab_ids: Array.from({ length: workerCount }, (_, i) => i + 1),
-                tab_mode: tabMode,
-                worker_count: workerCount,
-                reuse_session_tabs: reuseSession,
-              });
-            } catch (autoErr) {
-              console.warn('Automation start error:', autoErr);
-            }
-            if (isRunStopped(myRunId) || branchFatalError) {
-              await stopAutomation().catch(() => {});
-              return false;
-            }
+            let targetUrls = connectedTabGroupBox?.browserGroupTabUrls ||
+              ((connectedTabGroupBox as any)?._liveGroupTabs || []).map((t: any) => t.url).filter(Boolean) ||
+              (box as any).browserGroupTabUrls;
 
-            let pollAttempts = 0;
-            const maxPollAttempts = 150;
-            let isDone = false;
-
-            while (!isDone && pollAttempts < maxPollAttempts) {
-              if (isRunStopped(myRunId) || branchFatalError) {
-                await stopAutomation().catch(() => {});
-                return false;
-              }
-              pollAttempts++;
-              await delay(2000);
-              if (isRunStopped(myRunId) || branchFatalError) {
-                await stopAutomation().catch(() => {});
-                return false;
-              }
-
+            if (!targetUrls || targetUrls.length === 0) {
               try {
-                const queueJobs = await fetchImageQueue(propId);
-                if (isRunStopped(myRunId) || branchFatalError) {
-                  await stopAutomation().catch(() => {});
-                  return false;
+                const fetched = await fetchTabGroups(profId, profKey, profName);
+                if (isRunStopped(myRunId) || branchFatalError) return false;
+                const m = fetched.find((g) => g.name.toLowerCase() === groupName.toLowerCase());
+                if (m && m.tabs && m.tabs.length > 0) {
+                  targetUrls = m.tabs.map((t) => t.url).filter(Boolean);
                 }
-                const status = await getAutomationStatus();
-                if (isRunStopped(myRunId) || branchFatalError) {
-                  await stopAutomation().catch(() => {});
-                  return false;
-                }
+              } catch (e) {}
+            }
+            if (isRunStopped(myRunId) || branchFatalError) return false;
 
-                let completedCount = 0;
-                if (queueJobs && queueJobs.length > 0) {
-                  queueJobs.forEach((job) => {
-                    const isJobDone = job.status === 'COMPLETED' || (job.status as string) === 'completed' || (job as any).is_completed;
-                    const resUrl = job.output_file_url || (job as any).result_file_url;
-                    if (isJobDone && resUrl) {
-                      completedCount++;
-                      const pos = (job.original_position || 1) - 1;
-                      extPhotosMap[pos] = resUrl;
-                    }
-                  });
-                }
+            if (!targetUrls || targetUrls.length === 0) {
+              if (groupName.toLowerCase().includes('enhance')) {
+                targetUrls = [
+                  'https://chatgpt.com/c/6ad49918-a4f0-83ec-acf5-efb0ef516adc',
+                  'https://chatgpt.com/c/6ad49924-7dd0-83ec-8205-768c67420600',
+                  'https://chatgpt.com/c/6ad4992a-66e8-83ec-9b11-c5e727e258d9',
+                  'https://chatgpt.com/c/6ad4992b-135c-83ec-b042-8c92220921d7',
+                ];
+              }
+            }
 
-                if (status && status.completed !== undefined) {
-                  completedCount = Math.max(completedCount, status.completed);
-                }
+            const isStagingGroup = groupName.toLowerCase().includes('hero') || groupName.toLowerCase().includes('stage');
+            const isEnhanceGroup = groupName.toLowerCase().includes('enhance') || !isStagingGroup;
+            const isDirectStagingGroup =
+              (connectedTabGroupBox as any)?.stagingMode === 'direct_tab2' ||
+              (connectedTabGroupBox as any)?.skipTab1 === true ||
+              (box as any).stagingMode === 'direct_tab2' ||
+              (box as any).skipTab1 === true ||
+              (connectedTabGroupBox as any)?.workerTabCount === 1 ||
+              (box as any).workerTabCount === 1;
 
-                setEnhancedPhotos((prev) => ({ ...prev, ...extPhotosMap }));
-                workflowContextRef.current.localWatermarkedMap = { ...workflowContextRef.current.localWatermarkedMap, ...extPhotosMap };
+            const tabMode = ((connectedTabGroupBox as any)?.workerTabMode || (connectedTabGroupBox as any)?.boxConfig?.workerTabMode || (box as any).workerTabMode || 'existing_tabs') as 'existing_tabs' | 'new_tabs';
+            const explicitBoxCount = (connectedTabGroupBox as any)?.workerTabCount || (connectedTabGroupBox as any)?.boxConfig?.workerTabCount || (box as any).workerTabCount;
+            const workerCount = (
+              explicitBoxCount != null
+                ? Math.max(1, parseInt(explicitBoxCount, 10))
+                : (isStagingGroup ? (isDirectStagingGroup ? 1 : 2) : 4)
+            ) as number;
+            const reuseSession = ((connectedTabGroupBox as any)?.reuseSessionTabs ?? (connectedTabGroupBox as any)?.boxConfig?.reuseSessionTabs ?? (box as any).reuseSessionTabs ?? true) as boolean;
 
+            if (targetUrls && targetUrls.length > workerCount) {
+              targetUrls = targetUrls.slice(0, workerCount);
+            }
+
+            try {
+              if (isRunStopped(myRunId) || branchFatalError) return false;
+              await focusBrowserTabGroup({
+                profileId: profId,
+                profileKey: profKey,
+                groupName: groupName,
+                tabId: targetTabId,
+                groupTabUrls: targetUrls,
+                url: targetUrls?.[0],
+                tabMode: tabMode,
+                workerCount: workerCount,
+                reuseSessionTabs: reuseSession,
+                force: true,
+              });
+              if (isRunStopped(myRunId) || branchFatalError) return false;
+
+              // Actively verify and wait until Chrome and selected tab group are verified open in browser
+              const readyResult = await waitForBrowserTabsReady({
+                profileKey: profKey,
+                groupName: groupName,
+                expectedUrls: targetUrls,
+                tabMode: tabMode,
+                workerCount: workerCount,
+                maxWaitMs: 15000,
+                shouldCancel: () => isRunStopped(myRunId) || branchFatalError,
+                signal,
+                onProgress: (msg) => {
+                  updateBranchNodes([], [tabGroupNodeId], [], msg);
+                },
+              });
+              if (isRunStopped(myRunId) || branchFatalError) return false;
+
+              if (readyResult.verified) {
                 updateBranchNodes(
-                  [box.id],
+                  [],
                   [tabGroupNodeId],
                   [],
-                  `⚡ Phase 1: Enhancing images across 4 ChatGPT tabs: ${completedCount}/${totalImages} completed...`
+                  `✓ Tab Group [${groupName}] (${workerCount} ${workerCount === 1 ? 'Tab' : 'Tabs'}) confirmed active in browser [${profName}]!`
                 );
-
-                if (completedCount >= totalImages || (status && !status.is_running && (status.completed || 0) >= totalImages)) {
-                  isDone = true;
-                  break;
-                }
-              } catch (pollErr) {
-                console.warn('Enhancement status check warning:', pollErr);
+                await delay(500);
+                if (isRunStopped(myRunId) || branchFatalError) return false;
               }
+            } catch (openErr) {
+              if (isRunStopped(myRunId) || branchFatalError) return false;
+              console.warn('Could not auto-open Chrome profile and tab group:', openErr);
             }
 
-            if (isRunStopped(myRunId) || branchFatalError) {
-              await stopAutomation().catch(() => {});
-              return false;
-            }
-
-            updateBranchNodes(
-              [],
-              [tabGroupNodeId],
-              [],
-              `✓ Phase 1 complete: All ${totalImages} images enhanced and downloaded!`
-            );
-            await delay(600);
             if (isRunStopped(myRunId) || branchFatalError) return false;
 
-            setEnhancedPhotos((prev) => ({ ...prev, ...extPhotosMap }));
-            workflowContextRef.current.localWatermarkedMap = { ...workflowContextRef.current.localWatermarkedMap, ...extPhotosMap };
-          }
+            const runEnhance = isEnhanceGroup && imageList.length > 0 && isTabGroupEnabled;
+            const runStaging = isStagingGroup && isTabGroupEnabled;
 
-          // ── PHASE 2: STAGING & AD CREATION (2 TABS e.g. FB Hero) ──
-          if (runStaging) {
-            if (isRunStopped(myRunId) || branchFatalError) return false;
-            const stagingBox: any = connectedTabGroupBox || box;
-            const stagingGroupTarget = stagingBox.stagingGroupName || (box as any).stagingGroupName || groupName || 'FB Hero';
-
-            // Resolve Condo Name AI Box (wait briefly if parallel Content branch is still generating it)
-            const targetCondoAiBoxId =
-              stagingBox.condoNameAiBoxId ||
-              (box as any).condoNameAiBoxId ||
-              contentBranchBoxes.find(
-                (b: any) =>
-                  b.enabled !== false &&
-                  (b.title?.toLowerCase().includes('condo') || b.title?.toLowerCase().includes('name'))
-              )?.id;
-
-            if (targetCondoAiBoxId && contentEnabled) {
-              const condoBoxObj = contentBranchBoxes.find((b: any) => b.id === targetCondoAiBoxId);
-              if (condoBoxObj && condoBoxObj.enabled !== false) {
-                let waitCondoTicks = 0;
-                while (!generatedOutputsMap[targetCondoAiBoxId] && waitCondoTicks < 40 && !branchFatalError && !isRunStopped(myRunId)) {
-                  await delay(400);
-                  waitCondoTicks++;
-                }
-              }
+            if (isEnhanceGroup && imageList.length === 0 && isTabGroupEnabled) {
+              updateBranchNodes(
+                [],
+                [tabGroupNodeId],
+                [],
+                `⚠️ [${groupName}] Tab group open in Chrome. (0 photos to enhance)`
+              );
+              await delay(800);
+              if (isRunStopped(myRunId) || branchFatalError) return false;
             }
 
-            const aiExtractedCondo =
-              targetCondoAiBoxId && generatedOutputsMap[targetCondoAiBoxId]
-                ? extractCleanCondoNameFromAiText(generatedOutputsMap[targetCondoAiBoxId])
-                : '';
+            // ── PHASE 1: PHOTO ENHANCEMENT ACROSS 4 TABS (Enhance IMG) ──
+            if (runEnhance) {
+              if (isRunStopped(myRunId) || branchFatalError) return false;
 
-            const effectiveCondoName =
-              aiExtractedCondo ||
-              stagingBox.browserCondoName ||
-              (box as any).browserCondoName ||
-              propName;
+              // Filter effective images to enhance based on Tab Group configuration
+              let targetImages = imageList;
+              const tabGroupImgSourceMode =
+                connectedTabGroupBox?.imageSourceMode || (box as any).imageSourceMode || 'all';
+              const tabGroupSelectedIndices: number[] =
+                connectedTabGroupBox?.selectedImageIndices || (box as any).selectedImageIndices || [];
 
-            // Also resolve upstream AI prompt if promptSourceMode is upstream_ai
-            const targetPromptAiId = stagingBox.selectedUpstreamAiId || (box as any).selectedUpstreamAiId;
-            if (targetPromptAiId && contentEnabled) {
-              const promptBoxObj = contentBranchBoxes.find((b: any) => b.id === targetPromptAiId);
-              if (promptBoxObj && promptBoxObj.enabled !== false) {
-                let waitPromptTicks = 0;
-                while (!generatedOutputsMap[targetPromptAiId] && waitPromptTicks < 40 && !branchFatalError && !isRunStopped(myRunId)) {
-                  await delay(400);
-                  waitPromptTicks++;
+              if (tabGroupImgSourceMode === 'hero_only') {
+                targetImages = imageList.slice(0, 1);
+              } else if (
+                (tabGroupImgSourceMode === 'selected' ||
+                  (tabGroupSelectedIndices.length > 0 && tabGroupSelectedIndices.length < imageList.length)) &&
+                tabGroupSelectedIndices.length > 0
+              ) {
+                targetImages = imageList.filter((_img, i) =>
+                  tabGroupSelectedIndices.includes(i + 1)
+                );
+                if (targetImages.length === 0) {
+                  targetImages = imageList.slice(0, 1);
                 }
               }
-            }
 
-            const initialPrompt =
-              (targetPromptAiId && generatedOutputsMap[targetPromptAiId]) ||
-              resolvePromptForBrowserNode(stagingBox, {
-                title: effectiveCondoName,
-                width: stagingBox.outputWidth || (box as any).outputWidth || (box as any).targetWidth || 1080,
-                height: stagingBox.outputHeight || (box as any).outputHeight || (box as any).targetHeight || 1350,
+              const totalImages = targetImages.length;
+              const extPhotosMap: Record<number, string> = {};
+              targetImages.forEach((img, idx) => {
+                const origPos = imageList.indexOf(img);
+                const pos = origPos >= 0 ? origPos : idx;
+                extPhotosMap[pos] = img.stored_url || img.source_url;
               });
-            const useRefImg = stagingBox.useReferenceImage !== false && (box as any).useReferenceImage !== false;
-            const resolvedRefImage = useRefImg
-              ? (stagingBox.referenceImage ||
-                 (box as any).referenceImage ||
-                 getPersistedReferenceImage(connectedTabGroupBox?.id) ||
-                 (await loadPersistedReferenceImageAsync(connectedTabGroupBox?.id)) ||
-                 null)
-              : null;
 
-            updateBranchNodes(
-              [],
-              [tabGroupNodeId],
-              [],
-              `🚀 Phase 2 (Tab 1): Pasting & generating prompt for ${effectiveCondoName} in [${stagingGroupTarget}]...`
-            );
-
-            try {
-              await fetch('http://127.0.0.1:9224/start-two-stage-staging', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  profile_key: profKey,
-                  group_name: stagingGroupTarget,
-                  condo_name: effectiveCondoName,
-                  initial_prompt: initialPrompt,
-                  reference_image: resolvedRefImage,
-                  target_folder: stagingBox.targetFolder || (box as any).targetFolder || localStorage.getItem('bolthaven_condo_target_folder') || '',
-                  use_condo_images: stagingBox.useCondoImages !== false && (box as any).useCondoImages !== false,
-                  use_reference_image: useRefImg,
-                  skip_tab1: stagingBox.stagingMode === 'direct_tab2' || stagingBox.skipTab1 === true || (box as any).stagingMode === 'direct_tab2' || (box as any).skipTab1 === true,
-                }),
-                signal,
+              const enhancePrompt = resolvePromptForBrowserNode(box, {
+                title: propName,
+                width: (box as any).outputWidth || (box as any).targetWidth || 1080,
+                height: (box as any).outputHeight || (box as any).targetHeight || 1350,
               });
+
+              const rawImgs = targetImages.map((img, i) => {
+                const origPos = imageList.indexOf(img);
+                const pos = origPos >= 0 ? origPos : i;
+                return {
+                  index: i + 1,
+                  original_position: pos + 1,
+                  source_url: img.source_url || img.stored_url,
+                  stored_url: img.stored_url || img.source_url,
+                  local_path: (img as any).local_path || '',
+                  sha256: (img as any).sha256 || '',
+                  width: (box as any).outputWidth || (box as any).targetWidth || 1080,
+                  height: (box as any).outputHeight || (box as any).targetHeight || 1350,
+                  resolved_prompt: enhancePrompt,
+                };
+              });
+
+              const queuePayload = {
+                property_id: propId,
+                property_name: propName,
+                prompt_template_text: enhancePrompt,
+                prompt_template_id: (box as any).browserPromptTemplateKey || getPersistedPromptKey() || 'photo_retouch',
+                images: rawImgs,
+                processing_mode: (box as any).browserProcessingMode || 'chrome_assisted',
+                lane_id: (box as any).browserLaneKey || 'lane-1',
+                output_width: (box as any).outputWidth || (box as any).targetWidth || 1080,
+                output_height: (box as any).outputHeight || (box as any).targetHeight || 1350,
+                strict_preservation_active: (box as any).strictPreservationActive !== false,
+              };
+
+              try {
+                await createBatchImageQueue(queuePayload);
+                if (isRunStopped(myRunId) || branchFatalError) {
+                  await stopAutomation().catch(() => {});
+                  return false;
+                }
+                await startImageQueue(propId);
+              } catch (e) {
+                console.warn('External browser queue start notice:', e);
+              }
               if (isRunStopped(myRunId) || branchFatalError) {
                 await stopAutomation().catch(() => {});
                 return false;
               }
 
-              let twoStageDone = false;
-              let attempts = 0;
-              while (!twoStageDone && attempts < 150) {
+              updateBranchNodes(
+                [],
+                [box.id],
+                [],
+                `⚡ Phase 1: Distributing ${totalImages} images across ${workerCount} ChatGPT tabs [${groupName}]...`
+              );
+
+              try {
+                await startAutomation({
+                  property_id: propId,
+                  profile_key: profKey,
+                  group_name: groupName,
+                  tab_ids: Array.from({ length: workerCount }, (_, i) => i + 1),
+                  tab_mode: tabMode,
+                  worker_count: workerCount,
+                  reuse_session_tabs: reuseSession,
+                });
+              } catch (autoErr) {
+                console.warn('Automation start error:', autoErr);
+              }
+              if (isRunStopped(myRunId) || branchFatalError) {
+                await stopAutomation().catch(() => {});
+                return false;
+              }
+
+              let pollAttempts = 0;
+              const maxPollAttempts = 150;
+              let isDone = false;
+
+              while (!isDone && pollAttempts < maxPollAttempts) {
                 if (isRunStopped(myRunId) || branchFatalError) {
                   await stopAutomation().catch(() => {});
                   return false;
                 }
-                attempts++;
+                pollAttempts++;
                 await delay(2000);
                 if (isRunStopped(myRunId) || branchFatalError) {
                   await stopAutomation().catch(() => {});
                   return false;
                 }
+
                 try {
-                  const st = await fetch('http://127.0.0.1:9224/two-stage-status', { signal }).then((r) => r.json());
+                  const queueJobs = await fetchImageQueue(propId);
                   if (isRunStopped(myRunId) || branchFatalError) {
                     await stopAutomation().catch(() => {});
                     return false;
                   }
-                  if (st && st.state) {
-                    if (st.state.step === 'stopped') {
-                      return false;
-                    } else if (st.state.step === 'stage1_running') {
-                      updateBranchNodes([], [tabGroupNodeId], [], `⏳ Phase 2 (Tab 1): Generating & extracting prompt copy...`);
-                    } else if (st.state.step === 'stage1_completed') {
-                      updateBranchNodes([], [tabGroupNodeId], [], `✓ Phase 2 (Tab 1) extracted! Switching to Tab 2...`);
-                    } else if (st.state.step === 'stage2_running') {
-                      updateBranchNodes([], [tabGroupNodeId], [], `🖼️ Phase 2 (Tab 2): Pasting reference photo, condo images 1, 2, 3 & prompt...`);
-                    } else if (st.state.step === 'completed') {
-                      twoStageDone = true;
-                      updateBranchNodes([], [tabGroupNodeId], [], `✓ Phase 2 complete: Tab 2 submitted in [${stagingGroupTarget}] with reference & condo images!`);
-                    } else if (st.state.step === 'error') {
-                      break;
-                    }
+                  const status = await getAutomationStatus();
+                  if (isRunStopped(myRunId) || branchFatalError) {
+                    await stopAutomation().catch(() => {});
+                    return false;
                   }
-                } catch (e) {
-                  if (isRunStopped(myRunId) || branchFatalError) return false;
+
+                  let completedCount = 0;
+                  if (queueJobs && queueJobs.length > 0) {
+                    queueJobs.forEach((job) => {
+                      const isJobDone = job.status === 'COMPLETED' || (job.status as string) === 'completed' || (job as any).is_completed;
+                      const resUrl = job.output_file_url || (job as any).result_file_url;
+                      if (isJobDone && resUrl) {
+                        completedCount++;
+                        const pos = (job.original_position || 1) - 1;
+                        extPhotosMap[pos] = resUrl;
+                      }
+                    });
+                  }
+
+                  if (status && status.completed !== undefined) {
+                    completedCount = Math.max(completedCount, status.completed);
+                  }
+
+                  setEnhancedPhotos((prev) => ({ ...prev, ...extPhotosMap }));
+                  workflowContextRef.current.localWatermarkedMap = { ...workflowContextRef.current.localWatermarkedMap, ...extPhotosMap };
+
+                  updateBranchNodes(
+                    [box.id],
+                    [tabGroupNodeId],
+                    [],
+                    `⚡ Phase 1: Enhancing images across 4 ChatGPT tabs: ${completedCount}/${totalImages} completed...`
+                  );
+
+                  if (completedCount >= totalImages || (status && !status.is_running && (status.completed || 0) >= totalImages)) {
+                    isDone = true;
+                    break;
+                  }
+                } catch (pollErr) {
+                  console.warn('Enhancement status check warning:', pollErr);
                 }
               }
-            } catch (twoStageErr: any) {
+
+              if (isRunStopped(myRunId) || branchFatalError) {
+                await stopAutomation().catch(() => {});
+                return false;
+              }
+
+              updateBranchNodes(
+                [],
+                [tabGroupNodeId],
+                [],
+                `✓ Phase 1 complete: All ${totalImages} images enhanced and downloaded!`
+              );
+              await delay(600);
               if (isRunStopped(myRunId) || branchFatalError) return false;
-              console.warn('Two-stage staging execution error:', twoStageErr);
+
+              setEnhancedPhotos((prev) => ({ ...prev, ...extPhotosMap }));
+              workflowContextRef.current.localWatermarkedMap = { ...workflowContextRef.current.localWatermarkedMap, ...extPhotosMap };
             }
-          }
+
+            // ── PHASE 2: STAGING & AD CREATION (2 TABS e.g. FB Hero) ──
+            if (runStaging) {
+              if (isRunStopped(myRunId) || branchFatalError) return false;
+              const stagingBox: any = connectedTabGroupBox || box;
+              const stagingGroupTarget = stagingBox.stagingGroupName || (box as any).stagingGroupName || groupName || 'FB Hero';
+
+              // Resolve Condo Name AI Box (wait briefly if parallel Content branch is still generating it)
+              const targetCondoAiBoxId =
+                stagingBox.condoNameAiBoxId ||
+                (box as any).condoNameAiBoxId ||
+                contentBranchBoxes.find(
+                  (b: any) =>
+                    b.enabled !== false &&
+                    (b.title?.toLowerCase().includes('condo') || b.title?.toLowerCase().includes('name'))
+                )?.id;
+
+              if (targetCondoAiBoxId && contentEnabled) {
+                const condoBoxObj = contentBranchBoxes.find((b: any) => b.id === targetCondoAiBoxId);
+                if (condoBoxObj && condoBoxObj.enabled !== false) {
+                  let waitCondoTicks = 0;
+                  while (!generatedOutputsMap[targetCondoAiBoxId] && waitCondoTicks < 40 && !branchFatalError && !isRunStopped(myRunId)) {
+                    await delay(400);
+                    waitCondoTicks++;
+                  }
+                }
+              }
+
+              const aiExtractedCondo =
+                targetCondoAiBoxId && generatedOutputsMap[targetCondoAiBoxId]
+                  ? extractCleanCondoNameFromAiText(generatedOutputsMap[targetCondoAiBoxId])
+                  : '';
+
+              const effectiveCondoName =
+                aiExtractedCondo ||
+                stagingBox.browserCondoName ||
+                (box as any).browserCondoName ||
+                propName;
+
+              // Also resolve upstream AI prompt if promptSourceMode is upstream_ai
+              const targetPromptAiId =
+                stagingBox.selectedUpstreamAiId ||
+                (box as any).selectedUpstreamAiId ||
+                contentBranchBoxes.find((b: any) => b.title?.toLowerCase().includes('hero') || b.title?.toLowerCase().includes('prompt'))?.id;
+
+              if (targetPromptAiId && contentEnabled) {
+                const promptBoxObj = contentBranchBoxes.find((b: any) => b.id === targetPromptAiId);
+                if (promptBoxObj && promptBoxObj.enabled !== false) {
+                  let waitPromptTicks = 0;
+                  while (!generatedOutputsMap[targetPromptAiId] && waitPromptTicks < 40 && !branchFatalError && !isRunStopped(myRunId)) {
+                    await delay(400);
+                    waitPromptTicks++;
+                  }
+                } else if (promptBoxObj && !generatedOutputsMap[targetPromptAiId] && (rawCaption || primaryCopy)) {
+                  // If the linked AI Generator Node (e.g. FB Hero Prompt) is selected in Direct Mode but disabled on canvas, generate its prompt on the fly so Direct Mode has the real property prompt!
+                  try {
+                    const aiProvider = promptBoxObj.provider || (promptBoxObj.model?.startsWith('gpt-') ? 'openai' : 'google_ai');
+                    const aiModel = promptBoxObj.model || (aiProvider === 'openai' ? 'gpt-4o' : 'gemini-2.5-flash');
+                    const aiResp = await fetch('http://localhost:8085/api/facebook-import/generate-ai', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        provider: aiProvider,
+                        model: aiModel,
+                        template_id: promptBoxObj.templateId || '',
+                        template_name: promptBoxObj.title || 'FB Hero Prompt',
+                        template_text: promptBoxObj.templateText || '',
+                        raw_content: rawCaption || primaryCopy,
+                        custom_prompt: promptBoxObj.customPrompt || '',
+                      }),
+                      signal,
+                    });
+                    if (aiResp.ok) {
+                      const aiData = await aiResp.json();
+                      if (aiData.success && aiData.generated_content) {
+                        generatedOutputsMap[targetPromptAiId] = aiData.generated_content;
+                        workflowContextRef.current.generatedOutputsMap[targetPromptAiId] = aiData.generated_content;
+                        setAiGeneratedOutputs((prev) => ({ ...prev, [targetPromptAiId]: aiData.generated_content }));
+                      }
+                    }
+                  } catch {}
+                }
+              }
+
+              const initialPrompt =
+                (targetPromptAiId && generatedOutputsMap[targetPromptAiId]) ||
+                resolvePromptForBrowserNode(stagingBox, {
+                  title: effectiveCondoName,
+                  width: stagingBox.outputWidth || (box as any).outputWidth || (box as any).targetWidth || 1080,
+                  height: stagingBox.outputHeight || (box as any).outputHeight || (box as any).targetHeight || 1350,
+                });
+              const useRefImg = stagingBox.useReferenceImage !== false && (box as any).useReferenceImage !== false;
+              const resolvedRefImage = useRefImg
+                ? (stagingBox.referenceImage ||
+                   (box as any).referenceImage ||
+                   getPersistedReferenceImage(connectedTabGroupBox?.id) ||
+                   (await loadPersistedReferenceImageAsync(connectedTabGroupBox?.id)) ||
+                   null)
+                : null;
+
+              updateBranchNodes(
+                [],
+                [tabGroupNodeId],
+                [],
+                isDirectStagingGroup
+                  ? `🚀 Direct Mode (1 Tab): Attaching Reference Image + 3 Condo Photos (${effectiveCondoName}) + Prompt in [${stagingGroupTarget}]...`
+                  : `🚀 2-Stage Mode (2 Tabs): Pasting & generating prompt for ${effectiveCondoName} in [${stagingGroupTarget}]...`
+              );
+
+              try {
+                await fetch('http://127.0.0.1:9224/start-two-stage-staging', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    profile_key: profKey,
+                    group_name: stagingGroupTarget,
+                    condo_name: effectiveCondoName,
+                    initial_prompt: initialPrompt,
+                    reference_image: resolvedRefImage,
+                    target_folder: stagingBox.targetFolder || (box as any).targetFolder || localStorage.getItem('bolthaven_condo_target_folder') || '',
+                    use_condo_images: stagingBox.useCondoImages !== false && (box as any).useCondoImages !== false,
+                    use_reference_image: useRefImg,
+                    skip_tab1: isDirectStagingGroup,
+                    tab_mode: tabMode,
+                    worker_count: isDirectStagingGroup ? 1 : 2,
+                    reuse_session_tabs: reuseSession,
+                  }),
+                  signal,
+                });
+                if (isRunStopped(myRunId) || branchFatalError) {
+                  await stopAutomation().catch(() => {});
+                  return false;
+                }
+
+                let twoStageDone = false;
+                let attempts = 0;
+                while (!twoStageDone && attempts < 180) {
+                  if (isRunStopped(myRunId) || branchFatalError) {
+                    await stopAutomation().catch(() => {});
+                    return false;
+                  }
+                  attempts++;
+                  await delay(2000);
+                  if (isRunStopped(myRunId) || branchFatalError) {
+                    await stopAutomation().catch(() => {});
+                    return false;
+                  }
+                  try {
+                    const st = await fetch('http://127.0.0.1:9224/two-stage-status', { signal }).then((r) => r.json());
+                    if (isRunStopped(myRunId) || branchFatalError) {
+                      await stopAutomation().catch(() => {});
+                      return false;
+                    }
+                    if (st && st.state) {
+                      if (st.state.step === 'stopped') {
+                        return false;
+                      } else if (st.state.step === 'stage1_running') {
+                        updateBranchNodes([], [tabGroupNodeId], [], `⏳ Tab 1: Generating & extracting prompt copy...`);
+                      } else if (st.state.step === 'stage1_completed') {
+                        updateBranchNodes(
+                          [],
+                          [tabGroupNodeId],
+                          [],
+                          isDirectStagingGroup
+                            ? `⚡ Direct Mode (1 Tab): Prompt ready, attaching Reference Image + 3 Condo Photos...`
+                            : `✓ Tab 1 prompt extracted! Switching to Tab 2...`
+                        );
+                      } else if (st.state.step === 'stage2_running') {
+                        updateBranchNodes([], [tabGroupNodeId], [], `🖼️ Attaching Reference Image (1st), Condo Photos 1, 2, 3 (next) & Prompt...`);
+                      } else if (st.state.step === 'generating_image') {
+                        updateBranchNodes([], [tabGroupNodeId], [], st.state.message || `🎨 Generating Hero Image in ChatGPT...`);
+                      } else if (st.state.step === 'downloading_image') {
+                        updateBranchNodes([], [tabGroupNodeId], [], st.state.message || `⬇️ Downloading generated Hero Image...`);
+                      } else if (st.state.step === 'completed') {
+                        twoStageDone = true;
+                        const heroResultUrl = st.state.downloaded_data_url || st.state.result_url;
+                        if (heroResultUrl) {
+                          setEnhancedPhotos((prev) => ({ ...prev, 0: heroResultUrl }));
+                          workflowContextRef.current.localWatermarkedMap = {
+                            ...workflowContextRef.current.localWatermarkedMap,
+                            0: heroResultUrl,
+                          };
+                        }
+                        updateBranchNodes(
+                          [],
+                          [tabGroupNodeId],
+                          [],
+                          `✓ Complete: Hero Image generated & downloaded in [${stagingGroupTarget}]!`
+                        );
+                      } else if (st.state.step === 'error') {
+                        break;
+                      }
+                    }
+                  } catch (e) {
+                    if (isRunStopped(myRunId) || branchFatalError) return false;
+                  }
+                }
+              } catch (twoStageErr: any) {
+                if (isRunStopped(myRunId) || branchFatalError) return false;
+                console.warn('Two-stage staging execution error:', twoStageErr);
+              }
+            }
+            return true;
+          };
+
+          // Run every enabled profile in parallel; inside one profile, run its enabled tab groups in order.
+          const profileResults = await Promise.all(
+            enabledProfiles.map(async (profileBox: any, pIdx: number) => {
+              const profileTabGroups: any[] = (cfg.aiBoxes || []).filter(
+                (b: any) =>
+                  areBoxesConnected(profileBox.id, b.id) &&
+                  (isChromeTabGroupAIBox(b) || (b as any).processType === 'chrome_tab_group') &&
+                  b.enabled !== false &&
+                  b.autoRun !== false &&
+                  (b as any).enableAutoRun !== false
+              );
+              const targets: any[] = profileTabGroups.length > 0
+                ? profileTabGroups
+                : (cfg.aiBoxes || []).filter(
+                    (b: any) =>
+                      areBoxesConnected(box.id, b.id) &&
+                      (isChromeTabGroupAIBox(b) || (b as any).processType === 'chrome_tab_group') &&
+                      b.enabled !== false &&
+                      b.autoRun !== false &&
+                      (b as any).enableAutoRun !== false
+                  );
+              if (targets.length === 0) return true;
+              // Unique queue id per profile so parallel profiles never share one image queue
+              const profilePropId = enabledProfiles.length > 1 ? `${propIdBase}-p${pIdx + 1}` : propIdBase;
+              for (const tg of targets) {
+                if (isRunStopped(myRunId) || branchFatalError) return false;
+                const ok = await runBrowserTarget(profileBox, tg, profilePropId);
+                if (!ok) return false;
+              }
+              return true;
+            })
+          );
+          if (profileResults.some((r) => !r)) return false;
         } else {
           // Resolve upstream text for this text AI or format node
           const inConns = (cfg.connections || []).filter((c) => c.toNodeId === box.id);
@@ -2148,7 +2344,7 @@ export const CreateWorkflowView: React.FC = () => {
 
         const completedBranchIds = [
           box.id,
-          ...(isExternalBrowser ? [tabGroupNodeId, ...(connectedProfileBox ? [connectedProfileBox.id] : [])] : []),
+          ...(isExternalBrowser ? [...executedTabGroupIds, ...executedProfileIds] : []),
         ];
 
         updateBranchNodes(
@@ -2184,10 +2380,19 @@ export const CreateWorkflowView: React.FC = () => {
           { stepIndex: 3 }
         );
 
-        for (const box of contentBranchBoxes) {
+        const contentWaves = buildExecutionWaves(contentBranchBoxes);
+        for (const wave of contentWaves) {
           if (isRunStopped(myRunId) || branchFatalError) return;
-          const ok = await executeSingleAIBox(box);
-          if (!ok || branchFatalError) return;
+          if (wave.length > 1) {
+            updateBranchNodes(
+              [],
+              wave.map((b) => b.id),
+              [],
+              `⚡ Executing ${wave.length} AI format presets in parallel...`
+            );
+          }
+          const results = await Promise.all(wave.map((box) => executeSingleAIBox(box)));
+          if (results.some((ok) => !ok) || branchFatalError) return;
         }
       };
 
@@ -2208,10 +2413,19 @@ export const CreateWorkflowView: React.FC = () => {
           { stepIndex: 3 }
         );
 
-        for (const box of imageBranchBoxes) {
+        const imageWaves = buildExecutionWaves(imageBranchBoxes);
+        for (const wave of imageWaves) {
           if (isRunStopped(myRunId) || branchFatalError) return;
-          const ok = await executeSingleAIBox(box);
-          if (!ok || branchFatalError) return;
+          if (wave.length > 1) {
+            updateBranchNodes(
+              [],
+              wave.map((b) => b.id),
+              [],
+              `⚡ Executing ${wave.length} image format steps in parallel...`
+            );
+          }
+          const results = await Promise.all(wave.map((box) => executeSingleAIBox(box)));
+          if (results.some((ok) => !ok) || branchFatalError) return;
         }
       };
 
@@ -2562,6 +2776,94 @@ export const CreateWorkflowView: React.FC = () => {
     }
   };
 
+  // Run workflow starting from a specific node
+  const handleRunFromStep = async (nodeId: string) => {
+    if (isRunningWorkflow || !editingFormat?.config) return;
+    const cfg = editingFormat.config;
+
+    // 1. If clicking trigger:
+    if (nodeId === 'trigger') {
+      const url = (runFacebookUrl || workflowContextRef.current?.targetUrl || '').trim();
+      if (url) {
+        executeCanvasWorkflow(url);
+      } else {
+        setRunFacebookUrl('');
+        setIsRunModalOpen(true);
+      }
+      return;
+    }
+
+    // 2. Check if we already have extracted content or images
+    const ctx = workflowContextRef.current;
+    const hasContent = Boolean(extractedContent || ctx?.rawCaption);
+    const hasImages = Boolean(
+      (extractedImages && extractedImages.length > 0) ||
+      (ctx?.imageList && ctx.imageList.length > 0)
+    );
+    const url = (runFacebookUrl || ctx?.targetUrl || '').trim();
+
+    // If nothing is extracted yet and no URL is known, prompt for URL to run
+    if (!hasContent && !hasImages && !url) {
+      setRunFacebookUrl('');
+      setIsRunModalOpen(true);
+      return;
+    }
+
+    // If nothing is extracted yet but URL is known, execute full workflow
+    if (!hasContent && !hasImages && url) {
+      executeCanvasWorkflow(url);
+      return;
+    }
+
+    // 3. If running an AI Box (or Format Preset or Watermark/Crop):
+    const targetBox = cfg.aiBoxes?.find((b) => b.id === nodeId);
+    if (targetBox) {
+      const existingCopy = aiGeneratedOutputs[nodeId] || ctx?.generatedOutputsMap[nodeId];
+      if (!existingCopy && !isWatermarkAIBox(targetBox) && !isExternalBrowserAIBox(targetBox)) {
+        await handleRegenerateBoxOutput(nodeId);
+      }
+      handleContinueWorkflow(nodeId);
+      return;
+    }
+
+    // 4. If get-content:
+    if (nodeId === 'get-content') {
+      if (url) {
+        executeCanvasWorkflow(url);
+      } else if (hasContent) {
+        const firstAI = cfg.aiBoxes?.find((b) => isTextAIBox(b, cfg.connections));
+        if (firstAI) {
+          handleContinueWorkflow(firstAI.id);
+        }
+      }
+      return;
+    }
+
+    // 5. If get-images:
+    if (nodeId === 'get-images') {
+      if (url) {
+        executeCanvasWorkflow(url);
+      } else if (hasImages) {
+        const firstImgBox = cfg.aiBoxes?.find((b) => isWatermarkAIBox(b) || isExternalBrowserAIBox(b));
+        if (firstImgBox) {
+          handleContinueWorkflow(firstImgBox.id);
+        }
+      }
+      return;
+    }
+
+    // 6. If combine or destination:
+    if (nodeId === 'combine' || nodeId.startsWith('dest-') || nodeId === 'destination') {
+      const lastBox = cfg.aiBoxes?.[cfg.aiBoxes.length - 1];
+      if (lastBox) {
+        handleContinueWorkflow(lastBox.id);
+      } else if (url) {
+        executeCanvasWorkflow(url);
+      }
+      return;
+    }
+  };
+
   // Run Workflow with Facebook Link - Executes directly on Canvas!
   const handleConfirmRun = async () => {
     const url = runFacebookUrl.trim();
@@ -2731,8 +3033,8 @@ export const CreateWorkflowView: React.FC = () => {
           headerTitleEl
         )}
 
-      {/* Portal: Run & Reset Layout Buttons into Navbar Center (Same size, simple, zero glow) */}
-      {headerCenterEl &&
+      {/* Portal: Run & Reset Layout Buttons into Navbar Right Corner (Same size, simple, zero glow) */}
+      {headerActionEl &&
         isCanvasOpen &&
         editingFormat &&
         createPortal(
@@ -2898,7 +3200,7 @@ export const CreateWorkflowView: React.FC = () => {
               <span>Reset Layout</span>
             </button>
           </div>,
-          headerCenterEl
+          headerActionEl
         )}
 
 
@@ -2944,6 +3246,7 @@ export const CreateWorkflowView: React.FC = () => {
             onUpdateBoxOutput={handleUpdateBoxOutput}
             onRegenerateBoxOutput={handleRegenerateBoxOutput}
             onContinueWorkflow={handleContinueWorkflow}
+            onRunFromStep={handleRunFromStep}
           />
         </div>
       ) : (

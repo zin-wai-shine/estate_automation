@@ -367,10 +367,13 @@ export interface AutomationStatusResponse {
 export const startAutomation = async (params: {
   property_id: string;
   profile_key?: string;
+  group_name?: string;
+  group_tab_urls?: string[];
   tab_ids: number[];
   tab_mode?: 'existing_tabs' | 'new_tabs';
   worker_count?: number;
   reuse_session_tabs?: boolean;
+  jobs?: any[];
 }): Promise<{ success: boolean; message: string; job_count?: number }> => {
   try {
     const res = await fetch(`${API_BASE}/automation/start`, {

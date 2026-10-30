@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/zinwaishine/estate-automate/backend/internal/models"
@@ -360,6 +361,20 @@ func StartImageQueue(c *fiber.Ctx) error {
 func GetImageJobDetails(c *fiber.Ctx) error {
 	jobID := c.Params("id")
 	svc := services.GetSmartImageQueueService()
+
+	// If queried by property ID (PROP-...) instead of a specific job ID, return the queue for this property
+	if strings.HasPrefix(jobID, "PROP-") {
+		jobs, err := svc.GetQueue(jobID)
+		if err == nil {
+			return c.JSON(fiber.Map{
+				"status": "success",
+				"jobs":   jobs,
+				"queue":  jobs,
+				"count":  len(jobs),
+			})
+		}
+	}
+
 	job, events, err := svc.GetJob(jobID)
 	if err != nil {
 		return c.Status(http.StatusNotFound).JSON(fiber.Map{
@@ -585,12 +600,14 @@ func CompanionSync(c *fiber.Ctx) error {
 // Accepts: property_id, profile_key, tab_ids ([]int — Chrome tab IDs from the extension)
 func StartAutomation(c *fiber.Ctx) error {
 	var body struct {
-		PropertyID       string `json:"property_id"`
-		ProfileKey       string `json:"profile_key"`
-		TabIDs           []int  `json:"tab_ids"`
-		TabMode          string `json:"tab_mode"`
-		WorkerCount      int    `json:"worker_count"`
-		ReuseSessionTabs *bool  `json:"reuse_session_tabs"`
+		PropertyID       string                     `json:"property_id"`
+		ProfileKey       string                     `json:"profile_key"`
+		GroupName        string                     `json:"group_name"`
+		TabIDs           []int                      `json:"tab_ids"`
+		TabMode          string                     `json:"tab_mode"`
+		WorkerCount      int                        `json:"worker_count"`
+		ReuseSessionTabs *bool                      `json:"reuse_session_tabs"`
+		Jobs             []models.ImageProcessingJob `json:"jobs"`
 	}
 	if err := c.BodyParser(&body); err != nil || body.PropertyID == "" {
 		return c.Status(http.StatusBadRequest).JSON(fiber.Map{
@@ -599,21 +616,29 @@ func StartAutomation(c *fiber.Ctx) error {
 		})
 	}
 
-	// Load all pending jobs for this property
-	queueSvc := services.GetSmartImageQueueService()
-	jobs, err := queueSvc.GetQueue(body.PropertyID)
-	if err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
-			"status":  "error",
-			"message": fmt.Sprintf("Failed to load queue: %v", err),
-		})
+	// Load all jobs for this property if not explicitly passed
+	jobs := body.Jobs
+	if len(jobs) == 0 {
+		queueSvc := services.GetSmartImageQueueService()
+		var err error
+		jobs, err = queueSvc.GetQueue(body.PropertyID)
+		if err != nil {
+			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+				"status":  "error",
+				"message": fmt.Sprintf("Failed to load queue: %v", err),
+			})
+		}
 	}
 
 	// Strictly deduplicate jobs by OriginalPosition to ensure exactly 1 job per photo
 	posMap := make(map[int]models.ImageProcessingJob)
 	var orderedPositions []int
 	for _, j := range jobs {
-		if j.Status == models.ImgJobStatusPending || j.Status == models.ImgJobStatusReadyForUser {
+		// Accept Pending, Ready, Processing, or re-runnable Cancelled/Failed states
+		s := string(j.Status)
+		if s == string(models.ImgJobStatusPending) || s == string(models.ImgJobStatusReadyForUser) ||
+			s == string(models.ImgJobStatusCancelled) || s == string(models.ImgJobStatusFailed) ||
+			s == string(models.ImgJobStatusProcessingLocal) || s == string(models.ImgJobStatusProcessingAPI) {
 			pos := j.OriginalPosition
 			if _, exists := posMap[pos]; !exists {
 				orderedPositions = append(orderedPositions, pos)
@@ -637,7 +662,7 @@ func StartAutomation(c *fiber.Ctx) error {
 
 	// Call the companion service which queues a START_AUTOMATION command for the extension
 	browserSvc := services.GetBrowserProfileService()
-	result, err := browserSvc.StartAutomationViaCompanion(body.ProfileKey, body.PropertyID, body.TabIDs, pendingJobs, body.TabMode, body.WorkerCount, body.ReuseSessionTabs)
+	result, err := browserSvc.StartAutomationViaCompanion(body.ProfileKey, body.PropertyID, body.GroupName, body.TabIDs, pendingJobs, body.TabMode, body.WorkerCount, body.ReuseSessionTabs)
 	if err != nil {
 		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
 			"status":  "error",

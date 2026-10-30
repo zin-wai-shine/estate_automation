@@ -403,60 +403,129 @@ function isChromeRunning() {
   }
 }
 
-// Check if THAT SPECIFIC Chrome profile is currently open and active
-function isChromeProfileOpen(profileKey, profileName) {
-  const normKey = normalizeProfileKey(profileKey, profileName);
-  if (!isChromeRunning()) {
-    return false;
+function getChromeWindowCount() {
+  try {
+    const cnt = execSync("osascript -e 'tell application \"Google Chrome\" to count of windows' 2>/dev/null", {
+      encoding: 'utf8',
+      timeout: 1500,
+    }).trim();
+    return parseInt(cnt, 10) || 0;
+  } catch (e) {
+    return 0;
   }
-
-  // 1. Check live extension heartbeats / pair records for this specific profile
-  if (liveTabGroupsByKey[normKey] && liveTabGroupsByKey[normKey].length > 0) {
-    const recent = registeredProfiles.slice().reverse().find((p) => {
-      const k = (p.profileKey || p.profile_key || '').toLowerCase();
-      return k === normKey.toLowerCase();
-    });
-    if (recent && recent.paired_at) {
-      const age = Date.now() - new Date(recent.paired_at).getTime();
-      if (age < 45000) return true;
-    }
-  }
-
-  return false;
 }
 
-function activateChromeWindow(pid, fallbackUrl = 'https://chatgpt.com/', matchQuery = 'chatgpt.com') {
-  const targetPid = pid || getRunningChromePid();
-  if (targetPid) {
-    exec(`swift -e 'import AppKit; NSRunningApplication(processIdentifier: ${targetPid})?.activate(options: .activateIgnoringOtherApps)' 2>/dev/null`, () => {});
+function bringChromeToFront() {
+  const pid = getRunningChromePid();
+  if (pid) {
+    exec(`swift -e 'import AppKit; NSRunningApplication(processIdentifier: ${pid})?.activate(options: .activateIgnoringOtherApps)' 2>/dev/null`, () => {});
+  } else {
+    execFile('osascript', ['-e', 'tell application "Google Chrome" to activate'], () => {});
   }
-  const cleanMatch = (matchQuery || 'chatgpt.com').replace(/"/g, '');
-  const cleanFallback = (fallbackUrl || 'https://chatgpt.com/').replace(/"/g, '');
-  const asScript = `
-tell application "Google Chrome"
-  activate
-  if (count of windows) = 0 then
-    open location "${cleanFallback}"
-  else
-    repeat with w in windows
-      set tabIdx to 1
-      repeat with t in tabs of w
-        if URL of t contains "${cleanMatch}" then
-          set active tab index of w to tabIdx
-          set index of w to 1
-          return
-        end if
-        set tabIdx to tabIdx + 1
-      end repeat
-    end repeat
-  end if
-end tell
-`;
-  execFile('osascript', ['-e', asScript], () => {});
+}
+
+function hasOpenChatGPTWindow() {
+  try {
+    const res = execSync(`osascript -e '
+      tell application "Google Chrome"
+        repeat with w in windows
+          repeat with t in tabs of w
+            if (URL of t as text) contains "chatgpt.com" then return "YES"
+          end repeat
+        end repeat
+        return "NO"
+      end tell
+    ' 2>/dev/null`, { encoding: 'utf8', timeout: 2000 }).trim();
+    return res === 'YES';
+  } catch (e) {
+    return false;
+  }
+}
+
+function focusChatGPTWindow() {
+  try {
+    execSync(`osascript -e '
+      tell application "Google Chrome"
+        activate
+        repeat with w in windows
+          repeat with t in tabs of w
+            if (URL of t as text) contains "chatgpt.com" then
+              set index of w to 1
+              return "DONE"
+            end if
+          end repeat
+        end repeat
+      end tell
+    ' 2>/dev/null`, { timeout: 2000 });
+  } catch (e) {}
+}
+
+const openedProfiles = new Set();
+const launchingProfileLock = {};
+
+// Check if Chrome is currently running
+function isChromeProfileOpen(profileKey, profileName) {
+  return isChromeRunning();
+}
+
+function activateChromeProfile(profileKey, targetUrl = '') {
+  const resolvedKey = normalizeProfileKey(profileKey);
+  const now = Date.now();
+
+  // Debounce guard: do not re-trigger launch commands within 2 seconds
+  const lastLaunch = launchingProfileLock[resolvedKey] || 0;
+  if (now - lastLaunch < 2000) {
+    console.log(`[COMPANION] Profile "${resolvedKey}" launch was initiated recently. Debouncing...`);
+    return;
+  }
+  launchingProfileLock[resolvedKey] = now;
+
+  console.log(`[COMPANION] 🚀 Activating/Opening Chrome profile "${resolvedKey}" (target: ${targetUrl || 'chatgpt'})...`);
+
+  const target = targetUrl || 'https://chatgpt.com/';
+  // Using macOS 'open -a Google Chrome --args --profile-directory=...'
+  // instructs macOS to focus or launch the window belonging to THAT EXACT profile directory.
+  const args = [
+    '-a',
+    'Google Chrome',
+    '--args',
+    `--profile-directory=${resolvedKey}`,
+    target,
+  ];
+
+  // NOTE: `open -a ... --args` silently IGNORES --args when Chrome is already running (e.g. another
+  // profile like Hsu is open), so the requested profile never opens. Invoking the Chrome binary
+  // directly hands --profile-directory to the running instance, which opens/focuses that profile's window.
+  const chromeBinary = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+  try {
+    if (fs.existsSync(chromeBinary)) {
+      const child = spawn(chromeBinary, [`--profile-directory=${resolvedKey}`, target], {
+        detached: true,
+        stdio: 'ignore',
+      });
+      child.unref();
+      // Bring Chrome to the foreground so the profile window is visible
+      setTimeout(() => {
+        try {
+          spawn('osascript', ['-e', 'tell application "Google Chrome" to activate'], { detached: true, stdio: 'ignore' }).unref();
+        } catch (e) {}
+      }, 700);
+    } else {
+      const child = spawn('open', args, { detached: true, stdio: 'ignore' });
+      child.unref();
+    }
+  } catch (err) {
+    console.warn('[COMPANION] Error launching Chrome profile:', err.message);
+  }
+}
+
+// Backwards-compatible alias for any residual call
+function activateChromeWindow(pid, fallbackUrl, matchQuery, profileKey) {
+  activateChromeProfile(profileKey || 'Profile 2', fallbackUrl || '');
 }
 
 // 2. Focus / Open Chrome Profile on macOS
-function normalizeProfileKey(profileKey, profileName) {
+function normalizeProfileKey(profileKey, profileName, email) {
   const chromeDir = path.join(os.homedir(), 'Library', 'Application Support', 'Google', 'Chrome');
   if (profileKey && fs.existsSync(path.join(chromeDir, profileKey))) {
     return profileKey;
@@ -467,14 +536,36 @@ function normalizeProfileKey(profileKey, profileName) {
     if (fs.existsSync(path.join(chromeDir, key))) return key;
   }
   const profiles = getLocalChromeProfiles();
+
+  // High Priority: Match by email (notezinwai@gmail.com -> Profile 2, etc.)
+  const targetEmail = (email || '').toLowerCase().trim();
+  if (targetEmail) {
+    const emailMatch = profiles.find((p) => p.email && p.email.toLowerCase().trim() === targetEmail);
+    if (emailMatch) return emailMatch.profile_key;
+  }
+
+  // Known keyword matching for profiles configured in BoltHaven
+  const combined = `${profileKey || ''} ${profileName || ''}`.toLowerCase();
+  if (combined.includes('notezinwai') || combined.includes('note zin wai') || combined.includes('zin wai') || combined.includes('pro')) {
+    const zinMatch = profiles.find((p) => (p.email || '').toLowerCase().includes('notezinwai') || p.profile_key === 'Profile 2');
+    if (zinMatch) return zinMatch.profile_key;
+  }
+  if (combined.includes('hsuyeenandar417') || (combined.includes('hsu') && !combined.includes('yee'))) {
+    const hsuMatch = profiles.find((p) => p.profile_key === 'Profile 14' || (p.email || '').toLowerCase().includes('hsuyeenandar417'));
+    if (hsuMatch) return hsuMatch.profile_key;
+  }
+
   const match = profiles.find(
     (p) =>
       (profileName && p.display_name.toLowerCase() === profileName.toLowerCase()) ||
       (profileKey && p.profile_key.toLowerCase() === profileKey.toLowerCase()) ||
-      (profileKey && p.display_name.toLowerCase().includes(profileKey.toLowerCase()))
+      (profileKey && p.display_name.toLowerCase().includes(profileKey.toLowerCase())) ||
+      (profileName && p.display_name.toLowerCase().includes(profileName.toLowerCase())) ||
+      (profileName && profileName.toLowerCase().includes(p.display_name.toLowerCase()))
   );
   if (match) return match.profile_key;
-  return 'Profile 14';
+
+  return 'Profile 2';
 }
 
 let lastLaunchedProfile = '';
@@ -482,45 +573,28 @@ let lastLaunchTime = 0;
 
 function launchChromeProfileOnce(resolvedKey, targetUrls = []) {
   const now = Date.now();
+  const firstUrl = Array.isArray(targetUrls) ? targetUrls[0] : (targetUrls || '');
   if (lastLaunchedProfile === resolvedKey && (now - lastLaunchTime < 3000)) {
-    activateChromeWindow(undefined, 'https://chatgpt.com/', 'chatgpt.com');
+    activateChromeProfile(resolvedKey, firstUrl);
     return Promise.resolve(true);
   }
   lastLaunchedProfile = resolvedKey;
   lastLaunchTime = now;
 
   return new Promise((resolve) => {
-    console.log(`[COMPANION] Launching Chrome for profile "${resolvedKey}"...`);
-    // Launch Chrome profile cleanly with extension attached.
-    // Do not pass worker URLs on CLI to prevent creating duplicate loose tabs outside the tab group!
-    const args = [
-      `--profile-directory=${resolvedKey}`,
-      `--load-extension=/Users/zinwaishine/Desktop/Project_EA/extension`,
-    ];
-    try {
-      const child = spawn(CHROME_BINARY, args, { detached: true, stdio: 'ignore' });
-      child.unref();
-    } catch (err) {
-      console.warn('[COMPANION] Error launching Chrome with profile:', err.message);
-    }
-
+    console.log(`[COMPANION] Launching/Focusing Chrome for profile "${resolvedKey}"...`);
+    activateChromeProfile(resolvedKey, firstUrl);
     setTimeout(() => {
-      activateChromeWindow(undefined, 'https://chatgpt.com/', 'chatgpt.com');
       resolve(true);
-    }, 450);
+    }, 350);
   });
 }
 
-function focusChromeProfile(profileKey) {
+function focusChromeProfile(profileKey, targetUrl = '') {
   const resolvedKey = normalizeProfileKey(profileKey);
-  console.log(`[COMPANION] Focusing Chrome profile: "${resolvedKey}"`);
-  if (isChromeProfileOpen(resolvedKey)) {
-    console.log(`[COMPANION] Profile "${resolvedKey}" is already open. Activating window.`);
-    activateChromeWindow();
-    return Promise.resolve(true);
-  }
-  console.log(`[COMPANION] Profile "${resolvedKey}" is not open. Launching profile browser...`);
-  return launchChromeProfileOnce(resolvedKey);
+  console.log(`[COMPANION] Focusing Chrome profile: "${resolvedKey}" (target: "${targetUrl || ''}")`);
+  activateChromeProfile(resolvedKey, targetUrl);
+  return Promise.resolve(true);
 }
 
 function openChromeUrl(profileKey, targetURL) {
@@ -529,49 +603,14 @@ function openChromeUrl(profileKey, targetURL) {
     const urls = Array.isArray(targetURL) ? targetURL : [targetURL || 'https://chatgpt.com/'];
     console.log(`[COMPANION] Opening URLs in profile "${resolvedKey}":`, urls);
 
-    // If THAT SAME PROFILE is already open, queue for extension in that profile to open URL
-    if (isChromeProfileOpen(resolvedKey)) {
-      activateChromeWindow();
-      pushPendingCommand({
-        action: 'OPEN_URL',
-        payload: { url: urls[0], profileKey: resolvedKey },
-        created_at: new Date().toISOString(),
-      });
-      return resolve(true);
-    }
-
-    // Profile is NOT open -> must launch Chrome with that profile cleanly (no CLI urls to avoid duplicate tabs)
-    console.log(`[COMPANION] Profile "${resolvedKey}" is not open. Launching profile browser cleanly...`);
-    const pid = getRunningChromePid();
-    const args = [
-      `--profile-directory=${resolvedKey}`,
-      `--load-extension=/Users/zinwaishine/Desktop/Project_EA/extension`,
-    ];
-
-    try {
-      const child = spawn(CHROME_BINARY, args, {
-        detached: true,
-        stdio: 'ignore',
-      });
-      child.unref();
-
-      // Queue command for extension to handle once it connects
-      pushPendingCommand({
-        action: 'OPEN_URL',
-        payload: { url: urls[0], profileKey: resolvedKey },
-        created_at: new Date().toISOString(),
-      });
-
-      setTimeout(() => {
-        const updatedPid = getRunningChromePid() || pid;
-        activateChromeWindow(updatedPid, urls[0]);
-        console.log(`[COMPANION] Successfully launched Chrome cleanly in profile "${resolvedKey}"`);
-        resolve(true);
-      }, 450);
-    } catch (err) {
-      console.error(`[COMPANION] Error opening URL in profile "${resolvedKey}":`, err.message);
-      reject(err);
-    }
+    // Focus this profile directly with the target URL
+    activateChromeProfile(resolvedKey, urls[0]);
+    pushPendingCommand({
+      action: 'OPEN_URL',
+      payload: { url: urls[0], profileKey: resolvedKey },
+      created_at: new Date().toISOString(),
+    });
+    return resolve(true);
   });
 }
 
@@ -582,7 +621,7 @@ function openOrFocusChromeTabs(profileKey, groupName, targetUrls) {
   const resolvedKey = normalizeProfileKey(profileKey);
   console.log(`[COMPANION] openOrFocusChromeTabs: profile="${resolvedKey}", group="${groupName}"`);
   if (isChromeProfileOpen(resolvedKey)) {
-    activateChromeWindow();
+    activateChromeWindow(null, (Array.isArray(targetUrls) ? targetUrls[0] : targetUrls) || '', '', resolvedKey);
     return Promise.resolve(true);
   }
   return launchChromeProfileOnce(resolvedKey, targetUrls);
@@ -590,14 +629,16 @@ function openOrFocusChromeTabs(profileKey, groupName, targetUrls) {
 
 function focusChromeTabGroup(profileKey, groupName, tabId, defaultUrl, explicitTabUrls, force, tabMode = 'existing_tabs', workerCount = 4, reuseSessionTabs = true) {
   const resolvedKey = normalizeProfileKey(profileKey);
+  const isHero = (groupName || '').toLowerCase().includes('hero');
+  const count = Math.max(1, Math.min(8, parseInt(workerCount, 10) || (isHero ? 1 : 4)));
   const now = Date.now();
-  const cacheKey = `${resolvedKey}-${groupName}-${tabMode}-${workerCount}`;
+  const cacheKey = `${resolvedKey}-${groupName}-${tabMode}-${count}`;
   const shouldSkipWindowLaunch = (!force && cacheKey === lastFocusTabGroupKey && (now - lastFocusTabGroupTime < 2500));
   lastFocusTabGroupTime = now;
   lastFocusTabGroupKey = cacheKey;
 
   return new Promise(async (resolve) => {
-    console.log(`[COMPANION] Auto-focusing Chrome profile "${resolvedKey}" & Tab Group "${groupName}" (mode: ${tabMode}, workers: ${workerCount})...`);
+    console.log(`[COMPANION] Auto-focusing Chrome profile "${resolvedKey}" & Tab Group "${groupName}" (mode: ${tabMode}, workers: ${count})...`);
 
     // 1. Determine all distinct tab URLs for this group
     let groupTabUrls = Array.isArray(explicitTabUrls) && explicitTabUrls.length > 0 ? explicitTabUrls : [];
@@ -630,6 +671,10 @@ function focusChromeTabGroup(profileKey, groupName, tabId, defaultUrl, explicitT
       }
     }
 
+    if (groupTabUrls.length > count) {
+      groupTabUrls = groupTabUrls.slice(0, count);
+    }
+
     if (!targetUrl || targetUrl === 'chrome://newtab') {
       targetUrl = groupTabUrls[0] || 'https://chatgpt.com/';
     }
@@ -640,22 +685,12 @@ function focusChromeTabGroup(profileKey, groupName, tabId, defaultUrl, explicitT
     // 2. Queue command for Chrome Extension to expand and focus all tabs in group
     pushPendingCommand({
       action: 'FOCUS_GROUP',
-      payload: { groupName, tabId, profileKey: resolvedKey, targetUrl, groupTabUrls, tabMode, workerCount, reuseSessionTabs },
+      payload: { groupName, tabId, profileKey: resolvedKey, targetUrl, groupTabUrls, tabMode, workerCount: count, reuseSessionTabs },
       created_at: new Date().toISOString(),
     });
 
-    // 3. Activate window and bring the matching tab to the front
-    const matchTarget = (groupTabUrls[0] || targetUrl || 'chatgpt.com');
-    if (isChromeProfileOpen(resolvedKey)) {
-      console.log(`[COMPANION] Profile "${resolvedKey}" is already open. Activating window & matching tab.`);
-      activateChromeWindow(undefined, targetUrl, matchTarget);
-    } else if (!shouldSkipWindowLaunch) {
-      console.log(`[COMPANION] Profile "${resolvedKey}" is not open. Launching profile browser with group URLs...`);
-      await launchChromeProfileOnce(resolvedKey, groupTabUrls.length > 0 ? groupTabUrls : [targetUrl]);
-    } else {
-      activateChromeWindow(undefined, targetUrl, matchTarget);
-    }
-
+    // 3. Activate window specifically for this profile
+    activateChromeProfile(resolvedKey, targetUrl);
     resolve(true);
   });
 }
@@ -706,7 +741,7 @@ function verifyChromeTabsOpen(profileKey, groupName, expectedUrls = [], tabMode 
     } catch (e) {}
 
     if (winCount === 0) {
-      activateChromeWindow(undefined, targets[0] || 'https://chatgpt.com/', targets[0] || 'chatgpt.com');
+      activateChromeProfile(profileKey);
     }
 
     // 1. First priority: Check live tab groups reported directly by Chrome Extension
@@ -818,58 +853,67 @@ function verifyChromeTabsOpen(profileKey, groupName, expectedUrls = [], tabMode 
 
 
 // 3. Monitor download folder for completed images
-function startDownloadWatcher() {
-  if (!fs.existsSync(activeWatchDir)) {
-    return;
+function watchSingleDir(dirPath) {
+  if (!fs.existsSync(dirPath)) return;
+  console.log(`[COMPANION] Monitoring directory: ${dirPath}`);
+  try {
+    fs.watch(dirPath, (eventType, filename) => {
+      if (!filename) return;
+
+      const lower = filename.toLowerCase();
+      if (
+        lower.endsWith('.crdownload') ||
+        lower.endsWith('.tmp') ||
+        lower.startsWith('.') ||
+        lower.endsWith('.part')
+      ) {
+        return; // Skip partial download files
+      }
+
+      if (
+        !lower.endsWith('.png') &&
+        !lower.endsWith('.jpg') &&
+        !lower.endsWith('.jpeg') &&
+        !lower.endsWith('.webp')
+      ) {
+        return;
+      }
+
+      const fullPath = path.join(dirPath, filename);
+      if (processedFiles.has(fullPath)) return;
+
+      // Verify file write stability (file size unchanging)
+      setTimeout(() => {
+        try {
+          if (!fs.existsSync(fullPath)) return;
+          const stat1 = fs.statSync(fullPath);
+          if (stat1.size === 0) return;
+
+          setTimeout(() => {
+            try {
+              if (!fs.existsSync(fullPath)) return;
+              const stat2 = fs.statSync(fullPath);
+              if (stat1.size !== stat2.size) return; // Still downloading
+
+              // File complete!
+              processedFiles.add(fullPath);
+              handleDetectedDownload(fullPath, filename, stat2.size);
+            } catch (e) {}
+          }, 300);
+        } catch (e) {}
+      }, 200);
+    });
+  } catch (err) {
+    console.warn(`[COMPANION] Could not watch directory ${dirPath}:`, err.message);
   }
+}
 
-  console.log(`[COMPANION] Monitoring directory: ${activeWatchDir}`);
-  fs.watch(activeWatchDir, (eventType, filename) => {
-    if (!filename) return;
-
-    const lower = filename.toLowerCase();
-    if (
-      lower.endsWith('.crdownload') ||
-      lower.endsWith('.tmp') ||
-      lower.startsWith('.') ||
-      lower.endsWith('.part')
-    ) {
-      return; // Skip partial download files
-    }
-
-    if (
-      !lower.endsWith('.png') &&
-      !lower.endsWith('.jpg') &&
-      !lower.endsWith('.jpeg') &&
-      !lower.endsWith('.webp')
-    ) {
-      return;
-    }
-
-    const fullPath = path.join(activeWatchDir, filename);
-    if (processedFiles.has(fullPath)) return;
-
-    // Verify file write stability (file size unchanging)
-    setTimeout(() => {
-      try {
-        if (!fs.existsSync(fullPath)) return;
-        const stat1 = fs.statSync(fullPath);
-        if (stat1.size === 0) return;
-
-        setTimeout(() => {
-          try {
-            if (!fs.existsSync(fullPath)) return;
-            const stat2 = fs.statSync(fullPath);
-            if (stat1.size !== stat2.size) return; // Still downloading
-
-            // File complete!
-            processedFiles.add(fullPath);
-            handleDetectedDownload(fullPath, filename, stat2.size);
-          } catch (e) {}
-        }, 300);
-      } catch (e) {}
-    }, 200);
-  });
+function startDownloadWatcher() {
+  watchSingleDir(activeWatchDir);
+  const downloadsDir = path.join(os.homedir(), 'Downloads');
+  if (downloadsDir !== activeWatchDir) {
+    watchSingleDir(downloadsDir);
+  }
 }
 
 function handleDetectedDownload(filePath, fileName, size) {
@@ -877,6 +921,24 @@ function handleDetectedDownload(filePath, fileName, size) {
     const fileBuf = fs.readFileSync(filePath);
     const hash = crypto.createHash('sha256').update(fileBuf).digest('hex');
     console.log(`[COMPANION] Validated download: ${fileName} (${size} bytes, sha256: ${hash.slice(0, 12)})`);
+
+    // If this is a Hero image download (or twoStageState is active), attach data URL so the workflow receives the local downloaded file
+    if (fileName.toLowerCase().startsWith('fb_hero') || (twoStageState && (twoStageState.is_running || twoStageState.step === 'completed' || twoStageState.step === 'downloading_image'))) {
+      const ext = path.extname(fileName).toLowerCase().replace('.', '') || 'png';
+      const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'webp' ? 'image/webp' : 'image/png';
+      const dataUrl = `data:${mime};base64,${fileBuf.toString('base64')}`;
+      const imageUrl = `http://127.0.0.1:${PORT}/hero-downloaded-image?file=${encodeURIComponent(fileName)}&t=${Date.now()}`;
+      twoStageState = {
+        ...(twoStageState || {}),
+        downloaded_file: fileName,
+        downloaded_file_path: filePath,
+        downloaded_data_url: dataUrl,
+        downloaded_image_url: imageUrl,
+        result_url: imageUrl,
+        updated_at: new Date().toISOString(),
+      };
+      console.log(`[COMPANION] 🎉 Hero image attached to twoStageState: ${fileName} -> ${imageUrl}`);
+    }
 
     // Notify BoltHaven backend of newly downloaded file
     const postData = JSON.stringify({
@@ -1232,7 +1294,7 @@ const server = http.createServer(async (req, res) => {
       try {
         const payload = JSON.parse(body || '{}');
         const profileKey = payload.profile_key || 'Default';
-        await focusChromeProfile(profileKey);
+        await focusChromeProfile(profileKey, payload.url || 'https://chatgpt.com/');
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ status: 'success', message: `Profile ${profileKey} focused` }));
       } catch (e) {
@@ -1275,13 +1337,15 @@ const server = http.createServer(async (req, res) => {
     req.on('end', async () => {
       try {
         const payload = JSON.parse(body || '{}');
-        const profileKey = payload.profile_key || 'Profile 14';
-        const groupName = payload.group_name || 'Enhance IMG';
+        const profileKey = payload.profile_key || (registeredProfiles[0]?.profileKey) || 'Pro';
+        const groupName = payload.group_name || 'Enhance Image';
         const tabId = payload.tab_id || '';
         const groupTabUrls = payload.group_tab_urls || payload.groupTabUrls || [];
+        const defaultUrl = payload.url || payload.default_url || (groupTabUrls[0] || 'https://chatgpt.com/');
         const force = !!payload.force;
         const tabMode = payload.tab_mode || 'existing_tabs';
-        const workerCount = parseInt(payload.worker_count, 10) || 4;
+        const isHero = (groupName || '').toLowerCase().includes('hero');
+        const workerCount = parseInt(payload.worker_count, 10) || (isHero ? 1 : 4);
         const reuseSessionTabs = payload.reuse_session_tabs !== false;
 
         await focusChromeTabGroup(profileKey, groupName, tabId, defaultUrl, groupTabUrls, force, tabMode, workerCount, reuseSessionTabs);
@@ -1306,8 +1370,8 @@ const server = http.createServer(async (req, res) => {
       req.on('end', async () => {
         try {
           const payload = JSON.parse(body || '{}');
-          const profileKey = payload.profile_key || payload.profileKey || 'Profile 14';
-          const groupName = payload.group_name || payload.groupName || 'Enhance IMG';
+          const profileKey = payload.profile_key || payload.profileKey || (registeredProfiles[0]?.profileKey) || 'Pro';
+          const groupName = payload.group_name || payload.groupName || 'Enhance Image';
           const expectedUrls = payload.group_tab_urls || payload.groupTabUrls || payload.expected_urls || [];
           const autoLaunch = !!payload.auto_launch;
           const tabMode = payload.tab_mode || 'existing_tabs';
@@ -1325,8 +1389,8 @@ const server = http.createServer(async (req, res) => {
       return;
     } else {
       // GET request
-      const profileKey = url.searchParams.get('profile_key') || 'Profile 14';
-      const groupName = url.searchParams.get('group_name') || 'Enhance IMG';
+      const profileKey = url.searchParams.get('profile_key') || (registeredProfiles[0]?.profileKey) || 'Pro';
+      const groupName = url.searchParams.get('group_name') || 'Enhance Image';
       const rawUrls = url.searchParams.getAll('urls') || [];
       const expectedUrls = rawUrls.length > 0 ? rawUrls : (url.searchParams.get('urls') ? url.searchParams.get('urls').split(',') : []);
 
@@ -1576,6 +1640,7 @@ function mergeTabGroups(scannedGroups, liveGroups) {
         pushPendingCommand({
           action: 'START_AUTOMATION',
           payload: {
+            profileKey: profile_key,
             tabIds: safeTabIds,
             jobs: jobs || [],
             propertyId: property_id,
@@ -1604,6 +1669,92 @@ function mergeTabGroups(scannedGroups, liveGroups) {
         console.error('[COMPANION] Error in /start-automation:', e.message);
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+
+  // ── Save Generated Image Directly to Disk ──────────────────────────────────
+  if (url.pathname === '/save-generated-image' && req.method === 'POST') {
+    let body = '';
+    req.on('data', (c) => (body += c));
+    req.on('end', async () => {
+      try {
+        const payload = JSON.parse(body || '{}');
+        const imageUrl = payload.url || '';
+        const filename = (payload.filename || `fb_hero_${Date.now()}.png`).replace(/[\/\\]/g, '_').trim();
+        const condoName = payload.condo_name || '';
+
+        if (!imageUrl) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'Missing image url' }));
+        }
+
+        console.log(`[COMPANION] 📥 Direct save request for generated image: ${filename} (URL: ${imageUrl.slice(0, 80)}...)`);
+
+        // Target directories: ~/Downloads and Processing directory
+        const downloadsDir = path.join(os.homedir(), 'Downloads');
+        const downloadFilePath = path.join(downloadsDir, filename);
+        const processingFilePath = path.join(defaultProcessingDir, filename);
+
+        let buffer = null;
+        if (imageUrl.startsWith('data:')) {
+          const base64Data = imageUrl.replace(/^data:image\/\w+;base64,/, '');
+          buffer = Buffer.from(base64Data, 'base64');
+        } else if (imageUrl.startsWith('http:') || imageUrl.startsWith('https:')) {
+          buffer = await new Promise((resolve, reject) => {
+            const https = require('https');
+            const httpMod = imageUrl.startsWith('https:') ? https : http;
+            httpMod.get(imageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } }, (resp) => {
+              if (resp.statusCode >= 300 && resp.statusCode < 400 && resp.headers.location) {
+                httpMod.get(resp.headers.location, (redResp) => {
+                  const chunks = [];
+                  redResp.on('data', (c) => chunks.push(c));
+                  redResp.on('end', () => resolve(Buffer.concat(chunks)));
+                  redResp.on('error', reject);
+                });
+                return;
+              }
+              const chunks = [];
+              resp.on('data', (c) => chunks.push(c));
+              resp.on('end', () => resolve(Buffer.concat(chunks)));
+              resp.on('error', reject);
+            }).on('error', reject);
+          }).catch((err) => {
+            console.warn('[COMPANION] HTTP image buffer fetch warning:', err.message);
+            return null;
+          });
+        }
+
+        if (buffer && buffer.length > 0) {
+          try { fs.writeFileSync(downloadFilePath, buffer); } catch (e) {}
+          try { fs.writeFileSync(processingFilePath, buffer); } catch (e) {}
+          console.log(`[COMPANION] ✓ Saved generated image to disk:\n  - ${downloadFilePath} (${buffer.length} bytes)\n  - ${processingFilePath}`);
+
+          // Update twoStageState so UI instantly marks step as completed
+          twoStageState = {
+            ...twoStageState,
+            is_running: false,
+            step: 'completed',
+            result_url: imageUrl,
+            downloaded_file: filename,
+            updated_at: new Date().toISOString(),
+          };
+
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({
+            status: 'success',
+            download_path: downloadFilePath,
+            processing_path: processingFilePath,
+            size: buffer.length,
+          }));
+        } else {
+          throw new Error('Empty image buffer received');
+        }
+      } catch (err) {
+        console.warn('[COMPANION] Error saving generated image directly:', err.message);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: err.message }));
       }
     });
     return;
@@ -1646,6 +1797,20 @@ function mergeTabGroups(scannedGroups, liveGroups) {
       attempts++;
     }
     const result = global.lastInspectResult || { error: 'Timeout waiting for inspect result' };
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify(result));
+  }
+
+  if (url.pathname === '/test-attach' && req.method === 'GET') {
+    global.lastInspectResult = null;
+    pushPendingCommand({ action: 'TEST_ATTACH', payload: {}, created_at: new Date().toISOString() });
+    console.log('[COMPANION] Test Attach command queued');
+    let attempts = 0;
+    while (attempts < 60 && !global.lastInspectResult) {
+      await new Promise((r) => setTimeout(r, 200));
+      attempts++;
+    }
+    const result = global.lastInspectResult || { error: 'Timeout waiting for test attach result' };
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify(result));
   }
@@ -1709,15 +1874,15 @@ function mergeTabGroups(scannedGroups, liveGroups) {
     }
   }
 
-  // ── Two-Stage Staging Automation (Group 2: Tab 1 Prompt Extractor -> Tab 2 Staging) ──
+  // ── Two-Stage / Direct Staging Automation (FB Hero) ──
   if (url.pathname === '/start-two-stage-staging' && req.method === 'POST') {
     let body = '';
     req.on('data', (c) => (body += c));
     req.on('end', async () => {
       try {
         const payload = JSON.parse(body || '{}');
-        const profileKey = payload.profile_key || 'Profile 14';
-        const groupName = payload.group_name || 'FB Hero';
+        const profileKey = payload.profile_key || (registeredProfiles[0]?.profileKey) || 'Pro';
+        const groupName = payload.group_name || 'BG Hero Generate';
         const condoName = payload.condo_name || payload.title || '';
         const initialPrompt = payload.initial_prompt || payload.prompt || '';
         const useRef = payload.use_reference_image !== false;
@@ -1730,12 +1895,21 @@ function mergeTabGroups(scannedGroups, liveGroups) {
         const useCondoImgs = payload.use_condo_images !== false;
         const customBase = payload.target_folder || payload.base_dir;
         const baseDir = (customBase && fs.existsSync(customBase)) ? customBase : CONDO_BASE_DIR;
-        const skipTab1 = !!payload.skip_tab1 || payload.staging_mode === 'direct_tab2';
+        const skipTab1 = !!payload.skip_tab1 || payload.staging_mode === 'direct_tab2' || payload.worker_count === 1;
+        const tabMode = payload.tab_mode || payload.worker_tab_mode || 'existing_tabs';
+        const workerCount = skipTab1 ? 1 : (parseInt(payload.worker_count, 10) || 2);
+        const reuseSessionTabs = payload.reuse_session_tabs !== false;
+
+        // Ensure the connected Chrome Profile is open and focused with the right tab count (1 for Direct, 2 for 2-Stage)
+        const resolvedProfileKey = normalizeProfileKey(profileKey);
+        activateChromeProfile(resolvedProfileKey, 'https://chatgpt.com/');
 
         // Read local condo images 1, 2, 3 (Strictly Read-Only!)
-        let condoImages = [];
-        let matchedDir = '';
-        if (useCondoImgs && condoName && fs.existsSync(baseDir)) {
+        let condoImages = Array.isArray(payload.condo_images) && payload.condo_images.length > 0
+          ? payload.condo_images
+          : [];
+        let matchedDir = payload.matched_folder || '';
+        if (condoImages.length === 0 && useCondoImgs && condoName && fs.existsSync(baseDir)) {
           matchedDir = findCondoDirectory(condoName, baseDir);
           if (matchedDir) {
             const folderPath = path.join(baseDir, matchedDir);
@@ -1747,6 +1921,12 @@ function mergeTabGroups(scannedGroups, liveGroups) {
           }
         }
 
+        console.log(`[COMPANION] 🚀 Staging Command Prepared for "${condoName}":`);
+        console.log(`  - Reference image present: ${!!referenceImage}`);
+        console.log(`  - Condo images count: ${condoImages.length} (${condoImages.map((i) => i.filename || i.index).join(', ')})`);
+        console.log(`  - Matched directory: ${matchedDir || 'none'}`);
+        console.log(`  - Direct Staging (1 tab): ${skipTab1}`);
+
         twoStageState = {
           is_running: true,
           step: 'starting',
@@ -1754,6 +1934,8 @@ function mergeTabGroups(scannedGroups, liveGroups) {
           matched_folder: matchedDir || 'not found',
           images_attached: (referenceImage ? 1 : 0) + condoImages.length,
           extracted_prompt: '',
+          result_url: '',
+          downloaded_file: '',
           error: null,
           started_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
@@ -1762,27 +1944,29 @@ function mergeTabGroups(scannedGroups, liveGroups) {
         pushPendingCommand({
           action: 'START_TWO_STAGE_STAGING',
           payload: {
-            profileKey,
+            profileKey: resolvedProfileKey,
             groupName,
             initialPrompt,
-            referenceImage, // manual example image pasted 1st
-            condoImages,    // 1.png, 2.png, 3.png pasted right after
+            referenceImage, // 1st: manual reference image
+            condoImages,    // 2nd: 1.png, 2.png, 3.png
             condoName,
             matchedFolder: matchedDir,
             skipTab1,
+            tabMode,
+            workerCount,
+            reuseSessionTabs,
           },
           created_at: new Date().toISOString(),
         });
 
-        activateChromeWindow();
-
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
           status: 'success',
-          message: `Two-stage staging initiated for "${condoName}" in group "${groupName}"`,
+          message: `${skipTab1 ? 'Direct (1-Tab)' : 'Two-stage (2-Tab)'} Hero generation initiated for "${condoName}" in group "${groupName}"`,
           matched_folder: matchedDir,
           images_count: condoImages.length,
           reference_image_present: !!referenceImage,
+          tabs_used: workerCount,
         }));
       } catch (e) {
         console.error('[COMPANION] Error starting two-stage staging:', e);
@@ -1801,26 +1985,158 @@ function mergeTabGroups(scannedGroups, liveGroups) {
         try {
           const update = JSON.parse(body || '{}');
           twoStageState = { ...twoStageState, ...update, updated_at: new Date().toISOString() };
-          res.writeHead(200, { 'Content-Type': 'application/json' });
+
+          // If downloaded_file is provided, resolve it
+          const rawFile = update.downloaded_file || twoStageState?.downloaded_file;
+          if (rawFile) {
+            const safeName = path.basename(rawFile);
+            const downloadsDir = path.join(os.homedir(), 'Downloads');
+            const targetPath = path.join(downloadsDir, safeName);
+            if (fs.existsSync(targetPath)) {
+              twoStageState.downloaded_file = safeName;
+              twoStageState.downloaded_file_path = targetPath;
+              twoStageState.downloaded_image_url = `http://127.0.0.1:${PORT}/hero-downloaded-image?file=${encodeURIComponent(safeName)}&t=${Date.now()}`;
+            }
+          }
+
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
           res.end(JSON.stringify({ status: 'ok', twoStageState }));
         } catch (e) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
           res.end(JSON.stringify({ error: e.message }));
         }
       });
       return;
     } else {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
+      // GET request
+      if (twoStageState && twoStageState.downloaded_file) {
+        const safeName = path.basename(twoStageState.downloaded_file);
+        const downloadsDir = path.join(os.homedir(), 'Downloads');
+        const targetPath = path.join(downloadsDir, safeName);
+        if (fs.existsSync(targetPath)) {
+          twoStageState.downloaded_file_path = targetPath;
+          twoStageState.downloaded_image_url = `http://127.0.0.1:${PORT}/hero-downloaded-image?file=${encodeURIComponent(safeName)}`;
+        }
+      } else {
+        // Fallback: check latest fb_hero in Downloads
+        try {
+          const downloadsDir = path.join(os.homedir(), 'Downloads');
+          const heroFiles = fs.readdirSync(downloadsDir)
+            .filter((f) => f.toLowerCase().startsWith('fb_hero') && f.toLowerCase().endsWith('.png'))
+            .map((f) => ({ name: f, path: path.join(downloadsDir, f), mtime: fs.statSync(path.join(downloadsDir, f)).mtimeMs }))
+            .sort((a, b) => b.mtime - a.mtime);
+          if (heroFiles.length > 0) {
+            twoStageState = {
+              ...(twoStageState || {}),
+              downloaded_file: heroFiles[0].name,
+              downloaded_file_path: heroFiles[0].path,
+              downloaded_image_url: `http://127.0.0.1:${PORT}/hero-downloaded-image?file=${encodeURIComponent(heroFiles[0].name)}`,
+            };
+          }
+        } catch (e) {}
+      }
+
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
       return res.end(JSON.stringify({ status: 'success', state: twoStageState }));
     }
   }
 
+  // ── Serve Downloaded Hero Image ──
+  if (url.pathname === '/hero-downloaded-image' && (req.method === 'GET' || req.method === 'HEAD')) {
+    const rawFile = url.searchParams.get('file') || (twoStageState && twoStageState.downloaded_file) || '';
+    const safeName = path.basename(rawFile);
+    const downloadsDir = path.join(os.homedir(), 'Downloads');
+    let targetPath = safeName ? path.join(downloadsDir, safeName) : '';
+
+    if (!targetPath || !fs.existsSync(targetPath)) {
+      if (safeName && fs.existsSync(path.join(defaultProcessingDir, safeName))) {
+        targetPath = path.join(defaultProcessingDir, safeName);
+      }
+    }
+
+    if (!targetPath || !fs.existsSync(targetPath)) {
+      try {
+        const files = fs.readdirSync(downloadsDir)
+          .filter((f) => f.toLowerCase().startsWith('fb_hero') && f.toLowerCase().endsWith('.png'))
+          .map((f) => ({ name: f, path: path.join(downloadsDir, f), mtime: fs.statSync(path.join(downloadsDir, f)).mtimeMs }))
+          .sort((a, b) => b.mtime - a.mtime);
+        if (files.length > 0) {
+          targetPath = files[0].path;
+        }
+      } catch (e) {}
+    }
+
+    if (!targetPath || !fs.existsSync(targetPath)) {
+      res.writeHead(404, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      return res.end(JSON.stringify({ error: 'Hero image not found on disk' }));
+    }
+
+    const stat = fs.statSync(targetPath);
+    const ext = path.extname(targetPath).toLowerCase().replace('.', '') || 'png';
+    const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'webp' ? 'image/webp' : 'image/png';
+    res.writeHead(200, {
+      'Content-Type': mime,
+      'Content-Length': stat.size,
+      'Access-Control-Allow-Origin': '*',
+      'Cache-Control': 'no-cache',
+    });
+    fs.createReadStream(targetPath).pipe(res);
+    return;
+  }
+
+  // ── Reveal Downloaded File in macOS Finder ──
+  if (url.pathname === '/reveal-file' && (req.method === 'POST' || req.method === 'GET')) {
+    const rawFile = url.searchParams.get('file') || (twoStageState && twoStageState.downloaded_file) || '';
+    const safeName = path.basename(rawFile);
+    const downloadsDir = path.join(os.homedir(), 'Downloads');
+    let targetPath = safeName ? path.join(downloadsDir, safeName) : (twoStageState?.downloaded_file_path || '');
+    if (!fs.existsSync(targetPath)) {
+      targetPath = path.join(defaultProcessingDir, safeName);
+    }
+    if (!fs.existsSync(targetPath)) {
+      try {
+        const files = fs.readdirSync(downloadsDir)
+          .filter((f) => f.toLowerCase().startsWith('fb_hero') && f.toLowerCase().endsWith('.png'))
+          .map((f) => ({ name: f, path: path.join(downloadsDir, f), mtime: fs.statSync(path.join(downloadsDir, f)).mtimeMs }))
+          .sort((a, b) => b.mtime - a.mtime);
+        if (files.length > 0) {
+          targetPath = files[0].path;
+        }
+      } catch (e) {}
+    }
+
+    if (fs.existsSync(targetPath)) {
+      try {
+        execSync(`open -R "${targetPath}" 2>/dev/null`);
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        return res.end(JSON.stringify({ status: 'ok', file: targetPath }));
+      } catch (e) {}
+    }
+    res.writeHead(404, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+    return res.end(JSON.stringify({ error: 'File not found' }));
+  }
+
   // ── Poll for Pending Extension Command (called by the extension background on an interval) ─
   if (url.pathname === '/poll-command' && req.method === 'GET') {
+    const rawClientKey = url.searchParams.get('profile_key') || '';
+    const clientKey = rawClientKey ? normalizeProfileKey(rawClientKey) : '';
+
     if (pendingAutomationCommands.length > 0) {
-      const cmd = pendingAutomationCommands.shift();
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ status: 'command', command: cmd }));
+      // Find a command targeted for this specific client profile, or untargeted command
+      const cmdIndex = pendingAutomationCommands.findIndex((c) => {
+        if (!c || !c.payload) return true;
+        const targetRaw = c.payload.profileKey || c.payload.profile_key || '';
+        if (!targetRaw) return true;
+        const targetKey = normalizeProfileKey(targetRaw);
+        return !clientKey || targetKey === clientKey;
+      });
+
+      if (cmdIndex !== -1) {
+        const cmd = pendingAutomationCommands.splice(cmdIndex, 1)[0];
+        console.log(`[COMPANION] Dispatched command "${cmd.action}" to client profile "${clientKey || 'any'}"`);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ status: 'command', command: cmd }));
+      }
     }
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ status: 'idle' }));

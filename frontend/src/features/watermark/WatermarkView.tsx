@@ -52,6 +52,7 @@ import {
   type CropStudioFormat,
   INITIAL_CROP_FORMATS,
   getSavedCropFormats,
+  fetchCropFormatsFromBackend,
   saveCropFormatsList,
   getActiveCropFormatId,
   setActiveCropFormatId,
@@ -918,6 +919,9 @@ export const WatermarkView: React.FC = () => {
     const handleSync = () => {
       setCropStudioFormats(getSavedCropFormats());
     };
+    fetchCropFormatsFromBackend().then((fmts) => {
+      if (fmts && fmts.length > 0) setCropStudioFormats(fmts);
+    }).catch(() => {});
     window.addEventListener('focus', handleSync);
     window.addEventListener('ea_crop_formats_updated', handleSync);
     return () => {
@@ -1453,7 +1457,7 @@ export const WatermarkView: React.FC = () => {
       setActiveCropFormatId(formatId);
       syncCropFormatToWorkflowConfig(saved);
       setShowSaveFormatModal(false);
-      showToast(`✨ Updated format "${saved.name}" to ${targetWidth}×${targetHeight} (${resolvedAspect})!`);
+      showToast(`✨ Updated format "${saved.name}" in database (${targetWidth}×${targetHeight})!`);
     }
   };
 
@@ -1530,7 +1534,7 @@ export const WatermarkView: React.FC = () => {
     setActiveCropFormatId(newFormatId);
     syncCropFormatToWorkflowConfig(newFormat);
     setShowSaveFormatModal(false);
-    showToast(`✨ Saved format "${newFormat.name}"! Ready to use in layout.`);
+    showToast(`✨ Saved format "${newFormat.name}" to database! Ready to use in Canva & workflows.`);
   };
 
   // Load a Saved Studio Format

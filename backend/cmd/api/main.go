@@ -183,6 +183,16 @@ func main() {
 	wf.Get("/config", handlers.GetWorkflowConfig)
 	wf.Post("/config", handlers.SaveWorkflowConfig)
 
+	// Prompt Templates File-based Persistence Routes (no DB touch)
+	promptsGroup := app.Group("/api/prompt-templates")
+	promptsGroup.Get("/", handlers.GetPromptTemplates)
+	promptsGroup.Post("/", handlers.SavePromptTemplates)
+
+	// Crop & Cut Studio Formats Persistence Routes (no DB touch)
+	cropFormatsGroup := app.Group("/api/crop-formats")
+	cropFormatsGroup.Get("/", handlers.GetCropFormats)
+	cropFormatsGroup.Post("/", handlers.SaveCropFormats)
+
 	// n8n Automation Engine Integration Routes (Admin-protected)
 	n8nRoutes := app.Group("/api/integrations/n8n", middleware.Protected(), middleware.RequireRole(models.RoleAdmin))
 	n8nRoutes.Get("/status", handlers.N8NStatusCheck)

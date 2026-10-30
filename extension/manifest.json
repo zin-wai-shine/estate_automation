@@ -12,7 +12,8 @@
     "scripting",
     "downloads",
     "clipboardRead",
-    "clipboardWrite"
+    "clipboardWrite",
+    "identity"
   ],
   "host_permissions": [
     "http://localhost:8085/*",

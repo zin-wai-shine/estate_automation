@@ -174,6 +174,12 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
   });
 
   const [workerTabCount, setWorkerTabCount] = useState<number>(() => {
+    if (isHero) {
+      const mode =
+        boxConfig.stagingMode ||
+        (propertyContext?.upstreamPrompts && propertyContext.upstreamPrompts.length > 0 ? 'direct_tab2' : 'two_stage_tabs');
+      return mode === 'direct_tab2' ? 1 : 2;
+    }
     return boxConfig.workerTabCount || 4;
   });
 
@@ -251,8 +257,15 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
     setShowCondoProjectCard(boxConfig.showCondoProjectCard !== false);
     setShowImagesToEnhance(resolvedEnhanceImgs);
     setShowTabGroupsPipelines(resolvedTabGroups);
+    const resolvedStagingMode =
+      boxConfig.stagingMode ||
+      (propertyContext?.upstreamPrompts && propertyContext.upstreamPrompts.length > 0 ? 'direct_tab2' : 'two_stage_tabs');
     setWorkerTabMode(boxConfig.workerTabMode || 'existing_tabs');
-    setWorkerTabCount(boxConfig.workerTabCount || 4);
+    setWorkerTabCount(
+      isHero
+        ? (resolvedStagingMode === 'direct_tab2' ? 1 : 2)
+        : (boxConfig.workerTabCount || 4)
+    );
     setReuseSessionTabs(boxConfig.reuseSessionTabs !== false);
     setTargetFolder(
       boxConfig.targetFolder ||
@@ -1298,21 +1311,35 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
                       type="button"
                       onClick={() => {
                         setStagingMode('direct_tab2');
-                        updateSettings({ stagingMode: 'direct_tab2', skipTab1: true });
+                        setWorkerTabCount(1);
+                        updateSettings({
+                          stagingMode: 'direct_tab2',
+                          skipTab1: true,
+                          workerTabCount: 1,
+                          browserWorkerCount: 1,
+                          subtitle: '1 Tab',
+                        });
                       }}
                       style={getAppleSegmentStyle(stagingMode === 'direct_tab2')}
                     >
-                      Direct (Skip Tab 1)
+                      Direct (1 Tab)
                     </button>
                     <button
                       type="button"
                       onClick={() => {
                         setStagingMode('two_stage_tabs');
-                        updateSettings({ stagingMode: 'two_stage_tabs', skipTab1: false });
+                        setWorkerTabCount(2);
+                        updateSettings({
+                          stagingMode: 'two_stage_tabs',
+                          skipTab1: false,
+                          workerTabCount: 2,
+                          browserWorkerCount: 2,
+                          subtitle: '2 Tabs',
+                        });
                       }}
                       style={getAppleSegmentStyle(stagingMode !== 'direct_tab2')}
                     >
-                      2-Stage Browser
+                      2-Stage (2 Tabs)
                     </button>
                   </div>
                 </div>
@@ -1610,27 +1637,50 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
                         Parallel Workers:
                       </span>
                       <span style={{ fontSize: '0.625rem', fontWeight: 700, color: '#3B82F6' }}>
-                        {workerTabCount} {workerTabCount === 1 ? 'Tab Worker' : 'Tabs Concurrent'}
+                        {isHero && stagingMode === 'direct_tab2'
+                          ? '1 Tab Worker (Direct Mode)'
+                          : `${workerTabCount} ${workerTabCount === 1 ? 'Tab Worker' : 'Tabs Concurrent'}`}
                       </span>
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px' }}>
                       {[1, 2, 3, 4].map((count) => {
-                        const isSelected = workerTabCount === count;
+                        const effectiveCount = isHero && stagingMode === 'direct_tab2' ? 1 : workerTabCount;
+                        const isSelected = effectiveCount === count;
+                        const isDisabledForDirect = isHero && stagingMode === 'direct_tab2' && count > 1;
                         return (
                           <button
                             key={count}
                             type="button"
+                            disabled={isDisabledForDirect}
                             onClick={() => {
+                              if (isDisabledForDirect) return;
                               setWorkerTabCount(count);
-                              updateSettings({ workerTabCount: count });
+                              if (isHero) {
+                                const nextMode = count === 1 ? 'direct_tab2' : 'two_stage_tabs';
+                                setStagingMode(nextMode);
+                                updateSettings({
+                                  workerTabCount: count,
+                                  browserWorkerCount: count,
+                                  stagingMode: nextMode,
+                                  skipTab1: count === 1,
+                                  subtitle: `${count} ${count === 1 ? 'Tab' : 'Tabs'}`,
+                                });
+                              } else {
+                                updateSettings({
+                                  workerTabCount: count,
+                                  browserWorkerCount: count,
+                                  subtitle: `${count} ${count === 1 ? 'Tab' : 'Tabs'}`,
+                                });
+                              }
                             }}
                             style={{
                               padding: '5px 0',
                               fontSize: '0.6875rem',
                               fontWeight: 700,
                               borderRadius: '6px',
-                              cursor: 'pointer',
+                              cursor: isDisabledForDirect ? 'not-allowed' : 'pointer',
+                              opacity: isDisabledForDirect ? 0.4 : 1,
                               transition: 'all 0.15s ease',
                               border: isSelected ? '1px solid #3B82F6' : '1px solid var(--border-color)',
                               backgroundColor: isSelected ? '#3B82F6' : (isDark ? 'rgba(0,0,0,0.15)' : '#FFFFFF'),
@@ -1643,9 +1693,11 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
                       })}
                     </div>
                     <div style={{ fontSize: '0.5625rem', color: 'var(--text-muted)', paddingLeft: '2px' }}>
-                      {workerTabCount === 1
-                        ? '1 photo processed sequentially (safest from rate limits).'
-                        : `${workerTabCount} photos processed simultaneously in parallel (${workerTabCount}x speed).`}
+                      {isHero && stagingMode === 'direct_tab2'
+                        ? 'Direct Mode works in 1 tab: attaches Reference Image (1st) + 3 Condo Photos + Prompt -> Generates & Downloads Image.'
+                        : workerTabCount === 1
+                          ? '1 photo processed sequentially (safest from rate limits).'
+                          : `${workerTabCount} photos processed simultaneously in parallel (${workerTabCount}x speed).`}
                     </div>
                   </div>
 

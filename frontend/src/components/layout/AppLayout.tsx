@@ -53,6 +53,20 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
   const rawTab = location.pathname.split('/')[1] || 'add-url';
   const activeTab = rawTab === 'facebook-tokens' ? 'auth-manager' : rawTab;
 
+  const isWorkflowCanvasRoute = () => {
+    if (typeof window === 'undefined') return false;
+    if (location.pathname === '/create-workflow') {
+      try {
+        const sp = new URLSearchParams(window.location.search);
+        if (sp.get('id') || sp.get('format') || sp.get('canvas') === 'true') return true;
+        return localStorage.getItem('ea_workflow_canvas_open') === 'true';
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  };
+
   // Desktop sidebar collapse state
   const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -61,36 +75,32 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     return false;
   });
 
-  // Canvas mode (toggle sidebar into collapsed mode without hiding it)
-  const [isCanvasMode, setIsCanvasMode] = useState<boolean>(false);
-  const previousCollapsedRef = useRef<boolean | null>(null);
+  // Canvas mode (sidebar is hidden by default on canvas open, toggled to original 56px icon sidebar)
+  const [isCanvasMode, setIsCanvasMode] = useState<boolean>(() => isWorkflowCanvasRoute());
+  const [isCanvasSidebarVisible, setIsCanvasSidebarVisible] = useState<boolean>(false);
 
   useEffect(() => {
     const handleSetCanvasMode = (e: Event) => {
       const customEvent = e as CustomEvent<{ active: boolean }>;
       const active = Boolean(customEvent.detail?.active);
       setIsCanvasMode(active);
-      if (active) {
-        // Toggle to collapsed icon-only sidebar and remember previous state
-        previousCollapsedRef.current = isCollapsed;
-        setIsCollapsed(true);
-      } else {
-        // Restore collapse state
-        if (previousCollapsedRef.current !== null) {
-          setIsCollapsed(previousCollapsedRef.current);
-          previousCollapsedRef.current = null;
-        }
-      }
+      setIsCanvasSidebarVisible(false);
     };
     window.addEventListener('ea_set_canvas_mode', handleSetCanvasMode);
     return () => {
       window.removeEventListener('ea_set_canvas_mode', handleSetCanvasMode);
     };
-  }, [isCollapsed]);
+  }, []);
 
   useEffect(() => {
-    setIsCanvasMode(false);
-  }, [location.pathname]);
+    if (isWorkflowCanvasRoute()) {
+      setIsCanvasMode(true);
+      setIsCanvasSidebarVisible(false);
+    } else {
+      setIsCanvasMode(false);
+      setIsCanvasSidebarVisible(false);
+    }
+  }, [location.pathname, location.search]);
 
   // Mobile drawer state & screen size detection
   const [isMobileOpen, setIsMobileOpen] = useState(false);
@@ -187,11 +197,17 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
       return;
     }
 
+    if (isCanvasMode) {
+      setIsCanvasSidebarVisible(false);
+    }
+
     navigate(`/${id}`);
     setIsMobileOpen(false);
   };
 
-  const currentSidebarWidth = isMobile ? '250px' : (isCollapsed ? '56px' : '250px');
+  const currentSidebarWidth = isCanvasMode
+    ? (isCanvasSidebarVisible ? '56px' : '0px')
+    : (isMobile ? '250px' : (isCollapsed ? '56px' : '250px'));
 
   // Custom tooltip shown to the right of collapsed sidebar icons
   const [navTip, setNavTip] = useState<{ label: string; top: number; left: number } | null>(null);
@@ -288,11 +304,11 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                 width: currentSidebarWidth,
                 minWidth: currentSidebarWidth,
                 height: '100%',
-                padding: isCollapsed ? '0 0.5rem' : '0 1.25rem',
-                display: 'flex',
+                padding: currentSidebarWidth === '0px' ? 0 : (isCollapsed || isCanvasMode ? '0 0.5rem' : '0 1.25rem'),
+                display: currentSidebarWidth === '0px' ? 'none' : 'flex',
                 alignItems: 'center',
-                justifyContent: isCollapsed ? 'center' : 'flex-start',
-                borderRight: '1px solid var(--border-color)',
+                justifyContent: (isCollapsed || isCanvasMode) ? 'center' : 'flex-start',
+                borderRight: currentSidebarWidth === '0px' ? 'none' : '1px solid var(--border-color)',
                 borderBottom: 'none',
                 backgroundColor: isCanvasMode ? 'var(--bg-secondary)' : undefined,
                 pointerEvents: isCanvasMode ? 'auto' : undefined,
@@ -301,7 +317,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                 transition: 'width 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
               }}
             >
-              {!isCollapsed ? (
+              {!isCollapsed && !isCanvasMode ? (
                 <div style={{ overflow: 'hidden', whiteSpace: 'nowrap', textAlign: 'left' }}>
                   <h1 style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.2, margin: 0, letterSpacing: '-0.01em', textAlign: 'left' }}>
                     BoltHavenProperty
@@ -394,7 +410,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         style={{
           width: currentSidebarWidth,
           backgroundColor: 'var(--bg-secondary)',
-          borderRight: '1px solid var(--border-color)',
+          borderRight: currentSidebarWidth === '0px' ? 'none' : '1px solid var(--border-color)',
           display: 'flex',
           flexDirection: 'column',
           justifyContent: 'space-between',
@@ -405,7 +421,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
           zIndex: 30,
           transform: isMobile
             ? (isMobileOpen ? 'translateX(0)' : 'translateX(-100%)')
-            : 'none',
+            : (isCanvasMode && !isCanvasSidebarVisible ? 'translateX(-100%)' : 'translateX(0)'),
           transition: 'width 0.25s cubic-bezier(0.4, 0, 0.2, 1), transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
           overflow: 'hidden',
         }}
@@ -642,12 +658,18 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
             <div style={{ padding: '0.25rem 0.625rem 0.625rem', borderTop: '1px solid var(--border-color)' }}>
               <button
                 type="button"
-                onClick={toggleCollapse}
+                onClick={() => {
+                  if (isCanvasMode) {
+                    setIsCanvasSidebarVisible(false);
+                  } else {
+                    toggleCollapse();
+                  }
+                }}
                 style={{
                   width: '100%',
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: isCollapsed ? 'center' : 'flex-start',
+                  justifyContent: (isCollapsed || isCanvasMode) ? 'center' : 'flex-start',
                   gap: '0.5rem',
                   padding: '0.5rem 0.625rem',
                   color: 'var(--text-muted)',
@@ -667,15 +689,56 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                   e.currentTarget.style.color = 'var(--text-muted)';
                   e.currentTarget.style.backgroundColor = 'transparent';
                 }}
-                title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                title={isCanvasMode ? 'Hide sidebar' : (isCollapsed ? 'Expand sidebar' : 'Collapse sidebar')}
               >
                 <FiSidebar style={{ fontSize: '0.9375rem', flexShrink: 0 }} />
-                {!isCollapsed && <span>Collapse sidebar</span>}
+                {!isCollapsed && !isCanvasMode && <span>Collapse sidebar</span>}
               </button>
             </div>
           )}
         </div>
       </aside>
+
+      {/* Canvas Mode Standalone Sidebar Toggle Button (shown when sidebar is hidden) */}
+      {isCanvasMode && !isCanvasSidebarVisible && (
+        <button
+          type="button"
+          onClick={() => setIsCanvasSidebarVisible(true)}
+          title="Show sidebar"
+          aria-label="Show sidebar"
+          style={{
+            position: 'fixed',
+            bottom: '12px',
+            left: '10px',
+            width: '36px',
+            height: '36px',
+            borderRadius: '6px',
+            backgroundColor: isDark ? '#1C2128' : '#FFFFFF',
+            border: '1px solid var(--border-color)',
+            color: 'var(--text-secondary)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            zIndex: 40,
+            boxShadow: isDark ? '0 2px 8px rgba(0, 0, 0, 0.35)' : '0 2px 8px rgba(0, 0, 0, 0.08)',
+            transition: 'all 0.15s ease',
+            outline: 'none',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.color = 'var(--text-primary)';
+            e.currentTarget.style.backgroundColor = isDark ? '#2D333B' : '#F1F5F9';
+            e.currentTarget.style.borderColor = isDark ? '#444C56' : '#CBD5E1';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.color = 'var(--text-secondary)';
+            e.currentTarget.style.backgroundColor = isDark ? '#1C2128' : '#FFFFFF';
+            e.currentTarget.style.borderColor = 'var(--border-color)';
+          }}
+        >
+          <FiSidebar size={16} />
+        </button>
+      )}
 
       {/* Main Right Content Area */}
       <div

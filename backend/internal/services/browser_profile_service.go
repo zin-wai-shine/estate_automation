@@ -671,13 +671,14 @@ func (s *BrowserProfileService) UpdateLane(lane *models.ProcessingLane) error {
 }
 
 // StartAutomationViaCompanion asks the companion service to dispatch automation to the Chrome extension
-func (s *BrowserProfileService) StartAutomationViaCompanion(profileKey, propertyID string, tabIDs []int, jobs []models.ImageProcessingJob, tabMode string, workerCount int, reuseSessionTabs *bool) (map[string]interface{}, error) {
+func (s *BrowserProfileService) StartAutomationViaCompanion(profileKey, propertyID, groupName string, tabIDs []int, jobs []models.ImageProcessingJob, tabMode string, workerCount int, reuseSessionTabs *bool) (map[string]interface{}, error) {
 	payload := map[string]interface{}{
-		"profile_key": profileKey,
-		"property_id": propertyID,
-		"tab_ids":     tabIDs,
-		"jobs":        jobs,
-		"tab_mode":    tabMode,
+		"profile_key":  profileKey,
+		"property_id":  propertyID,
+		"group_name":   groupName,
+		"tab_ids":      tabIDs,
+		"jobs":         jobs,
+		"tab_mode":     tabMode,
 		"worker_count": workerCount,
 	}
 	if reuseSessionTabs != nil {

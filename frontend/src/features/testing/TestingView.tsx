@@ -6250,6 +6250,12 @@ export const TestingView: React.FC = () => {
                           }
 
                           localStorage.setItem('estate_prompt_templates', JSON.stringify(list));
+                          window.dispatchEvent(new CustomEvent('ea_prompt_templates_updated', { detail: list }));
+                          fetch('/api/prompt-templates', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(list),
+                          }).catch(() => {});
                         } catch (err) {
                           console.error('Failed to save prompt template to database', err);
                         }

@@ -1,5 +1,5 @@
 import { type WatermarkConfig, loadActiveWatermarkConfig } from '../autopost/watermarkStorage';
-import { drawWatermarkOnContext } from '../autopost/watermarkCanvas';
+import { drawWatermarkOnContext, loadImageElement } from '../autopost/watermarkCanvas';
 
 export type WatermarkPosition =
   | 'top-left'
@@ -53,6 +53,38 @@ export const FOCUS_COORDS: Record<WatermarkPosition, { x: number; y: number }> =
 
 export const INITIAL_CROP_FORMATS: CropStudioFormat[] = [
   {
+    id: 'format-grid-2split',
+    name: 'FB Hero Cut',
+    description: 'Social grid split • 2 seamless horizontal swipe tiles',
+    mode: 'grid',
+    targetWidth: 1080,
+    targetHeight: 1080,
+    aspect: '1:1',
+    fitMode: 'cover',
+    focusPosition: 'center',
+    cropZoom: 1,
+    gridLayoutId: 'two-squares',
+    watermarkConfig: {
+      enabled: true,
+      type: 'text',
+      logoUrl: '',
+      logoName: '',
+      text: 'BoltHaven Property',
+      textColor: '#FFFFFF',
+      fontSize: 26,
+      fontWeight: '600',
+      opacity: 85,
+      scale: 25,
+      position: 'bottom-right',
+      margin: 4,
+      hasShadow: true,
+      smartScope: 'all',
+    },
+    isDefault: false,
+    createdAt: 1792509885458,
+    updatedAt: Date.now(),
+  },
+  {
     id: 'format-1792362113668',
     name: 'FB Format',
     description: '1080 × 1350 px • Portrait listing photos for Facebook & IG',
@@ -65,6 +97,37 @@ export const INITIAL_CROP_FORMATS: CropStudioFormat[] = [
     cropZoom: 1,
     isDefault: true,
     createdAt: 1792362113668,
+    updatedAt: Date.now(),
+  },
+  {
+    id: 'format-1774-887',
+    name: 'Original 1774×887 Format',
+    description: '1774 × 887 px • Fill (Cover) • Anchor: Center',
+    mode: 'standard',
+    targetWidth: 1774,
+    targetHeight: 887,
+    aspect: '1774:887',
+    fitMode: 'cover',
+    focusPosition: 'center',
+    cropZoom: 1,
+    watermarkConfig: {
+      enabled: true,
+      type: 'text',
+      logoUrl: '',
+      logoName: '',
+      text: 'BoltHaven Property',
+      textColor: '#FFFFFF',
+      fontSize: 26,
+      fontWeight: '600',
+      opacity: 85,
+      scale: 25,
+      position: 'bottom-right',
+      margin: 4,
+      hasShadow: true,
+      smartScope: 'all',
+    },
+    isDefault: false,
+    createdAt: 1793310158189,
     updatedAt: Date.now(),
   },
   {
@@ -160,9 +223,10 @@ export const syncCropFormatToWorkflowConfig = async (format: CropStudioFormat) =
       box.cropFormatId = format.id;
       box.templateId = format.id;
       box.watermarkPresetId = format.id;
-      box.templateText = format.name;
-      box.title = `Format: ${format.name}`;
-      box.subtitle = `${format.targetWidth}×${format.targetHeight} (${format.aspect || '1:1'})`;
+      const cleanName = format.name.replace(/^Format:\s*/i, '');
+      box.templateText = cleanName;
+      box.title = cleanName;
+      box.subtitle = 'Crop & Cut';
       box.targetWidth = format.targetWidth;
       box.targetHeight = format.targetHeight;
       box.aspect = format.aspect;
@@ -255,14 +319,41 @@ export const syncCropFormatToWorkflowConfig = async (format: CropStudioFormat) =
   }
 };
 
+let hasFetchedFromBackend = false;
+
+export const fetchCropFormatsFromBackend = async (): Promise<CropStudioFormat[]> => {
+  try {
+    const res = await fetch('http://localhost:8085/api/crop-formats');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (data.success && Array.isArray(data.formats) && data.formats.length > 0) {
+      const serverFormats: CropStudioFormat[] = data.formats;
+      hasFetchedFromBackend = true;
+      localStorage.setItem(STORAGE_CROP_FORMATS_KEY, JSON.stringify(serverFormats));
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('ea_crop_formats_updated', { detail: serverFormats }));
+      }
+      return serverFormats;
+    }
+  } catch (err) {
+    console.warn('Failed to fetch crop formats from backend API:', err);
+  }
+  return getSavedCropFormats();
+};
+
 export const getSavedCropFormats = (): CropStudioFormat[] => {
+  if (!hasFetchedFromBackend && typeof window !== 'undefined') {
+    hasFetchedFromBackend = true;
+    fetchCropFormatsFromBackend().catch(() => {});
+  }
+
   try {
     const raw = localStorage.getItem(STORAGE_CROP_FORMATS_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
         // Return existing user formats directly, preserving custom names and edits
-        return parsed.map((fmt: CropStudioFormat) => {
+        const cleaned = parsed.map((fmt: CropStudioFormat) => {
           // If FB Format was inadvertently assigned raw image dimensions (e.g. 960x1706) or 1200x1200, restore 1080x1350 (4:5)
           if (
             fmt.id === 'format-1792362113668' &&
@@ -280,6 +371,31 @@ export const getSavedCropFormats = (): CropStudioFormat[] => {
           }
           return fmt;
         });
+
+        // Ensure newly supported presets (like FB Hero Cut and Original 1774×887 Format) are present if not already added
+        const hasHeroCut = cleaned.some((f: CropStudioFormat) => f.id === 'format-grid-2split' || f.name.toLowerCase().includes('hero cut'));
+        if (!hasHeroCut) {
+          const defaultHeroCut = INITIAL_CROP_FORMATS.find((f) => f.id === 'format-grid-2split');
+          if (defaultHeroCut) {
+            cleaned.unshift(defaultHeroCut);
+            try {
+              localStorage.setItem(STORAGE_CROP_FORMATS_KEY, JSON.stringify(cleaned));
+            } catch (e) {}
+          }
+        }
+
+        const has1774 = cleaned.some((f: CropStudioFormat) => f.id === 'format-1774-887' || f.name.includes('1774'));
+        if (!has1774) {
+          const default1774 = INITIAL_CROP_FORMATS.find((f) => f.id === 'format-1774-887');
+          if (default1774) {
+            cleaned.splice(1, 0, default1774);
+            try {
+              localStorage.setItem(STORAGE_CROP_FORMATS_KEY, JSON.stringify(cleaned));
+            } catch (e) {}
+          }
+        }
+
+        return cleaned;
       }
     }
   } catch (e) {
@@ -296,6 +412,19 @@ export const saveCropFormatsList = (formats: CropStudioFormat[]) => {
     }
   } catch (e) {
     console.error('Failed to save crop formats', e);
+  }
+
+  // Persist to backend database JSON store immediately
+  try {
+    fetch('http://localhost:8085/api/crop-formats', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ formats }),
+    }).catch((err) => {
+      console.warn('Failed to save crop formats to backend API:', err);
+    });
+  } catch (err) {
+    console.warn('Failed to dispatch save crop formats:', err);
   }
 };
 
@@ -377,21 +506,176 @@ export const getActiveCropFormat = (): CropStudioFormat => {
   return formats.find((f) => f.id === activeId) || formats[0] || INITIAL_CROP_FORMATS[0];
 };
 
+export interface FormattedCropSlice {
+  url: string;
+  tileIndex: number;
+  totalTiles: number;
+  label: string;
+  width: number;
+  height: number;
+  aspect: string;
+}
+
 /**
  * High-performance offscreen canvas helper to format any image
- * using a given CropStudioFormat (aspect, dimensions, fit, anchor, zoom).
+ * using a given CropStudioFormat (aspect, dimensions, fit, anchor, zoom, grid splits & watermarks).
+ * Returns array of slices: 1 item for standard crop, or multiple items for grid split layouts.
  */
-export const formatImageWithCropFormat = async (
+export const formatImageWithCropFormatSlices = async (
   imgSrc: string,
   format: CropStudioFormat
-): Promise<string> => {
-  return new Promise<string>((resolve) => {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = async () => {
-      try {
-        const naturalW = img.naturalWidth || 1200;
-        const naturalH = img.naturalHeight || 1200;
+): Promise<FormattedCropSlice[]> => {
+  const fallbackItem: FormattedCropSlice = {
+    url: imgSrc,
+    tileIndex: 1,
+    totalTiles: 1,
+    label: format.name || 'Photo',
+    width: format.targetWidth || 1200,
+    height: format.targetHeight || 1200,
+    aspect: format.aspect || '1:1',
+  };
+
+  try {
+    const img = await loadImageElement(imgSrc);
+    const naturalW = img.naturalWidth || img.width || 1200;
+    const naturalH = img.naturalHeight || img.height || 1200;
+    const mime = imgSrc.includes('.png') ? 'image/png' : imgSrc.includes('.webp') ? 'image/webp' : 'image/jpeg';
+
+        // Resolve effective watermark:
+        // Priority 1: format.watermarkConfig if present and explicitly defined
+        // Priority 2: active studio watermark from loadActiveWatermarkConfig if active
+        let effectiveWatermark: WatermarkConfig | null = null;
+        if (format.watermarkConfig && typeof format.watermarkConfig.enabled === 'boolean') {
+          if (format.watermarkConfig.enabled) {
+            effectiveWatermark = format.watermarkConfig;
+          }
+        } else if (typeof window !== 'undefined') {
+          try {
+            const activeWk = loadActiveWatermarkConfig();
+            if (activeWk?.config?.enabled) {
+              effectiveWatermark = activeWk.config;
+            }
+          } catch {}
+        }
+
+        const isGrid =
+          format.mode === 'grid' ||
+          Boolean(format.gridLayoutId) ||
+          (format.description && format.description.toLowerCase().includes('swipe tiles')) ||
+          (format.description && format.description.toLowerCase().includes('tile')) ||
+          (format.name && format.name.toLowerCase().includes('cut')) ||
+          (format.name && format.name.toLowerCase().includes('split')) ||
+          (format.name && format.name.toLowerCase().includes('grid'));
+
+        if (isGrid) {
+          // Define tiles based on gridLayoutId or default 2-split
+          const layoutId = format.gridLayoutId || 'two-squares';
+          let tiles: Array<{
+            id: number;
+            label: string;
+            x: number;
+            y: number;
+            w: number;
+            h: number;
+            focus: WatermarkPosition;
+          }> = [];
+
+          if (
+            layoutId === 'two-squares' ||
+            (!format.gridLayoutId && (format.description?.includes('2') || format.name?.toLowerCase().includes('hero') || format.name?.toLowerCase().includes('cut')))
+          ) {
+            tiles = [
+              { id: 1, label: 'Left Half (1/2)', x: 0, y: 0, w: 0.5, h: 1, focus: 'center-right' },
+              { id: 2, label: 'Right Half (2/2)', x: 0.5, y: 0, w: 0.5, h: 1, focus: 'center-left' },
+            ];
+          } else if (layoutId === 'three-squares') {
+            tiles = [
+              { id: 1, label: 'Top Banner (1/3)', x: 0, y: 0, w: 1, h: 0.52, focus: 'center' },
+              { id: 2, label: 'Bottom Left (2/3)', x: 0, y: 0.52, w: 0.5, h: 0.48, focus: 'center-right' },
+              { id: 3, label: 'Bottom Right (3/3)', x: 0.5, y: 0.52, w: 0.5, h: 0.48, focus: 'center-left' },
+            ];
+          } else if (layoutId === 'four-squares') {
+            tiles = [
+              { id: 1, label: 'Top Left (1/4)', x: 0, y: 0, w: 0.5, h: 0.5, focus: 'bottom-right' },
+              { id: 2, label: 'Top Right (2/4)', x: 0.5, y: 0, w: 0.5, h: 0.5, focus: 'bottom-left' },
+              { id: 3, label: 'Bottom Left (3/4)', x: 0, y: 0.5, w: 0.5, h: 0.5, focus: 'top-right' },
+              { id: 4, label: 'Bottom Right (4/4)', x: 0.5, y: 0.5, w: 0.5, h: 0.5, focus: 'top-left' },
+            ];
+          } else {
+            tiles = [
+              { id: 1, label: 'Left Half (1/2)', x: 0, y: 0, w: 0.5, h: 1, focus: 'center-right' },
+              { id: 2, label: 'Right Half (2/2)', x: 0.5, y: 0, w: 0.5, h: 1, focus: 'center-left' },
+            ];
+          }
+
+          const tileOutW = format.targetWidth || 1200;
+          const tileOutH = format.targetHeight || 1200;
+          const slices: FormattedCropSlice[] = [];
+
+          for (const tile of tiles) {
+            const tileRawX = Math.round(tile.x * naturalW);
+            const tileRawY = Math.round(tile.y * naturalH);
+            const tileRawW = Math.round(tile.w * naturalW);
+            const tileRawH = Math.round(tile.h * naturalH);
+
+            const focusPos = format.tileFocusMap?.[tile.id] || tile.focus;
+            const focusCoord = FOCUS_COORDS[focusPos] || { x: 0.5, y: 0.5 };
+
+            const targetAspect = tileOutW / (tileOutH || 1);
+            const tileAspect = tileRawW / (tileRawH || 1);
+
+            let cropW = tileRawW;
+            let cropH = tileRawH;
+
+            if (tileAspect > targetAspect) {
+              cropW = Math.round(tileRawH * targetAspect);
+              cropH = tileRawH;
+            } else {
+              cropW = tileRawW;
+              cropH = Math.round(tileRawW / targetAspect);
+            }
+
+            const maxOffsetX = Math.max(0, tileRawW - cropW);
+            const maxOffsetY = Math.max(0, tileRawH - cropH);
+            const localX = Math.round(maxOffsetX * focusCoord.x);
+            const localY = Math.round(maxOffsetY * focusCoord.y);
+
+            const sx = tileRawX + localX;
+            const sy = tileRawY + localY;
+
+            const canvas = document.createElement('canvas');
+            canvas.width = tileOutW;
+            canvas.height = tileOutH;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) continue;
+
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillRect(0, 0, tileOutW, tileOutH);
+            ctx.drawImage(img, sx, sy, cropW, cropH, 0, 0, tileOutW, tileOutH);
+
+            if (format.useWatermarkOnTiles !== false && effectiveWatermark && effectiveWatermark.enabled) {
+              await drawWatermarkOnContext(ctx, tileOutW, tileOutH, effectiveWatermark);
+            }
+
+            slices.push({
+              url: canvas.toDataURL(mime, 0.95),
+              tileIndex: tile.id,
+              totalTiles: tiles.length,
+              label: tile.label,
+              width: tileOutW,
+              height: tileOutH,
+              aspect: format.aspect || '1:1',
+            });
+          }
+
+          if (slices.length > 0) {
+            return slices;
+          }
+        }
+
+        // Standard Single-Image Crop:
         const width = format.targetWidth || 1200;
         const height = format.targetHeight || 1200;
         const fitMode = format.fitMode || 'cover';
@@ -403,8 +687,7 @@ export const formatImageWithCropFormat = async (
         canvas.height = height;
         const ctx = canvas.getContext('2d');
         if (!ctx) {
-          resolve(imgSrc);
-          return;
+          return [fallbackItem];
         }
 
         ctx.imageSmoothingEnabled = true;
@@ -465,37 +748,35 @@ export const formatImageWithCropFormat = async (
           ctx.drawImage(img, offsetX, offsetY, zoomedW, zoomedH);
         }
 
-        // Resolve effective watermark:
-        // Priority 1: format.watermarkConfig if present and explicitly defined
-        // Priority 2: active studio watermark from loadActiveWatermarkConfig if active
-        let effectiveWatermark: WatermarkConfig | null = null;
-        if (format.watermarkConfig && typeof format.watermarkConfig.enabled === 'boolean') {
-          if (format.watermarkConfig.enabled) {
-            effectiveWatermark = format.watermarkConfig;
-          }
-        } else if (typeof window !== 'undefined') {
-          try {
-            const activeWk = loadActiveWatermarkConfig();
-            if (activeWk?.config?.enabled) {
-              effectiveWatermark = activeWk.config;
-            }
-          } catch {}
-        }
-
         if (effectiveWatermark && effectiveWatermark.enabled) {
           await drawWatermarkOnContext(ctx, width, height, effectiveWatermark);
         }
 
-        const mime = imgSrc.includes('.png') ? 'image/png' : imgSrc.includes('.webp') ? 'image/webp' : 'image/jpeg';
-        resolve(canvas.toDataURL(mime, 0.95));
+        return [
+          {
+            url: canvas.toDataURL(mime, 0.95),
+            tileIndex: 1,
+            totalTiles: 1,
+            label: format.name || 'Photo',
+            width,
+            height,
+            aspect: format.aspect || '1:1',
+          },
+        ];
       } catch (err) {
         console.warn('Canvas crop formatting error, falling back to original', err);
-        resolve(imgSrc);
+        return [fallbackItem];
       }
     };
-    img.onerror = () => {
-      resolve(imgSrc);
-    };
-    img.src = imgSrc;
-  });
+
+/**
+ * High-performance offscreen canvas helper to format any image
+ * using a given CropStudioFormat (aspect, dimensions, fit, anchor, zoom).
+ */
+export const formatImageWithCropFormat = async (
+  imgSrc: string,
+  format: CropStudioFormat
+): Promise<string> => {
+  const slices = await formatImageWithCropFormatSlices(imgSrc, format);
+  return slices[0]?.url || imgSrc;
 };

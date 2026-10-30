@@ -32,6 +32,7 @@ import {
   FiEdit3,
   FiSearch,
   FiSquare,
+  FiMaximize2,
 } from 'react-icons/fi';
 import { FaChrome } from 'react-icons/fa';
 import { Button } from '../../components/ui/Button';
@@ -175,7 +176,13 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   const aboveBoxTitle = propertyContext?.aboveBoxTitle || 'Format: Enhance Image';
 
   const receivedImages = useMemo(() => {
-    return (propertyContext?.images || []).filter((img) => Boolean(img.url));
+    return (propertyContext?.images || [])
+      .filter((img) => Boolean(img.url))
+      .map((img, idx) => ({
+        ...img,
+        index: idx + 1,
+        filename: img.filename || `Photo #${idx + 1}`,
+      }));
   }, [propertyContext?.images]);
 
   // 4b. Authoritative Hero vs Enhance Node Classification
@@ -381,7 +388,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   const handleToggleAutoRun = (val: boolean) => {
     setAutoRunEnabled(val);
     localStorage.setItem('bolthaven_browser_auto_run', String(val));
-    onUpdateBoxConfig?.({ ...boxConfig, autoRun: val });
+    updateMultiConfig({ autoRun: val });
     if (!val && autoRunTimerRef.current) {
       clearTimeout(autoRunTimerRef.current);
       autoRunTimerRef.current = null;
@@ -424,6 +431,55 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   const [twoStageStatus, setTwoStageStatus] = useState<any>(null);
   const [isRunningTwoStage, setIsRunningTwoStage] = useState<boolean>(false);
   const [twoStageMessage, setTwoStageMessage] = useState<string | null>(null);
+  const [latestHeroImage, setLatestHeroImage] = useState<{
+    url: string;
+    fileName?: string;
+    condoName?: string;
+    createdAt?: string;
+  } | null>(() => {
+    try {
+      const saved = localStorage.getItem('bolthaven_last_hero_image');
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) {
+      return null;
+    }
+  });
+
+  const updateLatestHeroImage = (img: any) => {
+    setLatestHeroImage(img);
+    try {
+      if (img) {
+        localStorage.setItem('bolthaven_last_hero_image', JSON.stringify(img));
+      }
+    } catch (e) {}
+  };
+
+  // Auto-fetch latest downloaded Hero image on mount or when sidebar is opened
+  useEffect(() => {
+    if (!isHeroNode) return;
+    const fetchLatestStatus = async () => {
+      try {
+        const resp = await fetch('http://127.0.0.1:9224/two-stage-status');
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data?.state) {
+            setTwoStageStatus(data.state);
+            if (data.state.downloaded_image_url || data.state.downloaded_file) {
+              const file = data.state.downloaded_file;
+              const imgUrl = data.state.downloaded_image_url || `http://127.0.0.1:9224/hero-downloaded-image?file=${encodeURIComponent(file)}`;
+              updateLatestHeroImage({
+                url: imgUrl,
+                fileName: file,
+                condoName: data.state.condo_name || condoName,
+                createdAt: data.state.updated_at,
+              });
+            }
+          }
+        }
+      } catch (e) {}
+    };
+    fetchLatestStatus();
+  }, [isHeroNode, condoName]);
 
   // Restore persisted reference image on mount or box change (and keep it until changed or deleted)
   useEffect(() => {
@@ -448,6 +504,18 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       cancelled = true;
     };
   }, [boxConfig.id]);
+
+  useEffect(() => {
+    if (typeof boxConfig.autoRun === 'boolean') {
+      setAutoRunEnabled(boxConfig.autoRun);
+    }
+    if (boxConfig.imageSourceMode) {
+      setImageSourceMode(boxConfig.imageSourceMode);
+    }
+    if (Array.isArray(boxConfig.selectedImageIndices) && boxConfig.selectedImageIndices.length > 0) {
+      setSelectedImageIndices(boxConfig.selectedImageIndices);
+    }
+  }, [boxConfig.id, boxConfig.autoRun, boxConfig.imageSourceMode, boxConfig.selectedImageIndices]);
 
   // Fetch all available condo subfolders in the target directory
   const fetchCondoFolderList = async (folderToUse?: string) => {
@@ -604,13 +672,14 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     setTwoStageMessage('Initiating Two-Stage Staging via companion...');
     try {
       const activeProf = profiles.find((p) => p.id === selectedProfileId);
-      const profKey = activeProf?.profile_key || boxConfig.browserProfileKey || 'Profile 14';
+      const profKey = activeProf?.profile_key || boxConfig.browserProfileKey || (profiles[0]?.profile_key || 'Pro');
 
       const promptToUse = enablePromptEnhance
         ? (resolvedPromptPreview || currentPromptText || 'Analyze property details and formulate facebook ad prompt')
         : '';
       const refImgToUse = activeReferenceImage?.url || referenceImage || null;
       const effectiveHeroGroupName = currentGroup?.name || targetGroupName || 'FB Hero';
+      const isDirectStaging = boxConfig.stagingMode === 'direct_tab2' || boxConfig.skipTab1 === true || boxConfig.workerTabCount === 1;
 
       const resp = await fetch('http://127.0.0.1:9224/start-two-stage-staging', {
         method: 'POST',
@@ -619,6 +688,8 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
           profile_key: profKey,
           group_name: effectiveHeroGroupName,
           condo_name: matchedCondoInfo?.matched_folder || aiExtractedCondoName || condoSearchQuery || condoName,
+          matched_folder: matchedCondoInfo?.matched_folder || '',
+          condo_images: matchedCondoInfo?.images || [],
           initial_prompt: promptToUse,
           reference_image: refImgToUse,
           reference_image_index: activeReferenceImage?.index || 1,
@@ -626,13 +697,20 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
           target_folder: boxConfig.targetFolder || localStorage.getItem('bolthaven_condo_target_folder') || '',
           use_condo_images: boxConfig.useCondoImages !== false,
           use_reference_image: boxConfig.useReferenceImage !== false,
-          skip_tab1: boxConfig.stagingMode === 'direct_tab2' || boxConfig.skipTab1 === true,
+          skip_tab1: isDirectStaging,
+          tab_mode: boxConfig.workerTabMode || 'existing_tabs',
+          worker_count: isDirectStaging ? 1 : 2,
+          reuse_session_tabs: boxConfig.reuseSessionTabs !== false,
         }),
       });
       const data = await resp.json();
       if (isSidebarStoppedRef.current) return;
       if (data.status === 'success') {
-        setTwoStageMessage(`🚀 Two-Stage Staging started: Tab 1 generating prompt for "${data.matched_folder}"...`);
+        setTwoStageMessage(
+          isDirectStaging
+            ? `🚀 Direct Mode (1 Tab): Opening connected browser & attaching Reference + 3 Condo Photos for "${data.matched_folder || condoName}"...`
+            : `🚀 2-Stage Mode (2 Tabs): Tab 1 generating prompt for "${data.matched_folder || condoName}"...`
+        );
 
         let pollCount = 0;
         const interval = setInterval(async () => {
@@ -642,11 +720,11 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
             return;
           }
           pollCount++;
-          if (pollCount > 100) {
+          if (pollCount > 160) {
             clearInterval(interval);
             twoStageIntervalRef.current = null;
             setIsRunningTwoStage(false);
-            setTwoStageMessage('Two-stage staging completed or timed out.');
+            setTwoStageMessage('Hero generation completed or timed out.');
             return;
           }
           try {
@@ -659,6 +737,16 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
             }
             if (stData && stData.state) {
               setTwoStageStatus(stData.state);
+              if (stData.state.downloaded_image_url || stData.state.downloaded_file) {
+                const file = stData.state.downloaded_file;
+                const imgUrl = stData.state.downloaded_image_url || `http://127.0.0.1:9224/hero-downloaded-image?file=${encodeURIComponent(file)}`;
+                updateLatestHeroImage({
+                  url: imgUrl,
+                  fileName: file,
+                  condoName: stData.state.condo_name || condoName,
+                  createdAt: stData.state.updated_at,
+                });
+              }
               if (stData.state.step === 'stopped') {
                 clearInterval(interval);
                 twoStageIntervalRef.current = null;
@@ -667,14 +755,34 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
               } else if (stData.state.step === 'stage1_running') {
                 setTwoStageMessage('⏳ Tab 1: Pasted prompt, generating & extracting output...');
               } else if (stData.state.step === 'stage1_completed') {
-                setTwoStageMessage('✓ Tab 1: Extracted prompt! Focusing Tab 2...');
+                setTwoStageMessage(
+                  isDirectStaging
+                    ? '⚡ Direct Mode (1 Tab): Prompt ready, attaching Reference Image (1st) + 3 Condo Photos...'
+                    : '✓ Tab 1: Extracted prompt! Focusing Tab 2...'
+                );
               } else if (stData.state.step === 'stage2_running') {
-                setTwoStageMessage('🖼️ Tab 2: Pasting reference image, condo images 1, 2, 3 & prompt...');
+                setTwoStageMessage('🖼️ Attaching Reference Image (1st), Condo Photos 1, 2, 3 (next), and pasting prompt...');
+              } else if (stData.state.step === 'generating_image') {
+                setTwoStageMessage(stData.state.message || '🎨 Generating Hero Image in ChatGPT...');
+              } else if (stData.state.step === 'downloading_image') {
+                setTwoStageMessage(stData.state.message || '⬇️ Downloading generated Hero Image...');
               } else if (stData.state.step === 'completed') {
                 clearInterval(interval);
                 twoStageIntervalRef.current = null;
                 setIsRunningTwoStage(false);
-                setTwoStageMessage(`🎉 Complete! Tab 2 submitted with ${stData.state.images_attached || 4} images and extracted prompt.`);
+                setTwoStageMessage(
+                  `🎉 Complete! Hero Image generated & downloaded (${stData.state.downloaded_file || `${stData.state.images_attached || 4} images attached`}).`
+                );
+                if (stData.state.downloaded_image_url || stData.state.downloaded_file) {
+                  const file = stData.state.downloaded_file;
+                  const imgUrl = stData.state.downloaded_image_url || `http://127.0.0.1:9224/hero-downloaded-image?file=${encodeURIComponent(file)}`;
+                  updateLatestHeroImage({
+                    url: imgUrl,
+                    fileName: file,
+                    condoName: stData.state.condo_name || condoName,
+                    createdAt: stData.state.updated_at,
+                  });
+                }
               } else if (stData.state.step === 'error') {
                 clearInterval(interval);
                 twoStageIntervalRef.current = null;
@@ -733,7 +841,6 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
             (boxConfig.browserProfileName && (p.display_name === boxConfig.browserProfileName || boxConfig.browserProfileName.includes(p.display_name))) ||
             (selectedProfileId && p.id === selectedProfileId)
           ) ||
-          data.find((p) => p.profile_key === 'Profile 14' || p.display_name.toLowerCase().includes('hsu')) ||
           data[0];
         if (matched) {
           setSelectedProfileId(matched.id);
@@ -771,8 +878,8 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   useEffect(() => {
     if (selectedProfileId) {
       const currentProf = profiles.find((p) => p.id === selectedProfileId);
-      const profKey = currentProf?.profile_key || boxConfig.browserProfileKey || 'Profile 14';
-      const profName = currentProf?.display_name || boxConfig.browserProfileName || 'Hsu';
+      const profKey = currentProf?.profile_key || boxConfig.browserProfileKey || (profiles[0]?.profile_key || 'Pro');
+      const profName = currentProf?.display_name || boxConfig.browserProfileName || (profiles[0]?.display_name || 'Note Zin Wai');
 
       fetchTabGroups(selectedProfileId, profKey, profName).then((groups) => {
         setTabGroups(groups);
@@ -886,7 +993,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     hasAutoStartedRef.current = true;
     setAutoRunCountdown(null);
     const profId = activeProfile?.id || selectedProfileId;
-    const profKey = activeProfile?.profile_key || 'Profile 14';
+    const profKey = activeProfile?.profile_key || boxConfig.browserProfileKey || (profiles[0]?.profile_key || 'Pro');
     const propId = propertyContext?.id || `PROP-${Date.now()}`;
     const effectiveGroupName = currentGroup?.name || targetGroupName || selectedGroupName || (isHeroNode ? 'FB Hero' : 'Enhance IMG');
     const targetUrls = groupTabs.map((t) => t.url).filter(Boolean);
@@ -927,9 +1034,10 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     }));
 
     // Create or refresh batch queue with the active images if prompt enhancement is active
+    let createdBatchJobs: ImageProcessingJob[] = [];
     if (activeImages.length > 0 && enablePromptEnhance) {
       try {
-        await createBatchImageQueue({
+        createdBatchJobs = await createBatchImageQueue({
           property_id: propId,
           property_name: propertyContext?.title || 'Featured Property Listing',
           prompt_template_text: promptToUse,
@@ -998,7 +1106,13 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     const res = await startAutomation({
       property_id: propId,
       profile_key: profKey,
+      group_name: effectiveGroupName,
+      group_tab_urls: targetUrls,
       tab_ids: finalTabIds,
+      tab_mode: (boxConfig as any).workerTabMode || 'existing_tabs',
+      worker_count: finalTabIds.length,
+      reuse_session_tabs: (boxConfig as any).reuseSessionTabs ?? true,
+      jobs: createdBatchJobs.length > 0 ? createdBatchJobs : queueJobs,
     });
     if (isSidebarStoppedRef.current) return;
 
@@ -1098,8 +1212,13 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     if (imageSourceMode === 'hero_only') {
       return receivedImages.slice(0, 1);
     }
-    if (imageSourceMode === 'selected') {
-      const list = receivedImages.filter((img, i) => selectedImageIndices.includes(img.index || i + 1));
+    if (
+      imageSourceMode === 'selected' ||
+      (selectedImageIndices.length > 0 && selectedImageIndices.length < receivedImages.length)
+    ) {
+      const list = receivedImages.filter((img, i) =>
+        selectedImageIndices.includes(typeof img.index === 'number' && img.index > 0 ? img.index : i + 1)
+      );
       return list.length > 0 ? list : receivedImages.slice(0, 1);
     }
     if (imageSourceMode === 'custom_upload' && referenceImage) {
@@ -1347,21 +1466,30 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   // Launch / Focus Chrome Profile & Tab Group on Mac
   const handleOpenProfile = async () => {
     const profId = activeProfile?.id || selectedProfileId;
-    const profKey = activeProfile?.profile_key || 'Profile 14';
+    const profKey = activeProfile?.profile_key || boxConfig.browserProfileKey || (profiles[0]?.profile_key || 'Pro');
     const effectiveGroupName = currentGroup?.name || targetGroupName || selectedGroupName || (isHeroNode ? 'FB Hero' : 'Enhance IMG');
     if (profId) {
       setIsOpeningProfile(true);
       try {
-        const targetUrls = groupTabs.map((t) => t.url).filter(Boolean);
+        const effectiveWorkerCount = isHeroNode
+          ? (boxConfig.skipTab1 || boxConfig.stagingMode === 'direct_tab2' || boxConfig.workerTabCount === 1 ? 1 : 2)
+          : (boxConfig.workerTabCount || (groupTabs.length || 4));
+        let targetUrls = groupTabs.map((t) => t.url).filter(Boolean);
+        if (targetUrls.length > effectiveWorkerCount) {
+          targetUrls = targetUrls.slice(0, effectiveWorkerCount);
+        }
         const res = await focusBrowserTabGroup({
           profileId: profId,
           profileKey: profKey,
           groupName: effectiveGroupName,
           groupTabUrls: targetUrls,
           url: targetUrls[0],
+          tabMode: boxConfig.workerTabMode || 'existing_tabs',
+          workerCount: effectiveWorkerCount,
+          reuseSessionTabs: boxConfig.reuseSessionTabs !== false,
         });
         if (res.success) {
-          setSyncMessage(`Chrome "${activeProfile?.display_name || profKey}" & "${effectiveGroupName}" (${targetUrls.length || groupTabs.length} tabs) opened!`);
+          setSyncMessage(`Chrome "${activeProfile?.display_name || profKey}" & "${effectiveGroupName}" (${effectiveWorkerCount} ${effectiveWorkerCount === 1 ? 'tab' : 'tabs'}) opened!`);
         } else {
           setSyncMessage(res.message || 'Could not open Chrome profile.');
         }
@@ -1932,10 +2060,25 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
           { value: 'hero_only', label: 'Primary Hero Photo Only (Photo #1)' },
           { value: 'selected', label: `Select Specific Photos (${selectedImageIndices.length} picked)` },
         ]}
-        value={imageSourceMode === 'selected' || imageSourceMode === 'hero_only' ? imageSourceMode : 'all'}
+        value={
+          imageSourceMode === 'hero_only'
+            ? 'hero_only'
+            : imageSourceMode === 'selected' || (selectedImageIndices.length > 0 && selectedImageIndices.length < receivedImages.length)
+            ? 'selected'
+            : 'all'
+        }
         onChange={(val) => {
           setImageSourceMode(val as any);
-          updateConfig('imageSourceMode', val);
+          if (val === 'all') {
+            const allIdx = receivedImages.map((_, i) => i + 1);
+            setSelectedImageIndices(allIdx);
+            updateMultiConfig({ imageSourceMode: 'all', selectedImageIndices: allIdx });
+          } else if (val === 'hero_only') {
+            setSelectedImageIndices([1]);
+            updateMultiConfig({ imageSourceMode: 'hero_only', selectedImageIndices: [1] });
+          } else {
+            updateConfig('imageSourceMode', val);
+          }
         }}
       />
 
@@ -1943,61 +2086,82 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(60px, 1fr))',
-            gap: '5px',
-            maxHeight: '130px',
+            gridTemplateColumns: 'repeat(4, 1fr)',
+            gridAutoRows: '64px',
+            gap: '6px',
+            maxHeight: '180px',
             overflowY: 'auto',
-            padding: '4px',
-            backgroundColor: isDark ? 'rgba(0, 0, 0, 0.2)' : '#FFFFFF',
-            borderRadius: '6px',
+            padding: '6px',
+            backgroundColor: isDark ? 'rgba(0, 0, 0, 0.25)' : '#FFFFFF',
+            borderRadius: '8px',
             border: '1px solid var(--border-color)',
           }}
         >
           {receivedImages.map((img, idx) => {
-            const photoNum = img.index || idx + 1;
+            const photoNum = typeof img.index === 'number' && img.index > 0 ? img.index : idx + 1;
             const isChecked = selectedImageIndices.includes(photoNum);
             return (
               <div
                 key={idx}
                 onClick={() => {
-                  const nextIndices = isChecked
-                    ? (selectedImageIndices.length > 1 ? selectedImageIndices.filter((n) => n !== photoNum) : selectedImageIndices)
-                    : [...selectedImageIndices, photoNum];
+                  let nextIndices: number[];
+                  if (isChecked) {
+                    nextIndices = selectedImageIndices.length > 1
+                      ? selectedImageIndices.filter((n) => n !== photoNum)
+                      : selectedImageIndices;
+                  } else {
+                    nextIndices = [...selectedImageIndices, photoNum].sort((a, b) => a - b);
+                  }
                   setSelectedImageIndices(nextIndices);
-                  updateConfig('selectedImageIndices', nextIndices);
+                  setImageSourceMode('selected');
+                  updateMultiConfig({
+                    selectedImageIndices: nextIndices,
+                    imageSourceMode: 'selected',
+                  });
                 }}
                 style={{
                   position: 'relative',
-                  aspectRatio: '1',
-                  borderRadius: '5px',
+                  width: '100%',
+                  height: '64px',
+                  minHeight: '64px',
+                  borderRadius: '6px',
                   overflow: 'hidden',
-                  border: isChecked ? '1.5px solid #10B981' : isDark ? '1px solid #334155' : '1px solid #CBD5E1',
-                  background: '#000',
+                  border: isChecked ? '2px solid #10B981' : isDark ? '1px solid #334155' : '1px solid #CBD5E1',
+                  background: isDark ? '#1E293B' : '#E2E8F0',
                   cursor: 'pointer',
                   opacity: isChecked ? 1 : 0.45,
+                  transition: 'all 0.15s ease',
+                  flexShrink: 0,
                 }}
                 title={`Photo #${photoNum} — Click to toggle`}
               >
                 <img
                   src={img.url}
                   alt={img.filename || `Photo #${photoNum}`}
-                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'cover',
+                    display: 'block',
+                  }}
+                  loading="lazy"
                 />
                 <span
                   style={{
                     position: 'absolute',
-                    top: '2px',
-                    left: '2px',
+                    top: '3px',
+                    left: '3px',
                     background: isChecked ? '#10B981' : 'rgba(0,0,0,0.6)',
                     color: '#fff',
-                    fontSize: '0.45rem',
+                    fontSize: '0.55rem',
                     fontWeight: 800,
-                    width: '12px',
-                    height: '12px',
-                    borderRadius: '3px',
+                    width: '15px',
+                    height: '15px',
+                    borderRadius: '4px',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
+                    boxShadow: '0 1px 2px rgba(0,0,0,0.4)',
                   }}
                 >
                   {isChecked ? '✓' : ''}
@@ -2005,14 +2169,15 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                 <span
                   style={{
                     position: 'absolute',
-                    bottom: '2px',
-                    right: '2px',
+                    bottom: '3px',
+                    right: '3px',
                     background: 'rgba(0,0,0,0.75)',
                     color: '#fff',
-                    fontSize: '0.45rem',
+                    fontSize: '0.5rem',
                     fontWeight: 700,
-                    padding: '1px 3px',
-                    borderRadius: '2px',
+                    padding: '1px 4px',
+                    borderRadius: '3px',
+                    backdropFilter: 'blur(2px)',
                   }}
                 >
                   #{photoNum}
@@ -2085,7 +2250,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
           <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
             {isTabGroupNode ? (
               <>
-                <span>Connected to {boxConfig.browserProfileName || connectedProfileName || 'Hsu'} ({boxConfig.browserProfileKey || 'Profile 14'})</span>
+                <span>Connected to {boxConfig.browserProfileName || connectedProfileName || activeProfile?.display_name || 'Note Zin Wai'} ({boxConfig.browserProfileKey || activeProfile?.profile_key || 'Pro'})</span>
                 {connectedProfileNodeId && onOpenProfileNode && (
                   <button
                     type="button"
@@ -2109,7 +2274,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                 )}
               </>
             ) : isProfileNode ? (
-              `${activeProfile?.profile_key || boxConfig.browserProfileKey || 'Profile 14'} · Connected Tab Groups`
+              `${activeProfile?.profile_key || boxConfig.browserProfileKey || (profiles[0]?.profile_key || 'Pro')} · Connected Tab Groups`
             ) : (
               'Chrome Automation · Processing Pipeline'
             )}
@@ -2238,7 +2403,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                         fontWeight: 600,
                       }}
                     >
-                      {activeProfile?.profile_key || boxConfig.browserProfileKey || 'Profile 14'}
+                      {activeProfile?.profile_key || boxConfig.browserProfileKey || (profiles[0]?.profile_key || 'Pro')}
                     </span>
                   </div>
                   {activeProfile?.email && (
@@ -2387,7 +2552,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                       flexShrink: 0,
                     }}
                   >
-                    {activeProfile?.profile_key || boxConfig.browserProfileKey || 'Profile 14'}
+                    {activeProfile?.profile_key || boxConfig.browserProfileKey || (profiles[0]?.profile_key || 'Pro')}
                   </span>
                 </div>
                 {activeProfile?.email && (
@@ -2924,8 +3089,8 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
             variant="ghost"
             onClick={() => {
               const profId = activeProfile?.id || selectedProfileId;
-              const profKey = activeProfile?.profile_key || boxConfig.browserProfileKey || 'Profile 14';
-              const profName = activeProfile?.display_name || boxConfig.browserProfileName || 'Hsu';
+              const profKey = activeProfile?.profile_key || boxConfig.browserProfileKey || (profiles[0]?.profile_key || 'Pro');
+              const profName = activeProfile?.display_name || boxConfig.browserProfileName || (profiles[0]?.display_name || 'Note Zin Wai');
               if (profId) {
                 fetchTabGroups(profId, profKey, profName).then((g) => setTabGroups(g));
               }
@@ -3470,6 +3635,188 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                 </div>
               )}
             </div>
+
+            {/* ── 4. Generated Hero Advertisement Preview Card ── */}
+            {latestHeroImage && (
+              <div
+                style={{
+                  borderRadius: '12px',
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF',
+                  border: isDark ? '1px solid rgba(16, 185, 129, 0.35)' : '1px solid rgba(16, 185, 129, 0.4)',
+                  padding: '0.875rem 1rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.65rem',
+                  boxShadow: isDark ? '0 2px 10px rgba(0,0,0,0.3)' : '0 2px 8px rgba(16, 185, 129, 0.12)',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                    <div
+                      style={{
+                        width: '26px',
+                        height: '26px',
+                        borderRadius: '6px',
+                        backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                        color: '#10B981',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <FiCheckCircle size={14} />
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                      <div
+                        style={{
+                          fontSize: '0.78125rem',
+                          fontWeight: 700,
+                          color: isDark ? '#F3F4F6' : '#1E293B',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                      >
+                        Generated Hero Image
+                      </div>
+                      <div
+                        style={{
+                          fontSize: '0.625rem',
+                          color: 'var(--text-muted)',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                      >
+                        {latestHeroImage.condoName || condoName || 'Facebook Hero'}
+                      </div>
+                    </div>
+                  </div>
+                  <span
+                    style={{
+                      fontSize: '0.625rem',
+                      fontWeight: 700,
+                      color: '#10B981',
+                      backgroundColor: 'rgba(16, 185, 129, 0.12)',
+                      padding: '2px 8px',
+                      borderRadius: '12px',
+                      border: '1px solid rgba(16, 185, 129, 0.25)',
+                      flexShrink: 0,
+                    }}
+                  >
+                    ✓ Downloaded
+                  </span>
+                </div>
+
+                {/* Hero Image Thumbnail with Click-to-Open */}
+                <div
+                  style={{
+                    position: 'relative',
+                    borderRadius: '8px',
+                    overflow: 'hidden',
+                    border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid #E2E8F0',
+                    backgroundColor: '#0a0a0a',
+                    cursor: 'pointer',
+                    maxHeight: '190px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                  onClick={() => window.open(latestHeroImage.url, '_blank')}
+                  title="Click to view full 2400×1200 image in new tab"
+                >
+                  <img
+                    src={latestHeroImage.url}
+                    alt="Generated Facebook Hero"
+                    style={{
+                      width: '100%',
+                      height: 'auto',
+                      maxHeight: '190px',
+                      objectFit: 'contain',
+                      display: 'block',
+                    }}
+                  />
+                  <div
+                    style={{
+                      position: 'absolute',
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      padding: '4px 8px',
+                      background: 'linear-gradient(to top, rgba(0,0,0,0.8), rgba(0,0,0,0.3) 70%, transparent)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      fontSize: '0.5625rem',
+                      color: '#FFFFFF',
+                    }}
+                  >
+                    <span
+                      style={{
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        maxWidth: '75%',
+                      }}
+                    >
+                      {latestHeroImage.fileName || 'fb_hero.png'}
+                    </span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '3px', fontWeight: 600 }}>
+                      <FiMaximize2 size={10} /> View Full
+                    </span>
+                  </div>
+                </div>
+
+                {/* Action buttons */}
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <button
+                    type="button"
+                    onClick={() => window.open(latestHeroImage.url, '_blank')}
+                    style={{
+                      flex: 1,
+                      height: '28px',
+                      borderRadius: '6px',
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
+                      border: '1px solid var(--border-color)',
+                      color: isDark ? '#F3F4F6' : '#1E293B',
+                      fontSize: '0.625rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '4px',
+                    }}
+                  >
+                    <FiMaximize2 size={11} /> Open Full Size
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      fetch(`http://127.0.0.1:9224/reveal-file?file=${encodeURIComponent(latestHeroImage.fileName || '')}`).catch(() => {});
+                    }}
+                    style={{
+                      flex: 1,
+                      height: '28px',
+                      borderRadius: '6px',
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
+                      border: '1px solid var(--border-color)',
+                      color: isDark ? '#F3F4F6' : '#1E293B',
+                      fontSize: '0.625rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '4px',
+                    }}
+                  >
+                    <FiFolder size={11} /> Reveal in Finder
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 ) : (
           /* ═════════════════════════════════════════════════════════════════════ */
@@ -3697,23 +4044,12 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                     Cancel
                   </button>
                 )}
-                <button
-                  type="button"
-                  onClick={() => handleToggleAutoRun(!autoRunEnabled)}
-                  style={{
-                    border: 'none',
-                    background: autoRunEnabled ? '#10B981' : isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0',
-                    color: autoRunEnabled ? '#FFFFFF' : 'var(--text-secondary)',
-                    fontSize: '0.625rem',
-                    fontWeight: 700,
-                    padding: '3px 8px',
-                    borderRadius: '12px',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                  }}
-                >
-                  {autoRunEnabled ? 'ON' : 'OFF'}
-                </button>
+                <ToggleSwitch
+ checked={autoRunEnabled}
+ onChange={(val) => handleToggleAutoRun(val)}
+ size="sm"
+ activeColor="#10B981"
+ />
               </div>
             </div>
 
@@ -3806,8 +4142,8 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
             variant="ghost"
             onClick={() => {
               const profId = activeProfile?.id || selectedProfileId;
-              const profKey = activeProfile?.profile_key || boxConfig.browserProfileKey || 'Profile 14';
-              const profName = activeProfile?.display_name || boxConfig.browserProfileName || 'Hsu';
+              const profKey = activeProfile?.profile_key || boxConfig.browserProfileKey || (profiles[0]?.profile_key || 'Pro');
+              const profName = activeProfile?.display_name || boxConfig.browserProfileName || (profiles[0]?.display_name || 'Note Zin Wai');
               if (profId) {
                 fetchTabGroups(profId, profKey, profName).then((g) => setTabGroups(g));
               }
@@ -3839,7 +4175,11 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
             const isHero = group.name.toLowerCase().includes('hero') || group.name.toLowerCase().includes('fb');
             const groupBg = isDark ? 'var(--bg-surface)' : '#F8FAFC';
             const groupBorder = '1px solid var(--border-color)';
-            const tabs = group.tabs || [];
+            const allGroupTabs = group.tabs || [];
+            // FB Hero pipeline: Direct mode uses exactly 1 tab, 2-Stage uses 2. Show only the tabs actually used.
+            const isDirectHeroPipeline = boxConfig.stagingMode === 'direct_tab2' || boxConfig.skipTab1 === true;
+            const pipelineTabLimit = isHero ? (isDirectHeroPipeline ? 1 : 2) : (boxConfig.workerTabCount || allGroupTabs.length);
+            const tabs = allGroupTabs.slice(0, Math.max(1, pipelineTabLimit));
 
             return (
               <div
@@ -3881,13 +4221,16 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                     onClick={async () => {
                       if (tabs.length > 0) {
                         try {
+                          const isHeroGrp = (group.name || '').toLowerCase().includes('hero');
+                          const grpCount = isHeroGrp ? 1 : (boxConfig.workerTabCount || tabs.length || 4);
                           await focusBrowserTabGroup({
                             profileId: activeProfile?.id || selectedProfileId,
-                            profileKey: activeProfile?.profile_key || 'Profile 14',
+                            profileKey: activeProfile?.profile_key || boxConfig.browserProfileKey || (profiles[0]?.profile_key || 'Pro'),
                             groupName: group.name,
                             tabId: tabs[0].id,
-                            groupTabUrls: tabs.map((t) => t.url).filter(Boolean),
+                            groupTabUrls: tabs.map((t) => t.url).filter(Boolean).slice(0, grpCount),
                             url: tabs[0].url,
+                            workerCount: grpCount,
                             force: true,
                           });
                         } catch (e) {}
@@ -4028,23 +4371,12 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                         Cancel
                       </button>
                     )}
-                    <button
-                      type="button"
-                      onClick={() => handleToggleAutoRun(!autoRunEnabled)}
-                      style={{
-                        border: 'none',
-                        background: autoRunEnabled ? '#10B981' : isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0',
-                        color: autoRunEnabled ? '#FFFFFF' : 'var(--text-secondary)',
-                        fontSize: '0.625rem',
-                        fontWeight: 700,
-                        padding: '2px 8px',
-                        borderRadius: '10px',
-                        cursor: 'pointer',
-                        transition: 'all 0.15s ease',
-                      }}
-                    >
-                      {autoRunEnabled ? 'ON' : 'OFF'}
-                    </button>
+                    <ToggleSwitch
+ checked={autoRunEnabled}
+ onChange={(val) => handleToggleAutoRun(val)}
+ size="sm"
+ activeColor="#10B981"
+ />
                   </div>
                 </div>
 
@@ -4063,36 +4395,38 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                       }
                     }}
                     style={{
-                      fontSize: '0.6875rem',
+                      fontSize: '0.75rem',
                       fontWeight: 600,
                       width: '100%',
+                      minHeight: '40px',
+                      padding: '6px 12px',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
+                      overflow: 'hidden',
                       opacity: (isAutomating || isRunningTwoStage) ? 0.85 : 1,
                       cursor: (isAutomating || isRunningTwoStage) ? 'not-allowed' : 'pointer',
                     }}
                   >
                     {(isAutomating || isRunningTwoStage) ? (
-                      <>
-                        <FiLoader size={12} style={{ marginRight: '6px', animation: 'spin 1s linear infinite' }} />
-                        Processing {group.name} in Tabs...
-                      </>
-                    ) : !enablePromptEnhance ? (
-                      <>
-                        <FiPlay size={11} style={{ marginRight: '5px' }} />
-                        Run {group.name} (Direct Automation — No Prompt)
-                      </>
-                    ) : tabGroupMode === 'generate' ? (
-                      <>
-                        <FiPlay size={11} style={{ marginRight: '5px' }} />
-                        Run {group.name} (Ref: {activeReferenceImage?.label || 'Photo #1'} • {promptSourceLabel})
-                      </>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                        <FiLoader size={12} style={{ animation: 'spin 1s linear infinite' }} />
+                        <span>Processing {group.name}...</span>
+                      </span>
                     ) : (
-                      <>
-                        <FiPlay size={11} style={{ marginRight: '5px' }} />
-                        Run {group.name} ({activeImages.length} {activeImages.length === 1 ? 'image' : 'images'} • {promptSourceLabel})
-                      </>
+                      <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1px', minWidth: 0, maxWidth: '100%', lineHeight: 1.2 }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                          <FiPlay size={11} />
+                          <span>Run {group.name}</span>
+                        </span>
+                        <span style={{ fontSize: '0.5625rem', fontWeight: 500, opacity: 0.85, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>
+                          {!enablePromptEnhance
+                            ? 'Direct automation · No prompt'
+                            : tabGroupMode === 'generate'
+                              ? `Ref: ${activeReferenceImage?.label || 'Photo #1'} · ${promptSourceLabel}`
+                              : `${activeImages.length} ${activeImages.length === 1 ? 'image' : 'images'} · ${promptSourceLabel}`}
+                        </span>
+                      </span>
                     )}
                   </Button>
 

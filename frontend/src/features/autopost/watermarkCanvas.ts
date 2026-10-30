@@ -3,10 +3,12 @@ import type { WatermarkConfig, WatermarkPosition } from './watermarkStorage';
 export const loadImageElement = (src: string): Promise<HTMLImageElement> => {
   return new Promise((resolve, reject) => {
     const img = new Image();
-    img.crossOrigin = 'anonymous';
+    if (!src.startsWith('data:') && !src.startsWith('blob:')) {
+      img.crossOrigin = 'anonymous';
+    }
     img.onload = () => resolve(img);
     img.onerror = () => {
-      // If anonymous crossOrigin fails (e.g. data URL or strict CDN), retry without crossOrigin
+      // If anonymous crossOrigin fails (e.g. strict CDN), retry without crossOrigin
       const fallbackImg = new Image();
       fallbackImg.onload = () => resolve(fallbackImg);
       fallbackImg.onerror = () => reject(new Error(`Failed to load image from ${src.slice(0, 50)}...`));
