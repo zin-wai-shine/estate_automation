@@ -724,6 +724,20 @@ func (s *BrowserProfileService) GetAutomationStatus() (map[string]interface{}, e
 	return result, nil
 }
 
+// GetEnhancedImages returns downloaded enhanced images from the companion
+func (s *BrowserProfileService) GetEnhancedImages() (map[string]interface{}, error) {
+	resp, err := gohttp.Get(companionURL() + "/enhanced-images")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 // FocusTabGroupViaCompanion asks the companion to focus a Chrome profile and tab group
 func (s *BrowserProfileService) FocusTabGroupViaCompanion(profileKey, groupName, tabID, defaultURL string, groupTabUrls []string) (map[string]interface{}, error) {
 	payload := map[string]interface{}{

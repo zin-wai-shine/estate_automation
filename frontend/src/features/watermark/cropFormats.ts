@@ -209,6 +209,15 @@ export const INITIAL_CROP_FORMATS: CropStudioFormat[] = [
   },
 ];
 
+const getApiEndpoint = (path: string): string => {
+  if (typeof window !== 'undefined') {
+    if (window.location.protocol === 'https:' || window.location.origin.includes('bolthavenproperty.com')) {
+      return path;
+    }
+  }
+  return `http://localhost:8085${path}`;
+};
+
 export const syncCropFormatToWorkflowConfig = async (format: CropStudioFormat) => {
   const updateBox = (box: any) => {
     const isMatch =
@@ -286,7 +295,7 @@ export const syncCropFormatToWorkflowConfig = async (format: CropStudioFormat) =
 
   // 3. Sync to backend API
   try {
-    const res = await fetch('http://localhost:8085/api/workflow/config');
+    const res = await fetch(getApiEndpoint('/api/workflow/config'));
     if (!res.ok) return;
     const data = await res.json();
     let modified = false;
@@ -308,7 +317,7 @@ export const syncCropFormatToWorkflowConfig = async (format: CropStudioFormat) =
     }
 
     if (modified) {
-      await fetch('http://localhost:8085/api/workflow/config', {
+      await fetch(getApiEndpoint('/api/workflow/config'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
@@ -323,7 +332,7 @@ let hasFetchedFromBackend = false;
 
 export const fetchCropFormatsFromBackend = async (): Promise<CropStudioFormat[]> => {
   try {
-    const res = await fetch('http://localhost:8085/api/crop-formats');
+    const res = await fetch(getApiEndpoint('/api/crop-formats'));
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     if (data.success && Array.isArray(data.formats) && data.formats.length > 0) {
@@ -416,7 +425,7 @@ export const saveCropFormatsList = (formats: CropStudioFormat[]) => {
 
   // Persist to backend database JSON store immediately
   try {
-    fetch('http://localhost:8085/api/crop-formats', {
+    fetch(getApiEndpoint('/api/crop-formats'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ formats }),
@@ -539,7 +548,9 @@ export const formatImageWithCropFormatSlices = async (
     const img = await loadImageElement(imgSrc);
     const naturalW = img.naturalWidth || img.width || 1200;
     const naturalH = img.naturalHeight || img.height || 1200;
-    const mime = imgSrc.includes('.png') ? 'image/png' : imgSrc.includes('.webp') ? 'image/webp' : 'image/jpeg';
+    const isPng = imgSrc.includes('.png') || imgSrc.includes('image/png');
+    const isWebp = imgSrc.includes('.webp') || imgSrc.includes('image/webp');
+    const mime = isPng ? 'image/png' : isWebp ? 'image/webp' : 'image/jpeg';
 
         // Resolve effective watermark:
         // Priority 1: format.watermarkConfig if present and explicitly defined

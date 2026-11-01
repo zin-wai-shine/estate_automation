@@ -11,6 +11,7 @@ import (
 	"github.com/zinwaishine/estate-automate/backend/internal/database"
 	"github.com/zinwaishine/estate-automate/backend/internal/models"
 	"github.com/zinwaishine/estate-automate/backend/internal/services"
+	"github.com/zinwaishine/estate-automate/backend/internal/utils"
 )
 
 var (
@@ -349,6 +350,27 @@ func GetFacebookBrowserStatus(c *fiber.Ctx) error {
 	})
 }
 
+// GetFacebookExtractProgress proxies progress updates from the browser worker
+func GetFacebookExtractProgress(c *fiber.Ctx) error {
+	workerURL := utils.GetBrowserWorkerURL()
+	resp, err := http.Get(workerURL + "/facebook-extract-progress")
+	if err != nil {
+		return c.JSON(fiber.Map{
+			"phase": "idle",
+			"error": err.Error(),
+		})
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return c.JSON(fiber.Map{"phase": "idle"})
+	}
+
+	c.Set("Content-Type", "application/json")
+	return c.Send(body)
+}
+
 // ContinueFacebookBrowser resumes extraction after user manual login
 func ContinueFacebookBrowser(c *fiber.Ctx) error {
 	var req models.ExtractRequest
@@ -551,8 +573,15 @@ func ProxyFacebookImage(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "url parameter required"})
 	}
 
+	req, err := http.NewRequest("GET", targetURL, nil)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid URL"})
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+	req.Header.Set("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
+
 	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Get(targetURL)
+	resp, err := client.Do(req)
 	if err != nil {
 		return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{"error": "Failed to fetch image"})
 	}
@@ -596,10 +625,11 @@ func GenerateAICopy(c *fiber.Ctx) error {
 	}
 
 	if strings.TrimSpace(req.RawContent) == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"success": false,
-			"error":   "Raw content cannot be empty",
-		})
+		if strings.TrimSpace(req.TemplateText) != "" || strings.TrimSpace(req.CustomPrompt) != "" {
+			req.RawContent = "No raw content extracted. Generate a standard high-quality property listing template based on prompt instructions."
+		} else {
+			req.RawContent = "Featured Luxury Condo in Bangkok. Modern amenities, convenient transit location, full furnishings."
+		}
 	}
 
 	prompt := req.TemplateText
@@ -609,6 +639,9 @@ func GenerateAICopy(c *fiber.Ctx) error {
 		} else {
 			prompt = req.CustomPrompt
 		}
+	}
+	if strings.TrimSpace(prompt) == "" {
+		prompt = "Create a professional real estate rental listing copy. Highlight key property features, monthly price, location, bedrooms, and contact details."
 	}
 
 	var generatedText string

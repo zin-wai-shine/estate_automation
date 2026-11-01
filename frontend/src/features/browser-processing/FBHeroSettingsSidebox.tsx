@@ -210,7 +210,7 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
   });
 
   const [condoSearchQuery, setCondoSearchQuery] = useState<string>(() => {
-    return boxConfig.browserCondoName || propertyContext?.title || '';
+    return boxConfig.browserCondoName || (propertyContext?.title && propertyContext.title !== 'Featured Property Listing' && propertyContext.title !== 'Facebook Property Post' ? propertyContext.title : '') || '';
   });
 
   const [isScanningFolder, setIsScanningFolder] = useState(false);
@@ -273,7 +273,7 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
       defaultBaseDir
     );
     setCondoNameAiBoxId(boxConfig.condoNameAiBoxId || defaultCondoAiBoxId);
-    setCondoSearchQuery(boxConfig.browserCondoName || propertyContext?.title || '');
+    setCondoSearchQuery(boxConfig.browserCondoName || (propertyContext?.title && propertyContext.title !== 'Featured Property Listing' && propertyContext.title !== 'Facebook Property Post' ? propertyContext.title : '') || '');
   }, [boxConfig.id, isHero, isOpen]);
 
   // ── Sync Helper ───────────────────────────────────────────────────────────

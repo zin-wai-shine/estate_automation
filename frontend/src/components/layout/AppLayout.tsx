@@ -182,10 +182,29 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
   const allNavItems = navSections.flatMap((section) => section.items);
   const currentNav = allNavItems.find((item) => item.id === activeTab) || allNavItems[0];
 
+  const isCurrentlyInCanvas = Boolean(isCanvasMode || isWorkflowCanvasRoute());
+
   const handleNavClick = (e: React.MouseEvent<HTMLAnchorElement | HTMLButtonElement>, id: string) => {
     if (e.metaKey || e.ctrlKey || e.button === 1) {
       return;
     }
+
+    if (isCurrentlyInCanvas) {
+      // If user is already on create-workflow (canvas), do nothing on click
+      if (id === 'create-workflow') {
+        e.preventDefault();
+        return;
+      }
+
+      // For any other page, open it in a new browser tab so the canvas tab stays open and intact!
+      const targetAttr = (e.currentTarget as HTMLAnchorElement).target;
+      if ((e.currentTarget as HTMLElement).tagName !== 'A' || !targetAttr) {
+        e.preventDefault();
+        window.open(`/${id}`, '_blank');
+      }
+      return;
+    }
+
     e.preventDefault();
 
     // If an in-flight workflow is actively processing, request permission before navigating away
@@ -195,10 +214,6 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         setIsMobileOpen(false);
       });
       return;
-    }
-
-    if (isCanvasMode) {
-      setIsCanvasSidebarVisible(false);
     }
 
     navigate(`/${id}`);
@@ -472,8 +487,17 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                     <a
                       key={item.id}
                       href={`/${item.id}`}
+                      target={isCurrentlyInCanvas && item.id !== 'create-workflow' ? '_blank' : undefined}
+                      rel={isCurrentlyInCanvas && item.id !== 'create-workflow' ? 'noopener noreferrer' : undefined}
                       onClick={(e) => handleNavClick(e, item.id)}
                       aria-label={isCollapsed ? item.label : undefined}
+                      title={
+                        isCurrentlyInCanvas && item.id !== 'create-workflow'
+                          ? `Open ${item.label} in new tab (keeps Canvas open)`
+                          : isCollapsed
+                          ? item.label
+                          : undefined
+                      }
                       style={{
                         display: 'flex',
                         alignItems: 'center',
@@ -586,8 +610,16 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
           <div style={{ padding: isCollapsed ? '0.5rem 0.375rem' : '0.5rem 0.625rem' }}>
             <a
               href="/settings"
+              target={isCurrentlyInCanvas ? '_blank' : undefined}
+              rel={isCurrentlyInCanvas ? 'noopener noreferrer' : undefined}
               onClick={(e) => handleNavClick(e, 'settings')}
-              title={isCollapsed ? (user?.name || 'Settings') : undefined}
+              title={
+                isCurrentlyInCanvas
+                  ? 'Open Settings in new tab (keeps Canvas open)'
+                  : isCollapsed
+                  ? (user?.name || 'Settings')
+                  : undefined
+              }
               style={{
                 width: '100%',
                 display: 'flex',

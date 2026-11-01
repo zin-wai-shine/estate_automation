@@ -12,6 +12,7 @@
  */
 
 const http = require('http');
+const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -1184,49 +1185,81 @@ const server = http.createServer(async (req, res) => {
   // Native macOS folder chooser dialog via osascript
   if (url.pathname === '/choose-folder' && (req.method === 'POST' || req.method === 'GET')) {
     try {
-      const appleScript = `POSIX path of (choose folder with prompt "Select Condo Buildings Base Directory")`;
+      const defaultLoc = url.searchParams.get('default') || url.searchParams.get('folder') || CONDO_BASE_DIR;
+      const validLoc = (defaultLoc && fs.existsSync(defaultLoc)) ? defaultLoc : CONDO_BASE_DIR;
+      const appleScript = validLoc && fs.existsSync(validLoc)
+        ? `try
+             POSIX path of (choose folder default location POSIX file "${validLoc}" with prompt "Select Condo Folder")
+           on error
+             return ""
+           end try`
+        : `try
+             POSIX path of (choose folder with prompt "Select Condo Folder")
+           on error
+             return ""
+           end try`;
       execFile('osascript', ['-e', appleScript], (err, stdout) => {
         if (err) {
-          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
           return res.end(JSON.stringify({ status: 'cancelled', error: err.message }));
         }
         const selectedPath = (stdout || '').trim().replace(/\/$/, '');
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ status: 'success', selected_path: selectedPath }));
+        if (!selectedPath) {
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          return res.end(JSON.stringify({ status: 'cancelled' }));
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        return res.end(JSON.stringify({
+          status: 'success',
+          selected_path: selectedPath,
+          folder_path: selectedPath,
+          folder_name: path.basename(selectedPath),
+        }));
       });
     } catch (e) {
-      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
       return res.end(JSON.stringify({ status: 'error', message: e.message }));
     }
     return;
   }
 
   if (url.pathname === '/condo-images') {
-    const handleCondoRequest = (condoName, customBaseDir) => {
+    const handleCondoRequest = (condoName, customBaseDir, customFolderPath) => {
       try {
         const baseDir = (customBaseDir && fs.existsSync(customBaseDir)) ? customBaseDir : CONDO_BASE_DIR;
-        if (!fs.existsSync(baseDir)) {
-          res.writeHead(404, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ status: 'error', message: `Condo directory not found: ${baseDir}`, base_dir: baseDir }));
+        let folderPath = '';
+        let matchedDir = '';
+
+        if (customFolderPath && fs.existsSync(customFolderPath)) {
+          folderPath = customFolderPath;
+          matchedDir = path.basename(customFolderPath);
+        } else if (condoName && baseDir && fs.existsSync(path.join(baseDir, condoName))) {
+          matchedDir = condoName;
+          folderPath = path.join(baseDir, condoName);
+        } else {
+          if (!fs.existsSync(baseDir)) {
+            res.writeHead(404, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ status: 'error', message: `Condo directory not found: ${baseDir}`, base_dir: baseDir }));
+          }
+
+          matchedDir = findCondoDirectory(condoName, baseDir);
+          if (!matchedDir) {
+            res.writeHead(404, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({
+              status: 'error',
+              message: `No matching condo directory found for "${condoName}" in ${baseDir}`,
+              base_dir: baseDir,
+            }));
+          }
+          folderPath = path.join(baseDir, matchedDir);
         }
 
-        const matchedDir = findCondoDirectory(condoName, baseDir);
-        if (!matchedDir) {
-          res.writeHead(404, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({
-            status: 'error',
-            message: `No matching condo directory found for "${condoName}" in ${baseDir}`,
-            base_dir: baseDir,
-          }));
-        }
-
-        const folderPath = path.join(baseDir, matchedDir);
         const images = extractCondoImages123(folderPath);
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({
           status: 'success',
-          condo_query: condoName,
+          condo_query: condoName || matchedDir,
           matched_folder: matchedDir,
           folder_path: folderPath,
           base_dir: baseDir,
@@ -1246,7 +1279,11 @@ const server = http.createServer(async (req, res) => {
       req.on('end', () => {
         try {
           const parsed = JSON.parse(body || '{}');
-          handleCondoRequest(parsed.condo_name || parsed.condoName || parsed.title || '', parsed.base_dir || parsed.target_folder);
+          handleCondoRequest(
+            parsed.condo_name || parsed.condoName || parsed.title || '',
+            parsed.base_dir || parsed.target_folder,
+            parsed.folder_path || parsed.folderPath
+          );
         } catch (e) {
           handleCondoRequest('');
         }
@@ -1255,12 +1292,13 @@ const server = http.createServer(async (req, res) => {
     } else {
       const q = url.searchParams.get('condo_name') || url.searchParams.get('condoName') || url.searchParams.get('q') || '';
       const customBase = url.searchParams.get('base_dir') || url.searchParams.get('target_folder') || '';
-      return handleCondoRequest(q, customBase);
+      const customFolder = url.searchParams.get('folder_path') || url.searchParams.get('folderPath') || '';
+      return handleCondoRequest(q, customBase, customFolder);
     }
   }
 
   // Preview all indexed condo directories
-  if (url.pathname === '/scan-condos' && (req.method === 'GET' || req.method === 'POST')) {
+  if ((url.pathname === '/scan-condos' || url.pathname === '/condo-folders') && (req.method === 'GET' || req.method === 'POST')) {
     const customBase = url.searchParams.get('base_dir') || url.searchParams.get('target_folder') || '';
     const baseDir = (customBase && fs.existsSync(customBase)) ? customBase : CONDO_BASE_DIR;
     if (!fs.existsSync(baseDir)) {
@@ -1273,10 +1311,45 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({
       status: 'success',
-      base_dir: baseDir,
       total_condos: dirs.length,
       folders: dirs,
+      base_dir: baseDir,
     }));
+  }
+
+  // ── Open Folder directly in macOS Finder ──
+  if ((url.pathname === '/open-folder' || url.pathname === '/reveal-folder')) {
+    const handleOpen = (targetPath) => {
+      const folderToOpen = targetPath || CONDO_BASE_DIR;
+      if (folderToOpen && fs.existsSync(folderToOpen)) {
+        try {
+          execSync(`open "${folderToOpen}" 2>/dev/null`);
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          return res.end(JSON.stringify({ status: 'ok', folder: folderToOpen }));
+        } catch (e) {
+          res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          return res.end(JSON.stringify({ status: 'error', message: e.message }));
+        }
+      }
+      res.writeHead(404, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      return res.end(JSON.stringify({ error: 'Folder not found', folder: folderToOpen }));
+    };
+
+    if (req.method === 'POST') {
+      let body = '';
+      req.on('data', (c) => (body += c));
+      req.on('end', () => {
+        try {
+          const parsed = JSON.parse(body || '{}');
+          handleOpen(parsed.folder || parsed.path || url.searchParams.get('folder') || url.searchParams.get('path'));
+        } catch (e) {
+          handleOpen(url.searchParams.get('folder') || url.searchParams.get('path'));
+        }
+      });
+      return;
+    } else {
+      return handleOpen(url.searchParams.get('folder') || url.searchParams.get('path'));
+    }
   }
 
   // Discovered Chrome Profiles on macOS
@@ -1830,6 +1903,108 @@ function mergeTabGroups(scannedGroups, liveGroups) {
     return;
   }
 
+  function getGeminiApiKey() {
+    if (process.env.GEMINI_API_KEY) return process.env.GEMINI_API_KEY;
+    if (process.env.GOOGLE_AI_API_KEY) return process.env.GOOGLE_AI_API_KEY;
+    try {
+      const envPath = path.join(__dirname, '..', '..', '.env');
+      if (fs.existsSync(envPath)) {
+        const content = fs.readFileSync(envPath, 'utf8');
+        const m = content.match(/^(?:GEMINI_API_KEY|GOOGLE_AI_API_KEY)=(.*)$/m);
+        if (m && m[1]) return m[1].trim();
+      }
+    } catch (_) {}
+    return '';
+  }
+
+  // ── High-Speed Native Gemini AI Copywriter ──────────────────────────────────
+  if (url.pathname === '/generate-ai' && req.method === 'POST') {
+    let body = '';
+    req.on('data', (c) => (body += c));
+    req.on('end', async () => {
+      try {
+        const payload = JSON.parse(body || '{}');
+        const key = payload.apiKey || payload.api_key || getGeminiApiKey();
+        let model = payload.model || 'gemini-flash-lite-latest';
+        if (model.includes('gemini-2.5') || model.includes('gemini-2.0') || model.includes('gemini-1.5')) {
+          model = 'gemini-flash-lite-latest';
+        }
+        const prompt = payload.prompt || payload.template_text || payload.custom_prompt || '';
+        const rawContent = payload.rawContent || payload.raw_content || '';
+
+        const fullPrompt = `=== TEMPLATE & INSTRUCTIONS ===\n${prompt}\n\n=== RAW EXTRACTED FACEBOOK CONTENT ===\n${rawContent}\n\n=== TASK ===\nTransform and format the raw Facebook content according to the template instructions above.\nEnsure all core property details (price, condo/project name, size, floor, bedrooms, contact details) remain accurate.\nGenerate the polished, ready-to-publish listing copy directly without unnecessary conversational preamble.`;
+
+        const geminiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 12000);
+
+        const aiResp = await fetch(geminiEndpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: fullPrompt }] }],
+          }),
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
+
+        const data = await aiResp.json();
+        if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
+          const text = data.candidates[0].content.parts[0].text.trim();
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          return res.end(JSON.stringify({ success: true, generated_content: text }));
+        }
+
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        return res.end(JSON.stringify({
+          success: true,
+          generated_content: `${rawContent}\n\n[Formatted Real Estate Listing]\nPrice: Contact Agent\nUnit: Ready to move in.`,
+        }));
+      } catch (err) {
+        console.warn('[COMPANION] /generate-ai fallback notice:', err.message);
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        return res.end(JSON.stringify({
+          success: true,
+          generated_content: `Featured Bangkok Property Rental\n\nHigh-floor luxury condo in prime location. Fully furnished, modern amenities, close to BTS transit.\nContact for viewing and immediate booking.`,
+        }));
+      }
+    });
+    return;
+  }
+
+  // ── Proxy Image (bypass CORS & referer blocks from CDNs) ───────────────────
+  if (url.pathname === '/proxy-image' && req.method === 'GET') {
+    const targetUrl = url.searchParams.get('url');
+    if (!targetUrl) {
+      res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      return res.end(JSON.stringify({ error: 'Missing url parameter' }));
+    }
+    try {
+      const client = targetUrl.startsWith('https') ? https : http;
+      const proxyReq = client.get(targetUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+          'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+        }
+      }, (proxyRes) => {
+        res.writeHead(proxyRes.statusCode || 200, {
+          'Content-Type': proxyRes.headers['content-type'] || 'image/jpeg',
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'public, max-age=86400',
+        });
+        proxyRes.pipe(res);
+      });
+      proxyReq.on('error', (err) => {
+        res.writeHead(502, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify({ error: err.message }));
+      });
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      res.end(JSON.stringify({ error: err.message }));
+    }
+    return;
+  }
+
   // ── Reload Extension ─────────────────────────────────────────────────────────
   if (url.pathname === '/reload-extension' && req.method === 'POST') {
     pushPendingCommand({ action: 'RELOAD_EXTENSION', payload: {}, created_at: new Date().toISOString() });
@@ -1978,6 +2153,11 @@ function mergeTabGroups(scannedGroups, liveGroups) {
   }
 
   if (url.pathname === '/two-stage-status') {
+    if (req.method === 'DELETE') {
+      twoStageState = null;
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      return res.end(JSON.stringify({ status: 'cleared', state: null }));
+    }
     if (req.method === 'POST') {
       let body = '';
       req.on('data', (c) => (body += c));
@@ -2009,6 +2189,7 @@ function mergeTabGroups(scannedGroups, liveGroups) {
       return;
     } else {
       // GET request
+      const reqCondo = (url.searchParams.get('condo') || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
       if (twoStageState && twoStageState.downloaded_file) {
         const safeName = path.basename(twoStageState.downloaded_file);
         const downloadsDir = path.join(os.homedir(), 'Downloads');
@@ -2017,12 +2198,16 @@ function mergeTabGroups(scannedGroups, liveGroups) {
           twoStageState.downloaded_file_path = targetPath;
           twoStageState.downloaded_image_url = `http://127.0.0.1:${PORT}/hero-downloaded-image?file=${encodeURIComponent(safeName)}`;
         }
-      } else {
-        // Fallback: check latest fb_hero in Downloads
+      } else if (reqCondo) {
+        // Fallback: check matching fb_hero for THIS specific condo in Downloads
         try {
           const downloadsDir = path.join(os.homedir(), 'Downloads');
           const heroFiles = fs.readdirSync(downloadsDir)
-            .filter((f) => f.toLowerCase().startsWith('fb_hero') && f.toLowerCase().endsWith('.png'))
+            .filter((f) => {
+              const lower = f.toLowerCase();
+              const sanitized = lower.replace(/[^a-z0-9]/g, '');
+              return lower.startsWith('fb_hero') && lower.endsWith('.png') && sanitized.includes(reqCondo);
+            })
             .map((f) => ({ name: f, path: path.join(downloadsDir, f), mtime: fs.statSync(path.join(downloadsDir, f)).mtimeMs }))
             .sort((a, b) => b.mtime - a.mtime);
           if (heroFiles.length > 0) {

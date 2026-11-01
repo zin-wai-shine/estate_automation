@@ -90,6 +90,13 @@ async function stopAllExtensionAutomation() {
   automation.isRunning = false;
   automation.queue = [];
 
+  for (const [jobId, resolver] of pendingJobGenerations.entries()) {
+    try {
+      resolver({ success: false, error: 'Automation stopped by user' });
+    } catch (e) {}
+  }
+  pendingJobGenerations.clear();
+
   const notifiedTabIds = new Set();
   if (Array.isArray(automation.tabSlots)) {
     for (const slot of automation.tabSlots) {
@@ -167,27 +174,18 @@ function waitForTabComplete(tabId, maxWaitMs = 25000) {
   });
 }
 
-/** Ensure a tab has the content script injected (for tabs that were already open). */
+/** Ensure a tab has the content script injected (always re-injects to guarantee latest version). */
 async function ensureContentScriptInjected(tabId) {
-  await waitForTabComplete(tabId, 25000);
-  let alive = await pingTab(tabId);
-  if (alive) return true;
-
-  for (let attempt = 0; attempt < 5; attempt++) {
-    try {
-      await chrome.scripting.executeScript({
-        target: { tabId },
-        files: ['content.js'],
-      });
-      await delay(600);
-      alive = await pingTab(tabId);
-      if (alive) return true;
-    } catch (e) {
-      console.warn(`[BOLTHAVEN EXT] Content script injection attempt ${attempt + 1} on tab ${tabId}:`, e.message);
-      await delay(800);
-    }
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ['content.js'],
+    });
+    await delay(250);
+    return true;
+  } catch (e) {
+    return await pingTab(tabId);
   }
-  return false;
 }
 
 /**
@@ -196,15 +194,18 @@ async function ensureContentScriptInjected(tabId) {
  */
 async function reportJobComplete(jobId, resultUrl) {
   try {
+    const filename = `enhanced_${jobId}.png`;
+    const localCompanionUrl = `http://127.0.0.1:9224/downloaded-image?file=${encodeURIComponent(filename)}`;
+    const effectiveUrl = resultUrl && !resultUrl.startsWith('blob:') ? resultUrl : localCompanionUrl;
     await fetch(`${BOLTHAVEN_URL}/api/browser/jobs/${jobId}/complete-from-tab`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        result_url: resultUrl,
+        result_url: effectiveUrl,
         completed_via: 'chatgpt_tab_automation',
       }),
     });
-    console.log('[BOLTHAVEN EXT] Reported job complete:', jobId);
+    console.log('[BOLTHAVEN EXT] Reported job complete:', jobId, '->', effectiveUrl);
   } catch (e) {
     console.warn('[BOLTHAVEN EXT] Failed to report job complete:', e.message);
   }
@@ -225,34 +226,35 @@ async function reportJobFailed(jobId, reason) {
   }
 }
 
-// ─── Attachment Phase Mutex ──────────────────────────────────────────────────
-// Ensures that only ONE tab is in the critical focus + attach + send phase at a time.
-// As soon as that tab's image is attached and submitted, the lock is released so the
+// ─── Setup Phase Mutex ────────────────────────────────────────────────────────
+// Ensures that only ONE tab is in the active focus + attach + send phase at a time (~3 seconds).
+// As soon as that tab's image is sent and leaving composer, the lock is released so the
 // next tab gets full focus. All tabs then generate concurrently in parallel!
-let attachmentMutex = Promise.resolve();
+let setupMutex = Promise.resolve();
 
 function acquireAttachmentMutex() {
   let release;
   const newLock = new Promise((resolve) => {
     release = resolve;
   });
-  const prevLock = attachmentMutex;
-  attachmentMutex = newLock;
+  const prevLock = setupMutex;
+  setupMutex = newLock;
   return prevLock.then(() => release);
 }
 
-const pendingAttachmentResolvers = new Map();
+// ─── Concurrent Job Generation Map ───────────────────────────────────────────
+const pendingJobGenerations = new Map();
 
-function waitForAttachmentPhaseComplete(jobId, timeoutMs = 15000) {
+function waitForJobGeneration(jobId, timeoutMs = 360000) {
   return new Promise((resolve) => {
     const timer = setTimeout(() => {
-      pendingAttachmentResolvers.delete(jobId);
-      resolve(false);
+      pendingJobGenerations.delete(jobId);
+      resolve({ success: false, error: `Generation timed out after ${Math.round(timeoutMs / 1000)}s` });
     }, timeoutMs);
 
-    pendingAttachmentResolvers.set(jobId, () => {
+    pendingJobGenerations.set(jobId, (result) => {
       clearTimeout(timer);
-      resolve(true);
+      resolve(result);
     });
   });
 }
@@ -262,109 +264,113 @@ function waitForAttachmentPhaseComplete(jobId, timeoutMs = 15000) {
  * When done (success or fail), automatically picks the next pending job
  * from the shared queue and processes it on the same slot.
  */
-async function processSlot(slotIndex, sessionId) {
+async function processSlot(slotIndex, sessionId, initialJob = null) {
   const slot = automation.tabSlots[slotIndex];
   if (!slot) return;
 
-  while (automation.queue.length > 0 && automation.isRunning && sessionId === automationSessionId) {
-    const job = automation.queue.shift(); // take the next pending job
+  let nextJob = initialJob;
+
+  while (automation.isRunning && sessionId === automationSessionId) {
+    const job = nextJob || automation.queue.shift();
+    nextJob = null; // only use initialJob on first iteration
     if (!job) break;
     slot.busy = true;
     slot.currentJob = job;
 
     console.log(
-      `[BOLTHAVEN EXT] Tab ${slot.tabId} → waiting for attachment mutex for job ${job.job_id} (Image #${job.original_position})...`
+      `[BOLTHAVEN EXT] Tab ${slot.tabId} → waiting for setup lock for Image #${job.original_position}...`
     );
 
-    // Acquire exclusive attachment lock so this tab has 100% focused attention while attaching & sending
+    // 1. SEQUENTIAL SETUP & SEND (exclusive focus on this tab for ~3 seconds)
     const releaseLock = await acquireAttachmentMutex();
-    let lockReleased = false;
-    const safeReleaseLock = () => {
-      if (!lockReleased) {
-        lockReleased = true;
-        releaseLock();
-      }
-    };
-
-    // Auto-release lock after max 15s or when ATTACHMENT_PHASE_COMPLETE arrives
-    const phasePromise = waitForAttachmentPhaseComplete(job.job_id, 15000);
-    phasePromise.finally(safeReleaseLock);
-
-    console.log(
-      `[BOLTHAVEN EXT] Tab ${slot.tabId} → acquired attachment mutex! Focusing tab and dispatching job ${job.job_id}...`
-    );
-
-    // Focus this tab so file attachment and DOM events work reliably
-    await focusTab(slot.tabId);
-    await delay(500);
-    if (!automation.isRunning || sessionId !== automationSessionId) {
-      safeReleaseLock();
-      slot.busy = false;
-      slot.currentJob = null;
-      return;
-    }
-
-    // Make sure content script is injected
-    await ensureContentScriptInjected(slot.tabId);
-    if (!automation.isRunning || sessionId !== automationSessionId) {
-      safeReleaseLock();
-      slot.busy = false;
-      slot.currentJob = null;
-      return;
-    }
-
     try {
-      const result = await dispatchJobToTab(slot.tabId, job);
-      safeReleaseLock();
       if (!automation.isRunning || sessionId !== automationSessionId) {
         slot.busy = false;
         slot.currentJob = null;
         return;
       }
 
-      if (result && result.success && result.result?.success !== false) {
-        automation.completedCount++;
-        await reportJobComplete(job.job_id, result.result?.result_url || '');
-        console.log(`[BOLTHAVEN EXT] ✓ Job ${job.job_id} completed on tab ${slot.tabId}`);
+      console.log(`[BOLTHAVEN EXT] Tab ${slot.tabId} → acquired setup lock! Focusing tab for Image #${job.original_position}...`);
 
-        // Notify BoltHaven UI of progress
+      await focusTab(slot.tabId);
+      await delay(400);
+
+      await ensureContentScriptInjected(slot.tabId);
+      if (!automation.isRunning || sessionId !== automationSessionId) {
+        slot.busy = false;
+        slot.currentJob = null;
+        return;
+      }
+
+      // Send SETUP_AND_SEND_JOB to the tab
+      const setupRes = await new Promise((resolve) => {
+        chrome.tabs.sendMessage(slot.tabId, { action: 'SETUP_AND_SEND_JOB', job }, (res) => {
+          if (chrome.runtime.lastError) {
+            resolve({ success: false, error: chrome.runtime.lastError.message });
+          } else {
+            resolve(res || { success: false, error: 'No response from tab setup' });
+          }
+        });
+      });
+
+      if (!setupRes || !setupRes.success) {
+        throw new Error(setupRes?.error || 'Failed to setup and send image in ChatGPT tab');
+      }
+
+      console.log(`[BOLTHAVEN EXT] Tab ${slot.tabId} → Image #${job.original_position} sent! Releasing setup lock for next tab.`);
+    } catch (setupErr) {
+      console.warn(`[BOLTHAVEN EXT] Tab ${slot.tabId} setup error:`, setupErr.message);
+      automation.failedCount++;
+      await reportJobFailed(job.job_id, setupErr.message);
+      slot.busy = false;
+      slot.currentJob = null;
+      await delay(2000);
+      break;
+    } finally {
+      // RELEASE THE LOCK IMMEDIATELY SO NEXT TAB GETS FULL ATTENTION!
+      releaseLock();
+    }
+
+    // 2. PARALLEL GENERATION & DOWNLOAD (happens in background while other tabs setup)
+    console.log(`[BOLTHAVEN EXT] Tab ${slot.tabId} → generating Image #${job.original_position} in background...`);
+    try {
+      const genResult = await waitForJobGeneration(job.job_id, 360000);
+      if (genResult && genResult.success) {
+        automation.completedCount++;
+        await reportJobComplete(job.job_id, genResult.result_url || '');
+        console.log(`[BOLTHAVEN EXT] ✓ Job ${job.job_id} (Image #${job.original_position}) completed on tab ${slot.tabId}`);
         notifyProgress();
       } else {
-        automation.failedCount++;
-        const reason = result?.error || result?.result?.error || 'Unknown content script error';
-        await reportJobFailed(job.job_id, reason);
-        console.log(`[BOLTHAVEN EXT] ✗ Job ${job.job_id} failed:`, reason);
+        throw new Error(genResult?.error || 'Generation failed or timed out');
       }
-    } catch (err) {
-      safeReleaseLock();
-      if (!automation.isRunning || sessionId !== automationSessionId) {
-        slot.busy = false;
-        slot.currentJob = null;
-        return;
-      }
+    } catch (genErr) {
       automation.failedCount++;
-      await reportJobFailed(job.job_id, err.message);
-      console.warn(`[BOLTHAVEN EXT] Warning processing job ${job.job_id}:`, err.message);
-    } finally {
-      safeReleaseLock();
+      await reportJobFailed(job.job_id, genErr.message);
+      console.warn(`[BOLTHAVEN EXT] ✗ Job ${job.job_id} failed:`, genErr.message);
     }
 
     slot.busy = false;
     slot.currentJob = null;
 
-    // Settle pause between images on the same tab to avoid rate limits and let ChatGPT UI reset
-    await delay(3000);
+    // Brief pause before this slot takes the next job from queue
+    await delay(1500);
   }
 
-  // This slot has finished; check if all slots are done
-  const allDone = automation.tabSlots.every((s) => !s.busy && automation.queue.length === 0);
-  if (allDone && automation.isRunning && sessionId === automationSessionId) {
+  // Check if all slots have finished
+  checkAndFinishAutomation(sessionId);
+}
+
+function checkAndFinishAutomation(sessionId) {
+  const allDone = automation.tabSlots.every((s) => !s.busy) && automation.queue.length === 0;
+  if (allDone && automation.isRunning && (sessionId === undefined || sessionId === automationSessionId)) {
     finishAutomation();
   }
 }
 
 function notifyProgress() {
   const total = automation.completedCount + automation.failedCount + automation.queue.length;
+  const isAllDone = automation.queue.length === 0 && automation.tabSlots.every((s) => !s.busy);
+
   // Notify the companion service so the frontend can poll queue status
   fetch(`${COMPANION_URL}/automation-progress`, {
     method: 'POST',
@@ -374,8 +380,14 @@ function notifyProgress() {
       completed: automation.completedCount,
       failed: automation.failedCount,
       remaining: automation.queue.length,
+      total: total,
+      is_running: !isAllDone,
     }),
   }).catch(() => {});
+
+  if (isAllDone && automation.isRunning) {
+    finishAutomation();
+  }
 }
 
 function finishAutomation() {
@@ -392,6 +404,7 @@ function finishAutomation() {
       property_id: automation.propertyId,
       completed: automation.completedCount,
       failed: automation.failedCount,
+      is_running: false,
     }),
   }).catch(() => {});
 }
@@ -543,15 +556,6 @@ async function _ensureTabGroupOpenInternal(groupName, customUrls, tabMode = 'exi
     }
   }
 
-  // If tabMode === 'new_tabs', navigate tabs to fresh chat
-  if (tabMode === 'new_tabs') {
-    for (const t of selectedTabs) {
-      const cur = t.url || t.pendingUrl || '';
-      if (cur.includes('/c/')) {
-        await chrome.tabs.update(t.id, { url: 'https://chatgpt.com/' }).catch(() => {});
-      }
-    }
-  }
 
   // Close any empty initial "New Tab" pages
   try {
@@ -684,10 +688,12 @@ async function startAutomation(payload) {
 
   activeTabIds = activeTabIds.slice(0, maxWorkers);
 
-  if (activeTabIds.length === 0) {
-    console.log(`[BOLTHAVEN EXT] Opening ${maxWorkers} regular ChatGPT worker tab(s)...`);
-    for (let i = 0; i < maxWorkers; i++) {
-      const targetUrl = (groupTabUrls && groupTabUrls[i]) || 'https://chatgpt.com/';
+  if (activeTabIds.length < maxWorkers) {
+    const needed = maxWorkers - activeTabIds.length;
+    console.log(`[BOLTHAVEN EXT] Opening ${needed} additional ChatGPT worker tab(s) to reach ${maxWorkers} workers...`);
+    for (let i = 0; i < needed; i++) {
+      const idx = activeTabIds.length;
+      const targetUrl = (groupTabUrls && groupTabUrls[idx]) || 'https://chatgpt.com/';
       const created = await chrome.tabs.create({ url: targetUrl, active: false });
       activeTabIds.push(created.id);
     }
@@ -747,24 +753,32 @@ async function startAutomation(payload) {
   // Initialise automation state
   automation.isRunning = true;
   automation.propertyId = propertyId;
-  automation.queue = [...jobs];
+  // Queue holds remaining jobs after assigning the initial jobs to the slots
+  automation.queue = jobs.slice(activeTabIds.length);
   automation.completedCount = 0;
   automation.failedCount = 0;
   automation.tabSlots = activeTabIds.map((tabId) => ({ tabId, busy: false, currentJob: null }));
 
-  console.log(`[BOLTHAVEN EXT] Launching ${automation.tabSlots.length} concurrent tab worker slots...`);
+  console.log(`[BOLTHAVEN EXT] Starting sequential tab initialization for ${automation.tabSlots.length} tabs...`);
 
-  // Launch one concurrent worker per tab slot.
-  // The attachmentMutex ensures each tab gets exclusive focus during its attachment
-  // phase, and then immediately hands off focus to the next tab so all tabs generate in parallel!
-  for (let i = 0; i < automation.tabSlots.length; i++) {
-    (async (slotIdx) => {
-      if (slotIdx > 0) {
-        await delay(slotIdx * 600);
-      }
-      processSlot(slotIdx, mySessionId);
-    })(i);
-  }
+  // Sequentially setup and send each tab in strict order: Tab 1 (Image 1) -> Tab 2 (Image 2) -> Tab 3 (Image 3) -> Tab 4 (Image 4)
+  (async () => {
+    for (let i = 0; i < automation.tabSlots.length; i++) {
+      if (!automation.isRunning || mySessionId !== automationSessionId) break;
+      const initialJob = jobs[i];
+      if (!initialJob) break;
+
+      console.log(`[BOLTHAVEN EXT] Starting Tab Slot ${i + 1}/${automation.tabSlots.length} with Image #${initialJob.original_position}...`);
+      processSlot(i, mySessionId, initialJob);
+
+      // Wait until this slot completes its setup & send phase before starting the next tab
+      await delay(200);
+      await acquireAttachmentMutex().then((release) => {
+        release();
+      });
+      await delay(200);
+    }
+  })();
 
   return { success: true, message: `Automation started: ${jobs.length} jobs on ${activeTabIds.length} tabs` };
 }
@@ -772,6 +786,92 @@ async function startAutomation(payload) {
 // ─── Message Router ──────────────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  // Click Send button in MAIN world context (bypasses Chrome isolated world limitations for React events)
+  if (request.action === 'CLICK_SEND_MAIN_WORLD') {
+    const tabId = sender.tab?.id;
+    if (tabId) {
+      chrome.scripting.executeScript({
+        target: { tabId },
+        world: 'MAIN',
+        func: () => {
+          const isStop = (el) => {
+            if (!el) return false;
+            const aria = (el.getAttribute('aria-label') || '').toLowerCase();
+            const tid = (el.getAttribute('data-testid') || '').toLowerCase();
+            return aria.includes('stop') || tid.includes('stop') || Boolean(el.querySelector('svg rect, svg square'));
+          };
+
+          const explicit = (
+            document.querySelector('button[data-testid="send-button"]') ||
+            document.querySelector('button[data-testid="composer-send-button"]') ||
+            document.querySelector('button[aria-label="Send prompt"]') ||
+            document.querySelector('button[aria-label="Send message"]') ||
+            document.querySelector('button[aria-label="Send"]')
+          );
+          let btn = (explicit && !explicit.disabled && explicit.getAttribute('aria-disabled') !== 'true' && !isStop(explicit)) ? explicit : null;
+
+          if (!btn) {
+            const promptEl = document.querySelector('.ProseMirror, #prompt-textarea, textarea');
+            const pRect = promptEl?.getBoundingClientRect();
+            const btns = Array.from(document.querySelectorAll('button:not(:disabled)')).filter((b) => {
+              if (b.disabled || b.getAttribute('aria-disabled') === 'true' || isStop(b)) return false;
+              const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+              const text = (b.innerText || b.textContent || '').trim();
+              if (text.length > 0) return false;
+              if (
+                aria.includes('editor') ||
+                aria.includes('copy') ||
+                aria.includes('share') ||
+                aria.includes('pin') ||
+                aria.includes('desktop') ||
+                aria.includes('app') ||
+                aria.includes('project') ||
+                aria.includes('plugin') ||
+                aria.includes('attach') ||
+                aria.includes('mic') ||
+                aria.includes('voice') ||
+                aria.includes('model') ||
+                aria.includes('dictate') ||
+                aria.includes('record')
+              ) {
+                return false;
+              }
+              const r = b.getBoundingClientRect();
+              if (r.width < 18 || r.width > 55 || r.height < 18 || r.height > 55) return false;
+              if (pRect && r.bottom < pRect.top - 10) return false;
+              return Boolean(b.querySelector('svg'));
+            });
+            if (btns.length > 0) {
+              btns.sort((a, b) => b.getBoundingClientRect().right - a.getBoundingClientRect().right);
+              btn = btns[0];
+            }
+          }
+
+          if (btn && !btn.disabled) {
+            btn.focus();
+            const r = btn.getBoundingClientRect();
+            const opts = { bubbles: true, cancelable: true, composed: true, view: window, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2, buttons: 1 };
+            btn.dispatchEvent(new PointerEvent('pointerdown', { ...opts, pointerId: 1, isPrimary: true, pointerType: 'mouse' }));
+            btn.dispatchEvent(new MouseEvent('mousedown', opts));
+            btn.dispatchEvent(new PointerEvent('pointerup', { ...opts, pointerId: 1, isPrimary: true, pointerType: 'mouse' }));
+            btn.dispatchEvent(new MouseEvent('mouseup', opts));
+            btn.dispatchEvent(new MouseEvent('click', opts));
+            btn.click();
+            if (btn.form && typeof btn.form.requestSubmit === 'function') {
+              btn.form.requestSubmit(btn);
+            }
+          }
+
+          const pm = document.querySelector('.ProseMirror, #prompt-textarea, textarea');
+          if (pm) {
+            pm.focus();
+            pm.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true, composed: true }));
+          }
+        },
+      }).then(() => sendResponse({ success: true })).catch((e) => sendResponse({ success: false, error: e.message }));
+      return true;
+    }
+  }
   // Image download handler via chrome.downloads API
   if (request.action === 'DOWNLOAD_IMAGE') {
     const rawFilename = request.filename || `enhanced_${Date.now()}.png`;
@@ -921,6 +1021,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       remaining: automation.queue.length,
       propertyId: automation.propertyId,
     });
+    return true;
+  }
+
+  // ── Notify job generation complete/failed from content script ──────
+  if (request.action === 'JOB_GENERATION_COMPLETE' || request.action === 'JOB_GENERATION_FAILED') {
+    const resolver = pendingJobGenerations.get(request.jobId);
+    if (resolver) {
+      pendingJobGenerations.delete(request.jobId);
+      resolver({
+        success: request.action === 'JOB_GENERATION_COMPLETE',
+        result_url: request.result_url || '',
+        error: request.error || '',
+      });
+    }
+    sendResponse({ ok: true });
     return true;
   }
 
@@ -1137,19 +1252,35 @@ async function executeTwoStageStaging(payload) {
     }),
   }).catch(() => {});
 
-  const stage2Response = await new Promise((resolve, reject) => {
-    chrome.tabs.sendMessage(tab2.id, {
-      action: 'EXECUTE_STAGE2_STAGING',
-      extractedPrompt,
-      referenceImage, // 1st: manual reference image
-      condoImages,    // 2nd: 1.png, 2.png, 3.png
-      condoName,
-    }, (res) => {
-      if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
-      if (!res || !res.success) return reject(new Error(res?.error || 'Failed to execute Hero image generation'));
-      resolve(res);
-    });
-  });
+  let stage2Response = null;
+  let lastSendError = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await ensureContentScriptInjected(tab2.id);
+      stage2Response = await new Promise((resolve, reject) => {
+        chrome.tabs.sendMessage(tab2.id, {
+          action: 'EXECUTE_STAGE2_STAGING',
+          extractedPrompt,
+          referenceImage, // 1st: manual reference image
+          condoImages,    // 2nd: 1.png, 2.png, 3.png
+          condoName,
+        }, (res) => {
+          if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
+          if (!res || !res.success) return reject(new Error(res?.error || 'Failed to execute Hero image generation'));
+          resolve(res);
+        });
+      });
+      if (stage2Response) break;
+    } catch (err) {
+      lastSendError = err;
+      console.warn(`[BOLTHAVEN EXT] Attempt ${attempt} to dispatch EXECUTE_STAGE2_STAGING failed:`, err.message);
+      await delay(1000);
+    }
+  }
+
+  if (!stage2Response) {
+    throw lastSendError || new Error('Could not establish connection to ChatGPT tab');
+  }
 
   if (isTwoStageStopped()) return;
 
@@ -1238,11 +1369,120 @@ async function pollCompanion() {
         chrome.runtime.reload();
         return;
       } else if (action === 'INSPECT_CHATGPT') {
-        const tabs = await chrome.tabs.query({});
-        const chatTab = tabs.find((t) => t.active && (t.url || '').includes('chatgpt.com')) || tabs.find((t) => (t.url || '').includes('chatgpt.com'));
+        const focusedTabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+        const allTabs = await chrome.tabs.query({});
+        const chatTab = (focusedTabs.length > 0 && (focusedTabs[0].url || '').includes('chatgpt.com'))
+          ? focusedTabs[0]
+          : (allTabs.find((t) => t.active && (t.url || '').includes('chatgpt.com')) || allTabs.find((t) => (t.url || '').includes('chatgpt.com')));
+        if (chatTab) {
+          let mainWorldInfo = null;
+          try {
+            const results = await chrome.scripting.executeScript({
+              target: { tabId: chatTab.id },
+              world: 'MAIN',
+              func: (shouldClick) => {
+                const pm = document.querySelector('.ProseMirror, #prompt-textarea, textarea');
+                let insertStatus = 'none';
+                if (pm && shouldClick) {
+                  pm.focus();
+                  // Try document.execCommand('insertText')
+                  const testText = 'Hello Test Prompt from Antigravity';
+                  const sel = window.getSelection();
+                  const range = document.createRange();
+                  range.selectNodeContents(pm);
+                  sel.removeAllRanges();
+                  sel.addRange(range);
+                  const success = document.execCommand('insertText', false, testText);
+                  insertStatus = `execCommand insertText: ${success}, text: ${pm.textContent}`;
+                }
+
+                const allBtns = Array.from(document.querySelectorAll('button')).map(b => ({
+                  aria: b.getAttribute('aria-label'),
+                  testid: b.getAttribute('data-testid'),
+                  tag: b.tagName,
+                  disabled: b.disabled,
+                  ariaDisabled: b.getAttribute('aria-disabled'),
+                  text: (b.innerText || b.textContent || '').trim().slice(0, 20),
+                  rect: {
+                    x: Math.round(b.getBoundingClientRect().x),
+                    y: Math.round(b.getBoundingClientRect().y),
+                    w: Math.round(b.getBoundingClientRect().width),
+                    h: Math.round(b.getBoundingClientRect().height),
+                  },
+                  svg: Boolean(b.querySelector('svg')),
+                  svgPath: b.querySelector('svg path')?.getAttribute('d')?.slice(0, 40) || '',
+                }));
+
+                const explicit = (
+                  document.querySelector('button[data-testid="send-button"]') ||
+                  document.querySelector('button[data-testid="composer-send-button"]') ||
+                  document.querySelector('button[aria-label="Send prompt"]') ||
+                  document.querySelector('button[aria-label="Send message"]') ||
+                  document.querySelector('button[aria-label="Send"]')
+                );
+                let btn = explicit;
+                if (!btn) {
+                  // Find circular button near the bottom right of prompt textarea
+                  const promptEl = document.querySelector('.ProseMirror, #prompt-textarea');
+                  const pRect = promptEl?.getBoundingClientRect();
+                  const candidates = Array.from(document.querySelectorAll('button')).filter(b => {
+                    if (b.disabled || b.getAttribute('aria-disabled') === 'true') return false;
+                    const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+                    if (aria.includes('stop') || aria.includes('editor') || aria.includes('attach') || aria.includes('mic') || aria.includes('voice') || aria.includes('model') || aria.includes('files') || aria.includes('projects')) return false;
+                    const r = b.getBoundingClientRect();
+                    if (r.width < 20 || r.width > 55 || r.height < 20 || r.height > 55) return false;
+                    if (pRect && r.bottom < pRect.top) return false;
+                    return Boolean(b.querySelector('svg'));
+                  });
+                  if (candidates.length > 0) {
+                    candidates.sort((a, b) => b.getBoundingClientRect().right - a.getBoundingClientRect().right);
+                    btn = candidates[0];
+                  }
+                }
+
+                return {
+                  hasBtn: Boolean(btn),
+                  btnDisabled: btn?.disabled,
+                  btnAria: btn?.getAttribute('aria-label'),
+                  btnTestId: btn?.getAttribute('data-testid'),
+                  btnOuter: btn?.outerHTML?.slice(0, 150),
+                  allBtns: allBtns.filter(b => b.svg || b.aria),
+                  pmKeys,
+                  pmTag: pm?.tagName,
+                  insertStatus,
+                };
+              },
+              args: [Boolean(payload?.tryClick)],
+            });
+            mainWorldInfo = results?.[0]?.result;
+          } catch (e) {
+            mainWorldInfo = { error: e.message };
+          }
+
+          await ensureContentScriptInjected(chatTab.id);
+          chrome.tabs.sendMessage(chatTab.id, { action: 'INSPECT_CHATGPT', tryClick: payload?.tryClick }, (resp) => {
+            fetch(`${COMPANION_URL}/report-inspect`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ ...(resp || {}), mainWorldInfo }),
+            }).catch(() => {});
+          });
+        } else {
+          fetch(`${COMPANION_URL}/report-inspect`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ error: 'No chatgpt.com tab found in this Chrome profile' }),
+          }).catch(() => {});
+        }
+      } else if (action === 'TEST_ATTACH') {
+        const focusedTabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+        const allTabs = await chrome.tabs.query({});
+        const chatTab = (focusedTabs.length > 0 && (focusedTabs[0].url || '').includes('chatgpt.com'))
+          ? focusedTabs[0]
+          : (allTabs.find((t) => t.active && (t.url || '').includes('chatgpt.com')) || allTabs.find((t) => (t.url || '').includes('chatgpt.com')));
         if (chatTab) {
           await ensureContentScriptInjected(chatTab.id);
-          chrome.tabs.sendMessage(chatTab.id, { action: 'INSPECT_CHATGPT' }, (resp) => {
+          chrome.tabs.sendMessage(chatTab.id, { action: 'TEST_ATTACH' }, (resp) => {
             fetch(`${COMPANION_URL}/report-inspect`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -1256,12 +1496,21 @@ async function pollCompanion() {
             body: JSON.stringify({ error: 'No chatgpt.com tab found in this Chrome profile' }),
           }).catch(() => {});
         }
-      } else if (action === 'TEST_ATTACH') {
-        const tabs = await chrome.tabs.query({});
-        const chatTab = tabs.find((t) => t.active && (t.url || '').includes('chatgpt.com')) || tabs.find((t) => (t.url || '').includes('chatgpt.com'));
+      } else if (action === 'TEST_SETUP_AND_SEND') {
+        const focusedTabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+        const allTabs = await chrome.tabs.query({});
+        const chatTab = (focusedTabs.length > 0 && (focusedTabs[0].url || '').includes('chatgpt.com'))
+          ? focusedTabs[0]
+          : (allTabs.find((t) => t.active && (t.url || '').includes('chatgpt.com')) || allTabs.find((t) => (t.url || '').includes('chatgpt.com')));
         if (chatTab) {
           await ensureContentScriptInjected(chatTab.id);
-          chrome.tabs.sendMessage(chatTab.id, { action: 'TEST_ATTACH' }, (resp) => {
+          const sampleJob = {
+            job_id: 'test-job-001',
+            original_position: 1,
+            source_file_path: '/storage/uploads/facebook-import/FB-20261029-182451-0004/image_001.jpg',
+            resolved_prompt: 'Edit the attached original interior photograph into ONE clean, detailed, professional architectural real-estate image.',
+          };
+          chrome.tabs.sendMessage(chatTab.id, { action: 'SETUP_AND_SEND_JOB', job: sampleJob }, (resp) => {
             fetch(`${COMPANION_URL}/report-inspect`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },

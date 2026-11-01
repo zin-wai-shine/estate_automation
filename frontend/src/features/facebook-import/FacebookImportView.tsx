@@ -146,6 +146,37 @@ interface FacebookImportViewProps {
   onNavigateTab?: (tab: string) => void;
 }
 
+async function requestGenerateAI(payload: Record<string, any>): Promise<{ success: boolean; generated_content?: string; error?: string }> {
+  let resolvedModel = payload.model || 'gemini-flash-lite-latest';
+  if (resolvedModel.includes('gemini-2.5') || resolvedModel.includes('gemini-2.0') || resolvedModel.includes('gemini-1.5')) {
+    resolvedModel = 'gemini-flash-lite-latest';
+  }
+  const cleanPayload = { ...payload, model: resolvedModel };
+
+  const endpoints = [
+    'http://localhost:9224/generate-ai',
+    '/api/facebook-import/generate-ai',
+    'http://localhost:8085/api/facebook-import/generate-ai',
+  ];
+
+  for (const ep of endpoints) {
+    try {
+      const resp = await fetch(ep, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cleanPayload),
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.success && data.generated_content && typeof data.generated_content === 'string') {
+          return data;
+        }
+      }
+    } catch (_) {}
+  }
+  return { success: false, error: 'AI generation service unreachable' };
+}
+
 interface ExtractedImage {
   index: number;
   facebook_photo_id?: string;
@@ -767,35 +798,32 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
     addLog(`Calling ${providerName} for [${box.title}]...`, 'info');
 
     try {
-      const resp = await fetch('http://localhost:8085/api/facebook-import/generate-ai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          provider: effectiveProvider,
-          model: effectiveModel,
-          template_id: box.templateId || '',
-          template_name: box.title,
-          template_text: box.templateText || '',
-          raw_content: caption,
-          custom_prompt: box.customPrompt || '',
-        }),
+      const data = await requestGenerateAI({
+        provider: effectiveProvider,
+        model: effectiveModel,
+        template_id: box.templateId || '',
+        template_name: box.title,
+        template_text: box.templateText || '',
+        raw_content: caption,
+        custom_prompt: box.customPrompt || '',
       });
 
-      const data = await resp.json();
-      if (!resp.ok || !data.success) {
+      if (!data.success || !data.generated_content) {
         throw new Error(data.error || `Failed to generate listing copy with ${providerName}`);
       }
 
-      setAiGeneratedOutputs((prev) => ({ ...prev, [boxId]: data.generated_content }));
+      setAiGeneratedOutputs((prev) => ({ ...prev, [boxId]: data.generated_content || '' }));
       setAiGeneratedCopy(data.generated_content);
       if ((box.provider as string) !== 'watermark' && (box.provider as string) !== 'n8n' && (box.provider as string) !== 'external_browser') {
         setGeneratedProvider(box.provider as any);
       }
       addLog(`✨ [${box.title}] generated copy successfully!`, 'success');
+      return data.generated_content || '';
     } catch (err: any) {
       const msg = err.message || `Error communicating with ${providerName}`;
       setAiError(msg);
       addLog(`[${box.title}] AI generation failed: ${msg}`, 'error');
+      return '';
     } finally {
       setAiBoxGenerating((prev) => ({ ...prev, [boxId]: false }));
     }
@@ -940,21 +968,16 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
     addLog(`Calling ${providerName} with template "${template?.name || 'Selected'}"...`, 'info');
 
     try {
-      const resp = await fetch('http://localhost:8085/api/facebook-import/generate-ai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          provider: aiProvider,
-          template_id: template ? String(template.id) : '',
-          template_name: template?.name || 'Facebook Template',
-          template_text: template?.templateText || '',
-          raw_content: caption,
-          custom_prompt: customPromptTweak,
-        }),
+      const data = await requestGenerateAI({
+        provider: aiProvider,
+        template_id: template ? String(template.id) : '',
+        template_name: template?.name || 'Facebook Template',
+        template_text: template?.templateText || '',
+        raw_content: caption,
+        custom_prompt: customPromptTweak,
       });
 
-      const data = await resp.json();
-      if (!resp.ok || !data.success) {
+      if (!data.success || !data.generated_content) {
         throw new Error(data.error || `Failed to generate listing copy with ${providerName}`);
       }
 
@@ -1385,24 +1408,20 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
               const providerName = `${effectiveProvider === 'runware_ai' ? 'Runware AI' : effectiveProvider === 'laozhang_ai' ? 'LaoZhang AI' : effectiveProvider === 'openai' ? 'OpenAI' : 'Google AI'} (${getAIModelDisplayName(effectiveProvider, effectiveModel)})`;
               addLog(`Generating copy for [${box.title}] with ${providerName}...`, 'info');
               try {
-                const resp = await fetch('http://localhost:8085/api/facebook-import/generate-ai', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    provider: effectiveProvider,
-                    model: effectiveModel,
-                    template_id: box.templateId || '',
-                    template_name: box.title,
-                    template_text: box.templateText || '',
-                    raw_content: result.caption.original,
-                    custom_prompt: box.customPrompt || '',
-                  }),
+                const data = await requestGenerateAI({
+                  provider: effectiveProvider,
+                  model: effectiveModel,
+                  template_id: box.templateId || '',
+                  template_name: box.title,
+                  template_text: box.templateText || '',
+                  raw_content: result.caption.original,
+                  custom_prompt: box.customPrompt || '',
                 });
-                const data = await resp.json();
-                if (resp.ok && data.success && data.generated_content) {
+
+                if (data.success && data.generated_content) {
                   generatedCopiesMap[box.id] = data.generated_content;
                   if (!generatedPrimaryCopy) generatedPrimaryCopy = data.generated_content;
-                  setAiGeneratedOutputs((prev) => ({ ...prev, [box.id]: data.generated_content }));
+                  setAiGeneratedOutputs((prev) => ({ ...prev, [box.id]: data.generated_content || '' }));
                   setAiGeneratedCopy(data.generated_content);
                   addLog(`✨ [${box.title}] copy generated successfully!`, 'success');
                   setWorkflowExecutionState((prev) => ({
@@ -2361,26 +2380,57 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
 
   const handleDownloadImage = async (imgUrl: string, index?: number, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
+    if (!imgUrl) return;
+
     try {
-      const fullUrl = imgUrl.startsWith('/storage') ? `http://localhost:8085${imgUrl}` : imgUrl;
-      const response = await fetch(fullUrl, { mode: 'cors' });
-      const blob = await response.blob();
+      let blob: Blob;
+      let mimeType = 'image/jpeg';
+
+      if (imgUrl.startsWith('data:')) {
+        const commaIdx = imgUrl.indexOf(',');
+        const header = imgUrl.slice(0, commaIdx);
+        const base64Data = imgUrl.slice(commaIdx + 1);
+        mimeType = header.match(/:(.*?);/)?.[1] || 'image/jpeg';
+        const binaryStr = atob(base64Data);
+        const bytes = new Uint8Array(binaryStr.length);
+        for (let i = 0; i < binaryStr.length; i++) {
+          bytes[i] = binaryStr.charCodeAt(i);
+        }
+        blob = new Blob([bytes], { type: mimeType });
+      } else {
+        const fullUrl = imgUrl.startsWith('/storage') ? `http://localhost:8085${imgUrl}` : imgUrl;
+        const response = await fetch(fullUrl, { mode: 'cors' });
+        blob = await response.blob();
+        mimeType = blob.type || 'image/jpeg';
+      }
+
+      let ext = 'jpg';
+      if (mimeType.includes('png') || imgUrl.includes('.png')) {
+        ext = 'png';
+      } else if (mimeType.includes('webp') || imgUrl.includes('.webp')) {
+        ext = 'webp';
+      }
+
       const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = blobUrl;
-      a.download = `property-photo-${index !== undefined ? index : Date.now()}.jpg`;
+      const fileNum = index !== undefined ? (typeof index === 'number' && index >= 0 ? index + 1 : index) : Date.now();
+      a.download = `property-photo-${fileNum}.${ext}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      URL.revokeObjectURL(blobUrl);
+
+      setTimeout(() => {
+        try { URL.revokeObjectURL(blobUrl); } catch (_) {}
+      }, 30000);
       addLog(`Image #${index !== undefined ? index : ''} downloaded successfully`, 'success');
     } catch (err: any) {
-      console.warn('Direct blob download failed, falling back to window download:', err);
-      const fullUrl = imgUrl.startsWith('/storage') ? `http://localhost:8085${imgUrl}` : imgUrl;
+      console.warn('handleDownloadImage error, using direct fallback:', err);
+      const ext = imgUrl.includes('.png') ? 'png' : 'jpg';
       const a = document.createElement('a');
-      a.href = fullUrl;
+      a.href = imgUrl;
       a.target = '_blank';
-      a.download = `property-photo-${index !== undefined ? index : Date.now()}.jpg`;
+      a.download = `property-photo-${index !== undefined ? index : Date.now()}.${ext}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -5398,6 +5448,7 @@ style={{
             aiGeneratedOutputs={aiGeneratedOutputs}
             aiGeneratedCopy={aiGeneratedCopy}
             projectName={propertyData?.project_name || 'Facebook Property Post'}
+            onRegenerateBoxOutput={handleGenerateDynamicBoxCopy}
             autoFormatBoxes={autoFormatBoxes}
             onToggleBoxAutoFormat={handleToggleBoxAutoFormat}
             autoEnhance={autoEnhance}

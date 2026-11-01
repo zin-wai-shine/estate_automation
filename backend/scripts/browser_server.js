@@ -1581,6 +1581,32 @@ async function extractGalleryFromTargetPost(page, targetPostContext, maxImages =
 
     if (photoAnchors.length === 0) return { found: false, reason: 'No photo anchors found inside confirmed target post container' };
 
+    const anchorDataList = photoAnchors.map((a, idx) => {
+      let bestSrc = '';
+      const img = a.querySelector('img');
+      if (img) {
+        bestSrc = img.currentSrc || img.src || '';
+        if (img.srcset) {
+          const parts = img.srcset.split(',').map((s) => s.trim().split(/\s+/));
+          let maxW = 0;
+          for (const [url, desc] of parts) {
+            const w = desc ? parseInt(desc.replace('w', ''), 10) : 0;
+            if (w > maxW) { maxW = w; bestSrc = url; }
+          }
+        }
+      }
+      const r = a.getBoundingClientRect();
+      return {
+        index: idx,
+        href: a.href || '',
+        click_x: Math.round(r.left + r.width / 2),
+        click_y: Math.round(r.top + r.height / 2),
+        width: Math.round(r.width),
+        height: Math.round(r.height),
+        src: bestSrc,
+      };
+    });
+
     const firstAnchor = photoAnchors[0];
     firstAnchor.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
     const updatedRect = firstAnchor.getBoundingClientRect();
@@ -1595,6 +1621,7 @@ async function extractGalleryFromTargetPost(page, targetPostContext, maxImages =
       visible_cells: photoAnchors.length,
       additional_count: additionalCount,
       estimated_total: photoAnchors.length + additionalCount,
+      anchors: anchorDataList,
     };
   }, { postBoundingBox, postId });
 
@@ -1750,18 +1777,37 @@ async function extractGalleryFromTargetPost(page, targetPostContext, maxImages =
         '[aria-label="Next photo"]',
         '[aria-label="Next image"]',
         '[aria-label="Next"]',
+        '[aria-label*="Next" i]',
+        '[aria-label*="next" i]',
         '[aria-label="ถัดไป"]',
+        '[aria-label*="ถัดไป"]',
+        '[aria-label*="ต่อไป"]',
+        '[aria-label*="ดูรูปภาพถัดไป"]',
         '[aria-label="Next Picture"]',
         '[aria-label="Go to next item"]',
+        '[data-testid*="next" i]',
+        '[data-testid*="chevron-right" i]',
       ];
       for (const sel of nextSelectors) {
         const btns = Array.from(document.querySelectorAll(sel));
         for (const btn of btns) {
           const rect = btn.getBoundingClientRect();
-          if (rect.width > 0 && rect.height > 0 && rect.left > window.innerWidth / 2) {
+          if (rect.width > 0 && rect.height > 0 && rect.left > window.innerWidth * 0.45) {
             btn.click();
             return;
           }
+        }
+      }
+      // Floating right arrow button inside viewer
+      const dialog = document.querySelector('[role="dialog"]');
+      if (dialog) {
+        const btns = Array.from(dialog.querySelectorAll('button, div[role="button"]')).filter((b) => {
+          const r = b.getBoundingClientRect();
+          return r.width >= 24 && r.height >= 24 && r.left > window.innerWidth * 0.55 && Boolean(b.querySelector('svg'));
+        });
+        if (btns.length > 0) {
+          btns[0].click();
+          return;
         }
       }
     }).catch(() => {});
@@ -1791,9 +1837,92 @@ async function extractGalleryFromTargetPost(page, targetPostContext, maxImages =
     }
 
     if (!transitioned) {
-      console.log('[TARGET_POST] Photo did not change after Next — reached end of gallery');
+      console.log('[TARGET_POST] Photo did not change after Next in viewer');
+      // If we have remaining detected collage anchors from the post, fall back to clicking them directly!
+      const totalAnchors = (attachmentInfo.anchors || []).length;
+      if (count < totalAnchors && !cancelCurrentExtraction) {
+        console.log(`[TARGET_POST] Falling back to direct anchor clicking for remaining ${totalAnchors - count} photos...`);
+        for (let aIdx = count; aIdx < totalAnchors; aIdx++) {
+          if (cancelCurrentExtraction) break;
+          const targetAnchor = attachmentInfo.anchors[aIdx];
+          if (!targetAnchor) continue;
+          try {
+            await page.keyboard.press('Escape').catch(() => {});
+            await page.waitForTimeout(500);
+
+            // Click target collage photo
+            if (targetAnchor.click_x && targetAnchor.click_y) {
+              await page.mouse.click(targetAnchor.click_x, targetAnchor.click_y).catch(() => {});
+            } else if (targetAnchor.href) {
+              await page.evaluate((h) => {
+                const el = document.querySelector(`a[href="${h}"]`);
+                if (el) el.click();
+              }, targetAnchor.href).catch(() => {});
+            }
+            await page.waitForTimeout(1500);
+
+            const directRes = await getActiveViewerImage(15);
+            if (directRes && directRes.source_url) {
+              const dUrlBase = directRes.source_url.split('?')[0];
+              const dToken = dUrlBase.split('/').pop() || '';
+              const dPhotoId = getPhotoId(directRes.source_url, directRes.fbid) || dToken;
+              if (!seenPhotoIds.has(dPhotoId) && !seenUrlBases.has(dUrlBase)) {
+                count++;
+                seenPhotoIds.add(dPhotoId);
+                seenUrlBases.add(dUrlBase);
+                console.log(`[TARGET_POST] Photo ${count} verified via direct collage click: ${dToken}`);
+                downloadedImages.push({
+                  index: count,
+                  filename: `property-${String(count).padStart(3, '0')}.jpg`,
+                  source_url: directRes.source_url,
+                  width: directRes.natural_width || directRes.display_width || 1920,
+                  height: directRes.natural_height || directRes.display_height || 1080,
+                  mime_type: 'image/jpeg',
+                  sha256: generateImageHash(directRes.source_url, count),
+                  facebook_photo_id: dPhotoId,
+                  fbid: directRes.fbid || '',
+                  source: 'facebook_viewer_direct',
+                  target_post_verified: true,
+                  download_status: 'success',
+                });
+              }
+            }
+          } catch (e) {
+            console.warn(`[TARGET_POST] Direct anchor click error on photo ${aIdx + 1}:`, e.message);
+          }
+        }
+      }
       isFinished = true;
       break;
+    }
+  }
+
+  // Final fallback: If any collage photo was never captured in viewer, incorporate its high-res source directly
+  if (Array.isArray(attachmentInfo.anchors) && attachmentInfo.anchors.length > count && !cancelCurrentExtraction) {
+    for (const anc of attachmentInfo.anchors) {
+      if (!anc.src) continue;
+      const ancUrlBase = anc.src.split('?')[0];
+      const ancToken = ancUrlBase.split('/').pop() || '';
+      if (!seenUrlBases.has(ancUrlBase) && !seenPhotoIds.has(ancToken) && count < effectiveMax) {
+        count++;
+        seenUrlBases.add(ancUrlBase);
+        seenPhotoIds.add(ancToken);
+        console.log(`[TARGET_POST] Photo ${count} added from collage anchor image: ${ancToken}`);
+        downloadedImages.push({
+          index: count,
+          filename: `property-${String(count).padStart(3, '0')}.jpg`,
+          source_url: anc.src,
+          width: anc.width || 1080,
+          height: anc.height || 1080,
+          mime_type: 'image/jpeg',
+          sha256: generateImageHash(anc.src, count),
+          facebook_photo_id: ancToken,
+          fbid: '',
+          source: 'facebook_collage_anchor',
+          target_post_verified: true,
+          download_status: 'success',
+        });
+      }
     }
   }
 

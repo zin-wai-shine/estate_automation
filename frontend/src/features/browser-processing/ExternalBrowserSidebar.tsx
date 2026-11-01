@@ -69,6 +69,8 @@ import {
   focusBrowserTabGroup,
   waitForBrowserTabsReady,
   createBatchImageQueue,
+  fetchEnhancedDownloadedImages,
+  type EnhancedDownloadedImage,
   type AutomationStatusResponse,
 } from './browserAutomationService';
 import {
@@ -119,6 +121,8 @@ interface ExternalBrowserSidebarProps {
   onOpenSettingsSidebox?: () => void;
   onCloseSettingsSidebox?: () => void;
   isSettingsSideboxOpen?: boolean;
+  rawPostContent?: string;
+  onRunCondoNameStep?: () => Promise<string | void>;
 }
 
 export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
@@ -139,6 +143,8 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   onOpenSettingsSidebox,
   onCloseSettingsSidebox,
   isSettingsSideboxOpen,
+  rawPostContent,
+  onRunCondoNameStep,
 }) => {
   const isTabGroupNode = Boolean(
     propIsTabGroupNode ||
@@ -168,11 +174,11 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
 
   const condoName =
     aiExtractedCondoName ||
-    (propertyContext?.title && propertyContext.title !== 'Featured Property Listing'
+    (propertyContext?.title && propertyContext.title !== 'Featured Property Listing' && propertyContext.title !== 'Facebook Property Post'
       ? propertyContext.title
       : '') ||
     boxConfig.browserCondoName ||
-    'Featured Property Listing';
+    '';
   const aboveBoxTitle = propertyContext?.aboveBoxTitle || 'Format: Enhance Image';
 
   const receivedImages = useMemo(() => {
@@ -230,6 +236,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   // 3. Queue State
   const [queueJobs, setQueueJobs] = useState<ImageProcessingJob[]>([]);
   const [isLoadingQueue, setIsLoadingQueue] = useState(false);
+  const [enhancedImages, setEnhancedImages] = useState<EnhancedDownloadedImage[]>([]);
 
   // 4. Prompt Template State (Persisted uniquely per node)
   const [selectedPromptKey, setSelectedPromptKey] = useState<string>(() => {
@@ -419,18 +426,76 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   const [condoSearchQuery, setCondoSearchQuery] = useState<string>(
     () =>
       aiExtractedCondoName ||
-      boxConfig.browserCondoName ||
-      (propertyContext?.title && propertyContext.title !== 'Featured Property Listing'
+      (propertyContext?.title && propertyContext.title !== 'Featured Property Listing' && propertyContext.title !== 'Facebook Property Post'
         ? propertyContext.title
         : '') ||
-      'Regent Home Bangna'
+      boxConfig.browserCondoName ||
+      ''
   );
   const [matchedCondoInfo, setMatchedCondoInfo] = useState<any>(null);
   const [indexedCondoFolders, setIndexedCondoFolders] = useState<string[]>([]);
   const [isScanningCondo, setIsScanningCondo] = useState<boolean>(false);
+  const [showFolderPicker, setShowFolderPicker] = useState<boolean>(false);
+  const [isOpeningFinder, setIsOpeningFinder] = useState<boolean>(false);
+  const [finderFeedback, setFinderFeedback] = useState<string | null>(null);
+  const [isBrowsingFolder, setIsBrowsingFolder] = useState<boolean>(false);
   const [twoStageStatus, setTwoStageStatus] = useState<any>(null);
   const [isRunningTwoStage, setIsRunningTwoStage] = useState<boolean>(false);
   const [twoStageMessage, setTwoStageMessage] = useState<string | null>(null);
+  const [isReloadingCondoName, setIsReloadingCondoName] = useState<boolean>(false);
+
+  const handleReloadCondoName = async () => {
+    setIsReloadingCondoName(true);
+    try {
+      let extractedName = '';
+      if (onRunCondoNameStep) {
+        const res = await onRunCondoNameStep();
+        if (res && typeof res === 'string') {
+          extractedName = extractCleanCondoNameFromAiText(res);
+        }
+      }
+      if (!extractedName && (rawPostContent || propertyContext?.title)) {
+        const textSrc = rawPostContent || propertyContext?.title || '';
+        if (textSrc.trim()) {
+          const resp = await fetch('/api/facebook-import/ai-process', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              provider: 'google_ai',
+              model: 'gemini-1.5-flash',
+              template_name: 'Get Condo Name',
+              template_text: 'Extract the condominium or residential project name from the provided text and also translate that name to english.\n\nSTRICT RULES:\n- Return ONLY the condominium or project name.\n\nOUTPUT EXAMPLE:\nRegent Home Bangna\n\nTEXT TO ANALYZE:\n{{CONTENT}}',
+              raw_content: textSrc,
+            }),
+          });
+          const data = await resp.json();
+          if (data?.success && data?.generated_content) {
+            extractedName = extractCleanCondoNameFromAiText(data.generated_content);
+          }
+        }
+      }
+      if (extractedName && extractedName !== 'NOT_FOUND') {
+        setCondoSearchQuery(extractedName);
+        updateMultiConfig({
+          browserCondoName: extractedName,
+        });
+        await handleScanCondo(extractedName);
+      }
+    } catch (err) {
+      console.error('Error reloading condo name:', err);
+    } finally {
+      setIsReloadingCondoName(false);
+    }
+  };
+
+  useEffect(() => {
+    if (aiExtractedCondoName && aiExtractedCondoName !== condoSearchQuery) {
+      setCondoSearchQuery(aiExtractedCondoName);
+      updateMultiConfig({ browserCondoName: aiExtractedCondoName });
+      handleScanCondo(aiExtractedCondoName);
+    }
+  }, [aiExtractedCondoName]);
+
   const [latestHeroImage, setLatestHeroImage] = useState<{
     url: string;
     fileName?: string;
@@ -439,7 +504,16 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   } | null>(() => {
     try {
       const saved = localStorage.getItem('bolthaven_last_hero_image');
-      return saved ? JSON.parse(saved) : null;
+      if (!saved) return null;
+      const parsed = JSON.parse(saved);
+      const activeCondo = (aiExtractedCondoName || propertyContext?.title || boxConfig.browserCondoName || '').trim();
+      if (!activeCondo || activeCondo === 'Featured Property Listing' || activeCondo === 'Facebook Property Post') {
+        return null;
+      }
+      if (parsed?.condoName && activeCondo.toLowerCase().includes(parsed.condoName.toLowerCase())) {
+        return parsed;
+      }
+      return null;
     } catch (e) {
       return null;
     }
@@ -450,6 +524,8 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     try {
       if (img) {
         localStorage.setItem('bolthaven_last_hero_image', JSON.stringify(img));
+      } else {
+        localStorage.removeItem('bolthaven_last_hero_image');
       }
     } catch (e) {}
   };
@@ -459,27 +535,39 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     if (!isHeroNode) return;
     const fetchLatestStatus = async () => {
       try {
-        const resp = await fetch('http://127.0.0.1:9224/two-stage-status');
+        const queryCondo = (condoName || condoSearchQuery || '').trim();
+        if (!queryCondo || queryCondo === 'Featured Property Listing' || queryCondo === 'Facebook Property Post') {
+          return;
+        }
+        const resp = await fetch(`http://127.0.0.1:9224/two-stage-status?condo=${encodeURIComponent(queryCondo)}`);
         if (resp.ok) {
           const data = await resp.json();
           if (data?.state) {
             setTwoStageStatus(data.state);
             if (data.state.downloaded_image_url || data.state.downloaded_file) {
               const file = data.state.downloaded_file;
-              const imgUrl = data.state.downloaded_image_url || `http://127.0.0.1:9224/hero-downloaded-image?file=${encodeURIComponent(file)}`;
-              updateLatestHeroImage({
-                url: imgUrl,
-                fileName: file,
-                condoName: data.state.condo_name || condoName,
-                createdAt: data.state.updated_at,
-              });
+              const stateCondo = data.state.condo_name || '';
+              if (
+                !queryCondo ||
+                stateCondo.toLowerCase().includes(queryCondo.toLowerCase()) ||
+                queryCondo.toLowerCase().includes(stateCondo.toLowerCase()) ||
+                file.toLowerCase().includes(queryCondo.toLowerCase().replace(/[^a-z0-9]/g, ''))
+              ) {
+                const imgUrl = data.state.downloaded_image_url || `http://127.0.0.1:9224/hero-downloaded-image?file=${encodeURIComponent(file)}`;
+                updateLatestHeroImage({
+                  url: imgUrl,
+                  fileName: file,
+                  condoName: stateCondo || queryCondo,
+                  createdAt: data.state.updated_at,
+                });
+              }
             }
           }
         }
       } catch (e) {}
     };
     fetchLatestStatus();
-  }, [isHeroNode, condoName]);
+  }, [isHeroNode, condoName, condoSearchQuery]);
 
   // Restore persisted reference image on mount or box change (and keep it until changed or deleted)
   useEffect(() => {
@@ -568,16 +656,107 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     }
   };
 
+  // Open currently matched condo folder directly in macOS Finder
+  const handleOpenFolderInFinder = async () => {
+    const folderPath =
+      matchedCondoInfo?.folder_path ||
+      boxConfig.targetFolder ||
+      localStorage.getItem('bolthaven_condo_target_folder') ||
+      '/Users/zinwaishine/Desktop/Condo Building';
+    setIsOpeningFinder(true);
+    try {
+      const resp = await fetch(
+        `http://127.0.0.1:9224/open-folder?folder=${encodeURIComponent(folderPath)}`
+      );
+      const data = await resp.json();
+      if (data?.status === 'ok') {
+        setFinderFeedback('Opened in Finder');
+        setTimeout(() => setFinderFeedback(null), 2500);
+      }
+    } catch (err) {
+      console.warn('Failed to open folder in Finder:', err);
+    } finally {
+      setIsOpeningFinder(false);
+    }
+  };
+
+  // Browse any folder on Mac directly via native folder chooser dialog
+  const handleBrowseCustomFolder = async () => {
+    setIsBrowsingFolder(true);
+    try {
+      const defaultDir =
+        matchedCondoInfo?.folder_path ||
+        boxConfig.targetFolder ||
+        localStorage.getItem('bolthaven_condo_target_folder') ||
+        '/Users/zinwaishine/Desktop/Condo Building';
+      const resp = await fetch(
+        `http://127.0.0.1:9224/choose-folder?default=${encodeURIComponent(defaultDir)}`
+      );
+      const data = await resp.json();
+      if (data?.status === 'success' && data?.selected_path) {
+        const selectedPath = data.selected_path;
+        // Query photos directly for this chosen folder
+        const folderResp = await fetch(
+          `http://127.0.0.1:9224/condo-images?folder_path=${encodeURIComponent(selectedPath)}`
+        );
+        const folderData = await folderResp.json();
+        if (folderData?.status === 'success') {
+          setMatchedCondoInfo(folderData);
+          const chosenName = folderData.matched_folder || selectedPath.split('/').pop() || '';
+          setCondoSearchQuery(chosenName);
+          updateMultiConfig({
+            browserCondoName: chosenName,
+            targetFolder: folderData.base_dir || selectedPath,
+            browserMatchedFolder: folderData.matched_folder,
+            browserCondoImagesCount: folderData.images_found,
+          });
+        } else {
+          // If a base directory was chosen, reload the indexed folders
+          fetchCondoFolderList(selectedPath);
+          handleScanCondo(condoSearchQuery || condoName, selectedPath);
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to browse folder on Mac:', err);
+    } finally {
+      setIsBrowsingFolder(false);
+    }
+  };
+
+  // Select a condo folder manually from indexed folders or restore auto-match
+  const handleSelectCondoFolder = (val: string) => {
+    if (val === '__auto__') {
+      const autoQuery =
+        aiExtractedCondoName ||
+        (propertyContext?.title &&
+        propertyContext.title !== 'Featured Property Listing' &&
+        propertyContext.title !== 'Facebook Property Post'
+          ? propertyContext.title
+          : '') ||
+        condoName;
+      setCondoSearchQuery(autoQuery);
+      updateMultiConfig({ browserCondoName: autoQuery });
+      handleScanCondo(autoQuery);
+    } else {
+      setCondoSearchQuery(val);
+      updateMultiConfig({ browserCondoName: val });
+      handleScanCondo(val);
+    }
+  };
+
   useEffect(() => {
     const folder = boxConfig.targetFolder || localStorage.getItem('bolthaven_condo_target_folder') || '';
     fetchCondoFolderList(folder);
     const q =
       aiExtractedCondoName ||
       boxConfig.browserCondoName ||
-      (propertyContext?.title && propertyContext.title !== 'Featured Property Listing'
+      (propertyContext?.title &&
+      propertyContext.title !== 'Featured Property Listing' &&
+      propertyContext.title !== 'Facebook Property Post'
         ? propertyContext.title
         : '') ||
-      'Regent Home Bangna';
+      condoName ||
+      '';
     if (q) {
       setCondoSearchQuery(q);
       handleScanCondo(q, folder);
@@ -674,12 +853,10 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       const activeProf = profiles.find((p) => p.id === selectedProfileId);
       const profKey = activeProf?.profile_key || boxConfig.browserProfileKey || (profiles[0]?.profile_key || 'Pro');
 
-      const promptToUse = enablePromptEnhance
-        ? (resolvedPromptPreview || currentPromptText || 'Analyze property details and formulate facebook ad prompt')
-        : '';
+      const promptToUse = (resolvedPromptPreview || currentPromptText || 'Create facebook advertisement from the attached reference and building photos').trim();
       const refImgToUse = activeReferenceImage?.url || referenceImage || null;
       const effectiveHeroGroupName = currentGroup?.name || targetGroupName || 'FB Hero';
-      const isDirectStaging = boxConfig.stagingMode === 'direct_tab2' || boxConfig.skipTab1 === true || boxConfig.workerTabCount === 1;
+      const isDirectStaging = boxConfig.stagingMode !== 'two_stage';
 
       const resp = await fetch('http://127.0.0.1:9224/start-two-stage-staging', {
         method: 'POST',
@@ -953,26 +1130,40 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     return () => clearInterval(interval);
   }, [propertyContext?.id]);
 
-  // Poll automation progress when automation is running
+  // Poll automation progress and downloaded enhanced images
   useEffect(() => {
     let interval: any = null;
-    if (isAutomating) {
-      interval = setInterval(async () => {
+    const checkProgressAndImages = async () => {
+      try {
         const status = await getAutomationStatus();
         if (status) {
           setAutomationStatus(status);
-          loadQueue();
-          if (!status.is_running && status.total && status.completed !== undefined) {
+          if (!status.is_running) {
             setIsAutomating(false);
-            setAutomationMessage(`✓ All tabs finished! ${status.completed}/${status.total} enhanced.`);
+            if (status.completed !== undefined && status.completed > 0) {
+              setAutomationMessage(`✓ All tabs finished! ${status.completed} images enhanced.`);
+            }
           }
         }
-      }, 1500);
-    }
+      } catch (e) {}
+
+      try {
+        const enhanced = await fetchEnhancedDownloadedImages(propertyContext?.id);
+        if (enhanced && enhanced.length > 0) {
+          setEnhancedImages(enhanced);
+        }
+      } catch (e) {}
+
+      loadQueue();
+    };
+
+    checkProgressAndImages();
+    interval = setInterval(checkProgressAndImages, isAutomating ? 1500 : 3500);
+
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [isAutomating]);
+  }, [isAutomating, propertyContext?.id]);
 
   // Notify parent of running state changes (never report running if this step is disabled)
   useEffect(() => {
@@ -1005,6 +1196,16 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     }
 
     setIsAutomating(true);
+
+    // 0. INSTANT BROWSER FOCUS: Bring Chrome and the ChatGPT tab group to front immediately on click
+    focusBrowserTabGroup({
+      profileId: profId,
+      profileKey: profKey,
+      groupName: effectiveGroupName,
+      groupTabUrls: targetUrls,
+      url: targetUrls[0],
+      force: true,
+    }).catch(() => {});
 
     // Always use the prompt selected in the template preview / dropdown
     const promptToUse = enablePromptEnhance
@@ -1060,31 +1261,21 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
 
     if (isSidebarStoppedRef.current) return;
 
-    // Auto-open and focus the selected browser profile & selected tab group with all worker tabs!
+    // Verify browser tabs are active (quick verification with 3s timeout)
     try {
-      await focusBrowserTabGroup({
-        profileId: profId,
-        profileKey: profKey,
-        groupName: effectiveGroupName,
-        groupTabUrls: targetUrls,
-        url: targetUrls[0],
-        force: true,
-      });
-      if (isSidebarStoppedRef.current) return;
-
-      setAutomationMessage(`Opening Chrome [${profKey}] & Tab Group [${effectiveGroupName}]... Waiting for tabs to be ready...`);
+      setAutomationMessage(`Chrome [${profKey}] active. Verifying ChatGPT tabs...`);
       await waitForBrowserTabsReady({
         profileKey: profKey,
         groupName: effectiveGroupName,
         expectedUrls: targetUrls,
-        maxWaitMs: 15000,
+        maxWaitMs: 3000,
         shouldCancel: () => isSidebarStoppedRef.current,
         onProgress: (msg) => {
           if (!isSidebarStoppedRef.current) setAutomationMessage(msg);
         },
       });
     } catch (e) {
-      console.warn('Could not auto-open browser tab group:', e);
+      console.warn('Tab verification notice:', e);
     }
 
     if (isSidebarStoppedRef.current) return;
@@ -1819,27 +2010,110 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           <span
             style={{
               fontSize: '0.5625rem',
               fontWeight: 700,
-              padding: '2px 7px',
+              padding: '2px 6px',
               borderRadius: '10px',
               backgroundColor: matchedCondoInfo?.images_found ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.12)',
               color: matchedCondoInfo?.images_found ? '#10B981' : '#EF4444',
               border: matchedCondoInfo?.images_found ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(239, 68, 68, 0.25)',
+              whiteSpace: 'nowrap',
             }}
           >
             {matchedCondoInfo?.images_found ? `${matchedCondoInfo.images_found}/3 Ready` : 'Not Found'}
           </span>
+
+          {/* Change Folder Button */}
+          <button
+            type="button"
+            onClick={() => {
+              if (indexedCondoFolders.length === 0) {
+                fetchCondoFolderList();
+              }
+              setShowFolderPicker((prev) => !prev);
+            }}
+            title="Choose another condo folder or browse Mac"
+            style={{
+              padding: '3px 7px',
+              borderRadius: '5px',
+              border: showFolderPicker ? '1px solid #10B981' : '1px solid var(--border-color)',
+              backgroundColor: showFolderPicker
+                ? 'rgba(16, 185, 129, 0.15)'
+                : isDark
+                ? 'rgba(255,255,255,0.06)'
+                : '#F1F5F9',
+              color: showFolderPicker ? '#10B981' : 'var(--text-secondary)',
+              fontSize: '0.625rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '3px',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <FiFolder size={10} />
+            <span>Change</span>
+          </button>
+
+          {/* Open directly in Finder Button */}
+          <button
+            type="button"
+            onClick={handleOpenFolderInFinder}
+            disabled={isOpeningFinder}
+            title={
+              matchedCondoInfo?.folder_path
+                ? `Open in macOS Finder: ${matchedCondoInfo.folder_path}`
+                : 'Open target folder in macOS Finder'
+            }
+            style={{
+              padding: '3px 7px',
+              borderRadius: '5px',
+              border: finderFeedback ? '1px solid #10B981' : '1px solid var(--border-color)',
+              backgroundColor: finderFeedback
+                ? 'rgba(16, 185, 129, 0.15)'
+                : isDark
+                ? 'rgba(255,255,255,0.06)'
+                : '#F1F5F9',
+              color: finderFeedback ? '#10B981' : 'var(--text-secondary)',
+              fontSize: '0.625rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '3px',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            {finderFeedback ? (
+              <>
+                <FiCheck size={10} color="#10B981" />
+                <span style={{ color: '#10B981' }}>Opened</span>
+              </>
+            ) : isOpeningFinder ? (
+              <>
+                <FiLoader className="animate-spin" size={10} />
+                <span>Opening</span>
+              </>
+            ) : (
+              <>
+                <FiExternalLink size={10} />
+                <span>Finder</span>
+              </>
+            )}
+          </button>
+
+          {/* Scan Folder Button */}
           <button
             type="button"
             onClick={() => handleScanCondo(aiExtractedCondoName || condoSearchQuery)}
             disabled={isScanningCondo}
             title="Scan target folder"
             style={{
-              padding: '3px 8px',
+              padding: '3px 7px',
               borderRadius: '5px',
               border: '1px solid var(--border-color)',
               backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#F1F5F9',
@@ -1858,40 +2132,89 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
         </div>
       </div>
 
-      {/* Subfolder Selector (Auto-Matched from Condo Name or Manual Folder Selection) */}
-      {indexedCondoFolders.length > 0 && (
-        <Select
-          value={matchedCondoInfo?.matched_folder || '__auto__'}
-          onChange={(val) => {
-            if (val === '__auto__') {
-              const autoQuery =
-                aiExtractedCondoName ||
-                (propertyContext?.title && propertyContext.title !== 'Featured Property Listing'
-                  ? propertyContext.title
-                  : '') ||
-                condoName;
-              setCondoSearchQuery(autoQuery);
-              updateMultiConfig({ browserCondoName: autoQuery });
-              handleScanCondo(autoQuery);
-            } else {
-              setCondoSearchQuery(val);
-              updateMultiConfig({ browserCondoName: val });
-              handleScanCondo(val);
-            }
+      {/* Expandable Folder Chooser Drawer */}
+      {showFolderPicker && (
+        <div
+          style={{
+            padding: '8px 10px',
+            borderRadius: '7px',
+            backgroundColor: isDark ? 'rgba(0, 0, 0, 0.35)' : '#F1F5F9',
+            border: '1px solid var(--border-color)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '6px',
+            marginBottom: '4px',
           }}
-          options={[
-            {
-              label: matchedCondoInfo?.matched_folder
-                ? `✨ Matched: ${matchedCondoInfo.matched_folder}`
-                : `✨ Auto-Match (${condoName})`,
-              value: '__auto__',
-            },
-            ...indexedCondoFolders.map((f) => ({
-              label: `📁 ${f}`,
-              value: f,
-            })),
-          ]}
-        />
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <FiFolder size={11} color="#10B981" />
+              <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                Choose Condo Folder
+              </span>
+              <span style={{ fontSize: '0.5625rem', color: 'var(--text-muted)' }}>
+                ({indexedCondoFolders.length} indexed)
+              </span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <button
+                type="button"
+                onClick={handleBrowseCustomFolder}
+                disabled={isBrowsingFolder}
+                title="Browse any folder on Mac directly"
+                style={{
+                  padding: '2px 7px',
+                  borderRadius: '4px',
+                  border: '1px solid var(--border-color)',
+                  backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : '#FFFFFF',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.59375rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '3px',
+                }}
+              >
+                {isBrowsingFolder ? <FiLoader className="animate-spin" size={9} /> : <FiFolder size={9} />}
+                <span>Browse Mac...</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowFolderPicker(false)}
+                title="Close selector"
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  padding: '2px 4px',
+                  display: 'flex',
+                  alignItems: 'center',
+                }}
+              >
+                <FiX size={12} />
+              </button>
+            </div>
+          </div>
+
+          <Select
+            value={matchedCondoInfo?.matched_folder || '__auto__'}
+            onChange={handleSelectCondoFolder}
+            options={[
+              {
+                label: matchedCondoInfo?.matched_folder
+                  ? `✨ Auto-Matched: ${matchedCondoInfo.matched_folder}`
+                  : `✨ Auto-Match (${condoName})`,
+                value: '__auto__',
+              },
+              ...indexedCondoFolders.map((f) => ({
+                label: `📁 ${f}`,
+                value: f,
+              })),
+            ]}
+          />
+        </div>
       )}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.55rem', marginTop: '2px' }}>
@@ -3524,6 +3847,65 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                   />
                 )}
 
+                {/* Condo Project Identification Bar with Reload Button */}
+                {isHeroNode && (
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '8px',
+                      padding: '6px 10px',
+                      borderRadius: '8px',
+                      backgroundColor: isDark ? 'rgba(0, 0, 0, 0.22)' : 'rgba(0, 0, 0, 0.03)',
+                      border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid rgba(0, 0, 0, 0.08)',
+                      fontSize: '0.6875rem',
+                      marginTop: '2px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, overflow: 'hidden' }}>
+                      <span style={{ fontSize: '13px', flexShrink: 0 }}>🏢</span>
+                      <span
+                        style={{
+                          fontWeight: 600,
+                          color: (condoSearchQuery || condoName) ? 'var(--text-primary)' : '#EF4444',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                        title={(condoSearchQuery || condoName) ? `Condo: ${condoSearchQuery || condoName}` : 'No condo name extracted yet'}
+                      >
+                        {(condoSearchQuery || condoName) ? (condoSearchQuery || condoName) : 'No condo name extracted'}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleReloadCondoName}
+                      disabled={isReloadingCondoName}
+                      title="Reload / extract condo name from post"
+                      style={{
+                        flexShrink: 0,
+                        height: '24px',
+                        padding: '0 8px',
+                        borderRadius: '6px',
+                        border: '1px solid var(--border-color)',
+                        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#FFFFFF',
+                        color: 'var(--text-primary)',
+                        fontSize: '0.625rem',
+                        fontWeight: 600,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        cursor: isReloadingCondoName ? 'not-allowed' : 'pointer',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      <FiRefreshCw className={isReloadingCondoName ? 'spin' : ''} style={{ fontSize: '10px' }} />
+                      <span>{isReloadingCondoName ? 'Loading...' : 'Reload Condo'}</span>
+                    </button>
+                  </div>
+                )}
+
                 {/* View Prompt Button & Quick Copy Button */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
                   <button
@@ -3637,7 +4019,11 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
             </div>
 
             {/* ── 4. Generated Hero Advertisement Preview Card ── */}
-            {latestHeroImage && (
+            {latestHeroImage && Boolean((condoName || condoSearchQuery) && (
+              !latestHeroImage.condoName ||
+              (condoName || condoSearchQuery).toLowerCase().includes(latestHeroImage.condoName.toLowerCase()) ||
+              latestHeroImage.condoName.toLowerCase().includes((condoName || condoSearchQuery).toLowerCase())
+            )) && (
               <div
                 style={{
                   borderRadius: '12px',
@@ -3693,20 +4079,45 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                       </div>
                     </div>
                   </div>
-                  <span
-                    style={{
-                      fontSize: '0.625rem',
-                      fontWeight: 700,
-                      color: '#10B981',
-                      backgroundColor: 'rgba(16, 185, 129, 0.12)',
-                      padding: '2px 8px',
-                      borderRadius: '12px',
-                      border: '1px solid rgba(16, 185, 129, 0.25)',
-                      flexShrink: 0,
-                    }}
-                  >
-                    ✓ Downloaded
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span
+                      style={{
+                        fontSize: '0.625rem',
+                        fontWeight: 700,
+                        color: '#10B981',
+                        backgroundColor: 'rgba(16, 185, 129, 0.12)',
+                        padding: '2px 8px',
+                        borderRadius: '12px',
+                        border: '1px solid rgba(16, 185, 129, 0.25)',
+                        flexShrink: 0,
+                      }}
+                    >
+                      ✓ Downloaded
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        updateLatestHeroImage(null);
+                        fetch('http://127.0.0.1:9224/two-stage-status', { method: 'DELETE' }).catch(() => {});
+                      }}
+                      title="Clear / Dismiss preview"
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        color: 'var(--text-muted)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '2px',
+                        borderRadius: '4px',
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.color = '#EF4444')}
+                      onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
+                    >
+                      <FiX size={14} />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Hero Image Thumbnail with Click-to-Open */}
@@ -4476,6 +4887,206 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
           </div>
         )}
       </div>
+      )}
+
+      {/* SECTION: ENHANCED IMAGES RESULTS (Downloaded to Disk) */}
+      {enhancedImages.length > 0 && (
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.625rem',
+            padding: '0.75rem',
+            borderRadius: '10px',
+            backgroundColor: isDark ? 'rgba(16, 185, 129, 0.06)' : 'rgba(16, 185, 129, 0.05)',
+            border: '1px solid rgba(16, 185, 129, 0.35)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <div
+                style={{
+                  width: '18px',
+                  height: '18px',
+                  borderRadius: '50%',
+                  backgroundColor: '#10B981',
+                  color: '#FFFFFF',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                }}
+              >
+                ✓
+              </div>
+              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#10B981' }}>
+                Enhanced Images ({enhancedImages.length} Photos)
+              </span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => {
+                  fetch('http://127.0.0.1:9224/reveal-file').catch(() => {});
+                }}
+                style={{
+                  padding: '2px 8px',
+                  fontSize: '0.625rem',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  borderColor: 'rgba(16, 185, 129, 0.35)',
+                }}
+                title="Open Downloads folder in macOS Finder"
+              >
+                <FiFolder size={11} style={{ color: '#10B981' }} />
+                <span>Downloads</span>
+              </Button>
+            </div>
+          </div>
+
+          {/* Grid of Enhanced Images */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(2, 1fr)',
+              gap: '0.5rem',
+              maxHeight: '380px',
+              overflowY: 'auto',
+              paddingRight: '2px',
+            }}
+          >
+            {enhancedImages.map((img, idx) => (
+              <div
+                key={img.filename || idx}
+                style={{
+                  position: 'relative',
+                  borderRadius: '8px',
+                  overflow: 'hidden',
+                  border: isDark ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid var(--border-color)',
+                  backgroundColor: isDark ? '#0F172A' : '#F8FAFC',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+                }}
+              >
+                {/* Image Thumbnail with 4:5 aspect ratio */}
+                <div
+                  style={{
+                    position: 'relative',
+                    width: '100%',
+                    aspectRatio: '4/5',
+                    backgroundColor: isDark ? '#1E293B' : '#E2E8F0',
+                    overflow: 'hidden',
+                  }}
+                >
+                  <img
+                    src={img.url}
+                    alt={img.filename}
+                    loading="lazy"
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                      display: 'block',
+                    }}
+                  />
+                  {/* Position Badge */}
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: '6px',
+                      left: '6px',
+                      padding: '2px 6px',
+                      borderRadius: '4px',
+                      backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                      color: '#FFFFFF',
+                      fontSize: '0.625rem',
+                      fontWeight: 700,
+                      backdropFilter: 'blur(4px)',
+                    }}
+                  >
+                    #{img.position || idx + 1}
+                  </div>
+                  {/* Enhanced Status Pill */}
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: '6px',
+                      right: '6px',
+                      padding: '2px 5px',
+                      borderRadius: '4px',
+                      backgroundColor: '#10B981',
+                      color: '#FFFFFF',
+                      fontSize: '0.5625rem',
+                      fontWeight: 700,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '2px',
+                      boxShadow: '0 2px 4px rgba(0,0,0,0.25)',
+                    }}
+                  >
+                    ✓ Enhanced
+                  </div>
+                </div>
+
+                {/* Footer Actions */}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '4px 6px',
+                    fontSize: '0.625rem',
+                    color: 'var(--text-secondary)',
+                    backgroundColor: isDark ? 'rgba(0, 0, 0, 0.3)' : '#F1F5F9',
+                  }}
+                >
+                  <span style={{ fontSize: '0.5625rem', fontWeight: 500 }}>
+                    {Math.round(img.size / 1024)} KB
+                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        fetch(`http://127.0.0.1:9224/reveal-file?file=${encodeURIComponent(img.filename)}`).catch(() => {});
+                      }}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'inherit',
+                        cursor: 'pointer',
+                        padding: '2px',
+                        display: 'flex',
+                        alignItems: 'center',
+                      }}
+                      title="Reveal in Finder"
+                    >
+                      <FiFolder size={11} />
+                    </button>
+                    <a
+                      href={img.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{
+                        color: '#10B981',
+                        display: 'flex',
+                        alignItems: 'center',
+                        textDecoration: 'none',
+                        padding: '2px',
+                      }}
+                      title="View Full Resolution"
+                    >
+                      <FiExternalLink size={11} />
+                    </a>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
       {/* SECTION G — SMART IMAGE QUEUE */}

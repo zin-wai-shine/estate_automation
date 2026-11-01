@@ -29,6 +29,10 @@ import {
   FiLayers,
   FiShield,
   FiInfo,
+  FiHome,
+  FiSearch,
+  FiCopy,
+  FiExternalLink,
 } from 'react-icons/fi';
 import { motion, AnimatePresence } from 'framer-motion';
 import JSZip from 'jszip';
@@ -772,65 +776,219 @@ export const WatermarkView: React.FC = () => {
   const [editingFormatId, setEditingFormatId] = useState<string | null>(null);
   const [editingFormatName, setEditingFormatName] = useState<string>('');
 
+  // Top-level Studio Tab: 'home' (Formats Management & Fresh Page) vs 'canvas' (Studio Photo Workspace)
+  const [activeStudioTab, setActiveStudioTab] = useState<'home' | 'canvas'>('home');
+
+  // Search & Filter state on Formats Home Page
+  const [formatSearchQuery, setFormatSearchQuery] = useState<string>('');
+  const [formatCategoryFilter, setFormatCategoryFilter] = useState<'all' | 'standard' | 'grid' | 'watermark'>('all');
+
+  // Dedicated Format Editor Modal state (Handles both Create New and Edit)
+  const [formatEditorOpen, setFormatEditorOpen] = useState<boolean>(false);
+  const [editingFormatTarget, setEditingFormatTarget] = useState<CropStudioFormat | null>(null);
+  const [editorFormName, setEditorFormName] = useState<string>('');
+  const [editorFormDesc, setEditorFormDesc] = useState<string>('');
+  const [editorFormMode, setEditorFormMode] = useState<'standard' | 'grid'>('standard');
+  const [editorFormWidth, setEditorFormWidth] = useState<number>(1080);
+  const [editorFormHeight, setEditorFormHeight] = useState<number>(1350);
+  const [editorFormAspect, setEditorFormAspect] = useState<string>('4:5');
+  const [editorFormFitMode, setEditorFormFitMode] = useState<'cover' | 'contain'>('cover');
+  const [editorFormFocusPos, setEditorFormFocusPos] = useState<WatermarkPosition>('center');
+  const [editorFormZoom, setEditorFormZoom] = useState<number>(1);
+  const [editorFormGridLayoutId, setEditorFormGridLayoutId] = useState<string>('two-squares');
+  const [editorFormWatermarkEnabled, setEditorFormWatermarkEnabled] = useState<boolean>(false);
+
   const activeStudioFormat = useMemo(() => {
     return cropStudioFormats.find((f) => f.id === selectedStudioFormatId) || null;
   }, [cropStudioFormats, selectedStudioFormatId]);
 
-  // Auto-sync current studio setup (crop size, framing, anchor, zoom, watermark) into active format
-  useEffect(() => {
-    if (!selectedStudioFormatId) return;
+  // Open modal to Create a Brand New Format
+  const handleOpenCreateFormatModal = () => {
+    setEditingFormatTarget(null);
+    setEditorFormName('');
+    setEditorFormDesc('');
+    setEditorFormMode('standard');
+    setEditorFormWidth(1080);
+    setEditorFormHeight(1350);
+    setEditorFormAspect('4:5');
+    setEditorFormFitMode('cover');
+    setEditorFormFocusPos('center');
+    setEditorFormZoom(1);
+    setEditorFormGridLayoutId('two-squares');
+    setEditorFormWatermarkEnabled(false);
+    setFormatEditorOpen(true);
+  };
+
+  // Open modal to Edit an Existing Format
+  const handleOpenEditFormatModal = (format: CropStudioFormat) => {
+    setEditingFormatTarget(format);
+    setEditorFormName(format.name);
+    setEditorFormDesc(format.description || '');
+    setEditorFormMode(format.mode || 'standard');
+    setEditorFormWidth(format.targetWidth || 1080);
+    setEditorFormHeight(format.targetHeight || 1350);
+    setEditorFormAspect(format.aspect || '4:5');
+    setEditorFormFitMode(format.fitMode || 'cover');
+    setEditorFormFocusPos(format.focusPosition || 'center');
+    setEditorFormZoom(format.cropZoom || 1);
+    setEditorFormGridLayoutId(format.gridLayoutId || 'two-squares');
+    setEditorFormWatermarkEnabled(Boolean(format.watermarkConfig?.enabled));
+    setFormatEditorOpen(true);
+  };
+
+  // Confirm Save inside the Format Editor modal (Supports Create and Edit)
+  const handleSaveFormatFromEditor = () => {
+    if (!editorFormName.trim()) {
+      showToast('⚠️ Please enter a format name');
+      return;
+    }
 
     const resolvedAspect =
-      (targetWidth === 1080 && targetHeight === 1350) ? '4:5' :
-      (targetWidth === 1200 && targetHeight === 1200) || (targetWidth === 1080 && targetHeight === 1080) ? '1:1' :
-      (targetWidth === 1920 && targetHeight === 1080) ? '16:9' :
-      (targetWidth === 1080 && targetHeight === 1920) ? '9:16' :
-      (targetWidth === 1440 && targetHeight === 1080) ? '4:3' :
-      (targetWidth === 1620 && targetHeight === 1080) ? '3:2' :
-      `${targetWidth}:${targetHeight}`;
+      (editorFormWidth === 1080 && editorFormHeight === 1350) ? '4:5' :
+      (editorFormWidth === 1200 && editorFormHeight === 1200) || (editorFormWidth === 1080 && editorFormHeight === 1080) ? '1:1' :
+      (editorFormWidth === 1920 && editorFormHeight === 1080) ? '16:9' :
+      (editorFormWidth === 1080 && editorFormHeight === 1920) ? '9:16' :
+      (editorFormWidth === 1440 && editorFormHeight === 1080) ? '4:3' :
+      (editorFormWidth === 1620 && editorFormHeight === 1080) ? '3:2' :
+      (editorFormWidth === 1774 && editorFormHeight === 887) ? '2:1' :
+      (editorFormAspect && editorFormAspect !== 'Custom' ? editorFormAspect : `${editorFormWidth}:${editorFormHeight}`);
 
-    const effectiveWatermark = watermarkConfig.enabled ? { ...watermarkConfig } : undefined;
-
-    setCropStudioFormats((prevList) => {
-      const existing = prevList.find((f) => f.id === selectedStudioFormatId);
-      if (!existing) return prevList;
-
-      const isDifferent =
-        existing.targetWidth !== targetWidth ||
-        existing.targetHeight !== targetHeight ||
-        existing.aspect !== resolvedAspect ||
-        existing.fitMode !== fitMode ||
-        existing.focusPosition !== focusPosition ||
-        existing.cropZoom !== cropZoom ||
-        JSON.stringify(existing.watermarkConfig || null) !== JSON.stringify(effectiveWatermark || null);
-
-      if (!isDifferent) return prevList;
-
+    if (editingFormatTarget) {
+      // UPDATE EXISTING FORMAT
       const updated: CropStudioFormat = {
-        ...existing,
-        targetWidth,
-        targetHeight,
+        ...editingFormatTarget,
+        name: editorFormName.trim(),
+        description: editorFormDesc.trim() || `${editorFormWidth} × ${editorFormHeight} px • ${editorFormFitMode === 'cover' ? 'Fill (Cover)' : 'Fit (Contain)'}`,
+        mode: editorFormMode,
+        targetWidth: editorFormWidth,
+        targetHeight: editorFormHeight,
         aspect: resolvedAspect,
-        fitMode,
-        focusPosition,
-        cropZoom,
-        watermarkConfig: effectiveWatermark,
+        fitMode: editorFormFitMode,
+        focusPosition: editorFormFocusPos,
+        cropZoom: editorFormZoom,
+        gridLayoutId: editorFormMode === 'grid' ? editorFormGridLayoutId : undefined,
+        watermarkConfig: editorFormWatermarkEnabled
+          ? (editingFormatTarget.watermarkConfig?.enabled ? editingFormatTarget.watermarkConfig : { ...loadActiveWatermarkConfig().config, enabled: true })
+          : undefined,
         updatedAt: Date.now(),
       };
-      const nextList = prevList.map((f) => (f.id === selectedStudioFormatId ? updated : f));
-      saveCropFormatsList(nextList);
+
+      setCropStudioFormats((prev) => {
+        const next = prev.map((f) => (f.id === updated.id ? updated : f));
+        saveCropFormatsList(next);
+        return next;
+      });
+
       syncCropFormatToWorkflowConfig(updated);
-      return nextList;
+      showToast(`✨ Updated format "${updated.name}" successfully!`);
+    } else {
+      // CREATE BRAND NEW FORMAT
+      const newId = `format-${Date.now()}`;
+      const newFormat: CropStudioFormat = {
+        id: newId,
+        name: editorFormName.trim(),
+        description: editorFormDesc.trim() || `${editorFormWidth} × ${editorFormHeight} px • ${editorFormFitMode === 'cover' ? 'Fill (Cover)' : 'Fit (Contain)'}`,
+        mode: editorFormMode,
+        targetWidth: editorFormWidth,
+        targetHeight: editorFormHeight,
+        aspect: resolvedAspect,
+        fitMode: editorFormFitMode,
+        focusPosition: editorFormFocusPos,
+        cropZoom: editorFormZoom,
+        gridLayoutId: editorFormMode === 'grid' ? editorFormGridLayoutId : undefined,
+        watermarkConfig: editorFormWatermarkEnabled
+          ? { ...loadActiveWatermarkConfig().config, enabled: true }
+          : undefined,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+
+      setCropStudioFormats((prev) => {
+        const next = [newFormat, ...prev];
+        saveCropFormatsList(next);
+        return next;
+      });
+
+      setSelectedStudioFormatId(newId);
+      setActiveCropFormatId(newId);
+      syncCropFormatToWorkflowConfig(newFormat);
+      showToast(`✨ Created new format "${newFormat.name}"!`);
+    }
+
+    setFormatEditorOpen(false);
+  };
+
+  // Duplicate an existing format
+  const handleDuplicateStudioFormat = (format: CropStudioFormat, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const newId = `format-${Date.now()}`;
+    const duplicated: CropStudioFormat = {
+      ...format,
+      id: newId,
+      name: `${format.name} (Copy)`,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    setCropStudioFormats((prev) => {
+      const next = [duplicated, ...prev];
+      saveCropFormatsList(next);
+      return next;
     });
-  }, [
-    selectedStudioFormatId,
-    targetWidth,
-    targetHeight,
-    fitMode,
-    focusPosition,
-    cropZoom,
-    watermarkConfig,
-  ]);
+    syncCropFormatToWorkflowConfig(duplicated);
+    showToast(`✨ Duplicated format as "${duplicated.name}"`);
+  };
+
+  // Delete format with user confirmation
+  const handleDeleteStudioFormatWithConfirm = (formatId: string, formatName: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (window.confirm(`Are you sure you want to delete format "${formatName}"?`)) {
+      setCropStudioFormats((prev) => {
+        const next = prev.filter((f) => f.id !== formatId);
+        saveCropFormatsList(next);
+        return next;
+      });
+      if (selectedStudioFormatId === formatId) {
+        setSelectedStudioFormatId('');
+      }
+      showToast(`🗑️ Deleted format "${formatName}"`);
+    }
+  };
+
+  // Use format & switch to Studio Canvas
+  const handleUseFormatAndOpenStudio = (format: CropStudioFormat) => {
+    handleLoadStudioFormat(format);
+    setActiveStudioTab('canvas');
+    showToast(`✨ Loaded "${format.name}" in Studio Canvas`);
+  };
+
+  const PRESET_RATIO_CHIPS = [
+    { label: '4:5 Portrait', w: 1080, h: 1350, aspect: '4:5' },
+    { label: '1:1 Square', w: 1080, h: 1080, aspect: '1:1' },
+    { label: '1:1 Square HD', w: 1200, h: 1200, aspect: '1:1' },
+    { label: '16:9 Landscape', w: 1920, h: 1080, aspect: '16:9' },
+    { label: '9:16 Story/Reel', w: 1080, h: 1920, aspect: '9:16' },
+    { label: '2:1 Hero Banner', w: 1774, h: 887, aspect: '2:1' },
+    { label: '4:3 Standard', w: 1440, h: 1080, aspect: '4:3' },
+    { label: '3:2 Classic Photo', w: 1620, h: 1080, aspect: '3:2' },
+  ];
+
+  const filteredFormats = useMemo(() => {
+    return cropStudioFormats.filter((f) => {
+      if (formatCategoryFilter === 'standard' && f.mode === 'grid') return false;
+      if (formatCategoryFilter === 'grid' && f.mode !== 'grid') return false;
+      if (formatCategoryFilter === 'watermark' && !f.watermarkConfig?.enabled) return false;
+
+      if (formatSearchQuery.trim()) {
+        const q = formatSearchQuery.toLowerCase();
+        const matchName = f.name.toLowerCase().includes(q);
+        const matchDesc = (f.description || '').toLowerCase().includes(q);
+        const matchAspect = (f.aspect || '').toLowerCase().includes(q);
+        const matchSize = `${f.targetWidth}x${f.targetHeight}`.includes(q) || `${f.targetWidth} × ${f.targetHeight}`.includes(q);
+        if (!matchName && !matchDesc && !matchAspect && !matchSize) return false;
+      }
+      return true;
+    });
+  }, [cropStudioFormats, formatCategoryFilter, formatSearchQuery]);
   const [isDownloadImageDropdownOpen, setIsDownloadImageDropdownOpen] = useState<boolean>(false);
   const [isDownloadingAllDirect, setIsDownloadingAllDirect] = useState<boolean>(false);
   // Cut Slice Preview Animation states
@@ -1927,9 +2085,96 @@ export const WatermarkView: React.FC = () => {
   // Clean, professional, unified button sizing
   // =========================================================================
   const renderNavbarActions = () => (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-      {/* Group 1: Studio Format Presets (Save & Saved Formats) */}
-      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+      {/* Primary Studio View Toggle: Home (Manage Formats) vs Studio Canvas */}
+      <div
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          backgroundColor: isDark ? 'rgba(0, 0, 0, 0.35)' : 'var(--bg-surface-hover)',
+          borderRadius: '8px',
+          padding: '2px',
+          border: '1px solid var(--border-color)',
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => setActiveStudioTab('home')}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '5px',
+            height: '28px',
+            padding: '0 12px',
+            borderRadius: '6px',
+            border: 'none',
+            backgroundColor: activeStudioTab === 'home' ? 'var(--accent-primary)' : 'transparent',
+            color: activeStudioTab === 'home' ? '#FFFFFF' : 'var(--text-secondary)',
+            fontSize: '0.8125rem',
+            fontWeight: 600,
+            cursor: 'pointer',
+            transition: 'all 0.15s ease',
+          }}
+          title="Home: Manage all saved crop & cut formats"
+        >
+          <FiHome size={13} />
+          <span>Home</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveStudioTab('canvas')}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '5px',
+            height: '28px',
+            padding: '0 12px',
+            borderRadius: '6px',
+            border: 'none',
+            backgroundColor: activeStudioTab === 'canvas' ? 'var(--accent-primary)' : 'transparent',
+            color: activeStudioTab === 'canvas' ? '#FFFFFF' : 'var(--text-secondary)',
+            fontSize: '0.8125rem',
+            fontWeight: 600,
+            cursor: 'pointer',
+            transition: 'all 0.15s ease',
+          }}
+          title="Studio Canvas: Interactive image cropper & slice tool"
+        >
+          <FiScissors size={13} />
+          <span>Studio Canvas</span>
+        </button>
+      </div>
+
+      {activeStudioTab === 'home' ? (
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+          <button
+            type="button"
+            onClick={handleOpenCreateFormatModal}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              height: '32px',
+              padding: '0 14px',
+              fontSize: '0.8125rem',
+              fontWeight: 600,
+              borderRadius: '8px',
+              border: 'none',
+              backgroundColor: 'var(--accent-primary)',
+              color: '#FFFFFF',
+              cursor: 'pointer',
+              boxShadow: '0 2px 6px rgba(37, 99, 235, 0.35)',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <FiPlus size={13} strokeWidth={2.5} />
+            <span>Create New Format</span>
+          </button>
+        </div>
+      ) : (
+        <>
+          {/* Group 1: Studio Format Presets (Save & Saved Formats) */}
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
         {/* Save / Update Studio Format Button */}
         <button
           type="button"
@@ -2418,6 +2663,8 @@ export const WatermarkView: React.FC = () => {
           <span>Reset</span>
         </button>
       </div>
+        </>
+      )}
     </div>
   );
 
@@ -2487,17 +2734,632 @@ export const WatermarkView: React.FC = () => {
         )}
       </AnimatePresence>
 
-      {/* Main Studio Viewport (2-Column Grid) */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'minmax(0, 1.45fr) minmax(360px, 420px)',
-          gap: '1rem',
-          flex: 1,
-          minHeight: 0,
-          overflow: 'hidden',
-        }}
-      >
+      {/* Main Studio Viewport: Switch between Home (Formats Manager) and Studio Canvas */}
+      {activeStudioTab === 'home' ? (
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            flex: 1,
+            minHeight: 0,
+            overflowY: 'auto',
+            padding: '1.25rem 1.75rem',
+            gap: '1.25rem',
+          }}
+        >
+          {/* Header Banner */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '1.25rem 1.5rem',
+              borderRadius: '14px',
+              backgroundColor: 'var(--bg-secondary)',
+              border: '1px solid var(--border-color)',
+              boxShadow: '0 2px 6px rgba(0, 0, 0, 0.04)',
+            }}
+          >
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                <div
+                  style={{
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '8px',
+                    backgroundColor: 'var(--accent-primary-alpha)',
+                    color: 'var(--accent-primary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <FiScissors size={17} />
+                </div>
+                <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  Crop & Cut Formats Manager
+                </h2>
+                <span
+                  style={{
+                    fontSize: '0.6875rem',
+                    fontWeight: 700,
+                    padding: '2px 8px',
+                    borderRadius: '12px',
+                    backgroundColor: 'var(--accent-primary-alpha)',
+                    color: 'var(--accent-primary)',
+                  }}
+                >
+                  {cropStudioFormats.length} Formats
+                </span>
+              </div>
+              <p style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>
+                Create, customize, and manage standardized aspect ratios, resolutions, and social swipe grid split templates.
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <button
+                type="button"
+                onClick={handleOpenCreateFormatModal}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '8px 16px',
+                  fontSize: '0.8125rem',
+                  fontWeight: 600,
+                  borderRadius: '8px',
+                  border: 'none',
+                  backgroundColor: 'var(--accent-primary)',
+                  color: '#FFFFFF',
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 8px rgba(37, 99, 235, 0.35)',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <FiPlus size={15} strokeWidth={2.5} />
+                <span>Create New Format</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveStudioTab('canvas')}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '8px 14px',
+                  fontSize: '0.8125rem',
+                  fontWeight: 600,
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-color)',
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF',
+                  color: 'var(--text-primary)',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <FiSliders size={14} />
+                <span>Open Studio Canvas</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Search & Category Filter Toolbar */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px',
+              flexWrap: 'wrap',
+            }}
+          >
+            {/* Search Input */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '0 12px',
+                height: '38px',
+                borderRadius: '8px',
+                border: '1px solid var(--border-color)',
+                backgroundColor: 'var(--bg-secondary)',
+                minWidth: '280px',
+                flex: 1,
+                maxWidth: '420px',
+              }}
+            >
+              <FiSearch size={14} style={{ color: 'var(--text-muted)' }} />
+              <input
+                type="text"
+                value={formatSearchQuery}
+                onChange={(e) => setFormatSearchQuery(e.target.value)}
+                placeholder="Search formats by name, ratio (4:5, 1:1), size..."
+                style={{
+                  border: 'none',
+                  background: 'transparent',
+                  outline: 'none',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.8125rem',
+                  width: '100%',
+                }}
+              />
+              {formatSearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setFormatSearchQuery('')}
+                  style={{ border: 'none', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer', padding: 0 }}
+                >
+                  <FiX size={13} />
+                </button>
+              )}
+            </div>
+
+            {/* Filter Pills */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              {(['all', 'standard', 'grid', 'watermark'] as const).map((cat) => {
+                const count =
+                  cat === 'all'
+                    ? cropStudioFormats.length
+                    : cat === 'standard'
+                    ? cropStudioFormats.filter((f) => f.mode !== 'grid').length
+                    : cat === 'grid'
+                    ? cropStudioFormats.filter((f) => f.mode === 'grid').length
+                    : cropStudioFormats.filter((f) => f.watermarkConfig?.enabled).length;
+                const label =
+                  cat === 'all'
+                    ? 'All Formats'
+                    : cat === 'standard'
+                    ? 'Standard Crop'
+                    : cat === 'grid'
+                    ? 'Grid Split'
+                    : 'With Watermark';
+                const isSelected = formatCategoryFilter === cat;
+                return (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => setFormatCategoryFilter(cat)}
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: '8px',
+                      border: isSelected ? '1px solid var(--accent-primary)' : '1px solid var(--border-color)',
+                      backgroundColor: isSelected
+                        ? 'var(--accent-primary-alpha)'
+                        : isDark
+                        ? 'rgba(255, 255, 255, 0.03)'
+                        : '#FFFFFF',
+                      color: isSelected ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                      fontSize: '0.75rem',
+                      fontWeight: isSelected ? 700 : 500,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
+                    <span>{label}</span>
+                    <span
+                      style={{
+                        padding: '1px 5px',
+                        borderRadius: '4px',
+                        backgroundColor: isSelected ? 'var(--accent-primary)' : 'var(--border-color)',
+                        color: isSelected ? '#FFFFFF' : 'var(--text-muted)',
+                        fontSize: '0.625rem',
+                        fontWeight: 700,
+                      }}
+                    >
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Formats Grid Cards */}
+          {filteredFormats.length === 0 ? (
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '4rem 1rem',
+                borderRadius: '14px',
+                backgroundColor: 'var(--bg-secondary)',
+                border: '1px dashed var(--border-color)',
+                textAlign: 'center',
+              }}
+            >
+              <FiScissors size={36} style={{ color: 'var(--text-muted)', marginBottom: '12px', opacity: 0.5 }} />
+              <h3 style={{ margin: '0 0 6px', fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                No Formats Found
+              </h3>
+              <p style={{ margin: '0 0 16px', fontSize: '0.8125rem', color: 'var(--text-secondary)', maxWidth: '380px' }}>
+                {formatSearchQuery
+                  ? `No formats matched "${formatSearchQuery}". Try clearing search or selecting a different filter.`
+                  : 'Start by creating your first crop format or social grid template.'}
+              </p>
+              <button
+                type="button"
+                onClick={handleOpenCreateFormatModal}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '8px 18px',
+                  fontSize: '0.8125rem',
+                  fontWeight: 600,
+                  borderRadius: '8px',
+                  border: 'none',
+                  backgroundColor: 'var(--accent-primary)',
+                  color: '#FFFFFF',
+                  cursor: 'pointer',
+                }}
+              >
+                <FiPlus size={15} strokeWidth={2.5} />
+                <span>Create New Format</span>
+              </button>
+            </div>
+          ) : (
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+                gap: '14px',
+              }}
+            >
+              {filteredFormats.map((fmt) => {
+                const isActive = selectedStudioFormatId === fmt.id;
+                // Proportional box preview
+                const wRatio = Math.min(Math.max(fmt.targetWidth, 100), 4000);
+                const hRatio = Math.min(Math.max(fmt.targetHeight, 100), 4000);
+                const maxDim = 52;
+                let boxW = maxDim;
+                let boxH = maxDim;
+                if (wRatio > hRatio) {
+                  boxH = Math.max(16, Math.round((hRatio / wRatio) * maxDim));
+                } else {
+                  boxW = Math.max(16, Math.round((wRatio / hRatio) * maxDim));
+                }
+
+                return (
+                  <div
+                    key={fmt.id}
+                    style={{
+                      borderRadius: '12px',
+                      backgroundColor: 'var(--bg-secondary)',
+                      border: `1.5px solid ${isActive ? 'var(--accent-primary)' : 'var(--border-color)'}`,
+                      padding: '1rem',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      gap: '12px',
+                      boxShadow: isActive
+                        ? '0 4px 16px rgba(37, 99, 235, 0.15)'
+                        : '0 2px 6px rgba(0, 0, 0, 0.03)',
+                      transition: 'all 0.15s ease',
+                      position: 'relative',
+                    }}
+                  >
+                    <div>
+                      {/* Top Badges */}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span
+                            style={{
+                              padding: '2px 8px',
+                              borderRadius: '6px',
+                              backgroundColor: fmt.mode === 'grid' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(37, 99, 235, 0.12)',
+                              color: fmt.mode === 'grid' ? '#10B981' : 'var(--accent-primary)',
+                              fontSize: '0.6875rem',
+                              fontWeight: 700,
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.03em',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                            }}
+                          >
+                            {fmt.mode === 'grid' ? <FiGrid size={11} /> : <FiScissors size={11} />}
+                            <span>{fmt.mode === 'grid' ? 'Grid Split' : 'Standard'}</span>
+                          </span>
+                          <span
+                            style={{
+                              padding: '2px 7px',
+                              borderRadius: '6px',
+                              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'var(--bg-surface-hover)',
+                              color: 'var(--text-primary)',
+                              fontSize: '0.6875rem',
+                              fontWeight: 700,
+                            }}
+                          >
+                            {fmt.aspect}
+                          </span>
+                        </div>
+
+                        {isActive && (
+                          <span
+                            style={{
+                              padding: '2px 7px',
+                              borderRadius: '6px',
+                              backgroundColor: '#10B981',
+                              color: '#FFFFFF',
+                              fontSize: '0.625rem',
+                              fontWeight: 700,
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.04em',
+                            }}
+                          >
+                            Active In Studio
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Title & Description */}
+                      <h3
+                        style={{
+                          margin: '0 0 4px',
+                          fontSize: '0.9375rem',
+                          fontWeight: 700,
+                          color: 'var(--text-primary)',
+                        }}
+                      >
+                        {fmt.name}
+                      </h3>
+                      <p
+                        style={{
+                          margin: '0 0 10px',
+                          fontSize: '0.75rem',
+                          color: 'var(--text-secondary)',
+                          lineHeight: 1.45,
+                          minHeight: '28px',
+                        }}
+                      >
+                        {fmt.description || `${fmt.targetWidth} × ${fmt.targetHeight} px`}
+                      </p>
+
+                      {/* Visual Ratio Box Preview & Dimensions Summary */}
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '12px',
+                          padding: '10px 12px',
+                          borderRadius: '8px',
+                          backgroundColor: isDark ? 'rgba(0, 0, 0, 0.25)' : 'var(--bg-surface-hover)',
+                          border: '1px solid var(--border-color)',
+                          marginBottom: '10px',
+                        }}
+                      >
+                        {/* Proportional Box */}
+                        <div
+                          style={{
+                            width: `${maxDim}px`,
+                            height: `${maxDim}px`,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flexShrink: 0,
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: `${boxW}px`,
+                              height: `${boxH}px`,
+                              borderRadius: '4px',
+                              border: '1.5px solid var(--accent-primary)',
+                              backgroundColor: 'var(--accent-primary-alpha)',
+                              position: 'relative',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                            }}
+                          >
+                            {fmt.mode === 'grid' && (
+                              <div
+                                style={{
+                                  position: 'absolute',
+                                  top: 0,
+                                  bottom: 0,
+                                  left: '50%',
+                                  width: '1px',
+                                  borderLeft: '1px dashed var(--accent-primary)',
+                                }}
+                              />
+                            )}
+                            <div
+                              style={{
+                                width: '4px',
+                                height: '4px',
+                                borderRadius: '50%',
+                                backgroundColor: 'var(--accent-primary)',
+                              }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Specs Text */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', fontSize: '0.6875rem' }}>
+                          <div>
+                            <span style={{ color: 'var(--text-muted)' }}>Resolution: </span>
+                            <strong style={{ color: 'var(--text-primary)' }}>
+                              {fmt.targetWidth} × {fmt.targetHeight} px
+                            </strong>
+                          </div>
+                          <div>
+                            <span style={{ color: 'var(--text-muted)' }}>Framing: </span>
+                            <strong style={{ color: 'var(--text-primary)' }}>
+                              {fmt.fitMode === 'cover' ? 'Fill (Cover)' : 'Fit (Contain)'}
+                            </strong>
+                          </div>
+                          <div>
+                            <span style={{ color: 'var(--text-muted)' }}>Anchor: </span>
+                            <strong style={{ color: 'var(--text-primary)' }}>
+                              {POSITION_LABELS[fmt.focusPosition] || 'Center'}
+                            </strong>
+                          </div>
+                          {fmt.watermarkConfig?.enabled && (
+                            <div style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>
+                              ✓ Watermark Applied
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Actions Footer */}
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '6px',
+                        paddingTop: '8px',
+                        borderTop: '1px solid var(--border-color)',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        {/* Edit Button */}
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditFormatModal(fmt)}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '5px',
+                            padding: '6px 10px',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            borderRadius: '6px',
+                            border: '1px solid var(--border-color)',
+                            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF',
+                            color: 'var(--text-primary)',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.borderColor = 'var(--accent-primary)';
+                            e.currentTarget.style.color = 'var(--accent-primary)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.borderColor = 'var(--border-color)';
+                            e.currentTarget.style.color = 'var(--text-primary)';
+                          }}
+                          title="Edit format settings, dimensions, anchor, and style"
+                        >
+                          <FiEdit2 size={12} />
+                          <span>Edit</span>
+                        </button>
+
+                        {/* Open in Studio Button */}
+                        <button
+                          type="button"
+                          onClick={() => handleUseFormatAndOpenStudio(fmt)}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '5px',
+                            padding: '6px 12px',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            borderRadius: '6px',
+                            border: 'none',
+                            backgroundColor: 'var(--accent-primary)',
+                            color: '#FFFFFF',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease',
+                          }}
+                          title="Load this format into the Studio Canvas workspace"
+                        >
+                          <FiExternalLink size={12} />
+                          <span>Open in Studio</span>
+                        </button>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        {/* Duplicate Button */}
+                        <button
+                          type="button"
+                          onClick={(e) => handleDuplicateStudioFormat(fmt, e)}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            width: '28px',
+                            height: '28px',
+                            borderRadius: '6px',
+                            border: '1px solid var(--border-color)',
+                            backgroundColor: 'transparent',
+                            color: 'var(--text-muted)',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.borderColor = 'var(--accent-primary)';
+                            e.currentTarget.style.color = 'var(--accent-primary)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.borderColor = 'var(--border-color)';
+                            e.currentTarget.style.color = 'var(--text-muted)';
+                          }}
+                          title="Duplicate format"
+                        >
+                          <FiCopy size={13} />
+                        </button>
+
+                        {/* Delete Button */}
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeleteStudioFormatWithConfirm(fmt.id, fmt.name, e)}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            width: '28px',
+                            height: '28px',
+                            borderRadius: '6px',
+                            border: '1px solid var(--border-color)',
+                            backgroundColor: 'transparent',
+                            color: 'var(--text-muted)',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.borderColor = '#EF4444';
+                            e.currentTarget.style.color = '#EF4444';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.borderColor = 'var(--border-color)';
+                            e.currentTarget.style.color = 'var(--text-muted)';
+                          }}
+                          title="Delete format"
+                        >
+                          <FiTrash2 size={13} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ) : (
+        /* Main Studio Viewport (2-Column Grid) */
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'minmax(0, 1.45fr) minmax(360px, 420px)',
+            gap: '1rem',
+            flex: 1,
+            minHeight: 0,
+            overflow: 'hidden',
+          }}
+        >
         {/* ======================================================== */}
         {/* FIRST COLUMN (LEFT): 3 SEPARATE SESSIONS                  */}
         {/* ======================================================== */}
@@ -6358,6 +7220,533 @@ export const WatermarkView: React.FC = () => {
         )}
         </div>
       </div>
+      )}
+
+      {/* Format Editor Modal (Create New & Edit Format) */}
+      <AnimatePresence>
+        {formatEditorOpen && (
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 9999,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: 'rgba(0, 0, 0, 0.72)',
+              backdropFilter: 'blur(6px)',
+              padding: '1rem',
+            }}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              style={{
+                width: '100%',
+                maxWidth: '540px',
+                maxHeight: '90vh',
+                display: 'flex',
+                flexDirection: 'column',
+                borderRadius: '16px',
+                backgroundColor: 'var(--bg-secondary)',
+                border: '1px solid var(--border-color)',
+                boxShadow: '0 24px 48px rgba(0, 0, 0, 0.45)',
+                overflow: 'hidden',
+              }}
+            >
+              {/* Modal Header */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '1.25rem 1.5rem',
+                  borderBottom: '1px solid var(--border-color)',
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div
+                    style={{
+                      width: '34px',
+                      height: '34px',
+                      borderRadius: '8px',
+                      backgroundColor: 'var(--accent-primary-alpha)',
+                      color: 'var(--accent-primary)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    {editingFormatTarget ? <FiEdit2 size={17} /> : <FiPlus size={18} strokeWidth={2.5} />}
+                  </div>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                      {editingFormatTarget ? `Edit Format: ${editingFormatTarget.name}` : 'Create New Crop & Cut Format'}
+                    </h3>
+                    <p style={{ margin: '2px 0 0', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                      {editingFormatTarget
+                        ? 'Update dimensions, aspect ratio, framing, and watermark settings.'
+                        : 'Define reusable aspect ratios, focal points, and slicing for workflows.'}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setFormatEditorOpen(false)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: '30px',
+                    height: '30px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-color)',
+                    backgroundColor: 'transparent',
+                    color: 'var(--text-secondary)',
+                    cursor: 'pointer',
+                  }}
+                  title="Close"
+                >
+                  <FiX size={16} />
+                </button>
+              </div>
+
+              {/* Modal Body (Scrollable) */}
+              <div
+                style={{
+                  padding: '1.25rem 1.5rem',
+                  overflowY: 'auto',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '1.2rem',
+                }}
+              >
+                {/* 1. Format Name & Description */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '5px' }}>
+                      Format Name <span style={{ color: '#EF4444' }}>*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={editorFormName}
+                      onChange={(e) => setEditorFormName(e.target.value)}
+                      placeholder="e.g. FB Hero Cut, Instagram 4:5 Feed, TikTok 9:16"
+                      style={{
+                        width: '100%',
+                        height: '38px',
+                        padding: '0 12px',
+                        borderRadius: '8px',
+                        border: '1px solid var(--border-color)',
+                        backgroundColor: 'var(--bg-main)',
+                        color: 'var(--text-primary)',
+                        fontSize: '0.8125rem',
+                        outline: 'none',
+                        boxSizing: 'border-box',
+                      }}
+                      autoFocus
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '5px' }}>
+                      Description (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={editorFormDesc}
+                      onChange={(e) => setEditorFormDesc(e.target.value)}
+                      placeholder="e.g. Standard Facebook Post 1080x1350 with Bolthaven watermark"
+                      style={{
+                        width: '100%',
+                        height: '36px',
+                        padding: '0 12px',
+                        borderRadius: '8px',
+                        border: '1px solid var(--border-color)',
+                        backgroundColor: 'var(--bg-main)',
+                        color: 'var(--text-primary)',
+                        fontSize: '0.8125rem',
+                        outline: 'none',
+                        boxSizing: 'border-box',
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* 2. Crop Mode (Standard vs Grid) */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>
+                    Mode
+                  </label>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 1fr',
+                      gap: '8px',
+                      padding: '3px',
+                      borderRadius: '10px',
+                      backgroundColor: isDark ? 'rgba(0, 0, 0, 0.25)' : 'var(--bg-surface-hover)',
+                      border: '1px solid var(--border-color)',
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setEditorFormMode('standard')}
+                      style={{
+                        padding: '8px 12px',
+                        borderRadius: '7px',
+                        border: 'none',
+                        backgroundColor: editorFormMode === 'standard' ? 'var(--accent-primary)' : 'transparent',
+                        color: editorFormMode === 'standard' ? '#FFFFFF' : 'var(--text-secondary)',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                      }}
+                    >
+                      <FiScissors size={13} />
+                      <span>Standard Crop</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditorFormMode('grid')}
+                      style={{
+                        padding: '8px 12px',
+                        borderRadius: '7px',
+                        border: 'none',
+                        backgroundColor: editorFormMode === 'grid' ? 'var(--accent-primary)' : 'transparent',
+                        color: editorFormMode === 'grid' ? '#FFFFFF' : 'var(--text-secondary)',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                      }}
+                    >
+                      <FiGrid size={13} />
+                      <span>Grid Split Tiles</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 3. Quick Ratio Preset Chips */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>
+                    Quick Aspect Ratio Presets
+                  </label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                    {PRESET_RATIO_CHIPS.map((chip) => {
+                      const isSelected = editorFormWidth === chip.w && editorFormHeight === chip.h;
+                      return (
+                        <button
+                          key={chip.label}
+                          type="button"
+                          onClick={() => {
+                            setEditorFormWidth(chip.w);
+                            setEditorFormHeight(chip.h);
+                            setEditorFormAspect(chip.aspect);
+                          }}
+                          style={{
+                            padding: '5px 10px',
+                            borderRadius: '6px',
+                            border: `1px solid ${isSelected ? 'var(--accent-primary)' : 'var(--border-color)'}`,
+                            backgroundColor: isSelected ? 'var(--accent-primary-alpha)' : 'transparent',
+                            color: isSelected ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                            fontSize: '0.75rem',
+                            fontWeight: isSelected ? 700 : 500,
+                            cursor: 'pointer',
+                            transition: 'all 0.12s ease',
+                          }}
+                        >
+                          {chip.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 4. Target Dimensions */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: '10px', alignItems: 'center' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                      Target Width (px)
+                    </label>
+                    <input
+                      type="number"
+                      value={editorFormWidth}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10) || 1080;
+                        setEditorFormWidth(val);
+                      }}
+                      style={{
+                        width: '100%',
+                        height: '36px',
+                        padding: '0 10px',
+                        borderRadius: '7px',
+                        border: '1px solid var(--border-color)',
+                        backgroundColor: 'var(--bg-main)',
+                        color: 'var(--text-primary)',
+                        fontSize: '0.8125rem',
+                        boxSizing: 'border-box',
+                      }}
+                    />
+                  </div>
+                  <span style={{ marginTop: '20px', color: 'var(--text-muted)', fontWeight: 700 }}>×</span>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                      Target Height (px)
+                    </label>
+                    <input
+                      type="number"
+                      value={editorFormHeight}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10) || 1350;
+                        setEditorFormHeight(val);
+                      }}
+                      style={{
+                        width: '100%',
+                        height: '36px',
+                        padding: '0 10px',
+                        borderRadius: '7px',
+                        border: '1px solid var(--border-color)',
+                        backgroundColor: 'var(--bg-main)',
+                        color: 'var(--text-primary)',
+                        fontSize: '0.8125rem',
+                        boxSizing: 'border-box',
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* 5. Framing Style (Fill Cover vs Fit Contain) */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>
+                    Framing Style
+                  </label>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 1fr',
+                      gap: '8px',
+                      padding: '3px',
+                      borderRadius: '8px',
+                      backgroundColor: isDark ? 'rgba(0, 0, 0, 0.25)' : 'var(--bg-surface-hover)',
+                      border: '1px solid var(--border-color)',
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setEditorFormFitMode('cover')}
+                      style={{
+                        padding: '7px 10px',
+                        borderRadius: '6px',
+                        border: 'none',
+                        backgroundColor: editorFormFitMode === 'cover' ? 'var(--accent-primary)' : 'transparent',
+                        color: editorFormFitMode === 'cover' ? '#FFFFFF' : 'var(--text-secondary)',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Fill (Cover)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditorFormFitMode('contain')}
+                      style={{
+                        padding: '7px 10px',
+                        borderRadius: '6px',
+                        border: 'none',
+                        backgroundColor: editorFormFitMode === 'contain' ? 'var(--accent-primary)' : 'transparent',
+                        color: editorFormFitMode === 'contain' ? '#FFFFFF' : 'var(--text-secondary)',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Fit (Contain)
+                    </button>
+                  </div>
+                </div>
+
+                {/* 6. Focal Anchor (9-point position grid) */}
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                    <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                      Focal Anchor Point
+                    </label>
+                    <span style={{ fontSize: '0.6875rem', color: 'var(--accent-primary)', fontWeight: 600 }}>
+                      {POSITION_LABELS[editorFormFocusPos] || 'Center'}
+                    </span>
+                  </div>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(3, 1fr)',
+                      gap: '6px',
+                      maxWidth: '180px',
+                      padding: '6px',
+                      borderRadius: '8px',
+                      backgroundColor: isDark ? 'rgba(0, 0, 0, 0.25)' : 'var(--bg-surface-hover)',
+                      border: '1px solid var(--border-color)',
+                    }}
+                  >
+                    {[
+                      { pos: 'top-left', label: 'TL' },
+                      { pos: 'top', label: 'T' },
+                      { pos: 'top-right', label: 'TR' },
+                      { pos: 'left', label: 'L' },
+                      { pos: 'center', label: 'C' },
+                      { pos: 'right', label: 'R' },
+                      { pos: 'bottom-left', label: 'BL' },
+                      { pos: 'bottom', label: 'B' },
+                      { pos: 'bottom-right', label: 'BR' },
+                    ].map((cell) => {
+                      const isAnchor = editorFormFocusPos === cell.pos;
+                      return (
+                        <button
+                          key={cell.pos}
+                          type="button"
+                          onClick={() => setEditorFormFocusPos(cell.pos as WatermarkPosition)}
+                          style={{
+                            height: '28px',
+                            borderRadius: '5px',
+                            border: `1px solid ${isAnchor ? 'var(--accent-primary)' : 'var(--border-color)'}`,
+                            backgroundColor: isAnchor ? 'var(--accent-primary)' : 'transparent',
+                            color: isAnchor ? '#FFFFFF' : 'var(--text-secondary)',
+                            fontSize: '0.6875rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {cell.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 7. Grid Layout selection (if mode === 'grid') */}
+                {editorFormMode === 'grid' && (
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>
+                      Grid Slicing Preset
+                    </label>
+                    <select
+                      value={editorFormGridLayoutId}
+                      onChange={(e) => setEditorFormGridLayoutId(e.target.value)}
+                      style={{
+                        width: '100%',
+                        height: '36px',
+                        padding: '0 10px',
+                        borderRadius: '8px',
+                        border: '1px solid var(--border-color)',
+                        backgroundColor: 'var(--bg-main)',
+                        color: 'var(--text-primary)',
+                        fontSize: '0.8125rem',
+                        outline: 'none',
+                      }}
+                    >
+                      {SOCIAL_GRID_LAYOUTS.map((g) => (
+                        <option key={g.id} value={g.id}>
+                          {g.name} ({g.tileCount} Tiles • {g.subtitle})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* 8. Watermark Toggle */}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'var(--bg-surface-hover)',
+                    border: '1px solid var(--border-color)',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <FiShield size={15} style={{ color: editorFormWatermarkEnabled ? 'var(--accent-primary)' : 'var(--text-muted)' }} />
+                    <div>
+                      <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                        Apply Watermark Automatically
+                      </div>
+                      <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                        Embed your active logo watermark onto images cropped with this format.
+                      </div>
+                    </div>
+                  </div>
+                  <SwitchToggle
+                    checked={editorFormWatermarkEnabled}
+                    onChange={(checked) => setEditorFormWatermarkEnabled(checked)}
+                  />
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'flex-end',
+                  gap: '8px',
+                  padding: '1rem 1.5rem',
+                  borderTop: '1px solid var(--border-color)',
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)',
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setFormatEditorOpen(false)}
+                  style={{
+                    padding: '8px 16px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-color)',
+                    backgroundColor: 'transparent',
+                    color: 'var(--text-secondary)',
+                    fontSize: '0.8125rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveFormatFromEditor}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '8px 20px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    backgroundColor: 'var(--accent-primary)',
+                    color: '#FFFFFF',
+                    fontSize: '0.8125rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    boxShadow: '0 2px 8px rgba(37, 99, 235, 0.35)',
+                  }}
+                >
+                  <FiSave size={14} />
+                  <span>{editingFormatTarget ? 'Save Changes' : 'Create Format'}</span>
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Add New Crop Preset Modal */}
       <AnimatePresence>

@@ -415,9 +415,32 @@ export const getAutomationStatus = async (): Promise<AutomationStatusResponse | 
     const res = await fetch(`${API_BASE}/automation/status`);
     if (!res.ok) return null;
     const data = await res.json();
-    return data.automation || null;
+    const raw = data.automation || data;
+    const auto = raw.automation || raw;
+    return auto || null;
   } catch {
     return null;
+  }
+};
+
+export interface EnhancedDownloadedImage {
+  filename: string;
+  path: string;
+  size: number;
+  mtime: number;
+  position: number;
+  url: string;
+}
+
+export const fetchEnhancedDownloadedImages = async (propertyId?: string): Promise<EnhancedDownloadedImage[]> => {
+  try {
+    const q = propertyId ? `?property_id=${encodeURIComponent(propertyId)}` : '';
+    const res = await fetch(`http://127.0.0.1:9224/enhanced-images${q}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.images || [];
+  } catch {
+    return [];
   }
 };
 

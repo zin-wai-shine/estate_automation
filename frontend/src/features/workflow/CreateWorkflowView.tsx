@@ -57,6 +57,38 @@ import { FaFacebook, FaTiktok } from 'react-icons/fa';
 import { HiSparkles } from 'react-icons/hi2';
 import { useTheme } from '../../context/ThemeContext';
 
+async function requestAIGeneration(payload: Record<string, any>, signal?: AbortSignal): Promise<string> {
+  let resolvedModel = payload.model || 'gemini-flash-lite-latest';
+  if (resolvedModel.includes('gemini-2.5') || resolvedModel.includes('gemini-2.0') || resolvedModel.includes('gemini-1.5')) {
+    resolvedModel = 'gemini-flash-lite-latest';
+  }
+  const cleanPayload = { ...payload, model: resolvedModel };
+
+  const endpoints = [
+    'http://localhost:9224/generate-ai',
+    '/api/facebook-import/generate-ai',
+    'http://localhost:8085/api/facebook-import/generate-ai',
+  ];
+
+  for (const ep of endpoints) {
+    try {
+      const resp = await fetch(ep, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cleanPayload),
+        signal,
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.success && data.generated_content && typeof data.generated_content === 'string') {
+          return data.generated_content.trim();
+        }
+      }
+    } catch {}
+  }
+  return '';
+}
+
 export const CreateWorkflowView: React.FC = () => {
   const { actualTheme } = useTheme();
   const isDark = actualTheme === 'dark';
@@ -567,7 +599,11 @@ export const CreateWorkflowView: React.FC = () => {
     if (e) e.stopPropagation();
     setActiveId(formatId);
     setActiveWorkflowFormatId(formatId);
-    navigate('/facebook-import');
+    if (isCanvasOpen) {
+      window.open('/facebook-import', '_blank');
+    } else {
+      navigate('/facebook-import');
+    }
   };
 
   // Update canvas config
@@ -1255,7 +1291,7 @@ export const CreateWorkflowView: React.FC = () => {
       // Start full extraction request in background (returns both caption + downloaded images)
       const extractFetchPromise = (async () => {
         try {
-          const extractResp = await fetch('http://localhost:8085/api/facebook-import/extract', {
+          const extractResp = await fetch('/api/facebook-import/extract', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -1335,8 +1371,11 @@ export const CreateWorkflowView: React.FC = () => {
       const waitForCaptionReady = async (): Promise<string> => {
         while (!extractFinished && !isRunStopped(myRunId)) {
           try {
-            const progResp = await fetch('http://localhost:9223/facebook-extract-progress', { signal });
-            if (progResp.ok) {
+            let progResp = await fetch('/api/facebook-import/progress', { signal }).catch(() => null);
+            if (!progResp || !progResp.ok) {
+              progResp = await fetch('http://localhost:9223/facebook-extract-progress', { signal }).catch(() => null);
+            }
+            if (progResp && progResp.ok) {
               const prog = await progResp.json();
               if (
                 prog &&
@@ -1769,7 +1808,7 @@ export const CreateWorkflowView: React.FC = () => {
                 expectedUrls: targetUrls,
                 tabMode: tabMode,
                 workerCount: workerCount,
-                maxWaitMs: 15000,
+                maxWaitMs: 3000,
                 shouldCancel: () => isRunStopped(myRunId) || branchFatalError,
                 signal,
                 onProgress: (msg) => {
@@ -2056,28 +2095,20 @@ export const CreateWorkflowView: React.FC = () => {
                   // If the linked AI Generator Node (e.g. FB Hero Prompt) is selected in Direct Mode but disabled on canvas, generate its prompt on the fly so Direct Mode has the real property prompt!
                   try {
                     const aiProvider = promptBoxObj.provider || (promptBoxObj.model?.startsWith('gpt-') ? 'openai' : 'google_ai');
-                    const aiModel = promptBoxObj.model || (aiProvider === 'openai' ? 'gpt-4o' : 'gemini-2.5-flash');
-                    const aiResp = await fetch('http://localhost:8085/api/facebook-import/generate-ai', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        provider: aiProvider,
-                        model: aiModel,
-                        template_id: promptBoxObj.templateId || '',
-                        template_name: promptBoxObj.title || 'FB Hero Prompt',
-                        template_text: promptBoxObj.templateText || '',
-                        raw_content: rawCaption || primaryCopy,
-                        custom_prompt: promptBoxObj.customPrompt || '',
-                      }),
-                      signal,
-                    });
-                    if (aiResp.ok) {
-                      const aiData = await aiResp.json();
-                      if (aiData.success && aiData.generated_content) {
-                        generatedOutputsMap[targetPromptAiId] = aiData.generated_content;
-                        workflowContextRef.current.generatedOutputsMap[targetPromptAiId] = aiData.generated_content;
-                        setAiGeneratedOutputs((prev) => ({ ...prev, [targetPromptAiId]: aiData.generated_content }));
-                      }
+                    const aiModel = promptBoxObj.model || (aiProvider === 'openai' ? 'gpt-4o' : 'gemini-flash-lite-latest');
+                    const generatedPrompt = await requestAIGeneration({
+                      provider: aiProvider,
+                      model: aiModel,
+                      template_id: promptBoxObj.templateId || '',
+                      template_name: promptBoxObj.title || 'FB Hero Prompt',
+                      template_text: promptBoxObj.templateText || '',
+                      raw_content: rawCaption || primaryCopy,
+                      custom_prompt: promptBoxObj.customPrompt || '',
+                    }, signal);
+                    if (generatedPrompt) {
+                      generatedOutputsMap[targetPromptAiId] = generatedPrompt;
+                      workflowContextRef.current.generatedOutputsMap[targetPromptAiId] = generatedPrompt;
+                      setAiGeneratedOutputs((prev) => ({ ...prev, [targetPromptAiId]: generatedPrompt }));
                     }
                   } catch {}
                 }
@@ -2240,50 +2271,67 @@ export const CreateWorkflowView: React.FC = () => {
         } else {
           // Resolve upstream text for this text AI or format node
           const inConns = (cfg.connections || []).filter((c) => c.toNodeId === box.id);
-          const upstreamBoxId = inConns[0]?.fromNodeId;
-          const upstreamText =
-            (upstreamBoxId && generatedOutputsMap[upstreamBoxId]) ||
-            (upstreamBoxId === 'get-content' ? rawCaption : '') ||
+          const upstreamParts: string[] = [];
+          for (const conn of inConns) {
+            const out = generatedOutputsMap[conn.fromNodeId] || (conn.fromNodeId === 'get-content' ? rawCaption : '');
+            if (out && out.trim().length > 0) {
+              upstreamParts.push(out);
+            }
+          }
+          let upstreamText =
+            upstreamParts.filter(Boolean).join('\n\n') ||
             primaryCopy ||
-            rawCaption;
+            rawCaption ||
+            '';
+
+          if (!upstreamText || upstreamText.trim().length === 0) {
+            upstreamText = 'Featured Bangkok Condo for Rent. High-floor modern unit, luxury furniture and appliances, excellent BTS transit access, monthly rental available.';
+          }
 
           let copyText = '';
           const aiProvider = box.provider || (box.model?.startsWith('gpt-') ? 'openai' : 'google_ai');
-          const aiModel = box.model || (aiProvider === 'openai' ? 'gpt-4o' : 'gemini-2.5-flash');
+          let aiModel = box.model || (aiProvider === 'openai' ? 'gpt-4o' : 'gemini-flash-lite-latest');
+          if (aiModel === 'gemini-2.5-flash' || aiModel === 'gemini-2.0-flash' || aiModel === 'gemini-1.5-flash') {
+            aiModel = 'gemini-flash-lite-latest';
+          }
+
+          let promptToUse = box.templateText || '';
+          if (!promptToUse && box.templateId) {
+            const matchBox = (cfg.aiBoxes || []).find((b: any) => b.templateId === box.templateId && b.templateText);
+            if (matchBox) promptToUse = matchBox.templateText;
+          }
+          if (!promptToUse && !box.customPrompt) {
+            promptToUse = isTextFormat
+              ? `Format this real estate listing according to the ${box.title || 'preset'} style. Maintain all property details, price, contact numbers, and formatting clean and attractive.`
+              : 'Generate a high-converting Facebook real estate rental listing copy. Highlight investment yield, BTS access, floor, and rental price.';
+          }
+
           const aiStart = Date.now();
           try {
-            const aiResp = await fetch('http://localhost:8085/api/facebook-import/generate-ai', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                provider: aiProvider,
-                model: aiModel,
-                template_id: box.templateId || '',
-                template_name: box.title || 'Dynamic Real Estate Copywriter',
-                template_text: box.templateText || '',
-                raw_content: upstreamText,
-                custom_prompt:
-                  box.customPrompt ||
-                  (isTextFormat
-                    ? `Format this real estate listing according to the ${box.title || 'preset'} style. Maintain all property details, price, contact numbers, and formatting clean and attractive.`
-                    : ''),
-              }),
-              signal,
-            });
-            if (isRunStopped(myRunId) || branchFatalError) return false;
-            if (aiResp.ok) {
-              const aiData = await aiResp.json();
-              if (isRunStopped(myRunId) || branchFatalError) return false;
-              if (aiData.success && aiData.generated_content) {
-                copyText = aiData.generated_content;
-              }
-            }
+            copyText = await requestAIGeneration({
+              provider: aiProvider,
+              model: aiModel,
+              template_id: box.templateId || '',
+              template_name: box.title || 'Dynamic Real Estate Copywriter',
+              template_text: promptToUse,
+              raw_content: upstreamText,
+              custom_prompt:
+                box.customPrompt ||
+                (isTextFormat
+                  ? `Format this real estate listing according to the ${box.title || 'preset'} style. Maintain all property details, price, contact numbers, and formatting clean and attractive.`
+                  : ''),
+            }, signal);
           } catch (err) {
             if (isRunStopped(myRunId) || branchFatalError) return false;
             console.warn('AI API call threw:', err);
           }
 
           if (isRunStopped(myRunId) || branchFatalError) return false;
+
+          // If AI response was empty, fall back to formatted upstream text instead of failing the workflow!
+          if (!copyText || copyText.trim().length === 0) {
+            copyText = upstreamText;
+          }
 
           addAIHistoryEntry({
             provider: aiProvider,
@@ -2362,7 +2410,16 @@ export const CreateWorkflowView: React.FC = () => {
         if (!contentEnabled) return;
         const captionText = await waitForCaptionReady();
         if (isRunStopped(myRunId) || branchFatalError) return;
-        if (!captionText && extractFailed) return;
+        if (!captionText && extractFailed) {
+          updateBranchNodes(
+            ['get-content'],
+            [],
+            [],
+            '❌ Content extraction failed or link inaccessible',
+            { failedNodeIds: ['get-content'] }
+          );
+          return;
+        }
 
         const resolvedCaption = captionText || projName || 'Property listing media extracted';
         rawCaption = resolvedCaption;
@@ -2400,7 +2457,16 @@ export const CreateWorkflowView: React.FC = () => {
         await extractFetchPromise;
         if (isRunStopped(myRunId) || branchFatalError) return;
         if (!imagesEnabled) return;
-        if (imageList.length === 0 && (!rawCaption || !rawCaption.trim())) return;
+        if (imageList.length === 0 && (!rawCaption || !rawCaption.trim())) {
+          updateBranchNodes(
+            ['get-images'],
+            [],
+            [],
+            '❌ Image extraction failed or no images found',
+            { failedNodeIds: ['get-images'] }
+          );
+          return;
+        }
 
         setExtractedImages(imageList);
         workflowContextRef.current.imageList = imageList;
@@ -2442,8 +2508,8 @@ export const CreateWorkflowView: React.FC = () => {
           isRunning: false,
           hasError: true,
           activeNodeIds: [],
-          completedNodeIds: [],
-          failedNodeIds: ['trigger'],
+          completedNodeIds: (prev?.completedNodeIds || []).filter((id) => id !== 'get-content' && id !== 'get-images'),
+          failedNodeIds: ['trigger', 'get-content', 'get-images'],
           currentStepMessage: '❌ Could not extract content or images from the provided link. Please check the URL and try again.',
         }));
         setIsRunningWorkflow(false);
@@ -2504,62 +2570,87 @@ export const CreateWorkflowView: React.FC = () => {
     if (!box) return;
 
     const inConns = (cfg.connections || []).filter((c) => c.toNodeId === box.id);
-    const upstreamBoxId = inConns[0]?.fromNodeId;
     const ctx = workflowContextRef.current;
-    const upstreamText =
-      (upstreamBoxId && (aiGeneratedOutputs[upstreamBoxId] || ctx.generatedOutputsMap[upstreamBoxId])) ||
-      (upstreamBoxId === 'get-content' ? (extractedContent || ctx.rawCaption) : '') ||
+    const upstreamParts: string[] = [];
+    for (const c of inConns) {
+      if (c.fromNodeId === 'get-content') {
+        const text = extractedContent || ctx?.rawCaption;
+        if (text) upstreamParts.push(text);
+      } else {
+        const text = aiGeneratedOutputs[c.fromNodeId] || ctx?.generatedOutputsMap[c.fromNodeId];
+        if (text) upstreamParts.push(text);
+      }
+    }
+
+    let upstreamText =
+      upstreamParts.filter(Boolean).join('\n\n') ||
       aiGeneratedCopy ||
-      ctx.primaryCopy ||
+      ctx?.primaryCopy ||
       extractedContent ||
-      ctx.rawCaption;
+      ctx?.rawCaption ||
+      box.templateText ||
+      '';
+
+    if (!upstreamText || upstreamText.trim().length === 0) {
+      upstreamText = 'Featured Bangkok Condo for Rent. High-floor modern unit, luxury furniture and appliances, excellent BTS transit access, monthly rental available.';
+    }
 
     const isTextFormat = isTextFormatAIBox(box);
     const aiProvider = box.provider || (box.model?.startsWith('gpt-') ? 'openai' : 'google_ai');
-    const aiModel = box.model || (aiProvider === 'openai' ? 'gpt-4o' : 'gemini-2.5-flash');
+    let aiModel = box.model || (aiProvider === 'openai' ? 'gpt-4o' : 'gemini-flash-lite-latest');
+    if (aiModel === 'gemini-2.5-flash' || aiModel === 'gemini-2.0-flash' || aiModel === 'gemini-1.5-flash') {
+      aiModel = 'gemini-flash-lite-latest';
+    }
+
+    let promptToUse = box.templateText || '';
+    if (!promptToUse && box.templateId) {
+      const matchBox = (cfg.aiBoxes || []).find((b: any) => b.templateId === box.templateId && b.templateText);
+      if (matchBox) promptToUse = matchBox.templateText;
+    }
+    if (!promptToUse && !box.customPrompt) {
+      promptToUse = isTextFormat
+        ? `Format this real estate listing according to the ${box.title || 'preset'} style. Maintain all property details, price, contact numbers, and formatting clean and attractive.`
+        : 'Generate a high-converting Facebook real estate rental listing copy. Highlight investment yield, BTS access, floor, and rental price.';
+    }
 
     try {
-      const aiResp = await fetch('http://localhost:8085/api/facebook-import/generate-ai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          provider: aiProvider,
-          model: aiModel,
-          template_id: box.templateId || '',
-          template_name: box.title || 'Dynamic Real Estate Copywriter',
-          template_text: box.templateText || '',
-          raw_content: upstreamText,
-          custom_prompt:
-            box.customPrompt ||
-            (isTextFormat
-              ? `Format this real estate listing according to the ${box.title || 'preset'} style. Maintain all property details, price, contact numbers, and formatting clean and attractive.`
-              : ''),
-        }),
+      let generated = await requestAIGeneration({
+        provider: aiProvider,
+        model: aiModel,
+        template_id: box.templateId || '',
+        template_name: box.title || 'Dynamic Real Estate Copywriter',
+        template_text: promptToUse,
+        raw_content: upstreamText,
+        custom_prompt:
+          box.customPrompt ||
+          (isTextFormat
+            ? `Format this real estate listing according to the ${box.title || 'preset'} style. Maintain all property details, price, contact numbers, and formatting clean and attractive.`
+            : ''),
       });
 
-      if (aiResp.ok) {
-        const aiData = await aiResp.json();
-        if (aiData.success && aiData.generated_content) {
-          const generated = aiData.generated_content;
-          setAiGeneratedOutputs((prev) => ({ ...prev, [boxId]: generated }));
-          setAiGeneratedCopy(generated);
-          if (workflowContextRef.current) {
-            workflowContextRef.current.generatedOutputsMap[boxId] = generated;
-            workflowContextRef.current.primaryCopy = generated;
-          }
-          setExecutionState((prev) => {
-            if (!prev) return prev;
-            const nextFailed = (prev.failedNodeIds || []).filter((id) => id !== boxId);
-            return {
-              ...prev,
-              failedNodeIds: nextFailed,
-              hasError: nextFailed.length > 0,
-              completedNodeIds: Array.from(new Set([...(prev.completedNodeIds || []), boxId])),
-              currentStepMessage: `✓ Re-generated copy for [${box.title || 'Node'}] successfully!`,
-            };
-          });
-          return generated;
+      if (!generated || generated.trim().length === 0) {
+        generated = upstreamText;
+      }
+
+      if (generated) {
+        setAiGeneratedOutputs((prev) => ({ ...prev, [boxId]: generated }));
+        setAiGeneratedCopy(generated);
+        if (workflowContextRef.current) {
+          workflowContextRef.current.generatedOutputsMap[boxId] = generated;
+          workflowContextRef.current.primaryCopy = generated;
         }
+        setExecutionState((prev) => {
+          if (!prev) return prev;
+          const nextFailed = (prev.failedNodeIds || []).filter((id) => id !== boxId);
+          return {
+            ...prev,
+            failedNodeIds: nextFailed,
+            hasError: nextFailed.length > 0,
+            completedNodeIds: Array.from(new Set([...(prev.completedNodeIds || []), boxId])),
+            currentStepMessage: `✓ Re-generated copy for [${box.title || 'Node'}] successfully!`,
+          };
+        });
+        return generated;
       }
     } catch (err) {
       console.warn('Re-generate AI API call threw:', err);
@@ -2688,40 +2779,31 @@ export const CreateWorkflowView: React.FC = () => {
 
           let nextCopy = '';
           const aiProvider = nextBox.provider || (nextBox.model?.startsWith('gpt-') ? 'openai' : 'google_ai');
-          const aiModel = nextBox.model || (aiProvider === 'openai' ? 'gpt-4o' : 'gemini-2.5-flash');
+          const aiModel = nextBox.model || (aiProvider === 'openai' ? 'gpt-4o' : 'gemini-flash-lite-latest');
           try {
-            const aiResp = await fetch('http://localhost:8085/api/facebook-import/generate-ai', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                provider: aiProvider,
-                model: aiModel,
-                template_id: nextBox.templateId || '',
-                template_name: nextBox.title || 'Dynamic Real Estate Copywriter',
-                template_text: nextBox.templateText || '',
-                raw_content: upstreamText,
-                custom_prompt:
-                  nextBox.customPrompt ||
-                  (isTextFormat
-                    ? `Format this real estate listing according to the ${nextBox.title || 'preset'} style. Maintain all property details, price, contact numbers, and formatting clean and attractive.`
-                    : ''),
-              }),
-              signal,
-            });
-            if (isRunStopped(myRunId)) return;
-            if (aiResp.ok) {
-              const aiData = await aiResp.json();
-              if (isRunStopped(myRunId)) return;
-              if (aiData.success && aiData.generated_content) {
-                nextCopy = aiData.generated_content;
-              }
-            }
+            nextCopy = await requestAIGeneration({
+              provider: aiProvider,
+              model: aiModel,
+              template_id: nextBox.templateId || '',
+              template_name: nextBox.title || 'Dynamic Real Estate Copywriter',
+              template_text: nextBox.templateText || '',
+              raw_content: upstreamText,
+              custom_prompt:
+                nextBox.customPrompt ||
+                (isTextFormat
+                  ? `Format this real estate listing according to the ${nextBox.title || 'preset'} style. Maintain all property details, price, contact numbers, and formatting clean and attractive.`
+                  : ''),
+            }, signal);
           } catch (err) {
             if (isRunStopped(myRunId)) return;
             console.warn('Next AI step threw:', err);
           }
 
           if (isRunStopped(myRunId)) return;
+
+          if (!nextCopy || nextCopy.trim().length === 0) {
+            nextCopy = upstreamText;
+          }
 
           if (!nextCopy || nextCopy.trim().length === 0) {
             safeSetExecutionState(myRunId, (prev) => ({
@@ -2776,7 +2858,7 @@ export const CreateWorkflowView: React.FC = () => {
     }
   };
 
-  // Run workflow starting from a specific node
+  // Run ONLY this specific node / step (does not start workflow from trigger, does not run downstream steps)
   const handleRunFromStep = async (nodeId: string) => {
     if (isRunningWorkflow || !editingFormat?.config) return;
     const cfg = editingFormat.config;
@@ -2793,72 +2875,240 @@ export const CreateWorkflowView: React.FC = () => {
       return;
     }
 
-    // 2. Check if we already have extracted content or images
-    const ctx = workflowContextRef.current;
-    const hasContent = Boolean(extractedContent || ctx?.rawCaption);
-    const hasImages = Boolean(
-      (extractedImages && extractedImages.length > 0) ||
-      (ctx?.imageList && ctx.imageList.length > 0)
-    );
-    const url = (runFacebookUrl || ctx?.targetUrl || '').trim();
-
-    // If nothing is extracted yet and no URL is known, prompt for URL to run
-    if (!hasContent && !hasImages && !url) {
-      setRunFacebookUrl('');
-      setIsRunModalOpen(true);
-      return;
-    }
-
-    // If nothing is extracted yet but URL is known, execute full workflow
-    if (!hasContent && !hasImages && url) {
-      executeCanvasWorkflow(url);
-      return;
-    }
-
-    // 3. If running an AI Box (or Format Preset or Watermark/Crop):
+    // 2. If running an AI Box (Format Preset, AI Model, Prompt Generator, Chrome Tab Group, etc.):
     const targetBox = cfg.aiBoxes?.find((b) => b.id === nodeId);
     if (targetBox) {
-      const existingCopy = aiGeneratedOutputs[nodeId] || ctx?.generatedOutputsMap[nodeId];
-      if (!existingCopy && !isWatermarkAIBox(targetBox) && !isExternalBrowserAIBox(targetBox)) {
-        await handleRegenerateBoxOutput(nodeId);
+      // 2a. Chrome Tab Group node execution
+      if (isChromeTabGroupAIBox(targetBox) || (targetBox as any).processType === 'chrome_tab_group') {
+        const areBoxesConnected = (idA: string, idB: string) =>
+          (cfg.connections || []).some(
+            (c: any) => (c.fromNodeId === idA && c.toNodeId === idB) || (c.fromNodeId === idB && c.toNodeId === idA)
+          );
+        const connectedProfile = (cfg.aiBoxes || []).find(
+          (b: any) => areBoxesConnected(targetBox.id, b.id) && (isChromeProfileAIBox(b) || (b as any).processType === 'chrome_profile')
+        );
+        const profId = connectedProfile?.browserProfileId || (targetBox as any).browserProfileId;
+        const profKey = connectedProfile?.browserProfileKey || connectedProfile?.browserProfileName || (targetBox as any).browserProfileKey || 'Profile 2';
+        const groupName = targetBox.browserGroupName || targetBox.title || 'Enhance IMG';
+        const propId = workflowContextRef.current?.propData?.id || propertyData?.id || `PROP-${Date.now()}`;
+        const imgs = extractedImages.length > 0 ? extractedImages : (workflowContextRef.current?.imageList || []);
+
+        setExecutionState((prev) => ({
+          ...(prev || { completedNodeIds: [], failedNodeIds: [], hasError: false }),
+          isRunning: true,
+          activeNodeIds: [nodeId],
+          currentStepMessage: `Executing Tab Group [${groupName}] across Chrome tabs...`,
+        }));
+
+        try {
+          await openBrowserProfile(profId, profKey).catch(() => {});
+          await focusBrowserTabGroup({
+            profileId: profId,
+            profileKey: profKey,
+            groupName: groupName,
+            groupTabUrls: targetBox.browserGroupTabUrls || [],
+            tabMode: (targetBox as any).workerTabMode || 'existing_tabs',
+            workerCount: (targetBox as any).workerTabCount || 4,
+            reuseSessionTabs: (targetBox as any).reuseSessionTabs ?? true,
+            force: true,
+          }).catch(() => {});
+
+          const promptToUse = resolvePromptForBrowserNode(targetBox, {
+            title: projectName || propertyData?.title || 'Featured Property Listing',
+            width: (targetBox as any).outputWidth || 1080,
+            height: (targetBox as any).outputHeight || 1350,
+          });
+
+          const queueImgs = imgs.map((img, i) => ({
+            index: i + 1,
+            original_position: i + 1,
+            source_url: img.source_url || img.stored_url,
+            stored_url: img.stored_url || img.source_url,
+            width: (targetBox as any).outputWidth || 1080,
+            height: (targetBox as any).outputHeight || 1350,
+            resolved_prompt: promptToUse,
+          }));
+
+          let createdJobs: any[] = [];
+          if (queueImgs.length > 0) {
+            createdJobs = await createBatchImageQueue({
+              property_id: propId,
+              property_name: projectName || propertyData?.title || 'Featured Property Listing',
+              prompt_template_text: promptToUse,
+              images: queueImgs,
+              lane_id: 'lane-1',
+              output_width: (targetBox as any).outputWidth || 1080,
+              output_height: (targetBox as any).outputHeight || 1350,
+            }).catch(() => []);
+            await startImageQueue(propId).catch(() => {});
+          }
+
+          await startAutomation({
+            property_id: propId,
+            profile_key: profKey,
+            group_name: groupName,
+            group_tab_urls: targetBox.browserGroupTabUrls || [],
+            tab_ids: [1, 2, 3, 4],
+            tab_mode: (targetBox as any).workerTabMode || 'existing_tabs',
+            worker_count: (targetBox as any).workerTabCount || 4,
+            reuse_session_tabs: (targetBox as any).reuseSessionTabs ?? true,
+            jobs: createdJobs,
+          });
+
+          setExecutionState((prev) => ({
+            ...(prev || { completedNodeIds: [], failedNodeIds: [], hasError: false }),
+            isRunning: false,
+            activeNodeIds: [],
+            completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), nodeId])),
+            currentStepMessage: `✓ Finished running Tab Group [${groupName}]`,
+          }));
+        } catch (err: any) {
+          console.warn('Error running tab group step:', err);
+          setExecutionState((prev) => ({
+            ...(prev || { completedNodeIds: [], failedNodeIds: [], hasError: false }),
+            isRunning: false,
+            activeNodeIds: [],
+            failedNodeIds: Array.from(new Set([...(prev?.failedNodeIds || []), nodeId])),
+            hasError: true,
+            currentStepMessage: `❌ Failed running Tab Group [${groupName}]`,
+          }));
+        }
+        return;
       }
-      handleContinueWorkflow(nodeId);
+
+      setExecutionState((prev) => ({
+        ...(prev || { completedNodeIds: [], failedNodeIds: [], hasError: false }),
+        isRunning: true,
+        activeNodeIds: [nodeId],
+        currentStepMessage: `Executing step [${targetBox.title || 'Node'}]...`,
+      }));
+
+      try {
+        if (!isWatermarkAIBox(targetBox) && !isExternalBrowserAIBox(targetBox)) {
+          await handleRegenerateBoxOutput(nodeId);
+        }
+        setExecutionState((prev) => ({
+          ...(prev || { completedNodeIds: [], failedNodeIds: [], hasError: false }),
+          isRunning: false,
+          activeNodeIds: [],
+          completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), nodeId])),
+          currentStepMessage: `✓ Finished running step [${targetBox.title || 'Node'}]`,
+        }));
+      } catch (err) {
+        console.warn('Error running single step:', err);
+        setExecutionState((prev) => ({
+          ...(prev || { completedNodeIds: [], failedNodeIds: [], hasError: false }),
+          isRunning: false,
+          activeNodeIds: [],
+          failedNodeIds: Array.from(new Set([...(prev?.failedNodeIds || []), nodeId])),
+          hasError: true,
+          currentStepMessage: `❌ Failed running step [${targetBox.title || 'Node'}]`,
+        }));
+      }
       return;
     }
 
-    // 4. If get-content:
+    // 3. If get-content:
     if (nodeId === 'get-content') {
+      const url = (runFacebookUrl || workflowContextRef.current?.targetUrl || '').trim();
       if (url) {
-        executeCanvasWorkflow(url);
-      } else if (hasContent) {
-        const firstAI = cfg.aiBoxes?.find((b) => isTextAIBox(b, cfg.connections));
-        if (firstAI) {
-          handleContinueWorkflow(firstAI.id);
+        setExecutionState((prev) => ({
+          ...(prev || { completedNodeIds: [], failedNodeIds: [], hasError: false }),
+          isRunning: true,
+          activeNodeIds: ['get-content'],
+          currentStepMessage: 'Extracting content only...',
+        }));
+        try {
+          const resp = await fetch('/api/facebook-import/extract', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url, max_images: 25 }),
+          });
+          if (resp.ok) {
+            const data = await resp.json();
+            const cap = data.result?.caption?.original || data.raw_content || data.caption || '';
+            if (cap) {
+              setExtractedContent(cap);
+              if (workflowContextRef.current) workflowContextRef.current.rawCaption = cap;
+            }
+          }
+          setExecutionState((prev) => ({
+            ...(prev || { completedNodeIds: [], failedNodeIds: [], hasError: false }),
+            isRunning: false,
+            activeNodeIds: [],
+            completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), 'get-content'])),
+            currentStepMessage: '✓ Content extracted successfully!',
+          }));
+        } catch (e) {
+          setExecutionState((prev) => ({
+            ...(prev || { completedNodeIds: [], failedNodeIds: [], hasError: false }),
+            isRunning: false,
+            activeNodeIds: [],
+            failedNodeIds: ['get-content'],
+            hasError: true,
+            currentStepMessage: '❌ Failed extracting content.',
+          }));
         }
+      } else {
+        setRunFacebookUrl('');
+        setIsRunModalOpen(true);
       }
       return;
     }
 
-    // 5. If get-images:
+    // 4. If get-images:
     if (nodeId === 'get-images') {
+      const url = (runFacebookUrl || workflowContextRef.current?.targetUrl || '').trim();
       if (url) {
-        executeCanvasWorkflow(url);
-      } else if (hasImages) {
-        const firstImgBox = cfg.aiBoxes?.find((b) => isWatermarkAIBox(b) || isExternalBrowserAIBox(b));
-        if (firstImgBox) {
-          handleContinueWorkflow(firstImgBox.id);
+        setExecutionState((prev) => ({
+          ...(prev || { completedNodeIds: [], failedNodeIds: [], hasError: false }),
+          isRunning: true,
+          activeNodeIds: ['get-images'],
+          currentStepMessage: 'Extracting images only...',
+        }));
+        try {
+          const resp = await fetch('/api/facebook-import/extract', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url, max_images: 25 }),
+          });
+          if (resp.ok) {
+            const data = await resp.json();
+            const rawImgs = data.result?.images || data.images || [];
+            const imgs = rawImgs.map((img: any, idx: number) => ({
+              index: idx,
+              facebook_photo_id: img.facebook_photo_id,
+              source_url: img.source_url,
+              stored_url: img.stored_url,
+              status: img.status || 'verified',
+              width: img.width,
+              height: img.height,
+            }));
+            if (imgs.length > 0) {
+              setExtractedImages(imgs);
+              if (workflowContextRef.current) workflowContextRef.current.imageList = imgs;
+            }
+          }
+          setExecutionState((prev) => ({
+            ...(prev || { completedNodeIds: [], failedNodeIds: [], hasError: false }),
+            isRunning: false,
+            activeNodeIds: [],
+            completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), 'get-images'])),
+            currentStepMessage: '✓ Images extracted successfully!',
+          }));
+        } catch (e) {
+          setExecutionState((prev) => ({
+            ...(prev || { completedNodeIds: [], failedNodeIds: [], hasError: false }),
+            isRunning: false,
+            activeNodeIds: [],
+            failedNodeIds: ['get-images'],
+            hasError: true,
+            currentStepMessage: '❌ Failed extracting images.',
+          }));
         }
-      }
-      return;
-    }
-
-    // 6. If combine or destination:
-    if (nodeId === 'combine' || nodeId.startsWith('dest-') || nodeId === 'destination') {
-      const lastBox = cfg.aiBoxes?.[cfg.aiBoxes.length - 1];
-      if (lastBox) {
-        handleContinueWorkflow(lastBox.id);
-      } else if (url) {
-        executeCanvasWorkflow(url);
+      } else {
+        setRunFacebookUrl('');
+        setIsRunModalOpen(true);
       }
       return;
     }

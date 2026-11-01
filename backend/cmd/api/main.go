@@ -149,6 +149,7 @@ func main() {
 	fbImport := app.Group("/api/facebook-import")
 	fbImport.Post("/resolve", handlers.ResolveFacebookURL)
 	fbImport.Post("/extract", handlers.ExtractFacebookPost)
+	fbImport.Get("/progress", handlers.GetFacebookExtractProgress)
 	fbImport.Post("/browser/start", handlers.StartFacebookBrowser)
 	fbImport.Get("/browser/status", handlers.GetFacebookBrowserStatus)
 	fbImport.Post("/browser/continue", handlers.ContinueFacebookBrowser)
@@ -237,7 +238,9 @@ func main() {
 	browserRoutes.Post("/automation/start", handlers.StartAutomation)
 	browserRoutes.Post("/automation/stop", handlers.StopAutomation)
 	browserRoutes.Get("/automation/status", handlers.GetAutomationStatus)
+	browserRoutes.Get("/enhanced-images", handlers.GetEnhancedImages)
 	browserRoutes.Post("/jobs/:jobId/complete-from-tab", handlers.CompleteJobFromTab)
+	browserRoutes.Post("/jobs/:jobId/fail", handlers.FailJobFromTab)
 
 	// Isolated Testing Menu Routes
 	testingApi := app.Group("/api/testing")

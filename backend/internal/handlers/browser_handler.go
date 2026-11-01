@@ -722,10 +722,30 @@ func GetAutomationStatus(c *fiber.Ctx) error {
 			"automation": nil,
 		})
 	}
+
+	autoMap := status
+	if inner, ok := status["automation"].(map[string]interface{}); ok {
+		autoMap = inner
+	}
+
 	return c.JSON(fiber.Map{
 		"status":     "success",
-		"automation": status,
+		"automation": autoMap,
 	})
+}
+
+// GetEnhancedImages handles GET /api/browser/enhanced-images
+func GetEnhancedImages(c *fiber.Ctx) error {
+	browserSvc := services.GetBrowserProfileService()
+	result, err := browserSvc.GetEnhancedImages()
+	if err != nil {
+		return c.JSON(fiber.Map{
+			"status": "success",
+			"count":  0,
+			"images": []interface{}{},
+		})
+	}
+	return c.JSON(result)
 }
 
 // CompleteJobFromTab handles POST /api/browser/jobs/:jobId/complete-from-tab
@@ -755,5 +775,27 @@ func CompleteJobFromTab(c *fiber.Ctx) error {
 		"status":  "success",
 		"job_id":  jobID,
 		"message": "Job marked complete from tab automation",
+	})
+}
+
+// FailJobFromTab handles POST /api/browser/jobs/:jobId/fail
+// Called by the Chrome extension when a tab encounters an unrecoverable error.
+func FailJobFromTab(c *fiber.Ctx) error {
+	jobID := c.Params("jobId")
+	var body struct {
+		Reason string `json:"reason"`
+	}
+	_ = c.BodyParser(&body)
+	if body.Reason == "" {
+		body.Reason = "Failed during browser tab processing"
+	}
+
+	svc := services.GetSmartImageQueueService()
+	svc.FailJob(jobID, body.Reason)
+
+	return c.JSON(fiber.Map{
+		"status":  "success",
+		"job_id":  jobID,
+		"message": "Job marked failed from tab automation",
 	})
 }

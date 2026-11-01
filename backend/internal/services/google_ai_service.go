@@ -93,9 +93,19 @@ func (s *GoogleAIService) GenerateContent(templateText string, rawContent string
 	}
 
 	// Models to try in order of capability and quota reliability
-	modelsToTry := []string{"gemini-flash-lite-latest", "gemini-3.1-flash-lite-preview", "gemma-4-26b-a4b-it", "gemini-flash-latest"}
-	if modelOverride != "" && modelOverride != "gemini-flash-latest" && modelOverride != "gemini-1.5-flash" {
-		modelsToTry = append([]string{modelOverride}, modelsToTry...)
+	resolvedModel := modelOverride
+	if resolvedModel == "gemini-2.5-flash" || resolvedModel == "gemini-2.0-flash" || resolvedModel == "gemini-1.5-flash" {
+		resolvedModel = "gemini-flash-lite-latest"
+	}
+
+	// Try host Mac companion proxy first for swift, reliable responses without Docker network delay
+	if compRes, cErr := callCompanionGenerateAI(templateText, rawContent, key, resolvedModel); cErr == nil && compRes != "" {
+		return compRes, nil
+	}
+
+	modelsToTry := []string{"gemini-flash-lite-latest", "gemini-3.1-flash-lite-preview", "gemini-flash-latest"}
+	if resolvedModel != "" && resolvedModel != "gemini-flash-latest" && resolvedModel != "gemini-flash-lite-latest" {
+		modelsToTry = append([]string{resolvedModel}, modelsToTry...)
 	}
 
 	// Build combined prompt
@@ -404,6 +414,43 @@ func (s *GoogleAIService) GenerateContentWithLaoZhangAI(templateText string, raw
 	}
 
 	return "", fmt.Errorf("LaoZhang API returned no completion choices")
+}
+
+func callCompanionGenerateAI(templateText, rawContent, apiKey, model string) (string, error) {
+	companionHosts := []string{"http://host.docker.internal:9224", "http://127.0.0.1:9224", "http://localhost:9224"}
+	client := &http.Client{Timeout: 8 * time.Second}
+
+	payload := map[string]string{
+		"prompt":      templateText,
+		"raw_content": rawContent,
+		"api_key":     apiKey,
+		"model":       model,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+
+	for _, host := range companionHosts {
+		resp, err := client.Post(host+"/generate-ai", "application/json", bytes.NewBuffer(body))
+		if err != nil {
+			continue
+		}
+		respBytes, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			continue
+		}
+		var res struct {
+			Success          bool   `json:"success"`
+			GeneratedContent string `json:"generated_content"`
+			Error            string `json:"error"`
+		}
+		if err := json.Unmarshal(respBytes, &res); err == nil && res.Success && res.GeneratedContent != "" {
+			return res.GeneratedContent, nil
+		}
+	}
+	return "", fmt.Errorf("companion generate-ai unreachable")
 }
 
 
