@@ -60,7 +60,7 @@ import { HiSparkles } from 'react-icons/hi2';
 import { useScrollLock } from '../../hooks/useScrollLock';
 import { AITrainingChatbot, ModelSelectorMenu, LaoZhangIcon, RunwareIcon } from './AITrainingChatbot';
 import { useTheme } from '../../context/ThemeContext';
-import { getAIModelDisplayName, isImageAIBox, isImageModel, isWatermarkAIBox, isEnhanceAIBox, isAIBoxConnected, isTextFormatAIBox, isTextAIBox, isN8NAIBox, isExternalBrowserAIBox, isChromeProfileAIBox, isChromeTabGroupAIBox, isGoogleSheetBox, AI_ENGINE_MODEL_GROUPS } from './aiModelUtils';
+import { getAIModelDisplayName, isImageAIBox, isImageModel, isWatermarkAIBox, isEnhanceAIBox, isAIBoxConnected, isTextFormatAIBox, isTextAIBox, isN8NAIBox, isExternalBrowserAIBox, isChromeProfileAIBox, isChromeTabGroupAIBox, isGoogleSheetBox, AI_ENGINE_MODEL_GROUPS, GOOGLE_SHEET_AI_MODEL_OPTIONS } from './aiModelUtils';
 import { AIImageStudio } from './AIImageStudio';
 import { ExternalBrowserSidebar } from '../browser-processing/ExternalBrowserSidebar';
 import { getPersistedReferenceImage } from '../browser-processing/referenceImageStorage';
@@ -149,6 +149,20 @@ export const loadAvailablePromptTemplates = (): CanvasPromptOption[] => {
   ];
 };
 
+export interface GoogleSheetColumnMapping {
+  sheetColumn: string;
+  columnIndex: number;
+  mappingMode: 'auto' | 'direct' | 'ai_extract' | 'static' | 'derived' | 'ignore';
+  sourceField?: string;
+  dataType?: 'string' | 'number' | 'currency' | 'date' | 'boolean' | 'url';
+  required?: boolean;
+  aiDescription?: string;
+  defaultValue?: string;
+  staticValue?: string;
+  transform?: string;
+  missingValueHandling?: 'empty' | 'default' | 'skip_row';
+}
+
 export interface DynamicAIBoxConfig {
   id: string;
   title: string;
@@ -180,11 +194,20 @@ export interface DynamicAIBoxConfig {
   n8nTimeoutSeconds?: number;
   n8nRetryCount?: number;
   n8nContinueOnFailure?: boolean;
-  // Google Sheet Integration
+  // Google Sheet Integration & Universal Smart Data Mapping
   googleSpreadsheetUrl?: string;
   googleSpreadsheetId?: string;
+  googleSheetTitle?: string;
   googleSheetName?: string;
+  googleSheetAvailableTabs?: string[];
+  googleSheetHeaderRow?: number;
   googleSheetHeaders?: string[];
+  googleSheetProcessingMode?: 'smart_auto' | 'direct' | 'ai_extract';
+  googleSheetWriteOperation?: 'append' | 'update' | 'upsert' | 'preview';
+  googleSheetMatchColumns?: string[];
+  googleSheetColumnMappings?: GoogleSheetColumnMapping[];
+  googleSheetPreserveNonEmpty?: boolean;
+  googleSheetMissingValuePolicy?: 'empty' | 'default' | 'skip_row';
   googleSheetAction?: 'append_row' | 'upsert';
   googleSheetAiPrompt?: string;
   googleServiceAccountJson?: string;
@@ -3532,6 +3555,7 @@ export const FacebookWorkflowCanvas = forwardRef<
         body: JSON.stringify({
           spreadsheet_url: targetUrl,
           sheet_name: box.googleSheetName || '',
+          header_row: box.googleSheetHeaderRow || 1,
           credentials_json: box.googleServiceAccountJson || '',
         }),
       });
@@ -3548,7 +3572,10 @@ export const FacebookWorkflowCanvas = forwardRef<
       handleUpdateAIBox(box.id, {
         googleSheetHeaders: data.headers || [],
         googleSpreadsheetId: data.spreadsheet_id || box.googleSpreadsheetId,
+        googleSheetTitle: data.spreadsheet_title || box.googleSheetTitle,
         googleSheetName: data.sheet_name || box.googleSheetName,
+        googleSheetAvailableTabs: data.available_sheets || [data.sheet_name || 'Sheet1'],
+        googleSheetHeaderRow: data.header_row || box.googleSheetHeaderRow || 1,
         googleSpreadsheetUrl: targetUrl,
       });
       setSheetHeaderSuccess(`Loaded ${data.headers?.length || 0} columns from "${data.sheet_name || 'Sheet1'}"!`);
@@ -3578,19 +3605,38 @@ export const FacebookWorkflowCanvas = forwardRef<
       const sampleContent = rawContent || 'Rent Condo XT Ekkamai 1 Bedroom 35 sqm 25,000 THB/month Near BTS Ekkamai';
       const sampleCondo = 'XT Ekkamai';
       const sampleImages = images || [];
-      const res = await fetch('/api/google-sheets/sync', {
+      const res = await fetch('/api/google-sheets/process', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           spreadsheet_url: box.googleSpreadsheetUrl || 'https://docs.google.com/spreadsheets/d/1lzY57D5ers2Xs6cvbV-skeqGSAK_jijbQJZt8Hn8udY/edit?gid=0#gid=0',
           sheet_name: box.googleSheetName || '',
-          headers: box.googleSheetHeaders || [],
-          content: sampleContent,
+          header_row: box.googleSheetHeaderRow || 1,
+          mode: box.googleSheetProcessingMode || 'smart_auto',
+          operation: box.googleSheetWriteOperation || 'append',
+          match_columns: box.googleSheetMatchColumns || (box.googleSheetHeaders && box.googleSheetHeaders.length > 0 ? [box.googleSheetHeaders[0]] : ['Code']),
+          preserve_non_empty: box.googleSheetPreserveNonEmpty !== false,
+          column_mappings: box.googleSheetColumnMappings || [],
+          incoming_data: {
+            property: {
+              code: 'BHR-100001',
+              project_name: 'The Metropolis Samrong',
+              room_type: '1 Bedroom',
+              price: 12000,
+              size: 35,
+              floor: '21',
+              station: 'BTS Samrong',
+              agent_name: 'Super Agent',
+              contact_info: '081-234-5678 / Line: @supercondo',
+              source_url: 'https://facebook.com/marketplace/item/100001',
+            },
+          },
+          raw_content: sampleContent,
           condo_name: sampleCondo,
           images: sampleImages,
           custom_instructions: box.googleSheetAiPrompt || box.customPrompt || '',
           model: box.model || 'gemini-1.5-flash',
-          provider: box.provider || 'google_ai',
+          provider: (box.model || '').startsWith('gemini') ? 'google_ai' : (box.provider || 'google_ai'),
           prompt_template: box.templateText || '',
           credentials_json: box.googleServiceAccountJson || '',
         }),
@@ -3609,7 +3655,7 @@ export const FacebookWorkflowCanvas = forwardRef<
       if (data.headers && (!box.googleSheetHeaders || box.googleSheetHeaders.length === 0)) {
         handleUpdateAIBox(box.id, { googleSheetHeaders: data.headers });
       }
-      setSheetHeaderSuccess(`Successfully appended test row to sheet!`);
+      setSheetHeaderSuccess(data.execution_summary || `Successfully synced test row to sheet!`);
     } catch (err: any) {
       setSheetHeaderError(err.message || 'Error executing Google Sheet sync');
     } finally {
@@ -12040,7 +12086,67 @@ export const FacebookWorkflowCanvas = forwardRef<
                           </div>
                         </div>
 
-                        {/* AI Engine & Model */}
+                        {/* Open Full Settings Modal Button */}
+                        <button
+                          type="button"
+                          onClick={() => setShowGoogleSheetSettingsSidebox(true)}
+                          style={{
+                            width: '100%',
+                            height: '34px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px',
+                            borderRadius: '6px',
+                            backgroundColor: isDark ? 'rgba(15, 157, 88, 0.12)' : 'rgba(15, 157, 88, 0.08)',
+                            border: '1px solid #0F9D58',
+                            color: '#0F9D58',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease',
+                          }}
+                        >
+                          <FiSettings size={13} /> Configure Sheet Settings & AI Agent
+                        </button>
+
+                        {/* Data Processing Mode Selector */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                          <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                            Data Processing Mode
+                          </label>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px' }}>
+                            {[
+                              { id: 'smart_auto', label: 'Smart Auto' },
+                              { id: 'direct', label: 'Direct' },
+                              { id: 'ai_extract', label: 'AI Extract' },
+                            ].map((pm) => {
+                              const active = (currentModalAIBox.googleSheetProcessingMode || 'smart_auto') === pm.id;
+                              return (
+                                <button
+                                  key={pm.id}
+                                  type="button"
+                                  onClick={() => handleUpdateAIBox(currentModalAIBox.id, { googleSheetProcessingMode: pm.id as any })}
+                                  style={{
+                                    padding: '5px 4px',
+                                    borderRadius: '5px',
+                                    fontSize: '0.65625rem',
+                                    fontWeight: active ? 700 : 500,
+                                    border: active ? '1px solid #0F9D58' : isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                    backgroundColor: active ? 'rgba(15, 157, 88, 0.15)' : isDark ? '#0D1117' : '#FFFFFF',
+                                    color: active ? '#0F9D58' : 'var(--text-primary)',
+                                    cursor: 'pointer',
+                                    textAlign: 'center',
+                                  }}
+                                >
+                                  {pm.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* AI Engine & Model (matching Image 4 dropdown options) */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
                           <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
                             AI Engine & Model
@@ -12051,15 +12157,15 @@ export const FacebookWorkflowCanvas = forwardRef<
                               (currentModalAIBox.provider === 'openai' ? 'gpt-4o-mini' : 'gemini-1.5-flash')
                             }
                             onChange={(val) => {
-                              const isGoogle = AI_ENGINE_MODEL_GROUPS[0]?.options.some((o) => o.value === val);
+                              const isGoogle = val.startsWith('gemini');
                               handleUpdateAIBox(currentModalAIBox.id, {
                                 model: val,
                                 provider: isGoogle ? 'google_ai' : 'openai',
                               });
                             }}
-                            options={AI_ENGINE_MODEL_GROUPS}
+                            options={GOOGLE_SHEET_AI_MODEL_OPTIONS}
                             height="36px"
-                            placeholder="Select AI Model..."
+                            placeholder="Select option"
                           />
                         </div>
 
@@ -12085,14 +12191,14 @@ export const FacebookWorkflowCanvas = forwardRef<
                               });
                             }}
                             options={[
-                              { value: '', label: 'Select option' },
+                              { value: '', label: 'Select Prompt Template...' },
                               ...availablePrompts.map((p) => ({
                                 value: String(p.id),
                                 label: p.name,
                               })),
                             ]}
                             height="36px"
-                            placeholder="Select option"
+                            placeholder="Select Prompt Template..."
                           />
                           {Boolean(currentModalAIBox.templateId) && (
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
@@ -12212,6 +12318,16 @@ export const FacebookWorkflowCanvas = forwardRef<
                           </button>
                         </div>
 
+                        {/* Write Operation Quick Badge */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.45rem 0.65rem', borderRadius: '6px', backgroundColor: isDark ? '#0D1117' : '#F8FAFC', border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0' }}>
+                          <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                            Write Operation
+                          </span>
+                          <span style={{ fontSize: '0.625rem', fontWeight: 700, padding: '2px 7px', borderRadius: '10px', backgroundColor: 'rgba(15, 157, 88, 0.15)', color: '#0F9D58' }}>
+                            {(currentModalAIBox.googleSheetWriteOperation || 'append').toUpperCase()} ROW
+                          </span>
+                        </div>
+
                         {/* Error Alert with GCP Enablement Link if API disabled */}
                         {sheetHeaderError && (
                           <div
@@ -12329,6 +12445,31 @@ export const FacebookWorkflowCanvas = forwardRef<
                             Click <strong>"Load Headers"</strong> to automatically inspect and read column headers from Row 1 of your sheet.
                           </div>
                         )}
+                        {/* Test Sync Button */}
+                        <button
+                          type="button"
+                          disabled={testingSheetSync}
+                          onClick={() => handleTestGoogleSheetSync(currentModalAIBox)}
+                          style={{
+                            width: '100%',
+                            height: '36px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px',
+                            borderRadius: '6px',
+                            backgroundColor: isDark ? '#21262D' : '#F1F5F9',
+                            border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                            color: 'var(--text-primary)',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            cursor: testingSheetSync ? 'not-allowed' : 'pointer',
+                            marginTop: '0.25rem',
+                          }}
+                        >
+                          <SiGooglesheets size={13} color="#0F9D58" />
+                          {testingSheetSync ? 'Testing Mapping...' : 'Test AI Mapping & Append Test Row'}
+                        </button>
                       </div>
                     ) : isExternalBrowserAIBox(currentModalAIBox) || currentModalAIBox.processType === 'chrome_profile' || isChromeTabGroupAIBox(currentModalAIBox) ? (
                       (() => {

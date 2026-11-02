@@ -13,6 +13,7 @@ var sheetsService = services.NewGoogleSheetsService()
 type LoadGoogleSheetHeadersRequest struct {
 	SpreadsheetURL  string `json:"spreadsheet_url"`
 	SheetName       string `json:"sheet_name"`
+	HeaderRow       int    `json:"header_row,omitempty"`
 	CredentialsJSON string `json:"credentials_json,omitempty"`
 }
 
@@ -32,7 +33,12 @@ func LoadGoogleSheetHeaders(c *fiber.Ctx) error {
 		urlOrID = "https://docs.google.com/spreadsheets/d/1lzY57D5ers2Xs6cvbV-skeqGSAK_jijbQJZt8Hn8udY/edit?gid=0#gid=0"
 	}
 
-	meta, err := sheetsService.LoadHeaders(c.Context(), urlOrID, req.SheetName, req.CredentialsJSON)
+	headerRow := req.HeaderRow
+	if headerRow <= 0 {
+		headerRow = 1
+	}
+
+	meta, err := sheetsService.LoadHeaders(c.Context(), urlOrID, req.SheetName, headerRow, req.CredentialsJSON)
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"success": false,
@@ -45,11 +51,40 @@ func LoadGoogleSheetHeaders(c *fiber.Ctx) error {
 		"spreadsheet_id":    meta.SpreadsheetID,
 		"spreadsheet_title": meta.SpreadsheetTitle,
 		"sheet_name":        meta.SheetName,
+		"available_sheets":  meta.AvailableSheets,
 		"headers":           meta.Headers,
+		"header_row":        meta.HeaderRow,
 		"row_count":         meta.RowCount,
 		"column_count":      meta.ColumnCount,
 		"service_account":   meta.ServiceAccount,
 	})
+}
+
+// ProcessGoogleSheetData - POST /api/google-sheets/process
+// Universal Smart Data Mapping endpoint supporting Direct, AI Extract, and Smart Auto modes,
+// with Append, Update, Upsert, and Preview operations.
+func ProcessGoogleSheetData(c *fiber.Ctx) error {
+	var req services.ProcessGoogleSheetDataRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"success": false,
+			"error":   "Invalid request payload: " + err.Error(),
+		})
+	}
+
+	if strings.TrimSpace(req.SpreadsheetURL) == "" {
+		req.SpreadsheetURL = "https://docs.google.com/spreadsheets/d/1lzY57D5ers2Xs6cvbV-skeqGSAK_jijbQJZt8Hn8udY/edit?gid=0#gid=0"
+	}
+
+	res, err := sheetsService.ProcessGoogleSheetData(c.Context(), req)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"success": false,
+			"error":   err.Error(),
+		})
+	}
+
+	return c.JSON(res)
 }
 
 // PrepareGoogleSheetDataRequest represents the request to structure listing data to sheet headers.
@@ -185,7 +220,7 @@ func ExecuteGoogleSheetSync(c *fiber.Ctx) error {
 
 	// If headers not supplied, fetch dynamically from sheet
 	if len(headers) == 0 {
-		meta, err := sheetsService.LoadHeaders(c.Context(), urlOrID, sheetName, req.CredentialsJSON)
+		meta, err := sheetsService.LoadHeaders(c.Context(), urlOrID, sheetName, 1, req.CredentialsJSON)
 		if err != nil {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 				"success": false,

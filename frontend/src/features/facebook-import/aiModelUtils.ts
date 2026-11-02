@@ -20,6 +20,14 @@ export const AI_ENGINE_MODEL_GROUPS: SelectGroup[] = [
   },
 ];
 
+export const GOOGLE_SHEET_AI_MODEL_OPTIONS = [
+  { value: 'gemini-1.5-flash', label: '⚡ Gemini 1.5 Flash (Fast & Recommended)' },
+  { value: 'gemini-2.0-flash', label: '⚡ Gemini 2.0 Flash (Next-Gen Fast)' },
+  { value: 'gemini-1.5-pro', label: '🧠 Gemini 1.5 Pro (Deep Reasoning & Extraction)' },
+  { value: 'gpt-4o-mini', label: '🤖 OpenAI GPT-4o Mini (Fast)' },
+  { value: 'gpt-4o', label: '🧠 OpenAI GPT-4o (High Accuracy)' },
+];
+
 /**
  * Utility helper to get clean display names for AI providers and models.
  */
