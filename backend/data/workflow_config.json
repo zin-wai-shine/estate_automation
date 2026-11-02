@@ -1,5 +1,5 @@
 {
-  "timestamp": 1793629728244,
+  "timestamp": 1793632101408,
   "workflow_formats": [
     {
       "config": {
@@ -849,7 +849,7 @@
             "y": 592.3670886075957
           },
           {
-            "customPrompt": "",
+            "customPrompt": "You are an expert real estate data extraction and analysis engine.\nAnalyze the provided property content, specifications, and source link, then structure the data into a clean JSON object that maps strictly to the spreadsheet column headers.\n\nDynamic Spreadsheet Column Mapping:\n- The columns in this sheet are dynamic and may vary across different spreadsheets.\n- Automatically identify and map data to match whatever column names exist in the sheet (e.g., Code, Project, Room Type, Size, Floor, Price, BTS/MRT, Owner/Agent, Contact Info, Original Link).\n- Each key in your JSON output must match the exact column name from the sheet.\n\nExtraction \u0026 Analysis Rules:\n1. URL \u0026 Links:\n   - If the spreadsheet contains a column for links (such as \"Original Link\", \"Source URL\", \"Post Link\", or \"URL\"), populate it with the source link or trigger URL.\n2. Property \u0026 Project:\n   - Extract the clean Condo/Project name without promotional emojis or marketing slogans.\n   - For listing ID / Code: extract any listing reference code, or generate a clean code based on the project and unit specs.\n3. Specifications:\n   - Room Type: Format cleanly (e.g., \"1 Bed\", \"2 Bed 2 Bath\", \"Studio\").\n   - Size: Numeric floor area in SQM (e.g., \"35\").\n   - Floor: Floor number or level (e.g., \"15\", \"High Floor\").\n4. Pricing \u0026 Financials:\n   - Price: Extract rental or sale price with currency format (e.g., \"25,000 THB\") or clean integer.\n5. Transit \u0026 Location:\n   - BTS/MRT: Extract station name and walking distance or travel time if mentioned.\n6. Contact \u0026 Agent:\n   - Owner/Agent: Name or company if mentioned.\n   - Contact Info: Extract phone numbers, Line ID, WhatsApp, or email into the contact columns.\n\nOutput Format:\n- Return ONLY a valid, parseable JSON object with keys corresponding to the sheet column headers.\n- If a column value cannot be determined from the content or URL, use an empty string \"\" or \"N/A\".\n- Do NOT wrap in markdown explanation or conversational text.",
             "enabled": true,
             "googleSheetAction": "append_row",
             "googleSheetHeaders": [
@@ -1120,7 +1120,7 @@
       "id": "format-1792648980268",
       "isPinned": true,
       "name": "Download FB Post",
-      "updatedAt": 1793629727823
+      "updatedAt": 1793632100996
     },
     {
       "config": {

@@ -3684,6 +3684,7 @@ export const FacebookWorkflowCanvas = forwardRef<
 
   // Lightbox & image compiled preview
   const [lightboxImageIndex, setLightboxImageIndex] = useState<number | null>(null);
+  const [lightboxGalleryType, setLightboxGalleryType] = useState<'raw' | 'compiled'>('compiled');
   const [zoomScale, setZoomScale] = useState<number>(1);
 
   // Output & Combine Copy / Media states
@@ -3776,6 +3777,31 @@ export const FacebookWorkflowCanvas = forwardRef<
     isEnhanced: boolean;
   }
 
+  // Raw original photos extracted strictly at the "Get Images" step (without downstream crop slices or watermarks)
+  const rawExtractedImages: CompiledImageItem[] = useMemo(() => {
+    return (images || []).map((img) => {
+      let finalUrl =
+        img.stored_url
+          ? img.stored_url.startsWith('http')
+            ? img.stored_url
+            : `http://localhost:8085${img.stored_url}`
+          : '';
+      if (!finalUrl && img.source_url) {
+        if (img.source_url.includes('fbcdn.net') || img.source_url.includes('scontent')) {
+          finalUrl = `http://127.0.0.1:9224/proxy-image?url=${encodeURIComponent(img.source_url)}`;
+        } else {
+          finalUrl = img.source_url;
+        }
+      }
+      return {
+        ...img,
+        finalUrl: finalUrl || img.source_url || '',
+        isWatermarked: false,
+        isEnhanced: false,
+      };
+    });
+  }, [images]);
+
   const compiledImages: CompiledImageItem[] = useMemo(() => {
     const list: CompiledImageItem[] = [];
 
@@ -3822,11 +3848,13 @@ export const FacebookWorkflowCanvas = forwardRef<
     return list;
   }, [images, watermarkedPhotos, enhancedPhotos, combineCropSlices]);
 
-  const handleOpenLightbox = (indexOrUrl: number | string) => {
+  const handleOpenLightbox = (indexOrUrl: number | string, galleryType: 'raw' | 'compiled' = 'compiled') => {
+    setLightboxGalleryType(galleryType);
+    const gallery = galleryType === 'raw' ? rawExtractedImages : compiledImages;
     if (typeof indexOrUrl === 'number') {
       setLightboxImageIndex(indexOrUrl);
     } else {
-      const foundIdx = compiledImages.findIndex((img) => img.finalUrl === indexOrUrl || img.source_url === indexOrUrl);
+      const foundIdx = gallery.findIndex((img) => img.finalUrl === indexOrUrl || img.source_url === indexOrUrl);
       setLightboxImageIndex(foundIdx >= 0 ? foundIdx : 0);
     }
     setZoomScale(1);
@@ -10717,7 +10745,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                               >
                                 Extracted Media
                               </span>
-                              {compiledImages.length > 0 ? (
+                              {rawExtractedImages.length > 0 ? (
                                 <span
                                   style={{
                                     fontSize: '0.625rem',
@@ -10728,7 +10756,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                     borderRadius: '6px',
                                   }}
                                 >
-                                  ✓ {compiledImages.length} Photos Ready
+                                  ✓ {rawExtractedImages.length} Photos Ready
                                 </span>
                               ) : imagesStatus === 'running' ? (
                                 <span
@@ -10745,7 +10773,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                 </span>
                               ) : null}
                             </div>
-                            {compiledImages.length > 0 && (
+                            {rawExtractedImages.length > 0 && (
                               <span
                                 style={{
                                   fontSize: '0.6875rem',
@@ -10753,13 +10781,13 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   fontWeight: 400,
                                 }}
                               >
-                                Click any photo to preview full size ({compiledImages.length} total)
+                                Click any photo to preview full size ({rawExtractedImages.length} total)
                               </span>
                             )}
                           </div>
                         </div>
 
-                        {compiledImages.length > 0 ? (
+                        {rawExtractedImages.length > 0 ? (
                           <div
                             style={{
                               display: 'grid',
@@ -10771,10 +10799,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                               padding: '10px',
                             }}
                           >
-                            {compiledImages.map((img, i) => (
+                            {rawExtractedImages.map((img, i) => (
                               <div
                                 key={img.index ?? i}
-                                onClick={() => handleOpenLightbox(i)}
+                                onClick={() => handleOpenLightbox(i, 'raw')}
                                 style={{
                                   position: 'relative',
                                   width: '100%',
@@ -10823,37 +10851,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   >
                                     #{i + 1}
                                   </div>
-                                  {img.isEnhanced && (
-                                    <span
-                                      style={{
-                                        position: 'absolute',
-                                        top: '4px',
-                                        left: '4px',
-                                        fontSize: '0.5rem',
-                                        fontWeight: 700,
-                                        backgroundColor: '#EC4899',
-                                        color: '#FFFFFF',
-                                        padding: '1px 4px',
-                                        borderRadius: '4px',
-                                      }}
-                                    >
-                                      HD
-                                    </span>
-                                  )}
-                                  {img.isWatermarked && (
-                                    <span
-                                      style={{
-                                        position: 'absolute',
-                                        bottom: '5px',
-                                        right: '5px',
-                                        width: '7px',
-                                        height: '7px',
-                                        borderRadius: '50%',
-                                        backgroundColor: '#10B981',
-                                        boxShadow: '0 0 0 1.5px rgba(0,0,0,0.6)',
-                                      }}
-                                    />
-                                  )}
                                 </div>
                               </div>
                             ))}
@@ -19345,11 +19342,13 @@ export const FacebookWorkflowCanvas = forwardRef<
       )}
 
       {/* Lightbox Image Preview Modal - Exact Match to Second Image */}
-      {lightboxImageIndex !== null && compiledImages.length > 0 && compiledImages[lightboxImageIndex] && (() => {
+      {lightboxImageIndex !== null && (() => {
+        const activeGallery = lightboxGalleryType === 'raw' ? rawExtractedImages : compiledImages;
+        if (!activeGallery || activeGallery.length === 0 || !activeGallery[lightboxImageIndex]) return null;
         const activeIdx = lightboxImageIndex;
-        const activeImg = compiledImages[activeIdx];
+        const activeImg = activeGallery[activeIdx];
         const activeImgUrl = activeImg.finalUrl;
-        const totalImages = compiledImages.length;
+        const totalImages = activeGallery.length;
 
         return createPortal(
           <div
@@ -19400,7 +19399,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 {activeIdx + 1} / {totalImages}
               </span>
 
-              {activeImg.isEnhanced && (
+              {lightboxGalleryType !== 'raw' && activeImg.isEnhanced && (
                 <span
                   style={{
                     fontSize: '0.75rem',
@@ -19421,7 +19420,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 </span>
               )}
 
-              {activeImg.isWatermarked && (
+              {lightboxGalleryType !== 'raw' && activeImg.isWatermarked && (
                 <span
                   style={{
                     fontSize: '0.75rem',
