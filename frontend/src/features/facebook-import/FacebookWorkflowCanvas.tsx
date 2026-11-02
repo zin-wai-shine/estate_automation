@@ -60,7 +60,7 @@ import { HiSparkles } from 'react-icons/hi2';
 import { useScrollLock } from '../../hooks/useScrollLock';
 import { AITrainingChatbot, ModelSelectorMenu, LaoZhangIcon, RunwareIcon } from './AITrainingChatbot';
 import { useTheme } from '../../context/ThemeContext';
-import { getAIModelDisplayName, isImageAIBox, isImageModel, isWatermarkAIBox, isEnhanceAIBox, isAIBoxConnected, isTextFormatAIBox, isTextAIBox, isN8NAIBox, isExternalBrowserAIBox, isChromeProfileAIBox, isChromeTabGroupAIBox, isGoogleSheetBox, AI_ENGINE_MODEL_GROUPS, GOOGLE_SHEET_AI_MODEL_OPTIONS } from './aiModelUtils';
+import { getAIModelDisplayName, isImageAIBox, isImageModel, isWatermarkAIBox, isEnhanceAIBox, isAIBoxConnected, isTextFormatAIBox, isTextAIBox, isN8NAIBox, isExternalBrowserAIBox, isChromeProfileAIBox, isChromeTabGroupAIBox, isGoogleSheetBox, AI_ENGINE_MODEL_GROUPS } from './aiModelUtils';
 import { AIImageStudio } from './AIImageStudio';
 import { ExternalBrowserSidebar } from '../browser-processing/ExternalBrowserSidebar';
 import { getPersistedReferenceImage } from '../browser-processing/referenceImageStorage';
@@ -149,20 +149,6 @@ export const loadAvailablePromptTemplates = (): CanvasPromptOption[] => {
   ];
 };
 
-export interface GoogleSheetColumnMapping {
-  sheetColumn: string;
-  columnIndex: number;
-  mappingMode: 'auto' | 'direct' | 'ai_extract' | 'static' | 'derived' | 'ignore';
-  sourceField?: string;
-  dataType?: 'string' | 'number' | 'currency' | 'date' | 'boolean' | 'url';
-  required?: boolean;
-  aiDescription?: string;
-  defaultValue?: string;
-  staticValue?: string;
-  transform?: string;
-  missingValueHandling?: 'empty' | 'default' | 'skip_row';
-}
-
 export interface DynamicAIBoxConfig {
   id: string;
   title: string;
@@ -194,20 +180,11 @@ export interface DynamicAIBoxConfig {
   n8nTimeoutSeconds?: number;
   n8nRetryCount?: number;
   n8nContinueOnFailure?: boolean;
-  // Google Sheet Integration & Universal Smart Data Mapping
+  // Google Sheet Integration
   googleSpreadsheetUrl?: string;
   googleSpreadsheetId?: string;
-  googleSheetTitle?: string;
   googleSheetName?: string;
-  googleSheetAvailableTabs?: string[];
-  googleSheetHeaderRow?: number;
   googleSheetHeaders?: string[];
-  googleSheetProcessingMode?: 'smart_auto' | 'direct' | 'ai_extract';
-  googleSheetWriteOperation?: 'append' | 'update' | 'upsert' | 'preview';
-  googleSheetMatchColumns?: string[];
-  googleSheetColumnMappings?: GoogleSheetColumnMapping[];
-  googleSheetPreserveNonEmpty?: boolean;
-  googleSheetMissingValuePolicy?: 'empty' | 'default' | 'skip_row';
   googleSheetAction?: 'append_row' | 'upsert';
   googleSheetAiPrompt?: string;
   googleServiceAccountJson?: string;
@@ -3555,7 +3532,6 @@ export const FacebookWorkflowCanvas = forwardRef<
         body: JSON.stringify({
           spreadsheet_url: targetUrl,
           sheet_name: box.googleSheetName || '',
-          header_row: box.googleSheetHeaderRow || 1,
           credentials_json: box.googleServiceAccountJson || '',
         }),
       });
@@ -3572,10 +3548,7 @@ export const FacebookWorkflowCanvas = forwardRef<
       handleUpdateAIBox(box.id, {
         googleSheetHeaders: data.headers || [],
         googleSpreadsheetId: data.spreadsheet_id || box.googleSpreadsheetId,
-        googleSheetTitle: data.spreadsheet_title || box.googleSheetTitle,
         googleSheetName: data.sheet_name || box.googleSheetName,
-        googleSheetAvailableTabs: data.available_sheets || [data.sheet_name || 'Sheet1'],
-        googleSheetHeaderRow: data.header_row || box.googleSheetHeaderRow || 1,
         googleSpreadsheetUrl: targetUrl,
       });
       setSheetHeaderSuccess(`Loaded ${data.headers?.length || 0} columns from "${data.sheet_name || 'Sheet1'}"!`);
@@ -3605,38 +3578,19 @@ export const FacebookWorkflowCanvas = forwardRef<
       const sampleContent = rawContent || 'Rent Condo XT Ekkamai 1 Bedroom 35 sqm 25,000 THB/month Near BTS Ekkamai';
       const sampleCondo = 'XT Ekkamai';
       const sampleImages = images || [];
-      const res = await fetch('/api/google-sheets/process', {
+      const res = await fetch('/api/google-sheets/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           spreadsheet_url: box.googleSpreadsheetUrl || 'https://docs.google.com/spreadsheets/d/1lzY57D5ers2Xs6cvbV-skeqGSAK_jijbQJZt8Hn8udY/edit?gid=0#gid=0',
           sheet_name: box.googleSheetName || '',
-          header_row: box.googleSheetHeaderRow || 1,
-          mode: box.googleSheetProcessingMode || 'smart_auto',
-          operation: box.googleSheetWriteOperation || 'append',
-          match_columns: box.googleSheetMatchColumns || (box.googleSheetHeaders && box.googleSheetHeaders.length > 0 ? [box.googleSheetHeaders[0]] : ['Code']),
-          preserve_non_empty: box.googleSheetPreserveNonEmpty !== false,
-          column_mappings: box.googleSheetColumnMappings || [],
-          incoming_data: {
-            property: {
-              code: 'BHR-100001',
-              project_name: 'The Metropolis Samrong',
-              room_type: '1 Bedroom',
-              price: 12000,
-              size: 35,
-              floor: '21',
-              station: 'BTS Samrong',
-              agent_name: 'Super Agent',
-              contact_info: '081-234-5678 / Line: @supercondo',
-              source_url: 'https://facebook.com/marketplace/item/100001',
-            },
-          },
-          raw_content: sampleContent,
+          headers: box.googleSheetHeaders || [],
+          content: sampleContent,
           condo_name: sampleCondo,
           images: sampleImages,
           custom_instructions: box.googleSheetAiPrompt || box.customPrompt || '',
           model: box.model || 'gemini-1.5-flash',
-          provider: (box.model || '').startsWith('gemini') ? 'google_ai' : (box.provider || 'google_ai'),
+          provider: box.provider || 'google_ai',
           prompt_template: box.templateText || '',
           credentials_json: box.googleServiceAccountJson || '',
         }),
@@ -3655,7 +3609,7 @@ export const FacebookWorkflowCanvas = forwardRef<
       if (data.headers && (!box.googleSheetHeaders || box.googleSheetHeaders.length === 0)) {
         handleUpdateAIBox(box.id, { googleSheetHeaders: data.headers });
       }
-      setSheetHeaderSuccess(data.execution_summary || `Successfully synced test row to sheet!`);
+      setSheetHeaderSuccess(`Successfully appended test row to sheet!`);
     } catch (err: any) {
       setSheetHeaderError(err.message || 'Error executing Google Sheet sync');
     } finally {
@@ -4089,6 +4043,8 @@ export const FacebookWorkflowCanvas = forwardRef<
     templateText: string;
     headerTitle?: string;
     copyButtonLabel?: string;
+    isEditable?: boolean;
+    boxId?: string;
   } | null>(null);
   const [copiedPromptId, setCopiedPromptId] = useState<string | null>(null);
   const [isViewerPromptCopied, setIsViewerPromptCopied] = useState(false);
@@ -12086,67 +12042,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                           </div>
                         </div>
 
-                        {/* Open Full Settings Modal Button */}
-                        <button
-                          type="button"
-                          onClick={() => setShowGoogleSheetSettingsSidebox(true)}
-                          style={{
-                            width: '100%',
-                            height: '34px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '6px',
-                            borderRadius: '6px',
-                            backgroundColor: isDark ? 'rgba(15, 157, 88, 0.12)' : 'rgba(15, 157, 88, 0.08)',
-                            border: '1px solid #0F9D58',
-                            color: '#0F9D58',
-                            fontSize: '0.75rem',
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                            transition: 'all 0.15s ease',
-                          }}
-                        >
-                          <FiSettings size={13} /> Configure Sheet Settings & AI Agent
-                        </button>
-
-                        {/* Data Processing Mode Selector */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                          <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
-                            Data Processing Mode
-                          </label>
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px' }}>
-                            {[
-                              { id: 'smart_auto', label: 'Smart Auto' },
-                              { id: 'direct', label: 'Direct' },
-                              { id: 'ai_extract', label: 'AI Extract' },
-                            ].map((pm) => {
-                              const active = (currentModalAIBox.googleSheetProcessingMode || 'smart_auto') === pm.id;
-                              return (
-                                <button
-                                  key={pm.id}
-                                  type="button"
-                                  onClick={() => handleUpdateAIBox(currentModalAIBox.id, { googleSheetProcessingMode: pm.id as any })}
-                                  style={{
-                                    padding: '5px 4px',
-                                    borderRadius: '5px',
-                                    fontSize: '0.65625rem',
-                                    fontWeight: active ? 700 : 500,
-                                    border: active ? '1px solid #0F9D58' : isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                                    backgroundColor: active ? 'rgba(15, 157, 88, 0.15)' : isDark ? '#0D1117' : '#FFFFFF',
-                                    color: active ? '#0F9D58' : 'var(--text-primary)',
-                                    cursor: 'pointer',
-                                    textAlign: 'center',
-                                  }}
-                                >
-                                  {pm.label}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-
-                        {/* AI Engine & Model (matching Image 4 dropdown options) */}
+                        {/* AI Engine & Model */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
                           <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
                             AI Engine & Model
@@ -12157,15 +12053,15 @@ export const FacebookWorkflowCanvas = forwardRef<
                               (currentModalAIBox.provider === 'openai' ? 'gpt-4o-mini' : 'gemini-1.5-flash')
                             }
                             onChange={(val) => {
-                              const isGoogle = val.startsWith('gemini');
+                              const isGoogle = AI_ENGINE_MODEL_GROUPS[0]?.options.some((o) => o.value === val);
                               handleUpdateAIBox(currentModalAIBox.id, {
                                 model: val,
                                 provider: isGoogle ? 'google_ai' : 'openai',
                               });
                             }}
-                            options={GOOGLE_SHEET_AI_MODEL_OPTIONS}
+                            options={AI_ENGINE_MODEL_GROUPS}
                             height="36px"
-                            placeholder="Select option"
+                            placeholder="Select AI Model..."
                           />
                         </div>
 
@@ -12175,15 +12071,25 @@ export const FacebookWorkflowCanvas = forwardRef<
                             <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
                               Select Prompt Template
                             </label>
-                            {Boolean(currentModalAIBox.templateId) && (
+                            {currentModalAIBox.templateId === 'custom' ? (
+                              <span style={{ fontSize: '0.625rem', color: '#8B5CF6', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                ✍️ Manual Prompt Active
+                              </span>
+                            ) : Boolean(currentModalAIBox.templateId) ? (
                               <span style={{ fontSize: '0.625rem', color: '#10B981', fontWeight: 500 }}>
                                 ● Linked to Template
                               </span>
-                            )}
+                            ) : null}
                           </div>
                           <Select
                             value={String(currentModalAIBox.templateId || '')}
                             onChange={(val) => {
+                              if (val === 'custom') {
+                                handleUpdateAIBox(currentModalAIBox.id, {
+                                  templateId: 'custom',
+                                });
+                                return;
+                              }
                               const match = availablePrompts.find((p) => String(p.id) === String(val));
                               handleUpdateAIBox(currentModalAIBox.id, {
                                 templateId: String(val),
@@ -12191,16 +12097,19 @@ export const FacebookWorkflowCanvas = forwardRef<
                               });
                             }}
                             options={[
-                              { value: '', label: 'Select Prompt Template...' },
+                              { value: '', label: 'Select option' },
+                              { value: 'custom', label: '✍️ Manual Input (Custom Prompt)' },
                               ...availablePrompts.map((p) => ({
                                 value: String(p.id),
                                 label: p.name,
                               })),
                             ]}
                             height="36px"
-                            placeholder="Select Prompt Template..."
+                            placeholder="Select option"
                           />
-                          {Boolean(currentModalAIBox.templateId) && (
+
+                          {/* When linked to a template: View Prompt Template button */}
+                          {Boolean(currentModalAIBox.templateId) && currentModalAIBox.templateId !== 'custom' && (
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
                               <button
                                 type="button"
@@ -12213,6 +12122,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                                       id: String(activePrompt.id),
                                       name: activePrompt.name,
                                       templateText: activePrompt.templateText || currentModalAIBox.templateText || '',
+                                      headerTitle: 'Prompt Template Viewer',
+                                      copyButtonLabel: 'Copy Prompt',
+                                      isEditable: false,
+                                      boxId: currentModalAIBox.id,
                                     });
                                   }
                                 }}
@@ -12231,6 +12144,74 @@ export const FacebookWorkflowCanvas = forwardRef<
                               >
                                 <FiEye size={12} /> View Prompt Template
                               </button>
+                            </div>
+                          )}
+
+                          {/* When Manual Input is selected: Preview/Compact input box + [Open Prompt Editor] button */}
+                          {currentModalAIBox.templateId === 'custom' && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '4px' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                                  Manual Prompt
+                                </label>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setViewingPromptTemplate({
+                                      id: 'custom',
+                                      name: 'Custom Prompt (Manual Input)',
+                                      templateText: currentModalAIBox.customPrompt || '',
+                                      headerTitle: 'Custom Prompt Editor',
+                                      copyButtonLabel: 'Copy Prompt',
+                                      isEditable: true,
+                                      boxId: currentModalAIBox.id,
+                                    });
+                                  }}
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                    background: isDark ? 'rgba(139, 92, 246, 0.15)' : '#F5F3FF',
+                                    border: '1px solid rgba(139, 92, 246, 0.35)',
+                                    borderRadius: '5px',
+                                    padding: '3px 8px',
+                                    color: '#8B5CF6',
+                                    fontSize: '0.6875rem',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    transition: 'all 0.15s ease',
+                                  }}
+                                >
+                                  <FiEdit2 size={11} /> Open Prompt Editor
+                                </button>
+                              </div>
+                              <textarea
+                                value={currentModalAIBox.customPrompt || ''}
+                                onChange={(e) => {
+                                  const text = e.target.value;
+                                  handleUpdateAIBox(currentModalAIBox.id, {
+                                    customPrompt: text,
+                                  });
+                                  if (viewingPromptTemplate && viewingPromptTemplate.boxId === currentModalAIBox.id) {
+                                    setViewingPromptTemplate((prev) => (prev ? { ...prev, templateText: text } : null));
+                                  }
+                                }}
+                                placeholder="Type custom instructions or click 'Open Prompt Editor' for full editor..."
+                                rows={3}
+                                style={{
+                                  width: '100%',
+                                  padding: '0.5rem 0.65rem',
+                                  fontSize: '0.75rem',
+                                  lineHeight: '1.45',
+                                  borderRadius: '6px',
+                                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                  backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
+                                  color: 'var(--text-primary)',
+                                  resize: 'vertical',
+                                  fontFamily: 'inherit',
+                                  outline: 'none',
+                                }}
+                              />
                             </div>
                           )}
                         </div>
@@ -12316,16 +12297,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                               </>
                             )}
                           </button>
-                        </div>
-
-                        {/* Write Operation Quick Badge */}
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.45rem 0.65rem', borderRadius: '6px', backgroundColor: isDark ? '#0D1117' : '#F8FAFC', border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0' }}>
-                          <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
-                            Write Operation
-                          </span>
-                          <span style={{ fontSize: '0.625rem', fontWeight: 700, padding: '2px 7px', borderRadius: '10px', backgroundColor: 'rgba(15, 157, 88, 0.15)', color: '#0F9D58' }}>
-                            {(currentModalAIBox.googleSheetWriteOperation || 'append').toUpperCase()} ROW
-                          </span>
                         </div>
 
                         {/* Error Alert with GCP Enablement Link if API disabled */}
@@ -12445,31 +12416,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                             Click <strong>"Load Headers"</strong> to automatically inspect and read column headers from Row 1 of your sheet.
                           </div>
                         )}
-                        {/* Test Sync Button */}
-                        <button
-                          type="button"
-                          disabled={testingSheetSync}
-                          onClick={() => handleTestGoogleSheetSync(currentModalAIBox)}
-                          style={{
-                            width: '100%',
-                            height: '36px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '6px',
-                            borderRadius: '6px',
-                            backgroundColor: isDark ? '#21262D' : '#F1F5F9',
-                            border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                            color: 'var(--text-primary)',
-                            fontSize: '0.75rem',
-                            fontWeight: 600,
-                            cursor: testingSheetSync ? 'not-allowed' : 'pointer',
-                            marginTop: '0.25rem',
-                          }}
-                        >
-                          <SiGooglesheets size={13} color="#0F9D58" />
-                          {testingSheetSync ? 'Testing Mapping...' : 'Test AI Mapping & Append Test Row'}
-                        </button>
                       </div>
                     ) : isExternalBrowserAIBox(currentModalAIBox) || currentModalAIBox.processType === 'chrome_profile' || isChromeTabGroupAIBox(currentModalAIBox) ? (
                       (() => {
@@ -12813,11 +12759,15 @@ export const FacebookWorkflowCanvas = forwardRef<
                               <FiFileText style={{ fontSize: '12px', color: 'var(--accent-primary, #3B82F6)' }} />
                               Select Prompt Template
                             </label>
-                            {currentModalAIBox.templateId && currentModalAIBox.templateId !== 'custom' && (
+                            {currentModalAIBox.templateId === 'custom' ? (
+                              <span style={{ fontSize: '0.625rem', color: '#8B5CF6', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                ✍️ Manual Prompt Active
+                              </span>
+                            ) : Boolean(currentModalAIBox.templateId) ? (
                               <span style={{ fontSize: '0.625rem', color: '#10B981', fontWeight: 500 }}>
                                 ● Linked to Template
                               </span>
-                            )}
+                            ) : null}
                           </div>
                           <Select
                             options={[
@@ -12825,7 +12775,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                 value: String(p.id),
                                 label: p.name,
                               })),
-                              { value: 'custom', label: '✨ Custom Prompt (Manual Input)' },
+                              { value: 'custom', label: '✍️ Manual Input (Custom Prompt)' },
                             ]}
                             value={
                               availablePrompts.some((p) => String(p.id) === String(currentModalAIBox.templateId))
@@ -12841,13 +12791,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                                 handleUpdateAIBox(currentModalAIBox.id, {
                                   templateId: 'custom',
                                 });
-                                if (viewingPromptTemplate) {
-                                  setViewingPromptTemplate({
-                                    id: 'custom',
-                                    name: 'Custom Prompt',
-                                    templateText: currentModalAIBox.templateText || '',
-                                  });
-                                }
                                 return;
                               }
                               const matched = availablePrompts.find((p) => String(p.id) === String(val));
@@ -12867,120 +12810,185 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   templateText: matched.templateText,
                                   title: isGenericTitle ? matched.name : currentModalAIBox.title,
                                 });
-                                if (viewingPromptTemplate) {
-                                  setViewingPromptTemplate({
-                                    id: String(matched.id),
-                                    name: matched.name,
-                                    templateText: matched.templateText || '',
-                                  });
-                                }
                               }
                             }}
                             height="34px"
                             placeholder="Select prompt template..."
                           />
 
-                          {/* View Prompt Button & Quick Copy Button */}
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const activePrompt =
-                                  availablePrompts.find((p) => String(p.id) === String(currentModalAIBox.templateId)) ||
-                                  availablePrompts.find((p) => p.name === currentModalAIBox.title) ||
-                                  (currentModalAIBox.templateText
-                                    ? {
-                                        id: currentModalAIBox.templateId || 'custom',
-                                        name: currentModalAIBox.title || 'Prompt Template',
-                                        templateText: currentModalAIBox.templateText,
-                                      }
-                                    : null) ||
-                                  availablePrompts[0];
-
-                                if (activePrompt) {
-                                  setViewingPromptTemplate({
-                                    id: String(activePrompt.id),
-                                    name: activePrompt.name,
-                                    templateText: activePrompt.templateText || currentModalAIBox.templateText || '',
+                          {/* When Manual Input is selected: Preview/Compact input box + [Open Prompt Editor] button */}
+                          {currentModalAIBox.templateId === 'custom' ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '4px' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                                  Manual Prompt
+                                </label>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setViewingPromptTemplate({
+                                      id: 'custom',
+                                      name: 'Custom Prompt (Manual Input)',
+                                      templateText: currentModalAIBox.customPrompt || '',
+                                      headerTitle: 'Custom Prompt Editor',
+                                      copyButtonLabel: 'Copy Prompt',
+                                      isEditable: true,
+                                      boxId: currentModalAIBox.id,
+                                    });
+                                  }}
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                    background: isDark ? 'rgba(139, 92, 246, 0.15)' : '#F5F3FF',
+                                    border: '1px solid rgba(139, 92, 246, 0.35)',
+                                    borderRadius: '5px',
+                                    padding: '3px 8px',
+                                    color: '#8B5CF6',
+                                    fontSize: '0.6875rem',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    transition: 'all 0.15s ease',
+                                  }}
+                                >
+                                  <FiEdit2 size={11} /> Open Prompt Editor
+                                </button>
+                              </div>
+                              <textarea
+                                value={currentModalAIBox.customPrompt || ''}
+                                onChange={(e) => {
+                                  const text = e.target.value;
+                                  handleUpdateAIBox(currentModalAIBox.id, {
+                                    customPrompt: text,
                                   });
-                                }
-                              }}
-                              style={{
-                                flex: 1,
-                                height: '32px',
-                                borderRadius: '6px',
-                                border: '1px solid var(--border-color)',
-                                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC',
-                                color: 'var(--text-primary)',
-                                fontSize: '0.6875rem',
-                                fontWeight: 600,
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                gap: '6px',
-                                cursor: 'pointer',
-                                transition: 'all 0.15s ease',
-                              }}
-                              onMouseEnter={(e) => {
-                                e.currentTarget.style.borderColor = 'var(--accent-primary, #3B82F6)';
-                                e.currentTarget.style.backgroundColor = isDark ? 'rgba(59, 130, 246, 0.08)' : '#EFF6FF';
-                              }}
-                              onMouseLeave={(e) => {
-                                e.currentTarget.style.borderColor = 'var(--border-color)';
-                                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC';
-                              }}
-                            >
-                              <FiEye size={13} style={{ color: '#3B82F6' }} />
-                              <span>View Prompt Template</span>
-                            </button>
+                                  if (viewingPromptTemplate && viewingPromptTemplate.boxId === currentModalAIBox.id) {
+                                    setViewingPromptTemplate((prev) => (prev ? { ...prev, templateText: text } : null));
+                                  }
+                                }}
+                                placeholder="Type custom instructions or click 'Open Prompt Editor' for full editor..."
+                                rows={3}
+                                style={{
+                                  width: '100%',
+                                  padding: '0.5rem 0.65rem',
+                                  fontSize: '0.75rem',
+                                  lineHeight: '1.45',
+                                  borderRadius: '6px',
+                                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                  backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
+                                  color: 'var(--text-primary)',
+                                  resize: 'vertical',
+                                  fontFamily: 'inherit',
+                                  outline: 'none',
+                                }}
+                              />
+                            </div>
+                          ) : (
+                            /* View Prompt Button & Quick Copy Button */
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const activePrompt =
+                                    availablePrompts.find((p) => String(p.id) === String(currentModalAIBox.templateId)) ||
+                                    availablePrompts.find((p) => p.name === currentModalAIBox.title) ||
+                                    (currentModalAIBox.templateText
+                                      ? {
+                                          id: currentModalAIBox.templateId || 'custom',
+                                          name: currentModalAIBox.title || 'Prompt Template',
+                                          templateText: currentModalAIBox.templateText,
+                                        }
+                                      : null) ||
+                                    availablePrompts[0];
 
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const textToCopy =
-                                  currentModalAIBox.templateText ||
-                                  availablePrompts.find((p) => String(p.id) === String(currentModalAIBox.templateId))?.templateText ||
-                                  availablePrompts.find((p) => p.name === currentModalAIBox.title)?.templateText ||
-                                  '';
-                                if (textToCopy) {
-                                  navigator.clipboard.writeText(textToCopy);
-                                  setCopiedPromptId(currentModalAIBox.id);
-                                  setTimeout(() => setCopiedPromptId(null), 2000);
-                                }
-                              }}
-                              title="Copy full prompt text"
-                              style={{
-                                height: '32px',
-                                padding: '0 10px',
-                                borderRadius: '6px',
-                                border: '1px solid var(--border-color)',
-                                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC',
-                                color: 'var(--text-secondary)',
-                                fontSize: '0.6875rem',
-                                fontWeight: 600,
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '4px',
-                                cursor: 'pointer',
-                                transition: 'all 0.15s ease',
-                              }}
-                              onMouseEnter={(e) => {
-                                e.currentTarget.style.borderColor = 'var(--border-hover, #64748B)';
-                                e.currentTarget.style.color = 'var(--text-primary)';
-                              }}
-                              onMouseLeave={(e) => {
-                                e.currentTarget.style.borderColor = 'var(--border-color)';
-                                e.currentTarget.style.color = 'var(--text-secondary)';
-                              }}
-                            >
-                              {copiedPromptId === currentModalAIBox.id ? (
-                                <FiCheck size={12} style={{ color: '#10B981' }} />
-                              ) : (
-                                <FiCopy size={12} />
-                              )}
-                              <span>{copiedPromptId === currentModalAIBox.id ? 'Copied' : 'Copy'}</span>
-                            </button>
-                          </div>
+                                  if (activePrompt) {
+                                    setViewingPromptTemplate({
+                                      id: String(activePrompt.id),
+                                      name: activePrompt.name,
+                                      templateText: activePrompt.templateText || currentModalAIBox.templateText || '',
+                                      headerTitle: 'Prompt Template Viewer',
+                                      copyButtonLabel: 'Copy Prompt',
+                                      isEditable: false,
+                                      boxId: currentModalAIBox.id,
+                                    });
+                                  }
+                                }}
+                                style={{
+                                  flex: 1,
+                                  height: '32px',
+                                  borderRadius: '6px',
+                                  border: '1px solid var(--border-color)',
+                                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC',
+                                  color: 'var(--text-primary)',
+                                  fontSize: '0.6875rem',
+                                  fontWeight: 600,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '6px',
+                                  cursor: 'pointer',
+                                  transition: 'all 0.15s ease',
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.borderColor = 'var(--accent-primary, #3B82F6)';
+                                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(59, 130, 246, 0.08)' : '#EFF6FF';
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.borderColor = 'var(--border-color)';
+                                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC';
+                                }}
+                              >
+                                <FiEye size={13} style={{ color: '#3B82F6' }} />
+                                <span>View Prompt Template</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const textToCopy =
+                                    currentModalAIBox.templateText ||
+                                    availablePrompts.find((p) => String(p.id) === String(currentModalAIBox.templateId))?.templateText ||
+                                    availablePrompts.find((p) => p.name === currentModalAIBox.title)?.templateText ||
+                                    '';
+                                  if (textToCopy) {
+                                    navigator.clipboard.writeText(textToCopy);
+                                    setCopiedPromptId(currentModalAIBox.id);
+                                    setTimeout(() => setCopiedPromptId(null), 2000);
+                                  }
+                                }}
+                                title="Copy full prompt text"
+                                style={{
+                                  height: '32px',
+                                  padding: '0 10px',
+                                  borderRadius: '6px',
+                                  border: '1px solid var(--border-color)',
+                                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC',
+                                  color: 'var(--text-secondary)',
+                                  fontSize: '0.6875rem',
+                                  fontWeight: 600,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  cursor: 'pointer',
+                                  transition: 'all 0.15s ease',
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.borderColor = 'var(--border-hover, #64748B)';
+                                  e.currentTarget.style.color = 'var(--text-primary)';
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.borderColor = 'var(--border-color)';
+                                  e.currentTarget.style.color = 'var(--text-secondary)';
+                                }}
+                              >
+                                {copiedPromptId === currentModalAIBox.id ? (
+                                  <FiCheck size={12} style={{ color: '#10B981' }} />
+                                ) : (
+                                  <FiCopy size={12} />
+                                )}
+                                <span>{copiedPromptId === currentModalAIBox.id ? 'Copied' : 'Copy'}</span>
+                              </button>
+                            </div>
+                          )}
                         </div>
 
                         {/* AI Engine & Model */}
@@ -13735,7 +13743,7 @@ export const FacebookWorkflowCanvas = forwardRef<
         />
       )}
 
-      {/* ── PROMPT TEMPLATE VIEWER SLIDE-OVER (SLIDES OUT NEXT TO 380px SIDEBAR) ── */}
+      {/* ── PROMPT TEMPLATE VIEWER & EDITOR SLIDE-OVER (SLIDES OUT NEXT TO 380px SIDEBAR) ── */}
       {viewingPromptTemplate && (
         <div
           className="workflow-sidebar"
@@ -13767,7 +13775,7 @@ export const FacebookWorkflowCanvas = forwardRef<
               alignItems: 'center',
               justifyContent: 'space-between',
               padding: '0.875rem 1.125rem',
-              borderBottom: 'none',
+              borderBottom: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
               backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
             }}
           >
@@ -13777,21 +13785,23 @@ export const FacebookWorkflowCanvas = forwardRef<
                   width: '30px',
                   height: '30px',
                   borderRadius: '8px',
-                  backgroundColor: 'rgba(59, 130, 246, 0.12)',
-                  color: '#3B82F6',
+                  backgroundColor: viewingPromptTemplate.isEditable
+                    ? 'rgba(139, 92, 246, 0.12)'
+                    : 'rgba(59, 130, 246, 0.12)',
+                  color: viewingPromptTemplate.isEditable ? '#8B5CF6' : '#3B82F6',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                 }}
               >
-                <FiFileText size={15} />
+                {viewingPromptTemplate.isEditable ? <FiEdit2 size={15} /> : <FiFileText size={15} />}
               </div>
               <div>
                 <div style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.2 }}>
-                  {viewingPromptTemplate.headerTitle || 'Prompt Template Viewer'}
+                  {viewingPromptTemplate.headerTitle || (viewingPromptTemplate.isEditable ? 'Custom Prompt Editor' : 'Prompt Template Viewer')}
                 </div>
                 <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                  ✨ {viewingPromptTemplate.name}
+                  {viewingPromptTemplate.isEditable ? '✍️ Manual Input · Live Auto-Save' : `✨ ${viewingPromptTemplate.name}`}
                 </div>
               </div>
             </div>
@@ -13829,7 +13839,7 @@ export const FacebookWorkflowCanvas = forwardRef<
               <button
                 type="button"
                 onClick={() => setViewingPromptTemplate(null)}
-                title="Close Viewer"
+                title="Close"
                 style={{
                   width: '28px',
                   height: '28px',
@@ -13848,25 +13858,133 @@ export const FacebookWorkflowCanvas = forwardRef<
             </div>
           </div>
 
-          {/* Body: Main Scrollable Body with Direct Text */}
-          <div
-            style={{
-              flex: 1,
-              overflowY: 'auto',
-              padding: '1.25rem 1.375rem 3.5rem 1.375rem',
-              fontFamily: '"Helvetica Neue", Helvetica, Arial, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-              fontSize: '0.84375rem',
-              fontWeight: 400,
-              lineHeight: '1.7',
-              letterSpacing: '-0.005em',
-              color: isDark ? '#E2E8F0' : '#1E293B',
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-word',
-            }}
-          >
-            {viewingPromptTemplate.templateText || 'No content available.'}
-            <div style={{ height: '2.5rem' }} />
-          </div>
+          {/* Body: Prompt Editor or Read-Only Viewer */}
+          {viewingPromptTemplate.isEditable ? (
+            <div
+              style={{
+                flex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                padding: '1rem 1.125rem',
+                gap: '0.75rem',
+                overflow: 'hidden',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  fontSize: '0.6875rem',
+                  color: 'var(--text-muted)',
+                }}
+              >
+                <span>Write prompt instructions for AI execution:</span>
+                <span style={{ color: '#10B981', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  ● Saved to Node
+                </span>
+              </div>
+
+              <textarea
+                value={viewingPromptTemplate.templateText || ''}
+                onChange={(e) => {
+                  const newText = e.target.value;
+                  setViewingPromptTemplate((prev) => (prev ? { ...prev, templateText: newText } : null));
+                  if (viewingPromptTemplate.boxId) {
+                    handleUpdateAIBox(viewingPromptTemplate.boxId, {
+                      customPrompt: newText,
+                      templateText: newText,
+                    });
+                  }
+                }}
+                placeholder="Write your custom prompt instructions here... e.g. Analyze Facebook post, extract property specs, format price and location..."
+                style={{
+                  flex: 1,
+                  width: '100%',
+                  padding: '0.875rem 1rem',
+                  borderRadius: '8px',
+                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                  backgroundColor: isDark ? '#0D1117' : '#F8FAFC',
+                  color: isDark ? '#E2E8F0' : '#1E293B',
+                  fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
+                  fontSize: '0.8125rem',
+                  lineHeight: '1.65',
+                  resize: 'none',
+                  outline: 'none',
+                  boxShadow: 'inset 0 1px 3px rgba(0, 0, 0, 0.08)',
+                }}
+              />
+
+              {/* Status bar */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  paddingTop: '0.5rem',
+                  borderTop: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
+                  fontSize: '0.6875rem',
+                  color: 'var(--text-muted)',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span>{(viewingPromptTemplate.templateText || '').length} characters</span>
+                  <span>•</span>
+                  <span>
+                    {(viewingPromptTemplate.templateText || '').trim()
+                      ? (viewingPromptTemplate.templateText || '').trim().split(/\s+/).length
+                      : 0}{' '}
+                    words
+                  </span>
+                </div>
+                {(viewingPromptTemplate.templateText || '').length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setViewingPromptTemplate((prev) => (prev ? { ...prev, templateText: '' } : null));
+                      if (viewingPromptTemplate.boxId) {
+                        handleUpdateAIBox(viewingPromptTemplate.boxId, {
+                          customPrompt: '',
+                          templateText: '',
+                        });
+                      }
+                    }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: isDark ? '#FCA5A5' : '#DC2626',
+                      fontSize: '0.6875rem',
+                      fontWeight: 500,
+                      cursor: 'pointer',
+                      padding: 0,
+                    }}
+                  >
+                    Clear Prompt
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div
+              style={{
+                flex: 1,
+                overflowY: 'auto',
+                padding: '1.25rem 1.375rem 3.5rem 1.375rem',
+                fontFamily:
+                  '"Helvetica Neue", Helvetica, Arial, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                fontSize: '0.84375rem',
+                fontWeight: 400,
+                lineHeight: '1.7',
+                letterSpacing: '-0.005em',
+                color: isDark ? '#E2E8F0' : '#1E293B',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+              }}
+            >
+              {viewingPromptTemplate.templateText || 'No content available.'}
+              <div style={{ height: '2.5rem' }} />
+            </div>
+          )}
         </div>
       )}
 

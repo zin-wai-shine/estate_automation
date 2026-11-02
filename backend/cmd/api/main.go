@@ -200,7 +200,6 @@ func main() {
 	sheetsGroup.Post("/prepare-data", handlers.PrepareGoogleSheetData)
 	sheetsGroup.Post("/append-row", handlers.AppendGoogleSheetRow)
 	sheetsGroup.Post("/sync", handlers.ExecuteGoogleSheetSync)
-	sheetsGroup.Post("/process", handlers.ProcessGoogleSheetData)
 
 	// n8n Automation Engine Integration Routes (Admin-protected)
 	n8nRoutes := app.Group("/api/integrations/n8n", middleware.Protected(), middleware.RequireRole(models.RoleAdmin))

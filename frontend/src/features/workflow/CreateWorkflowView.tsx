@@ -1820,41 +1820,19 @@ export const CreateWorkflowView: React.FC = () => {
           const condoProjectName = projName || (propData as any)?.project_name || 'Featured Property Listing';
 
           try {
-            const incomingPayload = {
-              ...(typeof propData === 'object' && propData !== null ? propData : {}),
-              property: {
-                code: (propData as any)?.code || (propData as any)?.property_code || '',
-                project_name: condoProjectName,
-                room_type: (propData as any)?.room_type || (propData as any)?.bedroom || '',
-                price: (propData as any)?.price || (propData as any)?.rental_price || '',
-                size: (propData as any)?.size || (propData as any)?.size_sqm || '',
-                floor: (propData as any)?.floor || '',
-                station: (propData as any)?.station || (propData as any)?.bts_mrt || '',
-                agent_name: (propData as any)?.agent_name || (propData as any)?.owner || '',
-                contact_info: (propData as any)?.contact_info || (propData as any)?.phone || '',
-                source_url: (propData as any)?.source_url || (propData as any)?.link || '',
-              },
-            };
-
-            const syncRes = await fetch('/api/google-sheets/process', {
+            const syncRes = await fetch('/api/google-sheets/sync', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 spreadsheet_url: sheetUrl,
                 sheet_name: sheetName,
-                header_row: (box as any).googleSheetHeaderRow || 1,
-                mode: (box as any).googleSheetProcessingMode || 'smart_auto',
-                operation: (box as any).googleSheetWriteOperation || 'append',
-                match_columns: (box as any).googleSheetMatchColumns || (sheetHeaders.length > 0 ? [sheetHeaders[0]] : ['Code']),
-                preserve_non_empty: (box as any).googleSheetPreserveNonEmpty !== false,
-                column_mappings: (box as any).googleSheetColumnMappings || [],
-                incoming_data: incomingPayload,
-                raw_content: upstreamText,
+                headers: sheetHeaders,
+                content: upstreamText,
                 condo_name: condoProjectName,
                 images: imageList.map((img) => img.stored_url || img.source_url),
                 custom_instructions: customPrompt,
                 model: box.model || 'gemini-1.5-flash',
-                provider: (box.model || '').startsWith('gemini') ? 'google_ai' : (box.provider || 'google_ai'),
+                provider: box.provider || 'google_ai',
                 prompt_template: box.templateText || '',
                 credentials_json: (box as any).googleServiceAccountJson || '',
               }),
