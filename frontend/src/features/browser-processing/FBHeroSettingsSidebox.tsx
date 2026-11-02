@@ -1109,7 +1109,7 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
                             height: '58px',
                             borderRadius: '7px',
                             overflow: 'hidden',
-                            border: imgSrc ? '1.5px solid #10B981' : '1px solid var(--border-color)',
+                            border: '1px solid var(--border-color)',
                             backgroundColor: isDark ? 'rgba(0,0,0,0.28)' : '#F1F5F9',
                             display: 'flex',
                             flexDirection: 'column',
@@ -1119,32 +1119,11 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
                           title={img ? `${img.filename} (${img.path || ''})` : `Slot ${slotIdx}`}
                         >
                           {imgSrc ? (
-                            <>
-                              <img
-                                src={imgSrc}
-                                alt={img.filename}
-                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                              />
-                              <div
-                                style={{
-                                  position: 'absolute',
-                                  bottom: 0,
-                                  left: 0,
-                                  right: 0,
-                                  backgroundColor: 'rgba(0, 0, 0, 0.72)',
-                                  color: '#FFFFFF',
-                                  fontSize: '0.5625rem',
-                                  fontWeight: 600,
-                                  padding: '2px 4px',
-                                  textAlign: 'center',
-                                  whiteSpace: 'nowrap',
-                                  overflow: 'hidden',
-                                  textOverflow: 'ellipsis',
-                                }}
-                              >
-                                {img.filename}
-                              </div>
-                            </>
+                            <img
+                              src={imgSrc}
+                              alt={img.filename}
+                              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                            />
                           ) : (
                             <span style={{ fontSize: '0.5625rem', color: 'var(--text-muted)' }}>
                               Slot {slotIdx}

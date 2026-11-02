@@ -1256,6 +1256,30 @@ const server = http.createServer(async (req, res) => {
 
         const images = extractCondoImages123(folderPath);
 
+        // Also extract all available image files in this condo folder (so user can pick/swap/replace any of the 3 slots)
+        let availableImages = [];
+        try {
+          const allEntries = fs.readdirSync(folderPath, { withFileTypes: true });
+          availableImages = allEntries
+            .filter((f) => f.isFile() && /\.(png|jpg|jpeg|webp)$/i.test(f.name) && !f.name.startsWith('.'))
+            .map((f, i) => {
+              const fp = path.join(folderPath, f.name);
+              const ext = path.extname(f.name).toLowerCase().replace('.', '') || 'png';
+              const mime = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+              const fileBuf = fs.readFileSync(fp);
+              return {
+                id: `avail-${i + 1}`,
+                filename: f.name,
+                mime_type: mime,
+                full_path: fp,
+                size_bytes: fileBuf.length,
+                data_url: `data:${mime};base64,${fileBuf.toString('base64')}`,
+              };
+            });
+        } catch (scanErr) {
+          console.warn('[COMPANION] Error reading available images in folder:', scanErr);
+        }
+
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({
           status: 'success',
@@ -1265,6 +1289,7 @@ const server = http.createServer(async (req, res) => {
           base_dir: baseDir,
           images_found: images.length,
           images: images,
+          available_images: availableImages,
         }));
       } catch (err) {
         console.error('[COMPANION] Error reading condo images:', err);

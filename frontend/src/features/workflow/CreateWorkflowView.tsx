@@ -22,16 +22,18 @@ import {
   saveWorkflowFormatsList,
   getActiveWorkflowFormatId,
   setActiveWorkflowFormatId,
+  getPinnedWorkflowFormatId,
+  setPinnedWorkflowFormatId,
   restoreDefaultWorkflowFormats,
   type WorkflowFormat,
 } from './workflowFormats';
-import { isWatermarkAIBox, isTextFormatAIBox, isTextAIBox, isN8NAIBox, isExternalBrowserAIBox, isChromeProfileAIBox, isChromeTabGroupAIBox } from '../facebook-import/aiModelUtils';
+import { isWatermarkAIBox, isTextFormatAIBox, isTextAIBox, isN8NAIBox, isExternalBrowserAIBox, isChromeProfileAIBox, isChromeTabGroupAIBox, isGoogleSheetBox } from '../facebook-import/aiModelUtils';
 import { runN8NWorkflow } from '../../services/n8nService';
 import { createBatchImageQueue, startImageQueue, focusBrowserTabGroup, openBrowserProfile, fetchTabGroups, waitForBrowserTabsReady, startAutomation, stopAutomation, getAutomationStatus, fetchImageQueue } from '../browser-processing/browserAutomationService';
 import { resolvePromptForBrowserNode, getPersistedPromptKey } from '../browser-processing/browserPromptUtils';
 import { getPersistedReferenceImage, loadPersistedReferenceImageAsync } from '../browser-processing/referenceImageStorage';
 import { extractCleanCondoNameFromAiText } from '../browser-processing/FBHeroSettingsSidebox';
-import { getSavedCropFormats, formatImageWithCropFormat, type CropStudioFormat } from '../watermark/cropFormats';
+import { getSavedCropFormats, formatImageWithCropFormat, type CropStudioFormat, getEffectiveStudioImages } from '../watermark/cropFormats';
 import { loadActiveWatermarkConfig } from '../autopost/watermarkStorage';
 import {
   FiGitBranch,
@@ -52,9 +54,15 @@ import {
   FiArrowLeft,
   FiAlertTriangle,
   FiSquare,
+  FiEdit2,
+  FiEdit3,
+  FiImage,
+  FiUploadCloud,
+  FiX,
 } from 'react-icons/fi';
 import { FaFacebook, FaTiktok } from 'react-icons/fa';
 import { HiSparkles } from 'react-icons/hi2';
+import { BsPinAngle, BsPinAngleFill } from 'react-icons/bs';
 import { useTheme } from '../../context/ThemeContext';
 
 async function requestAIGeneration(payload: Record<string, any>, signal?: AbortSignal): Promise<string> {
@@ -96,6 +104,8 @@ export const CreateWorkflowView: React.FC = () => {
   const [searchParams] = useSearchParams();
   const canvasRef = useRef<FacebookWorkflowCanvasRef>(null);
   const [formats, setFormats] = useState<WorkflowFormat[]>(() => getSavedWorkflowFormats());
+  const formatsRef = useRef<WorkflowFormat[]>(formats);
+  formatsRef.current = formats;
   const [activeFormatId, setActiveId] = useState<string>(() => {
     const sp = new URLSearchParams(window.location.search);
     return sp.get('id') || sp.get('format') || getActiveWorkflowFormatId();
@@ -115,38 +125,26 @@ export const CreateWorkflowView: React.FC = () => {
       );
 
     // Sync latest workflow formats from backend API
-    fetch('http://localhost:8085/api/workflow/config')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data && Array.isArray(data.workflow_formats) && data.workflow_formats.length > 0) {
-          const syncedFormats = applyPersistedEnabledToFormats(data.workflow_formats);
-          setFormats(syncedFormats);
-          try {
-            localStorage.setItem('estate_saved_workflow_formats_v2', JSON.stringify(syncedFormats));
-          } catch {
-            try {
-              const compact = syncedFormats.map((f) =>
-                f.config ? { ...f, config: stripLargeBase64FromWorkflowConfig(f.config) } : f
-              );
-              localStorage.setItem('estate_saved_workflow_formats_v2', JSON.stringify(compact));
-            } catch {}
-          }
-          setEditingFormat((prev) => {
-            const sp = new URLSearchParams(window.location.search);
-            const urlId = sp.get('id') || sp.get('format');
-            const targetId = urlId || prev?.id;
-            const found = syncedFormats.find((f: WorkflowFormat) => f.id === targetId);
-            return found || syncedFormats[0];
-          });
-        }
-      })
-      .catch(() => {});
-
-    const handleWfSync = () => {
-      fetch('http://localhost:8085/api/workflow/config')
+    const syncFromBackend = () => {
+      fetch('/api/workflow/config')
         .then((res) => res.json())
         .then((data) => {
           if (data && Array.isArray(data.workflow_formats) && data.workflow_formats.length > 0) {
+            // Check if local storage has newer updates that haven't synced yet
+            try {
+              const localRaw = localStorage.getItem('estate_saved_workflow_formats_v2');
+              if (localRaw && data.timestamp) {
+                const localParsed = JSON.parse(localRaw);
+                const maxLocalUpdated = Array.isArray(localParsed)
+                  ? Math.max(...localParsed.map((f: any) => f.updatedAt || 0), 0)
+                  : 0;
+                if (maxLocalUpdated > data.timestamp) {
+                  // Local formats are newer, skip overwriting
+                  return;
+                }
+              }
+            } catch {}
+
             const syncedFormats = applyPersistedEnabledToFormats(data.workflow_formats);
             setFormats(syncedFormats);
             try {
@@ -160,13 +158,21 @@ export const CreateWorkflowView: React.FC = () => {
               } catch {}
             }
             setEditingFormat((prev) => {
-              const targetId = prev?.id;
+              const sp = new URLSearchParams(window.location.search);
+              const urlId = sp.get('id') || sp.get('format');
+              const targetId = urlId || prev?.id;
               const found = syncedFormats.find((f: WorkflowFormat) => f.id === targetId);
-              return found || prev;
+              return found || prev || syncedFormats[0];
             });
           }
         })
         .catch(() => {});
+    };
+
+    syncFromBackend();
+
+    const handleWfSync = () => {
+      syncFromBackend();
     };
 
     window.addEventListener('ea_workflow_updated', handleWfSync);
@@ -211,6 +217,76 @@ export const CreateWorkflowView: React.FC = () => {
     return found ? found.description || '' : '';
   });
   const [saveSuccess, setSaveSuccess] = useState(false);
+
+  // Inline format renaming on dashboard cards
+  const [inlineRenamingId, setInlineRenamingId] = useState<string | null>(null);
+  const [inlineRenamingName, setInlineRenamingName] = useState<string>('');
+
+  // Debounced auto-save timer for workflow format name editing
+  const formatNameSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleFormatNameChange = (newName: string) => {
+    setModalFormatName(newName);
+    if (!editingFormat) return;
+
+    const updated: WorkflowFormat = {
+      ...editingFormat,
+      name: newName,
+      updatedAt: Date.now(),
+    };
+    setEditingFormat(updated);
+    setFormats((prevFormats) =>
+      prevFormats.map((f) => (f.id === editingFormat.id ? updated : f))
+    );
+
+    if (formatNameSaveTimerRef.current) {
+      clearTimeout(formatNameSaveTimerRef.current);
+    }
+    formatNameSaveTimerRef.current = setTimeout(() => {
+      setFormats((latestFormats) => {
+        saveWorkflowFormatsList(latestFormats);
+        return latestFormats;
+      });
+    }, 400);
+  };
+
+  const handleFormatNameCommit = () => {
+    if (formatNameSaveTimerRef.current) {
+      clearTimeout(formatNameSaveTimerRef.current);
+    }
+    if (!editingFormat) return;
+    const finalName = modalFormatName.trim() || editingFormat.name || 'Untitled Workflow Format';
+    setModalFormatName(finalName);
+    const updated: WorkflowFormat = {
+      ...editingFormat,
+      name: finalName,
+      updatedAt: Date.now(),
+    };
+    setEditingFormat(updated);
+    setFormats((prevFormats) => {
+      const updatedList = prevFormats.map((f) => (f.id === editingFormat.id ? updated : f));
+      saveWorkflowFormatsList(updatedList);
+      return updatedList;
+    });
+  };
+
+  const handleSaveInlineRename = (formatId: string) => {
+    const trimmed = inlineRenamingName.trim();
+    if (trimmed) {
+      setFormats((prevFormats) => {
+        const updatedList = prevFormats.map((f) =>
+          f.id === formatId ? { ...f, name: trimmed, updatedAt: Date.now() } : f
+        );
+        saveWorkflowFormatsList(updatedList);
+        return updatedList;
+      });
+      if (editingFormat?.id === formatId) {
+        setEditingFormat((prev) => (prev ? { ...prev, name: trimmed, updatedAt: Date.now() } : null));
+        setModalFormatName(trimmed);
+      }
+    }
+    setInlineRenamingId(null);
+  };
 
   // Auto Save state (default: true)
   const [autoSave, setAutoSave] = useState<boolean>(() => {
@@ -370,18 +446,31 @@ export const CreateWorkflowView: React.FC = () => {
   // Synchronize when URL searchParams change
   useEffect(() => {
     const urlId = searchParams.get('id') || searchParams.get('format');
+    const canvasFlag = searchParams.get('canvas') === 'true';
     if (urlId) {
-      const found = formats.find((f) => f.id === urlId);
+      const found = formatsRef.current.find((f) => f.id === urlId);
       if (found) {
         setEditingFormat(found);
         setModalFormatName(found.name);
         setModalFormatDesc(found.description || '');
-        setIsCanvasOpen(true);
-        setActiveWorkflowFormatId(found.id);
-        window.dispatchEvent(new CustomEvent('ea_set_canvas_mode', { detail: { active: true } }));
       }
+      setIsCanvasOpen(true);
+      if (found?.id) {
+        setActiveWorkflowFormatId(found.id);
+      }
+      try {
+        localStorage.setItem('ea_workflow_canvas_open', 'true');
+      } catch {}
+      window.dispatchEvent(new CustomEvent('ea_set_canvas_mode', { detail: { active: true } }));
+    } else if (!canvasFlag) {
+      // Missing id/format in URL -> return to format list view
+      setIsCanvasOpen(false);
+      try {
+        localStorage.removeItem('ea_workflow_canvas_open');
+      } catch {}
+      window.dispatchEvent(new CustomEvent('ea_set_canvas_mode', { detail: { active: false } }));
     }
-  }, [searchParams, formats]);
+  }, [searchParams]);
 
   // Open Canvas as full page for an existing format
   const handleOpenCanvas = (format: WorkflowFormat) => {
@@ -400,12 +489,24 @@ export const CreateWorkflowView: React.FC = () => {
 
   // Close Canvas Page and return to list
   const handleCloseCanvas = () => {
+    handleFormatNameCommit();
+    // Ensure latest editingFormat with all node coordinates is committed synchronously before unmounting canvas
+    if (editingFormat) {
+      setFormats((latestFormats) => {
+        const found = latestFormats.find((f) => f.id === editingFormat.id);
+        const updatedList = found
+          ? latestFormats.map((f) => (f.id === editingFormat.id ? editingFormat : f))
+          : [...latestFormats, editingFormat];
+        saveWorkflowFormatsList(updatedList);
+        return updatedList;
+      });
+    }
     setIsCanvasOpen(false);
-    navigate('/create-workflow', { replace: false });
     try {
       localStorage.removeItem('ea_workflow_canvas_open');
     } catch {}
     window.dispatchEvent(new CustomEvent('ea_set_canvas_mode', { detail: { active: false } }));
+    navigate('/create-workflow', { replace: false });
   };
 
   // Safe Back click on canvas portal header: prompts confirmation if currently running
@@ -534,6 +635,24 @@ export const CreateWorkflowView: React.FC = () => {
     saveWorkflowFormatsList(updatedList);
   };
 
+  // Toggle Pin Workflow Format (Pinned workflow displays in the first row)
+  const handleTogglePinFormat = (formatId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setFormats((prev) => {
+      const isCurrentlyPinned = prev.find((f) => f.id === formatId)?.isPinned;
+      const nextPinned = !isCurrentlyPinned;
+      const updated = prev.map((f) => {
+        if (f.id === formatId) {
+          return { ...f, isPinned: nextPinned };
+        }
+        return { ...f, isPinned: false };
+      });
+      setPinnedWorkflowFormatId(nextPinned ? formatId : '');
+      saveWorkflowFormatsList(updated);
+      return updated;
+    });
+  };
+
   // Delete Format
   const handleDeleteFormat = (formatId: string, formatName: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
@@ -613,8 +732,10 @@ export const CreateWorkflowView: React.FC = () => {
     if (JSON.stringify(editingFormat.config) !== JSON.stringify(newConfig)) {
       setUndoStack((prev) => [...prev.slice(-30), editingFormat.config]);
     }
+    const currentName = modalFormatName.trim() || editingFormat.name;
     const updated: WorkflowFormat = {
       ...editingFormat,
+      name: currentName,
       config: newConfig,
       updatedAt: Date.now(),
     };
@@ -1198,29 +1319,36 @@ export const CreateWorkflowView: React.FC = () => {
       setAiGeneratedCopy('');
       setProjectName('');
 
-      const platform = checkSocialPlatform(targetUrl);
-      if (platform === 'unknown') {
-        safeSetExecutionState(myRunId, {
-          isRunning: false,
-          isComplete: false,
-          hasError: true,
-          activeNodeIds: [],
-          completedNodeIds: [],
-          failedNodeIds: ['trigger'],
-          currentStepMessage: '❌ Invalid URL. Please provide a valid Facebook or TikTok post link.',
-          stepIndex: 1,
-          totalSteps: 6,
-        });
-        setIsRunningWorkflow(false);
-        (window as any).__isWorkflowProcessing = false;
-        return;
+      const isManualTrigger = cfg.trigger?.sourceMode === 'manual';
+      let platformLabel = 'Facebook';
+
+      if (!isManualTrigger) {
+        const platform = checkSocialPlatform(targetUrl);
+        if (platform === 'unknown') {
+          safeSetExecutionState(myRunId, {
+            isRunning: false,
+            isComplete: false,
+            hasError: true,
+            activeNodeIds: [],
+            completedNodeIds: [],
+            failedNodeIds: ['trigger'],
+            currentStepMessage: '❌ Invalid URL. Please provide a valid Facebook or TikTok post link.',
+            stepIndex: 1,
+            totalSteps: 6,
+          });
+          setIsRunningWorkflow(false);
+          (window as any).__isWorkflowProcessing = false;
+          return;
+        }
+        platformLabel = platform === 'tiktok' ? 'TikTok' : 'Facebook';
+      } else {
+        platformLabel = 'Manual Input';
       }
-      const platformLabel = platform === 'tiktok' ? 'TikTok' : 'Facebook';
 
       const contentEnabled = cfg.getContent?.enabled !== false;
       const imagesEnabled = cfg.getImages?.enabled !== false;
 
-      // Phase 1: Trigger (Extract Link)
+      // Phase 1: Trigger (Extract Link or Manual Input)
       safeSetExecutionState(myRunId, {
         isRunning: true,
         isComplete: false,
@@ -1228,7 +1356,9 @@ export const CreateWorkflowView: React.FC = () => {
         activeNodeIds: ['trigger'],
         completedNodeIds: [],
         failedNodeIds: [],
-        currentStepMessage: `Resolving ${platformLabel} post link and isolating listing...`,
+        currentStepMessage: isManualTrigger
+          ? 'Loading manual content & photos into workflow...'
+          : `Resolving ${platformLabel} post link and isolating listing...`,
         stepIndex: 1,
         totalSteps: 6,
       });
@@ -1240,6 +1370,35 @@ export const CreateWorkflowView: React.FC = () => {
       let extractFinished = false;
       let extractFailed = false;
       const extractStartTime = Date.now();
+
+      if (isManualTrigger) {
+        rawCaption = cfg.trigger?.manualContent || '';
+        imageList = (cfg.trigger?.manualImages || []).map((img, idx) => ({
+          index: idx,
+          facebook_photo_id: `manual-photo-${idx + 1}`,
+          source_url: img.url,
+          stored_url: img.url,
+          filename: img.filename || `Photo #${idx + 1}`,
+          status: 'verified',
+        }));
+        if (!rawCaption && extractedContent) rawCaption = extractedContent;
+        if (imageList.length === 0 && extractedImages.length > 0) imageList = extractedImages;
+
+        const lines = rawCaption.split('\n').map((l) => l.trim()).filter(Boolean);
+        projName = lines[0]?.slice(0, 50) || 'Manual Property Listing';
+        propData = {
+          id: `PROP-MANUAL-${Date.now()}`,
+          project_name: projName,
+          title: projName,
+          raw_caption: rawCaption,
+          images: imageList,
+        };
+        setProjectName(projName);
+        setPropertyData(propData);
+        setExtractedContent(rawCaption);
+        setExtractedImages(imageList);
+        extractFinished = true;
+      }
 
       // Helper to update active/completed nodes for a branch without overwriting parallel branches
       const updateBranchNodes = (
@@ -1273,14 +1432,14 @@ export const CreateWorkflowView: React.FC = () => {
 
       // Initialize workflow context so parallel branches can populate outputs as they finish
       workflowContextRef.current = {
-        rawCaption: '',
-        imageList: [],
-        propData: null,
-        projName: '',
+        rawCaption,
+        imageList,
+        propData,
+        projName,
         localWatermarkedMap: {},
         generatedOutputsMap: {},
         primaryCopy: '',
-        targetUrl,
+        targetUrl: isManualTrigger ? 'manual://input' : targetUrl,
       };
 
       const generatedOutputsMap: Record<string, string> = {};
@@ -1289,7 +1448,9 @@ export const CreateWorkflowView: React.FC = () => {
       let branchFatalError = false;
 
       // Start full extraction request in background (returns both caption + downloaded images)
-      const extractFetchPromise = (async () => {
+      const extractFetchPromise = isManualTrigger
+        ? Promise.resolve(null)
+        : (async () => {
         try {
           const extractResp = await fetch('/api/facebook-import/extract', {
             method: 'POST',
@@ -1369,6 +1530,9 @@ export const CreateWorkflowView: React.FC = () => {
 
       // Helper to resolve caption as soon as browser_server.js extracts postInfo.caption (before image gallery finishes)
       const waitForCaptionReady = async (): Promise<string> => {
+        if (isManualTrigger) {
+          return rawCaption;
+        }
         while (!extractFinished && !isRunStopped(myRunId)) {
           try {
             let progResp = await fetch('/api/facebook-import/progress', { signal }).catch(() => null);
@@ -1464,6 +1628,7 @@ export const CreateWorkflowView: React.FC = () => {
         const isWatermark = isWatermarkAIBox(box);
         const isTextFormat = isTextFormatAIBox(box);
         const isN8N = isN8NAIBox(box);
+        const isGoogleSheet = isGoogleSheetBox(box);
         const isExternalBrowser = isExternalBrowserAIBox(box);
         const executedProfileIds: string[] = [];
         const executedTabGroupIds: string[] = [];
@@ -1523,6 +1688,8 @@ export const CreateWorkflowView: React.FC = () => {
             ? `📝 Formatting AI copy with [${box.title || 'Format Preset'}]...`
             : isN8N
             ? `🔄 Executing n8n Automation Engine [${box.title || 'n8n Workflow'}]...`
+            : isGoogleSheet
+            ? `📊 Appending row to Google Sheet [${box.title || 'Google Sheet'}]...`
             : `⚡ Generating AI copy with [${box.title || 'AI Model'}] (${box.model || 'Gemini 2.5 Flash'})...`,
           { stepIndex: 4 }
         );
@@ -1634,6 +1801,71 @@ export const CreateWorkflowView: React.FC = () => {
           generatedOutputsMap[box.id] = finalText;
           if (!primaryCopy) primaryCopy = finalText;
           setAiGeneratedOutputs((prev) => ({ ...prev, [box.id]: finalText }));
+          await delay(400);
+          if (isRunStopped(myRunId) || branchFatalError) return false;
+        } else if (isGoogleSheet) {
+          // Resolve upstream text / property for this Google Sheet sync node
+          const inConns = (cfg.connections || []).filter((c) => c.toNodeId === box.id);
+          const upstreamBoxId = inConns[0]?.fromNodeId;
+          const upstreamText =
+            (upstreamBoxId && generatedOutputsMap[upstreamBoxId]) ||
+            (upstreamBoxId === 'get-content' ? rawCaption : '') ||
+            primaryCopy ||
+            rawCaption;
+
+          const sheetUrl = (box as any).googleSpreadsheetUrl || 'https://docs.google.com/spreadsheets/d/1lzY57D5ers2Xs6cvbV-skeqGSAK_jijbQJZt8Hn8udY/edit?gid=0#gid=0';
+          const sheetName = (box as any).googleSheetName || '';
+          const sheetHeaders = (box as any).googleSheetHeaders || [];
+          const customPrompt = (box as any).googleSheetAiPrompt || box.customPrompt || '';
+          const condoProjectName = projName || (propData as any)?.project_name || 'Featured Property Listing';
+
+          try {
+            const syncRes = await fetch('/api/google-sheets/sync', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                spreadsheet_url: sheetUrl,
+                sheet_name: sheetName,
+                headers: sheetHeaders,
+                content: upstreamText,
+                condo_name: condoProjectName,
+                images: imageList.map((img) => img.stored_url || img.source_url),
+                custom_instructions: customPrompt,
+                model: box.model || 'gemini-1.5-flash',
+                provider: box.provider || 'google_ai',
+                prompt_template: box.templateText || '',
+                credentials_json: (box as any).googleServiceAccountJson || '',
+              }),
+            });
+
+            const syncData = await syncRes.json();
+            if (!syncRes.ok || !syncData.success) {
+              throw new Error(syncData.error || 'Failed to sync with Google Sheets');
+            }
+
+            const formattedResult = JSON.stringify(syncData.mapped_data, null, 2);
+            generatedOutputsMap[box.id] = formattedResult;
+            if (!primaryCopy) primaryCopy = formattedResult;
+            setAiGeneratedOutputs((prev) => ({ ...prev, [box.id]: formattedResult }));
+          } catch (err: any) {
+            if (isRunStopped(myRunId) || branchFatalError) return false;
+            console.warn('Google Sheet step error:', err);
+            branchFatalError = true;
+            safeSetExecutionState(myRunId, (prev) => ({
+              ...prev!,
+              isRunning: false,
+              hasError: true,
+              activeNodeIds: [box.id],
+              failedNodeIds: [box.id],
+              currentStepMessage: `❌ Google Sheet Sync failed for [${box.title || 'Google Sheet'}]: ${err.message || 'Sync error'}.`,
+            }));
+            setIsRunningWorkflow(false);
+            (window as any).__isWorkflowProcessing = false;
+            canvasRef.current?.openNodeDrawer(box.id);
+            return false;
+          }
+
+          if (isRunStopped(myRunId) || branchFatalError) return false;
           await delay(400);
           if (isRunStopped(myRunId) || branchFatalError) return false;
         } else if (isExternalBrowser) {
@@ -2865,6 +3097,11 @@ export const CreateWorkflowView: React.FC = () => {
 
     // 1. If clicking trigger:
     if (nodeId === 'trigger') {
+      const isManual = cfg.trigger?.sourceMode === 'manual';
+      if (isManual) {
+        executeCanvasWorkflow('');
+        return;
+      }
       const url = (runFacebookUrl || workflowContextRef.current?.targetUrl || '').trim();
       if (url) {
         executeCanvasWorkflow(url);
@@ -3010,6 +3247,19 @@ export const CreateWorkflowView: React.FC = () => {
 
     // 3. If get-content:
     if (nodeId === 'get-content') {
+      if (cfg.trigger?.sourceMode === 'manual') {
+        const manualCap = cfg.trigger.manualContent || '';
+        setExtractedContent(manualCap);
+        if (workflowContextRef.current) workflowContextRef.current.rawCaption = manualCap;
+        setExecutionState((prev) => ({
+          ...(prev || { completedNodeIds: [], failedNodeIds: [], hasError: false }),
+          isRunning: false,
+          activeNodeIds: [],
+          completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), 'get-content'])),
+          currentStepMessage: '✓ Content loaded from manual input!',
+        }));
+        return;
+      }
       const url = (runFacebookUrl || workflowContextRef.current?.targetUrl || '').trim();
       if (url) {
         setExecutionState((prev) => ({
@@ -3058,6 +3308,26 @@ export const CreateWorkflowView: React.FC = () => {
 
     // 4. If get-images:
     if (nodeId === 'get-images') {
+      if (cfg.trigger?.sourceMode === 'manual') {
+        const manualImgs = (cfg.trigger.manualImages || []).map((img, idx) => ({
+          index: idx,
+          facebook_photo_id: `manual-photo-${idx + 1}`,
+          source_url: img.url,
+          stored_url: img.url,
+          filename: img.filename || `Photo #${idx + 1}`,
+          status: 'verified',
+        }));
+        setExtractedImages(manualImgs);
+        if (workflowContextRef.current) workflowContextRef.current.imageList = manualImgs;
+        setExecutionState((prev) => ({
+          ...(prev || { completedNodeIds: [], failedNodeIds: [], hasError: false }),
+          isRunning: false,
+          activeNodeIds: [],
+          completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), 'get-images'])),
+          currentStepMessage: `✓ ${manualImgs.length} manual photos ready!`,
+        }));
+        return;
+      }
       const url = (runFacebookUrl || workflowContextRef.current?.targetUrl || '').trim();
       if (url) {
         setExecutionState((prev) => ({
@@ -3114,10 +3384,11 @@ export const CreateWorkflowView: React.FC = () => {
     }
   };
 
-  // Run Workflow with Facebook Link - Executes directly on Canvas!
+  // Run Workflow with Facebook Link or Manual Input - Executes directly on Canvas!
   const handleConfirmRun = async () => {
+    const isManual = editingFormat?.config?.trigger?.sourceMode === 'manual';
     const url = runFacebookUrl.trim();
-    if (!url) return;
+    if (!isManual && !url) return;
     if (editingFormat) {
       // Ensure current format is saved and set as active format
       const updated: WorkflowFormat = {
@@ -3133,7 +3404,7 @@ export const CreateWorkflowView: React.FC = () => {
       setActiveId(editingFormat.id);
     }
     setIsRunModalOpen(false);
-    await executeCanvasWorkflow(url);
+    await executeCanvasWorkflow(isManual ? '' : url);
   };
 
   // Save Format inside Modal
@@ -3263,22 +3534,71 @@ export const CreateWorkflowView: React.FC = () => {
             >
               <FiGitBranch />
             </div>
-            <input
-              type="text"
-              value={modalFormatName}
-              onChange={(e) => setModalFormatName(e.target.value)}
-              placeholder="Format Name"
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--text-primary)',
-                fontSize: '0.9375rem',
-                fontWeight: 600,
-                padding: '4px 6px',
-                outline: 'none',
-                minWidth: '200px',
-              }}
-            />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', position: 'relative' }}>
+              <input
+                type="text"
+                value={modalFormatName}
+                onChange={(e) => handleFormatNameChange(e.target.value)}
+                onBlur={handleFormatNameCommit}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    (e.target as HTMLInputElement).blur();
+                  }
+                }}
+                placeholder="Format Name"
+                title="Click to rename workflow"
+                style={{
+                  backgroundColor: 'transparent',
+                  border: isDark ? '1px solid transparent' : '1px solid transparent',
+                  borderRadius: '6px',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.9375rem',
+                  fontWeight: 600,
+                  padding: '4px 8px',
+                  outline: 'none',
+                  minWidth: '220px',
+                  maxWidth: '380px',
+                  transition: 'all 0.15s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = isDark ? '#30363D' : '#CBD5E1';
+                }}
+                onMouseLeave={(e) => {
+                  if (document.activeElement !== e.currentTarget) {
+                    e.currentTarget.style.borderColor = 'transparent';
+                  }
+                }}
+                onFocus={(e) => {
+                  e.currentTarget.style.borderColor = '#3B82F6';
+                  e.currentTarget.style.backgroundColor = isDark ? '#161B22' : '#FFFFFF';
+                }}
+                onBlurCapture={(e) => {
+                  e.currentTarget.style.borderColor = 'transparent';
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                }}
+              />
+              <button
+                type="button"
+                onClick={(e) => {
+                  const input = e.currentTarget.previousElementSibling as HTMLInputElement;
+                  if (input) input.focus();
+                }}
+                title="Rename workflow"
+                style={{
+                  border: 'none',
+                  background: 'transparent',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  padding: '4px',
+                  borderRadius: '4px',
+                  opacity: 0.6,
+                }}
+              >
+                <FiEdit2 size={12} />
+              </button>
+            </div>
           </div>,
           headerTitleEl
         )}
@@ -3486,8 +3806,21 @@ export const CreateWorkflowView: React.FC = () => {
             onToggleGeneralSettings={setIsGeneralSettingsOpen}
             formatName={modalFormatName}
             executionState={executionState}
-            rawContent={extractedContent}
-            images={extractedImages}
+            rawContent={extractedContent || (editingFormat.config.trigger.sourceMode === 'manual' ? (editingFormat.config.trigger.manualContent || '') : '')}
+            images={
+              extractedImages.length > 0
+                ? extractedImages
+                : (editingFormat.config.trigger.sourceMode === 'manual' && editingFormat.config.trigger.manualImages?.length)
+                ? editingFormat.config.trigger.manualImages.map((img, idx) => ({
+                    index: idx,
+                    facebook_photo_id: `manual-photo-${idx + 1}`,
+                    source_url: img.url,
+                    stored_url: img.url,
+                    filename: img.filename || `Photo #${idx + 1}`,
+                    status: 'verified',
+                  }))
+                : getEffectiveStudioImages()
+            }
             watermarkedPhotos={watermarkedPhotos}
             enhancedPhotos={enhancedPhotos}
             aiGeneratedOutputs={aiGeneratedOutputs}
@@ -3658,203 +3991,373 @@ export const CreateWorkflowView: React.FC = () => {
             </span>
           </button>
         </div>
-      ) : (
-        /* WORKFLOW FORMAT CARDS GRID */
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',
-            gap: '1.25rem',
-          }}
-        >
-          {formats.map((format) => {
-            const isActive = format.id === activeFormatId;
+      ) : (() => {
+        const pinnedFormats = formats.filter((f) => Boolean(f.isPinned));
+        const unpinnedFormats = formats.filter((f) => !f.isPinned);
 
-            return (
-              <div
-                key={format.id}
-                onClick={() => handleOpenCanvas(format)}
-                style={{
-                  backgroundColor: 'var(--bg-secondary)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: '0.75rem',
-                  padding: '1.25rem',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '1rem',
-                  cursor: 'pointer',
-                  transition: 'box-shadow 0.2s ease, border-color 0.2s ease',
-                  position: 'relative',
-                  boxShadow: 'var(--shadow-sm)',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = 'var(--border-color-hover)';
-                  e.currentTarget.style.boxShadow = isDark
-                    ? '0 10px 25px -3px rgba(0, 0, 0, 0.6)'
-                    : '0 10px 25px -3px rgba(0, 0, 0, 0.08)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = 'var(--border-color)';
-                  e.currentTarget.style.boxShadow = 'var(--shadow-sm)';
-                }}
-              >
-                {/* Card Top: Title & Active Badge */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.75rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', flex: 1, minWidth: 0 }}>
-                    <div
-                      style={{
-                        width: '34px',
-                        height: '34px',
-                        borderRadius: '0.5rem',
-                        backgroundColor: isActive ? 'rgba(59, 130, 246, 0.15)' : (isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)'),
-                        color: isActive ? (isDark ? '#60A5FA' : '#2563EB') : 'var(--text-secondary)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: '1.1rem',
-                        flexShrink: 0,
-                      }}
-                    >
-                      <FiGitBranch />
-                    </div>
-                    <div style={{ minWidth: 0 }}>
-                      <h3
-                        style={{
-                          fontSize: '0.9375rem',
-                          fontWeight: 600,
-                          color: 'var(--text-primary)',
-                          margin: 0,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
+        const renderFormatCard = (format: WorkflowFormat) => {
+          const isActive = format.id === activeFormatId;
+          const isPinned = Boolean(format.isPinned);
+
+          return (
+            <div
+              key={format.id}
+              onClick={() => handleOpenCanvas(format)}
+              style={{
+                backgroundColor: 'var(--bg-secondary)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '0.75rem',
+                padding: '1.25rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '1rem',
+                cursor: 'pointer',
+                transition: 'box-shadow 0.2s ease, border-color 0.2s ease',
+                position: 'relative',
+                boxShadow: 'var(--shadow-sm)',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.borderColor = 'var(--border-color-hover)';
+                e.currentTarget.style.boxShadow = isDark
+                  ? '0 10px 25px -3px rgba(0, 0, 0, 0.6)'
+                  : '0 10px 25px -3px rgba(0, 0, 0, 0.08)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = 'var(--border-color)';
+                e.currentTarget.style.boxShadow = 'var(--shadow-sm)';
+              }}
+            >
+              {/* Card Top: Title, Active Badge & Pin Button */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.75rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{
+                      width: '34px',
+                      height: '34px',
+                      borderRadius: '0.5rem',
+                      backgroundColor: isActive ? 'rgba(59, 130, 246, 0.15)' : (isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)'),
+                      color: isActive ? (isDark ? '#60A5FA' : '#2563EB') : 'var(--text-secondary)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '1.1rem',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <FiGitBranch />
+                  </div>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    {inlineRenamingId === format.id ? (
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                      >
+                        <input
+                          type="text"
+                          autoFocus
+                          value={inlineRenamingName}
+                          onChange={(e) => setInlineRenamingName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleSaveInlineRename(format.id);
+                            if (e.key === 'Escape') setInlineRenamingId(null);
+                          }}
+                          onBlur={() => handleSaveInlineRename(format.id)}
+                          style={{
+                            fontSize: '0.9375rem',
+                            fontWeight: 600,
+                            color: 'var(--text-primary)',
+                            backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                            border: '1px solid #3B82F6',
+                            borderRadius: '4px',
+                            padding: '2px 6px',
+                            width: '100%',
+                            outline: 'none',
+                          }}
+                        />
+                      </div>
+                    ) : (
+                      <div
+                        style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                        title="Double-click to rename"
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          setInlineRenamingId(format.id);
+                          setInlineRenamingName(format.name);
                         }}
                       >
-                        {format.name}
-                      </h3>
-                      <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                        Updated {new Date(format.updatedAt).toLocaleDateString()}
+                        <h3
+                          style={{
+                            fontSize: '0.9375rem',
+                            fontWeight: 600,
+                            color: 'var(--text-primary)',
+                            margin: 0,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {format.name}
+                        </h3>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setInlineRenamingId(format.id);
+                            setInlineRenamingName(format.name);
+                          }}
+                          title="Rename workflow"
+                          style={{
+                            border: 'none',
+                            background: 'transparent',
+                            color: 'var(--text-muted)',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            padding: '2px',
+                            borderRadius: '4px',
+                            opacity: 0.6,
+                            transition: 'opacity 0.15s ease',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.opacity = '1';
+                            e.currentTarget.style.color = 'var(--text-primary)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.opacity = '0.6';
+                            e.currentTarget.style.color = 'var(--text-muted)';
+                          }}
+                        >
+                          <FiEdit2 size={12} />
+                        </button>
                       </div>
+                    )}
+                    <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                      Updated {new Date(format.updatedAt).toLocaleDateString()}
                     </div>
                   </div>
+                </div>
 
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexShrink: 0 }}>
                   {isActive && (
                     <Badge variant="info" size="sm">
                       <FiCheckCircle style={{ marginRight: '3px' }} /> Active in FB Import
                     </Badge>
                   )}
-                </div>
 
-                {/* Description */}
-                <p
-                  style={{
-                    fontSize: '0.8125rem',
-                    color: 'var(--text-secondary)',
-                    margin: 0,
-                    lineHeight: '1.4',
-                    height: '38px',
-                    overflow: 'hidden',
-                    display: '-webkit-box',
-                    WebkitLineClamp: 2,
-                    WebkitBoxOrient: 'vertical',
-                  }}
-                >
-                  {format.description || 'Configured Facebook import extraction and multi-box dynamic AI prompts.'}
-                </p>
-
-                {/* Action Buttons */}
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: '0.5rem',
-                    marginTop: 'auto',
-                    paddingTop: '0.75rem',
-                    borderTop: '1px solid var(--border-color)',
-                  }}
-                >
-                  {/* Main Trigger Button */}
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleOpenCanvas(format);
-                    }}
-                    leftIcon={<FiMaximize2 style={{ fontSize: '13px' }} />}
-                    style={{
-                      height: '34px',
-                      fontSize: '0.75rem',
-                      fontWeight: 600,
-                      borderRadius: '0.375rem',
-                      flex: 1,
-                    }}
-                  >
-                    Open Workflow Canvas
-                  </Button>
-
-                  {!isActive && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={(e) => handleSetActiveFormat(format.id, e)}
-                      style={{
-                        height: '34px',
-                        fontSize: '0.75rem',
-                        borderRadius: '0.375rem',
-                        whiteSpace: 'nowrap',
-                      }}
-                      title="Set as active format for Facebook Import"
-                    >
-                      Set Active
-                    </Button>
-                  )}
-
+                  {/* Pin Toggle Button */}
                   <button
                     type="button"
-                    onClick={(e) => handleDuplicateFormat(format, e)}
-                    title="Duplicate format"
+                    onClick={(e) => handleTogglePinFormat(format.id, e)}
+                    title={isPinned ? 'Unpin workflow from first row' : 'Pin workflow to first row'}
                     style={{
-                      height: '34px',
-                      width: '34px',
+                      height: '28px',
+                      width: '28px',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
                       borderRadius: '0.375rem',
-                      backgroundColor: 'transparent',
-                      border: '1px solid var(--border-color)',
-                      color: 'var(--text-secondary)',
+                      backgroundColor: isPinned
+                        ? 'rgba(59, 130, 246, 0.15)'
+                        : isDark
+                        ? 'rgba(255, 255, 255, 0.04)'
+                        : 'rgba(0, 0, 0, 0.03)',
+                      border: isPinned
+                        ? '1px solid rgba(59, 130, 246, 0.45)'
+                        : '1px solid var(--border-color)',
+                      color: isPinned ? (isDark ? '#60A5FA' : '#2563EB') : 'var(--text-muted)',
                       cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = isPinned
+                        ? 'rgba(59, 130, 246, 0.25)'
+                        : isDark
+                        ? 'rgba(255, 255, 255, 0.08)'
+                        : 'rgba(0, 0, 0, 0.06)';
+                      e.currentTarget.style.color = isPinned
+                        ? (isDark ? '#60A5FA' : '#2563EB')
+                        : 'var(--text-primary)';
+                      e.currentTarget.style.borderColor = isPinned
+                        ? 'rgba(59, 130, 246, 0.7)'
+                        : 'var(--border-color-hover)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = isPinned
+                        ? 'rgba(59, 130, 246, 0.15)'
+                        : isDark
+                        ? 'rgba(255, 255, 255, 0.04)'
+                        : 'rgba(0, 0, 0, 0.03)';
+                      e.currentTarget.style.color = isPinned
+                        ? (isDark ? '#60A5FA' : '#2563EB')
+                        : 'var(--text-muted)';
+                      e.currentTarget.style.borderColor = isPinned
+                        ? 'rgba(59, 130, 246, 0.45)'
+                        : 'var(--border-color)';
                     }}
                   >
-                    <FiCopy style={{ fontSize: '13px' }} />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={(e) => handleDeleteFormat(format.id, format.name, e)}
-                    title="Delete format"
-                    style={{
-                      height: '34px',
-                      width: '34px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      borderRadius: '0.375rem',
-                      backgroundColor: 'transparent',
-                      border: '1px solid rgba(239, 68, 68, 0.3)',
-                      color: '#EF4444',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <FiTrash2 style={{ fontSize: '13px' }} />
+                    {isPinned ? (
+                      <BsPinAngleFill style={{ fontSize: '13px' }} />
+                    ) : (
+                      <BsPinAngle style={{ fontSize: '13px' }} />
+                    )}
                   </button>
                 </div>
               </div>
-            );
-          })}
-        </div>
-      )}
+
+              {/* Description */}
+              <p
+                style={{
+                  fontSize: '0.8125rem',
+                  color: 'var(--text-secondary)',
+                  margin: 0,
+                  lineHeight: '1.4',
+                  height: '38px',
+                  overflow: 'hidden',
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical',
+                }}
+              >
+                {format.description || 'Configured Facebook import extraction and multi-box dynamic AI prompts.'}
+              </p>
+
+              {/* Action Buttons */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '0.5rem',
+                  marginTop: 'auto',
+                  paddingTop: '0.75rem',
+                  borderTop: '1px solid var(--border-color)',
+                }}
+              >
+                {/* Main Trigger Button */}
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleOpenCanvas(format);
+                  }}
+                  leftIcon={<FiMaximize2 style={{ fontSize: '13px' }} />}
+                  style={{
+                    height: '34px',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    borderRadius: '0.375rem',
+                    flex: 1,
+                  }}
+                >
+                  Open Workflow Canvas
+                </Button>
+
+                {!isActive && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={(e) => handleSetActiveFormat(format.id, e)}
+                    style={{
+                      height: '34px',
+                      fontSize: '0.75rem',
+                      borderRadius: '0.375rem',
+                      whiteSpace: 'nowrap',
+                    }}
+                    title="Set as active format for Facebook Import"
+                  >
+                    Set Active
+                  </Button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={(e) => handleDuplicateFormat(format, e)}
+                  title="Duplicate format"
+                  style={{
+                    height: '34px',
+                    width: '34px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderRadius: '0.375rem',
+                    backgroundColor: 'transparent',
+                    border: '1px solid var(--border-color)',
+                    color: 'var(--text-secondary)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <FiCopy style={{ fontSize: '13px' }} />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={(e) => handleDeleteFormat(format.id, format.name, e)}
+                  title="Delete format"
+                  style={{
+                    height: '34px',
+                    width: '34px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderRadius: '0.375rem',
+                    backgroundColor: 'transparent',
+                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                    color: '#EF4444',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <FiTrash2 style={{ fontSize: '13px' }} />
+                </button>
+              </div>
+            </div>
+          );
+        };
+
+        return (
+          /* WORKFLOW FORMAT CARDS: PINNED FIRST ROW + UNDER ROW WITH SEPARATION GAP */
+          pinnedFormats.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              {/* First Row: Just Only Show Pinned Card */}
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',
+                  gap: '1.25rem',
+                }}
+              >
+                {pinnedFormats.map(renderFormatCard)}
+              </div>
+
+              {/* Generous Gap Between First Row (Pin Row) and Under Row */}
+              <div style={{ height: '2.5rem' }} />
+
+              {/* Under Row: Remaining Unpinned Cards */}
+              {unpinnedFormats.length > 0 && (
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',
+                    gap: '1.25rem',
+                  }}
+                >
+                  {unpinnedFormats.map(renderFormatCard)}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',
+                gap: '1.25rem',
+              }}
+            >
+              {formats.map(renderFormatCard)}
+            </div>
+          )
+        );
+      })()}
 
         </>
       )}
@@ -3864,147 +4367,520 @@ export const CreateWorkflowView: React.FC = () => {
         <Modal
           isOpen={isRunModalOpen}
           onClose={() => setIsRunModalOpen(false)}
-          title="Run Workflow"
-          maxWidth="520px"
+          title={editingFormat?.config?.trigger?.sourceMode === 'manual' ? 'Run Manual Workflow' : 'Run Workflow'}
+          maxWidth={editingFormat?.config?.trigger?.sourceMode === 'manual' ? '920px' : '520px'}
         >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', padding: '0.25rem 0' }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
-              {(() => {
-                const detected = checkSocialPlatform(runFacebookUrl);
-                const isTt = detected === 'tiktok';
-                const isFb = detected === 'facebook';
-                return (
-                  <>
-                    <div
+          {editingFormat?.config?.trigger?.sourceMode === 'manual' ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', padding: '0.25rem 0' }}>
+              {/* Header Banner */}
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+                <div
+                  style={{
+                    width: '38px',
+                    height: '38px',
+                    borderRadius: '10px',
+                    backgroundColor: 'rgba(16, 185, 129, 0.12)',
+                    color: '#10B981',
+                    border: '1px solid rgba(16, 185, 129, 0.25)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '1.25rem',
+                    flexShrink: 0,
+                  }}
+                >
+                  <FiEdit3 />
+                </div>
+                <div>
+                  <h4 style={{ margin: 0, fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                    Run with Manual Input
+                  </h4>
+                  <p style={{ margin: '4px 0 0', fontSize: '0.8125rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                    Execute this workflow using your manually entered property description and uploaded photos.
+                  </p>
+                </div>
+              </div>
+
+              {/* Two-Column Symmetrical Layout: Left Column (Textarea), Right Column (Images) */}
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: '1.25rem',
+                  alignItems: 'start',
+                }}
+              >
+                {/* Left Column: Property Description / Content */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: '24px' }}>
+                    <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                      Property Description / Content
+                    </label>
+                    <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                      {(editingFormat.config.trigger.manualContent || '').length} characters
+                    </span>
+                  </div>
+                  <textarea
+                    value={editingFormat.config.trigger.manualContent || ''}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      const updatedCfg = {
+                        ...editingFormat.config,
+                        trigger: {
+                          ...editingFormat.config.trigger,
+                          manualContent: val,
+                        },
+                      };
+                      handleCanvasConfigChange(updatedCfg);
+                    }}
+                    placeholder="Paste or edit property description, room specs, rent price, location..."
+                    style={{
+                      width: '100%',
+                      boxSizing: 'border-box',
+                      height: '380px',
+                      padding: '0.75rem',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-color)',
+                      backgroundColor: 'var(--bg-surface)',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.8125rem',
+                      lineHeight: 1.5,
+                      resize: 'none',
+                      outline: 'none',
+                      fontFamily: 'inherit',
+                    }}
+                  />
+                </div>
+
+                {/* Right Column: Upload Listing Photos & Grid Container */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                  {/* Symmetrical Top Header for Right Column */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: '24px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <FiImage size={14} color="#10B981" />
+                      <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                        Listing Photos
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span
+                        style={{
+                          fontSize: '0.6875rem',
+                          fontWeight: 700,
+                          padding: '1px 7px',
+                          borderRadius: '10px',
+                          backgroundColor:
+                            (editingFormat.config.trigger.manualImages?.length || 0) > 0
+                              ? 'rgba(16, 185, 129, 0.15)'
+                              : 'rgba(255,255,255,0.06)',
+                          color:
+                            (editingFormat.config.trigger.manualImages?.length || 0) > 0
+                              ? '#10B981'
+                              : 'var(--text-muted)',
+                        }}
+                      >
+                        {editingFormat.config.trigger.manualImages?.length || 0} Photos
+                      </span>
+                      {(editingFormat.config.trigger.manualImages?.length || 0) > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleCanvasConfigChange({
+                              ...editingFormat.config,
+                              trigger: {
+                                ...editingFormat.config.trigger,
+                                manualImages: [],
+                              },
+                            });
+                          }}
+                          title="Clear all photos"
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: '#EF4444',
+                            fontSize: '0.6875rem',
+                            cursor: 'pointer',
+                            padding: 0,
+                            fontWeight: 500,
+                          }}
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Matching Height Container for Images Box */}
+                  <div
+                    style={{
+                      height: '380px',
+                      boxSizing: 'border-box',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.65rem',
+                      padding: '0.75rem',
+                      borderRadius: '8px',
+                      backgroundColor: 'var(--bg-surface)',
+                      border: '1px solid var(--border-color)',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    {/* Hidden File Input for Modal */}
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/*"
+                      id="manual-run-modal-images-input"
+                      style={{ display: 'none' }}
+                      onChange={(e) => {
+                        const files = e.target.files;
+                        if (!files || files.length === 0) return;
+                        const readPromises = Array.from(files).map((file) => {
+                          return new Promise<{ url: string; filename: string; mime_type: string; size_bytes: number }>((resolve) => {
+                            const reader = new FileReader();
+                            reader.onload = (ev) => {
+                              resolve({
+                                url: ev.target?.result as string,
+                                filename: file.name,
+                                mime_type: file.type || 'image/jpeg',
+                                size_bytes: file.size,
+                              });
+                            };
+                            reader.readAsDataURL(file);
+                          });
+                        });
+                        Promise.all(readPromises).then((newImgs) => {
+                          const existing = editingFormat.config.trigger.manualImages || [];
+                          handleCanvasConfigChange({
+                            ...editingFormat.config,
+                            trigger: {
+                              ...editingFormat.config.trigger,
+                              manualImages: [...existing, ...newImgs],
+                            },
+                          });
+                          e.target.value = '';
+                        });
+                      }}
+                    />
+
+                    {/* Compact Upload Dropzone Header Bar */}
+                    <label
+                      htmlFor="manual-run-modal-images-input"
                       style={{
-                        width: '38px',
-                        height: '38px',
-                        borderRadius: '10px',
-                        backgroundColor: isTt ? 'rgba(254, 44, 85, 0.12)' : isFb ? 'rgba(24, 119, 242, 0.12)' : 'var(--bg-surface)',
-                        color: isTt ? '#FE2C55' : isFb ? '#1877F2' : 'var(--text-secondary)',
-                        border: '1px solid var(--border-color)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        fontSize: '1.25rem',
-                        flexShrink: 0,
+                        gap: '6px',
+                        padding: '10px 12px',
+                        borderRadius: '6px',
+                        border: '1.5px dashed var(--border-color)',
+                        backgroundColor: isDark ? 'rgba(255,255,255,0.02)' : '#F8FAFC',
+                        cursor: 'pointer',
                         transition: 'all 0.15s ease',
+                        flexShrink: 0,
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.borderColor = '#10B981';
+                        e.currentTarget.style.backgroundColor = isDark ? 'rgba(16, 185, 129, 0.05)' : '#F0FDF4';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = 'var(--border-color)';
+                        e.currentTarget.style.backgroundColor = isDark ? 'rgba(255,255,255,0.02)' : '#F8FAFC';
                       }}
                     >
-                      {isTt ? <FaTiktok /> : isFb ? <FaFacebook /> : <FiLink />}
-                    </div>
-                    <div>
-                      <h4 style={{ margin: 0, fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                        {isTt ? 'Enter TikTok Post Link' : isFb ? 'Enter Facebook Post Link' : 'Enter Post Link (Facebook or TikTok)'}
-                      </h4>
-                      <p style={{ margin: '4px 0 0', fontSize: '0.8125rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                        Provide the URL of the Facebook or TikTok listing post you want to import and process with this workflow format.
-                      </p>
-                    </div>
-                  </>
-                );
-              })()}
-            </div>
+                      <FiUploadCloud size={17} color="#10B981" />
+                      <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                        Click to Upload Listing Photos
+                      </span>
+                      <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
+                        · JPG, PNG, WEBP
+                      </span>
+                    </label>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                  Social Post URL <span style={{ color: '#ef4444' }}>*</span>
-                </label>
-                {(() => {
-                  const detected = checkSocialPlatform(runFacebookUrl);
-                  if (detected === 'tiktok') {
-                    return (
-                      <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: '#FE2C55', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                        <FaTiktok style={{ fontSize: '9px' }} /> TikTok Post Detected
-                      </span>
-                    );
-                  }
-                  if (detected === 'facebook') {
-                    return (
-                      <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: '#1877F2', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                        <FaFacebook style={{ fontSize: '10px' }} /> Facebook Post Detected
-                      </span>
-                    );
-                  }
-                  return null;
-                })()}
+                    {/* Scrollable Photos Preview Grid with Clean Boundaries */}
+                    {(editingFormat.config.trigger.manualImages || []).length > 0 ? (
+                      <div
+                        style={{
+                          flex: 1,
+                          minHeight: 0,
+                          overflowY: 'auto',
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(4, 1fr)',
+                          gridAutoRows: 'max-content',
+                          gap: '6px',
+                          paddingRight: '3px',
+                          paddingBottom: '8px',
+                        }}
+                      >
+                        {(editingFormat.config.trigger.manualImages || []).map((img, idx) => (
+                          <div
+                            key={idx}
+                            style={{
+                              position: 'relative',
+                              borderRadius: '6px',
+                              overflow: 'hidden',
+                              aspectRatio: '1',
+                              border: '1px solid var(--border-color)',
+                              backgroundColor: isDark ? '#000000' : '#E2E8F0',
+                            }}
+                          >
+                            <img
+                              src={img.url}
+                              alt={img.filename || `Photo ${idx + 1}`}
+                              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                            />
+                            <span
+                              style={{
+                                position: 'absolute',
+                                top: '3px',
+                                left: '3px',
+                                fontSize: '0.5rem',
+                                fontWeight: 700,
+                                padding: '1px 4px',
+                                borderRadius: '3px',
+                                backgroundColor: 'rgba(0,0,0,0.65)',
+                                color: '#FFFFFF',
+                              }}
+                            >
+                              #{idx + 1}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={(ev) => {
+                                ev.stopPropagation();
+                                const updated = (editingFormat.config.trigger.manualImages || []).filter((_, i) => i !== idx);
+                                handleCanvasConfigChange({
+                                  ...editingFormat.config,
+                                  trigger: {
+                                    ...editingFormat.config.trigger,
+                                    manualImages: updated,
+                                  },
+                                });
+                              }}
+                              title="Remove photo"
+                              style={{
+                                position: 'absolute',
+                                top: '3px',
+                                right: '3px',
+                                width: '18px',
+                                height: '18px',
+                                borderRadius: '50%',
+                                backgroundColor: 'rgba(0,0,0,0.7)',
+                                color: '#FFFFFF',
+                                border: 'none',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                padding: 0,
+                              }}
+                            >
+                              <FiX size={10} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div
+                        style={{
+                          flex: 1,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                          color: 'var(--text-muted)',
+                          fontSize: '0.75rem',
+                          textAlign: 'center',
+                          padding: '1rem',
+                        }}
+                      >
+                        <FiImage size={24} style={{ opacity: 0.35 }} />
+                        <span>No photos uploaded yet</span>
+                        <span style={{ fontSize: '0.6875rem', opacity: 0.65 }}>
+                          Click above to select multiple photos
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
+
+              {/* Modal footer buttons */}
               <div
                 style={{
                   display: 'flex',
+                  justifyContent: 'flex-end',
                   alignItems: 'center',
-                  gap: '0.5rem',
-                  padding: '0.5rem 0.75rem',
-                  borderRadius: '8px',
-                  border: '1px solid var(--border-color)',
-                  backgroundColor: 'var(--bg-surface)',
+                  gap: '0.75rem',
+                  paddingTop: '0.75rem',
+                  borderTop: '1px solid var(--border-color)',
                 }}
               >
-                <FiLink size={15} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-                <input
-                  type="url"
-                  autoFocus
-                  placeholder="Paste Facebook or TikTok post URL (e.g. facebook.com/... or tiktok.com/@...)"
-                  value={runFacebookUrl}
-                  onChange={(e) => setRunFacebookUrl(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && runFacebookUrl.trim()) {
-                      e.preventDefault();
-                      handleConfirmRun();
-                    }
-                  }}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsRunModalOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={handleConfirmRun}
+                  leftIcon={<FiPlay style={{ fill: 'currentColor' }} />}
                   style={{
-                    border: 'none',
-                    outline: 'none',
-                    background: 'transparent',
-                    color: 'var(--text-primary)',
-                    fontSize: '0.875rem',
-                    width: '100%',
+                    backgroundColor: '#10B981',
+                    borderColor: '#10B981',
+                    color: '#FFFFFF',
+                    fontWeight: 600,
+                    cursor: 'pointer',
                   }}
-                />
+                >
+                  Run Workflow
+                </Button>
               </div>
-              <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-                Supports Facebook posts/groups & TikTok photos/videos. Press Enter to run immediately.
-              </span>
             </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', padding: '0.25rem 0' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+                {(() => {
+                  const detected = checkSocialPlatform(runFacebookUrl);
+                  const isTt = detected === 'tiktok';
+                  const isFb = detected === 'facebook';
+                  return (
+                    <>
+                      <div
+                        style={{
+                          width: '38px',
+                          height: '38px',
+                          borderRadius: '10px',
+                          backgroundColor: isTt ? 'rgba(254, 44, 85, 0.12)' : isFb ? 'rgba(24, 119, 242, 0.12)' : 'var(--bg-surface)',
+                          color: isTt ? '#FE2C55' : isFb ? '#1877F2' : 'var(--text-secondary)',
+                          border: '1px solid var(--border-color)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '1.25rem',
+                          flexShrink: 0,
+                          transition: 'all 0.15s ease',
+                        }}
+                      >
+                        {isTt ? <FaTiktok /> : isFb ? <FaFacebook /> : <FiLink />}
+                      </div>
+                      <div>
+                        <h4 style={{ margin: 0, fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                          {isTt ? 'Enter TikTok Post Link' : isFb ? 'Enter Facebook Post Link' : 'Enter Post Link (Facebook or TikTok)'}
+                        </h4>
+                        <p style={{ margin: '4px 0 0', fontSize: '0.8125rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                          Provide the URL of the Facebook or TikTok listing post you want to import and process with this workflow format.
+                        </p>
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
 
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'flex-end',
-                alignItems: 'center',
-                gap: '0.75rem',
-                paddingTop: '0.75rem',
-                borderTop: '1px solid var(--border-color)',
-              }}
-            >
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setIsRunModalOpen(false)}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={handleConfirmRun}
-                disabled={!runFacebookUrl.trim()}
-                leftIcon={<FiPlay style={{ fill: 'currentColor' }} />}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                    Social Post URL <span style={{ color: '#ef4444' }}>*</span>
+                  </label>
+                  {(() => {
+                    const detected = checkSocialPlatform(runFacebookUrl);
+                    if (detected === 'tiktok') {
+                      return (
+                        <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: '#FE2C55', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                          <FaTiktok style={{ fontSize: '9px' }} /> TikTok Post Detected
+                        </span>
+                      );
+                    }
+                    if (detected === 'facebook') {
+                      return (
+                        <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: '#1877F2', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                          <FaFacebook style={{ fontSize: '10px' }} /> Facebook Post Detected
+                        </span>
+                      );
+                    }
+                    return null;
+                  })()}
+                </div>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    padding: '0.5rem 0.75rem',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-color)',
+                    backgroundColor: 'var(--bg-surface)',
+                  }}
+                >
+                  <FiLink size={15} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                  <input
+                    type="url"
+                    autoFocus
+                    placeholder="Paste Facebook or TikTok post URL (e.g. facebook.com/... or tiktok.com/@...)"
+                    value={runFacebookUrl}
+                    onChange={(e) => setRunFacebookUrl(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && runFacebookUrl.trim()) {
+                        e.preventDefault();
+                        handleConfirmRun();
+                      }
+                    }}
+                    style={{
+                      border: 'none',
+                      outline: 'none',
+                      background: 'transparent',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.875rem',
+                      width: '100%',
+                    }}
+                  />
+                </div>
+                <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                  Supports Facebook posts/groups & TikTok photos/videos. Press Enter to run immediately.
+                </span>
+              </div>
+
+              <div
                 style={{
-                  backgroundColor: checkSocialPlatform(runFacebookUrl) === 'tiktok' ? '#FE2C55' : '#1877F2',
-                  borderColor: checkSocialPlatform(runFacebookUrl) === 'tiktok' ? '#FE2C55' : '#1877F2',
-                  color: '#FFFFFF',
-                  opacity: !runFacebookUrl.trim() ? 0.6 : 1,
-                  cursor: !runFacebookUrl.trim() ? 'not-allowed' : 'pointer',
-                  transition: 'all 0.15s ease',
+                  display: 'flex',
+                  justifyContent: 'flex-end',
+                  alignItems: 'center',
+                  gap: '0.75rem',
+                  paddingTop: '0.75rem',
+                  borderTop: '1px solid var(--border-color)',
                 }}
               >
-                Run Workflow
-              </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsRunModalOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={handleConfirmRun}
+                  disabled={!runFacebookUrl.trim()}
+                  leftIcon={<FiPlay style={{ fill: 'currentColor' }} />}
+                  style={{
+                    backgroundColor: checkSocialPlatform(runFacebookUrl) === 'tiktok' ? '#FE2C55' : '#1877F2',
+                    borderColor: checkSocialPlatform(runFacebookUrl) === 'tiktok' ? '#FE2C55' : '#1877F2',
+                    color: '#FFFFFF',
+                    opacity: !runFacebookUrl.trim() ? 0.6 : 1,
+                    cursor: !runFacebookUrl.trim() ? 'not-allowed' : 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  Run Workflow
+                </Button>
+              </div>
             </div>
-          </div>
+          )}
         </Modal>
       )}
 

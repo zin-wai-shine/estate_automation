@@ -1,4 +1,4 @@
-import { type WatermarkConfig, loadActiveWatermarkConfig } from '../autopost/watermarkStorage';
+import { type WatermarkConfig, DEFAULT_WATERMARK_CONFIG, loadActiveWatermarkConfig } from '../autopost/watermarkStorage';
 import { drawWatermarkOnContext, loadImageElement } from '../autopost/watermarkCanvas';
 
 export type WatermarkPosition =
@@ -53,6 +53,39 @@ export const FOCUS_COORDS: Record<WatermarkPosition, { x: number; y: number }> =
 
 export const INITIAL_CROP_FORMATS: CropStudioFormat[] = [
   {
+    id: 'format-1793540333291',
+    name: 'Bolthaven - Watermark',
+    description: '1080 × 1350 px • Fill (Cover)',
+    mode: 'standard',
+    targetWidth: 1080,
+    targetHeight: 1350,
+    aspect: '4:5',
+    fitMode: 'cover',
+    focusPosition: 'center',
+    cropZoom: 1,
+    watermarkConfig: {
+      enabled: true,
+      type: 'logo',
+      logoUrl: '/watermarks/bolthaven-watermark.png',
+      logoName: 'BOLTHAVEN Watermark.png',
+      text: 'BoltHaven Property',
+      textColor: '#FFFFFF',
+      fontSize: 26,
+      fontWeight: '600',
+      opacity: 50,
+      scale: 36,
+      position: 'bottom-right',
+      margin: 4,
+      hasShadow: true,
+      smartScope: 'all',
+      borderStyle: 'none',
+      layoutMode: 'single',
+    },
+    isDefault: true,
+    createdAt: 1793540333291,
+    updatedAt: Date.now(),
+  },
+  {
     id: 'format-grid-2split',
     name: 'FB Hero Cut',
     description: 'Social grid split • 2 seamless horizontal swipe tiles',
@@ -64,22 +97,7 @@ export const INITIAL_CROP_FORMATS: CropStudioFormat[] = [
     focusPosition: 'center',
     cropZoom: 1,
     gridLayoutId: 'two-squares',
-    watermarkConfig: {
-      enabled: true,
-      type: 'text',
-      logoUrl: '',
-      logoName: '',
-      text: 'BoltHaven Property',
-      textColor: '#FFFFFF',
-      fontSize: 26,
-      fontWeight: '600',
-      opacity: 85,
-      scale: 25,
-      position: 'bottom-right',
-      margin: 4,
-      hasShadow: true,
-      smartScope: 'all',
-    },
+    useWatermarkOnTiles: false,
     isDefault: false,
     createdAt: 1792509885458,
     updatedAt: Date.now(),
@@ -329,6 +347,37 @@ export const syncCropFormatToWorkflowConfig = async (format: CropStudioFormat) =
 };
 
 let hasFetchedFromBackend = false;
+let inMemoryFormatsCache: CropStudioFormat[] | null = null;
+
+const sanitizeFormatsForStorage = (formats: CropStudioFormat[]): CropStudioFormat[] => {
+  return formats.map((fmt) => {
+    let updated = { ...fmt };
+    if (updated.watermarkConfig?.logoUrl?.startsWith('data:image/')) {
+      updated = {
+        ...updated,
+        watermarkConfig: {
+          ...updated.watermarkConfig,
+          logoUrl: '/watermarks/bolthaven-watermark.png',
+        },
+      };
+    }
+    return updated;
+  });
+};
+
+const safeSetLocalStorage = (key: string, formats: CropStudioFormat[]) => {
+  try {
+    localStorage.setItem(key, JSON.stringify(formats));
+  } catch (err) {
+    console.warn(`localStorage quota warning for ${key}, sanitizing...`);
+    try {
+      const sanitized = sanitizeFormatsForStorage(formats);
+      localStorage.setItem(key, JSON.stringify(sanitized));
+    } catch (e2) {
+      console.warn(`Could not write to localStorage for ${key}:`, e2);
+    }
+  }
+};
 
 export const fetchCropFormatsFromBackend = async (): Promise<CropStudioFormat[]> => {
   try {
@@ -336,9 +385,22 @@ export const fetchCropFormatsFromBackend = async (): Promise<CropStudioFormat[]>
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     if (data.success && Array.isArray(data.formats) && data.formats.length > 0) {
-      const serverFormats: CropStudioFormat[] = data.formats;
+      const serverFormats: CropStudioFormat[] = data.formats.map((f: CropStudioFormat) => {
+        if (f.watermarkConfig?.logoUrl?.startsWith('data:image/') || (!f.watermarkConfig?.logoUrl && f.name.toLowerCase().includes('bolthaven'))) {
+          return {
+            ...f,
+            watermarkConfig: {
+              ...f.watermarkConfig,
+              logoUrl: '/watermarks/bolthaven-watermark.png',
+              logoName: f.watermarkConfig?.logoName || 'BOLTHAVEN Watermark.png',
+            },
+          };
+        }
+        return f;
+      });
       hasFetchedFromBackend = true;
-      localStorage.setItem(STORAGE_CROP_FORMATS_KEY, JSON.stringify(serverFormats));
+      inMemoryFormatsCache = serverFormats;
+      safeSetLocalStorage(STORAGE_CROP_FORMATS_KEY, serverFormats);
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('ea_crop_formats_updated', { detail: serverFormats }));
       }
@@ -351,6 +413,10 @@ export const fetchCropFormatsFromBackend = async (): Promise<CropStudioFormat[]>
 };
 
 export const getSavedCropFormats = (): CropStudioFormat[] => {
+  if (inMemoryFormatsCache && inMemoryFormatsCache.length > 0) {
+    return inMemoryFormatsCache;
+  }
+
   if (!hasFetchedFromBackend && typeof window !== 'undefined') {
     hasFetchedFromBackend = true;
     fetchCropFormatsFromBackend().catch(() => {});
@@ -363,64 +429,84 @@ export const getSavedCropFormats = (): CropStudioFormat[] => {
       if (Array.isArray(parsed) && parsed.length > 0) {
         // Return existing user formats directly, preserving custom names and edits
         const cleaned = parsed.map((fmt: CropStudioFormat) => {
+          let updated = { ...fmt };
           // If FB Format was inadvertently assigned raw image dimensions (e.g. 960x1706) or 1200x1200, restore 1080x1350 (4:5)
           if (
-            fmt.id === 'format-1792362113668' &&
-            ((fmt.targetWidth === 960 && fmt.targetHeight === 1706) ||
-             (fmt.targetWidth === 1200 && fmt.targetHeight === 1200) ||
-             fmt.aspect === '960:1706')
+            updated.id === 'format-1792362113668' &&
+            ((updated.targetWidth === 960 && updated.targetHeight === 1706) ||
+             (updated.targetWidth === 1200 && updated.targetHeight === 1200) ||
+             updated.aspect === '960:1706')
           ) {
-            return {
-              ...fmt,
+            updated = {
+              ...updated,
               targetWidth: 1080,
               targetHeight: 1350,
               aspect: '4:5',
               updatedAt: Date.now(),
             };
           }
-          return fmt;
+          // Ensure watermarkConfig retains enabled: true if watermark logo/text is configured or format is named with watermark
+          if (updated.watermarkConfig && (updated.watermarkConfig.logoUrl || updated.watermarkConfig.text || updated.name.toLowerCase().includes('watermark'))) {
+            if (updated.watermarkConfig.enabled === undefined || updated.name.toLowerCase().includes('watermark')) {
+              updated = {
+                ...updated,
+                watermarkConfig: {
+                  ...updated.watermarkConfig,
+                  enabled: true,
+                },
+              };
+            }
+          }
+          // Normalize any Bolthaven watermark to static asset
+          if (updated.name.toLowerCase().includes('bolthaven') && (!updated.watermarkConfig?.logoUrl || updated.watermarkConfig?.logoUrl.startsWith('data:image/'))) {
+            updated = {
+              ...updated,
+              watermarkConfig: {
+                ...DEFAULT_WATERMARK_CONFIG,
+                ...updated.watermarkConfig,
+                enabled: true,
+                type: 'logo',
+                logoUrl: '/watermarks/bolthaven-watermark.png',
+                logoName: updated.watermarkConfig?.logoName || 'BOLTHAVEN Watermark.png',
+                scale: updated.watermarkConfig?.scale || 36,
+                opacity: updated.watermarkConfig?.opacity || 50,
+              },
+            };
+          }
+          return updated;
         });
 
-        // Ensure newly supported presets (like FB Hero Cut and Original 1774×887 Format) are present if not already added
+        // Ensure newly supported presets (like FB Hero Cut, Bolthaven, and Original 1774×887 Format) are present if not already added
+        const hasBolthaven = cleaned.some((f: CropStudioFormat) => f.id === 'format-1793540333291' || f.name.toLowerCase().includes('bolthaven'));
+        if (!hasBolthaven) {
+          cleaned.unshift(INITIAL_CROP_FORMATS[0]);
+        }
+
         const hasHeroCut = cleaned.some((f: CropStudioFormat) => f.id === 'format-grid-2split' || f.name.toLowerCase().includes('hero cut'));
         if (!hasHeroCut) {
           const defaultHeroCut = INITIAL_CROP_FORMATS.find((f) => f.id === 'format-grid-2split');
           if (defaultHeroCut) {
-            cleaned.unshift(defaultHeroCut);
-            try {
-              localStorage.setItem(STORAGE_CROP_FORMATS_KEY, JSON.stringify(cleaned));
-            } catch (e) {}
+            cleaned.splice(1, 0, defaultHeroCut);
           }
         }
 
-        const has1774 = cleaned.some((f: CropStudioFormat) => f.id === 'format-1774-887' || f.name.includes('1774'));
-        if (!has1774) {
-          const default1774 = INITIAL_CROP_FORMATS.find((f) => f.id === 'format-1774-887');
-          if (default1774) {
-            cleaned.splice(1, 0, default1774);
-            try {
-              localStorage.setItem(STORAGE_CROP_FORMATS_KEY, JSON.stringify(cleaned));
-            } catch (e) {}
-          }
-        }
-
+        inMemoryFormatsCache = cleaned;
         return cleaned;
       }
     }
   } catch (e) {
     console.error('Failed to load saved crop formats', e);
   }
+  inMemoryFormatsCache = INITIAL_CROP_FORMATS;
   return INITIAL_CROP_FORMATS;
 };
 
 export const saveCropFormatsList = (formats: CropStudioFormat[]) => {
-  try {
-    localStorage.setItem(STORAGE_CROP_FORMATS_KEY, JSON.stringify(formats));
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('ea_crop_formats_updated', { detail: formats }));
-    }
-  } catch (e) {
-    console.error('Failed to save crop formats', e);
+  inMemoryFormatsCache = formats;
+  safeSetLocalStorage(STORAGE_CROP_FORMATS_KEY, formats);
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('ea_crop_formats_updated', { detail: formats }));
   }
 
   // Persist to backend database JSON store immediately
@@ -791,3 +877,87 @@ export const formatImageWithCropFormat = async (
   const slices = await formatImageWithCropFormatSlices(imgSrc, format);
   return slices[0]?.url || imgSrc;
 };
+
+export interface StudioFallbackImage {
+  index: number;
+  facebook_photo_id?: string;
+  source_url: string;
+  stored_url?: string;
+  filename?: string;
+  width?: number;
+  height?: number;
+  status?: string;
+}
+
+export const DEFAULT_STUDIO_SAMPLE_PHOTOS = [
+  {
+    id: 'img-1',
+    url: 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=1536&q=80',
+    name: 'Luxurious Modern Condo Lounge.png',
+    width: 1536,
+    height: 1024,
+  },
+  {
+    id: 'img-2',
+    url: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=1536&q=80',
+    name: 'Kitchen & Dining Area.png',
+    width: 1536,
+    height: 1024,
+  },
+  {
+    id: 'img-3',
+    url: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1536&q=80',
+    name: 'Modern Bathroom & Spa.png',
+    width: 1536,
+    height: 1024,
+  },
+  {
+    id: 'img-4',
+    url: 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=1448&q=80',
+    name: 'Balcony Infinity Skyline.png',
+    width: 1448,
+    height: 1086,
+  },
+];
+
+export const getEffectiveStudioImages = (): StudioFallbackImage[] => {
+  try {
+    const saved =
+      localStorage.getItem('ea_crop_studio_standard_images_v2') ||
+      localStorage.getItem('ea_crop_studio_images_v1') ||
+      localStorage.getItem('ea_crop_studio_grid_images_v4');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const valid = parsed.filter((item: any) => item && (item.url || item.source_url || item.stored_url));
+        if (valid.length > 0) {
+          return valid.map((item: any, idx: number) => {
+            const url = item.url || item.stored_url || item.source_url;
+            return {
+              index: idx + 1,
+              facebook_photo_id: item.id || `photo-${idx + 1}`,
+              source_url: url,
+              stored_url: url,
+              filename: item.name || `Photo #${idx + 1}.jpg`,
+              width: item.width || 1200,
+              height: item.height || 1200,
+              status: 'verified',
+            };
+          });
+        }
+      }
+    }
+  } catch (e) {}
+
+  return DEFAULT_STUDIO_SAMPLE_PHOTOS.map((p, idx) => ({
+    index: idx + 1,
+    facebook_photo_id: p.id,
+    source_url: p.url,
+    stored_url: p.url,
+    filename: p.name,
+    width: p.width,
+    height: p.height,
+    status: 'verified',
+  }));
+};
+

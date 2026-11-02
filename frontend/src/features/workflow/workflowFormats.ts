@@ -10,6 +10,7 @@ export interface WorkflowFormat {
   name: string;
   description: string;
   isDefault?: boolean;
+  isPinned?: boolean;
   createdAt: number;
   updatedAt: number;
   config: FacebookWorkflowConfig;
@@ -17,6 +18,21 @@ export interface WorkflowFormat {
 
 const STORAGE_FORMATS_KEY = 'estate_saved_workflow_formats_v2';
 const STORAGE_SELECTED_FORMAT_ID_KEY = 'estate_active_workflow_format_id_v2';
+const STORAGE_PINNED_FORMAT_ID_KEY = 'estate_pinned_workflow_format_id_v2';
+
+export const getPinnedWorkflowFormatId = (): string => {
+  try {
+    const saved = localStorage.getItem(STORAGE_PINNED_FORMAT_ID_KEY);
+    if (saved !== null) return saved;
+  } catch (e) {}
+  return getActiveWorkflowFormatId();
+};
+
+export const setPinnedWorkflowFormatId = (id: string) => {
+  try {
+    localStorage.setItem(STORAGE_PINNED_FORMAT_ID_KEY, id);
+  } catch (e) {}
+};
 
 export const INITIAL_DEFAULT_FORMATS: WorkflowFormat[] = [
   {
@@ -238,15 +254,18 @@ export const INITIAL_DEFAULT_FORMATS: WorkflowFormat[] = [
 ];
 
 export const getSavedWorkflowFormats = (): WorkflowFormat[] => {
+  const pinnedId = getPinnedWorkflowFormatId();
   try {
     const raw = localStorage.getItem(STORAGE_FORMATS_KEY);
     if (raw !== null) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
         return parsed.map((format: WorkflowFormat) => {
-          if (!format.config) return format;
+          const isPinned = pinnedId ? format.id === pinnedId : Boolean(format.isPinned);
+          if (!format.config) return { ...format, isPinned };
           return {
             ...format,
+            isPinned,
             config: sanitizeAndResolveCollisions(format.config),
           };
         });
@@ -257,6 +276,7 @@ export const getSavedWorkflowFormats = (): WorkflowFormat[] => {
   }
   return INITIAL_DEFAULT_FORMATS.map((f) => ({
     ...f,
+    isPinned: pinnedId ? f.id === pinnedId : Boolean(f.isPinned),
     config: sanitizeAndResolveCollisions(f.config),
   }));
 };
@@ -273,17 +293,10 @@ export const restoreDefaultWorkflowFormats = (): WorkflowFormat[] => {
   return defaults;
 };
 
-export const saveWorkflowFormatsList = (formats: WorkflowFormat[]) => {
-  // Always sync with backend API regardless of localStorage quota
-  fetch('http://localhost:8085/api/workflow/config', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      workflow_formats: formats,
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
+let saveBackendDebounceTimer: any = null;
 
+export const saveWorkflowFormatsList = (formats: WorkflowFormat[]) => {
+  // Synchronously save to localStorage immediately so navigating back/away preserves all node positions
   try {
     localStorage.setItem(STORAGE_FORMATS_KEY, JSON.stringify(formats));
   } catch (e) {
@@ -296,6 +309,19 @@ export const saveWorkflowFormatsList = (formats: WorkflowFormat[]) => {
       console.error('Failed to save workflow formats to localStorage', err);
     }
   }
+
+  // Always sync with backend API debounced using relative API path (works seamlessly on both public and local)
+  if (saveBackendDebounceTimer) clearTimeout(saveBackendDebounceTimer);
+  saveBackendDebounceTimer = setTimeout(() => {
+    fetch('/api/workflow/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        workflow_formats: formats,
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+  }, 400);
 };
 
 export const getActiveWorkflowFormatId = (): string => {

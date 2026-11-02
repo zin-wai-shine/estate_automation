@@ -9,8 +9,9 @@ import {
   formatImageWithCropFormatSlices,
   type FormattedCropSlice,
   syncCropFormatToWorkflowConfig,
+  getEffectiveStudioImages,
 } from '../watermark/cropFormats';
-import type { DynamicAIBoxConfig } from './FacebookWorkflowCanvas';
+import type { DynamicAIBoxConfig, WorkflowWireConnection } from './FacebookWorkflowCanvas';
 import { Select, type SelectOption } from '../../components/ui/Select';
 import { PhotoLightboxModal } from './PhotoLightboxModal';
 
@@ -38,6 +39,8 @@ interface WatermarkNodeModalProps {
     createdAt?: string;
   } | null;
   onOpenLightbox?: (index: number) => void;
+  workflowBoxes?: DynamicAIBoxConfig[];
+  connections?: WorkflowWireConnection[];
 }
 
 export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
@@ -49,6 +52,8 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
   enhancedPhotos,
   heroImage,
   onOpenLightbox,
+  workflowBoxes,
+  connections: _connections,
 }) => {
   const [savedFormats, setSavedFormats] = useState<CropStudioFormat[]>(() => getSavedCropFormats());
   const [isEditingFormatName, setIsEditingFormatName] = useState<boolean>(false);
@@ -124,7 +129,49 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     (box.imageSource as any) || 'get_images'
   );
 
-  // Fallback hero image from localStorage or referenceImage
+  // Fallback effective images from Studio storage or sample photos if images prop is empty
+  const effectiveImageList = useMemo(() => {
+    if (images && images.length > 0) return images;
+    return getEffectiveStudioImages();
+  }, [images]);
+
+  // Dynamically resolve Hero / Generator node title from workflow boxes
+  const heroNode = useMemo(() => {
+    return workflowBoxes?.find(
+      (b) =>
+        b.title?.toLowerCase().includes('hero') ||
+        b.browserGroupName?.toLowerCase().includes('hero') ||
+        b.tabGroupMode === 'generate' ||
+        b.processKind === 'generate_image'
+    );
+  }, [workflowBoxes]);
+
+  const heroLabel = useMemo(() => {
+    if (heroNode) {
+      return (heroNode.browserGroupName || heroNode.title || 'BG Hero Generator').trim();
+    }
+    return 'BG Hero Generator';
+  }, [heroNode]);
+
+  // Dynamically resolve Enhance node title from workflow boxes
+  const enhanceNode = useMemo(() => {
+    return workflowBoxes?.find(
+      (b) =>
+        (b.title?.toLowerCase().includes('enhance') ||
+         b.browserGroupName?.toLowerCase().includes('enhance') ||
+         b.tabGroupMode === 'enhance') &&
+        b.id !== box.id
+    );
+  }, [workflowBoxes, box.id]);
+
+  const enhanceLabel = useMemo(() => {
+    if (enhanceNode) {
+      return (enhanceNode.browserGroupName || enhanceNode.title || 'Enhance Image').trim();
+    }
+    return 'Enhance Image';
+  }, [enhanceNode]);
+
+  // Fallback hero image from localStorage or referenceImage or primary image
   const effectiveHeroImage = useMemo(() => {
     if (heroImage && heroImage.url) return heroImage;
     try {
@@ -134,8 +181,13 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     if (box.referenceImage) {
       return { url: box.referenceImage, fileName: 'hero_reference.png' };
     }
+    if (effectiveImageList.length > 0) {
+      const first = effectiveImageList[0];
+      const url = first.stored_url || first.source_url;
+      if (url) return { url, fileName: 'hero_sample.png' };
+    }
     return null;
-  }, [heroImage, box.referenceImage]);
+  }, [heroImage, box.referenceImage, effectiveImageList]);
 
   // Build the list of photos available for the currently selected source
   const currentSourceList = useMemo(() => {
@@ -149,10 +201,10 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
       isEnhanced?: boolean;
     }> = [];
 
-    // 1. Get Images (Raw extracted)
+    // 1. Get Images (Raw extracted or fallback studio images)
     if (imageSource === 'get_images' || imageSource === 'all') {
-      if (images && images.length > 0) {
-        images.forEach((img, idx) => {
+      if (effectiveImageList && effectiveImageList.length > 0) {
+        effectiveImageList.forEach((img, idx) => {
           const photoNum = typeof img.index === 'number' && img.index > 0 ? img.index : idx + 1;
           const url =
             watermarkedPhotos?.[img.index] ||
@@ -172,12 +224,24 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     }
 
     // 2. Enhanced Images
-    if (imageSource === 'enhance' || (imageSource === 'all' && enhancedPhotos && Object.keys(enhancedPhotos).length > 0)) {
+    if (imageSource === 'enhance' || (imageSource === 'all' && ((enhancedPhotos && Object.keys(enhancedPhotos).length > 0) || effectiveImageList.length > 0))) {
       if (imageSource === 'enhance') {
-        if (images && images.length > 0) {
-          images.forEach((img, idx) => {
+        if (enhancedPhotos && Object.keys(enhancedPhotos).length > 0) {
+          Object.entries(enhancedPhotos).forEach(([k, enhUrl]) => {
+            const num = Number(k) + 1;
+            rawList.push({
+              id: `enh-${num}`,
+              index: num,
+              displayNumber: num,
+              url: enhUrl,
+              source: 'enhance',
+              label: `Enhanced #${num}`,
+              isEnhanced: true,
+            });
+          });
+        } else if (effectiveImageList && effectiveImageList.length > 0) {
+          effectiveImageList.forEach((img, idx) => {
             const photoNum = typeof img.index === 'number' && img.index > 0 ? img.index : idx + 1;
-            const enhUrl = enhancedPhotos?.[img.index] || enhancedPhotos?.[idx];
             const fallbackUrl = img.stored_url
               ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
               : img.source_url;
@@ -185,15 +249,15 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
               id: `enh-${photoNum}`,
               index: photoNum,
               displayNumber: idx + 1,
-              url: enhUrl || fallbackUrl,
+              url: fallbackUrl,
               source: 'enhance',
-              label: enhUrl ? `Enhanced #${idx + 1}` : `Photo #${idx + 1}`,
-              isEnhanced: Boolean(enhUrl),
+              label: `Photo #${idx + 1} (Enhance Source)`,
+              isEnhanced: false,
             });
           });
         }
       } else {
-        if (enhancedPhotos) {
+        if (enhancedPhotos && Object.keys(enhancedPhotos).length > 0) {
           Object.entries(enhancedPhotos).forEach(([k, url]) => {
             const num = Number(k) + 1;
             rawList.push({
@@ -210,7 +274,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
       }
     }
 
-    // 3. Generate Image (Hero)
+    // 3. Generate Image (Hero generator: BG Hero Generator / FB Hero)
     if (imageSource === 'generate' || imageSource === 'all') {
       if (effectiveHeroImage && effectiveHeroImage.url) {
         rawList.push({
@@ -219,10 +283,10 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
           displayNumber: 1,
           url: effectiveHeroImage.url,
           source: 'generate',
-          label: effectiveHeroImage.condoName ? `${effectiveHeroImage.condoName} Hero` : 'Generated Hero',
+          label: effectiveHeroImage.condoName ? `${effectiveHeroImage.condoName} Hero` : `${heroLabel} #1`,
         });
       } else if (imageSource === 'generate') {
-        const firstRaw = images?.[0];
+        const firstRaw = effectiveImageList?.[0];
         if (firstRaw) {
           const url = firstRaw.stored_url
             ? (firstRaw.stored_url.startsWith('http') ? firstRaw.stored_url : `http://localhost:8085${firstRaw.stored_url}`)
@@ -233,14 +297,14 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
             displayNumber: 1,
             url,
             source: 'generate',
-            label: 'Hero Generator Target Photo #1',
+            label: `${heroLabel} Target Photo #1`,
           });
         }
       }
     }
 
     return rawList;
-  }, [imageSource, images, enhancedPhotos, effectiveHeroImage]);
+  }, [imageSource, effectiveImageList, enhancedPhotos, effectiveHeroImage, heroLabel, watermarkedPhotos]);
 
   const [selectedIndices, setSelectedIndices] = useState<number[]>(() => {
     if (Array.isArray(box.selectedImageIndices) && box.selectedImageIndices.length > 0) {
@@ -434,20 +498,20 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
   };
 
   const sourceOptions: SelectOption[] = useMemo(() => {
-    const getImagesCount = images?.length || 0;
+    const getImagesCount = effectiveImageList.length;
     const enhanceCount = (enhancedPhotos && Object.keys(enhancedPhotos).length > 0)
       ? Object.keys(enhancedPhotos).length
       : getImagesCount;
-    const heroCount = effectiveHeroImage ? 1 : 0;
-    const totalCount = getImagesCount + heroCount;
+    const heroCount = effectiveHeroImage ? 1 : (effectiveImageList.length > 0 ? 1 : 0);
+    const totalCount = getImagesCount + (effectiveHeroImage ? 1 : 0);
 
     return [
       { value: 'get_images', label: `Get Images (${getImagesCount} ${getImagesCount === 1 ? 'Photo' : 'Photos'})` },
-      { value: 'enhance', label: `Enhance Image (${enhanceCount} ${enhanceCount === 1 ? 'Photo' : 'Photos'})` },
-      { value: 'generate', label: `Generate Image (${heroCount} ${heroCount === 1 ? 'Photo' : 'Photos'})` },
+      { value: 'enhance', label: `${enhanceLabel} (${enhanceCount} ${enhanceCount === 1 ? 'Photo' : 'Photos'})` },
+      { value: 'generate', label: `${heroLabel} (${heroCount} ${heroCount === 1 ? 'Photo' : 'Photos'})` },
       { value: 'all', label: `All Photos (${totalCount} ${totalCount === 1 ? 'Photo' : 'Photos'})` },
     ];
-  }, [images?.length, enhancedPhotos, effectiveHeroImage]);
+  }, [effectiveImageList.length, enhancedPhotos, effectiveHeroImage, heroLabel, enhanceLabel]);
 
   const photoOptions: SelectOption[] = useMemo(() => {
     if (currentSourceList.length === 0) {
@@ -871,20 +935,6 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
             onChange={(val) => handleSourceChange(val as any)}
             height="36px"
             placeholder="Select image source..."
-          />
-        </div>
-
-        {/* 2. Photo Selection Dropdown */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-          <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-            Select Photo to Crop
-          </label>
-          <Select
-            options={photoOptions}
-            value={currentPhotoSelectionValue}
-            onChange={(val) => handlePhotoSelectionChange(val)}
-            height="36px"
-            placeholder="Select photo(s)..."
           />
         </div>
       </div>

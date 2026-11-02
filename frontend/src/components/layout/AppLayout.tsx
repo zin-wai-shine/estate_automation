@@ -258,8 +258,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         style={{
           height: '56px',
           width: '100%',
-          backgroundColor: isCanvasMode ? 'transparent' : 'var(--bg-secondary)',
-          borderBottom: isCanvasMode ? 'none' : (isMobile ? '1px solid var(--border-color)' : 'none'),
+          backgroundColor: 'var(--bg-secondary)',
+          borderBottom: '1px solid var(--border-color)',
           display: 'flex',
           alignItems: 'center',
           position: 'fixed',
@@ -348,6 +348,52 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
               )}
             </div>
 
+            {/* Canvas Mode Standalone Sidebar Toggle Button (docked cleanly in top header when sidebar is hidden) */}
+            {isCanvasMode && !isCanvasSidebarVisible && (
+              <div
+                style={{
+                  height: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  paddingLeft: '0.875rem',
+                  borderBottom: '1px solid var(--border-color)',
+                  backgroundColor: 'transparent',
+                  pointerEvents: 'auto',
+                  flexShrink: 0,
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setIsCanvasSidebarVisible(true)}
+                  title="Show navigation sidebar"
+                  aria-label="Show navigation sidebar"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '8px',
+                    backgroundColor: isDark ? '#21262D' : '#F1F5F9',
+                    border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                    color: 'var(--text-secondary)',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.color = 'var(--text-primary)';
+                    e.currentTarget.style.backgroundColor = isDark ? '#30363D' : '#E2E8F0';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.color = 'var(--text-secondary)';
+                    e.currentTarget.style.backgroundColor = isDark ? '#21262D' : '#F1F5F9';
+                  }}
+                >
+                  <FiSidebar size={15} />
+                </button>
+              </div>
+            )}
+
             {/* Top-Right Header Content */}
             <div
               style={{
@@ -359,24 +405,22 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                 padding: '0 1.25rem',
                 gap: '1rem',
                 position: 'relative',
-                borderBottom: isCanvasMode ? 'none' : '1px solid var(--border-color)',
+                borderBottom: '1px solid var(--border-color)',
                 boxSizing: 'border-box',
                 pointerEvents: 'none',
               }}
             >
               <div id="header-title-portal" style={{ display: 'flex', alignItems: 'center', minWidth: 0, zIndex: 5, pointerEvents: 'auto' }}>
-                {!isCanvasMode && activeTab !== 'testing' && (
+                {!isCanvasMode && activeTab !== 'testing' && activeTab !== 'watermark' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                       <h2 style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
                         {currentNav.label}
                       </h2>
                     </div>
-                    {activeTab !== 'watermark' && (
-                      <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-                        Workflow Engine · Real Estate SaaS
-                      </span>
-                    )}
+                    <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                      Workflow Engine · Real Estate SaaS
+                    </span>
                   </div>
                 )}
               </div>
@@ -730,47 +774,6 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
           )}
         </div>
       </aside>
-
-      {/* Canvas Mode Standalone Sidebar Toggle Button (shown when sidebar is hidden) */}
-      {isCanvasMode && !isCanvasSidebarVisible && (
-        <button
-          type="button"
-          onClick={() => setIsCanvasSidebarVisible(true)}
-          title="Show sidebar"
-          aria-label="Show sidebar"
-          style={{
-            position: 'fixed',
-            bottom: '12px',
-            left: '10px',
-            width: '36px',
-            height: '36px',
-            borderRadius: '6px',
-            backgroundColor: isDark ? '#1C2128' : '#FFFFFF',
-            border: '1px solid var(--border-color)',
-            color: 'var(--text-secondary)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-            zIndex: 40,
-            boxShadow: isDark ? '0 2px 8px rgba(0, 0, 0, 0.35)' : '0 2px 8px rgba(0, 0, 0, 0.08)',
-            transition: 'all 0.15s ease',
-            outline: 'none',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.color = 'var(--text-primary)';
-            e.currentTarget.style.backgroundColor = isDark ? '#2D333B' : '#F1F5F9';
-            e.currentTarget.style.borderColor = isDark ? '#444C56' : '#CBD5E1';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.color = 'var(--text-secondary)';
-            e.currentTarget.style.backgroundColor = isDark ? '#1C2128' : '#FFFFFF';
-            e.currentTarget.style.borderColor = 'var(--border-color)';
-          }}
-        >
-          <FiSidebar size={16} />
-        </button>
-      )}
 
       {/* Main Right Content Area */}
       <div

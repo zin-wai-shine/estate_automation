@@ -55,16 +55,17 @@ import {
   FiSettings,
 } from 'react-icons/fi';
 import { FaFacebook, FaFacebookF, FaInstagram, FaTiktok, FaChrome } from 'react-icons/fa';
-import { SiGooglegemini } from 'react-icons/si';
+import { SiGooglegemini, SiGooglesheets } from 'react-icons/si';
 import { HiSparkles } from 'react-icons/hi2';
 import { useScrollLock } from '../../hooks/useScrollLock';
 import { AITrainingChatbot, ModelSelectorMenu, LaoZhangIcon, RunwareIcon } from './AITrainingChatbot';
 import { useTheme } from '../../context/ThemeContext';
-import { getAIModelDisplayName, isImageAIBox, isImageModel, isWatermarkAIBox, isEnhanceAIBox, isAIBoxConnected, isTextFormatAIBox, isTextAIBox, isN8NAIBox, isExternalBrowserAIBox, isChromeProfileAIBox, isChromeTabGroupAIBox } from './aiModelUtils';
+import { getAIModelDisplayName, isImageAIBox, isImageModel, isWatermarkAIBox, isEnhanceAIBox, isAIBoxConnected, isTextFormatAIBox, isTextAIBox, isN8NAIBox, isExternalBrowserAIBox, isChromeProfileAIBox, isChromeTabGroupAIBox, isGoogleSheetBox, AI_ENGINE_MODEL_GROUPS } from './aiModelUtils';
 import { AIImageStudio } from './AIImageStudio';
 import { ExternalBrowserSidebar } from '../browser-processing/ExternalBrowserSidebar';
 import { getPersistedReferenceImage } from '../browser-processing/referenceImageStorage';
 import { FBHeroSettingsSidebox, extractCleanCondoNameFromAiText } from '../browser-processing/FBHeroSettingsSidebox';
+import { GoogleSheetSettingsSidebox } from './GoogleSheetSettingsSidebox';
 import { focusBrowserTabGroup, fetchBrowserProfiles, fetchTabGroups } from '../browser-processing/browserAutomationService';
 import type { BrowserProfile, BrowserGroupItem } from '../browser-processing/types';
 import { WatermarkNodeModal } from './WatermarkNodeModal';
@@ -179,6 +180,16 @@ export interface DynamicAIBoxConfig {
   n8nTimeoutSeconds?: number;
   n8nRetryCount?: number;
   n8nContinueOnFailure?: boolean;
+  // Google Sheet Integration
+  googleSpreadsheetUrl?: string;
+  googleSpreadsheetId?: string;
+  googleSheetName?: string;
+  googleSheetHeaders?: string[];
+  googleSheetAction?: 'append_row' | 'upsert';
+  googleSheetAiPrompt?: string;
+  googleServiceAccountJson?: string;
+  googleServiceAccountEmail?: string;
+  googleServiceAccountFilename?: string;
   // External Browser Automation
   browserProfileId?: number;
   browserProfileKey?: string;
@@ -243,7 +254,7 @@ export interface FacebookWorkflowConfig {
     x: number;
     y: number;
     autoImport: boolean;
-    sourceMode?: 'paste' | 'page_sync' | 'webhook';
+    sourceMode?: 'paste' | 'page_sync' | 'webhook' | 'manual' | string;
     monitoredPageName?: string;
     monitoredPageId?: string;
     autoClassifyProperty?: boolean;
@@ -251,6 +262,8 @@ export interface FacebookWorkflowConfig {
     extractVideoClips?: boolean;
     cleanPromotionalText?: boolean;
     syncIntervalMinutes?: number;
+    manualContent?: string;
+    manualImages?: any[];
   };
   destination: DestinationNodeConfig;
   destinations?: DestinationNodeConfig[];
@@ -396,26 +409,6 @@ export const CONTENT_AI_MODEL_OPTIONS = [
   { value: 'google_ai|gemini-pro-latest', label: 'Google · Gemini Pro (High Precision)' },
 ];
 
-export const AI_ENGINE_MODEL_GROUPS: SelectGroup[] = [
-  {
-    label: 'Google Gemini',
-    options: [
-      { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (Ultra Fast & Precise)' },
-      { value: 'gemini-flash-latest', label: 'Gemini Flash Latest' },
-      { value: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro (Deep Reasoning)' },
-      { value: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash (Balanced)' },
-      { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash (Next Gen)' },
-    ],
-  },
-  {
-    label: 'OpenAI',
-    options: [
-      { value: 'gpt-4o', label: 'GPT-4o (High Precision)' },
-      { value: 'gpt-4o-mini', label: 'GPT-4o-mini (Lightweight & Fast)' },
-    ],
-  },
-];
-
 export const DEFAULT_FB_WORKFLOW_CONFIG: FacebookWorkflowConfig = {
   trigger: {
     enabled: false,
@@ -549,7 +542,7 @@ export const autoConnectWorkflow = (
   getContentEnabled: boolean = true,
   getImagesEnabled: boolean = true,
   destinationEnabled: boolean = true,
-  outputEnabled: boolean = true,
+  _outputEnabled: boolean = true,
   destinations: DestinationNodeConfig[] = [],
   combineBoxes: CombineBoxConfig[] = []
 ): WorkflowWireConnection[] => {
@@ -558,9 +551,6 @@ export const autoConnectWorkflow = (
   const activeCombineBoxes = (combineBoxes || []).filter((cb) => cb && cb.enabled !== false);
   const hasCombine = activeCombineBoxes.length > 0;
   const primaryCombineId = hasCombine ? activeCombineBoxes[0].id : null;
-
-  // When Combine Boxes exist, the Output node is superseded/hidden
-  const effectiveOutputEnabled = !hasCombine && outputEnabled;
 
   if (hasCombine && primaryCombineId) {
     // Migrate any legacy connections referencing 'output' to the primary combine box
@@ -571,8 +561,8 @@ export const autoConnectWorkflow = (
     }));
   }
 
-  // Remove self-connections and static trigger connections (trigger wires are drawn statically)
-  conns = conns.filter((c) => c.fromNodeId !== c.toNodeId && c.fromNodeId !== 'trigger');
+  // Remove self-connections, static trigger connections, and phantom output connections
+  conns = conns.filter((c) => c.fromNodeId !== c.toNodeId && c.fromNodeId !== 'trigger' && c.fromNodeId !== 'output' && c.toNodeId !== 'output');
 
   if (!getContentEnabled) {
     conns = conns.filter((c) => c.fromNodeId !== 'get-content' && c.toNodeId !== 'get-content');
@@ -924,89 +914,8 @@ export const autoConnectWorkflow = (
         return !(isTargetingDest && !isFromCombine && !isDestToDest);
       });
     }
-  } else if (effectiveOutputEnabled) {
-    // 3B. Standard Output Node Mode (Final Content & Images)
-    const textEndpoints = textFormatBoxes.length > 0 ? textFormatBoxes : textAIBoxes;
-    if (textEndpoints.length > 0) {
-      textEndpoints.forEach((cb) => {
-        const exists = conns.some((c) => c.fromNodeId === cb.id && c.toNodeId === 'output');
-        if (!exists) {
-          conns.push({
-            id: `conn-${cb.id}-output`,
-            fromNodeId: cb.id,
-            toNodeId: 'output',
-          });
-        }
-      });
-    } else if (getContentEnabled) {
-      const exists = conns.some((c) => c.fromNodeId === 'get-content' && c.toNodeId === 'output');
-      if (!exists) {
-        conns.push({
-          id: `conn-get-content-output`,
-          fromNodeId: 'get-content',
-          toNodeId: 'output',
-        });
-      }
-    }
-
-    // Image endpoints -> output
-    if (watermarkBoxes.length > 0) {
-      watermarkBoxes.forEach((wm) => {
-        const exists = conns.some((c) => c.fromNodeId === wm.id && c.toNodeId === 'output');
-        if (!exists) {
-          conns.push({
-            id: `conn-${wm.id}-output`,
-            fromNodeId: wm.id,
-            toNodeId: 'output',
-          });
-        }
-      });
-    } else if (enhanceBoxes.length > 0) {
-      enhanceBoxes.forEach((enh) => {
-        const exists = conns.some((c) => c.fromNodeId === enh.id && c.toNodeId === 'output');
-        if (!exists) {
-          conns.push({
-            id: `conn-${enh.id}-output`,
-            fromNodeId: enh.id,
-            toNodeId: 'output',
-          });
-        }
-      });
-    } else if (getImagesEnabled) {
-      const exists = conns.some((c) => c.fromNodeId === 'get-images' && c.toNodeId === 'output');
-      if (!exists) {
-        conns.push({
-          id: `conn-get-images-output`,
-          fromNodeId: 'get-images',
-          toNodeId: 'output',
-        });
-      }
-    }
-
-    // Output -> all active destinations (Remaining Posts Database & Facebook Pages)
-    if (destinationEnabled) {
-      const activeDests = (destinations || []).filter((d) => d && d.enabled !== false);
-      const targetList = activeDests.length > 0 ? activeDests : [{ id: 'destination', enabled: true }];
-      targetList.forEach((d) => {
-        const destId = d.id || 'destination';
-        const exists = conns.some((c) => c.fromNodeId === 'output' && c.toNodeId === destId);
-        if (!exists) {
-          conns.push({
-            id: `conn-output-${destId}`,
-            fromNodeId: 'output',
-            toNodeId: destId,
-          });
-        }
-      });
-
-      // Remove direct shortcuts from upstream nodes straight to destination (they now converge into output)
-      conns = conns.filter((c) => {
-        const isTargetingDest = targetList.some((d) => (d.id || 'destination') === c.toNodeId);
-        return !(isTargetingDest && c.fromNodeId !== 'output');
-      });
-    }
   } else if (destinationEnabled) {
-    // 3C. Direct to Destination Fallback (neither Combine Box nor Output Node active)
+    // 3B. Direct to Destination Fallback (when no Combine Box is present)
     const activeDests = (destinations || []).filter((d) => d && d.enabled !== false);
     const targetDestId = activeDests[0]?.id || 'destination';
     const textEndpoints = textFormatBoxes.length > 0 ? textFormatBoxes : textAIBoxes;
@@ -1784,7 +1693,6 @@ export const sanitizeAndResolveCollisions = (
     'trigger',
     'get-content',
     'get-images',
-    'output',
     ...allDestIds,
     ...allCombineBoxIds,
     ...updatedAiBoxes.map((b: any) => b.id),
@@ -1810,7 +1718,9 @@ export const sanitizeAndResolveCollisions = (
           c &&
           validNodeIds.has(c.fromNodeId) &&
           validNodeIds.has(c.toNodeId) &&
-          c.fromNodeId !== c.toNodeId
+          c.fromNodeId !== c.toNodeId &&
+          c.fromNodeId !== 'output' &&
+          c.toNodeId !== 'output'
       )
     : [];
 
@@ -1964,46 +1874,68 @@ export const sanitizeAndResolveCollisions = (
     connections: nextConnections,
   };
 
-  // If boxes already have valid user coordinates and did not need format branch synthesis, preserve positions
-  const hasExistingPositions =
-    !didSynthesizeCentralBox &&
-    (finalAiBoxes.length === 0 || finalAiBoxes.every((b) => typeof b.x === 'number' && typeof b.y === 'number')) &&
-    (conf.combineBoxes || []).every((cb) => typeof cb.x === 'number' && typeof cb.y === 'number');
+  // Check if existing nodes already have coordinates assigned
+  const hasAnyExistingCoords =
+    (typeof conf.getContent?.x === 'number' && typeof conf.getContent?.y === 'number') ||
+    (typeof conf.getImages?.x === 'number' && typeof conf.getImages?.y === 'number') ||
+    (typeof conf.trigger?.x === 'number' && typeof conf.trigger?.y === 'number') ||
+    finalAiBoxes.some((b) => typeof b.x === 'number' && typeof b.y === 'number');
 
-  if (hasExistingPositions && conf.aiBoxes && conf.aiBoxes.length > 0) {
-    // If the existing layout has legacy oversized/stretched spacing (e.g. tab group y >= 780 or profile y >= 580 or horizontal spread > 180px),
-    // or old cramped spacing (e.g. tab group vertical gap < 160),
-    // re-align to the clean, compact, balanced layout immediately
-    const isLegacyOversizedSpacing =
-      (conf.getImages?.y !== undefined && conf.getImages.y >= 550) ||
-      (conf.getContent?.y !== undefined && conf.getContent.y >= 250);
+  if (hasAnyExistingCoords) {
+    // PRESERVE ALL USER POSITIONS 100%! Only assign fallback defaults to any node missing coordinates.
+    const resolvedTrigger = {
+      ...DEFAULT_FB_WORKFLOW_CONFIG.trigger,
+      ...conf.trigger,
+      x: typeof conf.trigger?.x === 'number' ? conf.trigger.x : 80,
+      y: typeof conf.trigger?.y === 'number' ? conf.trigger.y : 365,
+    };
+    const resolvedGetContent = {
+      ...DEFAULT_FB_WORKFLOW_CONFIG.getContent,
+      ...conf.getContent,
+      x: typeof conf.getContent?.x === 'number' ? conf.getContent.x : 300,
+      y: typeof conf.getContent?.y === 'number' ? conf.getContent.y : 245,
+    };
+    const resolvedGetImages = {
+      ...DEFAULT_FB_WORKFLOW_CONFIG.getImages,
+      ...conf.getImages,
+      x: typeof conf.getImages?.x === 'number' ? conf.getImages.x : 300,
+      y: typeof conf.getImages?.y === 'number' ? conf.getImages.y : 485,
+    };
+    const resolvedAiBoxes = finalAiBoxes.map((b, idx) => ({
+      ...b,
+      x: typeof b.x === 'number' ? b.x : (520 + (idx % 3) * 180),
+      y: typeof b.y === 'number' ? b.y : (200 + Math.floor(idx / 3) * 120),
+    }));
+    const resolvedCombineBoxes = (conf.combineBoxes || []).map((cb, idx) => ({
+      ...cb,
+      x: typeof cb.x === 'number' ? cb.x : (1120 + idx * 240),
+      y: typeof cb.y === 'number' ? cb.y : 405,
+    }));
+    const resolvedDestinations = rawDests.map((d, idx) => ({
+      ...d,
+      x: typeof d.x === 'number' ? d.x : (1340 + idx * 240),
+      y: typeof d.y === 'number' ? d.y : 365,
+    }));
 
-    const hasCrampedSpacing = conf.aiBoxes.some((b) => {
-      if (isChromeTabGroupAIBox(b)) {
-        const profile = conf.aiBoxes.find(
-          (p) => isChromeProfileAIBox(p) && (p.browserProfileId === b.browserProfileId || nextConnections.some((c) => c.fromNodeId === p.id && c.toNodeId === b.id))
-        );
-        if (profile && b.y - profile.y < 160) return true;
-      }
-      return false;
-    });
-
-    const hasOversizedStretchedSpacing = conf.aiBoxes.some((b) => {
-      if (isChromeTabGroupAIBox(b) && b.y >= 780) return true;
-      if (isChromeProfileAIBox(b) && b.x > 820) return true;
-      return false;
-    });
-
-    const isFlatFormatLayout = (() => {
-      const formatBoxes = conf.aiBoxes.filter(isTextFormatAIBox);
-      if (formatBoxes.length < 4) return false;
-      const firstY = formatBoxes[0].y;
-      return formatBoxes.every((b) => Math.abs(b.y - firstY) < 4);
-    })();
-
-    if (!isLegacyOversizedSpacing && !hasCrampedSpacing && !hasOversizedStretchedSpacing && !isFlatFormatLayout) {
-      return baseConfig;
-    }
+    return {
+      ...DEFAULT_FB_WORKFLOW_CONFIG,
+      ...conf,
+      trigger: resolvedTrigger,
+      getContent: resolvedGetContent,
+      getImages: resolvedGetImages,
+      outputNode: {
+        id: 'output',
+        enabled: isOutputEnabled,
+        title: conf.outputNode?.title || 'Final Content & Images',
+        x: typeof conf.outputNode?.x === 'number' ? conf.outputNode.x : 955,
+        y: typeof conf.outputNode?.y === 'number' ? conf.outputNode.y : 365,
+      },
+      combineBoxes: resolvedCombineBoxes,
+      destination: resolvedDestinations[0] || { ...DEFAULT_FB_WORKFLOW_CONFIG.destination, enabled: false },
+      destinations: resolvedDestinations,
+      aiBoxes: resolvedAiBoxes,
+      connections: nextConnections,
+    };
   }
 
   return buildAlignedLayout(finalAiBoxes, nextConnections, baseConfig);
@@ -2085,12 +2017,12 @@ const CANVAS_NODE_ACTION_CSS = `
   border-radius: 41px 20px 20px 41px !important;
 }
 .canvas-node.is-selected::before {
-  opacity: 1 !important;
+  opacity: 0.8 !important;
   border-color: #388BFD !important;
   border-style: solid !important;
-  border-width: 2px !important;
+  border-width: 1.5px !important;
   transform: scale(1) !important;
-  box-shadow: 0 0 14px rgba(56, 139, 253, 0.5) !important;
+  box-shadow: none !important;
 }
 .canvas-node.is-circle.is-selected::before {
   border-radius: 50% !important;
@@ -3166,8 +3098,8 @@ export const FacebookWorkflowCanvas = forwardRef<
     const centeredPan = calculateCenteredPanOffset(base, vWidth, vHeight, optimalZoom);
     return {
       ...base,
-      zoom: optimalZoom,
-      panOffset: centeredPan,
+      zoom: typeof base.zoom === 'number' && base.zoom > 0 ? base.zoom : optimalZoom,
+      panOffset: (base.panOffset && (base.panOffset.x !== 0 || base.panOffset.y !== 0)) ? base.panOffset : centeredPan,
     };
   });
   const latestConfigRef = useRef<FacebookWorkflowConfig>(config);
@@ -3241,10 +3173,19 @@ export const FacebookWorkflowCanvas = forwardRef<
   };
 
   const hasInitializedPan = useRef(false);
+  const lastEmittedConfigRef = useRef<FacebookWorkflowConfig | null>(null);
+  const lastEmittedConfigStrRef = useRef<string>('');
 
   // Synchronize when initialConfig updates (e.g. backend sync or format switch) while preserving user pan & positions
   useEffect(() => {
     if (!initialConfig) return;
+    if (lastEmittedConfigRef.current && initialConfig === lastEmittedConfigRef.current) {
+      return;
+    }
+    const initialConfigStr = JSON.stringify(initialConfig);
+    if (lastEmittedConfigStrRef.current && initialConfigStr === lastEmittedConfigStrRef.current) {
+      return;
+    }
     const sanitized = sanitizeAndResolveCollisions(initialConfig);
     const el = canvasRef.current;
     const vWidth = el && el.clientWidth > 50 ? el.clientWidth : (typeof window !== 'undefined' ? window.innerWidth - 56 : 1200);
@@ -3344,8 +3285,75 @@ export const FacebookWorkflowCanvas = forwardRef<
 
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+  const panStartRef = useRef({ x: 0, y: 0 });
   const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null);
+  const draggedNodeIdRef = useRef<string | null>(null);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const dragStartRef = useRef({ x: 0, y: 0 });
+  const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Memorize first, background idle persist: completely separates continuous drag/drop interactions from storage
+  const schedulePersistAndNotify = (cfg: FacebookWorkflowConfig) => {
+    if (persistTimerRef.current) {
+      clearTimeout(persistTimerRef.current);
+      persistTimerRef.current = null;
+    }
+
+    // Do NOT schedule persist if the user is actively dragging any node
+    if (draggedNodeIdRef.current) {
+      return;
+    }
+
+    persistTimerRef.current = setTimeout(() => {
+      // Abort if another drag operation started in the meantime
+      if (draggedNodeIdRef.current) {
+        return;
+      }
+
+      const runPersist = () => {
+        if (draggedNodeIdRef.current) return;
+        try {
+          localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(cfg));
+        } catch (e) {
+          try {
+            localStorage.setItem(
+              LOCAL_STORAGE_KEY,
+              JSON.stringify(stripLargeBase64FromWorkflowConfig(cfg))
+            );
+          } catch {}
+        }
+
+        lastEmittedConfigRef.current = cfg;
+        lastEmittedConfigStrRef.current = JSON.stringify(cfg);
+
+        if (onConfigChange) {
+          onConfigChange(cfg);
+        }
+      };
+
+      if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+        (window as any).requestIdleCallback(runPersist, { timeout: 2000 });
+      } else {
+        setTimeout(runPersist, 0);
+      }
+    }, 1200);
+  };
+
+  // Flush any pending in-memory persistence cleanly on unmount so no coordinate changes are lost
+  useEffect(() => {
+    return () => {
+      if (persistTimerRef.current) {
+        clearTimeout(persistTimerRef.current);
+        persistTimerRef.current = null;
+        try {
+          localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(latestConfigRef.current));
+        } catch {}
+        if (onConfigChange) {
+          onConfigChange(latestConfigRef.current);
+        }
+      }
+    };
+  }, [onConfigChange]);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [selectedBoxId, setSelectedBoxId] = useState<string | null>(null);
   const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
@@ -3457,10 +3465,9 @@ export const FacebookWorkflowCanvas = forwardRef<
   const handleNodeMouseLeave = (nodeId: string) => {
     if (hoverLeaveTimeoutRef.current) {
       clearTimeout(hoverLeaveTimeoutRef.current);
+      hoverLeaveTimeoutRef.current = null;
     }
-    hoverLeaveTimeoutRef.current = setTimeout(() => {
-      setHoveredNodeId((curr) => (curr === nodeId ? null : curr));
-    }, 350);
+    setHoveredNodeId((curr) => (curr === nodeId ? null : curr));
   };
 
   useEffect(() => {
@@ -3476,9 +3483,11 @@ export const FacebookWorkflowCanvas = forwardRef<
   const [isAISettingsDrawerOpen, setIsAISettingsDrawerOpen] = useState(false);
   const [isRegeneratingAI, setIsRegeneratingAI] = useState(false);
   const [showFBHeroSettingsSidebox, setShowFBHeroSettingsSidebox] = useState<boolean>(false);
+  const [showGoogleSheetSettingsSidebox, setShowGoogleSheetSettingsSidebox] = useState<boolean>(false);
 
   useEffect(() => {
     setShowFBHeroSettingsSidebox(false);
+    setShowGoogleSheetSettingsSidebox(false);
   }, [(activeModalNode as any)?.boxId, activeModalNode?.type]);
 
   // Dedicated Connect Items Drawer (opened via [+] node button)
@@ -3501,6 +3510,112 @@ export const FacebookWorkflowCanvas = forwardRef<
   }, []);
 
   const [isAddFromTriggerOpen, setIsAddFromTriggerOpen] = useState(false);
+
+  // Google Sheets Integration State
+  const [loadingSheetHeaders, setLoadingSheetHeaders] = useState(false);
+  const [sheetHeaderError, setSheetHeaderError] = useState<string | null>(null);
+  const [sheetHeaderSuccess, setSheetHeaderSuccess] = useState<string | null>(null);
+  const [testingSheetSync, setTestingSheetSync] = useState(false);
+  const [sheetTestResult, setSheetTestResult] = useState<any | null>(null);
+  const googleSheetAutoLoadTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleLoadGoogleSheetHeaders = async (box: DynamicAIBoxConfig, overrideUrl?: string) => {
+    const targetUrl = (overrideUrl !== undefined ? overrideUrl : (box.googleSpreadsheetUrl || '')).trim() ||
+      'https://docs.google.com/spreadsheets/d/1lzY57D5ers2Xs6cvbV-skeqGSAK_jijbQJZt8Hn8udY/edit?gid=0#gid=0';
+    setLoadingSheetHeaders(true);
+    setSheetHeaderError(null);
+    setSheetHeaderSuccess(null);
+    try {
+      const res = await fetch('/api/google-sheets/load-headers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          spreadsheet_url: targetUrl,
+          sheet_name: box.googleSheetName || '',
+          credentials_json: box.googleServiceAccountJson || '',
+        }),
+      });
+      let data: any = null;
+      const rawText = await res.text();
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        throw new Error(`Server returned ${res.status} ${res.statusText || 'Bad Gateway'}. Please check backend connection.`);
+      }
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to load sheet headers');
+      }
+      handleUpdateAIBox(box.id, {
+        googleSheetHeaders: data.headers || [],
+        googleSpreadsheetId: data.spreadsheet_id || box.googleSpreadsheetId,
+        googleSheetName: data.sheet_name || box.googleSheetName,
+        googleSpreadsheetUrl: targetUrl,
+      });
+      setSheetHeaderSuccess(`Loaded ${data.headers?.length || 0} columns from "${data.sheet_name || 'Sheet1'}"!`);
+    } catch (err: any) {
+      setSheetHeaderError(err.message || 'Error connecting to Google Sheets API');
+    } finally {
+      setLoadingSheetHeaders(false);
+    }
+  };
+
+  const handleSheetUrlChange = (box: DynamicAIBoxConfig, newUrl: string, delay = 750) => {
+    handleUpdateAIBox(box.id, { googleSpreadsheetUrl: newUrl });
+    const trimmed = (newUrl || '').trim();
+    if (!trimmed || trimmed.length < 15) return;
+    if (googleSheetAutoLoadTimerRef.current) {
+      clearTimeout(googleSheetAutoLoadTimerRef.current);
+    }
+    googleSheetAutoLoadTimerRef.current = setTimeout(() => {
+      handleLoadGoogleSheetHeaders({ ...box, googleSpreadsheetUrl: trimmed }, trimmed);
+    }, delay);
+  };
+
+  const handleTestGoogleSheetSync = async (box: DynamicAIBoxConfig) => {
+    setTestingSheetSync(true);
+    setSheetHeaderError(null);
+    try {
+      const sampleContent = rawContent || 'Rent Condo XT Ekkamai 1 Bedroom 35 sqm 25,000 THB/month Near BTS Ekkamai';
+      const sampleCondo = 'XT Ekkamai';
+      const sampleImages = images || [];
+      const res = await fetch('/api/google-sheets/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          spreadsheet_url: box.googleSpreadsheetUrl || 'https://docs.google.com/spreadsheets/d/1lzY57D5ers2Xs6cvbV-skeqGSAK_jijbQJZt8Hn8udY/edit?gid=0#gid=0',
+          sheet_name: box.googleSheetName || '',
+          headers: box.googleSheetHeaders || [],
+          content: sampleContent,
+          condo_name: sampleCondo,
+          images: sampleImages,
+          custom_instructions: box.googleSheetAiPrompt || box.customPrompt || '',
+          model: box.model || 'gemini-1.5-flash',
+          provider: box.provider || 'google_ai',
+          prompt_template: box.templateText || '',
+          credentials_json: box.googleServiceAccountJson || '',
+        }),
+      });
+      let data: any = null;
+      const rawText = await res.text();
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        throw new Error(`Server returned ${res.status} ${res.statusText || 'Bad Gateway'}. Please check backend connection.`);
+      }
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to prepare or append row');
+      }
+      setSheetTestResult(data.mapped_data || data);
+      if (data.headers && (!box.googleSheetHeaders || box.googleSheetHeaders.length === 0)) {
+        handleUpdateAIBox(box.id, { googleSheetHeaders: data.headers });
+      }
+      setSheetHeaderSuccess(`Successfully appended test row to sheet!`);
+    } catch (err: any) {
+      setSheetHeaderError(err.message || 'Error executing Google Sheet sync');
+    } finally {
+      setTestingSheetSync(false);
+    }
+  };
   const [pendingDeleteBox, setPendingDeleteBox] = useState<DynamicAIBoxConfig | null>(null);
   const [pendingDeleteConnection, setPendingDeleteConnection] = useState<{ id: string; fromTitle: string; toTitle: string } | null>(null);
   const confirmDeleteConnection = () => {
@@ -3937,6 +4052,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     setConnectDrawerNode(null);
     setIsAISettingsDrawerOpen(false);
     setShowFBHeroSettingsSidebox(false);
+    setShowGoogleSheetSettingsSidebox(false);
     setSelectedNodeIds(new Set());
     setSelectedBoxId(null);
     setViewingPromptTemplate(null);
@@ -4164,7 +4280,7 @@ export const FacebookWorkflowCanvas = forwardRef<
           }
           return c;
         })
-        .filter((c) => c && c.fromNodeId !== c.toNodeId && c.fromNodeId !== 'trigger')
+        .filter((c) => c && c.fromNodeId !== c.toNodeId && c.fromNodeId !== 'trigger' && c.fromNodeId !== 'output' && c.toNodeId !== 'output')
       : [];
 
     const sanitizedConfig = {
@@ -4236,16 +4352,7 @@ export const FacebookWorkflowCanvas = forwardRef<
         : { x: config.getImages.x + 1, y: config.getImages.y + HALF_CIRCLE };
     }
     if (nodeId === 'output') {
-      const hasCombineBoxes = (config.combineBoxes || []).some((b) => b && b.enabled !== false);
-      if (hasCombineBoxes) return null;
-      const outNode = config.outputNode;
-      if (!outNode) return null;
-      const outX = outNode.x ?? 620;
-      const outY = outNode.y ?? 248;
-      const hasAddBtn = isNodeEffectivelyEnabled('output');
-      return socketType === 'output'
-        ? { x: outX + (hasAddBtn ? 109 : 71), y: outY + HALF_CIRCLE }
-        : { x: outX + 1, y: outY + HALF_CIRCLE };
+      return null;
     }
     if (nodeId === 'destination' || nodeId.startsWith('dest-')) {
       const allDests = getNormalizedDestinations(config);
@@ -5439,12 +5546,12 @@ export const FacebookWorkflowCanvas = forwardRef<
         },
       ];
 
-    const nextConfig = buildAlignedLayout(config.aiBoxes, newConnections, {
+    const nextConfig: FacebookWorkflowConfig = {
       ...config,
       destination: updatedDests[0],
       destinations: updatedDests,
       connections: newConnections,
-    });
+    };
     updateConfig(nextConfig);
     setQuickAddPopover(null);
     setConnectDrawerNode(null);
@@ -5670,11 +5777,11 @@ export const FacebookWorkflowCanvas = forwardRef<
 
     const nextCombineBoxes = [...(config.combineBoxes || []), newBox];
     const nextConns = [...(config.connections || []), newConn];
-    const nextConfig = buildAlignedLayout(config.aiBoxes, nextConns, {
+    const nextConfig: FacebookWorkflowConfig = {
       ...config,
       combineBoxes: nextCombineBoxes,
       connections: nextConns,
-    });
+    };
     updateConfig(nextConfig);
     return id;
   };
@@ -5706,11 +5813,11 @@ export const FacebookWorkflowCanvas = forwardRef<
       onConfirm: () => {
         const remainingBoxes = (config.combineBoxes || []).filter((b) => b.id !== boxId);
         const remainingConns = (config.connections || []).filter((c) => c.fromNodeId !== boxId && c.toNodeId !== boxId);
-        const nextConfig = buildAlignedLayout(config.aiBoxes, remainingConns, {
+        const nextConfig: FacebookWorkflowConfig = {
           ...config,
           combineBoxes: remainingBoxes,
           connections: remainingConns,
-        });
+        };
         updateConfig(nextConfig);
         if (activeModalNode?.type === 'combine' && (activeModalNode.combineId === boxId || (activeModalNode as any).id === boxId)) {
           setActiveModalNode(null);
@@ -5899,29 +6006,6 @@ export const FacebookWorkflowCanvas = forwardRef<
       toNodeId: newId,
     };
 
-    // If active Combine Box exists, automatically connect AI Box right socket to Combine Box!
-    const activeCb = (config.combineBoxes || []).find((cb) => cb && cb.enabled !== false);
-    const extraConns: WorkflowWireConnection[] = [];
-    if (activeCb) {
-      extraConns.push({
-        id: `conn-${newId}-${activeCb.id}`,
-        fromNodeId: newId,
-        toNodeId: activeCb.id,
-      });
-    } else {
-      const combineConns = (config.connections || []).filter((c) => {
-        const isTargetCombine = (config.combineBoxes || []).some((cb) => cb.id === c.toNodeId) || c.toNodeId === 'output';
-        return isTargetCombine && textAIBoxes.some((tb) => tb.id === c.fromNodeId);
-      });
-      if (combineConns.length > 0) {
-        extraConns.push({
-          id: `conn-${newId}-${combineConns[0].toNodeId}`,
-          fromNodeId: newId,
-          toNodeId: combineConns[0].toNodeId,
-        });
-      }
-    }
-
     let nextBoxes: DynamicAIBoxConfig[];
     if (position === 'above' && targetBoxId) {
       const targetIdx = config.aiBoxes.findIndex((b) => b.id === targetBoxId);
@@ -5949,17 +6033,11 @@ export const FacebookWorkflowCanvas = forwardRef<
       nextBoxes = [...config.aiBoxes, newBox];
     }
 
-    const nextConns = autoConnectWorkflow(
-      nextBoxes,
-      [...(config.connections || []), newConn, ...extraConns],
-      config.getContent.enabled,
-      config.getImages.enabled,
-      config.destination?.enabled !== false,
-      config.outputNode?.enabled !== false,
-      getNormalizedDestinations(config),
-      config.combineBoxes || []
-    );
-    updateConfig(buildAlignedLayout(nextBoxes, nextConns, { ...config, aiBoxes: nextBoxes, connections: nextConns }));
+    const nextConns = [
+      ...(config.connections || []),
+      ...(fromNodeId ? [newConn] : []),
+    ];
+    updateConfig({ ...config, aiBoxes: nextBoxes, connections: nextConns });
     setSelectedBoxId(newId);
     return newId;
   };
@@ -5977,6 +6055,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     const sourceBox = sourceAIBoxId ? config.aiBoxes.find((b) => b.id === sourceAIBoxId) : undefined;
     const fromId = sourceAIBoxId || config.aiBoxes.find((b) => isTextAIBox(b, config.connections))?.id || 'get-content';
 
+    const maxFormatX = formatBoxes.reduce((max, b) => Math.max(max, b.x), 375);
     const newId = `ai-box-format-${Date.now()}`;
     const newBox: DynamicAIBoxConfig = {
       id: newId,
@@ -5991,8 +6070,8 @@ export const FacebookWorkflowCanvas = forwardRef<
         : 'Generate optimized marketing copy for this property listing.\nHighlight rent/sale price, transit access, and clear call-to-action.',
       customPrompt: '',
       enabled: true,
-      x: 520,
-      y: 80,
+      x: formatBoxes.length > 0 ? maxFormatX + 145 : 520,
+      y: 110,
     };
 
     const newConn: WorkflowWireConnection = {
@@ -6003,7 +6082,7 @@ export const FacebookWorkflowCanvas = forwardRef<
 
     const nextBoxes = [...config.aiBoxes, newBox];
     const nextConns = [...(config.connections || []), newConn];
-    updateConfig(buildAlignedLayout(nextBoxes, nextConns, { ...config, aiBoxes: nextBoxes, connections: nextConns }));
+    updateConfig({ ...config, aiBoxes: nextBoxes, connections: nextConns });
     setSelectedBoxId(newId);
     return newId;
   };
@@ -6063,7 +6142,7 @@ export const FacebookWorkflowCanvas = forwardRef<
       aiBoxes: nextBoxes,
       connections: nextConns,
     };
-    updateConfig(buildAlignedLayout(nextBoxes, nextConns, nextConfig));
+    updateConfig(nextConfig);
     setSelectedBoxId(newId);
     return newId;
   };
@@ -6118,7 +6197,7 @@ export const FacebookWorkflowCanvas = forwardRef<
       aiBoxes: nextBoxes,
       connections: nextConns,
     };
-    updateConfig(buildAlignedLayout(nextBoxes, nextConns, nextConfig));
+    updateConfig(nextConfig);
     setSelectedBoxId(newId);
     return newId;
   };
@@ -6208,6 +6287,52 @@ export const FacebookWorkflowCanvas = forwardRef<
     return newId;
   };
 
+  // Add Dynamic Google Sheet Sync Node
+  const handleAddGoogleSheetNodeConnectedFrom = (fromNodeId?: string): string => {
+    const sheetBoxes = config.aiBoxes.filter((b) => isGoogleSheetBox(b));
+    const newCount = sheetBoxes.length + 1;
+    const newId = `ai-box-google-sheet-${Date.now()}`;
+
+    const newBox: DynamicAIBoxConfig = {
+      id: newId,
+      title: newCount === 1 ? 'Google Sheet' : `Google Sheet #${newCount}`,
+      subtitle: 'Spreadsheet Sync',
+      processType: 'google_sheet',
+      provider: 'google_sheet' as any,
+      model: 'google-sheets-v4',
+      templateId: 'sheets-append',
+      templateText: '',
+      customPrompt: '',
+      enabled: true,
+      googleSpreadsheetUrl: 'https://docs.google.com/spreadsheets/d/1lzY57D5ers2Xs6cvbV-skeqGSAK_jijbQJZt8Hn8udY/edit?gid=0#gid=0',
+      googleSpreadsheetId: '1lzY57D5ers2Xs6cvbV-skeqGSAK_jijbQJZt8Hn8udY',
+      googleSheetName: '',
+      googleSheetHeaders: [],
+      googleSheetAction: 'append_row',
+      x: 740,
+      y: 280 + (newCount - 1) * 140,
+    };
+
+    const nextBoxes = [...config.aiBoxes, newBox];
+    let nextConns = [...(config.connections || [])];
+    if (fromNodeId) {
+      nextConns.push({
+        id: `wire-${fromNodeId}-${newId}-${Date.now()}`,
+        fromNodeId: fromNodeId,
+        toNodeId: newId,
+      });
+    }
+
+    const nextConfig = {
+      ...config,
+      aiBoxes: nextBoxes,
+      connections: nextConns,
+    };
+    updateConfig(nextConfig);
+    setSelectedBoxId(newId);
+    return newId;
+  };
+
   // Add Dynamic External Browser Node (Chrome / ChatGPT multi-worker automation)
   const handleAddExternalBrowserNodeConnectedFrom = (fromNodeId?: string): string => {
     const browserBoxes = config.aiBoxes.filter((b) => isExternalBrowserAIBox(b));
@@ -6259,7 +6384,7 @@ export const FacebookWorkflowCanvas = forwardRef<
       aiBoxes: nextBoxes,
       connections: nextConns,
     };
-    updateConfig(buildAlignedLayout(nextBoxes, nextConns, nextConfig));
+    updateConfig(nextConfig);
     setSelectedBoxId(newId);
     return newId;
   };
@@ -6299,22 +6424,11 @@ export const FacebookWorkflowCanvas = forwardRef<
       },
     ];
 
-    const autoConns = autoConnectWorkflow(
-      nextBoxes,
-      nextConns,
-      config.getContent.enabled,
-      config.getImages.enabled,
-      config.destination?.enabled !== false,
-      config.outputNode?.enabled !== false,
-      getNormalizedDestinations(config),
-      config.combineBoxes || []
-    );
-
-    const nextConfig = buildAlignedLayout(nextBoxes, autoConns, {
+    const nextConfig = {
       ...config,
       aiBoxes: nextBoxes,
-      connections: autoConns,
-    });
+      connections: nextConns,
+    };
 
     updateConfig(nextConfig);
     setSelectedBoxId(newId);
@@ -6359,22 +6473,11 @@ export const FacebookWorkflowCanvas = forwardRef<
       },
     ];
 
-    const autoConns = autoConnectWorkflow(
-      nextBoxes,
-      nextConns,
-      config.getContent.enabled,
-      config.getImages.enabled,
-      config.destination?.enabled !== false,
-      config.outputNode?.enabled !== false,
-      getNormalizedDestinations(config),
-      config.combineBoxes || []
-    );
-
-    const nextConfig = buildAlignedLayout(nextBoxes, autoConns, {
+    const nextConfig = {
       ...config,
       aiBoxes: nextBoxes,
-      connections: autoConns,
-    });
+      connections: nextConns,
+    };
 
     updateConfig(nextConfig);
     setSelectedBoxId(newId);
@@ -6394,6 +6497,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     if (isEnhance) return <FiImage style={{ fontSize: `${size}px`, color: '#EC4899' }} />;
     if (isTextFormatAIBox(b)) return <FiFileText style={{ fontSize: `${size}px`, color: '#6366F1' }} />;
     if (isN8NAIBox(b)) return <FiServer style={{ fontSize: `${size}px`, color: '#FF6D5A' }} />;
+    if (isGoogleSheetBox(b)) return <SiGooglesheets style={{ fontSize: `${size}px`, color: '#0F9D58' }} />;
     return <FiMessageSquare style={{ fontSize: `${size}px`, color: '#8B5CF6' }} />;
   };
 
@@ -6435,11 +6539,11 @@ export const FacebookWorkflowCanvas = forwardRef<
       (c) => c.fromNodeId !== id && c.toNodeId !== id
     );
     const newConnections = autoConnectImagePipeline(newBoxes, unassociatedConnections);
-    const newConfig = buildAlignedLayout(newBoxes, newConnections, {
+    const newConfig: FacebookWorkflowConfig = {
       ...config,
       aiBoxes: newBoxes,
       connections: newConnections,
-    });
+    };
     updateConfig(newConfig);
 
     if (selectedBoxId === id) setSelectedBoxId(null);
@@ -6783,11 +6887,11 @@ export const FacebookWorkflowCanvas = forwardRef<
     };
     const nextBoxes = [...config.aiBoxes, duplicated];
     const nextConns = autoConnectImagePipeline(nextBoxes, config.connections);
-    const nextConfig = buildAlignedLayout(nextBoxes, nextConns, {
+    const nextConfig: FacebookWorkflowConfig = {
       ...config,
       aiBoxes: nextBoxes,
       connections: nextConns,
-    });
+    };
     updateConfig(nextConfig);
     setSelectedBoxId(newId);
   };
@@ -6944,6 +7048,10 @@ export const FacebookWorkflowCanvas = forwardRef<
   };
 
   const handleCanvasMouseDown = (e: React.MouseEvent) => {
+    if (persistTimerRef.current) {
+      clearTimeout(persistTimerRef.current);
+      persistTimerRef.current = null;
+    }
     if (
       (e.target as HTMLElement).closest('.canvas-node') ||
       (e.target as HTMLElement).closest('.canvas-control') ||
@@ -6963,6 +7071,7 @@ export const FacebookWorkflowCanvas = forwardRef<
       return;
     }
     setIsPanning(true);
+    panStartRef.current = { x: e.clientX - config.panOffset.x, y: e.clientY - config.panOffset.y };
     setPanStart({ x: e.clientX - config.panOffset.x, y: e.clientY - config.panOffset.y });
   };
 
@@ -7008,22 +7117,32 @@ export const FacebookWorkflowCanvas = forwardRef<
     }
 
     if (isPanning) {
+      const startX = panStartRef.current.x || panStart.x;
+      const startY = panStartRef.current.y || panStart.y;
       const newOffset = {
-        x: e.clientX - panStart.x,
-        y: e.clientY - panStart.y,
+        x: e.clientX - startX,
+        y: e.clientY - startY,
       };
       setConfig((prev) => ({ ...prev, panOffset: newOffset }));
     }
 
-    if (draggedNodeId) {
-      if (Math.hypot(e.clientX - dragStartCoord.current.x, e.clientY - dragStartCoord.current.y) > 4) {
+    const activeDragId = draggedNodeIdRef.current || draggedNodeId;
+    if (activeDragId) {
+      if (persistTimerRef.current) {
+        clearTimeout(persistTimerRef.current);
+        persistTimerRef.current = null;
+      }
+      if (Math.hypot(e.clientX - dragStartCoord.current.x, e.clientY - dragStartCoord.current.y) > 3) {
         hasMoved.current = true;
       }
 
-      const deltaX = (e.clientX - dragStart.x) / config.zoom;
-      const deltaY = (e.clientY - dragStart.y) / config.zoom;
+      const prevX = dragStartRef.current.x || dragStart.x;
+      const prevY = dragStartRef.current.y || dragStart.y;
+      const deltaX = (e.clientX - prevX) / config.zoom;
+      const deltaY = (e.clientY - prevY) / config.zoom;
+      dragStartRef.current = { x: e.clientX, y: e.clientY };
 
-      if (selectedNodeIds.has(draggedNodeId) && selectedNodeIds.size > 1) {
+      if (selectedNodeIds.has(activeDragId) && selectedNodeIds.size > 1) {
         // Move all selected nodes simultaneously
         setConfig((prev) => {
           let newTrigger = prev.trigger;
@@ -7071,7 +7190,7 @@ export const FacebookWorkflowCanvas = forwardRef<
             selectedNodeIds.has(b.id) ? { ...b, x: b.x + deltaX, y: b.y + deltaY } : b
           );
 
-          return {
+          const next = {
             ...prev,
             trigger: newTrigger,
             getContent: newGetContent,
@@ -7082,62 +7201,90 @@ export const FacebookWorkflowCanvas = forwardRef<
             aiBoxes: newAiBoxes,
             combineBoxes: newCombineBoxes,
           };
+          latestConfigRef.current = next;
+          return next;
         });
       } else {
-        if (draggedNodeId === 'trigger') {
-          setConfig((prev) => ({
-            ...prev,
-            trigger: { ...prev.trigger, x: prev.trigger.x + deltaX, y: prev.trigger.y + deltaY },
-          }));
-        } else if (draggedNodeId === 'get-content') {
-          setConfig((prev) => ({
-            ...prev,
-            getContent: { ...prev.getContent, x: prev.getContent.x + deltaX, y: prev.getContent.y + deltaY },
-          }));
-        } else if (draggedNodeId === 'get-images') {
-          setConfig((prev) => ({
-            ...prev,
-            getImages: { ...prev.getImages, x: prev.getImages.x + deltaX, y: prev.getImages.y + deltaY },
-          }));
-        } else if (draggedNodeId === 'output') {
-          setConfig((prev) => ({
-            ...prev,
-            outputNode: {
-              ...prev.outputNode,
-              id: 'output',
-              enabled: prev.outputNode?.enabled !== false,
-              x: (prev.outputNode?.x ?? 620) + deltaX,
-              y: (prev.outputNode?.y ?? 248) + deltaY,
-            },
-          }));
-        } else if (draggedNodeId === 'destination' || draggedNodeId.startsWith('dest-')) {
+        if (activeDragId === 'trigger') {
+          setConfig((prev) => {
+            const next = {
+              ...prev,
+              trigger: { ...prev.trigger, x: prev.trigger.x + deltaX, y: prev.trigger.y + deltaY },
+            };
+            latestConfigRef.current = next;
+            return next;
+          });
+        } else if (activeDragId === 'get-content') {
+          setConfig((prev) => {
+            const next = {
+              ...prev,
+              getContent: { ...prev.getContent, x: prev.getContent.x + deltaX, y: prev.getContent.y + deltaY },
+            };
+            latestConfigRef.current = next;
+            return next;
+          });
+        } else if (activeDragId === 'get-images') {
+          setConfig((prev) => {
+            const next = {
+              ...prev,
+              getImages: { ...prev.getImages, x: prev.getImages.x + deltaX, y: prev.getImages.y + deltaY },
+            };
+            latestConfigRef.current = next;
+            return next;
+          });
+        } else if (activeDragId === 'output') {
+          setConfig((prev) => {
+            const next = {
+              ...prev,
+              outputNode: {
+                ...prev.outputNode,
+                id: 'output',
+                enabled: prev.outputNode?.enabled !== false,
+                x: (prev.outputNode?.x ?? 620) + deltaX,
+                y: (prev.outputNode?.y ?? 248) + deltaY,
+              },
+            };
+            latestConfigRef.current = next;
+            return next;
+          });
+        } else if (activeDragId === 'destination' || activeDragId.startsWith('dest-')) {
           setConfig((prev) => {
             const allDests = getNormalizedDestinations(prev);
             const updatedDests = allDests.map((d) =>
-              d.id === draggedNodeId ? { ...d, x: d.x + deltaX, y: d.y + deltaY } : d
+              d.id === activeDragId ? { ...d, x: d.x + deltaX, y: d.y + deltaY } : d
             );
-            return {
+            const next = {
               ...prev,
-              destination: (draggedNodeId === 'destination' || draggedNodeId === updatedDests[0]?.id)
+              destination: (activeDragId === 'destination' || activeDragId === updatedDests[0]?.id)
                 ? { ...prev.destination, x: prev.destination.x + deltaX, y: prev.destination.y + deltaY }
                 : prev.destination,
               destinations: updatedDests,
             };
+            latestConfigRef.current = next;
+            return next;
           });
-        } else if (draggedNodeId.startsWith('ai-box-')) {
-          setConfig((prev) => ({
-            ...prev,
-            aiBoxes: prev.aiBoxes.map((b) =>
-              b.id === draggedNodeId ? { ...b, x: b.x + deltaX, y: b.y + deltaY } : b
-            ),
-          }));
-        } else if (draggedNodeId.startsWith('combine-box') || (config.combineBoxes || []).some((b) => b.id === draggedNodeId)) {
-          setConfig((prev) => ({
-            ...prev,
-            combineBoxes: (prev.combineBoxes || []).map((b) =>
-              b.id === draggedNodeId ? { ...b, x: b.x + deltaX, y: b.y + deltaY } : b
-            ),
-          }));
+        } else if (config.aiBoxes.some((b) => b.id === activeDragId)) {
+          setConfig((prev) => {
+            const next = {
+              ...prev,
+              aiBoxes: prev.aiBoxes.map((b) =>
+                b.id === activeDragId ? { ...b, x: b.x + deltaX, y: b.y + deltaY } : b
+              ),
+            };
+            latestConfigRef.current = next;
+            return next;
+          });
+        } else if ((config.combineBoxes || []).some((b) => b.id === activeDragId)) {
+          setConfig((prev) => {
+            const next = {
+              ...prev,
+              combineBoxes: (prev.combineBoxes || []).map((b) =>
+                b.id === activeDragId ? { ...b, x: b.x + deltaX, y: b.y + deltaY } : b
+              ),
+            };
+            latestConfigRef.current = next;
+            return next;
+          });
         }
       }
 
@@ -7152,18 +7299,34 @@ export const FacebookWorkflowCanvas = forwardRef<
       setDragWire(null);
     }
     if (isPanning) setIsPanning(false);
-    if (draggedNodeId) {
+
+    const activeDragId = draggedNodeIdRef.current || draggedNodeId;
+    if (activeDragId) {
+      draggedNodeIdRef.current = null;
       setDraggedNodeId(null);
       if (hasMoved.current) {
-        setConfig((latest) => {
+        hasMoved.current = false;
+        // Immediately persist on drop so clicking Back or navigating preserves exact custom coordinates!
+        if (persistTimerRef.current) {
+          clearTimeout(persistTimerRef.current);
+          persistTimerRef.current = null;
+        }
+        const cfgToSave = latestConfigRef.current;
+        try {
+          localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(cfgToSave));
+        } catch {
           try {
-            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(latest));
-          } catch (e) { }
-          if (onConfigChange) {
-            onConfigChange(latest);
-          }
-          return latest;
-        });
+            localStorage.setItem(
+              LOCAL_STORAGE_KEY,
+              JSON.stringify(stripLargeBase64FromWorkflowConfig(cfgToSave))
+            );
+          } catch {}
+        }
+        lastEmittedConfigRef.current = cfgToSave;
+        lastEmittedConfigStrRef.current = JSON.stringify(cfgToSave);
+        if (onConfigChange) {
+          onConfigChange(cfgToSave);
+        }
       }
     }
   };
@@ -7177,6 +7340,10 @@ export const FacebookWorkflowCanvas = forwardRef<
 
   const startDragNode = (nodeId: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    if (persistTimerRef.current) {
+      clearTimeout(persistTimerRef.current);
+      persistTimerRef.current = null;
+    }
     if (e.shiftKey) {
       setSelectedNodeIds((prev) => {
         const next = new Set(prev);
@@ -7195,11 +7362,36 @@ export const FacebookWorkflowCanvas = forwardRef<
         return new Set([nodeId]);
       });
     }
+    draggedNodeIdRef.current = nodeId;
     setDraggedNodeId(nodeId);
+    dragStartRef.current = { x: e.clientX, y: e.clientY };
     setDragStart({ x: e.clientX, y: e.clientY });
     dragStartCoord.current = { x: e.clientX, y: e.clientY };
     hasMoved.current = false;
   };
+
+  // Global window listeners for butter-smooth dragging & panning
+  // Prevents node movement from getting stuck or losing cursor when moving quickly over child elements or canvas borders
+  useEffect(() => {
+    const isDragging = Boolean(draggedNodeIdRef.current || draggedNodeId);
+    if (!isDragging && !isPanning && !dragWire) return;
+
+    const onWindowMouseMove = (e: MouseEvent) => {
+      handleCanvasMouseMove(e as any);
+    };
+
+    const onWindowMouseUp = () => {
+      handleCanvasMouseUp();
+    };
+
+    window.addEventListener('mousemove', onWindowMouseMove, { passive: true });
+    window.addEventListener('mouseup', onWindowMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', onWindowMouseMove);
+      window.removeEventListener('mouseup', onWindowMouseUp);
+    };
+  }, [draggedNodeId, isPanning, Boolean(dragWire)]);
 
   const handleNodeClick = (node: ActiveModalNode, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -7294,6 +7486,18 @@ export const FacebookWorkflowCanvas = forwardRef<
   const currentModalAIBox = activeModalNode?.type === 'ai-box'
     ? config.aiBoxes.find((b) => b.id === activeModalNode.boxId)
     : null;
+
+  useEffect(() => {
+    if (
+      currentModalAIBox &&
+      isGoogleSheetBox(currentModalAIBox) &&
+      currentModalAIBox.googleSpreadsheetUrl &&
+      (!currentModalAIBox.googleSheetHeaders || currentModalAIBox.googleSheetHeaders.length === 0) &&
+      !loadingSheetHeaders
+    ) {
+      handleLoadGoogleSheetHeaders(currentModalAIBox);
+    }
+  }, [currentModalAIBox?.id]);
 
   const isContentOutputConnected = (config.connections || []).some((c) => c.fromNodeId === 'get-content');
   const contentHasReceiver = Boolean(config.getContent.enabled) && config.aiBoxes.some((b) => isValidConnection('get-content', b.id));
@@ -7511,7 +7715,7 @@ export const FacebookWorkflowCanvas = forwardRef<
             left: 0,
             width: '100%',
             height: '100%',
-            transition: isPanning || draggedNodeId ? 'none' : 'transform 0.28s cubic-bezier(0.16, 1, 0.3, 1)',
+            transition: 'none',
           }}
         >
           {/* SVG Connection Lines */}
@@ -7771,6 +7975,23 @@ export const FacebookWorkflowCanvas = forwardRef<
             {/* Dynamic AI / Workflow Connections from config.connections */}
             {dedupeConnections(config.connections || []).map((conn) => {
               if (conn.fromNodeId === 'trigger') return null;
+              if (conn.fromNodeId === 'output' || conn.toNodeId === 'output') return null;
+
+              const activeDests = getNormalizedDestinations(config).filter((d) => d && d.enabled !== false);
+
+              // Validate that both endpoints exist on canvas (prevents phantom or floating wires)
+              const isNodeOnCanvas = (nodeId: string): boolean => {
+                if (nodeId === 'get-content') return Boolean(config.getContent?.enabled);
+                if (nodeId === 'get-images') return Boolean(config.getImages?.enabled);
+                if (config.aiBoxes.some((b) => b.id === nodeId)) return true;
+                if ((config.combineBoxes || []).some((cb) => cb.id === nodeId && cb.enabled !== false)) return true;
+                if (activeDests.some((d) => (d.id || 'destination') === nodeId)) return true;
+                return false;
+              };
+              if (!isNodeOnCanvas(conn.fromNodeId) || !isNodeOnCanvas(conn.toNodeId)) {
+                return null;
+              }
+
               const fromBox = config.aiBoxes.find((b) => b.id === conn.fromNodeId);
               const toBox = config.aiBoxes.find((b) => b.id === conn.toNodeId);
 
@@ -7783,7 +8004,6 @@ export const FacebookWorkflowCanvas = forwardRef<
               }
 
               // 2. Do not render dangling wires to destinations if no destination is active on canvas
-              const activeDests = getNormalizedDestinations(config).filter((d) => d && d.enabled !== false);
               if ((conn.toNodeId === 'destination' || conn.toNodeId.startsWith('dest-')) && activeDests.length === 0) {
                 return null;
               }
@@ -8807,6 +9027,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                     <FiFileText style={{ fontSize: '28px', color: isEffectiveEnabled ? '#6366F1' : '#8B949E', transition: 'color 0.2s ease' }} />
                   ) : isN8NAIBox(box) ? (
                     <FiServer style={{ fontSize: '28px', color: isEffectiveEnabled ? '#FF6D5A' : '#8B949E', transition: 'color 0.2s ease' }} />
+                  ) : isGoogleSheetBox(box) ? (
+                    <SiGooglesheets style={{ fontSize: '28px', color: isEffectiveEnabled ? '#0F9D58' : '#8B949E', transition: 'color 0.2s ease' }} />
                   ) : (
                     <FiMessageSquare style={{ fontSize: '28px', color: isEffectiveEnabled ? '#8B5CF6' : '#8B949E', transition: 'color 0.2s ease' }} />
                   )}
@@ -8895,7 +9117,9 @@ export const FacebookWorkflowCanvas = forwardRef<
 
                     const displayNodeTitle = box.title || (isWatermark && matchingCropFormat ? `Format: ${matchingCropFormat.name}` : (isWatermark ? 'Format Preset' : 'AI Node'));
 
-                    const displayNodeSubtitle = isWatermark && matchingCropFormat
+                    const displayNodeSubtitle = isGoogleSheetBox(box)
+                      ? (box.googleSheetHeaders && box.googleSheetHeaders.length > 0 ? `${box.googleSheetHeaders.length} Columns` : (box.subtitle || 'Spreadsheet Sync'))
+                      : isWatermark && matchingCropFormat
                       ? `${matchingCropFormat.targetWidth}×${matchingCropFormat.targetHeight} (${matchingCropFormat.aspect || '1:1'})`
                       : (box.subtitle || 'Crop & Watermark');
 
@@ -9934,10 +10158,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                 width: '380px',
                 maxWidth: '100%',
                 backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
-                borderLeft: viewingPromptTemplate
-                  ? '1px solid transparent'
-                  : '1px solid var(--border-color)',
-                boxShadow: viewingPromptTemplate
+                borderLeft: '1px solid var(--border-color)',
+                boxShadow: (viewingPromptTemplate || showGoogleSheetSettingsSidebox)
                   ? 'none'
                   : isDark
                   ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
@@ -9957,6 +10179,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                   justifyContent: 'space-between',
                   gap: '1rem',
                   padding: '0.875rem 1rem',
+                  height: '62px',
+                  boxSizing: 'border-box',
                   borderBottom: 'none',
                   backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
                 }}
@@ -9978,9 +10202,11 @@ export const FacebookWorkflowCanvas = forwardRef<
                               ? 'rgba(245, 158, 11, 0.12)'
                               : isOutput
                                 ? 'rgba(16, 185, 129, 0.12)'
-                                : currentModalAIBox?.provider === 'google_ai'
-                                  ? 'rgba(96, 165, 250, 0.15)'
-                                  : 'rgba(16, 185, 129, 0.15)',
+                                : currentModalAIBox && isGoogleSheetBox(currentModalAIBox)
+                                  ? 'rgba(15, 157, 88, 0.15)'
+                                  : currentModalAIBox?.provider === 'google_ai'
+                                    ? 'rgba(96, 165, 250, 0.15)'
+                                    : 'rgba(16, 185, 129, 0.15)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -9993,6 +10219,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                     {isCombine && <FiGitMerge size={18} color="#F59E0B" />}
                     {isOutput && <FiCheckCircle size={18} color="#10B981" />}
                     {isAIBox && currentModalAIBox && (() => {
+                      if (isGoogleSheetBox(currentModalAIBox)) return <SiGooglesheets size={18} color="#0F9D58" />;
                       const isWatermark = isWatermarkAIBox(currentModalAIBox);
                       const isEnhance = (isEnhanceAIBox(currentModalAIBox) || isImageAIBox(currentModalAIBox, config.connections)) && !isWatermark;
                       const isFormat = isTextFormatAIBox(currentModalAIBox);
@@ -10068,6 +10295,39 @@ export const FacebookWorkflowCanvas = forwardRef<
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  {isAIBox && currentModalAIBox && isGoogleSheetBox(currentModalAIBox) && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowGoogleSheetSettingsSidebox((prev) => !prev);
+                      }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      title="Google Sheet & AI Agent Settings (Spreadsheet, Credentials, Model, Prompt)"
+                      aria-label="Google Sheet Settings"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: '28px',
+                        height: '28px',
+                        borderRadius: '6px',
+                        border: showGoogleSheetSettingsSidebox
+                          ? '1px solid #0F9D58'
+                          : isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                        backgroundColor: showGoogleSheetSettingsSidebox
+                          ? 'rgba(15, 157, 88, 0.15)'
+                          : isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+                        color: showGoogleSheetSettingsSidebox ? '#0F9D58' : 'var(--text-secondary)',
+                        cursor: 'pointer',
+                        flexShrink: 0,
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      <FiSettings size={15} />
+                    </button>
+                  )}
+
                   {isAIBox && currentModalAIBox && (
                     isChromeTabGroupAIBox(currentModalAIBox) ||
                     isExternalBrowserAIBox(currentModalAIBox) ||
@@ -11739,6 +11999,337 @@ export const FacebookWorkflowCanvas = forwardRef<
                           />
                         </div>
                       </div>
+                    ) : isGoogleSheetBox(currentModalAIBox) ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                        {/* Google Sheets Engine Banner */}
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.625rem',
+                            padding: '0.65rem 0.75rem',
+                            borderRadius: '8px',
+                            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC',
+                            border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: '32px',
+                              height: '32px',
+                              borderRadius: '8px',
+                              backgroundColor: '#0F9D58',
+                              color: '#FFFFFF',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <SiGooglesheets size={18} />
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                              Google Sheets Integration
+                            </div>
+                            <div style={{ fontSize: '0.625rem', color: currentModalAIBox.googleServiceAccountEmail ? '#10B981' : 'var(--text-muted)', wordBreak: 'break-all', fontWeight: currentModalAIBox.googleServiceAccountEmail ? 600 : 400 }}>
+                              {currentModalAIBox.googleServiceAccountEmail
+                                ? `Custom Key: ${currentModalAIBox.googleServiceAccountEmail}`
+                                : 'Service Account: bolthaven-sheets@super-realestate-488219.iam.gserviceaccount.com'}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* AI Engine & Model */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                          <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                            AI Engine & Model
+                          </label>
+                          <Select
+                            value={
+                              currentModalAIBox.model ||
+                              (currentModalAIBox.provider === 'openai' ? 'gpt-4o-mini' : 'gemini-1.5-flash')
+                            }
+                            onChange={(val) => {
+                              const isGoogle = AI_ENGINE_MODEL_GROUPS[0]?.options.some((o) => o.value === val);
+                              handleUpdateAIBox(currentModalAIBox.id, {
+                                model: val,
+                                provider: isGoogle ? 'google_ai' : 'openai',
+                              });
+                            }}
+                            options={AI_ENGINE_MODEL_GROUPS}
+                            height="36px"
+                            placeholder="Select AI Model..."
+                          />
+                        </div>
+
+                        {/* Select Prompt Template */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                              Select Prompt Template
+                            </label>
+                            {Boolean(currentModalAIBox.templateId) && (
+                              <span style={{ fontSize: '0.625rem', color: '#10B981', fontWeight: 500 }}>
+                                ● Linked to Template
+                              </span>
+                            )}
+                          </div>
+                          <Select
+                            value={String(currentModalAIBox.templateId || '')}
+                            onChange={(val) => {
+                              const match = availablePrompts.find((p) => String(p.id) === String(val));
+                              handleUpdateAIBox(currentModalAIBox.id, {
+                                templateId: String(val),
+                                templateText: match?.templateText || '',
+                              });
+                            }}
+                            options={[
+                              { value: '', label: 'Select option' },
+                              ...availablePrompts.map((p) => ({
+                                value: String(p.id),
+                                label: p.name,
+                              })),
+                            ]}
+                            height="36px"
+                            placeholder="Select option"
+                          />
+                          {Boolean(currentModalAIBox.templateId) && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const activePrompt =
+                                    availablePrompts.find((p) => String(p.id) === String(currentModalAIBox.templateId)) ||
+                                    availablePrompts[0];
+                                  if (activePrompt) {
+                                    setViewingPromptTemplate({
+                                      id: String(activePrompt.id),
+                                      name: activePrompt.name,
+                                      templateText: activePrompt.templateText || currentModalAIBox.templateText || '',
+                                    });
+                                  }
+                                }}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '5px',
+                                  background: 'none',
+                                  border: 'none',
+                                  color: 'var(--accent-primary, #3B82F6)',
+                                  fontSize: '0.6875rem',
+                                  fontWeight: 500,
+                                  cursor: 'pointer',
+                                  padding: '2px 0',
+                                }}
+                              >
+                                <FiEye size={12} /> View Prompt Template
+                              </button>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Sheet Tab Name & Load Headers Button */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '0.5rem', alignItems: 'flex-end' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                            <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                              Sheet / Tab Name (Optional)
+                            </label>
+                            <input
+                              type="text"
+                              value={currentModalAIBox.googleSheetName || ''}
+                              onChange={(e) => {
+                                handleUpdateAIBox(currentModalAIBox.id, {
+                                  googleSheetName: e.target.value,
+                                });
+                              }}
+                              placeholder="e.g. Sheet1 or Listings"
+                              style={{
+                                width: '100%',
+                                height: '34px',
+                                padding: '0 0.625rem',
+                                borderRadius: '6px',
+                                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
+                                color: 'var(--text-primary)',
+                                fontSize: '0.75rem',
+                                boxSizing: 'border-box',
+                              }}
+                            />
+                          </div>
+
+                          <button
+                            type="button"
+                            disabled={loadingSheetHeaders}
+                            onClick={() => handleLoadGoogleSheetHeaders(currentModalAIBox)}
+                            style={{
+                              height: '34px',
+                              padding: '0 0.85rem',
+                              borderRadius: '6px',
+                              border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                              backgroundColor: isDark ? '#21262D' : '#F1F5F9',
+                              color: 'var(--text-primary)',
+                              fontSize: '0.75rem',
+                              fontWeight: 600,
+                              cursor: loadingSheetHeaders ? 'not-allowed' : 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              opacity: loadingSheetHeaders ? 0.7 : 1,
+                              whiteSpace: 'nowrap',
+                              transition: 'all 0.15s ease',
+                            }}
+                            onMouseEnter={(e) => {
+                              if (!loadingSheetHeaders) {
+                                e.currentTarget.style.backgroundColor = isDark ? '#30363D' : '#E2E8F0';
+                              }
+                            }}
+                            onMouseLeave={(e) => {
+                              if (!loadingSheetHeaders) {
+                                e.currentTarget.style.backgroundColor = isDark ? '#21262D' : '#F1F5F9';
+                              }
+                            }}
+                          >
+                            {loadingSheetHeaders ? (
+                              <>
+                                <div
+                                  style={{
+                                    width: '12px',
+                                    height: '12px',
+                                    border: '2px solid var(--text-primary)',
+                                    borderTopColor: 'transparent',
+                                    borderRadius: '50%',
+                                    animation: 'spin 0.8s linear infinite',
+                                  }}
+                                />
+                                Loading...
+                              </>
+                            ) : (
+                              <>
+                                <SiGooglesheets size={13} color="#0F9D58" /> Load Headers
+                              </>
+                            )}
+                          </button>
+                        </div>
+
+                        {/* Error Alert with GCP Enablement Link if API disabled */}
+                        {sheetHeaderError && (
+                          <div
+                            style={{
+                              padding: '0.65rem 0.75rem',
+                              borderRadius: '6px',
+                              backgroundColor: isDark ? 'rgba(239, 68, 68, 0.12)' : '#FEF2F2',
+                              border: '1px solid #EF4444',
+                              color: isDark ? '#FCA5A5' : '#B91C1C',
+                              fontSize: '0.6875rem',
+                              lineHeight: 1.4,
+                            }}
+                          >
+                            <div style={{ fontWeight: 700, marginBottom: '2px' }}>Connection Error:</div>
+                            <div style={{ wordBreak: 'break-word' }}>{sheetHeaderError}</div>
+                            {sheetHeaderError.includes('Enable it by visiting') && (
+                              <div style={{ marginTop: '0.5rem' }}>
+                                <a
+                                  href="https://console.developers.google.com/apis/api/sheets.googleapis.com/overview?project=472927885767"
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                    padding: '4px 8px',
+                                    borderRadius: '4px',
+                                    backgroundColor: '#DC2626',
+                                    color: '#FFFFFF',
+                                    fontWeight: 600,
+                                    fontSize: '0.6875rem',
+                                    textDecoration: 'none',
+                                  }}
+                                >
+                                  👉 Enable Google Sheets API in GCP Console <FiExternalLink size={10} />
+                                </a>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Success Alert */}
+                        {sheetHeaderSuccess && (
+                          <div
+                            style={{
+                              padding: '0.5rem 0.75rem',
+                              borderRadius: '6px',
+                              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F1F5F9',
+                              border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                              color: 'var(--text-primary)',
+                              fontSize: '0.6875rem',
+                              fontWeight: 500,
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                            }}
+                          >
+                            <SiGooglesheets size={12} color="#0F9D58" /> {sheetHeaderSuccess}
+                          </div>
+                        )}
+
+                        {/* Loaded Headers Chips Display */}
+                        {currentModalAIBox.googleSheetHeaders && currentModalAIBox.googleSheetHeaders.length > 0 ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                                Detected Sheet Columns ({currentModalAIBox.googleSheetHeaders.length})
+                              </label>
+                              <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)', fontWeight: 500 }}>
+                                Row 1 Header Mapping Active
+                              </span>
+                            </div>
+                            <div
+                              style={{
+                                display: 'flex',
+                                flexWrap: 'wrap',
+                                gap: '4px',
+                                padding: '0.5rem',
+                                borderRadius: '6px',
+                                backgroundColor: isDark ? '#0D1117' : '#F1F5F9',
+                                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                maxHeight: '130px',
+                                overflowY: 'auto',
+                              }}
+                            >
+                              {currentModalAIBox.googleSheetHeaders.map((hdr, i) => (
+                                <span
+                                  key={i}
+                                  style={{
+                                    fontSize: '0.625rem',
+                                    fontWeight: 600,
+                                    padding: '2px 7px',
+                                    borderRadius: '12px',
+                                    backgroundColor: isDark ? '#1C2128' : '#FFFFFF',
+                                    border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                    color: 'var(--text-primary)',
+                                  }}
+                                >
+                                  {hdr}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          <div
+                            style={{
+                              padding: '0.75rem',
+                              borderRadius: '6px',
+                              border: isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1',
+                              textAlign: 'center',
+                              fontSize: '0.6875rem',
+                              color: 'var(--text-muted)',
+                            }}
+                          >
+                            Click <strong>"Load Headers"</strong> to automatically inspect and read column headers from Row 1 of your sheet.
+                          </div>
+                        )}
+                      </div>
                     ) : isExternalBrowserAIBox(currentModalAIBox) || currentModalAIBox.processType === 'chrome_profile' || isChromeTabGroupAIBox(currentModalAIBox) ? (
                       (() => {
                         const candidateAbove =
@@ -12984,6 +13575,25 @@ export const FacebookWorkflowCanvas = forwardRef<
           );
         })()}
 
+      {/* ── GOOGLE SHEET SETTINGS SLIDE-OVER (SLIDES OUT UNDER 380px SIDEBAR) ── */}
+      {currentModalAIBox && isGoogleSheetBox(currentModalAIBox) && (
+        <GoogleSheetSettingsSidebox
+          key={currentModalAIBox.id}
+          isOpen={showGoogleSheetSettingsSidebox}
+          onClose={() => setShowGoogleSheetSettingsSidebox(false)}
+          isDark={isDark}
+          boxConfig={currentModalAIBox}
+          onUpdateBoxConfig={(updated) => handleUpdateAIBox(currentModalAIBox.id, updated)}
+          availablePrompts={availablePrompts as any}
+          onLoadHeaders={() => handleLoadGoogleSheetHeaders(currentModalAIBox)}
+          loadingHeaders={loadingSheetHeaders}
+          onUrlChange={(newUrl, delay) => handleSheetUrlChange(currentModalAIBox, newUrl, delay)}
+          onTestGoogleSheetSync={() => handleTestGoogleSheetSync(currentModalAIBox)}
+          testingSheetSync={testingSheetSync}
+          sheetTestResult={sheetTestResult}
+        />
+      )}
+
       {/* ── PROMPT TEMPLATE VIEWER SLIDE-OVER (SLIDES OUT NEXT TO 380px SIDEBAR) ── */}
       {viewingPromptTemplate && (
         <div
@@ -13000,11 +13610,13 @@ export const FacebookWorkflowCanvas = forwardRef<
             backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
             borderLeft: '1px solid var(--border-color)',
             borderRight: 'none',
-            boxShadow: isDark ? '-12px 0 35px rgba(0, 0, 0, 0.75)' : '-6px 0 24px rgba(0, 0, 0, 0.08)',
-            zIndex: 169,
+            boxShadow: isDark
+              ? '-16px 0 20px -6px rgba(0, 0, 0, 0.75)'
+              : '-8px 0 16px -4px rgba(0, 0, 0, 0.08)',
+            zIndex: 165,
             display: 'flex',
             flexDirection: 'column',
-            animation: 'sidebarSlideIn 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+            animation: 'sidebarSlideIn 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
           }}
         >
           {/* Top Header */}
@@ -13138,10 +13750,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                 width: '380px',
                 maxWidth: '100%',
                 backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
-                borderLeft: viewingPromptTemplate
-                  ? '1px solid transparent'
-                  : '1px solid var(--border-color)',
-                boxShadow: viewingPromptTemplate
+                borderLeft: '1px solid var(--border-color)',
+                boxShadow: (viewingPromptTemplate || showGoogleSheetSettingsSidebox)
                   ? 'none'
                   : isDark
                   ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
@@ -13161,6 +13771,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                   justifyContent: 'space-between',
                   gap: '1rem',
                   padding: '0.875rem 1rem',
+                  height: '62px',
+                  boxSizing: 'border-box',
                   borderBottom: 'none',
                   backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
                 }}
@@ -13923,10 +14535,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                 width: '380px',
                 maxWidth: '100%',
                 backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
-                borderLeft: viewingPromptTemplate
-                  ? '1px solid transparent'
-                  : '1px solid var(--border-color)',
-                boxShadow: viewingPromptTemplate
+                borderLeft: '1px solid var(--border-color)',
+                boxShadow: (viewingPromptTemplate || showGoogleSheetSettingsSidebox)
                   ? 'none'
                   : isDark
                   ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
@@ -14186,10 +14796,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                 width: '380px',
                 maxWidth: '100%',
                 backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
-                borderLeft: viewingPromptTemplate
-                  ? '1px solid transparent'
-                  : '1px solid var(--border-color)',
-                boxShadow: viewingPromptTemplate
+                borderLeft: '1px solid var(--border-color)',
+                boxShadow: (viewingPromptTemplate || showGoogleSheetSettingsSidebox)
                   ? 'none'
                   : isDark
                   ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
@@ -14443,10 +15051,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                 width: '380px',
                 maxWidth: '100%',
                 backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
-                borderLeft: viewingPromptTemplate
-                  ? '1px solid transparent'
-                  : '1px solid var(--border-color)',
-                boxShadow: viewingPromptTemplate
+                borderLeft: '1px solid var(--border-color)',
+                boxShadow: (viewingPromptTemplate || showGoogleSheetSettingsSidebox)
                   ? 'none'
                   : isDark
                   ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
@@ -14846,10 +15452,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                 width: '380px',
                 maxWidth: '100%',
                 backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
-                borderLeft: viewingPromptTemplate
-                  ? '1px solid transparent'
-                  : '1px solid var(--border-color)',
-                boxShadow: viewingPromptTemplate
+                borderLeft: '1px solid var(--border-color)',
+                boxShadow: (viewingPromptTemplate || showGoogleSheetSettingsSidebox)
                   ? 'none'
                   : isDark
                   ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
@@ -16011,6 +16615,61 @@ export const FacebookWorkflowCanvas = forwardRef<
                       </div>
                       <div style={{ fontSize: '0.5625rem', color: isDark ? '#8B949E' : '#64748B' }}>
                         Execute n8n webhook pipelines & workflows
+                      </div>
+                    </div>
+                    <FiArrowRight size={13} style={{ color: isDark ? '#8B949E' : '#94A3B8' }} />
+                  </button>
+
+                  {/* Google Sheets Sync Node */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleAddGoogleSheetNodeConnectedFrom(fromNodeId);
+                      setConnectDrawerNode(null);
+                      setActiveModalNode(null);
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                      padding: '0.55rem 0.65rem',
+                      borderRadius: '7px',
+                      border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                      backgroundColor: isDark ? '#1C2128' : '#F8FAFC',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      transition: 'all 0.15s ease',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = '#0F9D58';
+                      e.currentTarget.style.backgroundColor = isDark ? '#062615' : '#ECFDF5';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
+                      e.currentTarget.style.backgroundColor = isDark ? '#1C2128' : '#F8FAFC';
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: '28px',
+                        height: '28px',
+                        borderRadius: '6px',
+                        background: 'linear-gradient(135deg, #0F9D58, #0B8043)',
+                        color: '#FFFFFF',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <SiGooglesheets size={14} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '0.71875rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
+                        + Google Sheet
+                      </div>
+                      <div style={{ fontSize: '0.5625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                        Sync AI structured listing rows to Google Sheets
                       </div>
                     </div>
                     <FiArrowRight size={13} style={{ color: isDark ? '#8B949E' : '#94A3B8' }} />
@@ -17610,6 +18269,68 @@ export const FacebookWorkflowCanvas = forwardRef<
                   borderRadius: '6px',
                   border: 'none',
                   backgroundColor: '#06B6D4',
+                  color: '#FFFFFF',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                }}
+              >
+                <FiPlus size={13} /> Add
+              </button>
+            </div>
+
+            {/* Option 7: Google Sheets Integration */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '0.75rem',
+                borderRadius: '8px',
+                border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#F8FAFC',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', flex: 1, minWidth: 0 }}>
+                <div
+                  style={{
+                    width: '34px',
+                    height: '34px',
+                    borderRadius: '8px',
+                    backgroundColor: '#0F9D58',
+                    color: '#FFFFFF',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  <SiGooglesheets size={16} />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                    Google Sheet
+                  </div>
+                  <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', lineHeight: 1.3 }}>
+                    Sync and append AI-structured property listing rows directly to Google Sheets
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const newId = handleAddGoogleSheetNodeConnectedFrom();
+                  setIsAddFromTriggerOpen(false);
+                  setActiveModalNode({ type: 'ai-box', boxId: newId });
+                }}
+                style={{
+                  padding: '5px 10px',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  borderRadius: '6px',
+                  border: 'none',
+                  backgroundColor: '#0F9D58',
                   color: '#FFFFFF',
                   cursor: 'pointer',
                   display: 'flex',

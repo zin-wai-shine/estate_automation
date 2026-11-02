@@ -443,6 +443,126 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   const [isRunningTwoStage, setIsRunningTwoStage] = useState<boolean>(false);
   const [twoStageMessage, setTwoStageMessage] = useState<string | null>(null);
   const [isReloadingCondoName, setIsReloadingCondoName] = useState<boolean>(false);
+  const [activeCondoSlot, setActiveCondoSlot] = useState<number | null>(null);
+
+  // Current 3 condo slots (array of length 3, each item is image object or null)
+  const condoSlots = useMemo(() => {
+    const slots: any[] = [null, null, null];
+    const currentImgs = matchedCondoInfo?.images || [];
+    currentImgs.forEach((img: any, i: number) => {
+      const targetIdx =
+        typeof img.index === 'number' && img.index >= 1 && img.index <= 3
+          ? img.index - 1
+          : i < 3
+          ? i
+          : -1;
+      if (targetIdx >= 0 && targetIdx < 3 && !slots[targetIdx]) {
+        slots[targetIdx] = img;
+      }
+    });
+    // Fallback: fill any unassigned slots sequentially from remaining images
+    let nextIdx = 0;
+    currentImgs.forEach((img: any) => {
+      if (!slots.includes(img)) {
+        while (nextIdx < 3 && slots[nextIdx] !== null) nextIdx++;
+        if (nextIdx < 3) slots[nextIdx] = img;
+      }
+    });
+    return slots;
+  }, [matchedCondoInfo?.images]);
+
+  const selectedCondoCount = condoSlots.filter(Boolean).length;
+
+  // Set or replace a slot with an image (ensures exactly 3 slots max)
+  const handleAssignCondoSlot = (imageObj: any, preferredSlotIndex?: number) => {
+    const updated = [...condoSlots];
+    let slotToUse =
+      typeof preferredSlotIndex === 'number' && preferredSlotIndex >= 0 && preferredSlotIndex < 3
+        ? preferredSlotIndex
+        : activeCondoSlot !== null
+        ? activeCondoSlot
+        : -1;
+
+    // If no preferred slot, find first empty slot
+    if (slotToUse === -1) {
+      slotToUse = updated.findIndex((s) => s === null);
+      if (slotToUse === -1) slotToUse = 0; // if all 3 full, replace first slot
+    }
+
+    // Check if this image is already in another slot, if so swap or remove it from that slot
+    const existingSlotIdx = updated.findIndex(
+      (s) =>
+        s &&
+        (s.full_path === imageObj.full_path ||
+          s.filename === imageObj.filename ||
+          (s.data_url && imageObj.data_url && s.data_url === imageObj.data_url))
+    );
+    if (existingSlotIdx !== -1 && existingSlotIdx !== slotToUse) {
+      updated[existingSlotIdx] = null;
+    }
+
+    updated[slotToUse] = {
+      ...imageObj,
+      index: slotToUse + 1,
+    };
+
+    const cleanList = updated.filter(Boolean).map((img, i) => ({
+      ...img,
+      index: i + 1,
+    }));
+
+    const newInfo = {
+      ...matchedCondoInfo,
+      images: updated.map((img, i) => (img ? { ...img, index: i + 1 } : null)).filter(Boolean),
+      images_found: cleanList.length,
+    };
+    setMatchedCondoInfo(newInfo);
+    updateMultiConfig({
+      browserCondoImagesCount: cleanList.length,
+      condoImages: cleanList,
+    });
+  };
+
+  // Remove photo from a slot
+  const handleRemoveCondoSlot = (slotIndex: number) => {
+    const updated = [...condoSlots];
+    updated[slotIndex] = null;
+    const cleanList = updated.filter(Boolean).map((img, i) => ({
+      ...img,
+      index: i + 1,
+    }));
+    const newInfo = {
+      ...matchedCondoInfo,
+      images: cleanList,
+      images_found: cleanList.length,
+    };
+    setMatchedCondoInfo(newInfo);
+    updateMultiConfig({
+      browserCondoImagesCount: cleanList.length,
+      condoImages: cleanList,
+    });
+  };
+
+  // Upload custom file for a condo slot
+  const handleUploadCondoPhoto = (e: React.ChangeEvent<HTMLInputElement>, slotIndex?: number) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string;
+      const customImg = {
+        index: (slotIndex !== undefined ? slotIndex : 0) + 1,
+        filename: file.name,
+        mime_type: file.type || 'image/png',
+        full_path: file.name,
+        size_bytes: file.size,
+        data_url: dataUrl,
+      };
+      handleAssignCondoSlot(customImg, slotIndex);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
 
   const handleReloadCondoName = async () => {
     setIsReloadingCondoName(true);
@@ -2010,235 +2130,390 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
           <span
             style={{
               fontSize: '0.5625rem',
               fontWeight: 700,
               padding: '2px 6px',
               borderRadius: '10px',
-              backgroundColor: matchedCondoInfo?.images_found ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.12)',
-              color: matchedCondoInfo?.images_found ? '#10B981' : '#EF4444',
-              border: matchedCondoInfo?.images_found ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(239, 68, 68, 0.25)',
+              backgroundColor:
+                selectedCondoCount === 3
+                  ? 'rgba(16, 185, 129, 0.15)'
+                  : selectedCondoCount > 0
+                  ? 'rgba(245, 158, 11, 0.15)'
+                  : 'rgba(239, 68, 68, 0.12)',
+              color:
+                selectedCondoCount === 3
+                  ? '#10B981'
+                  : selectedCondoCount > 0
+                  ? '#F59E0B'
+                  : '#EF4444',
+              border:
+                selectedCondoCount === 3
+                  ? '1px solid rgba(16, 185, 129, 0.3)'
+                  : selectedCondoCount > 0
+                  ? '1px solid rgba(245, 158, 11, 0.3)'
+                  : '1px solid rgba(239, 68, 68, 0.25)',
               whiteSpace: 'nowrap',
             }}
           >
-            {matchedCondoInfo?.images_found ? `${matchedCondoInfo.images_found}/3 Ready` : 'Not Found'}
+            {selectedCondoCount === 3 ? '3/3 Ready' : `${selectedCondoCount}/3 Selected`}
           </span>
 
-          {/* Change Folder Button */}
+          {/* Change / Select Photos Button */}
           <button
             type="button"
             onClick={() => {
-              if (indexedCondoFolders.length === 0) {
-                fetchCondoFolderList();
-              }
               setShowFolderPicker((prev) => !prev);
+              setActiveCondoSlot(null);
             }}
-            title="Choose another condo folder or browse Mac"
+            title="Select & change condo photos"
             style={{
-              padding: '3px 7px',
-              borderRadius: '5px',
-              border: showFolderPicker ? '1px solid #10B981' : '1px solid var(--border-color)',
-              backgroundColor: showFolderPicker
-                ? 'rgba(16, 185, 129, 0.15)'
-                : isDark
-                ? 'rgba(255,255,255,0.06)'
-                : '#F1F5F9',
-              color: showFolderPicker ? '#10B981' : 'var(--text-secondary)',
-              fontSize: '0.625rem',
-              fontWeight: 600,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '3px',
-              transition: 'all 0.15s ease',
-            }}
-          >
-            <FiFolder size={10} />
-            <span>Change</span>
-          </button>
-
-          {/* Open directly in Finder Button */}
-          <button
-            type="button"
-            onClick={handleOpenFolderInFinder}
-            disabled={isOpeningFinder}
-            title={
-              matchedCondoInfo?.folder_path
-                ? `Open in macOS Finder: ${matchedCondoInfo.folder_path}`
-                : 'Open target folder in macOS Finder'
-            }
-            style={{
-              padding: '3px 7px',
-              borderRadius: '5px',
-              border: finderFeedback ? '1px solid #10B981' : '1px solid var(--border-color)',
-              backgroundColor: finderFeedback
-                ? 'rgba(16, 185, 129, 0.15)'
-                : isDark
-                ? 'rgba(255,255,255,0.06)'
-                : '#F1F5F9',
-              color: finderFeedback ? '#10B981' : 'var(--text-secondary)',
-              fontSize: '0.625rem',
-              fontWeight: 600,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '3px',
-              transition: 'all 0.15s ease',
-            }}
-          >
-            {finderFeedback ? (
-              <>
-                <FiCheck size={10} color="#10B981" />
-                <span style={{ color: '#10B981' }}>Opened</span>
-              </>
-            ) : isOpeningFinder ? (
-              <>
-                <FiLoader className="animate-spin" size={10} />
-                <span>Opening</span>
-              </>
-            ) : (
-              <>
-                <FiExternalLink size={10} />
-                <span>Finder</span>
-              </>
-            )}
-          </button>
-
-          {/* Scan Folder Button */}
-          <button
-            type="button"
-            onClick={() => handleScanCondo(aiExtractedCondoName || condoSearchQuery)}
-            disabled={isScanningCondo}
-            title="Scan target folder"
-            style={{
-              padding: '3px 7px',
-              borderRadius: '5px',
+              padding: '3px 8px',
+              borderRadius: '6px',
               border: '1px solid var(--border-color)',
-              backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#F1F5F9',
-              color: 'var(--text-secondary)',
+              backgroundColor: showFolderPicker
+                ? isDark
+                  ? 'rgba(255,255,255,0.12)'
+                  : '#E2E8F0'
+                : isDark
+                ? 'rgba(255,255,255,0.06)'
+                : '#F1F5F9',
+              color: 'var(--text-primary)',
               fontSize: '0.625rem',
-              fontWeight: 600,
+              fontWeight: 500,
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
-              gap: '3px',
+              gap: '4px',
+              transition: 'all 0.15s ease',
             }}
           >
-            {isScanningCondo ? <FiLoader className="animate-spin" size={10} /> : <FiSearch size={10} />}
-            <span>Scan</span>
+            <FiFolder size={11} style={{ opacity: 0.7 }} />
+            <span>Change</span>
           </button>
         </div>
       </div>
 
-      {/* Expandable Folder Chooser Drawer */}
+      {/* Condo Photo Selector Drawer (Strictly 3 photos, select / remove / change) */}
       {showFolderPicker && (
         <div
           style={{
-            padding: '8px 10px',
-            borderRadius: '7px',
-            backgroundColor: isDark ? 'rgba(0, 0, 0, 0.35)' : '#F1F5F9',
+            padding: '10px',
+            borderRadius: '8px',
+            backgroundColor: isDark ? 'rgba(0, 0, 0, 0.4)' : '#F8FAFC',
             border: '1px solid var(--border-color)',
             display: 'flex',
             flexDirection: 'column',
-            gap: '6px',
+            gap: '8px',
             marginBottom: '4px',
           }}
         >
+          {/* Drawer Header */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-              <FiFolder size={11} color="#10B981" />
-              <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                Choose Condo Folder
-              </span>
-              <span style={{ fontSize: '0.5625rem', color: 'var(--text-muted)' }}>
-                ({indexedCondoFolders.length} indexed)
-              </span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <button
-                type="button"
-                onClick={handleBrowseCustomFolder}
-                disabled={isBrowsingFolder}
-                title="Browse any folder on Mac directly"
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+              <span
                 style={{
-                  padding: '2px 7px',
-                  borderRadius: '4px',
-                  border: '1px solid var(--border-color)',
-                  backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : '#FFFFFF',
-                  color: 'var(--text-primary)',
-                  fontSize: '0.59375rem',
+                  fontSize: '0.71875rem',
                   fontWeight: 600,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '3px',
+                  color: 'var(--text-primary)',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
                 }}
               >
-                {isBrowsingFolder ? <FiLoader className="animate-spin" size={9} /> : <FiFolder size={9} />}
-                <span>Browse Mac...</span>
-              </button>
+                {matchedCondoInfo?.matched_folder || 'Condo'} Photos
+              </span>
+              <span style={{ fontSize: '0.59375rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                ({(matchedCondoInfo?.available_images || matchedCondoInfo?.images || []).length} available)
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+              <span
+                style={{
+                  fontSize: '0.5625rem',
+                  fontWeight: 700,
+                  padding: '1px 6px',
+                  borderRadius: '10px',
+                  backgroundColor:
+                    selectedCondoCount === 3 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                  color: selectedCondoCount === 3 ? '#10B981' : '#F59E0B',
+                  border:
+                    selectedCondoCount === 3
+                      ? '1px solid rgba(16, 185, 129, 0.3)'
+                      : '1px solid rgba(245, 158, 11, 0.3)',
+                }}
+              >
+                {selectedCondoCount}/3 Selected
+              </span>
+
               <button
                 type="button"
-                onClick={() => setShowFolderPicker(false)}
-                title="Close selector"
+                onClick={() => {
+                  setShowFolderPicker(false);
+                  setActiveCondoSlot(null);
+                }}
+                title="Close photo drawer"
                 style={{
                   background: 'none',
                   border: 'none',
                   color: 'var(--text-muted)',
                   cursor: 'pointer',
-                  padding: '2px 4px',
+                  padding: '2px',
                   display: 'flex',
                   alignItems: 'center',
                 }}
               >
-                <FiX size={12} />
+                <FiX size={13} />
               </button>
             </div>
           </div>
 
-          <Select
-            value={matchedCondoInfo?.matched_folder || '__auto__'}
-            onChange={handleSelectCondoFolder}
-            options={[
-              {
-                label: matchedCondoInfo?.matched_folder
-                  ? `✨ Auto-Matched: ${matchedCondoInfo.matched_folder}`
-                  : `✨ Auto-Match (${condoName})`,
-                value: '__auto__',
-              },
-              ...indexedCondoFolders.map((f) => ({
-                label: `📁 ${f}`,
-                value: f,
-              })),
-            ]}
-          />
+          {/* Hint if not full 3 */}
+          {selectedCondoCount < 3 ? (
+            <div style={{ fontSize: '0.625rem', color: '#F59E0B', fontWeight: 500, lineHeight: 1.3 }}>
+              Select {3 - selectedCondoCount} more photo{3 - selectedCondoCount > 1 ? 's' : ''} to complete the 3 required photos (Min: 3, Max: 3).
+            </div>
+          ) : (
+            <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', lineHeight: 1.3 }}>
+              Click any selected photo to remove, or click an unselected photo to swap it into a slot.
+            </div>
+          )}
+
+          {/* Photo Grid from this Condo Folder */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(4, 1fr)',
+              gridAutoRows: '64px',
+              gap: '6px',
+              maxHeight: '210px',
+              overflowY: 'auto',
+              padding: '2px',
+            }}
+          >
+            {((matchedCondoInfo?.available_images && matchedCondoInfo.available_images.length > 0)
+              ? matchedCondoInfo.available_images
+              : (matchedCondoInfo?.images || [])
+            ).map((photo: any, pIdx: number) => {
+              // Find which slot (0, 1, 2) this photo is assigned to, if any
+              const assignedSlot = condoSlots.findIndex(
+                (s) =>
+                  s &&
+                  (s.full_path === photo.full_path ||
+                    s.filename === photo.filename ||
+                    (s.data_url && photo.data_url && s.data_url === photo.data_url))
+              );
+              const isSelected = assignedSlot !== -1;
+
+              return (
+                <div
+                  key={photo.id || pIdx}
+                  onClick={() => {
+                    if (isSelected) {
+                      // Clicking an already selected photo removes it from its slot
+                      handleRemoveCondoSlot(assignedSlot);
+                    } else {
+                      // Assign to target or open slot
+                      handleAssignCondoSlot(photo, activeCondoSlot !== null ? activeCondoSlot : undefined);
+                      if (activeCondoSlot !== null) setActiveCondoSlot(null);
+                    }
+                  }}
+                  title={
+                    isSelected
+                      ? `Selected as Slot #${assignedSlot + 1} — Click to remove`
+                      : `${photo.filename} — Click to select`
+                  }
+                  style={{
+                    position: 'relative',
+                    width: '100%',
+                    height: '64px',
+                    borderRadius: '6px',
+                    overflow: 'hidden',
+                    border: isSelected
+                      ? '2px solid var(--accent-primary, #2563EB)'
+                      : '1px solid var(--border-color)',
+                    backgroundColor: isDark ? 'rgba(0,0,0,0.3)' : '#E2E8F0',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                    opacity: isSelected ? 1 : 0.7,
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isSelected) e.currentTarget.style.opacity = '1';
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isSelected) e.currentTarget.style.opacity = '0.7';
+                  }}
+                >
+                  <img
+                    src={photo.data_url}
+                    alt={photo.filename}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    loading="lazy"
+                  />
+
+                  {/* Slot Number Badge */}
+                  {isSelected && (
+                    <span
+                      style={{
+                        position: 'absolute',
+                        top: '3px',
+                        left: '3px',
+                        backgroundColor: 'var(--accent-primary, #2563EB)',
+                        color: '#FFFFFF',
+                        fontSize: '0.5625rem',
+                        fontWeight: 700,
+                        padding: '1px 5px',
+                        borderRadius: '4px',
+                        zIndex: 2,
+                      }}
+                    >
+                      #{assignedSlot + 1}
+                    </span>
+                  )}
+
+                  {/* Remove '✕' on selected photo */}
+                  {isSelected && (
+                    <span
+                      style={{
+                        position: 'absolute',
+                        top: '3px',
+                        right: '3px',
+                        width: '16px',
+                        height: '16px',
+                        borderRadius: '50%',
+                        backgroundColor: 'rgba(0, 0, 0, 0.65)',
+                        backdropFilter: 'blur(3px)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: '#FFFFFF',
+                        zIndex: 2,
+                      }}
+                    >
+                      <FiX size={10} />
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+
+            {/* Custom File Upload Option */}
+            <label
+              title="Add custom photo from computer"
+              style={{
+                width: '100%',
+                height: '64px',
+                borderRadius: '6px',
+                border: '1.5px dashed var(--border-color)',
+                backgroundColor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '2px',
+                cursor: 'pointer',
+                color: 'var(--text-muted)',
+                transition: 'all 0.15s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.borderColor = 'var(--accent-primary, #2563EB)';
+                e.currentTarget.style.color = 'var(--accent-primary, #2563EB)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = 'var(--border-color)';
+                e.currentTarget.style.color = 'var(--text-muted)';
+              }}
+            >
+              <FiUploadCloud size={14} />
+              <span style={{ fontSize: '0.53125rem', fontWeight: 600 }}>+ Upload</span>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) =>
+                  handleUploadCondoPhoto(e, activeCondoSlot !== null ? activeCondoSlot : undefined)
+                }
+                style={{ display: 'none' }}
+              />
+            </label>
+          </div>
+
+          {/* Bottom subtle switch folder option */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginTop: '2px',
+              paddingTop: '5px',
+              borderTop: '1px solid var(--border-color)',
+            }}
+          >
+            <span
+              style={{
+                fontSize: '0.5625rem',
+                color: 'var(--text-muted)',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                maxWidth: '190px',
+              }}
+              title={matchedCondoInfo?.folder_path}
+            >
+              {matchedCondoInfo?.matched_folder ? `Folder: ${matchedCondoInfo.matched_folder}` : 'Condo Directory'}
+            </span>
+            <button
+              type="button"
+              onClick={handleChooseFolder}
+              title="Choose another condo folder on Mac"
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--text-secondary)',
+                fontSize: '0.5625rem',
+                cursor: 'pointer',
+                textDecoration: 'underline',
+                padding: 0,
+              }}
+            >
+              Switch Folder...
+            </button>
+          </div>
         </div>
       )}
 
+      {/* 3 Condo Photo Slots (Min: 3, Max: 3) */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.55rem', marginTop: '2px' }}>
         {[1, 2, 3].map((num) => {
-          const img =
-            matchedCondoInfo?.images?.find((i: any) => i.index === num) ||
-            matchedCondoInfo?.images?.[num - 1];
+          const img = condoSlots[num - 1];
+          const isSlotActive = activeCondoSlot === num - 1 && showFolderPicker;
+
           return (
             <div
               key={num}
-              title={img?.filename ? `${img.filename} (${img.path || ''})` : `Slot ${num}`}
+              onClick={() => {
+                setActiveCondoSlot(num - 1);
+                setShowFolderPicker(true);
+              }}
+              title={img?.filename ? `${img.filename} — Click to change` : `Slot #${num} — Click to pick photo`}
               style={{
                 position: 'relative',
                 borderRadius: '8px',
                 overflow: 'hidden',
                 height: '78px',
                 backgroundColor: isDark ? 'rgba(0,0,0,0.3)' : '#F8FAFC',
-                border: img ? '1.5px solid #10B981' : '1px solid var(--border-color)',
+                border: isSlotActive
+                  ? '2px solid var(--accent-primary, #2563EB)'
+                  : '1px solid var(--border-color)',
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'center',
-                boxShadow: img ? '0 2px 6px rgba(16, 185, 129, 0.15)' : 'none',
+                boxShadow: 'none',
                 transition: 'all 0.15s ease',
+                cursor: 'pointer',
               }}
             >
               <span
@@ -2246,11 +2521,11 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                   position: 'absolute',
                   top: '4px',
                   left: '4px',
-                  backgroundColor: img ? '#10B981' : 'rgba(0, 0, 0, 0.55)',
+                  backgroundColor: 'rgba(0, 0, 0, 0.65)',
                   backdropFilter: 'blur(4px)',
                   color: '#FFFFFF',
                   fontSize: '0.5625rem',
-                  fontWeight: 700,
+                  fontWeight: 600,
                   padding: '1px 5px',
                   borderRadius: '4px',
                   zIndex: 2,
@@ -2266,51 +2541,42 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                     alt={img.filename || `Condo ${num}`}
                     style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                   />
-                  <span
+                  {/* Remove button to clear this slot */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleRemoveCondoSlot(num - 1);
+                      setActiveCondoSlot(num - 1);
+                      setShowFolderPicker(true);
+                    }}
+                    title="Remove this photo"
                     style={{
                       position: 'absolute',
                       top: '4px',
                       right: '4px',
-                      width: '16px',
-                      height: '16px',
+                      width: '18px',
+                      height: '18px',
                       borderRadius: '50%',
-                      backgroundColor: 'rgba(0,0,0,0.6)',
-                      backdropFilter: 'blur(4px)',
+                      backgroundColor: 'rgba(0, 0, 0, 0.65)',
+                      backdropFilter: 'blur(3px)',
+                      border: 'none',
+                      color: '#FFFFFF',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      zIndex: 2,
+                      cursor: 'pointer',
+                      zIndex: 3,
                     }}
                   >
-                    <FiCheckCircle size={11} color="#10B981" />
-                  </span>
-                  <div
-                    style={{
-                      position: 'absolute',
-                      bottom: 0,
-                      left: 0,
-                      right: 0,
-                      backgroundColor: 'rgba(0, 0, 0, 0.72)',
-                      backdropFilter: 'blur(3px)',
-                      color: '#FFFFFF',
-                      fontSize: '0.5625rem',
-                      fontWeight: 600,
-                      padding: '2px 5px',
-                      textAlign: 'center',
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      zIndex: 2,
-                    }}
-                  >
-                    {img.filename || `${num}.png`}
-                  </div>
+                    <FiX size={10} />
+                  </button>
                 </>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}>
-                  <FiImage size={18} style={{ color: 'var(--text-muted)', opacity: 0.35 }} />
-                  <span style={{ fontSize: '0.5625rem', fontWeight: 500, color: 'var(--text-muted)' }}>
-                    Slot {num}
+                  <FiPlus size={16} style={{ color: 'var(--text-muted)' }} />
+                  <span style={{ fontSize: '0.5625rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                    Pick #{num}
                   </span>
                 </div>
               )}
@@ -3528,9 +3794,9 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
         }}
       >
         {/* Condo / Property Name */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
               <div
                 style={{
                   width: '28px',
@@ -3546,59 +3812,87 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
               >
                 <FiFolder size={14} />
               </div>
-              <div>
-                <div style={{ fontSize: '0.78125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+              <div style={{ minWidth: 0 }}>
+                <div
+                  style={{
+                    fontSize: '0.78125rem',
+                    fontWeight: 600,
+                    color: 'var(--text-primary)',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
                   Condo / Project Name
                 </div>
-                <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
-                  From {aboveBoxTitle}
-                </div>
-              </div>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span
-                style={{
-                  fontSize: '0.5625rem',
-                  fontWeight: 700,
-                  padding: '2px 8px',
-                  borderRadius: '10px',
-                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
-                  color: 'var(--text-secondary)',
-                  border: '1px solid var(--border-color)',
-                  letterSpacing: '0.02em',
-                }}
-              >
-                Active Project
-              </span>
-              {onOpenSettingsSidebox && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowPromptViewSidebox(false);
-                    onOpenSettingsSidebox();
-                  }}
-                  title="Configure in Settings"
+                <div
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '4px',
-                    padding: '3px 8px',
-                    borderRadius: '6px',
-                    border: '1px solid rgba(245, 158, 11, 0.35)',
-                    backgroundColor: 'rgba(245, 158, 11, 0.1)',
-                    color: '#F59E0B',
+                    gap: '5px',
                     fontSize: '0.625rem',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                    flexShrink: 0,
+                    color: 'var(--text-muted)',
+                    whiteSpace: 'nowrap',
+                    marginTop: '1px',
                   }}
                 >
-                  <FiSettings size={11} />
-                  <span>Settings</span>
-                </button>
-              )}
+                  <span>From {aboveBoxTitle}</span>
+                  <span style={{ opacity: 0.4 }}>•</span>
+                  <span
+                    style={{
+                      fontSize: '0.5625rem',
+                      fontWeight: 700,
+                      padding: '1px 5px',
+                      borderRadius: '4px',
+                      backgroundColor: isDark ? 'rgba(59, 130, 246, 0.1)' : 'rgba(37, 99, 235, 0.08)',
+                      color: 'var(--accent-primary)',
+                      border: '1px solid rgba(59, 130, 246, 0.25)',
+                      letterSpacing: '0.02em',
+                      lineHeight: '1.2',
+                    }}
+                  >
+                    Active Project
+                  </span>
+                </div>
+              </div>
             </div>
+            {onOpenSettingsSidebox && (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPromptViewSidebox(false);
+                  onOpenSettingsSidebox();
+                }}
+                title="Configure in Settings"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '3px 8px',
+                  borderRadius: '6px',
+                  border: '1px solid rgba(245, 158, 11, 0.35)',
+                  backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                  color: '#F59E0B',
+                  fontSize: '0.625rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0,
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.18)';
+                  e.currentTarget.style.borderColor = 'rgba(245, 158, 11, 0.5)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.1)';
+                  e.currentTarget.style.borderColor = 'rgba(245, 158, 11, 0.35)';
+                }}
+              >
+                <FiSettings size={11} />
+                <span>Settings</span>
+              </button>
+            )}
           </div>
           <div
             style={{
@@ -4402,69 +4696,69 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                   <span>{isCopied ? 'Copied' : 'Copy'}</span>
                 </button>
               </div>
+
+              {/* Auto-Run Toggle & Status Bar (Integrated inside Enhancement Prompt Box) */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '6px 10px',
+                  borderRadius: '6px',
+                  background: autoRunEnabled ? 'rgba(16, 185, 129, 0.08)' : isDark ? 'rgba(255, 255, 255, 0.03)' : '#F8FAFC',
+                  border: autoRunEnabled ? '1px solid rgba(16, 185, 129, 0.25)' : '1px solid var(--border-color)',
+                  marginTop: '4px',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span
+                    style={{
+                      width: '7px',
+                      height: '7px',
+                      borderRadius: '50%',
+                      backgroundColor: autoRunEnabled ? '#10B981' : '#94A3B8',
+                      boxShadow: autoRunEnabled ? '0 0 8px rgba(16, 185, 129, 0.6)' : 'none',
+                    }}
+                  />
+                  <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: autoRunEnabled ? '#10B981' : 'var(--text-secondary)' }}>
+                    {autoRunCountdown !== null
+                      ? `⚡ Auto-starting in ${autoRunCountdown}s...`
+                      : autoRunEnabled
+                      ? 'Auto-Run: Active (Auto-runs tabs & photos)'
+                      : 'Auto-Run: Off (Manual click)'}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  {autoRunCountdown !== null && (
+                    <button
+                      type="button"
+                      onClick={handleCancelAutoRun}
+                      style={{
+                        border: 'none',
+                        background: 'rgba(239, 68, 68, 0.12)',
+                        color: '#EF4444',
+                        fontSize: '0.625rem',
+                        fontWeight: 600,
+                        padding: '2px 6px',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  )}
+                  <ToggleSwitch
+                    checked={autoRunEnabled}
+                    onChange={(val) => handleToggleAutoRun(val)}
+                    size="sm"
+                    activeColor="#10B981"
+                  />
+                </div>
+              </div>
             </div>
             )}
 
-            {/* Auto-Run Toggle & Status Bar */}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '6px 10px',
-                borderRadius: '8px',
-                background: autoRunEnabled ? 'rgba(16, 185, 129, 0.08)' : isDark ? 'rgba(255, 255, 255, 0.03)' : '#F8FAFC',
-                border: autoRunEnabled ? '1px solid rgba(16, 185, 129, 0.25)' : '1px solid var(--border-color)',
-                marginBottom: '8px',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span
-                  style={{
-                    width: '7px',
-                    height: '7px',
-                    borderRadius: '50%',
-                    backgroundColor: autoRunEnabled ? '#10B981' : '#94A3B8',
-                    boxShadow: autoRunEnabled ? '0 0 8px rgba(16, 185, 129, 0.6)' : 'none',
-                  }}
-                />
-                <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: autoRunEnabled ? '#10B981' : 'var(--text-secondary)' }}>
-                  {autoRunCountdown !== null
-                    ? `⚡ Auto-starting in ${autoRunCountdown}s...`
-                    : autoRunEnabled
-                    ? 'Auto-Run: Active (Auto-runs tabs & photos)'
-                    : 'Auto-Run: Off (Manual click)'}
-                </span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                {autoRunCountdown !== null && (
-                  <button
-                    type="button"
-                    onClick={handleCancelAutoRun}
-                    style={{
-                      border: 'none',
-                      background: 'rgba(239, 68, 68, 0.12)',
-                      color: '#EF4444',
-                      fontSize: '0.625rem',
-                      fontWeight: 600,
-                      padding: '2px 6px',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Cancel
-                  </button>
-                )}
-                <ToggleSwitch
- checked={autoRunEnabled}
- onChange={(val) => handleToggleAutoRun(val)}
- size="sm"
- activeColor="#10B981"
- />
-              </div>
-            </div>
-
-            {/* Run Action Button (Apple Clean Orange/Primary Pill like FB Hero) */}
+            {/* Run Action Button (Theme Primary Clean Normal Button) */}
             <button
               type="button"
               disabled={isAutomating || isRunningTwoStage}
@@ -4478,22 +4772,32 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
               }}
               style={{
                 width: '100%',
-                height: '42px',
-                borderRadius: '10px',
-                border: 'none',
-                background: (isAutomating || isRunningTwoStage)
-                  ? 'rgba(245, 158, 11, 0.6)'
-                  : 'linear-gradient(135deg, #F59E0B, #D97706)',
+                height: '38px',
+                borderRadius: '8px',
+                border: '1px solid var(--accent-primary, #2563EB)',
+                backgroundColor: (isAutomating || isRunningTwoStage)
+                  ? 'rgba(37, 99, 235, 0.6)'
+                  : 'var(--accent-primary, #2563EB)',
                 color: '#FFFFFF',
                 fontSize: '0.8125rem',
-                fontWeight: 700,
+                fontWeight: 600,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: '8px',
                 cursor: (isAutomating || isRunningTwoStage) ? 'not-allowed' : 'pointer',
-                boxShadow: '0 4px 14px rgba(245, 158, 11, 0.35)',
+                boxShadow: 'none',
                 transition: 'all 0.15s ease',
+              }}
+              onMouseEnter={(e) => {
+                if (!isAutomating && !isRunningTwoStage) {
+                  e.currentTarget.style.backgroundColor = 'var(--accent-primary-hover, #1D4ED8)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!isAutomating && !isRunningTwoStage) {
+                  e.currentTarget.style.backgroundColor = 'var(--accent-primary, #2563EB)';
+                }
               }}
             >
               {isAutomating || isRunningTwoStage ? (
@@ -4507,11 +4811,11 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                 </>
               ) : (
                 <>
-                  <FiZap size={14} />
+                  <FiPlay size={13} />
                   <span>
                     {isHeroNode
                       ? `Run ${currentGroup.name} (Generate Image)`
-                      : `Run ${currentGroup.name} (Process ${currentGroup.tabs_count || currentGroup.tabs?.length || 4} Tabs)`}
+                      : `Run ${currentGroup.name} (${activeImages.length} Images · ${currentGroup.tabs_count || currentGroup.tabs?.length || 4} Tabs)`}
                   </span>
                 </>
               )}
@@ -4653,215 +4957,82 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                   </Button>
                 </div>
 
-                {/* Worker Tabs in this Group */}
+                {/* Worker Tabs in this Group (Clean Compact Grid) */}
                 {tabs.length > 0 && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', marginTop: '2px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', marginTop: '2px' }}>
                     <div style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-muted)' }}>
                       Pipeline workers ({tabs.length} live {tabs.length === 1 ? 'tab' : 'tabs'}):
                     </div>
-                    {tabs.map((tab, idx) => (
-                      <div
-                        key={tab.id || idx}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '0.45rem',
-                          padding: '0.35rem 0.5rem',
-                          borderRadius: '6px',
-                          backgroundColor: isDark ? 'rgba(0, 0, 0, 0.2)' : '#FFFFFF',
-                          border: '1px solid var(--border-color)',
-                        }}
-                      >
-                        <div
-                          style={{
-                            width: '16px',
-                            height: '16px',
-                            borderRadius: '50%',
-                            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#E2E8F0',
-                            color: 'var(--text-primary)',
-                            fontSize: '0.5625rem',
-                            fontWeight: 700,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            flexShrink: 0,
-                          }}
-                        >
-                          {idx + 1}
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
-                          <span
-                            style={{
-                              fontSize: '0.625rem',
-                              fontWeight: 600,
-                              color: 'var(--text-primary)',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
-                            }}
-                            title={tab.title}
-                          >
-                            {tab.title || `Worker Tab #${idx + 1}`}
-                          </span>
-                          <span
-                            style={{
-                              fontSize: '0.5rem',
-                              color: 'var(--text-muted)',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
-                            }}
-                            title={tab.url}
-                          >
-                            {tab.url || 'chrome-tab://active'}
-                          </span>
-                        </div>
-                        <div
-                          style={{
-                            width: '6px',
-                            height: '6px',
-                            borderRadius: '50%',
-                            background: '#10B981',
-                            boxShadow: '0 0 4px #10B981',
-                            flexShrink: 0,
-                          }}
-                          title="Tab Active"
-                        />
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Auto-Run Toggle & Status Bar */}
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '5px 8px',
-                    borderRadius: '6px',
-                    background: autoRunEnabled ? 'rgba(16, 185, 129, 0.08)' : isDark ? 'rgba(255, 255, 255, 0.03)' : '#F8FAFC',
-                    border: autoRunEnabled ? '1px solid rgba(16, 185, 129, 0.25)' : '1px solid var(--border-color)',
-                    marginBottom: '4px',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span
+                    <div
                       style={{
-                        width: '7px',
-                        height: '7px',
-                        borderRadius: '50%',
-                        backgroundColor: autoRunEnabled ? '#10B981' : '#94A3B8',
-                        boxShadow: autoRunEnabled ? '0 0 8px rgba(16, 185, 129, 0.6)' : 'none',
-                      }}
-                    />
-                    <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: autoRunEnabled ? '#10B981' : 'var(--text-secondary)' }}>
-                      {autoRunCountdown !== null
-                        ? `⚡ Auto-starting in ${autoRunCountdown}s...`
-                        : autoRunEnabled
-                        ? 'Auto-Run: Active'
-                        : 'Auto-Run: Off'}
-                    </span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    {autoRunCountdown !== null && (
-                      <button
-                        type="button"
-                        onClick={handleCancelAutoRun}
-                        style={{
-                          border: 'none',
-                          background: 'rgba(239, 68, 68, 0.12)',
-                          color: '#EF4444',
-                          fontSize: '0.625rem',
-                          fontWeight: 600,
-                          padding: '2px 6px',
-                          borderRadius: '4px',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        Cancel
-                      </button>
-                    )}
-                    <ToggleSwitch
- checked={autoRunEnabled}
- onChange={(val) => handleToggleAutoRun(val)}
- size="sm"
- activeColor="#10B981"
- />
-                  </div>
-                </div>
-
-                {/* Group Automation Process Action Button */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', marginTop: '2px' }}>
-                  <Button
-                    size="sm"
-                    variant="primary"
-                    disabled={isAutomating || isRunningTwoStage}
-                    onClick={() => {
-                      if (isHero) {
-                        handleRunTwoStageTest();
-                      } else {
-                        setSelectedGroupName(group.name);
-                        handleStartGroupAutomation();
-                      }
-                    }}
-                    style={{
-                      fontSize: '0.75rem',
-                      fontWeight: 600,
-                      width: '100%',
-                      minHeight: '40px',
-                      padding: '6px 12px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      overflow: 'hidden',
-                      opacity: (isAutomating || isRunningTwoStage) ? 0.85 : 1,
-                      cursor: (isAutomating || isRunningTwoStage) ? 'not-allowed' : 'pointer',
-                    }}
-                  >
-                    {(isAutomating || isRunningTwoStage) ? (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                        <FiLoader size={12} style={{ animation: 'spin 1s linear infinite' }} />
-                        <span>Processing {group.name}...</span>
-                      </span>
-                    ) : (
-                      <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1px', minWidth: 0, maxWidth: '100%', lineHeight: 1.2 }}>
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
-                          <FiPlay size={11} />
-                          <span>Run {group.name}</span>
-                        </span>
-                        <span style={{ fontSize: '0.5625rem', fontWeight: 500, opacity: 0.85, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>
-                          {!enablePromptEnhance
-                            ? 'Direct automation · No prompt'
-                            : tabGroupMode === 'generate'
-                              ? `Ref: ${activeReferenceImage?.label || 'Photo #1'} · ${promptSourceLabel}`
-                              : `${activeImages.length} ${activeImages.length === 1 ? 'image' : 'images'} · ${promptSourceLabel}`}
-                        </span>
-                      </span>
-                    )}
-                  </Button>
-
-                  {/* Stop Automation Button */}
-                  {(isAutomating || isRunningTwoStage) && (
-                    <Button
-                      size="sm"
-                      variant="danger"
-                      onClick={handleStopGroupAutomation}
-                      style={{
-                        fontSize: '0.6875rem',
-                        fontWeight: 600,
-                        width: '100%',
-                        marginTop: '2px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
+                        display: 'grid',
+                        gridTemplateColumns: tabs.length > 1 ? 'repeat(2, 1fr)' : '1fr',
                         gap: '6px',
                       }}
                     >
-                      <FiSquare size={11} /> Stop Automation
-                    </Button>
-                  )}
-                </div>
+                      {tabs.map((tab, idx) => (
+                        <div
+                          key={tab.id || idx}
+                          title={`${tab.title || `Worker Tab #${idx + 1}`}\n${tab.url || ''}`}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '5px 8px',
+                            borderRadius: '6px',
+                            backgroundColor: isDark ? 'rgba(0, 0, 0, 0.25)' : '#FFFFFF',
+                            border: '1px solid var(--border-color)',
+                            minWidth: 0,
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                            <div
+                              style={{
+                                width: '16px',
+                                height: '16px',
+                                borderRadius: '50%',
+                                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#E2E8F0',
+                                color: 'var(--text-primary)',
+                                fontSize: '0.5625rem',
+                                fontWeight: 700,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                flexShrink: 0,
+                              }}
+                            >
+                              {idx + 1}
+                            </div>
+                            <span
+                              style={{
+                                fontSize: '0.6875rem',
+                                fontWeight: 600,
+                                color: 'var(--text-primary)',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              Worker #{idx + 1}
+                            </span>
+                          </div>
+                          <div
+                            style={{
+                              width: '6px',
+                              height: '6px',
+                              borderRadius: '50%',
+                              background: '#10B981',
+                              boxShadow: '0 0 4px #10B981',
+                              flexShrink: 0,
+                              marginLeft: '4px',
+                            }}
+                            title="Tab Active"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })
@@ -5127,127 +5298,108 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
               </Button>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', maxHeight: '220px', overflowY: 'auto' }}>
-                {displayQueueItems.map((job) => {
-                  const isCompleted = job.status === 'COMPLETED';
-                  const isReady = job.status === 'READY_FOR_USER';
-                  const isLocal = job.status === 'PROCESSING_LOCAL';
-                  const isFailed = job.status === 'FAILED';
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: displayQueueItems.length > 1 ? 'repeat(2, 1fr)' : '1fr',
+                gap: '6px',
+              }}
+            >
+              {displayQueueItems.map((job) => {
+                const isCompleted = job.status === 'COMPLETED';
+                const isReady = job.status === 'READY_FOR_USER';
+                const isLocal = job.status === 'PROCESSING_LOCAL';
+                const isFailed = job.status === 'FAILED';
 
-                  const badgeColor = isCompleted
-                    ? '#10B981'
-                    : isReady
-                    ? '#06B6D4'
-                    : isLocal
-                    ? '#8B5CF6'
-                    : isFailed
-                    ? '#EF4444'
-                    : '#6B7280';
+                const badgeColor = isCompleted
+                  ? '#10B981'
+                  : isReady
+                  ? '#06B6D4'
+                  : isLocal
+                  ? '#8B5CF6'
+                  : isFailed
+                  ? '#EF4444'
+                  : '#6B7280';
 
-                  return (
-                    <div
-                      key={job.id}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        padding: '0.5rem 0.65rem',
-                        borderRadius: '6px',
-                        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF',
-                        border: '1px solid var(--border-color)',
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <div
-                          style={{
-                            width: '24px',
-                            height: '24px',
-                            borderRadius: '4px',
-                            backgroundColor: isDark ? '#0F172A' : '#E2E8F0',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: '0.625rem',
-                            fontWeight: 700,
-                          }}
-                        >
-                          {job.original_position}
-                        </div>
-                        <div>
-                          <div style={{ fontSize: '0.6875rem', fontWeight: 600 }}>
-                            Image {job.original_position} of {displayQueueItems.length}
-                          </div>
-                          <div style={{ fontSize: '0.5625rem', color: '#94A3B8' }}>
-                            {String(job.job_id).slice(0, 18)}...
-                          </div>
-                        </div>
+                return (
+                  <div
+                    key={job.id}
+                    title={`Image #${job.original_position} · Status: ${job.status}`}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '5px 8px',
+                      borderRadius: '6px',
+                      backgroundColor: isDark ? 'rgba(0, 0, 0, 0.25)' : '#FFFFFF',
+                      border: '1px solid var(--border-color)',
+                      minWidth: 0,
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                      <div
+                        style={{
+                          width: '18px',
+                          height: '18px',
+                          borderRadius: '4px',
+                          backgroundColor: isDark ? '#0F172A' : '#E2E8F0',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '0.625rem',
+                          fontWeight: 700,
+                          color: 'var(--text-primary)',
+                          flexShrink: 0,
+                        }}
+                      >
+                        {job.original_position}
                       </div>
+                      <span
+                        style={{
+                          fontSize: '0.6875rem',
+                          fontWeight: 600,
+                          color: 'var(--text-primary)',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        Image #{job.original_position}
+                      </span>
+                    </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                    <span
-                      style={{
-                        padding: '2px 6px',
-                        borderRadius: '10px',
-                        fontSize: '0.5625rem',
-                        fontWeight: 600,
-                        backgroundColor: `${badgeColor}22`,
-                        color: badgeColor,
-                        border: `1px solid ${badgeColor}44`,
-                      }}
-                    >
-                      {job.status}
-                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+                      <span
+                        style={{
+                          padding: '1px 5px',
+                          borderRadius: '4px',
+                          fontSize: '0.5625rem',
+                          fontWeight: 600,
+                          backgroundColor: `${badgeColor}18`,
+                          color: badgeColor,
+                          border: `1px solid ${badgeColor}33`,
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {isReady ? 'Ready' : isCompleted ? 'Done' : isLocal ? 'Local' : job.status}
+                      </span>
 
-                    {/* Quick Action Buttons */}
-                    {isReady && (
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => pauseImageJob(job.job_id).then(loadQueue)}
-                        title="Pause Job"
-                        style={{ padding: '2px 4px' }}
-                      >
-                        <FiPause size={10} />
-                      </Button>
-                    )}
-                    {job.status === 'PENDING' && (
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => resumeImageJob(job.job_id).then(loadQueue)}
-                        title="Resume / Activate"
-                        style={{ padding: '2px 4px' }}
-                      >
-                        <FiPlay size={10} />
-                      </Button>
-                    )}
-                    {isFailed && (
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => retryImageJob(job.job_id).then(loadQueue)}
-                        title="Retry Failed"
-                        style={{ padding: '2px 4px' }}
-                      >
-                        <FiRotateCcw size={10} />
-                      </Button>
-                    )}
-                    {job.output_file_url && (
-                      <a
-                        href={job.output_file_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={{ color: '#10B981', display: 'flex', alignItems: 'center' }}
-                        title="View Enhanced Master"
-                      >
-                        <FiExternalLink size={12} />
-                      </a>
-                    )}
+                      {job.output_file_url && (
+                        <a
+                          href={job.output_file_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{ color: '#10B981', display: 'flex', alignItems: 'center' }}
+                          title="View Enhanced Master"
+                        >
+                          <FiExternalLink size={10} />
+                        </a>
+                      )}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
         </div>
       );
     })()}

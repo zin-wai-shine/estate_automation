@@ -87,18 +87,18 @@ export const SAMPLE_BADGES = {
 export const DEFAULT_WATERMARK_CONFIG: WatermarkConfig = {
   enabled: true,
   type: 'logo',
-  logoUrl: SAMPLE_BADGES.goldShield,
-  logoName: 'Gold Estate Shield Badge',
-  text: '{project} · Tel: 081-234-5678',
+  logoUrl: '/watermarks/bolthaven-watermark.png',
+  logoName: 'BOLTHAVEN Watermark.png',
+  text: 'BoltHaven Property',
   textColor: '#FFFFFF',
   fontSize: 26,
   fontWeight: '600',
-  opacity: 85,
-  scale: 24,
+  opacity: 50,
+  scale: 36,
   position: 'bottom-right',
   margin: 4,
   hasShadow: true,
-  smartScope: 'body-only',
+  smartScope: 'all',
   layoutMode: 'single',
   rows: 2,
   columns: 6,
@@ -110,9 +110,23 @@ export const DEFAULT_WATERMARK_CONFIG: WatermarkConfig = {
 
 export const DEFAULT_PRESETS: WatermarkPreset[] = [
   {
+    id: 'preset-bolthaven',
+    name: 'BoltHaven Watermark (Bottom Right)',
+    isDefault: true,
+    config: {
+      ...DEFAULT_WATERMARK_CONFIG,
+      logoUrl: '/watermarks/bolthaven-watermark.png',
+      logoName: 'BOLTHAVEN Watermark.png',
+      position: 'bottom-right',
+      scale: 36,
+      opacity: 50,
+      smartScope: 'all',
+    },
+  },
+  {
     id: 'preset-gold-shield',
     name: 'Gold Estate Badge (Bottom Right)',
-    isDefault: true,
+    isDefault: false,
     config: {
       ...DEFAULT_WATERMARK_CONFIG,
       logoUrl: SAMPLE_BADGES.goldShield,
@@ -188,6 +202,12 @@ export interface SavedWatermarkItem {
 
 export const DEFAULT_SAVED_WATERMARKS: SavedWatermarkItem[] = [
   {
+    id: 'badge-bolthaven',
+    name: 'BOLTHAVEN Watermark.png',
+    type: 'logo',
+    url: '/watermarks/bolthaven-watermark.png',
+  },
+  {
     id: 'badge-gold-shield',
     name: 'Gold Estate Shield Badge',
     type: 'logo',
@@ -213,6 +233,14 @@ export const loadSavedWatermarksList = (): SavedWatermarkItem[] => {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
+        // Ensure BoltHaven watermark is always present as first item
+        const hasBolt = parsed.some((item: SavedWatermarkItem) =>
+          item.url === '/watermarks/bolthaven-watermark.png' ||
+          item.name.toLowerCase().includes('bolthaven')
+        );
+        if (!hasBolt) {
+          return [DEFAULT_SAVED_WATERMARKS[0], ...parsed];
+        }
         return parsed;
       }
     }

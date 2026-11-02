@@ -8,7 +8,7 @@ services:
       - tunnel
       - --no-autoupdate
       - --protocol
-      - http2
+      - auto
       - --retries
       - "1000"
       - --metrics

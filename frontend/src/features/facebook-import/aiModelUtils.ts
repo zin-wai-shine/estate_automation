@@ -1,3 +1,25 @@
+import type { SelectGroup } from '../../components/ui/Select';
+
+export const AI_ENGINE_MODEL_GROUPS: SelectGroup[] = [
+  {
+    label: 'Google Gemini',
+    options: [
+      { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (Ultra Fast & Precise)' },
+      { value: 'gemini-flash-latest', label: 'Gemini Flash Latest' },
+      { value: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro (Deep Reasoning)' },
+      { value: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash (Balanced)' },
+      { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash (Next Gen)' },
+    ],
+  },
+  {
+    label: 'OpenAI',
+    options: [
+      { value: 'gpt-4o', label: 'GPT-4o (High Precision)' },
+      { value: 'gpt-4o-mini', label: 'GPT-4o-mini (Lightweight & Fast)' },
+    ],
+  },
+];
+
 /**
  * Utility helper to get clean display names for AI providers and models.
  */
@@ -93,6 +115,22 @@ export const isN8NAIBox = (
 };
 
 /**
+ * Determines whether a box is a Google Sheet integration node.
+ */
+export const isGoogleSheetBox = (
+  box?: { id?: string; provider?: string; processType?: string; title?: string }
+): boolean => {
+  if (!box) return false;
+  return (
+    box.provider === 'google_sheet' ||
+    box.processType === 'google_sheet' ||
+    Boolean(box.id?.includes('google-sheet')) ||
+    Boolean(box.id?.includes('google_sheet')) ||
+    Boolean(box.title?.toLowerCase().includes('google sheet'))
+  );
+};
+
+/**
  * Determines whether a workflow box is an External Browser image processing node.
  */
 export const isChromeTabGroupAIBox = (
@@ -137,7 +175,7 @@ export const isWatermarkAIBox = (
 ): boolean => {
   if (!box) return false;
   if (isChromeProfileAIBox(box) || isChromeTabGroupAIBox(box)) return false;
-  if (isN8NAIBox(box) || isExternalBrowserAIBox(box)) return false;
+  if (isN8NAIBox(box) || isExternalBrowserAIBox(box) || isGoogleSheetBox(box)) return false;
   if (box.processType === 'text_format' || box.processType === 'text_ai') return false;
   return (
     box.processType === 'watermark' ||
@@ -157,7 +195,7 @@ export const isTextFormatAIBox = (
 ): boolean => {
   if (!box) return false;
   if (isChromeProfileAIBox(box) || isChromeTabGroupAIBox(box)) return false;
-  if (isN8NAIBox(box) || isExternalBrowserAIBox(box)) return false;
+  if (isN8NAIBox(box) || isExternalBrowserAIBox(box) || isGoogleSheetBox(box)) return false;
   if (isWatermarkAIBox(box)) return false;
   if (box.processType === 'image_enhance' || box.provider === 'runware_ai') return false;
   if (box.processType === 'text_format') return true;
@@ -184,7 +222,7 @@ export const isTextAIBox = (
 ): boolean => {
   if (!box) return false;
   if (isChromeProfileAIBox(box) || isChromeTabGroupAIBox(box)) return false;
-  if (isN8NAIBox(box) || isExternalBrowserAIBox(box)) return false;
+  if (isN8NAIBox(box) || isExternalBrowserAIBox(box) || isGoogleSheetBox(box)) return false;
   if (isWatermarkAIBox(box)) return false;
   if (isTextFormatAIBox(box)) return false;
   if (isImageAIBox(box, connections)) return false;
@@ -201,7 +239,7 @@ export const isImageAIBox = (
 ): boolean => {
   if (!box) return false;
   if (isChromeProfileAIBox(box) || isChromeTabGroupAIBox(box)) return false;
-  if (isN8NAIBox(box)) return false;
+  if (isN8NAIBox(box) || isGoogleSheetBox(box)) return false;
   if (isExternalBrowserAIBox(box)) return true;
   if (isWatermarkAIBox(box)) return true;
   // If connected from 'get-content', it is guaranteed to be a Content / Copywriting node
