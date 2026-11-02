@@ -495,6 +495,7 @@ func (s *GoogleSheetsService) PrepareDataWithAI(
 	model string,
 	provider string,
 	promptTemplate string,
+	postURL string,
 ) (map[string]interface{}, []interface{}, error) {
 	if len(headers) == 0 {
 		return nil, nil, fmt.Errorf("no headers provided to map data against")
@@ -520,20 +521,23 @@ func (s *GoogleSheetsService) PrepareDataWithAI(
 	}
 
 	systemPrompt := fmt.Sprintf(`You are an expert real estate data parser and listing analyst.
-Your task is to parse the property listing content and map it into a JSON object matching these exact spreadsheet column headers:
+Your task is to analyze the property listing content and link, then map it into a clean JSON object matching these exact spreadsheet column headers:
 [%s]
 
 Condo / Project Name (if known): "%s"
+Source / Post Link (if available): "%s"
 Number of Available Photos: %d
 %s
 
 Guidelines:
 1. Return ONLY a valid, parseable JSON object where each key corresponds EXACTLY to one of the spreadsheet column headers listed above.
-2. For numeric fields (price, size, rent), provide clean numbers or formatted strings as appropriate.
-3. If an image or media column exists, put a summary or the first photo URL if available.
-4. If a field cannot be determined from the listing, use an empty string "" or "N/A".
-5. Do NOT include markdown blocks or any conversational text outside of the JSON object.
-%s`, headersList, condoName, len(images), templateGuidance, customInstructions)
+2. The columns are dynamic and may vary across spreadsheets. Follow the provided column names strictly.
+3. If any column relates to a URL, post link, or original link (such as "Original Link", "Post Link", "Source URL", "URL", or "Link"), populate it with the provided Source / Post Link.
+4. For numeric fields (price, size, rent, floor), provide clean numbers or formatted strings as appropriate.
+5. If an image or media column exists, put a summary or the first photo URL if available.
+6. If a field cannot be determined from the listing content or link, use an empty string "" or "N/A".
+7. Do NOT include markdown blocks or any conversational text outside of the JSON object.
+%s`, headersList, condoName, strings.TrimSpace(postURL), len(images), templateGuidance, customInstructions)
 
 	aiSvc := NewGoogleAIService()
 	var generatedJSON string

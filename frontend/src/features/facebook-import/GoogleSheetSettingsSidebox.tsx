@@ -14,7 +14,7 @@ import {
 import { SiGooglesheets } from 'react-icons/si';
 import { Select } from '../../components/ui/Select';
 import { AI_ENGINE_MODEL_GROUPS } from './aiModelUtils';
-import type { DynamicAIBoxConfig } from './FacebookWorkflowCanvas';
+import { DEFAULT_GOOGLE_SHEET_PROMPT, type DynamicAIBoxConfig } from './FacebookWorkflowCanvas';
 
 const DEFAULT_SERVICE_ACCOUNT_EMAIL = 'bolthaven-sheets@super-realestate-488219.iam.gserviceaccount.com';
 
@@ -130,8 +130,11 @@ export const GoogleSheetSettingsSidebox: React.FC<GoogleSheetSettingsSideboxProp
 
   const handleTemplateChange = (templateId: string) => {
     if (templateId === 'custom') {
+      const promptText = boxConfig.customPrompt?.trim() || boxConfig.googleSheetAiPrompt?.trim() || DEFAULT_GOOGLE_SHEET_PROMPT;
       onUpdateBoxConfig({
         templateId: 'custom',
+        customPrompt: promptText,
+        googleSheetAiPrompt: promptText,
       });
       return;
     }

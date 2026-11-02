@@ -84,13 +84,44 @@ export interface CanvasPromptOption {
   model?: string;
 }
 
+export const DEFAULT_GOOGLE_SHEET_PROMPT = `You are an expert real estate data extraction and analysis engine.
+Analyze the provided property content, specifications, and source link, then structure the data into a clean JSON object that maps strictly to the spreadsheet column headers.
+
+Dynamic Spreadsheet Column Mapping:
+- The columns in this sheet are dynamic and may vary across different spreadsheets.
+- Automatically identify and map data to match whatever column names exist in the sheet (e.g., Code, Project, Room Type, Size, Floor, Price, BTS/MRT, Owner/Agent, Contact Info, Original Link).
+- Each key in your JSON output must match the exact column name from the sheet.
+
+Extraction & Analysis Rules:
+1. URL & Links:
+   - If the spreadsheet contains a column for links (such as "Original Link", "Source URL", "Post Link", or "URL"), populate it with the source link or trigger URL.
+2. Property & Project:
+   - Extract the clean Condo/Project name without promotional emojis or marketing slogans.
+   - For listing ID / Code: extract any listing reference code, or generate a clean code based on the project and unit specs.
+3. Specifications:
+   - Room Type: Format cleanly (e.g., "1 Bed", "2 Bed 2 Bath", "Studio").
+   - Size: Numeric floor area in SQM (e.g., "35").
+   - Floor: Floor number or level (e.g., "15", "High Floor").
+4. Pricing & Financials:
+   - Price: Extract rental or sale price with currency format (e.g., "25,000 THB") or clean integer.
+5. Transit & Location:
+   - BTS/MRT: Extract station name and walking distance or travel time if mentioned.
+6. Contact & Agent:
+   - Owner/Agent: Name or company if mentioned.
+   - Contact Info: Extract phone numbers, Line ID, WhatsApp, or email into the contact columns.
+
+Output Format:
+- Return ONLY a valid, parseable JSON object with keys corresponding to the sheet column headers.
+- If a column value cannot be determined from the content or URL, use an empty string "" or "N/A".
+- Do NOT wrap in markdown explanation or conversational text.`;
+
 export const loadAvailablePromptTemplates = (): CanvasPromptOption[] => {
   try {
     const raw = localStorage.getItem('estate_prompt_templates');
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed
+        const templates = parsed
           .filter((item: any) => item && (item.templateText || item.name))
           .map((item: any) => {
             let cat = item.category || 'GENERAL';
@@ -105,12 +136,28 @@ export const loadAvailablePromptTemplates = (): CanvasPromptOption[] => {
               model: item.model,
             };
           });
+        if (!templates.some((t: any) => t.id === 'sheets-dynamic-ai' || /google sheet/i.test(t.name))) {
+          templates.unshift({
+            id: 'sheets-dynamic-ai',
+            name: 'Google Sheet Dynamic Column & URL Extractor',
+            category: 'GOOGLE_SHEET',
+            templateText: DEFAULT_GOOGLE_SHEET_PROMPT,
+            model: undefined,
+          });
+        }
+        return templates;
       }
     }
   } catch (e) {
     console.error('Failed to load prompt templates', e);
   }
   return [
+    {
+      id: 'sheets-dynamic-ai',
+      name: 'Google Sheet Dynamic Column & URL Extractor',
+      category: 'GOOGLE_SHEET',
+      templateText: DEFAULT_GOOGLE_SHEET_PROMPT,
+    },
     {
       id: '1',
       name: 'Facebook Rental Listing Copy (Thai/English)',
@@ -3127,7 +3174,7 @@ export const FacebookWorkflowCanvas = forwardRef<
             }
           }
         }
-      } catch (e) {}
+      } catch (e) { }
     };
 
     checkBrowserAutomationStatus();
@@ -3320,7 +3367,7 @@ export const FacebookWorkflowCanvas = forwardRef<
               LOCAL_STORAGE_KEY,
               JSON.stringify(stripLargeBase64FromWorkflowConfig(cfg))
             );
-          } catch {}
+          } catch { }
         }
 
         lastEmittedConfigRef.current = cfg;
@@ -3347,7 +3394,7 @@ export const FacebookWorkflowCanvas = forwardRef<
         persistTimerRef.current = null;
         try {
           localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(latestConfigRef.current));
-        } catch {}
+        } catch { }
         if (onConfigChange) {
           onConfigChange(latestConfigRef.current);
         }
@@ -3578,6 +3625,15 @@ export const FacebookWorkflowCanvas = forwardRef<
       const sampleContent = rawContent || 'Rent Condo XT Ekkamai 1 Bedroom 35 sqm 25,000 THB/month Near BTS Ekkamai';
       const sampleCondo = 'XT Ekkamai';
       const sampleImages = images || [];
+      const sampleLink =
+        (config.trigger?.monitoredPageName && /^https?:\/\//i.test(config.trigger.monitoredPageName)
+          ? config.trigger.monitoredPageName
+          : null) ||
+        (config.trigger?.manualContent && /^https?:\/\//i.test(config.trigger.manualContent.trim())
+          ? config.trigger.manualContent.trim().split(/\s+/)[0]
+          : null) ||
+        'https://facebook.com/groups/bangkokcondoexchange/posts/981273941203';
+
       const res = await fetch('/api/google-sheets/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -3588,10 +3644,11 @@ export const FacebookWorkflowCanvas = forwardRef<
           content: sampleContent,
           condo_name: sampleCondo,
           images: sampleImages,
+          post_url: sampleLink,
           custom_instructions: box.googleSheetAiPrompt || box.customPrompt || '',
           model: box.model || 'gemini-1.5-flash',
           provider: box.provider || 'google_ai',
-          prompt_template: box.templateText || '',
+          prompt_template: box.templateText || box.customPrompt || DEFAULT_GOOGLE_SHEET_PROMPT,
           credentials_json: box.googleServiceAccountJson || '',
         }),
       });
@@ -3661,7 +3718,7 @@ export const FacebookWorkflowCanvas = forwardRef<
           const parsed = JSON.parse(savedHero);
           if (parsed?.url) targetImgUrl = parsed.url;
         }
-      } catch (e) {}
+      } catch (e) { }
     } else if (cropBox.imageSource === 'enhance') {
       targetImgUrl = enhancedPhotos?.[0] || images?.[0]?.stored_url || images?.[0]?.source_url || '';
     } else if (cropBox.imageSource === 'get_images' || (cropBox.imageSource as string) === 'get-images') {
@@ -3673,7 +3730,7 @@ export const FacebookWorkflowCanvas = forwardRef<
           const parsed = JSON.parse(savedHero);
           if (parsed?.url) targetImgUrl = parsed.url;
         }
-      } catch (e) {}
+      } catch (e) { }
       if (!targetImgUrl && images && images.length > 0) {
         targetImgUrl = enhancedPhotos?.[0] || images[0].stored_url || images[0].source_url || '';
       }
@@ -3692,7 +3749,7 @@ export const FacebookWorkflowCanvas = forwardRef<
           setCombineCropSlices(slices);
         }
       })
-      .catch(() => {});
+      .catch(() => { });
 
     return () => {
       isCancelled = true;
@@ -3820,7 +3877,7 @@ export const FacebookWorkflowCanvas = forwardRef<
 
       // Do NOT revoke immediately — keep alive 30s so browser download pipeline finishes completely
       setTimeout(() => {
-        try { URL.revokeObjectURL(blobUrl); } catch (_) {}
+        try { URL.revokeObjectURL(blobUrl); } catch (_) { }
       }, 30000);
     } catch (err: any) {
       console.warn('handleDownloadImage error, using direct fallback:', err);
@@ -3944,14 +4001,14 @@ export const FacebookWorkflowCanvas = forwardRef<
         style={{
           ...(isSideRight
             ? {
-                top: '50%',
-                left: '100%',
-                transform: 'translateY(-50%)',
-                marginLeft: '8px',
-                flexDirection: 'row-reverse',
-              }
+              top: '50%',
+              left: '100%',
+              transform: 'translateY(-50%)',
+              marginLeft: '8px',
+              flexDirection: 'row-reverse',
+            }
             : isSideLeft
-            ? {
+              ? {
                 top: '50%',
                 right: '100%',
                 left: 'auto',
@@ -3959,7 +4016,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 marginRight: '8px',
                 flexDirection: 'row',
               }
-            : {}),
+              : {}),
           ...positionStyle,
         }}
       >
@@ -4004,19 +4061,19 @@ export const FacebookWorkflowCanvas = forwardRef<
           style={{
             ...(isSideRight
               ? {
-                  width: '14px',
-                  height: '48px',
-                  marginTop: 0,
-                  marginRight: '-2px',
-                }
+                width: '14px',
+                height: '48px',
+                marginTop: 0,
+                marginRight: '-2px',
+              }
               : isSideLeft
-              ? {
+                ? {
                   width: '14px',
                   height: '48px',
                   marginTop: 0,
                   marginLeft: '-2px',
                 }
-              : {}),
+                : {}),
           }}
         />
       </div>
@@ -6302,9 +6359,9 @@ export const FacebookWorkflowCanvas = forwardRef<
       processType: 'google_sheet',
       provider: 'google_sheet' as any,
       model: 'google-sheets-v4',
-      templateId: 'sheets-append',
-      templateText: '',
-      customPrompt: '',
+      templateId: 'sheets-dynamic-ai',
+      templateText: DEFAULT_GOOGLE_SHEET_PROMPT,
+      customPrompt: DEFAULT_GOOGLE_SHEET_PROMPT,
       enabled: true,
       googleSpreadsheetUrl: 'https://docs.google.com/spreadsheets/d/1lzY57D5ers2Xs6cvbV-skeqGSAK_jijbQJZt8Hn8udY/edit?gid=0#gid=0',
       googleSpreadsheetId: '1lzY57D5ers2Xs6cvbV-skeqGSAK_jijbQJZt8Hn8udY',
@@ -7322,7 +7379,7 @@ export const FacebookWorkflowCanvas = forwardRef<
               LOCAL_STORAGE_KEY,
               JSON.stringify(stripLargeBase64FromWorkflowConfig(cfgToSave))
             );
-          } catch {}
+          } catch { }
         }
         lastEmittedConfigRef.current = cfgToSave;
         lastEmittedConfigStrRef.current = JSON.stringify(cfgToSave);
@@ -9062,277 +9119,277 @@ export const FacebookWorkflowCanvas = forwardRef<
                       pointerEvents: 'auto',
                       zIndex: 2,
                     }}
-                  onClick={(e) => {
-                    if (editingCanvasBoxId === box.id) {
-                      e.stopPropagation();
-                    } else {
-                      handleNodeClick({ type: 'ai-box', boxId: box.id }, e);
-                    }
-                  }}
-                >
-                  {editingCanvasBoxId === box.id ? (
-                    <input
-                      autoFocus
-                      type="text"
-                      value={editingCanvasBoxTitle}
-                      onChange={(e) => setEditingCanvasBoxTitle(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
+                    onClick={(e) => {
+                      if (editingCanvasBoxId === box.id) {
+                        e.stopPropagation();
+                      } else {
+                        handleNodeClick({ type: 'ai-box', boxId: box.id }, e);
+                      }
+                    }}
+                  >
+                    {editingCanvasBoxId === box.id ? (
+                      <input
+                        autoFocus
+                        type="text"
+                        value={editingCanvasBoxTitle}
+                        onChange={(e) => setEditingCanvasBoxTitle(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            if (editingCanvasBoxTitle.trim()) {
+                              handleUpdateAIBox(box.id, { title: editingCanvasBoxTitle.trim() });
+                            }
+                            setEditingCanvasBoxId(null);
+                          } else if (e.key === 'Escape') {
+                            setEditingCanvasBoxId(null);
+                          }
+                        }}
+                        onBlur={() => {
                           if (editingCanvasBoxTitle.trim()) {
                             handleUpdateAIBox(box.id, { title: editingCanvasBoxTitle.trim() });
                           }
                           setEditingCanvasBoxId(null);
-                        } else if (e.key === 'Escape') {
-                          setEditingCanvasBoxId(null);
-                        }
-                      }}
-                      onBlur={() => {
-                        if (editingCanvasBoxTitle.trim()) {
-                          handleUpdateAIBox(box.id, { title: editingCanvasBoxTitle.trim() });
-                        }
-                        setEditingCanvasBoxId(null);
-                      }}
-                      onClick={(e) => e.stopPropagation()}
-                      onMouseDown={(e) => e.stopPropagation()}
-                      style={{
-                        fontSize: '0.8125rem',
-                        fontWeight: 600,
-                        color: 'var(--text-primary)',
-                        backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
-                        border: '1px solid #3B82F6',
-                        borderRadius: '4px',
-                        padding: '1px 6px',
-                        outline: 'none',
-                        textAlign: 'center',
-                        width: '120px',
-                        maxWidth: '120px',
-                        boxShadow: '0 2px 8px rgba(0,0,0,0.18)',
-                      }}
-                    />
-                  ) : (() => {
-                    const matchingCropFormat = isWatermark
-                      ? (savedCropFormatsList.find((f) => f.id === box.cropFormatId || f.id === box.templateId || f.id === box.watermarkPresetId) ||
-                        savedCropFormatsList.find((f) => box.templateText && f.name.toLowerCase() === box.templateText.toLowerCase()) ||
-                        savedCropFormatsList.find((f) => box.title && f.name && box.title.toLowerCase().includes(f.name.toLowerCase())) ||
-                        ((box.title?.toLowerCase().includes('fb') || box.templateText?.toLowerCase().includes('fb')) ? savedCropFormatsList.find((f) => f.name.toLowerCase().includes('fb')) : null))
-                      : null;
-
-                    const displayNodeTitle = box.title || (isWatermark && matchingCropFormat ? `Format: ${matchingCropFormat.name}` : (isWatermark ? 'Format Preset' : 'AI Node'));
-
-                    const displayNodeSubtitle = isGoogleSheetBox(box)
-                      ? (box.googleSheetHeaders && box.googleSheetHeaders.length > 0 ? `${box.googleSheetHeaders.length} Columns` : (box.subtitle || 'Spreadsheet Sync'))
-                      : isWatermark && matchingCropFormat
-                      ? `${matchingCropFormat.targetWidth}×${matchingCropFormat.targetHeight} (${matchingCropFormat.aspect || '1:1'})`
-                      : (box.subtitle || 'Crop & Watermark');
-
-                    return (
-                      <span
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        onMouseDown={(e) => e.stopPropagation()}
                         style={{
                           fontSize: '0.8125rem',
                           fontWeight: 600,
                           color: 'var(--text-primary)',
-                          transition: 'color 0.2s ease',
-                          maxWidth: '130px',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          display: '-webkit-box',
-                          WebkitLineClamp: 2,
-                          WebkitBoxOrient: 'vertical',
+                          backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
+                          border: '1px solid #3B82F6',
+                          borderRadius: '4px',
+                          padding: '1px 6px',
+                          outline: 'none',
                           textAlign: 'center',
-                          lineHeight: '1.25',
-                          wordBreak: 'break-word',
+                          width: '120px',
+                          maxWidth: '120px',
+                          boxShadow: '0 2px 8px rgba(0,0,0,0.18)',
                         }}
-                        onDoubleClick={(e) => {
-                          e.stopPropagation();
-                          setEditingCanvasBoxId(box.id);
-                          setEditingCanvasBoxTitle(displayNodeTitle);
-                        }}
-                        title={displayNodeTitle}
-                      >
-                        {displayNodeTitle}
-                      </span>
-                    );
-                  })()}
-                  {boxStatus === 'running' ? (
-                    <span
-                      style={{
-                        fontSize: '0.6875rem',
-                        fontWeight: 500,
-                        color: isDark
-                          ? (isWatermark ? '#FBBF24' : (isChromeTabGroup || isChromeProfile || isExternalBrowser) ? '#38BDF8' : '#C084FC')
-                          : (isWatermark ? '#D97706' : (isChromeTabGroup || isChromeProfile || isExternalBrowser) ? '#0284C7' : '#7C3AED'),
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
+                      />
+                    ) : (() => {
+                      const matchingCropFormat = isWatermark
+                        ? (savedCropFormatsList.find((f) => f.id === box.cropFormatId || f.id === box.templateId || f.id === box.watermarkPresetId) ||
+                          savedCropFormatsList.find((f) => box.templateText && f.name.toLowerCase() === box.templateText.toLowerCase()) ||
+                          savedCropFormatsList.find((f) => box.title && f.name && box.title.toLowerCase().includes(f.name.toLowerCase())) ||
+                          ((box.title?.toLowerCase().includes('fb') || box.templateText?.toLowerCase().includes('fb')) ? savedCropFormatsList.find((f) => f.name.toLowerCase().includes('fb')) : null))
+                        : null;
+
+                      const displayNodeTitle = box.title || (isWatermark && matchingCropFormat ? `Format: ${matchingCropFormat.name}` : (isWatermark ? 'Format Preset' : 'AI Node'));
+
+                      const displayNodeSubtitle = isGoogleSheetBox(box)
+                        ? (box.googleSheetHeaders && box.googleSheetHeaders.length > 0 ? `${box.googleSheetHeaders.length} Columns` : (box.subtitle || 'Spreadsheet Sync'))
+                        : isWatermark && matchingCropFormat
+                          ? `${matchingCropFormat.targetWidth}×${matchingCropFormat.targetHeight} (${matchingCropFormat.aspect || '1:1'})`
+                          : (box.subtitle || 'Crop & Watermark');
+
+                      return (
+                        <span
+                          style={{
+                            fontSize: '0.8125rem',
+                            fontWeight: 600,
+                            color: 'var(--text-primary)',
+                            transition: 'color 0.2s ease',
+                            maxWidth: '130px',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            display: '-webkit-box',
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: 'vertical',
+                            textAlign: 'center',
+                            lineHeight: '1.25',
+                            wordBreak: 'break-word',
+                          }}
+                          onDoubleClick={(e) => {
+                            e.stopPropagation();
+                            setEditingCanvasBoxId(box.id);
+                            setEditingCanvasBoxTitle(displayNodeTitle);
+                          }}
+                          title={displayNodeTitle}
+                        >
+                          {displayNodeTitle}
+                        </span>
+                      );
+                    })()}
+                    {boxStatus === 'running' ? (
                       <span
                         style={{
-                          width: '5px',
-                          height: '5px',
-                          borderRadius: '50%',
-                          backgroundColor: isDark
+                          fontSize: '0.6875rem',
+                          fontWeight: 500,
+                          color: isDark
                             ? (isWatermark ? '#FBBF24' : (isChromeTabGroup || isChromeProfile || isExternalBrowser) ? '#38BDF8' : '#C084FC')
                             : (isWatermark ? '#D97706' : (isChromeTabGroup || isChromeProfile || isExternalBrowser) ? '#0284C7' : '#7C3AED'),
-                        }}
-                      />
-                      <span>
-                        {isChromeTabGroup
-                          ? 'Processing in Tabs...'
-                          : isChromeProfile
-                            ? 'Active Profile...'
-                            : isExternalBrowser
-                              ? 'Chrome Automating...'
-                              : isWatermark
-                                ? 'Processing...'
-                                : isRunware
-                                  ? 'Enhancing...'
-                                  : isTextFormatAIBox(box)
-                                    ? 'Formatting...'
-                                    : 'Generating...'}
-                      </span>
-                    </span>
-                  ) : isChromeTabGroup ? (
-                    <span
-                      style={{
-                        fontSize: '0.6875rem',
-                        color: isDark ? '#38BDF8' : '#0284C7',
-                        fontWeight: 600,
-                        textAlign: 'center',
-                        lineHeight: '1.2',
-                      }}
-                    >
-                      {box.subtitle || 'Tab Group'}
-                    </span>
-                  ) : !isChromeProfile ? (
-                    <span
-                      style={{
-                        fontSize: '0.6875rem',
-                        color: isDark ? '#8B949E' : '#64748B',
-                        textAlign: 'center',
-                        lineHeight: '1.2',
-                      }}
-                    >
-                      {isWatermark
-                        ? (() => {
-                          const matchingCropFormat =
-                            savedCropFormatsList.find((f) => f.id === box.cropFormatId || f.id === box.templateId || f.id === box.watermarkPresetId) ||
-                            savedCropFormatsList.find((f) => box.templateText && f.name.toLowerCase() === box.templateText.toLowerCase()) ||
-                            savedCropFormatsList.find((f) => box.title && f.name && box.title.toLowerCase().includes(f.name.toLowerCase())) ||
-                            ((box.title?.toLowerCase().includes('fb') || box.templateText?.toLowerCase().includes('fb')) ? savedCropFormatsList.find((f) => f.name.toLowerCase().includes('fb')) : null);
-                          return matchingCropFormat
-                            ? `${matchingCropFormat.targetWidth}×${matchingCropFormat.targetHeight} (${matchingCropFormat.aspect || '1:1'})`
-                            : (box.subtitle || 'Crop & Watermark');
-                        })()
-                        : isExternalBrowserAIBox(box) ? (
-                          'Chrome Automation'
-                        ) : (isRunware || isEnhance)
-                          ? 'Image Enhancer'
-                          : isTextFormatAIBox(box)
-                            ? 'Format Preset'
-                            : isTextAIBox(box, config.connections)
-                              ? 'AI Model'
-                              : 'Copywriter'}
-                    </span>
-                  ) : null}
-
-                  {/* Base vertical line and [+] button below text */}
-                  {(isExternalBrowser || isChromeProfile) && (
-                    <div
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        marginTop: '8px',
-                        pointerEvents: 'auto',
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: '1.75px',
-                          height: '18px',
-                          backgroundColor: isDark ? '#4B5563' : '#94A3B8',
-                        }}
-                      />
-                      <button
-                        type="button"
-                        className="merged-node-bottom-add-btn"
-                        title={isChromeProfile ? 'Connect Chrome Tab Group' : 'Connect Chrome Profile'}
-                        onMouseDown={(e) => {
-                          e.stopPropagation();
-                          e.preventDefault();
-                        }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          e.preventDefault();
-                          if (isChromeProfile) {
-                            handleOpenConnectDrawer(box.id, 'ai-box', box.title || 'Chrome Profile', 'chrome-tab-group');
-                          } else {
-                            handleOpenConnectDrawer(box.id, 'ai-box', box.title || 'External Browser', 'chrome-profile');
-                          }
-                        }}
-                        style={{
-                          width: '22px',
-                          height: '22px',
-                          borderRadius: '6px',
-                          border: isDark ? '1.5px solid #4B5563' : '1.5px solid #94A3B8',
-                          backgroundColor: isDark ? '#1F2937' : '#FFFFFF',
-                          display: 'flex',
+                          display: 'inline-flex',
                           alignItems: 'center',
-                          justifyContent: 'center',
-                          padding: 0,
-                          cursor: 'pointer',
-                          pointerEvents: 'auto',
-                          zIndex: 40,
-                          boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-                          transition: 'all 0.15s ease',
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.borderColor = isDark ? '#60A5FA' : '#2563EB';
-                          e.currentTarget.style.backgroundColor = isDark ? '#263342' : '#EFF6FF';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.borderColor = isDark ? '#4B5563' : '#94A3B8';
-                          e.currentTarget.style.backgroundColor = isDark ? '#1F2937' : '#FFFFFF';
+                          gap: '4px',
+                          whiteSpace: 'nowrap',
                         }}
                       >
-                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                          <path
-                            d="M 6 2 L 6 10 M 2 6 L 10 6"
-                            stroke={isDark ? '#9CA3AF' : '#64748B'}
-                            strokeWidth="1.75"
-                            strokeLinecap="round"
-                          />
-                        </svg>
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
+                        <span
+                          style={{
+                            width: '5px',
+                            height: '5px',
+                            borderRadius: '50%',
+                            backgroundColor: isDark
+                              ? (isWatermark ? '#FBBF24' : (isChromeTabGroup || isChromeProfile || isExternalBrowser) ? '#38BDF8' : '#C084FC')
+                              : (isWatermark ? '#D97706' : (isChromeTabGroup || isChromeProfile || isExternalBrowser) ? '#0284C7' : '#7C3AED'),
+                          }}
+                        />
+                        <span>
+                          {isChromeTabGroup
+                            ? 'Processing in Tabs...'
+                            : isChromeProfile
+                              ? 'Active Profile...'
+                              : isExternalBrowser
+                                ? 'Chrome Automating...'
+                                : isWatermark
+                                  ? 'Processing...'
+                                  : isRunware
+                                    ? 'Enhancing...'
+                                    : isTextFormatAIBox(box)
+                                      ? 'Formatting...'
+                                      : 'Generating...'}
+                        </span>
+                      </span>
+                    ) : isChromeTabGroup ? (
+                      <span
+                        style={{
+                          fontSize: '0.6875rem',
+                          color: isDark ? '#38BDF8' : '#0284C7',
+                          fontWeight: 600,
+                          textAlign: 'center',
+                          lineHeight: '1.2',
+                        }}
+                      >
+                        {box.subtitle || 'Tab Group'}
+                      </span>
+                    ) : !isChromeProfile ? (
+                      <span
+                        style={{
+                          fontSize: '0.6875rem',
+                          color: isDark ? '#8B949E' : '#64748B',
+                          textAlign: 'center',
+                          lineHeight: '1.2',
+                        }}
+                      >
+                        {isWatermark
+                          ? (() => {
+                            const matchingCropFormat =
+                              savedCropFormatsList.find((f) => f.id === box.cropFormatId || f.id === box.templateId || f.id === box.watermarkPresetId) ||
+                              savedCropFormatsList.find((f) => box.templateText && f.name.toLowerCase() === box.templateText.toLowerCase()) ||
+                              savedCropFormatsList.find((f) => box.title && f.name && box.title.toLowerCase().includes(f.name.toLowerCase())) ||
+                              ((box.title?.toLowerCase().includes('fb') || box.templateText?.toLowerCase().includes('fb')) ? savedCropFormatsList.find((f) => f.name.toLowerCase().includes('fb')) : null);
+                            return matchingCropFormat
+                              ? `${matchingCropFormat.targetWidth}×${matchingCropFormat.targetHeight} (${matchingCropFormat.aspect || '1:1'})`
+                              : (box.subtitle || 'Crop & Watermark');
+                          })()
+                          : isExternalBrowserAIBox(box) ? (
+                            'Chrome Automation'
+                          ) : (isRunware || isEnhance)
+                            ? 'Image Enhancer'
+                            : isTextFormatAIBox(box)
+                              ? 'Format Preset'
+                              : isTextAIBox(box, config.connections)
+                                ? 'AI Model'
+                                : 'Copywriter'}
+                      </span>
+                    ) : null}
 
-              {/* Floating Run Step Play Button */}
-              {Boolean(isEffectiveEnabled) && (hoveredNodeId === box.id || isSelected) &&
-                renderNodePlayButton(
-                  box.id,
-                  isTextFormat
-                    ? '#6366F1'
-                    : isExternalBrowser
-                    ? '#0EA5E9'
-                    : isWatermark
-                    ? '#8B5CF6'
-                    : isTextAI
-                    ? '#A855F7'
-                    : isChromeProfile || isChromeTabGroup
-                    ? '#38BDF8'
-                    : '#A855F7',
-                  isTextAI ? { left: '24px', top: '-38px', transform: 'none' } : undefined,
-                  box.title || 'Step',
-                  isTextFormat ? 'right' : 'top'
+                    {/* Base vertical line and [+] button below text */}
+                    {(isExternalBrowser || isChromeProfile) && (
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          marginTop: '8px',
+                          pointerEvents: 'auto',
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: '1.75px',
+                            height: '18px',
+                            backgroundColor: isDark ? '#4B5563' : '#94A3B8',
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="merged-node-bottom-add-btn"
+                          title={isChromeProfile ? 'Connect Chrome Tab Group' : 'Connect Chrome Profile'}
+                          onMouseDown={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            if (isChromeProfile) {
+                              handleOpenConnectDrawer(box.id, 'ai-box', box.title || 'Chrome Profile', 'chrome-tab-group');
+                            } else {
+                              handleOpenConnectDrawer(box.id, 'ai-box', box.title || 'External Browser', 'chrome-profile');
+                            }
+                          }}
+                          style={{
+                            width: '22px',
+                            height: '22px',
+                            borderRadius: '6px',
+                            border: isDark ? '1.5px solid #4B5563' : '1.5px solid #94A3B8',
+                            backgroundColor: isDark ? '#1F2937' : '#FFFFFF',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            padding: 0,
+                            cursor: 'pointer',
+                            pointerEvents: 'auto',
+                            zIndex: 40,
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+                            transition: 'all 0.15s ease',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.borderColor = isDark ? '#60A5FA' : '#2563EB';
+                            e.currentTarget.style.backgroundColor = isDark ? '#263342' : '#EFF6FF';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.borderColor = isDark ? '#4B5563' : '#94A3B8';
+                            e.currentTarget.style.backgroundColor = isDark ? '#1F2937' : '#FFFFFF';
+                          }}
+                        >
+                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                            <path
+                              d="M 6 2 L 6 10 M 2 6 L 10 6"
+                              stroke={isDark ? '#9CA3AF' : '#64748B'}
+                              strokeWidth="1.75"
+                              strokeLinecap="round"
+                            />
+                          </svg>
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 )}
-            </div>
-          );
-        })}
+
+                {/* Floating Run Step Play Button */}
+                {Boolean(isEffectiveEnabled) && (hoveredNodeId === box.id || isSelected) &&
+                  renderNodePlayButton(
+                    box.id,
+                    isTextFormat
+                      ? '#6366F1'
+                      : isExternalBrowser
+                        ? '#0EA5E9'
+                        : isWatermark
+                          ? '#8B5CF6'
+                          : isTextAI
+                            ? '#A855F7'
+                            : isChromeProfile || isChromeTabGroup
+                              ? '#38BDF8'
+                              : '#A855F7',
+                    isTextAI ? { left: '24px', top: '-38px', transform: 'none' } : undefined,
+                    box.title || 'Step',
+                    isTextFormat ? 'right' : 'top'
+                  )}
+              </div>
+            );
+          })}
 
           {/* DESTINATION / OUTPUT NODES (Supports Multiple Independent Nodes: Database, Social Media, or Hybrid) */}
           {/* COMBINE BOX NODES */}
@@ -10164,8 +10221,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                 boxShadow: (viewingPromptTemplate || showGoogleSheetSettingsSidebox)
                   ? 'none'
                   : isDark
-                  ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
-                  : '-3px 0 16px rgba(0, 0, 0, 0.06)',
+                    ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
+                    : '-3px 0 16px rgba(0, 0, 0, 0.06)',
                 transition: 'box-shadow 0.28s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.28s ease',
                 zIndex: 170,
                 display: 'flex',
@@ -10838,10 +10895,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                         const fromTitle = c.fromNodeId === 'get-content' ? 'Get Content' : fromBox?.title || c.fromNodeId;
                         const isTextAI = fromBox
                           ? isTextAIBox(fromBox, config.connections) ||
-                            fromBox.subtitle === 'AI Processor' ||
-                            fromBox.processType === 'text_ai' ||
-                            fromBox.title?.toLowerCase().includes('prompt generator') ||
-                            fromBox.title?.toLowerCase().includes('ai model')
+                          fromBox.subtitle === 'AI Processor' ||
+                          fromBox.processType === 'text_ai' ||
+                          fromBox.title?.toLowerCase().includes('prompt generator') ||
+                          fromBox.title?.toLowerCase().includes('ai model')
                           : false;
 
                         if (isTextAI) {
@@ -10896,8 +10953,8 @@ export const FacebookWorkflowCanvas = forwardRef<
 
                       const mergedText = connectedTextOutputs.length > 0
                         ? (connectedTextOutputs.length === 1
-                            ? connectedTextOutputs[0].text
-                            : connectedTextOutputs.map((item) => `## ${item.title}\n\n${item.text}`).join('\n\n---\n\n'))
+                          ? connectedTextOutputs[0].text
+                          : connectedTextOutputs.map((item) => `## ${item.title}\n\n${item.text}`).join('\n\n---\n\n'))
                         : (aiGeneratedCopy || rawContent || '');
 
                       const hasImagesIn = combineInputs.some(
@@ -10940,10 +10997,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                                 // Upstream format preset children connected to this AI Processor node
                                 const isTextAI = fromBox
                                   ? isTextAIBox(fromBox, config.connections) ||
-                                    fromBox.subtitle === 'AI Processor' ||
-                                    fromBox.processType === 'text_ai' ||
-                                    fromBox.title?.toLowerCase().includes('prompt generator') ||
-                                    fromBox.title?.toLowerCase().includes('ai model')
+                                  fromBox.subtitle === 'AI Processor' ||
+                                  fromBox.processType === 'text_ai' ||
+                                  fromBox.title?.toLowerCase().includes('prompt generator') ||
+                                  fromBox.title?.toLowerCase().includes('ai model')
                                   : false;
 
                                 let childFormatBoxes: DynamicAIBoxConfig[] = [];
@@ -11533,8 +11590,107 @@ export const FacebookWorkflowCanvas = forwardRef<
                               >
                                 {combineCropSlices.length > 0
                                   ? combineCropSlices.map((slice, idx) => (
+                                    <div
+                                      key={`combine-slice-${slice.tileIndex}-${idx}`}
+                                      onClick={() => handleOpenLightbox(idx)}
+                                      style={{
+                                        position: 'relative',
+                                        width: '100%',
+                                        paddingTop: '100%',
+                                        borderRadius: '6px',
+                                        overflow: 'hidden',
+                                        backgroundColor: '#000000',
+                                        border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                        cursor: 'pointer',
+                                        transition: 'transform 0.15s ease',
+                                      }}
+                                      title={`Click to view Tile #${slice.tileIndex} (${slice.label}) full size`}
+                                    >
+                                      <div style={{ position: 'absolute', inset: 0 }}>
+                                        <img
+                                          src={slice.url}
+                                          alt={slice.label}
+                                          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                                        />
+                                        {/* Direct 1-Click Tile Download Button */}
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleDownloadImage(slice.url, idx, e);
+                                          }}
+                                          title={`Download Tile #${slice.tileIndex}`}
+                                          aria-label={`Download Tile #${slice.tileIndex}`}
+                                          style={{
+                                            position: 'absolute',
+                                            top: '3px',
+                                            left: '3px',
+                                            width: '20px',
+                                            height: '20px',
+                                            borderRadius: '4px',
+                                            backgroundColor: 'rgba(0, 0, 0, 0.65)',
+                                            border: '1px solid rgba(255, 255, 255, 0.25)',
+                                            color: '#FFFFFF',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            cursor: 'pointer',
+                                            zIndex: 3,
+                                            transition: 'background-color 0.15s ease',
+                                          }}
+                                          onMouseEnter={(e) => {
+                                            e.currentTarget.style.backgroundColor = '#3B82F6';
+                                          }}
+                                          onMouseLeave={(e) => {
+                                            e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.65)';
+                                          }}
+                                        >
+                                          <FiDownload size={10} />
+                                        </button>
+                                        <div
+                                          style={{
+                                            position: 'absolute',
+                                            bottom: '2px',
+                                            left: '2px',
+                                            fontSize: '0.5rem',
+                                            fontWeight: 700,
+                                            padding: '1px 4px',
+                                            borderRadius: '2px',
+                                            backgroundColor: 'rgba(0,0,0,0.7)',
+                                            color: '#FFFFFF',
+                                          }}
+                                        >
+                                          Tile #{slice.tileIndex}
+                                        </div>
+                                        {slice.totalTiles > 1 && (
+                                          <div
+                                            style={{
+                                              position: 'absolute',
+                                              top: '2px',
+                                              right: '2px',
+                                              fontSize: '0.45rem',
+                                              fontWeight: 700,
+                                              padding: '1px 4px',
+                                              borderRadius: '2px',
+                                              backgroundColor: 'rgba(139, 92, 246, 0.9)',
+                                              color: '#FFFFFF',
+                                            }}
+                                          >
+                                            {slice.tileIndex}/{slice.totalTiles}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))
+                                  : images.map((img, idx) => {
+                                    const url =
+                                      watermarkedPhotos?.[img.index] ||
+                                      enhancedPhotos?.[img.index] ||
+                                      img.stored_url ||
+                                      img.source_url;
+                                    return (
                                       <div
-                                        key={`combine-slice-${slice.tileIndex}-${idx}`}
+                                        key={`combine-img-${img.index}`}
                                         onClick={() => handleOpenLightbox(idx)}
                                         style={{
                                           position: 'relative',
@@ -11547,23 +11703,23 @@ export const FacebookWorkflowCanvas = forwardRef<
                                           cursor: 'pointer',
                                           transition: 'transform 0.15s ease',
                                         }}
-                                        title={`Click to view Tile #${slice.tileIndex} (${slice.label}) full size`}
+                                        title={`Click to view Photo #${idx + 1} full size`}
                                       >
                                         <div style={{ position: 'absolute', inset: 0 }}>
                                           <img
-                                            src={slice.url}
-                                            alt={slice.label}
+                                            src={url}
+                                            alt={`Merged #${img.index + 1}`}
                                             style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                                           />
-                                          {/* Direct 1-Click Tile Download Button */}
+                                          {/* Direct 1-Click Photo Download Button */}
                                           <button
                                             type="button"
                                             onClick={(e) => {
                                               e.stopPropagation();
-                                              handleDownloadImage(slice.url, idx, e);
+                                              handleDownloadImage(url, idx, e);
                                             }}
-                                            title={`Download Tile #${slice.tileIndex}`}
-                                            aria-label={`Download Tile #${slice.tileIndex}`}
+                                            title={`Download Photo #${idx + 1}`}
+                                            aria-label={`Download Photo #${idx + 1}`}
                                             style={{
                                               position: 'absolute',
                                               top: '3px',
@@ -11603,111 +11759,12 @@ export const FacebookWorkflowCanvas = forwardRef<
                                               color: '#FFFFFF',
                                             }}
                                           >
-                                            Tile #{slice.tileIndex}
+                                            #{idx + 1}
                                           </div>
-                                          {slice.totalTiles > 1 && (
-                                            <div
-                                              style={{
-                                                position: 'absolute',
-                                                top: '2px',
-                                                right: '2px',
-                                                fontSize: '0.45rem',
-                                                fontWeight: 700,
-                                                padding: '1px 4px',
-                                                borderRadius: '2px',
-                                                backgroundColor: 'rgba(139, 92, 246, 0.9)',
-                                                color: '#FFFFFF',
-                                              }}
-                                            >
-                                              {slice.tileIndex}/{slice.totalTiles}
-                                            </div>
-                                          )}
                                         </div>
                                       </div>
-                                    ))
-                                  : images.map((img, idx) => {
-                                      const url =
-                                        watermarkedPhotos?.[img.index] ||
-                                        enhancedPhotos?.[img.index] ||
-                                        img.stored_url ||
-                                        img.source_url;
-                                      return (
-                                        <div
-                                          key={`combine-img-${img.index}`}
-                                          onClick={() => handleOpenLightbox(idx)}
-                                          style={{
-                                            position: 'relative',
-                                            width: '100%',
-                                            paddingTop: '100%',
-                                            borderRadius: '6px',
-                                            overflow: 'hidden',
-                                            backgroundColor: '#000000',
-                                            border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                                            cursor: 'pointer',
-                                            transition: 'transform 0.15s ease',
-                                          }}
-                                          title={`Click to view Photo #${idx + 1} full size`}
-                                        >
-                                          <div style={{ position: 'absolute', inset: 0 }}>
-                                            <img
-                                              src={url}
-                                              alt={`Merged #${img.index + 1}`}
-                                              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                                            />
-                                            {/* Direct 1-Click Photo Download Button */}
-                                            <button
-                                              type="button"
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                handleDownloadImage(url, idx, e);
-                                              }}
-                                              title={`Download Photo #${idx + 1}`}
-                                              aria-label={`Download Photo #${idx + 1}`}
-                                              style={{
-                                                position: 'absolute',
-                                                top: '3px',
-                                                left: '3px',
-                                                width: '20px',
-                                                height: '20px',
-                                                borderRadius: '4px',
-                                                backgroundColor: 'rgba(0, 0, 0, 0.65)',
-                                                border: '1px solid rgba(255, 255, 255, 0.25)',
-                                                color: '#FFFFFF',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                cursor: 'pointer',
-                                                zIndex: 3,
-                                                transition: 'background-color 0.15s ease',
-                                              }}
-                                              onMouseEnter={(e) => {
-                                                e.currentTarget.style.backgroundColor = '#3B82F6';
-                                              }}
-                                              onMouseLeave={(e) => {
-                                                e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.65)';
-                                              }}
-                                            >
-                                              <FiDownload size={10} />
-                                            </button>
-                                            <div
-                                              style={{
-                                                position: 'absolute',
-                                                bottom: '2px',
-                                                left: '2px',
-                                                fontSize: '0.5rem',
-                                                fontWeight: 700,
-                                                padding: '1px 4px',
-                                                borderRadius: '2px',
-                                                backgroundColor: 'rgba(0,0,0,0.7)',
-                                                color: '#FFFFFF',
-                                              }}
-                                            >
-                                              #{idx + 1}
-                                            </div>
-                                          </div>
-                                        </div>
-                                      );
-                                    })}
+                                    );
+                                  })}
                               </div>
                             </div>
                           )}
@@ -12085,13 +12142,18 @@ export const FacebookWorkflowCanvas = forwardRef<
                             value={String(currentModalAIBox.templateId || '')}
                             onChange={(val) => {
                               if (val === 'custom') {
+                                const promptText =
+                                  currentModalAIBox.customPrompt?.trim() ||
+                                  currentModalAIBox.templateText?.trim() ||
+                                  DEFAULT_GOOGLE_SHEET_PROMPT;
                                 handleUpdateAIBox(currentModalAIBox.id, {
                                   templateId: 'custom',
+                                  customPrompt: promptText,
                                 });
                                 setViewingPromptTemplate({
                                   id: 'custom',
                                   name: 'Custom Prompt (Manual Input)',
-                                  templateText: currentModalAIBox.customPrompt || '',
+                                  templateText: promptText,
                                   headerTitle: 'Custom Prompt Editor',
                                   copyButtonLabel: 'Copy Prompt',
                                   isEditable: true,
@@ -12162,10 +12224,19 @@ export const FacebookWorkflowCanvas = forwardRef<
                               <button
                                 type="button"
                                 onClick={() => {
+                                  const promptText =
+                                    currentModalAIBox.customPrompt?.trim() ||
+                                    currentModalAIBox.templateText?.trim() ||
+                                    DEFAULT_GOOGLE_SHEET_PROMPT;
+                                  if (!currentModalAIBox.customPrompt?.trim()) {
+                                    handleUpdateAIBox(currentModalAIBox.id, {
+                                      customPrompt: promptText,
+                                    });
+                                  }
                                   setViewingPromptTemplate({
                                     id: 'custom',
                                     name: 'Custom Prompt (Manual Input)',
-                                    templateText: currentModalAIBox.customPrompt || '',
+                                    templateText: promptText,
                                     headerTitle: 'Custom Prompt Editor',
                                     copyButtonLabel: 'Copy Prompt',
                                     isEditable: true,
@@ -12735,8 +12806,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                               Select Prompt Template
                             </label>
                             {currentModalAIBox.templateId === 'custom' ? (
-                              <span style={{ fontSize: '0.625rem', color: '#10B981', fontWeight: 500 }}>
-                                ● Manual Prompt Active
+                              <span style={{ fontSize: '0.625rem', color: '#8B5CF6', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                ✍️ Manual Prompt Active
                               </span>
                             ) : Boolean(currentModalAIBox.templateId) ? (
                               <span style={{ fontSize: '0.625rem', color: '#10B981', fontWeight: 500 }}>
@@ -12750,7 +12821,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                 value: String(p.id),
                                 label: p.name,
                               })),
-                              { value: 'custom', label: 'Manual Input (Custom Prompt)' },
+                              { value: 'custom', label: '✍️ Manual Input (Custom Prompt)' },
                             ]}
                             value={
                               availablePrompts.some((p) => String(p.id) === String(currentModalAIBox.templateId))
@@ -12820,9 +12891,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   flex: 1,
                                   height: '32px',
                                   borderRadius: '6px',
-                                  border: '1px solid var(--border-color)',
-                                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC',
-                                  color: 'var(--text-primary)',
+                                  border: '1px solid rgba(139, 92, 246, 0.35)',
+                                  backgroundColor: isDark ? 'rgba(139, 92, 246, 0.1)' : '#F5F3FF',
+                                  color: '#8B5CF6',
                                   fontSize: '0.6875rem',
                                   fontWeight: 600,
                                   display: 'flex',
@@ -12833,15 +12904,13 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   transition: 'all 0.15s ease',
                                 }}
                                 onMouseEnter={(e) => {
-                                  e.currentTarget.style.borderColor = 'var(--accent-primary, #3B82F6)';
-                                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(59, 130, 246, 0.08)' : '#EFF6FF';
+                                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(139, 92, 246, 0.18)' : '#EDE9FE';
                                 }}
                                 onMouseLeave={(e) => {
-                                  e.currentTarget.style.borderColor = 'var(--border-color)';
-                                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC';
+                                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(139, 92, 246, 0.1)' : '#F5F3FF';
                                 }}
                               >
-                                <FiEdit2 size={13} style={{ color: '#3B82F6' }} />
+                                <FiEdit2 size={13} style={{ color: '#8B5CF6' }} />
                                 <span>Open Prompt Editor</span>
                               </button>
                             </div>
@@ -12856,10 +12925,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                                     availablePrompts.find((p) => p.name === currentModalAIBox.title) ||
                                     (currentModalAIBox.templateText
                                       ? {
-                                          id: currentModalAIBox.templateId || 'custom',
-                                          name: currentModalAIBox.title || 'Prompt Template',
-                                          templateText: currentModalAIBox.templateText,
-                                        }
+                                        id: currentModalAIBox.templateId || 'custom',
+                                        name: currentModalAIBox.title || 'Prompt Template',
+                                        templateText: currentModalAIBox.templateText,
+                                      }
                                       : null) ||
                                     availablePrompts[0];
 
@@ -13748,8 +13817,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                   width: '30px',
                   height: '30px',
                   borderRadius: '8px',
-                  backgroundColor: 'rgba(59, 130, 246, 0.12)',
-                  color: '#3B82F6',
+                  backgroundColor: viewingPromptTemplate.isEditable
+                    ? 'rgba(139, 92, 246, 0.12)'
+                    : 'rgba(59, 130, 246, 0.12)',
+                  color: viewingPromptTemplate.isEditable ? '#8B5CF6' : '#3B82F6',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -13762,7 +13833,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   {viewingPromptTemplate.headerTitle || (viewingPromptTemplate.isEditable ? 'Custom Prompt Editor' : 'Prompt Template Viewer')}
                 </div>
                 <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                  {viewingPromptTemplate.isEditable ? 'Manual Input · Live Auto-Save' : viewingPromptTemplate.name}
+                  {viewingPromptTemplate.isEditable ? '✍️ Manual Input · Live Auto-Save' : `✨ ${viewingPromptTemplate.name}`}
                 </div>
               </div>
             </div>
@@ -13974,8 +14045,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                 boxShadow: (viewingPromptTemplate || showGoogleSheetSettingsSidebox)
                   ? 'none'
                   : isDark
-                  ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
-                  : '-3px 0 16px rgba(0, 0, 0, 0.06)',
+                    ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
+                    : '-3px 0 16px rgba(0, 0, 0, 0.06)',
                 transition: 'box-shadow 0.28s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.28s ease',
                 zIndex: 170,
                 display: 'flex',
@@ -14759,8 +14830,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                 boxShadow: (viewingPromptTemplate || showGoogleSheetSettingsSidebox)
                   ? 'none'
                   : isDark
-                  ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
-                  : '-3px 0 16px rgba(0, 0, 0, 0.06)',
+                    ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
+                    : '-3px 0 16px rgba(0, 0, 0, 0.06)',
                 transition: 'box-shadow 0.28s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.28s ease',
                 zIndex: 170,
                 display: 'flex',
@@ -15020,8 +15091,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                 boxShadow: (viewingPromptTemplate || showGoogleSheetSettingsSidebox)
                   ? 'none'
                   : isDark
-                  ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
-                  : '-3px 0 16px rgba(0, 0, 0, 0.06)',
+                    ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
+                    : '-3px 0 16px rgba(0, 0, 0, 0.06)',
                 transition: 'box-shadow 0.28s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.28s ease',
                 zIndex: 170,
                 display: 'flex',
@@ -15275,8 +15346,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                 boxShadow: (viewingPromptTemplate || showGoogleSheetSettingsSidebox)
                   ? 'none'
                   : isDark
-                  ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
-                  : '-3px 0 16px rgba(0, 0, 0, 0.06)',
+                    ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
+                    : '-3px 0 16px rgba(0, 0, 0, 0.06)',
                 transition: 'box-shadow 0.28s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.28s ease',
                 zIndex: 170,
                 display: 'flex',
@@ -15676,8 +15747,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                 boxShadow: (viewingPromptTemplate || showGoogleSheetSettingsSidebox)
                   ? 'none'
                   : isDark
-                  ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
-                  : '-3px 0 16px rgba(0, 0, 0, 0.06)',
+                    ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
+                    : '-3px 0 16px rgba(0, 0, 0, 0.06)',
                 transition: 'box-shadow 0.28s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.28s ease',
                 zIndex: 170,
                 display: 'flex',
@@ -16152,8 +16223,8 @@ export const FacebookWorkflowCanvas = forwardRef<
               label: isModalWatermark
                 ? 'Delete Watermark Node'
                 : isModalImageBox
-                ? 'Delete Image AI Node'
-                : `Delete "${currentModalAIBox.title || 'AI'}" Node`,
+                  ? 'Delete Image AI Node'
+                  : `Delete "${currentModalAIBox.title || 'AI'}" Node`,
               onClick: (e) => handleDeleteAIBox(currentModalAIBox.id, e),
             };
           }
@@ -17025,18 +17096,18 @@ export const FacebookWorkflowCanvas = forwardRef<
                         conn.toNodeId === 'get-content'
                           ? 'Get Content'
                           : conn.toNodeId === 'get-images'
-                          ? 'Get Images'
-                          : conn.toNodeId === 'output'
-                          ? 'Post Output'
-                          : targetDest
-                          ? (targetDest.targetMode === 'remaining_posts'
-                              ? 'Database (Remaining Posts)'
-                              : targetDest.targetMode === 'hybrid'
-                              ? 'Social & Database Storage'
-                              : `Social Media${targetPage ? ` (${targetPage.name})` : ''}`)
-                          : targetCb
-                          ? (targetCb.title || 'Combine Box')
-                          : targetBox?.title || conn.toNodeId;
+                            ? 'Get Images'
+                            : conn.toNodeId === 'output'
+                              ? 'Post Output'
+                              : targetDest
+                                ? (targetDest.targetMode === 'remaining_posts'
+                                  ? 'Database (Remaining Posts)'
+                                  : targetDest.targetMode === 'hybrid'
+                                    ? 'Social & Database Storage'
+                                    : `Social Media${targetPage ? ` (${targetPage.name})` : ''}`)
+                                : targetCb
+                                  ? (targetCb.title || 'Combine Box')
+                                  : targetBox?.title || conn.toNodeId;
 
                       return (
                         <div
@@ -17652,10 +17723,10 @@ export const FacebookWorkflowCanvas = forwardRef<
         const modalSubtitle = isWatermark
           ? `${pendingDeleteBox.subtitle || '1200×1200 (1:1)'} · ${pendingDeleteBox.enabled !== false ? 'Active' : 'Disabled'}`
           : isImage
-          ? `${pendingDeleteBox.model || 'Runware AI'} · ${pendingDeleteBox.enabled !== false ? 'Active' : 'Disabled'}`
-          : `${getAIModelDisplayName(pendingDeleteBox.provider, pendingDeleteBox.model)} · ${pendingDeleteBox.enabled !== false ? 'Active' : 'Disabled'}`;
+            ? `${pendingDeleteBox.model || 'Runware AI'} · ${pendingDeleteBox.enabled !== false ? 'Active' : 'Disabled'}`
+            : `${getAIModelDisplayName(pendingDeleteBox.provider, pendingDeleteBox.model)} · ${pendingDeleteBox.enabled !== false ? 'Active' : 'Disabled'}`;
 
-        
+
 
         return (
           <Modal
@@ -17711,10 +17782,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                     backgroundColor: isWatermark
                       ? 'rgba(139, 92, 246, 0.15)'
                       : isImage
-                      ? 'rgba(16, 185, 129, 0.15)'
-                      : isDark
-                      ? '#1F2937'
-                      : '#F1F5F9',
+                        ? 'rgba(16, 185, 129, 0.15)'
+                        : isDark
+                          ? '#1F2937'
+                          : '#F1F5F9',
                     border: '1px solid var(--border-color)',
                     display: 'flex',
                     alignItems: 'center',
@@ -18072,122 +18143,122 @@ export const FacebookWorkflowCanvas = forwardRef<
                 </button>
               )}
             </div>
-                    {/* Step 3: Multi-Destination Node Management (Hybrid Power) */}
-                    {(() => {
-                      const allDests = getNormalizedDestinations(config);
-                      const destId = activeModalNode && activeModalNode.type === 'destination' ? activeModalNode.destinationId : '';
+            {/* Step 3: Multi-Destination Node Management (Hybrid Power) */}
+            {(() => {
+              const allDests = getNormalizedDestinations(config);
+              const destId = activeModalNode && activeModalNode.type === 'destination' ? activeModalNode.destinationId : '';
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', marginTop: '0.1rem' }}>
+                  <div style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                    All Destination Nodes ({allDests.length})
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
+                    {allDests.map((d, dIdx) => {
+                      const isCur = d.id === destId;
                       return (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', marginTop: '0.1rem' }}>
-                      <div style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                        All Destination Nodes ({allDests.length})
-                      </div>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
-                        {allDests.map((d, dIdx) => {
-                          const isCur = d.id === destId;
-                          return (
-                            <button
-                              key={d.id || dIdx}
-                              type="button"
-                              onClick={() => {
-                                setConnectDrawerNode(null);
-                                setActiveModalNode({ type: 'destination', destinationId: d.id });
-                              }}
-                              style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '0.3rem',
-                                padding: '3px 8px',
-                                borderRadius: '4px',
-                                border: isCur ? '1.5px solid #2563EB' : isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                                backgroundColor: isCur ? (isDark ? 'rgba(37, 99, 235, 0.15)' : '#EFF6FF') : 'transparent',
-                                color: isCur ? '#3B82F6' : 'var(--text-secondary)',
-                                fontSize: '0.625rem',
-                                fontWeight: 600,
-                                cursor: 'pointer',
-                              }}
-                            >
-                              <span>{d.title || `Node ${dIdx + 1}`}</span>
-                              {isCur && <span style={{ width: '4px', height: '4px', borderRadius: '50%', backgroundColor: '#2563EB' }} />}
-                            </button>
-                          );
-                        })}
-                      </div>
-
-                      {/* Add Another Destination Button */}
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.3rem', marginTop: '0.2rem' }}>
                         <button
+                          key={d.id || dIdx}
                           type="button"
-                          onClick={() => handleAddDestinationNode('remaining_posts')}
+                          onClick={() => {
+                            setConnectDrawerNode(null);
+                            setActiveModalNode({ type: 'destination', destinationId: d.id });
+                          }}
                           style={{
                             display: 'flex',
                             alignItems: 'center',
-                            justifyContent: 'center',
                             gap: '0.3rem',
-                            height: '26px',
-                            borderRadius: '5px',
-                            border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                            backgroundColor: isDark ? 'rgba(2, 132, 199, 0.1)' : '#F0F9FF',
-                            color: '#0284C7',
+                            padding: '3px 8px',
+                            borderRadius: '4px',
+                            border: isCur ? '1.5px solid #2563EB' : isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                            backgroundColor: isCur ? (isDark ? 'rgba(37, 99, 235, 0.15)' : '#EFF6FF') : 'transparent',
+                            color: isCur ? '#3B82F6' : 'var(--text-secondary)',
                             fontSize: '0.625rem',
                             fontWeight: 600,
                             cursor: 'pointer',
                           }}
                         >
-                          <FiPlus size={11} />
-                          <span>+ Database Node</span>
+                          <span>{d.title || `Node ${dIdx + 1}`}</span>
+                          {isCur && <span style={{ width: '4px', height: '4px', borderRadius: '50%', backgroundColor: '#2563EB' }} />}
                         </button>
+                      );
+                    })}
+                  </div>
 
-                        <button
-                          type="button"
-                          onClick={() => handleAddDestinationNode('social_media')}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '0.3rem',
-                            height: '26px',
-                            borderRadius: '5px',
-                            border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                            backgroundColor: isDark ? 'rgba(37, 99, 235, 0.1)' : '#EFF6FF',
-                            color: '#2563EB',
-                            fontSize: '0.625rem',
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                          }}
-                        >
-                          <FiPlus size={11} />
-                          <span>+ Social Media Node</span>
-                        </button>
+                  {/* Add Another Destination Button */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.3rem', marginTop: '0.2rem' }}>
+                    <button
+                      type="button"
+                      onClick={() => handleAddDestinationNode('remaining_posts')}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '0.3rem',
+                        height: '26px',
+                        borderRadius: '5px',
+                        border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                        backgroundColor: isDark ? 'rgba(2, 132, 199, 0.1)' : '#F0F9FF',
+                        color: '#0284C7',
+                        fontSize: '0.625rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <FiPlus size={11} />
+                      <span>+ Database Node</span>
+                    </button>
 
-                        {(!config.outputNode || config.outputNode.enabled === false) && (
-                          <button
-                            type="button"
-                            onClick={() => handleAddOutputNode()}
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              gap: '0.3rem',
-                              height: '26px',
-                              borderRadius: '5px',
-                              border: '1px solid #6366F1',
-                              backgroundColor: isDark ? 'rgba(99, 102, 241, 0.12)' : '#EEF2FF',
-                              color: isDark ? '#A5B4FC' : '#4F46E5',
-                              fontSize: '0.625rem',
-                              fontWeight: 600,
-                              cursor: 'pointer',
-                              gridColumn: '1 / -1',
-                              marginTop: '0.15rem',
-                            }}
-                          >
-                            <FiLayout size={11} />
-                            <span>+ Add Output Box (Preview Studio)</span>
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })()}
+                    <button
+                      type="button"
+                      onClick={() => handleAddDestinationNode('social_media')}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '0.3rem',
+                        height: '26px',
+                        borderRadius: '5px',
+                        border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                        backgroundColor: isDark ? 'rgba(37, 99, 235, 0.1)' : '#EFF6FF',
+                        color: '#2563EB',
+                        fontSize: '0.625rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <FiPlus size={11} />
+                      <span>+ Social Media Node</span>
+                    </button>
+
+                    {(!config.outputNode || config.outputNode.enabled === false) && (
+                      <button
+                        type="button"
+                        onClick={() => handleAddOutputNode()}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '0.3rem',
+                          height: '26px',
+                          borderRadius: '5px',
+                          border: '1px solid #6366F1',
+                          backgroundColor: isDark ? 'rgba(99, 102, 241, 0.12)' : '#EEF2FF',
+                          color: isDark ? '#A5B4FC' : '#4F46E5',
+                          fontSize: '0.625rem',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          gridColumn: '1 / -1',
+                          marginTop: '0.15rem',
+                        }}
+                      >
+                        <FiLayout size={11} />
+                        <span>+ Add Output Box (Preview Studio)</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
             {/* Option 2: Get Images */}
             <div
               style={{
@@ -19009,7 +19080,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                         setSelectRecoverIds(new Set());
                         try {
                           localStorage.removeItem(LOCAL_STORAGE_DELETED_KEY);
-                        } catch {}
+                        } catch { }
                       }
                     }}
                     style={{
@@ -19066,8 +19137,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                         backgroundColor: isWatermarkAIBox(record.box)
                           ? 'rgba(139, 92, 246, 0.15)'
                           : isImageAIBox(record.box, record.connections)
-                          ? 'rgba(16, 185, 129, 0.15)'
-                          : 'var(--bg-secondary)',
+                            ? 'rgba(16, 185, 129, 0.15)'
+                            : 'var(--bg-secondary)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',

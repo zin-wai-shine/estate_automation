@@ -62,6 +62,9 @@ type PrepareGoogleSheetDataRequest struct {
 	Model              string   `json:"model,omitempty"`
 	Provider           string   `json:"provider,omitempty"`
 	PromptTemplate     string   `json:"prompt_template,omitempty"`
+	PostURL            string   `json:"post_url,omitempty"`
+	SourceURL          string   `json:"source_url,omitempty"`
+	Link               string   `json:"link,omitempty"`
 }
 
 // PrepareGoogleSheetData - POST /api/google-sheets/prepare-data
@@ -81,6 +84,14 @@ func PrepareGoogleSheetData(c *fiber.Ctx) error {
 		})
 	}
 
+	effectiveLink := req.PostURL
+	if effectiveLink == "" {
+		effectiveLink = req.SourceURL
+	}
+	if effectiveLink == "" {
+		effectiveLink = req.Link
+	}
+
 	mapped, rowValues, err := sheetsService.PrepareDataWithAI(
 		c.Context(),
 		req.Headers,
@@ -91,6 +102,7 @@ func PrepareGoogleSheetData(c *fiber.Ctx) error {
 		req.Model,
 		req.Provider,
 		req.PromptTemplate,
+		effectiveLink,
 	)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -163,6 +175,9 @@ type SyncGoogleSheetRequest struct {
 	Provider           string   `json:"provider,omitempty"`
 	PromptTemplate     string   `json:"prompt_template,omitempty"`
 	CredentialsJSON    string   `json:"credentials_json,omitempty"`
+	PostURL            string   `json:"post_url,omitempty"`
+	SourceURL          string   `json:"source_url,omitempty"`
+	Link               string   `json:"link,omitempty"`
 }
 
 // ExecuteGoogleSheetSync - POST /api/google-sheets/sync
@@ -205,6 +220,14 @@ func ExecuteGoogleSheetSync(c *fiber.Ctx) error {
 		})
 	}
 
+	effectiveLink := req.PostURL
+	if effectiveLink == "" {
+		effectiveLink = req.SourceURL
+	}
+	if effectiveLink == "" {
+		effectiveLink = req.Link
+	}
+
 	// AI Data Preparation
 	mapped, rowValues, err := sheetsService.PrepareDataWithAI(
 		c.Context(),
@@ -216,6 +239,7 @@ func ExecuteGoogleSheetSync(c *fiber.Ctx) error {
 		req.Model,
 		req.Provider,
 		req.PromptTemplate,
+		effectiveLink,
 	)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
