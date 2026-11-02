@@ -1,5 +1,5 @@
 {
-  "timestamp": 1793628133117,
+  "timestamp": 1793628533287,
   "workflow_formats": [
     {
       "config": {
@@ -873,7 +873,7 @@
             "processType": "google_sheet",
             "provider": "google_ai",
             "subtitle": "Spreadsheet Sync",
-            "templateId": "sheets-append",
+            "templateId": "custom",
             "templateText": "",
             "title": "Google Sheet",
             "x": 587.4727988016657,
@@ -1094,8 +1094,8 @@
           "y": 365
         },
         "panOffset": {
-          "x": 207,
-          "y": 116
+          "x": 216,
+          "y": 111
         },
         "trigger": {
           "autoClassifyProperty": true,
@@ -1120,7 +1120,7 @@
       "id": "format-1792648980268",
       "isPinned": true,
       "name": "Download FB Post",
-      "updatedAt": 1793628132703
+      "updatedAt": 1793628532875
     },
     {
       "config": {

@@ -12088,6 +12088,15 @@ export const FacebookWorkflowCanvas = forwardRef<
                                 handleUpdateAIBox(currentModalAIBox.id, {
                                   templateId: 'custom',
                                 });
+                                setViewingPromptTemplate({
+                                  id: 'custom',
+                                  name: 'Custom Prompt (Manual Input)',
+                                  templateText: currentModalAIBox.customPrompt || '',
+                                  headerTitle: 'Custom Prompt Editor',
+                                  copyButtonLabel: 'Copy Prompt',
+                                  isEditable: true,
+                                  boxId: currentModalAIBox.id,
+                                });
                                 return;
                               }
                               const match = availablePrompts.find((p) => String(p.id) === String(val));
@@ -12147,71 +12156,37 @@ export const FacebookWorkflowCanvas = forwardRef<
                             </div>
                           )}
 
-                          {/* When Manual Input is selected: Preview/Compact input box + [Open Prompt Editor] button */}
+                          {/* When Manual Input is selected: Only show Open Prompt Editor button (no small box) */}
                           {currentModalAIBox.templateId === 'custom' && (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '4px' }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
-                                  Manual Prompt
-                                </label>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setViewingPromptTemplate({
-                                      id: 'custom',
-                                      name: 'Custom Prompt (Manual Input)',
-                                      templateText: currentModalAIBox.customPrompt || '',
-                                      headerTitle: 'Custom Prompt Editor',
-                                      copyButtonLabel: 'Copy Prompt',
-                                      isEditable: true,
-                                      boxId: currentModalAIBox.id,
-                                    });
-                                  }}
-                                  style={{
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '4px',
-                                    background: isDark ? 'rgba(139, 92, 246, 0.15)' : '#F5F3FF',
-                                    border: '1px solid rgba(139, 92, 246, 0.35)',
-                                    borderRadius: '5px',
-                                    padding: '3px 8px',
-                                    color: '#8B5CF6',
-                                    fontSize: '0.6875rem',
-                                    fontWeight: 600,
-                                    cursor: 'pointer',
-                                    transition: 'all 0.15s ease',
-                                  }}
-                                >
-                                  <FiEdit2 size={11} /> Open Prompt Editor
-                                </button>
-                              </div>
-                              <textarea
-                                value={currentModalAIBox.customPrompt || ''}
-                                onChange={(e) => {
-                                  const text = e.target.value;
-                                  handleUpdateAIBox(currentModalAIBox.id, {
-                                    customPrompt: text,
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setViewingPromptTemplate({
+                                    id: 'custom',
+                                    name: 'Custom Prompt (Manual Input)',
+                                    templateText: currentModalAIBox.customPrompt || '',
+                                    headerTitle: 'Custom Prompt Editor',
+                                    copyButtonLabel: 'Copy Prompt',
+                                    isEditable: true,
+                                    boxId: currentModalAIBox.id,
                                   });
-                                  if (viewingPromptTemplate && viewingPromptTemplate.boxId === currentModalAIBox.id) {
-                                    setViewingPromptTemplate((prev) => (prev ? { ...prev, templateText: text } : null));
-                                  }
                                 }}
-                                placeholder="Type custom instructions or click 'Open Prompt Editor' for full editor..."
-                                rows={3}
                                 style={{
-                                  width: '100%',
-                                  padding: '0.5rem 0.65rem',
-                                  fontSize: '0.75rem',
-                                  lineHeight: '1.45',
-                                  borderRadius: '6px',
-                                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                                  backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
-                                  color: 'var(--text-primary)',
-                                  resize: 'vertical',
-                                  fontFamily: 'inherit',
-                                  outline: 'none',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '5px',
+                                  background: 'none',
+                                  border: 'none',
+                                  color: '#8B5CF6',
+                                  fontSize: '0.6875rem',
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                  padding: '2px 0',
                                 }}
-                              />
+                              >
+                                <FiEdit2 size={12} /> Open Prompt Editor
+                              </button>
                             </div>
                           )}
                         </div>
@@ -12791,6 +12766,15 @@ export const FacebookWorkflowCanvas = forwardRef<
                                 handleUpdateAIBox(currentModalAIBox.id, {
                                   templateId: 'custom',
                                 });
+                                setViewingPromptTemplate({
+                                  id: 'custom',
+                                  name: 'Custom Prompt (Manual Input)',
+                                  templateText: currentModalAIBox.customPrompt || '',
+                                  headerTitle: 'Custom Prompt Editor',
+                                  copyButtonLabel: 'Copy Prompt',
+                                  isEditable: true,
+                                  boxId: currentModalAIBox.id,
+                                });
                                 return;
                               }
                               const matched = availablePrompts.find((p) => String(p.id) === String(val));
@@ -12816,71 +12800,48 @@ export const FacebookWorkflowCanvas = forwardRef<
                             placeholder="Select prompt template..."
                           />
 
-                          {/* When Manual Input is selected: Preview/Compact input box + [Open Prompt Editor] button */}
+                          {/* When Manual Input is selected: Only show Open Prompt Editor button (no small box) */}
                           {currentModalAIBox.templateId === 'custom' ? (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '4px' }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
-                                  Manual Prompt
-                                </label>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setViewingPromptTemplate({
-                                      id: 'custom',
-                                      name: 'Custom Prompt (Manual Input)',
-                                      templateText: currentModalAIBox.customPrompt || '',
-                                      headerTitle: 'Custom Prompt Editor',
-                                      copyButtonLabel: 'Copy Prompt',
-                                      isEditable: true,
-                                      boxId: currentModalAIBox.id,
-                                    });
-                                  }}
-                                  style={{
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '4px',
-                                    background: isDark ? 'rgba(139, 92, 246, 0.15)' : '#F5F3FF',
-                                    border: '1px solid rgba(139, 92, 246, 0.35)',
-                                    borderRadius: '5px',
-                                    padding: '3px 8px',
-                                    color: '#8B5CF6',
-                                    fontSize: '0.6875rem',
-                                    fontWeight: 600,
-                                    cursor: 'pointer',
-                                    transition: 'all 0.15s ease',
-                                  }}
-                                >
-                                  <FiEdit2 size={11} /> Open Prompt Editor
-                                </button>
-                              </div>
-                              <textarea
-                                value={currentModalAIBox.customPrompt || ''}
-                                onChange={(e) => {
-                                  const text = e.target.value;
-                                  handleUpdateAIBox(currentModalAIBox.id, {
-                                    customPrompt: text,
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setViewingPromptTemplate({
+                                    id: 'custom',
+                                    name: 'Custom Prompt (Manual Input)',
+                                    templateText: currentModalAIBox.customPrompt || '',
+                                    headerTitle: 'Custom Prompt Editor',
+                                    copyButtonLabel: 'Copy Prompt',
+                                    isEditable: true,
+                                    boxId: currentModalAIBox.id,
                                   });
-                                  if (viewingPromptTemplate && viewingPromptTemplate.boxId === currentModalAIBox.id) {
-                                    setViewingPromptTemplate((prev) => (prev ? { ...prev, templateText: text } : null));
-                                  }
                                 }}
-                                placeholder="Type custom instructions or click 'Open Prompt Editor' for full editor..."
-                                rows={3}
                                 style={{
-                                  width: '100%',
-                                  padding: '0.5rem 0.65rem',
-                                  fontSize: '0.75rem',
-                                  lineHeight: '1.45',
+                                  flex: 1,
+                                  height: '32px',
                                   borderRadius: '6px',
-                                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                                  backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
-                                  color: 'var(--text-primary)',
-                                  resize: 'vertical',
-                                  fontFamily: 'inherit',
-                                  outline: 'none',
+                                  border: '1px solid rgba(139, 92, 246, 0.35)',
+                                  backgroundColor: isDark ? 'rgba(139, 92, 246, 0.1)' : '#F5F3FF',
+                                  color: '#8B5CF6',
+                                  fontSize: '0.6875rem',
+                                  fontWeight: 600,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '6px',
+                                  cursor: 'pointer',
+                                  transition: 'all 0.15s ease',
                                 }}
-                              />
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(139, 92, 246, 0.18)' : '#EDE9FE';
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(139, 92, 246, 0.1)' : '#F5F3FF';
+                                }}
+                              >
+                                <FiEdit2 size={13} style={{ color: '#8B5CF6' }} />
+                                <span>Open Prompt Editor</span>
+                              </button>
                             </div>
                           ) : (
                             /* View Prompt Button & Quick Copy Button */
