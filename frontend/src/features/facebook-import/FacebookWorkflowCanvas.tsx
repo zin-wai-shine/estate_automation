@@ -12072,8 +12072,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                               Select Prompt Template
                             </label>
                             {currentModalAIBox.templateId === 'custom' ? (
-                              <span style={{ fontSize: '0.625rem', color: '#8B5CF6', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '3px' }}>
-                                ✍️ Manual Prompt Active
+                              <span style={{ fontSize: '0.625rem', color: '#10B981', fontWeight: 500 }}>
+                                ● Manual Prompt Active
                               </span>
                             ) : Boolean(currentModalAIBox.templateId) ? (
                               <span style={{ fontSize: '0.625rem', color: '#10B981', fontWeight: 500 }}>
@@ -12107,7 +12107,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                             }}
                             options={[
                               { value: '', label: 'Select option' },
-                              { value: 'custom', label: '✍️ Manual Input (Custom Prompt)' },
+                              { value: 'custom', label: 'Manual Input (Custom Prompt)' },
                               ...availablePrompts.map((p) => ({
                                 value: String(p.id),
                                 label: p.name,
@@ -12178,9 +12178,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   gap: '5px',
                                   background: 'none',
                                   border: 'none',
-                                  color: '#8B5CF6',
+                                  color: 'var(--accent-primary, #3B82F6)',
                                   fontSize: '0.6875rem',
-                                  fontWeight: 600,
+                                  fontWeight: 500,
                                   cursor: 'pointer',
                                   padding: '2px 0',
                                 }}
@@ -12735,8 +12735,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                               Select Prompt Template
                             </label>
                             {currentModalAIBox.templateId === 'custom' ? (
-                              <span style={{ fontSize: '0.625rem', color: '#8B5CF6', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '3px' }}>
-                                ✍️ Manual Prompt Active
+                              <span style={{ fontSize: '0.625rem', color: '#10B981', fontWeight: 500 }}>
+                                ● Manual Prompt Active
                               </span>
                             ) : Boolean(currentModalAIBox.templateId) ? (
                               <span style={{ fontSize: '0.625rem', color: '#10B981', fontWeight: 500 }}>
@@ -12750,7 +12750,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                 value: String(p.id),
                                 label: p.name,
                               })),
-                              { value: 'custom', label: '✍️ Manual Input (Custom Prompt)' },
+                              { value: 'custom', label: 'Manual Input (Custom Prompt)' },
                             ]}
                             value={
                               availablePrompts.some((p) => String(p.id) === String(currentModalAIBox.templateId))
@@ -12820,9 +12820,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   flex: 1,
                                   height: '32px',
                                   borderRadius: '6px',
-                                  border: '1px solid rgba(139, 92, 246, 0.35)',
-                                  backgroundColor: isDark ? 'rgba(139, 92, 246, 0.1)' : '#F5F3FF',
-                                  color: '#8B5CF6',
+                                  border: '1px solid var(--border-color)',
+                                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC',
+                                  color: 'var(--text-primary)',
                                   fontSize: '0.6875rem',
                                   fontWeight: 600,
                                   display: 'flex',
@@ -12833,13 +12833,15 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   transition: 'all 0.15s ease',
                                 }}
                                 onMouseEnter={(e) => {
-                                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(139, 92, 246, 0.18)' : '#EDE9FE';
+                                  e.currentTarget.style.borderColor = 'var(--accent-primary, #3B82F6)';
+                                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(59, 130, 246, 0.08)' : '#EFF6FF';
                                 }}
                                 onMouseLeave={(e) => {
-                                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(139, 92, 246, 0.1)' : '#F5F3FF';
+                                  e.currentTarget.style.borderColor = 'var(--border-color)';
+                                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC';
                                 }}
                               >
-                                <FiEdit2 size={13} style={{ color: '#8B5CF6' }} />
+                                <FiEdit2 size={13} style={{ color: '#3B82F6' }} />
                                 <span>Open Prompt Editor</span>
                               </button>
                             </div>
@@ -13746,10 +13748,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                   width: '30px',
                   height: '30px',
                   borderRadius: '8px',
-                  backgroundColor: viewingPromptTemplate.isEditable
-                    ? 'rgba(139, 92, 246, 0.12)'
-                    : 'rgba(59, 130, 246, 0.12)',
-                  color: viewingPromptTemplate.isEditable ? '#8B5CF6' : '#3B82F6',
+                  backgroundColor: 'rgba(59, 130, 246, 0.12)',
+                  color: '#3B82F6',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -13762,7 +13762,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   {viewingPromptTemplate.headerTitle || (viewingPromptTemplate.isEditable ? 'Custom Prompt Editor' : 'Prompt Template Viewer')}
                 </div>
                 <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                  {viewingPromptTemplate.isEditable ? '✍️ Manual Input · Live Auto-Save' : `✨ ${viewingPromptTemplate.name}`}
+                  {viewingPromptTemplate.isEditable ? 'Manual Input · Live Auto-Save' : viewingPromptTemplate.name}
                 </div>
               </div>
             </div>

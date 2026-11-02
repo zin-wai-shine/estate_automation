@@ -152,7 +152,7 @@ export const GoogleSheetSettingsSidebox: React.FC<GoogleSheetSettingsSideboxProp
 
   const promptOptions = [
     { value: '', label: 'None (Default Extraction)' },
-    { value: 'custom', label: '✍️ Manual Input (Custom Prompt)' },
+    { value: 'custom', label: 'Manual Input (Custom Prompt)' },
     ...availablePrompts.map((p) => ({
       value: String(p.id),
       label: p.name,
