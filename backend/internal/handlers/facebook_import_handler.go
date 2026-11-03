@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -612,6 +613,7 @@ type GenerateAICopyRequest struct {
 	CustomPrompt string `json:"custom_prompt"`
 	APIKey       string `json:"api_key"`
 	Model        string `json:"model"`
+	ListingCode  string `json:"listing_code,omitempty"`
 }
 
 // GenerateAICopy modifies raw content using Google AI (Gemini) or OpenAI and the selected prompt template
@@ -644,6 +646,17 @@ func GenerateAICopy(c *fiber.Ctx) error {
 		prompt = "Create a professional real estate rental listing copy. Highlight key property features, monthly price, location, bedrooms, and contact details."
 	}
 
+	// Dynamic unique listing code replacement & context injection
+	if strings.TrimSpace(req.ListingCode) != "" {
+		code := strings.TrimSpace(req.ListingCode)
+		codePlaceholderRegex := regexp.MustCompile(`(?i)\[(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)\]|\{(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)\}|<(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)>`)
+		if codePlaceholderRegex.MatchString(prompt) {
+			prompt = codePlaceholderRegex.ReplaceAllString(prompt, code)
+		} else {
+			prompt = prompt + fmt.Sprintf("\n\n[Active Listing Code: %s] (Requirement: Always use this exact listing code wherever a listing code, listing ID, or reference number is generated or referenced).", code)
+		}
+	}
+
 	var generatedText string
 	var err error
 	provider := strings.ToLower(strings.TrimSpace(req.Provider))
@@ -665,6 +678,12 @@ func GenerateAICopy(c *fiber.Ctx) error {
 			"success": false,
 			"error":   fmt.Sprintf("Failed to generate AI copy: %v", err),
 		})
+	}
+
+	if strings.TrimSpace(req.ListingCode) != "" {
+		code := strings.TrimSpace(req.ListingCode)
+		codePlaceholderRegex := regexp.MustCompile(`(?i)\[(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)\]|\{(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)\}|<(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)>`)
+		generatedText = codePlaceholderRegex.ReplaceAllString(generatedText, code)
 	}
 
 	return c.JSON(fiber.Map{

@@ -571,15 +571,26 @@ export const GoogleSheetSettingsSidebox: React.FC<GoogleSheetSettingsSideboxProp
                 Listing Code Generator
               </span>
             </div>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={boxConfig.autoGenerateCode ?? true}
-                onChange={(e) => onUpdateBoxConfig({ autoGenerateCode: e.target.checked })}
-                style={{ cursor: 'pointer' }}
-              />
-              <span style={{ fontSize: '0.6875rem', color: 'var(--text-secondary)' }}>Auto-generate</span>
-            </label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={boxConfig.useGeneratedCode ?? true}
+                  onChange={(e) => onUpdateBoxConfig({ useGeneratedCode: e.target.checked })}
+                  style={{ cursor: 'pointer' }}
+                />
+                <span style={{ fontSize: '0.6875rem', color: 'var(--text-secondary)' }}>Use in Prompts</span>
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={boxConfig.autoGenerateCode ?? true}
+                  onChange={(e) => onUpdateBoxConfig({ autoGenerateCode: e.target.checked })}
+                  style={{ cursor: 'pointer' }}
+                />
+                <span style={{ fontSize: '0.6875rem', color: 'var(--text-secondary)' }}>Auto-generate</span>
+              </label>
+            </div>
           </div>
 
           <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>

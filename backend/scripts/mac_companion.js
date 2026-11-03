@@ -1954,8 +1954,20 @@ function mergeTabGroups(scannedGroups, liveGroups) {
         if (model.includes('gemini-2.5') || model.includes('gemini-2.0') || model.includes('gemini-1.5')) {
           model = 'gemini-flash-lite-latest';
         }
-        const prompt = payload.prompt || payload.template_text || payload.custom_prompt || '';
+        let prompt = payload.prompt || payload.template_text || payload.custom_prompt || '';
         const rawContent = payload.rawContent || payload.raw_content || '';
+        const listingCode = payload.listingCode || payload.listing_code || '';
+
+        if (listingCode) {
+          const codeRegex = /\[(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)\]|\{(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)\}|<(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)>/gi;
+          if (codeRegex.test(prompt)) {
+            prompt = prompt.replace(codeRegex, listingCode);
+          } else {
+            prompt = `${prompt}\n\n[Active Listing Code: ${listingCode}] (Always use this exact listing code wherever a listing code, ID, or reference number is generated).`;
+          }
+        }
+
+        const fullPrompt = `${prompt}\n\n=== SOURCE PROPERTY CONTENT ===\n${rawContent}`;
         const isJSONRequest = prompt.includes('JSON') || prompt.includes('headers') || prompt.includes('spreadsheet') || prompt.includes('parseable');
 
         let initialModel = payload.model || 'gemini-flash-lite-latest';
@@ -2001,6 +2013,10 @@ function mergeTabGroups(scannedGroups, liveGroups) {
         }
 
         if (generatedText) {
+          if (listingCode) {
+            const codeRegex = /\[(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)\]|\{(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)\}|<(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)>/gi;
+            generatedText = generatedText.replace(codeRegex, listingCode);
+          }
           res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
           return res.end(JSON.stringify({ success: true, generated_content: generatedText }));
         }

@@ -11,6 +11,7 @@ import {
   loadAvailablePromptTemplates,
   applyPersistedNodeEnabledToConfig,
   stripLargeBase64FromWorkflowConfig,
+  generateUniqueListingCode,
   type FacebookWorkflowConfig,
   type FacebookWorkflowCanvasRef,
   type WorkflowExecutionState,
@@ -65,6 +66,48 @@ import { FaFacebook, FaTiktok } from 'react-icons/fa';
 import { HiSparkles } from 'react-icons/hi2';
 import { BsPinAngle, BsPinAngleFill } from 'react-icons/bs';
 import { useTheme } from '../../context/ThemeContext';
+
+export function injectListingCodeIntoPrompt(
+  prompt: string,
+  listingCode: string,
+  useGeneratedCode: boolean = true
+): string {
+  if (!useGeneratedCode || !listingCode || !prompt) return prompt;
+
+  let updatedPrompt = prompt;
+
+  // 1. Replace explicit placeholders case-insensitively
+  // e.g. [CODE], {CODE}, <CODE>, [Listing Code], {Listing Code}, [Listing ID], {Listing ID}, [Ref], {Ref}, [Property Code]
+  const placeholderRegex = /\[(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)\]|\{(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)\}|<(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)>/gi;
+
+  const hadPlaceholder = placeholderRegex.test(updatedPrompt);
+  updatedPrompt = updatedPrompt.replace(placeholderRegex, listingCode);
+
+  // 2. Also look for patterns like "Code: [N/A]" or "Listing ID: ..." or "Code: N/A" or "Ref: N/A"
+  updatedPrompt = updatedPrompt.replace(/(?:Code|Listing\s*Code|Listing\s*ID|Ref):\s*(?:\[?(?:N\/A|null|none|\.{3}|—|-)\]?)/gi, `Code: ${listingCode}`);
+
+  // 3. If there was no explicit placeholder replaced, provide the active listing code instruction to the AI model
+  // so the AI analysis incorporates this exact code!
+  if (!hadPlaceholder) {
+    updatedPrompt = `${updatedPrompt}\n\n[Active Listing Code: ${listingCode}] (Requirement: Always use this exact listing code "${listingCode}" wherever a listing code, listing ID, or reference number is generated or referenced).`;
+  }
+
+  return updatedPrompt;
+}
+
+export function applyListingCodeToGeneratedText(
+  text: string,
+  listingCode: string,
+  useGeneratedCode: boolean = true
+): string {
+  if (!useGeneratedCode || !listingCode || !text) return text;
+  let res = text;
+  // Replace leftover placeholders like [CODE], {CODE}, etc.
+  const placeholderRegex = /\[(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)\]|\{(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)\}|<(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)>/gi;
+  res = res.replace(placeholderRegex, listingCode);
+  res = res.replace(/(?:Code|Listing\s*Code|Listing\s*ID|Ref):\s*\[?(?:N\/A|null|none|\.{3}|—|-)\]?/gi, `Code: ${listingCode}`);
+  return res;
+}
 
 async function requestAIGeneration(payload: Record<string, any>, signal?: AbortSignal): Promise<string> {
   let resolvedModel = payload.model || 'gemini-flash-lite-latest';
@@ -393,6 +436,7 @@ export const CreateWorkflowView: React.FC = () => {
     generatedOutputsMap: Record<string, string>;
     primaryCopy: string;
     targetUrl: string;
+    listingCode: string;
   }>({
     rawCaption: '',
     imageList: [],
@@ -402,6 +446,7 @@ export const CreateWorkflowView: React.FC = () => {
     generatedOutputsMap: {},
     primaryCopy: '',
     targetUrl: '',
+    listingCode: '',
   });
 
   // Global navigation & page unload guards when workflow is actively executing
@@ -1432,6 +1477,8 @@ export const CreateWorkflowView: React.FC = () => {
       };
 
       // Initialize workflow context so parallel branches can populate outputs as they finish
+      const codeFormatPattern = (cfg as any)?.codeFormat || 'AAA-######-AA';
+      const initialRunListingCode = generateUniqueListingCode(codeFormatPattern);
       workflowContextRef.current = {
         rawCaption,
         imageList,
@@ -1441,6 +1488,7 @@ export const CreateWorkflowView: React.FC = () => {
         generatedOutputsMap: {},
         primaryCopy: '',
         targetUrl: isManualTrigger ? 'manual://input' : targetUrl,
+        listingCode: initialRunListingCode,
       };
 
       const generatedOutputsMap: Record<string, string> = {};
@@ -1885,6 +1933,7 @@ export const CreateWorkflowView: React.FC = () => {
                 credentials_json: (box as any).googleServiceAccountJson || '',
                 code_format: (box as any).codeFormat || (cfg as any)?.codeFormat || 'AAA-######-AA',
                 auto_generate_code: (box as any).autoGenerateCode !== undefined ? (box as any).autoGenerateCode : ((cfg as any)?.autoGenerateCode !== undefined ? (cfg as any).autoGenerateCode : true),
+                listing_code: (box as any).useGeneratedCode !== false ? (workflowContextRef.current?.listingCode || initialRunListingCode) : '',
               }),
             });
 
@@ -2587,6 +2636,22 @@ export const CreateWorkflowView: React.FC = () => {
               : 'Generate a high-converting Facebook real estate rental listing copy. Highlight investment yield, BTS access, floor, and rental price.';
           }
 
+          const shouldUseCode = (box as any).useGeneratedCode !== false;
+          const currentRunListingCode = workflowContextRef.current?.listingCode || initialRunListingCode;
+
+          let effectiveCustomPrompt =
+            box.customPrompt ||
+            (isTextFormat
+              ? `Format this real estate listing according to the ${box.title || 'preset'} style. Maintain all property details, price, contact numbers, and formatting clean and attractive.`
+              : '');
+
+          if (shouldUseCode && currentRunListingCode) {
+            promptToUse = injectListingCodeIntoPrompt(promptToUse, currentRunListingCode, true);
+            if (effectiveCustomPrompt) {
+              effectiveCustomPrompt = injectListingCodeIntoPrompt(effectiveCustomPrompt, currentRunListingCode, true);
+            }
+          }
+
           const aiStart = Date.now();
           try {
             copyText = await requestAIGeneration({
@@ -2596,11 +2661,8 @@ export const CreateWorkflowView: React.FC = () => {
               template_name: box.title || 'Dynamic Real Estate Copywriter',
               template_text: promptToUse,
               raw_content: upstreamText,
-              custom_prompt:
-                box.customPrompt ||
-                (isTextFormat
-                  ? `Format this real estate listing according to the ${box.title || 'preset'} style. Maintain all property details, price, contact numbers, and formatting clean and attractive.`
-                  : ''),
+              custom_prompt: effectiveCustomPrompt,
+              listing_code: shouldUseCode ? currentRunListingCode : '',
             }, signal);
           } catch (err) {
             if (isRunStopped(myRunId) || branchFatalError) return false;
@@ -2612,6 +2674,10 @@ export const CreateWorkflowView: React.FC = () => {
           // If AI response was empty, fall back to formatted upstream text instead of failing the workflow!
           if (!copyText || copyText.trim().length === 0) {
             copyText = upstreamText;
+          }
+
+          if (shouldUseCode && currentRunListingCode && copyText) {
+            copyText = applyListingCodeToGeneratedText(copyText, currentRunListingCode, true);
           }
 
           addAIHistoryEntry({
@@ -2876,6 +2942,14 @@ export const CreateWorkflowView: React.FC = () => {
       upstreamText = 'Featured Bangkok Condo for Rent. High-floor modern unit, luxury furniture and appliances, excellent BTS transit access, monthly rental available.';
     }
 
+    const shouldUseCode = (box as any).useGeneratedCode !== false;
+    const activeListingCode =
+      workflowContextRef.current?.listingCode ||
+      generateUniqueListingCode((box as any).codeFormat || (cfg as any)?.codeFormat || 'AAA-######-AA');
+    if (workflowContextRef.current && !workflowContextRef.current.listingCode) {
+      workflowContextRef.current.listingCode = activeListingCode;
+    }
+
     if (isGoogleSheetBox(box)) {
       let postLink =
         ctx?.targetUrl ||
@@ -2934,6 +3008,7 @@ export const CreateWorkflowView: React.FC = () => {
             credentials_json: (box as any).googleServiceAccountJson || '',
             code_format: (box as any).codeFormat || (cfg as any)?.codeFormat || 'AAA-######-AA',
             auto_generate_code: (box as any).autoGenerateCode !== undefined ? (box as any).autoGenerateCode : ((cfg as any)?.autoGenerateCode !== undefined ? (cfg as any).autoGenerateCode : true),
+            listing_code: shouldUseCode ? activeListingCode : '',
           }),
         });
 
@@ -3013,6 +3088,19 @@ export const CreateWorkflowView: React.FC = () => {
         : 'Generate a high-converting Facebook real estate rental listing copy. Highlight investment yield, BTS access, floor, and rental price.';
     }
 
+    let effectiveCustomPrompt =
+      box.customPrompt ||
+      (isTextFormat
+        ? `Format this real estate listing according to the ${box.title || 'preset'} style. Maintain all property details, price, contact numbers, and formatting clean and attractive.`
+        : '');
+
+    if (shouldUseCode && activeListingCode) {
+      promptToUse = injectListingCodeIntoPrompt(promptToUse, activeListingCode, true);
+      if (effectiveCustomPrompt) {
+        effectiveCustomPrompt = injectListingCodeIntoPrompt(effectiveCustomPrompt, activeListingCode, true);
+      }
+    }
+
     try {
       let generated = await requestAIGeneration({
         provider: aiProvider,
@@ -3021,15 +3109,16 @@ export const CreateWorkflowView: React.FC = () => {
         template_name: box.title || 'Dynamic Real Estate Copywriter',
         template_text: promptToUse,
         raw_content: upstreamText,
-        custom_prompt:
-          box.customPrompt ||
-          (isTextFormat
-            ? `Format this real estate listing according to the ${box.title || 'preset'} style. Maintain all property details, price, contact numbers, and formatting clean and attractive.`
-            : ''),
+        custom_prompt: effectiveCustomPrompt,
+        listing_code: shouldUseCode ? activeListingCode : '',
       });
 
       if (!generated || generated.trim().length === 0) {
         generated = upstreamText;
+      }
+
+      if (shouldUseCode && activeListingCode && generated) {
+        generated = applyListingCodeToGeneratedText(generated, activeListingCode, true);
       }
 
       if (generated) {

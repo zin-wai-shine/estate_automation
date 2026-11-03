@@ -755,6 +755,7 @@ func (s *GoogleSheetsService) PrepareDataWithAI(
 	postURL string,
 	codeFormat string,
 	autoGenerateCode bool,
+	listingCode string,
 ) (map[string]interface{}, []interface{}, error) {
 	if len(headers) == 0 {
 		return nil, nil, fmt.Errorf("no headers provided to map data against")
@@ -779,13 +780,18 @@ func (s *GoogleSheetsService) PrepareDataWithAI(
 		templateGuidance = fmt.Sprintf("\n\nCustom Prompt Instructions / Field Mapping Rules:\n%s", strings.TrimSpace(promptTemplate))
 	}
 
+	activeCodeGuidance := ""
+	if strings.TrimSpace(listingCode) != "" {
+		activeCodeGuidance = fmt.Sprintf("\nActive Dynamic Listing Code: \"%s\"\n(For 'Code' column or property ID, strictly use this exact code).", strings.TrimSpace(listingCode))
+	}
+
 	systemPrompt := fmt.Sprintf(`You are an expert real estate data parser and listing analyst.
 Your task is to analyze the property listing content and link, then map it into a clean JSON object matching these exact spreadsheet column headers:
 [%s]
 
 Condo / Project Name (if known): "%s"
 Source / Post Link (if available): "%s"
-Number of Available Photos: %d
+Number of Available Photos: %d%s
 %s
 
 Guidelines:
@@ -798,7 +804,7 @@ Guidelines:
 7. If an image or media column exists, put a summary or the first photo URL if available.
 8. If a field cannot be determined from the listing content or link, use an empty string "" or "N/A".
 9. Do NOT include markdown blocks or any conversational text outside of the JSON object.
-%s`, headersList, condoName, strings.TrimSpace(postURL), len(images), templateGuidance, customInstructions)
+%s`, headersList, condoName, strings.TrimSpace(postURL), len(images), activeCodeGuidance, templateGuidance, customInstructions)
 
 	aiSvc := NewGoogleAIService()
 	var generatedJSON string
@@ -870,13 +876,17 @@ Guidelines:
 		}
 
 		// Safeguard for Code column:
-		// Auto-generate a dynamic unique code (e.g. AEA-123456-GE)
+		// Auto-generate a dynamic unique code (e.g. AEA-123456-GE) or preserve active listing code
 		if lowerH == "code" || lowerH == "listing code" || lowerH == "property code" || lowerH == "unit code" || lowerH == "id" || lowerH == "listing id" {
 			valStr := ""
 			if val != nil {
 				valStr = strings.TrimSpace(fmt.Sprintf("%v", val))
 			}
-			if autoGenerateCode || !exists || val == nil || valStr == "" || strings.EqualFold(valStr, "n/a") || strings.EqualFold(valStr, "null") {
+			if strings.TrimSpace(listingCode) != "" {
+				val = strings.TrimSpace(listingCode)
+				mappedData[header] = val
+				exists = true
+			} else if autoGenerateCode || !exists || val == nil || valStr == "" || strings.EqualFold(valStr, "n/a") || strings.EqualFold(valStr, "null") {
 				uniqueCode := GenerateUniqueCode(codeFormat)
 				val = uniqueCode
 				mappedData[header] = uniqueCode
