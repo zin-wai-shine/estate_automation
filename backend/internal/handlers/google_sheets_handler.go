@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"log"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -242,6 +243,7 @@ func ExecuteGoogleSheetSync(c *fiber.Ctx) error {
 		effectiveLink,
 	)
 	if err != nil {
+		log.Printf("[ExecuteGoogleSheetSync] PrepareDataWithAI error: %v (model: %s, link: %s)", err, req.Model, effectiveLink)
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"success": false,
 			"error":   "AI data preparation failed: " + err.Error(),
@@ -251,6 +253,7 @@ func ExecuteGoogleSheetSync(c *fiber.Ctx) error {
 	// Append Row to Google Sheet
 	appendRes, err := sheetsService.AppendRow(c.Context(), urlOrID, sheetName, rowValues, req.CredentialsJSON)
 	if err != nil {
+		log.Printf("[ExecuteGoogleSheetSync] AppendRow error: %v (urlOrID: %s, sheet: %s)", err, urlOrID, sheetName)
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"success":     false,
 			"error":       "Failed to append row to Google Sheet: " + err.Error(),

@@ -13500,10 +13500,12 @@ export const FacebookWorkflowCanvas = forwardRef<
                                 <FiAlertTriangle size={15} style={{ flexShrink: 0, marginTop: '2px', color: '#EF4444' }} />
                                 <div style={{ flex: 1 }}>
                                   <div style={{ fontWeight: 700, color: isDark ? '#FCA5A5' : '#B91C1C' }}>
-                                    Formatting Failed at this Step
+                                    {isGoogleSheetBox(currentModalAIBox) ? 'Google Sheet Sync Failed at this Step' : 'Formatting Failed at this Step'}
                                   </div>
                                   <div style={{ fontSize: '0.6875rem', color: isDark ? '#F87171' : '#DC2626', marginTop: '2px' }}>
-                                    AI generation did not complete. Click &quot;Re-generate&quot; to try again.
+                                    {isGoogleSheetBox(currentModalAIBox)
+                                      ? (executionState?.currentStepMessage?.replace(/^[❌⚠️]\s*/, '') || 'Google Sheet AI sync did not complete. Click "Re-generate" to retry.')
+                                      : 'AI generation did not complete. Click "Re-generate" to try again.'}
                                   </div>
                                 </div>
                               </div>

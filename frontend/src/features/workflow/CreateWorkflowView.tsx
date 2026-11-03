@@ -7,6 +7,7 @@ import { Modal } from '../../components/ui/Modal';
 import {
   FacebookWorkflowCanvas,
   DEFAULT_FB_WORKFLOW_CONFIG,
+  DEFAULT_GOOGLE_SHEET_PROMPT,
   loadAvailablePromptTemplates,
   applyPersistedNodeEnabledToConfig,
   stripLargeBase64FromWorkflowConfig,
@@ -1804,20 +1805,54 @@ export const CreateWorkflowView: React.FC = () => {
           await delay(400);
           if (isRunStopped(myRunId) || branchFatalError) return false;
         } else if (isGoogleSheet) {
-          // Resolve upstream text / property for this Google Sheet sync node
+          // Resolve post link from workflow context or targetUrl (from second image: Run Workflow dialog)
+          const postLink =
+            targetUrl ||
+            workflowContextRef.current.targetUrl ||
+            runFacebookUrl ||
+            (cfg.trigger?.monitoredPageName && /^https?:\/\//i.test(cfg.trigger.monitoredPageName)
+              ? cfg.trigger.monitoredPageName
+              : '') ||
+            (cfg.trigger?.manualContent && /^https?:\/\//i.test(cfg.trigger.manualContent.trim())
+              ? cfg.trigger.manualContent.trim().split(/\s+/)[0]
+              : '');
+
+          // Resolve property details from Get Content or upstream nodes
           const inConns = (cfg.connections || []).filter((c) => c.toNodeId === box.id);
           const upstreamBoxId = inConns[0]?.fromNodeId;
           const upstreamText =
-            (upstreamBoxId && generatedOutputsMap[upstreamBoxId]) ||
-            (upstreamBoxId === 'get-content' ? rawCaption : '') ||
+            (upstreamBoxId && upstreamBoxId !== 'get-content' && generatedOutputsMap[upstreamBoxId]) ||
+            rawCaption ||
+            workflowContextRef.current.rawCaption ||
+            extractedContent ||
             primaryCopy ||
-            rawCaption;
+            (propData as any)?.raw_caption ||
+            '';
 
           const sheetUrl = (box as any).googleSpreadsheetUrl || 'https://docs.google.com/spreadsheets/d/1lzY57D5ers2Xs6cvbV-skeqGSAK_jijbQJZt8Hn8udY/edit?gid=0#gid=0';
           const sheetName = (box as any).googleSheetName || '';
-          const sheetHeaders = (box as any).googleSheetHeaders || [];
+          let sheetHeaders = (box as any).googleSheetHeaders || [];
+          if (!sheetHeaders || sheetHeaders.length === 0) {
+            sheetHeaders = [
+              'Code',
+              'Project',
+              'Room Type',
+              'Size',
+              'Floor',
+              'Price',
+              'BTS/MRT',
+              'Owner/Agent',
+              'Contact Info',
+              'Original Link',
+            ];
+          }
           const customPrompt = (box as any).googleSheetAiPrompt || box.customPrompt || '';
-          const condoProjectName = projName || (propData as any)?.project_name || 'Featured Property Listing';
+          const condoProjectName = projName || workflowContextRef.current.projName || (propData as any)?.project_name || 'Featured Property Listing';
+          const promptTemplate =
+            box.templateText ||
+            box.customPrompt ||
+            (box as any).googleSheetAiPrompt ||
+            DEFAULT_GOOGLE_SHEET_PROMPT;
 
           try {
             const syncRes = await fetch('/api/google-sheets/sync', {
@@ -1830,10 +1865,13 @@ export const CreateWorkflowView: React.FC = () => {
                 content: upstreamText,
                 condo_name: condoProjectName,
                 images: imageList.map((img) => img.stored_url || img.source_url),
+                post_url: postLink,
+                source_url: postLink,
+                link: postLink,
                 custom_instructions: customPrompt,
                 model: box.model || 'gemini-1.5-flash',
                 provider: box.provider || 'google_ai',
-                prompt_template: box.templateText || '',
+                prompt_template: promptTemplate,
                 credentials_json: (box as any).googleServiceAccountJson || '',
               }),
             });
@@ -2825,6 +2863,92 @@ export const CreateWorkflowView: React.FC = () => {
 
     if (!upstreamText || upstreamText.trim().length === 0) {
       upstreamText = 'Featured Bangkok Condo for Rent. High-floor modern unit, luxury furniture and appliances, excellent BTS transit access, monthly rental available.';
+    }
+
+    if (isGoogleSheetBox(box)) {
+      const postLink =
+        ctx?.targetUrl ||
+        runFacebookUrl ||
+        (cfg.trigger?.monitoredPageName && /^https?:\/\//i.test(cfg.trigger.monitoredPageName)
+          ? cfg.trigger.monitoredPageName
+          : '') ||
+        '';
+      const sheetUrl = (box as any).googleSpreadsheetUrl || 'https://docs.google.com/spreadsheets/d/1lzY57D5ers2Xs6cvbV-skeqGSAK_jijbQJZt8Hn8udY/edit?gid=0#gid=0';
+      const sheetName = (box as any).googleSheetName || '';
+      let sheetHeaders = (box as any).googleSheetHeaders || [];
+      if (!sheetHeaders || sheetHeaders.length === 0) {
+        sheetHeaders = [
+          'Code',
+          'Project',
+          'Room Type',
+          'Size',
+          'Floor',
+          'Price',
+          'BTS/MRT',
+          'Owner/Agent',
+          'Contact Info',
+          'Original Link',
+        ];
+      }
+      const customPrompt = (box as any).googleSheetAiPrompt || box.customPrompt || '';
+      const condoProjectName = projectName || ctx?.projName || (propertyData as any)?.project_name || 'Featured Property Listing';
+
+      try {
+        const syncRes = await fetch('/api/google-sheets/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            spreadsheet_url: sheetUrl,
+            sheet_name: sheetName,
+            headers: sheetHeaders,
+            content: upstreamText,
+            condo_name: condoProjectName,
+            images: (extractedImages || ctx?.imageList || []).map((img: any) => img.stored_url || img.source_url),
+            post_url: postLink,
+            source_url: postLink,
+            link: postLink,
+            custom_instructions: customPrompt,
+            model: box.model || 'gemini-1.5-flash',
+            provider: box.provider || 'google_ai',
+            prompt_template: box.templateText || box.customPrompt || (box as any).googleSheetAiPrompt || DEFAULT_GOOGLE_SHEET_PROMPT,
+            credentials_json: (box as any).googleServiceAccountJson || '',
+          }),
+        });
+
+        const syncData = await syncRes.json();
+        if (!syncRes.ok || !syncData.success) {
+          throw new Error(syncData.error || 'Failed to sync with Google Sheets');
+        }
+
+        const formattedResult = JSON.stringify(syncData.mapped_data, null, 2);
+        setAiGeneratedOutputs((prev) => ({ ...prev, [boxId]: formattedResult }));
+        if (workflowContextRef.current) {
+          workflowContextRef.current.generatedOutputsMap[boxId] = formattedResult;
+          if (!workflowContextRef.current.primaryCopy) workflowContextRef.current.primaryCopy = formattedResult;
+        }
+        setExecutionState((prev) => {
+          if (!prev) return prev;
+          const nextFailed = (prev.failedNodeIds || []).filter((id) => id !== boxId);
+          return {
+            ...prev,
+            failedNodeIds: nextFailed,
+            hasError: nextFailed.length > 0,
+            completedNodeIds: Array.from(new Set([...(prev.completedNodeIds || []), boxId])),
+            currentStepMessage: `✓ Synced with Google Sheet [${box.title || 'Google Sheet'}] successfully!`,
+          };
+        });
+        return formattedResult;
+      } catch (err: any) {
+        console.warn('Google Sheet re-generate sync failed:', err);
+        setExecutionState((prev) => ({
+          ...prev!,
+          isRunning: false,
+          hasError: true,
+          failedNodeIds: Array.from(new Set([...(prev?.failedNodeIds || []), boxId])),
+          currentStepMessage: `❌ Google Sheet Sync failed: ${err.message || 'Sync error'}.`,
+        }));
+        return;
+      }
     }
 
     const isTextFormat = isTextFormatAIBox(box);

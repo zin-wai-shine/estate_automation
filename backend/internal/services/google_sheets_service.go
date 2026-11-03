@@ -556,13 +556,19 @@ Guidelines:
 		return nil, nil, fmt.Errorf("AI parsing failed: %w", err)
 	}
 
-	// Clean JSON markdown fences
+	// Clean JSON markdown fences & extract valid JSON block
 	cleanJSON := strings.TrimSpace(generatedJSON)
 	if strings.HasPrefix(cleanJSON, "```") {
 		lines := strings.Split(cleanJSON, "\n")
 		if len(lines) > 2 {
 			cleanJSON = strings.Join(lines[1:len(lines)-1], "\n")
 		}
+	}
+	cleanJSON = strings.TrimSpace(cleanJSON)
+	startIdx := strings.Index(cleanJSON, "{")
+	endIdx := strings.LastIndex(cleanJSON, "}")
+	if startIdx != -1 && endIdx != -1 && endIdx > startIdx {
+		cleanJSON = cleanJSON[startIdx : endIdx+1]
 	}
 
 	var mappedData map[string]interface{}
@@ -572,6 +578,8 @@ Guidelines:
 
 	// Build row values strictly in the order of the headers
 	rowValues := make([]interface{}, len(headers))
+	trimmedPostURL := strings.TrimSpace(postURL)
+
 	for i, header := range headers {
 		val, exists := mappedData[header]
 		if !exists {
@@ -584,6 +592,22 @@ Guidelines:
 				}
 			}
 		}
+
+		// Safeguard for Link / URL / Source columns:
+		// When the user specifies an Original Link / URL column, ensure it receives the exact social post link
+		lowerH := strings.ToLower(strings.TrimSpace(header))
+		if (strings.Contains(lowerH, "link") || strings.Contains(lowerH, "url") || strings.Contains(lowerH, "source")) && trimmedPostURL != "" {
+			valStr := ""
+			if val != nil {
+				valStr = strings.TrimSpace(fmt.Sprintf("%v", val))
+			}
+			if !exists || val == nil || valStr == "" || strings.EqualFold(valStr, "n/a") || strings.EqualFold(valStr, "null") {
+				val = trimmedPostURL
+				mappedData[header] = trimmedPostURL
+				exists = true
+			}
+		}
+
 		if exists && val != nil {
 			rowValues[i] = val
 		} else {
