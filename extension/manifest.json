@@ -13,7 +13,8 @@
     "downloads",
     "clipboardRead",
     "clipboardWrite",
-    "identity"
+    "identity",
+    "identity.email"
   ],
   "host_permissions": [
     "http://localhost:8085/*",

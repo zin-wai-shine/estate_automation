@@ -2100,14 +2100,12 @@ export const CreateWorkflowView: React.FC = () => {
             if (isRunStopped(myRunId) || branchFatalError) return false;
 
             if (!targetUrls || targetUrls.length === 0) {
-              if (groupName.toLowerCase().includes('enhance')) {
-                targetUrls = [
-                  'https://chatgpt.com/c/6ad49918-a4f0-83ec-acf5-efb0ef516adc',
-                  'https://chatgpt.com/c/6ad49924-7dd0-83ec-8205-768c67420600',
-                  'https://chatgpt.com/c/6ad4992a-66e8-83ec-9b11-c5e727e258d9',
-                  'https://chatgpt.com/c/6ad4992b-135c-83ec-b042-8c92220921d7',
-                ];
-              }
+              targetUrls = [
+                'https://chatgpt.com/',
+                'https://chatgpt.com/',
+                'https://chatgpt.com/',
+                'https://chatgpt.com/',
+              ];
             }
 
             const isStagingGroup = groupName.toLowerCase().includes('hero') || groupName.toLowerCase().includes('stage');

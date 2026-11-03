@@ -1307,7 +1307,18 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     const profKey = activeProfile?.profile_key || boxConfig.browserProfileKey || (profiles[0]?.profile_key || 'Pro');
     const propId = propertyContext?.id || `PROP-${Date.now()}`;
     const effectiveGroupName = currentGroup?.name || targetGroupName || selectedGroupName || (isHeroNode ? 'FB Hero' : 'Enhance IMG');
-    const targetUrls = groupTabs.map((t) => t.url).filter(Boolean);
+    const effectiveWorkerCount = isHeroNode
+      ? (boxConfig.skipTab1 || boxConfig.stagingMode === 'direct_tab2' || boxConfig.workerTabCount === 1 ? 1 : 2)
+      : (boxConfig.workerTabCount || (groupTabs.length || 4));
+    const isNewTabsMode = (boxConfig as any).workerTabMode === 'new_tabs';
+    let targetUrls = isNewTabsMode
+      ? Array(effectiveWorkerCount).fill('https://chatgpt.com/')
+      : groupTabs.map((t) => t.url).filter((u) => u && !u.includes('6ad49918') && !u.includes('6ad49924'));
+    if (targetUrls.length === 0 || isNewTabsMode) {
+      targetUrls = Array(effectiveWorkerCount).fill('https://chatgpt.com/');
+    } else if (targetUrls.length > effectiveWorkerCount) {
+      targetUrls = targetUrls.slice(0, effectiveWorkerCount);
+    }
 
     const hasImages = activeImages.length > 0 || queueJobs.length > 0;
     if (!hasImages && enablePromptEnhance) {
@@ -1324,6 +1335,9 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       groupName: effectiveGroupName,
       groupTabUrls: targetUrls,
       url: targetUrls[0],
+      tabMode: isNewTabsMode ? 'new_tabs' : ((boxConfig as any).workerTabMode || 'existing_tabs'),
+      workerCount: effectiveWorkerCount,
+      reuseSessionTabs: (boxConfig as any).reuseSessionTabs !== false,
       force: true,
     }).catch(() => {});
 
@@ -1409,10 +1423,10 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       })
       .filter((id) => id > 0);
 
-    const finalTabIds = tabIds.length > 0 ? tabIds : [1, 2, 3, 4];
+    const finalTabIds = tabIds.length > 0 ? tabIds : Array.from({ length: effectiveWorkerCount }, (_, i) => i + 1);
 
     setIsAutomating(true);
-    setAutomationMessage(`Auto-opened Chrome [${profKey}] & Tab Group [${effectiveGroupName}]. Processing across ${finalTabIds.length} tabs...`);
+    setAutomationMessage(`Auto-opened Chrome [${profKey}] & Tab Group [${effectiveGroupName}]. Processing across ${effectiveWorkerCount} tabs...`);
 
     const res = await startAutomation({
       property_id: propId,
@@ -1420,8 +1434,8 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       group_name: effectiveGroupName,
       group_tab_urls: targetUrls,
       tab_ids: finalTabIds,
-      tab_mode: (boxConfig as any).workerTabMode || 'existing_tabs',
-      worker_count: finalTabIds.length,
+      tab_mode: isNewTabsMode ? 'new_tabs' : ((boxConfig as any).workerTabMode || 'existing_tabs'),
+      worker_count: effectiveWorkerCount,
       reuse_session_tabs: (boxConfig as any).reuseSessionTabs ?? true,
       jobs: createdBatchJobs.length > 0 ? createdBatchJobs : queueJobs,
     });
@@ -1785,8 +1799,13 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
         const effectiveWorkerCount = isHeroNode
           ? (boxConfig.skipTab1 || boxConfig.stagingMode === 'direct_tab2' || boxConfig.workerTabCount === 1 ? 1 : 2)
           : (boxConfig.workerTabCount || (groupTabs.length || 4));
-        let targetUrls = groupTabs.map((t) => t.url).filter(Boolean);
-        if (targetUrls.length > effectiveWorkerCount) {
+        const isNewTabs = (boxConfig as any).workerTabMode === 'new_tabs';
+        let targetUrls = isNewTabs
+          ? Array(effectiveWorkerCount).fill('https://chatgpt.com/')
+          : groupTabs.map((t) => t.url).filter((u) => u && !u.includes('6ad49918') && !u.includes('6ad49924'));
+        if (targetUrls.length === 0 || isNewTabs) {
+          targetUrls = Array(effectiveWorkerCount).fill('https://chatgpt.com/');
+        } else if (targetUrls.length > effectiveWorkerCount) {
           targetUrls = targetUrls.slice(0, effectiveWorkerCount);
         }
         const res = await focusBrowserTabGroup({
@@ -1795,9 +1814,10 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
           groupName: effectiveGroupName,
           groupTabUrls: targetUrls,
           url: targetUrls[0],
-          tabMode: boxConfig.workerTabMode || 'existing_tabs',
+          tabMode: isNewTabs ? 'new_tabs' : (boxConfig.workerTabMode || 'existing_tabs'),
           workerCount: effectiveWorkerCount,
           reuseSessionTabs: boxConfig.reuseSessionTabs !== false,
+          force: true,
         });
         if (res.success) {
           setSyncMessage(`Chrome "${activeProfile?.display_name || profKey}" & "${effectiveGroupName}" (${effectiveWorkerCount} ${effectiveWorkerCount === 1 ? 'tab' : 'tabs'}) opened!`);

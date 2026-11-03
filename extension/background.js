@@ -473,10 +473,10 @@ function finishAutomation() {
 }
 
 const ENHANCE_CHATGPT_DEFAULT_URLS = [
-  'https://chatgpt.com/c/6ad49918-a4f0-83ec-acf5-efb0ef516adc',
-  'https://chatgpt.com/c/6ad49924-7dd0-83ec-8205-768c67420600',
-  'https://chatgpt.com/c/6ad4992a-66e8-83ec-9b11-c5e727e258d9',
-  'https://chatgpt.com/c/6ad4992b-135c-83ec-b042-8c92220921d7',
+  'https://chatgpt.com/',
+  'https://chatgpt.com/',
+  'https://chatgpt.com/',
+  'https://chatgpt.com/',
 ];
 
 // Global lock to prevent concurrent calls to ensureTabGroupOpen from racing and creating duplicate tab groups
@@ -558,24 +558,52 @@ async function _ensureTabGroupOpenInternal(groupName, customUrls, tabMode = 'exi
   const isHero = clean.includes('hero') || clean.includes('create') || clean.includes('stage');
   const count = isHero ? 1 : Math.max(1, Math.min(8, parseInt(workerCount, 10) || 4));
   const resolvedName = isHero ? 'FB Hero' : (groupName || 'Enhance IMG');
+  const isNewTabsMode = tabMode === 'new_tabs' || tabMode === 'open_fresh';
 
   console.log(`[BOLTHAVEN EXT] 🎯 Ensuring Tab Group "${resolvedName}" is open with ${count} tab(s) (mode: ${tabMode})`);
 
-  // Target URLs
-  const rawTargetUrls = Array.isArray(customUrls) && customUrls.length > 0 ? customUrls : ENHANCE_CHATGPT_DEFAULT_URLS;
-  const targetUrls = isHero ? ['https://chatgpt.com/'] : rawTargetUrls.slice(0, count);
+  // Target URLs: for fresh tabs or fallback, always use clean ChatGPT base URL
+  const rawTargetUrls = Array.isArray(customUrls) && customUrls.length > 0 && !isNewTabsMode
+    ? customUrls.filter((u) => u && !u.includes('6ad49918') && !u.includes('6ad49924'))
+    : Array(count).fill('https://chatgpt.com/');
+  const targetUrls = isHero ? ['https://chatgpt.com/'] : (rawTargetUrls.length >= count ? rawTargetUrls.slice(0, count) : [...rawTargetUrls, ...Array(count - rawTargetUrls.length).fill('https://chatgpt.com/')]);
   const targetKeys = new Set(targetUrls.map(getConversationKey).filter(Boolean));
 
-  // 1. Check if an active tab group exists for this name
+  let finalTabIds = [];
+
+  // Check if an active tab group exists for this name
   const allGroups = await chrome.tabGroups.query({});
   let matchingGroup = (allGroups || []).find((g) => {
     const gt = (g.title || '').toLowerCase().trim();
     return gt && (gt.includes(clean) || clean.includes(gt) || (clean.includes('enhance') && gt.includes('enhance')));
   });
 
-  let finalTabIds = [];
-
-  if (matchingGroup) {
+  if (isNewTabsMode) {
+    // Open Fresh Tabs Mode: create clean ChatGPT tabs without past chat history
+    console.log(`[BOLTHAVEN EXT] 🌟 Open Fresh Tabs Mode: Creating ${count} fresh worker tab(s) for "${resolvedName}"...`);
+    const createdTabs = [];
+    for (let i = 0; i < count; i++) {
+      const createdTab = await chrome.tabs.create({
+        url: 'https://chatgpt.com/',
+        active: i === 0,
+      });
+      createdTabs.push(createdTab);
+    }
+    finalTabIds = createdTabs.map((t) => t.id);
+    try {
+      if (finalTabIds.length > 0) {
+        const newGroupId = await chrome.tabs.group({ tabIds: finalTabIds });
+        await chrome.tabGroups.update(newGroupId, {
+          title: resolvedName,
+          color: isHero ? 'purple' : 'blue',
+          collapsed: false,
+        });
+        console.log(`[BOLTHAVEN EXT] ✓ Grouped ${finalTabIds.length} fresh tabs into "${resolvedName}"`);
+      }
+    } catch (grpErr) {
+      console.warn('[BOLTHAVEN EXT] Tab grouping notice:', grpErr.message);
+    }
+  } else if (matchingGroup) {
     // Uncollapse group and ensure title and color
     await chrome.tabGroups.update(matchingGroup.id, {
       collapsed: false,
@@ -602,7 +630,7 @@ async function _ensureTabGroupOpenInternal(groupName, customUrls, tabMode = 'exi
       }
     }
   } else {
-    // 2. If no tab group exists: find open matching ChatGPT tabs or open missing ones, then create Tab Group
+    // If no tab group exists: find open matching ChatGPT tabs or open missing ones, then create Tab Group
     const allTabs = await chrome.tabs.query({});
     const chatGPTTabs = allTabs.filter((t) => (t.url || t.pendingUrl || '').includes('chatgpt.com'));
 
@@ -1505,8 +1533,8 @@ let pollCycleCount = 0;
 
 async function getExtensionProfile() {
   const stored = await chrome.storage.local.get(['profileName', 'profileKey', 'email']);
-  if (stored.profileKey && stored.profileKey !== 'Profile 14') {
-    return { profileName: stored.profileName || 'Note Zin Wai', profileKey: stored.profileKey };
+  if (stored.profileKey) {
+    return { profileName: stored.profileName || stored.profileKey, profileKey: stored.profileKey };
   }
   try {
     const userInfo = await new Promise((resolve) => {
@@ -1518,18 +1546,31 @@ async function getExtensionProfile() {
     });
     if (userInfo && userInfo.email) {
       const email = userInfo.email.toLowerCase().trim();
-      if (email.includes('notezinwai') || email.includes('zin')) {
-        await chrome.storage.local.set({ profileName: 'Note Zin Wai (Profile 2)', profileKey: 'Profile 2', email });
-        return { profileName: 'Note Zin Wai', profileKey: 'Profile 2' };
-      } else if (email.includes('hsuyeenandar417') || email.includes('hsu')) {
+      if (email.includes('hsuyeenandar417') || email.includes('hsu')) {
         await chrome.storage.local.set({ profileName: 'Hsu (Profile 14)', profileKey: 'Profile 14', email });
         return { profileName: 'Hsu', profileKey: 'Profile 14' };
+      } else if (email.includes('notezinwai') || email.includes('zin')) {
+        await chrome.storage.local.set({ profileName: 'Note Zin Wai (Profile 2)', profileKey: 'Profile 2', email });
+        return { profileName: 'Note Zin Wai', profileKey: 'Profile 2' };
       }
     }
   } catch (e) {}
+
+  // Check companion's current active profile focus
+  try {
+    const resp = await fetch(`${COMPANION_URL}/current-profile`, { signal: AbortSignal.timeout(1200) });
+    if (resp.ok) {
+      const info = await resp.json();
+      if (info && info.profileKey) {
+        await chrome.storage.local.set({ profileName: info.profileKey, profileKey: info.profileKey });
+        return { profileName: info.profileKey, profileKey: info.profileKey };
+      }
+    }
+  } catch (e) {}
+
   return {
     profileName: stored.profileName || 'Active Chrome Profile',
-    profileKey: stored.profileKey || 'Profile 2',
+    profileKey: stored.profileKey || '',
   };
 }
 
@@ -1559,7 +1600,14 @@ async function pollCompanion() {
     const data = await resp.json();
     if (data.status === 'command' && data.command) {
       const { action, payload } = data.command;
-      console.log('[BOLTHAVEN EXT] Received command from companion:', action);
+      console.log('[BOLTHAVEN EXT] Received command from companion:', action, payload?.groupName || '');
+      if (payload && (payload.profileKey || payload.profile_key)) {
+        const pk = payload.profileKey || payload.profile_key;
+        chrome.storage.local.set({
+          profileKey: pk,
+          profileName: payload.profileName || payload.profile_name || pk,
+        }).catch(() => {});
+      }
       if (action === 'RELOAD_EXTENSION') {
         console.log('[BOLTHAVEN EXT] Reloading extension via companion command...');
         chrome.runtime.reload();

@@ -179,12 +179,16 @@ func OpenBrowserProfileURL(c *fiber.Ctx) error {
 // Focuses the chosen Chrome profile and activates its tab group.
 func FocusBrowserTabGroup(c *fiber.Ctx) error {
 	var body struct {
-		ProfileID    uint     `json:"profile_id"`
-		ProfileKey   string   `json:"profile_key"`
-		GroupName    string   `json:"group_name"`
-		TabID        string   `json:"tab_id"`
-		URL          string   `json:"url"`
-		GroupTabUrls []string `json:"group_tab_urls"`
+		ProfileID        uint     `json:"profile_id"`
+		ProfileKey       string   `json:"profile_key"`
+		GroupName        string   `json:"group_name"`
+		TabID            string   `json:"tab_id"`
+		URL              string   `json:"url"`
+		GroupTabUrls     []string `json:"group_tab_urls"`
+		TabMode          string   `json:"tab_mode"`
+		WorkerCount      int      `json:"worker_count"`
+		ReuseSessionTabs *bool    `json:"reuse_session_tabs"`
+		Force            bool     `json:"force"`
 	}
 	_ = c.BodyParser(&body)
 
@@ -207,8 +211,18 @@ func FocusBrowserTabGroup(c *fiber.Ctx) error {
 		body.GroupName = "Enhance IMG"
 	}
 
+	reuseSession := true
+	if body.ReuseSessionTabs != nil {
+		reuseSession = *body.ReuseSessionTabs
+	}
+
+	workerCount := body.WorkerCount
+	if workerCount <= 0 {
+		workerCount = 4
+	}
+
 	svc := services.GetBrowserProfileService()
-	res, err := svc.FocusTabGroupViaCompanion(targetKey, body.GroupName, body.TabID, body.URL, body.GroupTabUrls)
+	res, err := svc.FocusTabGroupViaCompanion(targetKey, body.GroupName, body.TabID, body.URL, body.GroupTabUrls, body.TabMode, workerCount, reuseSession, body.Force)
 	if err != nil {
 		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
 			"status":  "error",

@@ -546,7 +546,7 @@ func (s *BrowserProfileService) getMockTabsForGroup(profileName, groupName strin
 			{
 				ID:          "tab-enh-1",
 				Title:       "Enhance Interior Photograph — Worker #1",
-				URL:         "https://chatgpt.com/c/6ad49918-a4f0-83ec-acf5-efb0ef516adc",
+				URL:         "https://chatgpt.com/",
 				Hostname:    "chatgpt.com",
 				IsChatGPT:   true,
 				IsConnected: true,
@@ -555,7 +555,7 @@ func (s *BrowserProfileService) getMockTabsForGroup(profileName, groupName strin
 			{
 				ID:          "tab-enh-2",
 				Title:       "ChatGPT Conversation — Worker #2",
-				URL:         "https://chatgpt.com/c/6ad4992a-66e8-83ec-9b11-c5e727e258d9",
+				URL:         "https://chatgpt.com/",
 				Hostname:    "chatgpt.com",
 				IsChatGPT:   true,
 				IsConnected: true,
@@ -564,7 +564,7 @@ func (s *BrowserProfileService) getMockTabsForGroup(profileName, groupName strin
 			{
 				ID:          "tab-enh-3",
 				Title:       "Enhance interior photograph — Worker #3",
-				URL:         "https://chatgpt.com/c/6ad4992b-135c-83ec-b042-8c92220921d7",
+				URL:         "https://chatgpt.com/",
 				Hostname:    "chatgpt.com",
 				IsChatGPT:   true,
 				IsConnected: true,
@@ -573,7 +573,7 @@ func (s *BrowserProfileService) getMockTabsForGroup(profileName, groupName strin
 			{
 				ID:          "tab-enh-4",
 				Title:       "ChatGPT — Worker #4",
-				URL:         "https://chatgpt.com/c/6ad49924-7dd0-83ec-8205-768c67420600",
+				URL:         "https://chatgpt.com/",
 				Hostname:    "chatgpt.com",
 				IsChatGPT:   true,
 				IsConnected: true,
@@ -739,13 +739,17 @@ func (s *BrowserProfileService) GetEnhancedImages() (map[string]interface{}, err
 }
 
 // FocusTabGroupViaCompanion asks the companion to focus a Chrome profile and tab group
-func (s *BrowserProfileService) FocusTabGroupViaCompanion(profileKey, groupName, tabID, defaultURL string, groupTabUrls []string) (map[string]interface{}, error) {
+func (s *BrowserProfileService) FocusTabGroupViaCompanion(profileKey, groupName, tabID, defaultURL string, groupTabUrls []string, tabMode string, workerCount int, reuseSessionTabs bool, force bool) (map[string]interface{}, error) {
 	payload := map[string]interface{}{
-		"profile_key":    profileKey,
-		"group_name":     groupName,
-		"tab_id":         tabID,
-		"url":            defaultURL,
-		"group_tab_urls": groupTabUrls,
+		"profile_key":        profileKey,
+		"group_name":         groupName,
+		"tab_id":             tabID,
+		"url":                defaultURL,
+		"group_tab_urls":     groupTabUrls,
+		"tab_mode":           tabMode,
+		"worker_count":       workerCount,
+		"reuse_session_tabs": reuseSessionTabs,
+		"force":              force,
 	}
 	bodyBytes, err := json.Marshal(payload)
 	if err != nil {
