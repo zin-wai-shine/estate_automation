@@ -4131,6 +4131,14 @@ export const FacebookWorkflowCanvas = forwardRef<
     isEditable?: boolean;
     boxId?: string;
   } | null>(null);
+
+  // Mutually exclusive slide-over sidebars: when opening Prompt Viewer/Editor, close setting sideboxes
+  useEffect(() => {
+    if (viewingPromptTemplate) {
+      setShowGoogleSheetSettingsSidebox(false);
+      setShowFBHeroSettingsSidebox(false);
+    }
+  }, [viewingPromptTemplate]);
   const [copiedPromptId, setCopiedPromptId] = useState<string | null>(null);
   const [isViewerPromptCopied, setIsViewerPromptCopied] = useState(false);
 
@@ -4153,6 +4161,18 @@ export const FacebookWorkflowCanvas = forwardRef<
           e.stopImmediatePropagation();
           e.stopPropagation();
           setViewingPromptTemplate(null);
+          return;
+        }
+        if (showGoogleSheetSettingsSidebox) {
+          e.stopImmediatePropagation();
+          e.stopPropagation();
+          setShowGoogleSheetSettingsSidebox(false);
+          return;
+        }
+        if (showFBHeroSettingsSidebox) {
+          e.stopImmediatePropagation();
+          e.stopPropagation();
+          setShowFBHeroSettingsSidebox(false);
           return;
         }
         if (deleteConfirmTarget) {
@@ -10387,7 +10407,14 @@ export const FacebookWorkflowCanvas = forwardRef<
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        setShowGoogleSheetSettingsSidebox((prev) => !prev);
+                        if (viewingPromptTemplate) {
+                          setViewingPromptTemplate(null);
+                          setShowFBHeroSettingsSidebox(false);
+                          setShowGoogleSheetSettingsSidebox(true);
+                        } else {
+                          setShowFBHeroSettingsSidebox(false);
+                          setShowGoogleSheetSettingsSidebox((prev) => !prev);
+                        }
                       }}
                       onMouseDown={(e) => e.stopPropagation()}
                       title="Google Sheet & AI Agent Settings (Spreadsheet, Credentials, Model, Prompt)"
@@ -10399,13 +10426,13 @@ export const FacebookWorkflowCanvas = forwardRef<
                         width: '28px',
                         height: '28px',
                         borderRadius: '6px',
-                        border: showGoogleSheetSettingsSidebox
+                        border: showGoogleSheetSettingsSidebox && !viewingPromptTemplate
                           ? '1px solid #0F9D58'
                           : isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                        backgroundColor: showGoogleSheetSettingsSidebox
+                        backgroundColor: showGoogleSheetSettingsSidebox && !viewingPromptTemplate
                           ? 'rgba(15, 157, 88, 0.15)'
                           : isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
-                        color: showGoogleSheetSettingsSidebox ? '#0F9D58' : 'var(--text-secondary)',
+                        color: showGoogleSheetSettingsSidebox && !viewingPromptTemplate ? '#0F9D58' : 'var(--text-secondary)',
                         cursor: 'pointer',
                         flexShrink: 0,
                         transition: 'all 0.15s ease',
@@ -10425,7 +10452,14 @@ export const FacebookWorkflowCanvas = forwardRef<
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          setShowFBHeroSettingsSidebox((prev) => !prev);
+                          if (viewingPromptTemplate) {
+                            setViewingPromptTemplate(null);
+                            setShowGoogleSheetSettingsSidebox(false);
+                            setShowFBHeroSettingsSidebox(true);
+                          } else {
+                            setShowGoogleSheetSettingsSidebox(false);
+                            setShowFBHeroSettingsSidebox((prev) => !prev);
+                          }
                         }}
                         onMouseDown={(e) => e.stopPropagation()}
                         title="FB Hero Settings (Reference Image, Prompt & Condo 1,2,3)"
@@ -13759,7 +13793,7 @@ export const FacebookWorkflowCanvas = forwardRef<
       {currentModalAIBox && isGoogleSheetBox(currentModalAIBox) && (
         <GoogleSheetSettingsSidebox
           key={currentModalAIBox.id}
-          isOpen={showGoogleSheetSettingsSidebox}
+          isOpen={showGoogleSheetSettingsSidebox && !viewingPromptTemplate}
           onClose={() => setShowGoogleSheetSettingsSidebox(false)}
           isDark={isDark}
           boxConfig={currentModalAIBox}
