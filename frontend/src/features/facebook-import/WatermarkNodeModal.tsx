@@ -202,9 +202,8 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
           const map: Record<number, string> = {};
           downloaded.forEach((img) => {
             const pos = img.position || 1;
-            const pos0 = pos - 1;
+            const pos0 = pos - 1; // 0-based index key
             map[pos0] = img.url;
-            map[pos] = img.url;
           });
           setCompanionEnhanced((prev) => ({ ...prev, ...map }));
         }
@@ -263,10 +262,8 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
         if (effectiveImageList && effectiveImageList.length > 0) {
           effectiveImageList.forEach((img, idx) => {
             const photoNum = typeof img.index === 'number' && img.index > 0 ? img.index : idx + 1;
-            const enhUrl =
-              mergedEnhancedPhotos[idx] ||
-              mergedEnhancedPhotos[photoNum] ||
-              mergedEnhancedPhotos[photoNum - 1];
+            // Use strictly 0-based index key (idx) to match companion mapping
+            const enhUrl = mergedEnhancedPhotos[idx];
 
             const fallbackUrl = img.stored_url
               ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)

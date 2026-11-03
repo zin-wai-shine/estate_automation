@@ -1276,9 +1276,8 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
           if (onEnhancedPhotosUpdate) {
             const map: Record<number, string> = {};
             enhanced.forEach((img) => {
-              const pos0 = (img.position || 1) - 1;
+              const pos0 = (img.position || 1) - 1; // 0-based index key
               map[pos0] = img.url;
-              map[img.position || 1] = img.url;
             });
             onEnhancedPhotosUpdate(map);
           }
