@@ -741,6 +741,19 @@ func GenerateUniqueCode(pattern string) string {
 	return result
 }
 
+// Helper to detect if a string contains non-English/non-Latin scripts (e.g. Thai, Burmese, Chinese)
+func containsNonEnglishScript(s string) bool {
+	for _, r := range s {
+		// Thai: 0x0E00 - 0x0E7F
+		// Myanmar: 0x1000 - 0x109F
+		// CJK: 0x4E00 - 0x9FFF, 0x3040 - 0x30FF
+		if (r >= 0x0E00 && r <= 0x0E7F) || (r >= 0x1000 && r <= 0x109F) || (r >= 0x4E00 && r <= 0x9FFF) || (r >= 0x3040 && r <= 0x30FF) {
+			return true
+		}
+	}
+	return false
+}
+
 // PrepareDataWithAI prompts Gemini or OpenAI to extract data matching the sheet's exact headers.
 func (s *GoogleSheetsService) PrepareDataWithAI(
 	ctx context.Context,
@@ -803,7 +816,14 @@ Guidelines:
 6. Put any personal names, agent/owner names, phone numbers, Line ID, or contact details into "Contact Info" instead.
 7. If an image or media column exists, put a summary or the first photo URL if available.
 8. If a field cannot be determined from the listing content or link, use an empty string "" or "N/A".
-9. Do NOT include markdown blocks or any conversational text outside of the JSON object.
+9. MANDATORY 100%% ENGLISH TRANSLATION:
+   - EVERY single value in the JSON output MUST be in English. ALL words, text, locations, transit stations, names, specifications, and notes MUST be in English.
+   - NEVER output Thai, Myanmar, Chinese, or any non-English script anywhere in the values (except preserving the exact original web URL as-is in the link column).
+   - For BTS/MRT/Transit columns: MUST translate station names to English (e.g., "BTS ปุณณวิถี" -> "BTS Punnawithi", "BTS อุดมสุข" -> "BTS Udom Suk", "MRT เพชรบุรี" -> "MRT Phetchaburi", "ใกล้ BTS ทองหล่อ" -> "Near BTS Thong Lo").
+   - For Contact Info column: Translate and transliterate Thai/foreign names and words to Romanized English (e.g., "คุณ กิตติศักดิ์" -> "Khun Kittisak", "โทร" -> "Tel:", "ไลน์" -> "Line:").
+   - For Project / Condo Name: Output the English project name (e.g., "Elio Del Ray", "The Sky Sukhumvit").
+   - For Room Type, Floor, Price, Features: All must be English (e.g., "1 Bed", "Floor 1", "20,000 THB").
+10. Do NOT include markdown blocks or any conversational text outside of the JSON object.
 %s`, headersList, condoName, strings.TrimSpace(postURL), len(images), activeCodeGuidance, templateGuidance, customInstructions)
 
 	aiSvc := NewGoogleAIService()
@@ -841,6 +861,71 @@ Guidelines:
 	var mappedData map[string]interface{}
 	if err := json.Unmarshal([]byte(cleanJSON), &mappedData); err != nil {
 		return nil, nil, fmt.Errorf("failed to parse AI JSON response: %w (raw response: %s)", err, cleanJSON)
+	}
+
+	// Post-processing safeguard: Ensure 100% English translation on all mapped fields
+	hasNonEnglish := false
+	fieldsToTranslate := make(map[string]string)
+	for k, v := range mappedData {
+		lowerK := strings.ToLower(k)
+		if strings.Contains(lowerK, "link") || strings.Contains(lowerK, "url") || strings.Contains(lowerK, "source") || lowerK == "code" {
+			continue
+		}
+		if vStr, ok := v.(string); ok && containsNonEnglishScript(vStr) {
+			hasNonEnglish = true
+			fieldsToTranslate[k] = vStr
+		}
+	}
+
+	if hasNonEnglish && len(fieldsToTranslate) > 0 {
+		log.Printf("[GoogleSheets] Detected non-English text in %d fields, translating to English: %v", len(fieldsToTranslate), fieldsToTranslate)
+		transJSONBytes, _ := json.Marshal(fieldsToTranslate)
+		transPrompt := fmt.Sprintf(`You are an expert real estate translator and Romanization engine.
+Translate or Romanize/transliterate ALL non-English text (Thai, Burmese, etc.) in the following JSON into clean, professional English.
+Rules:
+1. BTS / MRT / Transit stations MUST be translated to official English (e.g., "BTS ปุณณวิถี" -> "BTS Punnawithi", "BTS อุดมสุข" -> "BTS Udom Suk", "MRT สุขุมวิท" -> "MRT Sukhumvit", "ใกล้ BTS" -> "Near BTS").
+2. Personal and contact names must be transliterated into Romanized English (e.g., "คุณ กิตติศักดิ์" -> "Khun Kittisak", "โทร" -> "Tel:", "ไลน์" -> "Line:").
+3. Condo / Project names and room specs must be in clean English.
+4. Return ONLY a valid JSON object with the exact same keys containing the English translations. No explanation, no markdown backticks.
+
+Input JSON:
+%s`, string(transJSONBytes))
+
+		var transResult string
+		var transErr error
+		if selectedProvider == "openai" {
+			transResult, transErr = aiSvc.GenerateContentWithOpenAI(transPrompt, "", "", selectedModel)
+		} else {
+			transResult, transErr = aiSvc.GenerateContent(transPrompt, "", "", selectedModel)
+			if transErr != nil {
+				transResult, transErr = aiSvc.GenerateContentWithOpenAI(transPrompt, "", "", "gpt-4o-mini")
+			}
+		}
+
+		if transErr == nil {
+			cleanTrans := strings.TrimSpace(transResult)
+			if strings.HasPrefix(cleanTrans, "```") {
+				lines := strings.Split(cleanTrans, "\n")
+				if len(lines) > 2 {
+					cleanTrans = strings.Join(lines[1:len(lines)-1], "\n")
+				}
+			}
+			cleanTrans = strings.TrimSpace(cleanTrans)
+			sI := strings.Index(cleanTrans, "{")
+			eI := strings.LastIndex(cleanTrans, "}")
+			if sI != -1 && eI != -1 && eI > sI {
+				cleanTrans = cleanTrans[sI : eI+1]
+			}
+			var translatedFields map[string]interface{}
+			if err := json.Unmarshal([]byte(cleanTrans), &translatedFields); err == nil {
+				for tk, tv := range translatedFields {
+					mappedData[tk] = tv
+				}
+				log.Printf("[GoogleSheets] Successfully translated non-English fields into English: %v", translatedFields)
+			}
+		} else {
+			log.Printf("[GoogleSheets] Translation pass failed: %v", transErr)
+		}
 	}
 
 	// Build row values strictly in the order of the headers

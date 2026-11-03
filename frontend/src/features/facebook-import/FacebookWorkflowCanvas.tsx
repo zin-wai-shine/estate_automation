@@ -114,6 +114,12 @@ Extraction & Analysis Rules:
    - If it does not include owner or is posted by an agent/co-agent, the value must be "Agent".
 7. Contact Information:
    - Contact Info: Extract phone numbers, Line ID, WhatsApp, email, or agent/owner names into the contact columns.
+8. Mandatory 100% English Translation:
+   - EVERY single value in the extracted JSON must be in English. All words, locations, transit stations, names, specifications, and notes must be in English.
+   - Never output Thai, Myanmar, Chinese, or any non-English language scripts in any column (except preserving original web URLs as-is in the link column).
+   - BTS/MRT stations must be in English (e.g. "BTS ปุณณวิถี" -> "BTS Punnawithi", "BTS อุดมสุข" -> "BTS Udom Suk", "MRT สุขุมวิท" -> "MRT Sukhumvit", "ใกล้ BTS ทองหล่อ" -> "Near BTS Thong Lo").
+   - Contact Info names and titles must be in Romanized English (e.g. "คุณ กิตติศักดิ์" -> "Khun Kittisak", "โทร" -> "Tel:", "ไลน์" -> "Line:").
+   - Condo/Project names must be in English (e.g. "Elio Del Ray", "The Sky Sukhumvit").
 
 Output Format:
 - Return ONLY a valid, parseable JSON object with keys corresponding to the sheet column headers.
