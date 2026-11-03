@@ -3776,30 +3776,33 @@ export const CreateWorkflowView: React.FC = () => {
 
             <div
               style={{
-                width: '1px',
-                height: '18px',
-                backgroundColor: isDark ? '#30363D' : '#CBD5E1',
-                flexShrink: 0,
-              }}
-            />
-
-            <div
-              style={{
-                width: '28px',
-                height: '28px',
-                borderRadius: '6px',
-                backgroundColor: isDark ? 'rgba(139, 92, 246, 0.15)' : 'rgba(139, 92, 246, 0.1)',
-                color: isDark ? '#A78BFA' : '#7C3AED',
-                display: 'flex',
+                height: '32px',
+                padding: '0 6px 0 4px',
+                display: 'inline-flex',
                 alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '14px',
-                flexShrink: 0,
+                gap: '6px',
+                borderRadius: '6px',
+                backgroundColor: isDark ? '#21262D' : '#F1F5F9',
+                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                boxSizing: 'border-box',
               }}
             >
-              <FiGitBranch />
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', position: 'relative' }}>
+              <div
+                style={{
+                  width: '24px',
+                  height: '24px',
+                  borderRadius: '5px',
+                  backgroundColor: isDark ? 'rgba(139, 92, 246, 0.18)' : 'rgba(139, 92, 246, 0.12)',
+                  color: isDark ? '#A78BFA' : '#7C3AED',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '13px',
+                  flexShrink: 0,
+                }}
+              >
+                <FiGitBranch />
+              </div>
               <input
                 type="text"
                 value={modalFormatName}
@@ -3814,32 +3817,15 @@ export const CreateWorkflowView: React.FC = () => {
                 title="Click to rename workflow"
                 style={{
                   backgroundColor: 'transparent',
-                  border: isDark ? '1px solid transparent' : '1px solid transparent',
-                  borderRadius: '6px',
+                  border: 'none',
                   color: 'var(--text-primary)',
-                  fontSize: '0.9375rem',
+                  fontSize: '0.8125rem',
                   fontWeight: 600,
-                  padding: '4px 8px',
+                  padding: '2px 4px',
                   outline: 'none',
-                  minWidth: '220px',
-                  maxWidth: '380px',
+                  minWidth: '180px',
+                  maxWidth: '320px',
                   transition: 'all 0.15s ease',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = isDark ? '#30363D' : '#CBD5E1';
-                }}
-                onMouseLeave={(e) => {
-                  if (document.activeElement !== e.currentTarget) {
-                    e.currentTarget.style.borderColor = 'transparent';
-                  }
-                }}
-                onFocus={(e) => {
-                  e.currentTarget.style.borderColor = '#3B82F6';
-                  e.currentTarget.style.backgroundColor = isDark ? '#161B22' : '#FFFFFF';
-                }}
-                onBlurCapture={(e) => {
-                  e.currentTarget.style.borderColor = 'transparent';
-                  e.currentTarget.style.backgroundColor = 'transparent';
                 }}
               />
               <button
@@ -3858,7 +3844,7 @@ export const CreateWorkflowView: React.FC = () => {
                   alignItems: 'center',
                   padding: '4px',
                   borderRadius: '4px',
-                  opacity: 0.6,
+                  opacity: 0.7,
                 }}
               >
                 <FiEdit2 size={12} />

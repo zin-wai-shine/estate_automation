@@ -258,8 +258,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         style={{
           height: '56px',
           width: '100%',
-          backgroundColor: 'var(--bg-secondary)',
-          borderBottom: '1px solid var(--border-color)',
+          backgroundColor: isCurrentlyInCanvas ? 'transparent' : 'var(--bg-secondary)',
+          borderBottom: isCurrentlyInCanvas ? 'none' : '1px solid var(--border-color)',
           display: 'flex',
           alignItems: 'center',
           position: 'fixed',
@@ -268,8 +268,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
           right: 0,
           zIndex: 40,
           padding: isMobile ? '0 0.875rem' : 0,
-          pointerEvents: isCanvasMode ? 'none' : 'auto',
-          boxShadow: isCanvasMode ? 'none' : undefined,
+          pointerEvents: isCurrentlyInCanvas ? 'none' : 'auto',
+          boxShadow: isCurrentlyInCanvas ? 'none' : undefined,
         }}
       >
         {isMobile ? (
@@ -356,7 +356,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                   display: 'flex',
                   alignItems: 'center',
                   paddingLeft: '0.875rem',
-                  borderBottom: '1px solid var(--border-color)',
+                  borderBottom: isCurrentlyInCanvas ? 'none' : '1px solid var(--border-color)',
                   backgroundColor: 'transparent',
                   pointerEvents: 'auto',
                   flexShrink: 0,
@@ -405,7 +405,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                 padding: '0 1.25rem',
                 gap: '1rem',
                 position: 'relative',
-                borderBottom: '1px solid var(--border-color)',
+                borderBottom: isCurrentlyInCanvas ? 'none' : '1px solid var(--border-color)',
                 boxSizing: 'border-box',
                 pointerEvents: 'none',
               }}
@@ -780,7 +780,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         style={{
           flex: 1,
           marginLeft: isMobile ? 0 : currentSidebarWidth,
-          marginTop: isCanvasMode ? 0 : '56px',
+          marginTop: isCurrentlyInCanvas ? 0 : '56px',
           display: 'flex',
           flexDirection: 'column',
           minWidth: 0,
@@ -790,15 +790,15 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         <main
           style={{
             flex: 1,
-            padding: isCanvasMode ? 0 : (isMobile ? '0.875rem 0.75rem' : '1.25rem'),
-            maxWidth: isCanvasMode ? '100%' : '1400px',
+            padding: isCurrentlyInCanvas ? 0 : (isMobile ? '0.875rem 0.75rem' : '1.25rem'),
+            maxWidth: isCurrentlyInCanvas ? '100%' : '1400px',
             width: '100%',
             margin: '0 auto',
             boxSizing: 'border-box',
-            height: isCanvasMode ? '100vh' : 'auto',
-            display: isCanvasMode ? 'flex' : 'block',
-            flexDirection: isCanvasMode ? 'column' : 'initial',
-            overflow: isCanvasMode ? 'hidden' : 'visible',
+            height: isCurrentlyInCanvas ? '100vh' : 'auto',
+            display: isCurrentlyInCanvas ? 'flex' : 'block',
+            flexDirection: isCurrentlyInCanvas ? 'column' : 'initial',
+            overflow: isCurrentlyInCanvas ? 'hidden' : 'visible',
           }}
         >
           {children}
