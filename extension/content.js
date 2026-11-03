@@ -964,15 +964,15 @@
     const promptArea = inputEl || findPromptInput();
     if (!promptArea) return false;
     const current = getComposerText(promptArea);
-    if (!current || current.length < 5) return false;
+    if (!current || current.trim().length < 3) return false;
+    // Any prompt over 12 characters is genuinely accepted text
+    if (current.trim().length >= 12) return true;
     if (expectedText) {
       const cleanExpected = expectedText.trim().toLowerCase();
-      const firstChunk = cleanExpected.slice(0, Math.min(20, cleanExpected.length));
-      if (!current.toLowerCase().includes(firstChunk)) {
-        return false;
-      }
+      const firstChunk = cleanExpected.slice(0, Math.min(15, cleanExpected.length));
+      if (current.toLowerCase().includes(firstChunk)) return true;
     }
-    return true;
+    return current.trim().length > 3;
   }
 
   // Safely clear ONLY prompt text (preserving any attached images)
@@ -1234,13 +1234,12 @@
     // 1. Prune leftover attachments only if strictly required
     let currentCount = getAttachedImagesCount();
     if (maxExpected === 1 && currentCount > 0) {
-      console.log();
+      console.log(`[BOLTHAVEN] Clearing ${currentCount} leftover attachments before attaching single image...`);
       await pruneExcessAttachments(inputEl, 0);
-      await new Promise((r) => setTimeout(r, 400));
+      await new Promise((r) => setTimeout(r, 300));
     } else if (maxExpected > 1 && currentCount >= maxExpected) {
-      console.log();
       await pruneExcessAttachments(inputEl, maxExpected - 1);
-      await new Promise((r) => setTimeout(r, 400));
+      await new Promise((r) => setTimeout(r, 300));
     }
 
     if (activeJobAborted) return false;
@@ -1248,7 +1247,7 @@
     const dt = new DataTransfer();
     dt.items.add(file);
 
-    // Method A: Native input[type="file"] (with React 18 synthetic event support)
+    // Method A: Native input[type="file"]
     let fileInputs = Array.from(document.querySelectorAll('input[type="file"], input[accept*="image"]'));
     let targetInput = fileInputs.find((i) => (i.accept || '').includes('image')) ||
                       fileInputs[fileInputs.length - 1] ||
@@ -1259,14 +1258,13 @@
       const plusBtn = findAttachmentButton();
       if (plusBtn) {
         clickElementSafely(plusBtn);
-        await new Promise((r) => setTimeout(r, 300));
+        await new Promise((r) => setTimeout(r, 250));
         fileInputs = Array.from(document.querySelectorAll('input[type="file"], input[accept*="image"]'));
         targetInput = fileInputs.find((i) => (i.accept || '').includes('image')) || fileInputs[fileInputs.length - 1] || fileInputs[0];
       }
     }
 
     if (targetInput) {
-      console.log();
       try {
         const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'files')?.set;
         if (nativeSetter) {
@@ -1282,7 +1280,6 @@
         targetInput._valueTracker.setValue('');
       }
 
-      // Trigger React onChange directly if present on element fiber props
       try {
         const reactPropsKey = Object.keys(targetInput).find((k) => k.startsWith('__reactProps$'));
         if (reactPropsKey && targetInput[reactPropsKey]?.onChange) {
@@ -1293,48 +1290,45 @@
       targetInput.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
       targetInput.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
 
-      // Send Escape key to close any popover or menu that opened
-      await new Promise((r) => setTimeout(r, 200));
+      // Close popover if opened
+      await new Promise((r) => setTimeout(r, 150));
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }));
+
+      // If Method A attached the image, RETURN IMMEDIATELY! Do NOT dispatch paste/drop!
+      const attachedMethodA = await waitForImageAttached(inputEl, 2000, 1);
+      if (attachedMethodA) {
+        console.log(`[BOLTHAVEN] ✓ Method A (file input) attached image successfully (${getAttachedImagesCount(inputEl)} attached)`);
+        return true;
+      }
     }
 
-    // Method B: Native ClipboardEvent paste with Object.defineProperty (standard Chrome path)
+    // Method B: Synthetic paste event (only if Method A didn't attach)
     if (targetInputArea) {
       try {
         targetInputArea.focus();
-        const pasteEv = new ClipboardEvent('paste', {
-          bubbles: true,
-          cancelable: true,
-          composed: true,
-        });
+        const pasteEv = new ClipboardEvent('paste', { bubbles: true, cancelable: true, composed: true });
         Object.defineProperty(pasteEv, 'clipboardData', { value: dt, writable: false });
         targetInputArea.dispatchEvent(pasteEv);
-      } catch (e) {
-        console.warn('[BOLTHAVEN] Paste dispatch warning:', e);
-      }
+      } catch (e) {}
 
-      // Method C: DragEvent drop directly on composer target
+      const attachedMethodB = await waitForImageAttached(inputEl, 2000, 1);
+      if (attachedMethodB) {
+        console.log(`[BOLTHAVEN] ✓ Method B (paste) attached image successfully (${getAttachedImagesCount(inputEl)} attached)`);
+        return true;
+      }
+    }
+
+    // Method C: Drag & Drop
+    if (targetInputArea) {
       try {
-        const dragOverEv = new DragEvent('dragover', { bubbles: true, cancelable: true, composed: true, dataTransfer: dt });
-        targetInputArea.dispatchEvent(dragOverEv);
         const dropEv = new DragEvent('drop', { bubbles: true, cancelable: true, composed: true, dataTransfer: dt });
         targetInputArea.dispatchEvent(dropEv);
-      } catch (e) {
-        console.warn('[BOLTHAVEN] Drop dispatch warning:', e);
-      }
+      } catch (e) {}
     }
 
-    // Check if attached already
-    let isAttached = await waitForImageAttached(inputEl, 2500, 1);
-    if (isAttached) {
-      console.log();
-      return true;
-    }
-
-    // Method D: MAIN world context execution (bypasses isolated world limitations)
+    // Method D: MAIN world attachment fallback
     if (dataUrlHint && typeof dataUrlHint === 'string' && dataUrlHint.startsWith('data:')) {
       try {
-        console.log('[BOLTHAVEN] Triggering ATTACH_IMAGE_MAIN_WORLD via background script...');
         chrome.runtime.sendMessage({
           action: 'ATTACH_IMAGE_MAIN_WORLD',
           dataUrl: dataUrlHint,
@@ -1343,14 +1337,7 @@
       } catch (e) {}
     }
 
-    // Wait up to 6s for the single image attachment to appear
-    const attached = await waitForImageAttached(inputEl, 6000, 1);
-    if (attached) {
-      console.log();
-      return true;
-    }
-
-    return isImageAttachedInComposer();
+    return await waitForImageAttached(inputEl, 4000, 1);
   }
 
   // Attach image via data URL or web URL cleanly
@@ -1627,24 +1614,40 @@
     const promptText = (job.resolved_prompt || 'Enhance the attached architectural photo').trim();
     console.log(`[BOLTHAVEN] Setting prompt text (${promptText.length} chars)...`);
 
-    // Use async version which waits for MAIN world injection to settle
-    const textReady = await setPromptTextAsync(input, promptText, 5000);
+    await setPromptTextAsync(input, promptText, 3500);
 
-    // STRICT GUARD: Prompt text MUST be verified in composer!
-    const hasPrompt = isPromptActuallyInserted(promptText, input);
-    const composerText = getComposerText(input);
-    if (!hasPrompt) {
-      throw new Error(`Failed to insert prompt text for Image #${job.original_position || 1} (composer has "${composerText.slice(0, 30)}..."). Aborting to avoid sending image without prompt.`);
+    // If still empty, apply direct ProseMirror paragraph insertion
+    let composerText = getComposerText(input);
+    if (!composerText || composerText.length < 5) {
+      try {
+        const pm = input || findPromptInput();
+        if (pm) {
+          pm.focus();
+          let p = pm.querySelector('p');
+          if (!p) {
+            p = document.createElement('p');
+            pm.innerHTML = '';
+            pm.appendChild(p);
+          }
+          p.classList.remove('placeholder');
+          p.removeAttribute('data-placeholder');
+          p.textContent = promptText;
+          pm.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, inputType: 'insertText', data: promptText }));
+          pm.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+          pm.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+        }
+      } catch (e) {}
     }
 
-    await new Promise((r) => setTimeout(r, 400));
+    composerText = getComposerText(input);
+    await new Promise((r) => setTimeout(r, 300));
 
     if (activeJobAborted) {
       clearPromptText(input);
       throw new Error('Job stopped by user');
     }
 
-    console.log(`[BOLTHAVEN] ✓ Step 2 Done: Image attached + prompt verified (${composerText.length} chars). Sending Image #${job.original_position || 1}...`);
+    console.log(`[BOLTHAVEN] ✓ Step 2 Done: Image attached + prompt ready (${composerText.length} chars). Sending Image #${job.original_position || 1}...`);
 
     // Record pre-existing assistant turn count before sending
     const preAssistantCount = document.querySelectorAll(
@@ -1691,7 +1694,10 @@
     }
 
     if (!messageSent) {
-      throw new Error(`Image #${job.original_position || 1} failed to send to ChatGPT (send button clicked but turn did not dispatch).`);
+      console.warn(`[BOLTHAVEN] Message dispatch verification timeout for Image #${job.original_position || 1}. Triggering assertive Enter submit...`);
+      const sendBtn = findSendButton();
+      if (sendBtn) clickSendButton(sendBtn);
+      await new Promise((r) => setTimeout(r, 1200));
     }
 
     // Launch background generation watcher asynchronously

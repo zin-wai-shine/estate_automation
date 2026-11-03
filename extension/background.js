@@ -110,6 +110,7 @@ async function stopAllExtensionAutomation() {
   twoStageAborted = true;
   automation.isRunning = false;
   automation.queue = [];
+  setupMutex = Promise.resolve();
 
   for (const [jobId, resolver] of pendingJobGenerations.entries()) {
     try {
@@ -271,10 +272,18 @@ async function reportJobFailed(jobId, reason) {
 // next tab gets full focus. All tabs then generate concurrently in parallel!
 let setupMutex = Promise.resolve();
 
-function acquireAttachmentMutex() {
+function acquireAttachmentMutex(timeoutMs = 18000) {
   let release;
+  let timer;
   const newLock = new Promise((resolve) => {
-    release = resolve;
+    release = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    timer = setTimeout(() => {
+      console.warn('[BOLTHAVEN EXT] Attachment mutex auto-released after timeout');
+      resolve();
+    }, timeoutMs);
   });
   const prevLock = setupMutex;
   setupMutex = newLock;
@@ -695,6 +704,7 @@ async function startAutomation(payload) {
 
   const mySessionId = ++automationSessionId;
   twoStageAborted = false;
+  setupMutex = Promise.resolve();
 
   // 1. Immediately ensure the worker tabs are open, organized in Tab Group, and focused
   console.log(`[BOLTHAVEN EXT] Ensuring Tab Group "${groupName || 'Enhance IMG'}" is active...`);
@@ -1357,6 +1367,7 @@ async function executeTwoStageStaging(payload) {
   const requiredTabCount = isDirectMode ? 1 : Math.max(1, parseInt(reqWorkerCount, 10) || 2);
   const mySessionId = ++automationSessionId;
   twoStageAborted = false;
+  setupMutex = Promise.resolve();
   const isTwoStageStopped = () => twoStageAborted || mySessionId !== automationSessionId;
 
   console.log(
