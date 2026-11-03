@@ -12,19 +12,9 @@ import {
   FiInfo,
 } from 'react-icons/fi';
 import { SiGooglesheets } from 'react-icons/si';
-import { Select } from '../../components/ui/Select';
-import { AI_ENGINE_MODEL_GROUPS } from './aiModelUtils';
-import { DEFAULT_GOOGLE_SHEET_PROMPT, type DynamicAIBoxConfig } from './FacebookWorkflowCanvas';
+import { type DynamicAIBoxConfig } from './FacebookWorkflowCanvas';
 
 const DEFAULT_SERVICE_ACCOUNT_EMAIL = 'bolthaven-sheets@super-realestate-488219.iam.gserviceaccount.com';
-
-const PRESET_INSTRUCTION_SNIPPETS = [
-  { label: '+ Clean Condo Name', text: 'Extract clean condo project name without marketing words or emojis.' },
-  { label: '+ Format Price THB', text: 'Format price as numeric integer with THB currency symbol (e.g. 25,000 THB).' },
-  { label: '+ BTS/MRT Distance', text: 'Extract nearest BTS or MRT station and walk distance or minutes.' },
-  { label: '+ Phone & Line ID', text: 'Extract agent phone number and Line ID into contact columns.' },
-  { label: '+ Area in SQM', text: 'Format unit size in square meters (SQM) as clean numeric value.' },
-];
 
 interface GoogleSheetSettingsSideboxProps {
   isOpen: boolean;
@@ -32,13 +22,9 @@ interface GoogleSheetSettingsSideboxProps {
   isDark: boolean;
   boxConfig: DynamicAIBoxConfig;
   onUpdateBoxConfig: (updated: Partial<DynamicAIBoxConfig>) => void;
-  availablePrompts?: Array<{ id: string | number; name: string; category?: string; instructions?: string; templateText?: string }>;
   onLoadHeaders?: () => Promise<void>;
   loadingHeaders?: boolean;
   onUrlChange?: (newUrl: string, delay?: number) => void;
-  onTestGoogleSheetSync?: () => void;
-  testingSheetSync?: boolean;
-  sheetTestResult?: any;
 }
 
 export const GoogleSheetSettingsSidebox: React.FC<GoogleSheetSettingsSideboxProps> = ({
@@ -47,13 +33,9 @@ export const GoogleSheetSettingsSidebox: React.FC<GoogleSheetSettingsSideboxProp
   isDark,
   boxConfig,
   onUpdateBoxConfig,
-  availablePrompts = [],
   onLoadHeaders,
   loadingHeaders = false,
   onUrlChange,
-  onTestGoogleSheetSync,
-  testingSheetSync = false,
-  sheetTestResult,
 }) => {
   const [copiedEmail, setCopiedEmail] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -64,9 +46,6 @@ export const GoogleSheetSettingsSidebox: React.FC<GoogleSheetSettingsSideboxProp
 
   const currentEmail = boxConfig.googleServiceAccountEmail || DEFAULT_SERVICE_ACCOUNT_EMAIL;
   const isCustomKey = Boolean(boxConfig.googleServiceAccountJson && boxConfig.googleServiceAccountEmail);
-  const selectedModel = boxConfig.model || (boxConfig.provider === 'openai' ? 'gpt-4o' : 'gemini-2.5-flash');
-  const selectedTemplateId = boxConfig.templateId || '';
-  const currentAiPrompt = boxConfig.googleSheetAiPrompt ?? boxConfig.customPrompt ?? '';
 
   const handleCopyEmail = () => {
     navigator.clipboard.writeText(currentEmail);
@@ -120,47 +99,6 @@ export const GoogleSheetSettingsSidebox: React.FC<GoogleSheetSettingsSideboxProp
     setUploadError(null);
   };
 
-  const handleModelChange = (newModel: string) => {
-    const isGoogle = AI_ENGINE_MODEL_GROUPS[0]?.options.some((o) => o.value === newModel);
-    onUpdateBoxConfig({
-      model: newModel,
-      provider: isGoogle ? 'google_ai' : 'openai',
-    });
-  };
-
-  const handleTemplateChange = (templateId: string) => {
-    if (templateId === 'custom') {
-      const promptText = boxConfig.customPrompt?.trim() || boxConfig.googleSheetAiPrompt?.trim() || DEFAULT_GOOGLE_SHEET_PROMPT;
-      onUpdateBoxConfig({
-        templateId: 'custom',
-        customPrompt: promptText,
-        googleSheetAiPrompt: promptText,
-      });
-      return;
-    }
-    const match = availablePrompts.find((p) => String(p.id) === templateId);
-    onUpdateBoxConfig({
-      templateId,
-      templateText: match?.templateText || match?.instructions || '',
-    });
-  };
-
-  const handleAppendInstruction = (snippet: string) => {
-    const updated = currentAiPrompt ? `${currentAiPrompt.trim()}\n- ${snippet}` : `- ${snippet}`;
-    onUpdateBoxConfig({
-      googleSheetAiPrompt: updated,
-      customPrompt: updated,
-    });
-  };
-
-  const promptOptions = [
-    { value: '', label: 'None (Default Extraction)' },
-    { value: 'custom', label: 'Manual Input (Custom Prompt)' },
-    ...availablePrompts.map((p) => ({
-      value: String(p.id),
-      label: p.name,
-    })),
-  ];
 
   return (
     <div
@@ -229,10 +167,10 @@ export const GoogleSheetSettingsSidebox: React.FC<GoogleSheetSettingsSideboxProp
                 textOverflow: 'ellipsis',
               }}
             >
-              Google Sheet & AI Agent Settings
+              Google Sheet Connection & Credentials
             </div>
             <div style={{ fontSize: '0.6875rem', color: isDark ? '#8B949E' : '#64748B', marginTop: '2px', fontWeight: 500 }}>
-              Custom credentials, AI extraction model, and mapping rules
+              Spreadsheet destination and Google Cloud service account key
             </div>
           </div>
         </div>
@@ -611,155 +549,6 @@ export const GoogleSheetSettingsSidebox: React.FC<GoogleSheetSettingsSideboxProp
             </div>
           )}
         </div>
-
-        {/* ── 3. AI Extraction Model Selection ───────────────────────────────── */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-          <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
-            AI Engine & Model
-          </label>
-          <Select
-            value={selectedModel}
-            onChange={(val) => handleModelChange(val)}
-            options={AI_ENGINE_MODEL_GROUPS}
-            height="36px"
-            placeholder="Select AI Model..."
-          />
-        </div>
-
-        {/* ── 4. Prompt Template Selection ────────────────────────────────────── */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-          <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
-            Select Prompt Template
-          </label>
-          <Select
-            value={selectedTemplateId}
-            onChange={(val) => handleTemplateChange(val)}
-            options={promptOptions}
-            height="36px"
-            placeholder="Select Prompt Template..."
-          />
-        </div>
-
-        {/* ── 5. AI Agent Prompt / Mapping Instructions ──────────────────────── */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
-          <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
-            AI Instructions for Sheet Mapping
-          </label>
-
-          {/* Helper snippet chips */}
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-            {PRESET_INSTRUCTION_SNIPPETS.map((snippet, idx) => (
-              <button
-                key={idx}
-                type="button"
-                onClick={() => handleAppendInstruction(snippet.text)}
-                style={{
-                  fontSize: '0.5625rem',
-                  fontWeight: 600,
-                  padding: '2px 7px',
-                  borderRadius: '10px',
-                  border: '1px solid var(--border-color)',
-                  backgroundColor: isDark ? '#21262D' : '#FFFFFF',
-                  color: 'var(--text-primary)',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease',
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#0F9D58'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border-color)'; }}
-              >
-                {snippet.label}
-              </button>
-            ))}
-          </div>
-
-          <textarea
-            rows={4}
-            value={currentAiPrompt}
-            onChange={(e) => {
-              onUpdateBoxConfig({
-                googleSheetAiPrompt: e.target.value,
-                customPrompt: e.target.value,
-              });
-            }}
-            placeholder="e.g. Map price with THB currency symbol, clean condo project name, format bedrooms as integer, extract BTS station name..."
-            style={{
-              width: '100%',
-              padding: '0.5rem 0.625rem',
-              borderRadius: '6px',
-              border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-              backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
-              color: 'var(--text-primary)',
-              fontSize: '0.75rem',
-              boxSizing: 'border-box',
-              resize: 'vertical',
-              fontFamily: 'inherit',
-              lineHeight: 1.4,
-            }}
-          />
-        </div>
-
-        {/* Quick Test / Sync Button */}
-        {onTestGoogleSheetSync && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-            <button
-              type="button"
-              disabled={testingSheetSync}
-              onClick={onTestGoogleSheetSync}
-              style={{
-                width: '100%',
-                padding: '0.55rem',
-                borderRadius: '6px',
-                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                backgroundColor: isDark ? '#21262D' : '#F1F5F9',
-                color: 'var(--text-primary)',
-                fontSize: '0.75rem',
-                fontWeight: 600,
-                cursor: testingSheetSync ? 'not-allowed' : 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '6px',
-                transition: 'all 0.15s ease',
-              }}
-              onMouseEnter={(e) => {
-                if (!testingSheetSync) {
-                  e.currentTarget.style.backgroundColor = isDark ? '#30363D' : '#E2E8F0';
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (!testingSheetSync) {
-                  e.currentTarget.style.backgroundColor = isDark ? '#21262D' : '#F1F5F9';
-                }
-              }}
-            >
-              {testingSheetSync ? (
-                'Testing AI Mapping & Row Append...'
-              ) : (
-                <>
-                  <SiGooglesheets size={13} color="#0F9D58" /> Test AI Mapping & Append Test Row
-                </>
-              )}
-            </button>
-
-            {sheetTestResult && (
-              <pre
-                style={{
-                  padding: '0.5rem',
-                  borderRadius: '6px',
-                  backgroundColor: isDark ? '#0D1117' : '#F8FAFC',
-                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                  fontSize: '0.625rem',
-                  color: isDark ? '#E6EDF3' : '#0F172A',
-                  maxHeight: '120px',
-                  overflow: 'auto',
-                  margin: 0,
-                }}
-              >
-                {typeof sheetTestResult === 'string' ? sheetTestResult : JSON.stringify(sheetTestResult, null, 2)}
-              </pre>
-            )}
-          </div>
-        )}
 
         <div style={{ height: '2.5rem' }} />
       </div>

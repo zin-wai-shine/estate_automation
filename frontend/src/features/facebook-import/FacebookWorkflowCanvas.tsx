@@ -13798,13 +13798,9 @@ export const FacebookWorkflowCanvas = forwardRef<
           isDark={isDark}
           boxConfig={currentModalAIBox}
           onUpdateBoxConfig={(updated) => handleUpdateAIBox(currentModalAIBox.id, updated)}
-          availablePrompts={availablePrompts as any}
           onLoadHeaders={() => handleLoadGoogleSheetHeaders(currentModalAIBox)}
           loadingHeaders={loadingSheetHeaders}
           onUrlChange={(newUrl, delay) => handleSheetUrlChange(currentModalAIBox, newUrl, delay)}
-          onTestGoogleSheetSync={() => handleTestGoogleSheetSync(currentModalAIBox)}
-          testingSheetSync={testingSheetSync}
-          sheetTestResult={sheetTestResult}
         />
       )}
 
