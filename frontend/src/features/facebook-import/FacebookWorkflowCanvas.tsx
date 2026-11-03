@@ -68,7 +68,7 @@ import { ExternalBrowserSidebar } from '../browser-processing/ExternalBrowserSid
 import { getPersistedReferenceImage } from '../browser-processing/referenceImageStorage';
 import { FBHeroSettingsSidebox, extractCleanCondoNameFromAiText } from '../browser-processing/FBHeroSettingsSidebox';
 import { GoogleSheetSettingsSidebox } from './GoogleSheetSettingsSidebox';
-import { focusBrowserTabGroup, fetchBrowserProfiles, fetchTabGroups } from '../browser-processing/browserAutomationService';
+import { focusBrowserTabGroup, fetchBrowserProfiles, fetchTabGroups, fetchEnhancedDownloadedImages } from '../browser-processing/browserAutomationService';
 import type { BrowserProfile, BrowserGroupItem } from '../browser-processing/types';
 import { WatermarkNodeModal } from './WatermarkNodeModal';
 import { ToggleSwitch } from '../../components/ui/ToggleSwitch';
@@ -3217,6 +3217,37 @@ export const FacebookWorkflowCanvas = forwardRef<
 
   const [locallyRunningNodeId, setLocallyRunningNodeId] = useState<string | null>(null);
   const [locallyCompletedNodeIds, setLocallyCompletedNodeIds] = useState<string[]>([]);
+  const [companionEnhancedMap, setCompanionEnhancedMap] = useState<Record<number, string>>({});
+
+  useEffect(() => {
+    let isCancelled = false;
+    const pollCompanionEnhanced = async () => {
+      try {
+        const list = await fetchEnhancedDownloadedImages(executionState?.propertyId);
+        if (list && list.length > 0 && !isCancelled) {
+          const map: Record<number, string> = {};
+          list.forEach((img) => {
+            const pos = img.position || 1;
+            const pos0 = pos - 1;
+            map[pos0] = img.url;
+            map[pos] = img.url;
+          });
+          setCompanionEnhancedMap((prev) => ({ ...prev, ...map }));
+        }
+      } catch (e) {}
+    };
+
+    pollCompanionEnhanced();
+    const interval = setInterval(pollCompanionEnhanced, 3500);
+    return () => {
+      isCancelled = true;
+      clearInterval(interval);
+    };
+  }, [executionState?.propertyId]);
+
+  const allEnhancedPhotos = useMemo(() => {
+    return { ...companionEnhancedMap, ...enhancedPhotos };
+  }, [enhancedPhotos, companionEnhancedMap]);
 
   useEffect(() => {
     let timer: any = null;
@@ -3273,6 +3304,19 @@ export const FacebookWorkflowCanvas = forwardRef<
     }
     if (locallyCompletedNodeIds.includes(nodeId)) {
       return 'success';
+    }
+
+    // Auto-complete Enhance node if enhanced images have been downloaded
+    const targetBox = config.aiBoxes?.find((b) => b.id === nodeId);
+    if (targetBox) {
+      const isEnhanceBox =
+        targetBox.tabGroupMode === 'enhance' ||
+        targetBox.processKind === 'enhance_images' ||
+        targetBox.title?.toLowerCase().includes('enhance') ||
+        targetBox.browserGroupName?.toLowerCase().includes('enhance');
+      if (isEnhanceBox && Object.keys(allEnhancedPhotos).length > 0) {
+        return 'success';
+      }
     }
 
     if (!executionState) return 'idle';
@@ -3805,7 +3849,7 @@ export const FacebookWorkflowCanvas = forwardRef<
         }
       } catch (e) { }
     } else if (cropBox.imageSource === 'enhance') {
-      targetImgUrl = enhancedPhotos?.[0] || images?.[0]?.stored_url || images?.[0]?.source_url || '';
+      targetImgUrl = allEnhancedPhotos?.[0] || images?.[0]?.stored_url || images?.[0]?.source_url || '';
     } else if (cropBox.imageSource === 'get_images' || (cropBox.imageSource as string) === 'get-images') {
       targetImgUrl = images?.[0]?.stored_url || images?.[0]?.source_url || '';
     } else {
@@ -3817,7 +3861,7 @@ export const FacebookWorkflowCanvas = forwardRef<
         }
       } catch (e) { }
       if (!targetImgUrl && images && images.length > 0) {
-        targetImgUrl = enhancedPhotos?.[0] || images[0].stored_url || images[0].source_url || '';
+        targetImgUrl = allEnhancedPhotos?.[0] || images[0].stored_url || images[0].source_url || '';
       }
     }
 
@@ -3839,7 +3883,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     return () => {
       isCancelled = true;
     };
-  }, [config.aiBoxes, config.connections, images, enhancedPhotos]);
+  }, [config.aiBoxes, config.connections, images, allEnhancedPhotos]);
 
   const activeCopy: string = useMemo(() => {
     if (outputSelectedCopyKey === 'original') return rawContent || '';
@@ -3905,10 +3949,10 @@ export const FacebookWorkflowCanvas = forwardRef<
 
     (images || []).forEach((img) => {
       const isWatermarked = Boolean(watermarkedPhotos[img.index]);
-      const isEnhanced = Boolean(enhancedPhotos[img.index]);
+      const isEnhanced = Boolean(allEnhancedPhotos[img.index]);
       let finalUrl =
         watermarkedPhotos[img.index] ||
-        enhancedPhotos[img.index] ||
+        allEnhancedPhotos[img.index] ||
         (img.stored_url
           ? img.stored_url.startsWith('http')
             ? img.stored_url
@@ -3930,7 +3974,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     });
 
     return list;
-  }, [images, watermarkedPhotos, enhancedPhotos, combineCropSlices]);
+  }, [images, watermarkedPhotos, allEnhancedPhotos, combineCropSlices]);
 
   const handleOpenLightbox = (indexOrUrl: number | string, galleryType: 'raw' | 'compiled' = 'compiled') => {
     setLightboxGalleryType(galleryType);
@@ -11801,7 +11845,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   : images.map((img, idx) => {
                                     const url =
                                       watermarkedPhotos?.[img.index] ||
-                                      enhancedPhotos?.[img.index] ||
+                                      allEnhancedPhotos?.[img.index] ||
                                       img.stored_url ||
                                       img.source_url;
                                     return (
@@ -13160,6 +13204,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                               onOpenSettingsSidebox={() => setShowFBHeroSettingsSidebox(true)}
                               onCloseSettingsSidebox={() => setShowFBHeroSettingsSidebox(false)}
                               isSettingsSideboxOpen={showFBHeroSettingsSidebox}
+                              onEnhancedPhotosUpdate={(photos) => setCompanionEnhancedMap((prev) => ({ ...prev, ...photos }))}
                             />
                             <FBHeroSettingsSidebox
                               key={currentModalAIBox.id}
@@ -14669,7 +14714,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   onClose={handleCloseModal}
                   images={images}
                   watermarkedPhotos={watermarkedPhotos}
-                  enhancedPhotos={enhancedPhotos}
+                  enhancedPhotos={allEnhancedPhotos}
                   onOpenLightbox={handleOpenLightbox}
                 />
               </div>

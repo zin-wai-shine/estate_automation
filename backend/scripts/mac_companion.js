@@ -2361,6 +2361,92 @@ function mergeTabGroups(scannedGroups, liveGroups) {
     }
   }
 
+  // ── Serve Downloaded Enhanced Image ──
+  if (url.pathname === '/downloaded-image' && (req.method === 'GET' || req.method === 'HEAD')) {
+    const rawFile = url.searchParams.get('file') || '';
+    const safeName = path.basename(rawFile);
+    const downloadsDir = path.join(os.homedir(), 'Downloads');
+    let targetPath = safeName ? path.join(downloadsDir, safeName) : '';
+
+    if (!targetPath || !fs.existsSync(targetPath)) {
+      if (safeName && fs.existsSync(path.join(defaultProcessingDir, safeName))) {
+        targetPath = path.join(defaultProcessingDir, safeName);
+      }
+    }
+
+    if (!targetPath || !fs.existsSync(targetPath)) {
+      res.writeHead(404, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      return res.end(JSON.stringify({ error: 'Image not found on disk' }));
+    }
+
+    const stat = fs.statSync(targetPath);
+    const ext = path.extname(targetPath).toLowerCase().replace('.', '') || 'png';
+    const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'webp' ? 'image/webp' : 'image/png';
+    res.writeHead(200, {
+      'Content-Type': mime,
+      'Content-Length': stat.size,
+      'Access-Control-Allow-Origin': '*',
+      'Cache-Control': 'public, max-age=86400',
+    });
+    if (req.method === 'HEAD') return res.end();
+    fs.createReadStream(targetPath).pipe(res);
+    return;
+  }
+
+  // ── List All Downloaded Enhanced Images ──
+  if (url.pathname === '/enhanced-images' && req.method === 'GET') {
+    try {
+      const downloadsDir = path.join(os.homedir(), 'Downloads');
+      const dirsToScan = [downloadsDir, defaultProcessingDir].filter((d) => fs.existsSync(d));
+      const seenPositions = new Map(); // pos -> imgObj
+
+      for (const dir of dirsToScan) {
+        try {
+          const files = fs.readdirSync(dir);
+          for (const f of files) {
+            const lower = f.toLowerCase();
+            if (!lower.startsWith('enhanced_')) continue;
+            if (!lower.endsWith('.png') && !lower.endsWith('.jpg') && !lower.endsWith('.jpeg') && !lower.endsWith('.webp')) continue;
+
+            const m = f.match(/^enhanced_(\d+)_/i);
+            const pos = m ? parseInt(m[1], 10) : 0;
+            const fullPath = path.join(dir, f);
+            const stat = fs.statSync(fullPath);
+
+            const imgObj = {
+              filename: f,
+              full_path: fullPath,
+              size_bytes: stat.size,
+              mtime: stat.mtimeMs,
+              position: pos > 0 ? pos : 1,
+              url: `http://127.0.0.1:${PORT}/downloaded-image?file=${encodeURIComponent(f)}`,
+            };
+
+            const key = imgObj.position;
+            if (!seenPositions.has(key) || stat.mtimeMs > seenPositions.get(key).mtime) {
+              seenPositions.set(key, imgObj);
+            }
+          }
+        } catch (e) {}
+      }
+
+      const sortedImages = Array.from(seenPositions.values()).sort((a, b) => a.position - b.position);
+      res.writeHead(200, {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'no-cache',
+      });
+      return res.end(JSON.stringify({
+        status: 'success',
+        count: sortedImages.length,
+        images: sortedImages,
+      }));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      return res.end(JSON.stringify({ error: err.message, images: [] }));
+    }
+  }
+
   // ── Serve Downloaded Hero Image ──
   if (url.pathname === '/hero-downloaded-image' && (req.method === 'GET' || req.method === 'HEAD')) {
     const rawFile = url.searchParams.get('file') || (twoStageState && twoStageState.downloaded_file) || '';

@@ -123,6 +123,7 @@ interface ExternalBrowserSidebarProps {
   isSettingsSideboxOpen?: boolean;
   rawPostContent?: string;
   onRunCondoNameStep?: () => Promise<string | void>;
+  onEnhancedPhotosUpdate?: (photos: Record<number, string>) => void;
 }
 
 export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
@@ -145,6 +146,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   isSettingsSideboxOpen,
   rawPostContent,
   onRunCondoNameStep,
+  onEnhancedPhotosUpdate,
 }) => {
   const isTabGroupNode = Boolean(
     propIsTabGroupNode ||
@@ -1271,6 +1273,15 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
         const enhanced = await fetchEnhancedDownloadedImages(propertyContext?.id);
         if (enhanced && enhanced.length > 0) {
           setEnhancedImages(enhanced);
+          if (onEnhancedPhotosUpdate) {
+            const map: Record<number, string> = {};
+            enhanced.forEach((img) => {
+              const pos0 = (img.position || 1) - 1;
+              map[pos0] = img.url;
+              map[img.position || 1] = img.url;
+            });
+            onEnhancedPhotosUpdate(map);
+          }
         }
       } catch (e) {}
 

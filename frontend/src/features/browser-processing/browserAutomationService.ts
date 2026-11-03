@@ -433,15 +433,25 @@ export interface EnhancedDownloadedImage {
 }
 
 export const fetchEnhancedDownloadedImages = async (propertyId?: string): Promise<EnhancedDownloadedImage[]> => {
+  const q = propertyId ? `?property_id=${encodeURIComponent(propertyId)}` : '';
   try {
-    const q = propertyId ? `?property_id=${encodeURIComponent(propertyId)}` : '';
     const res = await fetch(`http://127.0.0.1:9224/enhanced-images${q}`);
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.images || [];
-  } catch {
-    return [];
-  }
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.images)) return data.images;
+    }
+  } catch {}
+
+  // Fallback via Go backend
+  try {
+    const res = await fetch(`${API_BASE}/enhanced-images${q}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.images)) return data.images;
+    }
+  } catch {}
+
+  return [];
 };
 
 export interface TabReadinessResult {

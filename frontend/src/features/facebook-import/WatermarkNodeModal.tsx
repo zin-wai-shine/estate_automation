@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { FiEdit2, FiMaximize2, FiCheck, FiX, FiImage } from 'react-icons/fi';
 import {
   type CropStudioFormat,
@@ -14,6 +14,7 @@ import {
 import type { DynamicAIBoxConfig, WorkflowWireConnection } from './FacebookWorkflowCanvas';
 import { Select, type SelectOption } from '../../components/ui/Select';
 import { PhotoLightboxModal } from './PhotoLightboxModal';
+import { fetchEnhancedDownloadedImages } from '../browser-processing/browserAutomationService';
 
 interface WatermarkNodeModalProps {
   box: DynamicAIBoxConfig;
@@ -189,6 +190,38 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     return null;
   }, [heroImage, box.referenceImage, effectiveImageList]);
 
+  // Live downloaded enhanced photos polled from companion / backend
+  const [companionEnhanced, setCompanionEnhanced] = useState<Record<number, string>>({});
+
+  useEffect(() => {
+    let isCancelled = false;
+    const loadDownloaded = async () => {
+      try {
+        const downloaded = await fetchEnhancedDownloadedImages();
+        if (downloaded && downloaded.length > 0 && !isCancelled) {
+          const map: Record<number, string> = {};
+          downloaded.forEach((img) => {
+            const pos = img.position || 1;
+            const pos0 = pos - 1;
+            map[pos0] = img.url;
+            map[pos] = img.url;
+          });
+          setCompanionEnhanced((prev) => ({ ...prev, ...map }));
+        }
+      } catch (e) {}
+    };
+    loadDownloaded();
+    const interval = setInterval(loadDownloaded, 3500);
+    return () => {
+      isCancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
+
+  const mergedEnhancedPhotos = useMemo(() => {
+    return { ...companionEnhanced, ...(enhancedPhotos || {}) };
+  }, [companionEnhanced, enhancedPhotos]);
+
   // Build the list of photos available for the currently selected source
   const currentSourceList = useMemo(() => {
     const rawList: Array<{
@@ -224,10 +257,49 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     }
 
     // 2. Enhanced Images
-    if (imageSource === 'enhance' || (imageSource === 'all' && ((enhancedPhotos && Object.keys(enhancedPhotos).length > 0) || effectiveImageList.length > 0))) {
+    if (imageSource === 'enhance' || imageSource === 'all') {
+      const hasEnhanced = Object.keys(mergedEnhancedPhotos).length > 0;
       if (imageSource === 'enhance') {
-        if (enhancedPhotos && Object.keys(enhancedPhotos).length > 0) {
-          Object.entries(enhancedPhotos).forEach(([k, enhUrl]) => {
+        if (effectiveImageList && effectiveImageList.length > 0) {
+          effectiveImageList.forEach((img, idx) => {
+            const photoNum = typeof img.index === 'number' && img.index > 0 ? img.index : idx + 1;
+            const enhUrl =
+              mergedEnhancedPhotos[idx] ||
+              mergedEnhancedPhotos[photoNum] ||
+              mergedEnhancedPhotos[photoNum - 1];
+
+            const fallbackUrl = img.stored_url
+              ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
+              : img.source_url;
+
+            rawList.push({
+              id: `enh-${photoNum}`,
+              index: photoNum,
+              displayNumber: idx + 1,
+              url: enhUrl || fallbackUrl,
+              source: 'enhance',
+              label: enhUrl ? `Enhanced #${idx + 1}` : `Photo #${idx + 1} (Enhance Source)`,
+              isEnhanced: Boolean(enhUrl),
+            });
+          });
+
+          // Add any extra enhanced photos beyond effectiveImageList
+          Object.entries(mergedEnhancedPhotos).forEach(([k, enhUrl]) => {
+            const num = Number(k) + 1;
+            if (!rawList.some((r) => r.index === num || r.displayNumber === num)) {
+              rawList.push({
+                id: `enh-${num}`,
+                index: num,
+                displayNumber: num,
+                url: enhUrl,
+                source: 'enhance',
+                label: `Enhanced #${num}`,
+                isEnhanced: true,
+              });
+            }
+          });
+        } else if (hasEnhanced) {
+          Object.entries(mergedEnhancedPhotos).forEach(([k, enhUrl]) => {
             const num = Number(k) + 1;
             rawList.push({
               id: `enh-${num}`,
@@ -239,26 +311,11 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
               isEnhanced: true,
             });
           });
-        } else if (effectiveImageList && effectiveImageList.length > 0) {
-          effectiveImageList.forEach((img, idx) => {
-            const photoNum = typeof img.index === 'number' && img.index > 0 ? img.index : idx + 1;
-            const fallbackUrl = img.stored_url
-              ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
-              : img.source_url;
-            rawList.push({
-              id: `enh-${photoNum}`,
-              index: photoNum,
-              displayNumber: idx + 1,
-              url: fallbackUrl,
-              source: 'enhance',
-              label: `Photo #${idx + 1} (Enhance Source)`,
-              isEnhanced: false,
-            });
-          });
         }
       } else {
-        if (enhancedPhotos && Object.keys(enhancedPhotos).length > 0) {
-          Object.entries(enhancedPhotos).forEach(([k, url]) => {
+        // imageSource === 'all'
+        if (hasEnhanced) {
+          Object.entries(mergedEnhancedPhotos).forEach(([k, url]) => {
             const num = Number(k) + 1;
             rawList.push({
               id: `enh-${num}`,
@@ -304,7 +361,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     }
 
     return rawList;
-  }, [imageSource, effectiveImageList, enhancedPhotos, effectiveHeroImage, heroLabel, watermarkedPhotos]);
+  }, [imageSource, effectiveImageList, mergedEnhancedPhotos, effectiveHeroImage, heroLabel, watermarkedPhotos]);
 
   const [selectedIndices, setSelectedIndices] = useState<number[]>(() => {
     if (Array.isArray(box.selectedImageIndices) && box.selectedImageIndices.length > 0) {
@@ -316,7 +373,13 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
   // Synchronize selection indices with current source list
   useEffect(() => {
     if (currentSourceList.length > 0) {
-      if (selectedIndices.length === 0 || !selectedIndices.some((idx) => currentSourceList.some((p) => p.index === idx))) {
+      const isCustomExplicit = (box as any).isCustomPicked === true;
+      const shouldSelectAll =
+        selectedIndices.length === 0 ||
+        !isCustomExplicit ||
+        !selectedIndices.some((idx) => currentSourceList.some((p) => p.index === idx));
+
+      if (shouldSelectAll && selectedIndices.length !== currentSourceList.length) {
         const all = currentSourceList.map((p) => p.index);
         setSelectedIndices(all);
         onUpdateBox(box.id, { selectedImageIndices: all });
@@ -499,9 +562,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
 
   const sourceOptions: SelectOption[] = useMemo(() => {
     const getImagesCount = effectiveImageList.length;
-    const enhanceCount = (enhancedPhotos && Object.keys(enhancedPhotos).length > 0)
-      ? Object.keys(enhancedPhotos).length
-      : getImagesCount;
+    const enhanceCount = Math.max(Object.keys(mergedEnhancedPhotos).length, getImagesCount);
     const heroCount = effectiveHeroImage ? 1 : (effectiveImageList.length > 0 ? 1 : 0);
     const totalCount = getImagesCount + (effectiveHeroImage ? 1 : 0);
 
@@ -511,7 +572,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
       { value: 'generate', label: `${heroLabel} (${heroCount} ${heroCount === 1 ? 'Photo' : 'Photos'})` },
       { value: 'all', label: `All Photos (${totalCount} ${totalCount === 1 ? 'Photo' : 'Photos'})` },
     ];
-  }, [effectiveImageList.length, enhancedPhotos, effectiveHeroImage, heroLabel, enhanceLabel]);
+  }, [effectiveImageList.length, mergedEnhancedPhotos, effectiveHeroImage, heroLabel, enhanceLabel]);
 
   const photoOptions: SelectOption[] = useMemo(() => {
     if (currentSourceList.length === 0) {
