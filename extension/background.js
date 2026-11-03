@@ -174,14 +174,15 @@ function waitForTabComplete(tabId, maxWaitMs = 25000) {
   });
 }
 
-/** Ensure a tab has the content script injected (always re-injects to guarantee latest version). */
+/** Ensure a tab has the content script injected (waits for tab load then injects). */
 async function ensureContentScriptInjected(tabId) {
   try {
+    await waitForTabComplete(tabId, 25000);
     await chrome.scripting.executeScript({
       target: { tabId },
       files: ['content.js'],
     });
-    await delay(250);
+    await delay(300);
     return true;
   } catch (e) {
     return await pingTab(tabId);
@@ -302,16 +303,21 @@ async function processSlot(slotIndex, sessionId, initialJob = null) {
         return;
       }
 
-      // Send SETUP_AND_SEND_JOB to the tab
-      const setupRes = await new Promise((resolve) => {
-        chrome.tabs.sendMessage(slot.tabId, { action: 'SETUP_AND_SEND_JOB', job }, (res) => {
-          if (chrome.runtime.lastError) {
-            resolve({ success: false, error: chrome.runtime.lastError.message });
-          } else {
-            resolve(res || { success: false, error: 'No response from tab setup' });
-          }
+      // Send SETUP_AND_SEND_JOB to the tab with retry
+      let setupRes = null;
+      for (let sendAttempt = 0; sendAttempt < 3; sendAttempt++) {
+        setupRes = await new Promise((resolve) => {
+          chrome.tabs.sendMessage(slot.tabId, { action: 'SETUP_AND_SEND_JOB', job }, (res) => {
+            if (chrome.runtime.lastError) {
+              resolve({ success: false, error: chrome.runtime.lastError.message });
+            } else {
+              resolve(res || { success: false, error: 'No response from tab setup' });
+            }
+          });
         });
-      });
+        if (setupRes && setupRes.success) break;
+        await delay(1200);
+      }
 
       if (!setupRes || !setupRes.success) {
         throw new Error(setupRes?.error || 'Failed to setup and send image in ChatGPT tab');
@@ -496,66 +502,100 @@ async function _ensureTabGroupOpenInternal(groupName, customUrls, tabMode = 'exi
   const count = isHero ? 1 : Math.max(1, Math.min(8, parseInt(workerCount, 10) || 4));
   const resolvedName = isHero ? 'FB Hero' : (groupName || 'Enhance IMG');
 
-  console.log(`[BOLTHAVEN EXT] 🎯 Opening regular tab(s) for "${resolvedName}" (count: ${count}, mode: ${tabMode}) — No tab groups created`);
+  console.log(`[BOLTHAVEN EXT] 🎯 Ensuring Tab Group "${resolvedName}" is open with ${count} tab(s) (mode: ${tabMode})`);
 
-  // 1. If any old tab groups with this title exist, ungroup their tabs so they become regular tabs
-  try {
-    const allGroups = await chrome.tabGroups.query({});
-    for (const g of allGroups) {
-      const gt = (g.title || '').toLowerCase().trim();
-      if (gt && (gt.includes('hero') || gt.includes('enhance') || clean.includes(gt) || gt.includes(clean))) {
-        const gTabs = await chrome.tabs.query({ groupId: g.id });
-        if (gTabs.length > 0) {
-          console.log(`[BOLTHAVEN EXT] Ungrouping tabs from legacy group "${g.title}"...`);
-          await chrome.tabs.ungroup(gTabs.map((t) => t.id)).catch(() => {});
+  // Target URLs
+  const rawTargetUrls = Array.isArray(customUrls) && customUrls.length > 0 ? customUrls : ENHANCE_CHATGPT_DEFAULT_URLS;
+  const targetUrls = isHero ? ['https://chatgpt.com/'] : rawTargetUrls.slice(0, count);
+  const targetKeys = new Set(targetUrls.map(getConversationKey).filter(Boolean));
+
+  // 1. Check if an active tab group exists for this name
+  const allGroups = await chrome.tabGroups.query({});
+  let matchingGroup = (allGroups || []).find((g) => {
+    const gt = (g.title || '').toLowerCase().trim();
+    return gt && (gt.includes(clean) || clean.includes(gt) || (clean.includes('enhance') && gt.includes('enhance')));
+  });
+
+  let finalTabIds = [];
+
+  if (matchingGroup) {
+    // Uncollapse group and ensure title and color
+    await chrome.tabGroups.update(matchingGroup.id, {
+      collapsed: false,
+      title: resolvedName,
+      color: isHero ? 'purple' : 'blue',
+    }).catch(() => {});
+
+    let groupTabs = await chrome.tabs.query({ groupId: matchingGroup.id });
+    finalTabIds = groupTabs.map((t) => t.id);
+
+    // If group has fewer tabs than count, open missing tabs and add to group
+    if (finalTabIds.length < count) {
+      const missingCount = count - finalTabIds.length;
+      console.log(`[BOLTHAVEN EXT] Tab Group "${resolvedName}" has ${finalTabIds.length}/${count} tabs. Adding ${missingCount} tab(s)...`);
+      for (let i = 0; i < missingCount; i++) {
+        const u = targetUrls[finalTabIds.length] || targetUrls[0] || 'https://chatgpt.com/';
+        const createdTab = await chrome.tabs.create({
+          url: u,
+          windowId: matchingGroup.windowId,
+          active: false,
+        });
+        await chrome.tabs.group({ groupId: matchingGroup.id, tabIds: [createdTab.id] }).catch(() => {});
+        finalTabIds.push(createdTab.id);
+      }
+    }
+  } else {
+    // 2. If no tab group exists: find open matching ChatGPT tabs or open missing ones, then create Tab Group
+    const allTabs = await chrome.tabs.query({});
+    const chatGPTTabs = allTabs.filter((t) => (t.url || t.pendingUrl || '').includes('chatgpt.com'));
+
+    const matchedTabs = chatGPTTabs.filter((t) => {
+      const k = getTabKey(t);
+      return k && targetKeys.has(k);
+    });
+
+    let selectedTabs = matchedTabs.slice(0, count);
+
+    // Fill up to count from any other open ChatGPT tabs
+    if (selectedTabs.length < count) {
+      const selectedIds = new Set(selectedTabs.map((t) => t.id));
+      for (const t of chatGPTTabs) {
+        if (!selectedIds.has(t.id)) {
+          selectedTabs.push(t);
+          selectedIds.add(t.id);
+          if (selectedTabs.length >= count) break;
         }
       }
     }
-  } catch (e) {}
 
-  // 2. Find existing open ChatGPT tabs
-  const allTabs = await chrome.tabs.query({});
-  const chatGPTTabs = allTabs.filter((t) => (t.url || t.pendingUrl || '').includes('chatgpt.com'));
-
-  // Prioritize tabs matching target URLs if provided
-  const targetUrls = Array.isArray(customUrls) && customUrls.length > 0
-    ? customUrls
-    : (isHero ? ['https://chatgpt.com/'] : ENHANCE_CHATGPT_DEFAULT_URLS);
-
-  const targetKeys = new Set(targetUrls.map(getConversationKey).filter(Boolean));
-  const matchedTabs = chatGPTTabs.filter((t) => {
-    const k = getTabKey(t);
-    return k && targetKeys.has(k);
-  });
-
-  let selectedTabs = [];
-  if (matchedTabs.length > 0) {
-    selectedTabs = matchedTabs.slice(0, count);
-  }
-
-  // Fill up to count from any other open ChatGPT tabs
-  if (selectedTabs.length < count) {
-    const selectedIds = new Set(selectedTabs.map((t) => t.id));
-    for (const t of chatGPTTabs) {
-      if (!selectedIds.has(t.id)) {
-        selectedTabs.push(t);
-        selectedIds.add(t.id);
-        if (selectedTabs.length >= count) break;
+    // Open any missing worker tabs
+    const needed = count - selectedTabs.length;
+    if (needed > 0) {
+      console.log(`[BOLTHAVEN EXT] Opening ${needed} worker tab(s) for "${resolvedName}"...`);
+      for (let i = 0; i < needed; i++) {
+        const u = targetUrls[selectedTabs.length] || targetUrls[0] || 'https://chatgpt.com/';
+        const newTab = await chrome.tabs.create({ url: u, active: false });
+        selectedTabs.push(newTab);
       }
     }
-  }
 
-  // If still fewer than count, open missing tabs directly as regular tabs!
-  const needed = count - selectedTabs.length;
-  if (needed > 0) {
-    console.log(`[BOLTHAVEN EXT] Opening ${needed} regular tab(s)...`);
-    for (let i = 0; i < needed; i++) {
-      const urlToOpen = targetUrls[selectedTabs.length + i] || targetUrls[0] || 'https://chatgpt.com/';
-      const newTab = await chrome.tabs.create({ url: urlToOpen, active: false });
-      selectedTabs.push(newTab);
+    finalTabIds = selectedTabs.map((t) => t.id).slice(0, count);
+
+    // Group all selected tabs into a clean, named Tab Group in Chrome
+    try {
+      if (finalTabIds.length > 0) {
+        const newGroupId = await chrome.tabs.group({ tabIds: finalTabIds });
+        await chrome.tabGroups.update(newGroupId, {
+          title: resolvedName,
+          color: isHero ? 'purple' : 'blue',
+          collapsed: false,
+        });
+        console.log(`[BOLTHAVEN EXT] ✓ Created Tab Group "${resolvedName}" with ${finalTabIds.length} tabs`);
+      }
+    } catch (grpErr) {
+      console.warn('[BOLTHAVEN EXT] Tab grouping notice:', grpErr.message);
     }
   }
-
 
   // Close any empty initial "New Tab" pages
   try {
@@ -564,14 +604,19 @@ async function _ensureTabGroupOpenInternal(groupName, customUrls, tabMode = 'exi
     blankTabs.forEach((bt) => chrome.tabs.remove(bt.id).catch(() => {}));
   } catch (e) {}
 
-  const finalTabIds = selectedTabs.map((t) => t.id).slice(0, count);
+  finalTabIds = finalTabIds.slice(0, count);
   await saveSessionTabs(resolvedName, finalTabIds);
 
   if (finalTabIds.length > 0) {
     await focusTab(finalTabIds[0]);
   }
 
-  console.log(`[BOLTHAVEN EXT] ✓ Ready: ${finalTabIds.length} regular tab(s) active:`, finalTabIds);
+  // Ensure all tabs are completely loaded before returning
+  for (const tid of finalTabIds) {
+    await waitForTabComplete(tid, 20000);
+  }
+
+  console.log(`[BOLTHAVEN EXT] ✓ Ready: ${finalTabIds.length} tab(s) confirmed open and active for "${resolvedName}":`, finalTabIds);
   return finalTabIds;
 }
 
@@ -588,115 +633,69 @@ async function startAutomation(payload) {
   const maxWorkers = Math.max(1, Math.min(8, parseInt(workerCount, 10) || 4));
 
   if (automation.isRunning) {
-    console.warn('[BOLTHAVEN EXT] Automation already running, ignoring start request');
-    return { success: false, error: 'Automation already running' };
+    console.log('[BOLTHAVEN EXT] Automation was already marked running. Resetting previous session to run requested batch...');
+    await stopAllExtensionAutomation();
+    await delay(400);
   }
 
   const mySessionId = ++automationSessionId;
   twoStageAborted = false;
 
-  // 1. Immediately ensure the worker tabs are open, expanded, and focused
-  await ensureTabGroupOpen(groupName || 'Enhance IMG', groupTabUrls, tabMode, maxWorkers, reuseSessionTabs).catch(() => {});
+  // 1. Immediately ensure the worker tabs are open, organized in Tab Group, and focused
+  console.log(`[BOLTHAVEN EXT] Ensuring Tab Group "${groupName || 'Enhance IMG'}" is active...`);
+  const ensuredTabIds = await ensureTabGroupOpen(groupName || 'Enhance IMG', groupTabUrls, tabMode, maxWorkers, reuseSessionTabs).catch(() => []);
   if (mySessionId !== automationSessionId) {
     return { success: false, error: 'Automation cancelled by user' };
   }
 
-  // 2. Wait for ChatGPT worker tabs to be ready (up to 30s)
-  let activeTabIds = [];
-  const waitDeadline = Date.now() + 30000;
-  console.log(`[BOLTHAVEN EXT] Resolving open ChatGPT worker tabs for automation (maxWorkers: ${maxWorkers})...`);
+  let activeTabIds = (Array.isArray(ensuredTabIds) && ensuredTabIds.length > 0)
+    ? ensuredTabIds.slice(0, maxWorkers)
+    : [];
 
-  while (Date.now() < waitDeadline) {
-    if (mySessionId !== automationSessionId) {
-      return { success: false, error: 'Automation cancelled by user' };
+  // Fallback: If not enough tabs returned by ensureTabGroupOpen, locate available tabs
+  if (activeTabIds.length < maxWorkers) {
+    const allTabs = await chrome.tabs.query({});
+    const realTabIdSet = new Set(allTabs.map((t) => t.id));
+
+    if (Array.isArray(tabIds) && tabIds.length > 0) {
+      const valid = tabIds.filter((id) => typeof id === 'number' && realTabIdSet.has(id));
+      for (const vid of valid) {
+        if (!activeTabIds.includes(vid)) {
+          activeTabIds.push(vid);
+          if (activeTabIds.length >= maxWorkers) break;
+        }
+      }
     }
-    try {
-      // Priority 1: Pick tabs that belong strictly to the connected Tab Group (e.g. Enhance IMG / Enhance Image)
-      const allGroups = await chrome.tabGroups.query({});
-      const targetGroupName = (groupName || 'enhance').toLowerCase().trim();
-      const targetGroup = allGroups.find((g) => {
-        const title = (g.title || '').toLowerCase().trim();
-        return (
-          title.includes(targetGroupName) ||
-          targetGroupName.includes(title) ||
-          (targetGroupName.includes('enhance') && title.includes('enhance')) ||
-          (targetGroupName.includes('hero') && title.includes('hero'))
-        );
-      });
 
-      if (targetGroup) {
-        const groupTabs = await chrome.tabs.query({ groupId: targetGroup.id });
-        if (groupTabs.length >= maxWorkers) {
-          activeTabIds = groupTabs.map((t) => t.id).slice(0, maxWorkers);
-          console.log(`[BOLTHAVEN EXT] Selected all ${activeTabIds.length} tabs strictly from Tab Group "${targetGroup.title}":`, activeTabIds);
-          break;
-        } else if (groupTabs.length > 0 && Date.now() > waitDeadline - 8000) {
-          activeTabIds = groupTabs.map((t) => t.id).slice(0, maxWorkers);
-          console.log(`[BOLTHAVEN EXT] Selected ${activeTabIds.length} available tabs from Tab Group "${targetGroup.title}":`, activeTabIds);
-          break;
-        }
-      }
-
-      // Priority 2: If tabMode === 'new_tabs', use this group's remembered worker tabs
-      if (tabMode === 'new_tabs') {
-        const validSession = await loadAliveSessionTabs(groupName || 'Enhance IMG');
-        if (validSession.length > 0) {
-          activeTabIds = validSession.slice(0, maxWorkers);
-          console.log(`[BOLTHAVEN EXT] Selected ${activeTabIds.length} remembered tabs for "${groupName}" (new_tabs mode):`, activeTabIds);
-          break;
-        }
-      }
-
-      const allTabs = await chrome.tabs.query({});
-      const realTabIdSet = new Set(allTabs.map((t) => t.id));
-
-      if (Array.isArray(tabIds) && tabIds.length > 0) {
-        const valid = tabIds.filter((id) => typeof id === 'number' && realTabIdSet.has(id));
-        if (valid.length > 0) {
-          activeTabIds = valid.slice(0, maxWorkers);
-          break;
-        }
-      }
-
-      // Priority 2: Match tabs by worker conversation URL keys
-      const targetKeys = new Set((groupTabUrls && groupTabUrls.length > 0 ? groupTabUrls : ENHANCE_CHATGPT_DEFAULT_URLS).map(getConversationKey).filter(Boolean));
-      const matchedWorkerTabs = allTabs.filter((t) => {
-        const k = getTabKey(t);
-        return k && targetKeys.has(k);
-      });
-      if (matchedWorkerTabs.length > 0) {
-        activeTabIds = matchedWorkerTabs.map((t) => t.id).slice(0, maxWorkers);
-        console.log(`[BOLTHAVEN EXT] Selected ${activeTabIds.length} worker tabs by conversation URL:`, activeTabIds);
-        break;
-      }
-
-      // Priority 3: Fallback to any open ChatGPT tabs
+    if (activeTabIds.length < maxWorkers) {
       const chatGPTTabs = allTabs.filter((t) => (t.url || '').includes('chatgpt.com'));
-      if (chatGPTTabs.length > 0) {
-        activeTabIds = chatGPTTabs.map((t) => t.id).slice(0, maxWorkers);
-        break;
+      for (const t of chatGPTTabs) {
+        if (!activeTabIds.includes(t.id)) {
+          activeTabIds.push(t.id);
+          if (activeTabIds.length >= maxWorkers) break;
+        }
       }
-    } catch (e) {
-      console.warn('[BOLTHAVEN EXT] Error resolving active ChatGPT tabs:', e);
     }
-    await delay(1000);
   }
 
-  if (mySessionId !== automationSessionId) {
-    return { success: false, error: 'Automation cancelled by user' };
-  }
-
-  activeTabIds = activeTabIds.slice(0, maxWorkers);
-
+  // Open any remaining tabs to reach maxWorkers
   if (activeTabIds.length < maxWorkers) {
     const needed = maxWorkers - activeTabIds.length;
-    console.log(`[BOLTHAVEN EXT] Opening ${needed} additional ChatGPT worker tab(s) to reach ${maxWorkers} workers...`);
+    console.log(`[BOLTHAVEN EXT] Opening ${needed} additional ChatGPT worker tab(s)...`);
     for (let i = 0; i < needed; i++) {
       const idx = activeTabIds.length;
       const targetUrl = (groupTabUrls && groupTabUrls[idx]) || 'https://chatgpt.com/';
       const created = await chrome.tabs.create({ url: targetUrl, active: false });
       activeTabIds.push(created.id);
     }
+  }
+
+  activeTabIds = activeTabIds.slice(0, maxWorkers);
+
+  // Ensure content scripts are active on all worker tabs
+  for (const tid of activeTabIds) {
+    await waitForTabComplete(tid, 20000);
+    await ensureContentScriptInjected(tid);
   }
 
   // 2. If jobs not passed or empty, fetch pending jobs from the backend queue

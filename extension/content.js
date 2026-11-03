@@ -1268,8 +1268,28 @@
 
     if (activeJobAborted) return false;
 
-    // 2. ATTACH EXACTLY ONCE via native file input
-    // In ChatGPT web client, input[type="file"] is always rendered in the DOM
+    // 2. ATTACH:
+    // Method A: Native ClipboardEvent paste directly on prompt textarea / ProseMirror
+    let pasteDispatched = false;
+    if (targetInputArea) {
+      try {
+        targetInputArea.focus();
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        const pasteEv = new ClipboardEvent('paste', {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          clipboardData: dt,
+        });
+        targetInputArea.dispatchEvent(pasteEv);
+        pasteDispatched = true;
+      } catch (e) {
+        console.warn('[BOLTHAVEN] Paste dispatch warning:', e);
+      }
+    }
+
+    // Method B: Complement with native input[type="file"]
     let fileInputs = Array.from(document.querySelectorAll('input[type="file"], input[accept*="image"]'));
     let targetInput = fileInputs.find((i) => (i.accept || '').includes('image')) ||
                       fileInputs[fileInputs.length - 1] ||
@@ -1322,23 +1342,21 @@
       }
 
       // CRITICAL: Dispatch ONLY 'change' event!
-      // Native HTML file inputs ONLY fire 'change'.
-      // Dispatching both 'input' AND 'change' causes React to process the file twice and attach duplicates!
       targetInput.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
 
       // Send Escape key to close any popover or menu that opened
       await new Promise((r) => setTimeout(r, 200));
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }));
 
-      // Wait up to 8s for the single image attachment to appear
-      const attached = await waitForImageAttached(inputEl, 8000, 1);
+      // Wait up to 6s for the single image attachment to appear
+      const attached = await waitForImageAttached(inputEl, 6000, 1);
       if (attached) {
         console.log(`[BOLTHAVEN] ✓ Image attachment confirmed via file input (${getAttachedImagesCount()} attached)`);
         return true;
       }
     }
 
-    return isImageAttachedInComposer();
+    return pasteDispatched || isImageAttachedInComposer();
   }
 
   // Attach image via data URL or web URL cleanly
