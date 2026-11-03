@@ -1,5 +1,5 @@
 {
-  "timestamp": 1793672878378,
+  "timestamp": 1793673618204,
   "workflow_formats": [
     {
       "config": {
@@ -903,6 +903,7 @@
             "y": 362.41146647791805
           }
         ],
+        "codeFormat": "AAA-######-AA",
         "combineBoxes": [
           {
             "enabled": true,
@@ -1117,8 +1118,8 @@
           "y": 365
         },
         "panOffset": {
-          "x": 216,
-          "y": 111
+          "x": 167,
+          "y": 97
         },
         "trigger": {
           "autoClassifyProperty": true,
@@ -1143,7 +1144,7 @@
       "id": "format-1792648980268",
       "isPinned": true,
       "name": "Download FB Post",
-      "updatedAt": 1793672877138
+      "updatedAt": 1793673617789
     },
     {
       "config": {

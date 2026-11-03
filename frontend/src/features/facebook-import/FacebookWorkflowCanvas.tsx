@@ -19400,11 +19400,51 @@ export const FacebookWorkflowCanvas = forwardRef<
               Auto-generate dynamic unique codes for the <strong>Code</strong> column during sheet sync.
             </div>
 
-            {/* Pattern Input & Presets */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+            {/* Format Preset Dropdown */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
               <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                Code Format Pattern
+                Code Format Type
               </label>
+              <Select
+                options={[
+                  { value: 'AAA-######-AA', label: 'Dynamic (3 Letters - 6 Digits - 2 Letters) · e.g. AEA-123456-GE' },
+                  { value: 'AAA-######', label: 'Compact (3 Letters - 6 Digits) · e.g. BKK-849201' },
+                  { value: '######-AA', label: 'Numeric Prefix (6 Digits - 2 Letters) · e.g. 123456-GE' },
+                  { value: 'AEA-[6D]-GE', label: 'Fixed Prefix (AEA - 6 Digits - GE) · e.g. AEA-850017-GE' },
+                  { value: 'custom', label: 'Custom Pattern (User Defined)' },
+                ]}
+                value={
+                  ['AAA-######-AA', 'AAA-######', '######-AA', 'AEA-[6D]-GE'].includes(config.codeFormat ?? 'AAA-######-AA')
+                    ? (config.codeFormat ?? 'AAA-######-AA')
+                    : 'custom'
+                }
+                onChange={(val) => {
+                  const newFormat = val === 'custom' ? (config.codeFormat || 'AAA-######-AA') : val;
+                  setConfig((prev) => {
+                    const next = { ...prev, codeFormat: newFormat };
+                    onConfigChange?.(next);
+                    return next;
+                  });
+                  config.aiBoxes.forEach((b) => {
+                    if (b.id.includes('google-sheet') || b.processType === 'google_sheet') {
+                      handleUpdateAIBox(b.id, { codeFormat: newFormat });
+                    }
+                  });
+                }}
+                height="34px"
+              />
+            </div>
+
+            {/* Pattern Input & Legend */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                  Pattern Mask / Syntax
+                </label>
+                <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
+                  <code>A</code>=Letter &nbsp;•&nbsp; <code>#</code>=Digit
+                </span>
+              </div>
               <input
                 type="text"
                 value={config.codeFormat ?? 'AAA-######-AA'}
@@ -19424,8 +19464,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                 placeholder="e.g. AAA-######-AA"
                 style={{
                   width: '100%',
-                  height: '32px',
-                  padding: '0 8px',
+                  height: '34px',
+                  padding: '0 10px',
                   fontSize: '0.75rem',
                   fontFamily: 'monospace',
                   fontWeight: 600,
@@ -19434,56 +19474,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                   border: '1px solid var(--border-color)',
                   borderRadius: '6px',
                   outline: 'none',
+                  transition: 'border-color 0.15s ease',
                 }}
               />
-
-              {/* Quick Preset Buttons */}
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '2px' }}>
-                {[
-                  { label: 'AAA-######-AA (AEA-123456-GE)', pattern: 'AAA-######-AA' },
-                  { label: 'AAA-######', pattern: 'AAA-######' },
-                  { label: '######-AA', pattern: '######-AA' },
-                  { label: 'AEA-[6D]-GE', pattern: 'AEA-[6D]-GE' },
-                ].map((preset) => {
-                  const isCurrent = (config.codeFormat ?? 'AAA-######-AA') === preset.pattern;
-                  return (
-                    <button
-                      key={preset.pattern}
-                      type="button"
-                      onClick={() => {
-                        setConfig((prev) => {
-                          const next = { ...prev, codeFormat: preset.pattern };
-                          onConfigChange?.(next);
-                          return next;
-                        });
-                        config.aiBoxes.forEach((b) => {
-                          if (b.id.includes('google-sheet') || b.processType === 'google_sheet') {
-                            handleUpdateAIBox(b.id, { codeFormat: preset.pattern });
-                          }
-                        });
-                      }}
-                      style={{
-                        padding: '2px 6px',
-                        fontSize: '0.625rem',
-                        fontWeight: 500,
-                        borderRadius: '4px',
-                        backgroundColor: isCurrent ? 'rgba(59, 130, 246, 0.15)' : 'var(--bg-surface)',
-                        color: isCurrent ? 'var(--accent-primary)' : 'var(--text-muted)',
-                        border: isCurrent ? '1px solid var(--accent-primary)' : '1px solid var(--border-color)',
-                        cursor: 'pointer',
-                        transition: 'all 0.12s ease',
-                      }}
-                    >
-                      {preset.label}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Pattern Legend */}
-              <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                <code>A</code> = Random Letter (A-Z) &nbsp;•&nbsp; <code>#</code> = Random Digit (0-9)
-              </div>
             </div>
 
             {/* Live Sample Preview */}
