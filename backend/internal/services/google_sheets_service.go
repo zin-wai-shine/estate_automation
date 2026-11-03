@@ -475,11 +475,20 @@ func (s *GoogleSheetsService) AppendRow(ctx context.Context, spreadsheetInput st
 		sheetName = sheetNameOpt
 	}
 
-	// If GID is present in URL, resolve the sheet name to ensure we append to the exact tab indicated by gid
-	if targetGID >= 0 {
-		meta, err := s.LoadHeaders(ctx, spreadsheetInput, "", customCredsJSON)
-		if err == nil && meta != nil && meta.SheetName != "" {
-			sheetName = meta.SheetName
+	var sheetMeta *SheetMetadata
+	// If GID is present in URL or sheet name not explicit, resolve sheet metadata
+	if targetGID >= 0 || sheetNameOpt == "" {
+		meta, err := s.LoadHeaders(ctx, spreadsheetInput, sheetNameOpt, customCredsJSON)
+		if err == nil && meta != nil {
+			sheetMeta = meta
+			if meta.SheetName != "" {
+				sheetName = meta.SheetName
+			}
+		}
+	} else {
+		meta, err := s.LoadHeaders(ctx, spreadsheetInput, sheetName, customCredsJSON)
+		if err == nil && meta != nil {
+			sheetMeta = meta
 		}
 	}
 
@@ -491,7 +500,8 @@ func (s *GoogleSheetsService) AppendRow(ctx context.Context, spreadsheetInput st
 	} else {
 		escapedSheet = url.PathEscape(sheetName)
 	}
-	apiURL := fmt.Sprintf("https://sheets.googleapis.com/v4/spreadsheets/%s/values/%s!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS", spreadsheetID, escapedSheet)
+	// Use insertDataOption=OVERWRITE to fill empty rows cleanly without copying header format
+	apiURL := fmt.Sprintf("https://sheets.googleapis.com/v4/spreadsheets/%s/values/%s!A1:append?valueInputOption=USER_ENTERED&insertDataOption=OVERWRITE", spreadsheetID, escapedSheet)
 
 	payload := map[string]interface{}{
 		"majorDimension": "ROWS",
@@ -529,7 +539,130 @@ func (s *GoogleSheetsService) AppendRow(ctx context.Context, spreadsheetInput st
 		return nil, err
 	}
 
+	// Format the newly appended row(s) to guarantee pure white background and normal (non-bold, non-italic) font.
+	sheetID := int64(0)
+	if targetGID >= 0 {
+		sheetID = int64(targetGID)
+	}
+	numCols := len(values)
+	if sheetMeta != nil {
+		sheetID = int64(sheetMeta.SheetID)
+		if int(sheetMeta.ColumnCount) > numCols {
+			numCols = int(sheetMeta.ColumnCount)
+		}
+	}
+
+	startRowIdx, endRowIdx := -1, -1
+	if updates, ok := appendResult["updates"].(map[string]interface{}); ok {
+		if updatedRange, ok := updates["updatedRange"].(string); ok {
+			startRowIdx, endRowIdx = parseRowIndicesFromRange(updatedRange)
+		}
+	}
+
+	if startRowIdx >= 1 && endRowIdx >= startRowIdx {
+		_ = s.FormatRowsSimple(ctx, spreadsheetID, sheetID, startRowIdx, endRowIdx, numCols, token)
+	}
+
 	return appendResult, nil
+}
+
+// FormatRowsSimple formats a row range to pure white background (#ffffff) and normal (non-bold, non-italic) text.
+func (s *GoogleSheetsService) FormatRowsSimple(ctx context.Context, spreadsheetID string, sheetID int64, startRowIndex, endRowIndex, numCols int, token string) error {
+	batchURL := fmt.Sprintf("https://sheets.googleapis.com/v4/spreadsheets/%s:batchUpdate", spreadsheetID)
+
+	gridRange := map[string]interface{}{
+		"sheetId":          sheetID,
+		"startRowIndex":    startRowIndex,
+		"endRowIndex":      endRowIndex,
+		"startColumnIndex": 0,
+	}
+	if numCols > 0 {
+		gridRange["endColumnIndex"] = numCols
+	}
+
+	reqPayload := map[string]interface{}{
+		"requests": []map[string]interface{}{
+			{
+				"repeatCell": map[string]interface{}{
+					"range": gridRange,
+					"cell": map[string]interface{}{
+						"userEnteredFormat": map[string]interface{}{
+							"backgroundColor": map[string]interface{}{
+								"red":   1.0,
+								"green": 1.0,
+								"blue":  1.0,
+							},
+							"textFormat": map[string]interface{}{
+								"bold":   false,
+								"italic": false,
+							},
+						},
+					},
+					"fields": "userEnteredFormat(backgroundColor,textFormat.bold,textFormat.italic)",
+				},
+			},
+		},
+	}
+
+	body, err := json.Marshal(reqPayload)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", batchURL, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	return nil
+}
+
+// parseRowIndicesFromRange parses 0-indexed start and end row indices from a range string like "Sheet6!A2:J2" or "'Sheet 1'!A10:H12"
+func parseRowIndicesFromRange(rangeStr string) (int, int) {
+	exclamationIdx := strings.LastIndex(rangeStr, "!")
+	cellRange := rangeStr
+	if exclamationIdx >= 0 {
+		cellRange = rangeStr[exclamationIdx+1:]
+	}
+	parts := strings.Split(cellRange, ":")
+	if len(parts) == 0 {
+		return -1, -1
+	}
+
+	extractNum := func(s string) int {
+		numStr := ""
+		for _, r := range s {
+			if r >= '0' && r <= '9' {
+				numStr += string(r)
+			}
+		}
+		if numStr == "" {
+			return -1
+		}
+		n, _ := strconv.Atoi(numStr)
+		return n
+	}
+
+	startRow := extractNum(parts[0])
+	endRow := startRow
+	if len(parts) > 1 {
+		endRow = extractNum(parts[1])
+	}
+
+	if startRow <= 0 {
+		return -1, -1
+	}
+
+	// 0-indexed GridRange: startRowIndex is startRow - 1, endRowIndex is endRow (exclusive)
+	return startRow - 1, endRow
 }
 
 // PrepareDataWithAI prompts Gemini or OpenAI to extract data matching the sheet's exact headers.
