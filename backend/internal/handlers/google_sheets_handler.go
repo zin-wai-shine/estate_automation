@@ -66,6 +66,8 @@ type PrepareGoogleSheetDataRequest struct {
 	PostURL            string   `json:"post_url,omitempty"`
 	SourceURL          string   `json:"source_url,omitempty"`
 	Link               string   `json:"link,omitempty"`
+	CodeFormat         string   `json:"code_format,omitempty"`
+	AutoGenerateCode   *bool    `json:"auto_generate_code,omitempty"`
 }
 
 // PrepareGoogleSheetData - POST /api/google-sheets/prepare-data
@@ -93,6 +95,11 @@ func PrepareGoogleSheetData(c *fiber.Ctx) error {
 		effectiveLink = req.Link
 	}
 
+	autoGen := true
+	if req.AutoGenerateCode != nil {
+		autoGen = *req.AutoGenerateCode
+	}
+
 	mapped, rowValues, err := sheetsService.PrepareDataWithAI(
 		c.Context(),
 		req.Headers,
@@ -104,6 +111,8 @@ func PrepareGoogleSheetData(c *fiber.Ctx) error {
 		req.Provider,
 		req.PromptTemplate,
 		effectiveLink,
+		req.CodeFormat,
+		autoGen,
 	)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -179,6 +188,8 @@ type SyncGoogleSheetRequest struct {
 	PostURL            string   `json:"post_url,omitempty"`
 	SourceURL          string   `json:"source_url,omitempty"`
 	Link               string   `json:"link,omitempty"`
+	CodeFormat         string   `json:"code_format,omitempty"`
+	AutoGenerateCode   *bool    `json:"auto_generate_code,omitempty"`
 }
 
 // ExecuteGoogleSheetSync - POST /api/google-sheets/sync
@@ -241,6 +252,11 @@ func ExecuteGoogleSheetSync(c *fiber.Ctx) error {
 		effectiveLink = req.Link
 	}
 
+	autoGen := true
+	if req.AutoGenerateCode != nil {
+		autoGen = *req.AutoGenerateCode
+	}
+
 	// AI Data Preparation
 	mapped, rowValues, err := sheetsService.PrepareDataWithAI(
 		c.Context(),
@@ -253,6 +269,8 @@ func ExecuteGoogleSheetSync(c *fiber.Ctx) error {
 		req.Provider,
 		req.PromptTemplate,
 		effectiveLink,
+		req.CodeFormat,
+		autoGen,
 	)
 	if err != nil {
 		log.Printf("[ExecuteGoogleSheetSync] PrepareDataWithAI error: %v (model: %s, link: %s)", err, req.Model, effectiveLink)

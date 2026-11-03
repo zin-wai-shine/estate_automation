@@ -1883,6 +1883,8 @@ export const CreateWorkflowView: React.FC = () => {
                 provider: box.provider || 'google_ai',
                 prompt_template: promptTemplate,
                 credentials_json: (box as any).googleServiceAccountJson || '',
+                code_format: (box as any).codeFormat || (cfg as any)?.codeFormat || 'AAA-######-AA',
+                auto_generate_code: (box as any).autoGenerateCode !== undefined ? (box as any).autoGenerateCode : ((cfg as any)?.autoGenerateCode !== undefined ? (cfg as any).autoGenerateCode : true),
               }),
             });
 
@@ -2930,6 +2932,8 @@ export const CreateWorkflowView: React.FC = () => {
             provider: box.provider || 'google_ai',
             prompt_template: box.templateText || box.customPrompt || (box as any).googleSheetAiPrompt || DEFAULT_GOOGLE_SHEET_PROMPT,
             credentials_json: (box as any).googleServiceAccountJson || '',
+            code_format: (box as any).codeFormat || (cfg as any)?.codeFormat || 'AAA-######-AA',
+            auto_generate_code: (box as any).autoGenerateCode !== undefined ? (box as any).autoGenerateCode : ((cfg as any)?.autoGenerateCode !== undefined ? (cfg as any).autoGenerateCode : true),
           }),
         });
 

@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/big"
 	"net/http"
 	"net/url"
 	"os"
@@ -665,6 +666,81 @@ func parseRowIndicesFromRange(rangeStr string) (int, int) {
 	return startRow - 1, endRow
 }
 
+func cryptoRandInt(max int) int {
+	if max <= 0 {
+		return 0
+	}
+	n, err := rand.Int(rand.Reader, big.NewInt(int64(max)))
+	if err != nil {
+		return 0
+	}
+	return int(n.Int64())
+}
+
+// GenerateUniqueCode generates a unique listing code based on a pattern such as "AAA-######-AA" or "[3L]-[6D]-[2L]"
+func GenerateUniqueCode(pattern string) string {
+	pattern = strings.TrimSpace(pattern)
+	if pattern == "" {
+		pattern = "AAA-######-AA"
+	}
+
+	const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	const digits = "0123456789"
+
+	hasTokens := regexp.MustCompile(`(?i)[\[{](\d+)[A-Za-z#0][\]}]`).MatchString(pattern)
+	result := pattern
+
+	// Replace bracketed tokens: [3L] or {3L} (random letters)
+	letterTokenRe := regexp.MustCompile(`(?i)[\[{](\d+)[LA][\]}]`)
+	result = letterTokenRe.ReplaceAllStringFunc(result, func(m string) string {
+		sub := letterTokenRe.FindStringSubmatch(m)
+		if len(sub) > 1 {
+			count, _ := strconv.Atoi(sub[1])
+			if count > 0 && count <= 50 {
+				var sb strings.Builder
+				for i := 0; i < count; i++ {
+					sb.WriteByte(letters[cryptoRandInt(len(letters))])
+				}
+				return sb.String()
+			}
+		}
+		return m
+	})
+
+	// Replace bracketed tokens: [6D] or {6D} (random digits)
+	digitTokenRe := regexp.MustCompile(`(?i)[\[{](\d+)[DN#0][\]}]`)
+	result = digitTokenRe.ReplaceAllStringFunc(result, func(m string) string {
+		sub := digitTokenRe.FindStringSubmatch(m)
+		if len(sub) > 1 {
+			count, _ := strconv.Atoi(sub[1])
+			if count > 0 && count <= 50 {
+				var sb strings.Builder
+				for i := 0; i < count; i++ {
+					sb.WriteByte(digits[cryptoRandInt(len(digits))])
+				}
+				return sb.String()
+			}
+		}
+		return m
+	})
+
+	if !hasTokens {
+		var sb strings.Builder
+		for _, ch := range result {
+			if ch == 'A' {
+				sb.WriteByte(letters[cryptoRandInt(len(letters))])
+			} else if ch == '#' {
+				sb.WriteByte(digits[cryptoRandInt(len(digits))])
+			} else {
+				sb.WriteRune(ch)
+			}
+		}
+		return sb.String()
+	}
+
+	return result
+}
+
 // PrepareDataWithAI prompts Gemini or OpenAI to extract data matching the sheet's exact headers.
 func (s *GoogleSheetsService) PrepareDataWithAI(
 	ctx context.Context,
@@ -677,6 +753,8 @@ func (s *GoogleSheetsService) PrepareDataWithAI(
 	provider string,
 	promptTemplate string,
 	postURL string,
+	codeFormat string,
+	autoGenerateCode bool,
 ) (map[string]interface{}, []interface{}, error) {
 	if len(headers) == 0 {
 		return nil, nil, fmt.Errorf("no headers provided to map data against")
@@ -787,6 +865,21 @@ Guidelines:
 			if !exists || val == nil || valStr == "" || strings.EqualFold(valStr, "n/a") || strings.EqualFold(valStr, "null") {
 				val = trimmedPostURL
 				mappedData[header] = trimmedPostURL
+				exists = true
+			}
+		}
+
+		// Safeguard for Code column:
+		// Auto-generate a dynamic unique code (e.g. AEA-123456-GE)
+		if lowerH == "code" || lowerH == "listing code" || lowerH == "property code" || lowerH == "unit code" || lowerH == "id" || lowerH == "listing id" {
+			valStr := ""
+			if val != nil {
+				valStr = strings.TrimSpace(fmt.Sprintf("%v", val))
+			}
+			if autoGenerateCode || !exists || val == nil || valStr == "" || strings.EqualFold(valStr, "n/a") || strings.EqualFold(valStr, "null") {
+				uniqueCode := GenerateUniqueCode(codeFormat)
+				val = uniqueCode
+				mappedData[header] = uniqueCode
 				exists = true
 			}
 		}

@@ -10,6 +10,7 @@ import {
   FiAlertCircle,
   FiRefreshCw,
   FiInfo,
+  FiTag,
 } from 'react-icons/fi';
 import { SiGooglesheets } from 'react-icons/si';
 import { type DynamicAIBoxConfig } from './FacebookWorkflowCanvas';
@@ -548,6 +549,101 @@ export const GoogleSheetSettingsSidebox: React.FC<GoogleSheetSettingsSideboxProp
               <FiCheckCircle size={12} /> {uploadSuccess}
             </div>
           )}
+        </div>
+
+        {/* Listing Code Generator Section */}
+        <div
+          style={{
+            padding: '0.875rem',
+            borderRadius: '8px',
+            border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.625rem',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <FiTag size={14} style={{ color: 'var(--accent-primary, #3B82F6)' }} />
+              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                Listing Code Generator
+              </span>
+            </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={boxConfig.autoGenerateCode ?? true}
+                onChange={(e) => onUpdateBoxConfig({ autoGenerateCode: e.target.checked })}
+                style={{ cursor: 'pointer' }}
+              />
+              <span style={{ fontSize: '0.6875rem', color: 'var(--text-secondary)' }}>Auto-generate</span>
+            </label>
+          </div>
+
+          <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>
+            Auto-generate dynamic unique listing codes for the <strong>Code</strong> column during sheet sync.
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+            <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+              Code Format Pattern
+            </label>
+            <input
+              type="text"
+              value={boxConfig.codeFormat ?? 'AAA-######-AA'}
+              onChange={(e) => onUpdateBoxConfig({ codeFormat: e.target.value })}
+              placeholder="e.g. AAA-######-AA"
+              style={{
+                width: '100%',
+                height: '32px',
+                padding: '0 8px',
+                fontSize: '0.75rem',
+                fontFamily: 'monospace',
+                fontWeight: 600,
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC',
+                color: 'var(--text-primary)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '6px',
+                outline: 'none',
+              }}
+            />
+
+            {/* Quick Presets */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '2px' }}>
+              {[
+                { label: 'AAA-######-AA (AEA-123456-GE)', pattern: 'AAA-######-AA' },
+                { label: 'AAA-######', pattern: 'AAA-######' },
+                { label: '######-AA', pattern: '######-AA' },
+                { label: 'AEA-[6D]-GE', pattern: 'AEA-[6D]-GE' },
+              ].map((preset) => {
+                const isCurrent = (boxConfig.codeFormat ?? 'AAA-######-AA') === preset.pattern;
+                return (
+                  <button
+                    key={preset.pattern}
+                    type="button"
+                    onClick={() => onUpdateBoxConfig({ codeFormat: preset.pattern })}
+                    style={{
+                      padding: '2px 6px',
+                      fontSize: '0.625rem',
+                      fontWeight: 500,
+                      borderRadius: '4px',
+                      backgroundColor: isCurrent ? 'rgba(59, 130, 246, 0.15)' : 'var(--bg-surface)',
+                      color: isCurrent ? 'var(--accent-primary, #3B82F6)' : 'var(--text-muted)',
+                      border: isCurrent ? '1px solid var(--accent-primary, #3B82F6)' : '1px solid var(--border-color)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {preset.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+              <code>A</code> = Random Letter (A-Z) &nbsp;•&nbsp; <code>#</code> = Random Digit (0-9)
+            </div>
+          </div>
         </div>
 
         <div style={{ height: '2.5rem' }} />

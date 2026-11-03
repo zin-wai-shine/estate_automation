@@ -53,6 +53,8 @@ import {
   FiServer,
   FiMonitor,
   FiSettings,
+  FiTag,
+  FiHash,
 } from 'react-icons/fi';
 import { FaFacebook, FaFacebookF, FaInstagram, FaTiktok, FaChrome } from 'react-icons/fa';
 import { SiGooglegemini, SiGooglesheets } from 'react-icons/si';
@@ -117,6 +119,52 @@ Output Format:
 - Return ONLY a valid, parseable JSON object with keys corresponding to the sheet column headers.
 - If a column value cannot be determined from the content or URL, use an empty string "" or "N/A".
 - Do NOT wrap in markdown explanation or conversational text.`;
+
+export function generateUniqueListingCode(pattern: string = 'AAA-######-AA'): string {
+  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const digits = '0123456789';
+
+  const p = pattern || 'AAA-######-AA';
+  const hasTokens = /[\[{](\d+)[A-Za-z#0][\]}]/.test(p);
+  let result = p;
+
+  // Replace bracketed tokens: [3L] or {3L} (random letters)
+  result = result.replace(/[\[{](\d+)[LA][\]}]/gi, (_, count) => {
+    let s = '';
+    const num = Math.min(Math.max(parseInt(count, 10) || 1, 1), 20);
+    for (let i = 0; i < num; i++) {
+      s += letters.charAt(Math.floor(Math.random() * letters.length));
+    }
+    return s;
+  });
+
+  // Replace bracketed tokens: [6D] or {6D} (random digits)
+  result = result.replace(/[\[{](\d+)[DN#0][\]}]/gi, (_, count) => {
+    let s = '';
+    const num = Math.min(Math.max(parseInt(count, 10) || 1, 1), 20);
+    for (let i = 0; i < num; i++) {
+      s += digits.charAt(Math.floor(Math.random() * digits.length));
+    }
+    return s;
+  });
+
+  if (!hasTokens) {
+    let finalStr = '';
+    for (let i = 0; i < result.length; i++) {
+      const ch = result[i];
+      if (ch === 'A') {
+        finalStr += letters.charAt(Math.floor(Math.random() * letters.length));
+      } else if (ch === '#') {
+        finalStr += digits.charAt(Math.floor(Math.random() * digits.length));
+      } else {
+        finalStr += ch;
+      }
+    }
+    return finalStr;
+  }
+
+  return result;
+}
 
 export const loadAvailablePromptTemplates = (): CanvasPromptOption[] => {
   try {
@@ -240,6 +288,8 @@ export interface DynamicAIBoxConfig {
   googleServiceAccountJson?: string;
   googleServiceAccountEmail?: string;
   googleServiceAccountFilename?: string;
+  codeFormat?: string;
+  autoGenerateCode?: boolean;
   // External Browser Automation
   browserProfileId?: number;
   browserProfileKey?: string;
@@ -323,6 +373,8 @@ export interface FacebookWorkflowConfig {
   connections?: WorkflowWireConnection[];
   zoom: number;
   panOffset: { x: number; y: number };
+  codeFormat?: string;
+  autoGenerateCode?: boolean;
 }
 
 export interface OutputNodeConfig {
@@ -3528,6 +3580,19 @@ export const FacebookWorkflowCanvas = forwardRef<
     };
   }, []);
 
+  // Listing Code Generator Preview State
+  const [previewSampleCode, setPreviewSampleCode] = useState<string>(() =>
+    generateUniqueListingCode(config.codeFormat || 'AAA-######-AA')
+  );
+
+  useEffect(() => {
+    setPreviewSampleCode(generateUniqueListingCode(config.codeFormat || 'AAA-######-AA'));
+  }, [config.codeFormat]);
+
+  const handleRefreshPreviewCode = () => {
+    setPreviewSampleCode(generateUniqueListingCode(config.codeFormat || 'AAA-######-AA'));
+  };
+
   // Node Modal State
   const [activeModalNode, setActiveModalNode] = useState<ActiveModalNode>(null);
   const [isAISettingsDrawerOpen, setIsAISettingsDrawerOpen] = useState(false);
@@ -3658,6 +3723,8 @@ export const FacebookWorkflowCanvas = forwardRef<
           provider: box.provider || 'google_ai',
           prompt_template: box.templateText || box.customPrompt || DEFAULT_GOOGLE_SHEET_PROMPT,
           credentials_json: box.googleServiceAccountJson || '',
+          code_format: box.codeFormat || config.codeFormat || 'AAA-######-AA',
+          auto_generate_code: box.autoGenerateCode !== undefined ? box.autoGenerateCode : (config.autoGenerateCode !== undefined ? config.autoGenerateCode : true),
         }),
       });
       let data: any = null;
@@ -19290,6 +19357,169 @@ export const FacebookWorkflowCanvas = forwardRef<
               >
                 <FiCrosshair size={13} style={{ color: 'var(--accent-primary)' }} />
                 <span>Reset Layout</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Section: Unique Listing Code Generator */}
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.625rem',
+              paddingTop: '0.75rem',
+              borderTop: '1px solid var(--border-color)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <FiTag size={13} style={{ color: 'var(--accent-primary)' }} />
+                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                  Listing Code Generator
+                </span>
+              </div>
+              <ToggleSwitch
+                checked={config.autoGenerateCode ?? true}
+                onChange={(checked) => {
+                  setConfig((prev) => {
+                    const next = { ...prev, autoGenerateCode: checked };
+                    onConfigChange?.(next);
+                    return next;
+                  });
+                  config.aiBoxes.forEach((b) => {
+                    if (b.id.includes('google-sheet') || b.processType === 'google_sheet') {
+                      handleUpdateAIBox(b.id, { autoGenerateCode: checked });
+                    }
+                  });
+                }}
+                size="sm"
+              />
+            </div>
+
+            <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>
+              Auto-generate dynamic unique codes for the <strong>Code</strong> column during sheet sync.
+            </div>
+
+            {/* Pattern Input & Presets */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+              <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                Code Format Pattern
+              </label>
+              <input
+                type="text"
+                value={config.codeFormat ?? 'AAA-######-AA'}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setConfig((prev) => {
+                    const next = { ...prev, codeFormat: val };
+                    onConfigChange?.(next);
+                    return next;
+                  });
+                  config.aiBoxes.forEach((b) => {
+                    if (b.id.includes('google-sheet') || b.processType === 'google_sheet') {
+                      handleUpdateAIBox(b.id, { codeFormat: val });
+                    }
+                  });
+                }}
+                placeholder="e.g. AAA-######-AA"
+                style={{
+                  width: '100%',
+                  height: '32px',
+                  padding: '0 8px',
+                  fontSize: '0.75rem',
+                  fontFamily: 'monospace',
+                  fontWeight: 600,
+                  backgroundColor: 'var(--bg-surface)',
+                  color: 'var(--text-primary)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '6px',
+                  outline: 'none',
+                }}
+              />
+
+              {/* Quick Preset Buttons */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '2px' }}>
+                {[
+                  { label: 'AAA-######-AA (AEA-123456-GE)', pattern: 'AAA-######-AA' },
+                  { label: 'AAA-######', pattern: 'AAA-######' },
+                  { label: '######-AA', pattern: '######-AA' },
+                  { label: 'AEA-[6D]-GE', pattern: 'AEA-[6D]-GE' },
+                ].map((preset) => {
+                  const isCurrent = (config.codeFormat ?? 'AAA-######-AA') === preset.pattern;
+                  return (
+                    <button
+                      key={preset.pattern}
+                      type="button"
+                      onClick={() => {
+                        setConfig((prev) => {
+                          const next = { ...prev, codeFormat: preset.pattern };
+                          onConfigChange?.(next);
+                          return next;
+                        });
+                        config.aiBoxes.forEach((b) => {
+                          if (b.id.includes('google-sheet') || b.processType === 'google_sheet') {
+                            handleUpdateAIBox(b.id, { codeFormat: preset.pattern });
+                          }
+                        });
+                      }}
+                      style={{
+                        padding: '2px 6px',
+                        fontSize: '0.625rem',
+                        fontWeight: 500,
+                        borderRadius: '4px',
+                        backgroundColor: isCurrent ? 'rgba(59, 130, 246, 0.15)' : 'var(--bg-surface)',
+                        color: isCurrent ? 'var(--accent-primary)' : 'var(--text-muted)',
+                        border: isCurrent ? '1px solid var(--accent-primary)' : '1px solid var(--border-color)',
+                        cursor: 'pointer',
+                        transition: 'all 0.12s ease',
+                      }}
+                    >
+                      {preset.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Pattern Legend */}
+              <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                <code>A</code> = Random Letter (A-Z) &nbsp;•&nbsp; <code>#</code> = Random Digit (0-9)
+              </div>
+            </div>
+
+            {/* Live Sample Preview */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '6px 10px',
+                borderRadius: '6px',
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#F8FAFC',
+                border: '1px dashed var(--border-color)',
+                marginTop: '2px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>Preview:</span>
+                <span style={{ fontSize: '0.75rem', fontFamily: 'monospace', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  {previewSampleCode}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={handleRefreshPreviewCode}
+                title="Generate another sample code"
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  padding: '2px',
+                }}
+              >
+                <FiRefreshCw size={12} />
               </button>
             </div>
           </div>
