@@ -582,9 +582,11 @@ Guidelines:
 2. The columns are dynamic and may vary across spreadsheets. Follow the provided column names strictly.
 3. If any column relates to a URL, post link, or original link (such as "Original Link", "Post Link", "Source URL", "URL", or "Link"), populate it with the provided Source / Post Link.
 4. For numeric fields (price, size, rent, floor), provide clean numbers or formatted strings as appropriate.
-5. If an image or media column exists, put a summary or the first photo URL if available.
-6. If a field cannot be determined from the listing content or link, use an empty string "" or "N/A".
-7. Do NOT include markdown blocks or any conversational text outside of the JSON object.
+5. For "Owner/Agent" (or similar column): Strictly output ONLY either "Owner" or "Agent" (do not include names or extra words). If the content mentions or includes "owner" (e.g. owner post, เจ้าของ, direct owner), output "Owner"; otherwise output "Agent".
+6. Put any personal names, agent/owner names, phone numbers, Line ID, or contact details into "Contact Info" instead.
+7. If an image or media column exists, put a summary or the first photo URL if available.
+8. If a field cannot be determined from the listing content or link, use an empty string "" or "N/A".
+9. Do NOT include markdown blocks or any conversational text outside of the JSON object.
 %s`, headersList, condoName, strings.TrimSpace(postURL), len(images), templateGuidance, customInstructions)
 
 	aiSvc := NewGoogleAIService()
@@ -654,6 +656,24 @@ Guidelines:
 				mappedData[header] = trimmedPostURL
 				exists = true
 			}
+		}
+
+		// Safeguard for Owner / Agent column:
+		// Must strictly output either "Owner" or "Agent"
+		if lowerH == "owner/agent" || lowerH == "owner or agent" || lowerH == "agent/owner" || lowerH == "owner" || lowerH == "agent" || strings.Contains(lowerH, "owner") {
+			valStr := ""
+			if val != nil {
+				valStr = strings.TrimSpace(fmt.Sprintf("%v", val))
+			}
+			valLower := strings.ToLower(valStr)
+			contentLower := strings.ToLower(rawContent)
+			if strings.Contains(valLower, "owner") || strings.Contains(contentLower, "owner") || strings.Contains(rawContent, "เจ้าของ") {
+				val = "Owner"
+			} else {
+				val = "Agent"
+			}
+			mappedData[header] = val
+			exists = true
 		}
 
 		if exists && val != nil {

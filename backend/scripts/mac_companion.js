@@ -1956,28 +1956,58 @@ function mergeTabGroups(scannedGroups, liveGroups) {
         }
         const prompt = payload.prompt || payload.template_text || payload.custom_prompt || '';
         const rawContent = payload.rawContent || payload.raw_content || '';
+        const isJSONRequest = prompt.includes('JSON') || prompt.includes('headers') || prompt.includes('spreadsheet') || prompt.includes('parseable');
 
-        const fullPrompt = `=== TEMPLATE & INSTRUCTIONS ===\n${prompt}\n\n=== RAW EXTRACTED FACEBOOK CONTENT ===\n${rawContent}\n\n=== TASK ===\nTransform and format the raw Facebook content according to the template instructions above.\nEnsure all core property details (price, condo/project name, size, floor, bedrooms, contact details) remain accurate.\nGenerate the polished, ready-to-publish listing copy directly without unnecessary conversational preamble.`;
+        let initialModel = payload.model || 'gemini-flash-lite-latest';
+        if (initialModel.includes('gemini-2.5') || initialModel.includes('gemini-2.0') || initialModel.includes('gemini-1.5')) {
+          initialModel = 'gemini-flash-lite-latest';
+        }
 
-        const geminiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 12000);
+        const modelsToTry = [initialModel, 'gemini-flash-lite-latest', 'gemini-2.5-flash-lite', 'gemini-flash-latest']
+          .filter((m, i, arr) => Boolean(m) && arr.indexOf(m) === i);
 
-        const aiResp = await fetch(geminiEndpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: fullPrompt }] }],
-          }),
-          signal: controller.signal,
-        });
-        clearTimeout(timeout);
+        let generatedText = null;
+        let lastError = null;
 
-        const data = await aiResp.json();
-        if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
-          const text = data.candidates[0].content.parts[0].text.trim();
+        for (const candidateModel of modelsToTry) {
+          try {
+            const geminiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${candidateModel}:generateContent?key=${key}`;
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 12000);
+
+            const aiResp = await fetch(geminiEndpoint, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{ parts: [{ text: isJSONRequest ? `${prompt}\n\n=== CONTENT ===\n${rawContent}` : fullPrompt }] }],
+              }),
+              signal: controller.signal,
+            });
+            clearTimeout(timeout);
+
+            const data = await aiResp.json();
+            if (aiResp.ok && data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
+              generatedText = data.candidates[0].content.parts[0].text.trim();
+              console.log(`[COMPANION] /generate-ai succeeded with model: ${candidateModel}`);
+              break;
+            } else {
+              lastError = data.error?.message || `HTTP ${aiResp.status}`;
+              console.warn(`[COMPANION] /generate-ai model ${candidateModel} failed: ${lastError}`);
+            }
+          } catch (modelErr) {
+            lastError = modelErr.message;
+            console.warn(`[COMPANION] /generate-ai model ${candidateModel} error: ${modelErr.message}`);
+          }
+        }
+
+        if (generatedText) {
           res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-          return res.end(JSON.stringify({ success: true, generated_content: text }));
+          return res.end(JSON.stringify({ success: true, generated_content: generatedText }));
+        }
+
+        if (isJSONRequest) {
+          res.writeHead(502, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          return res.end(JSON.stringify({ success: false, error: lastError || 'All Gemini models unavailable' }));
         }
 
         res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
@@ -1987,10 +2017,10 @@ function mergeTabGroups(scannedGroups, liveGroups) {
         }));
       } catch (err) {
         console.warn('[COMPANION] /generate-ai fallback notice:', err.message);
-        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
         return res.end(JSON.stringify({
-          success: true,
-          generated_content: `Featured Bangkok Property Rental\n\nHigh-floor luxury condo in prime location. Fully furnished, modern amenities, close to BTS transit.\nContact for viewing and immediate booking.`,
+          success: false,
+          error: err.message,
         }));
       }
     });

@@ -106,9 +106,12 @@ Extraction & Analysis Rules:
    - Price: Extract rental or sale price with currency format (e.g., "25,000 THB") or clean integer.
 5. Transit & Location:
    - BTS/MRT: Extract station name and walking distance or travel time if mentioned.
-6. Contact & Agent:
-   - Owner/Agent: Name or company if mentioned.
-   - Contact Info: Extract phone numbers, Line ID, WhatsApp, or email into the contact columns.
+6. Owner vs Agent Classification:
+   - For the "Owner/Agent" column: Strictly output ONLY either "Owner" or "Agent" (do not include personal names or extra words).
+   - If the content mentions or includes the word "owner" (or "owner post", "เจ้าของ", "owner listing", etc.), the value must be "Owner".
+   - If it does not include owner or is posted by an agent/co-agent, the value must be "Agent".
+7. Contact Information:
+   - Contact Info: Extract phone numbers, Line ID, WhatsApp, email, or agent/owner names into the contact columns.
 
 Output Format:
 - Return ONLY a valid, parseable JSON object with keys corresponding to the sheet column headers.
@@ -13082,8 +13085,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                               Select Prompt Template
                             </label>
                             {currentModalAIBox.templateId === 'custom' ? (
-                              <span style={{ fontSize: '0.625rem', color: '#8B5CF6', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '3px' }}>
-                                ✍️ Manual Prompt Active
+                              <span style={{ fontSize: '0.625rem', color: '#10B981', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                ● Manual Prompt Active
                               </span>
                             ) : Boolean(currentModalAIBox.templateId) ? (
                               <span style={{ fontSize: '0.625rem', color: '#10B981', fontWeight: 500 }}>
@@ -13097,7 +13100,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                 value: String(p.id),
                                 label: p.name,
                               })),
-                              { value: 'custom', label: '✍️ Manual Input (Custom Prompt)' },
+                              { value: 'custom', label: 'Manual Input (Custom Prompt)' },
                             ]}
                             value={
                               availablePrompts.some((p) => String(p.id) === String(currentModalAIBox.templateId))
@@ -13167,9 +13170,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   flex: 1,
                                   height: '32px',
                                   borderRadius: '6px',
-                                  border: '1px solid rgba(139, 92, 246, 0.35)',
-                                  backgroundColor: isDark ? 'rgba(139, 92, 246, 0.1)' : '#F5F3FF',
-                                  color: '#8B5CF6',
+                                  border: isDark ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid #E2E8F0',
+                                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#F8FAFC',
+                                  color: isDark ? '#E2E8F0' : '#334155',
                                   fontSize: '0.6875rem',
                                   fontWeight: 600,
                                   display: 'flex',
@@ -13180,13 +13183,13 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   transition: 'all 0.15s ease',
                                 }}
                                 onMouseEnter={(e) => {
-                                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(139, 92, 246, 0.18)' : '#EDE9FE';
+                                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.1)' : '#F1F5F9';
                                 }}
                                 onMouseLeave={(e) => {
-                                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(139, 92, 246, 0.1)' : '#F5F3FF';
+                                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.05)' : '#F8FAFC';
                                 }}
                               >
-                                <FiEdit2 size={13} style={{ color: '#8B5CF6' }} />
+                                <FiEdit2 size={13} style={{ color: isDark ? '#94A3B8' : '#64748B' }} />
                                 <span>Open Prompt Editor</span>
                               </button>
                             </div>
@@ -14108,7 +14111,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   {viewingPromptTemplate.headerTitle || (viewingPromptTemplate.isEditable ? 'Custom Prompt Editor' : 'Prompt Template Viewer')}
                 </div>
                 <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                  {viewingPromptTemplate.isEditable ? '✍️ Manual Input · Live Auto-Save' : `✨ ${viewingPromptTemplate.name}`}
+                  {viewingPromptTemplate.isEditable ? 'Manual Input · Live Auto-Save' : viewingPromptTemplate.name}
                 </div>
               </div>
             </div>
