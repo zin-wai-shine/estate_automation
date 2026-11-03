@@ -195,19 +195,36 @@ function waitForTabComplete(tabId, maxWaitMs = 25000) {
   });
 }
 
-/** Ensure a tab has the content script injected (waits for tab load then injects). */
+/** Ensure a tab has the content script injected. Returns immediately if already alive. */
 async function ensureContentScriptInjected(tabId) {
+  // 1. Quick test: already alive?
+  if (await pingTab(tabId)) return true;
+
+  // 2. Try immediate injection
   try {
-    await waitForTabComplete(tabId, 25000);
     await chrome.scripting.executeScript({
       target: { tabId },
       files: ['content.js'],
     });
+    await delay(150);
+    if (await pingTab(tabId)) return true;
+  } catch (e) {}
+
+  // 3. Tab might still be loading initial page, poll for up to 4s
+  const deadline = Date.now() + 4000;
+  while (Date.now() < deadline) {
     await delay(300);
-    return true;
-  } catch (e) {
-    return await pingTab(tabId);
+    if (await pingTab(tabId)) return true;
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        files: ['content.js'],
+      });
+      await delay(150);
+      if (await pingTab(tabId)) return true;
+    } catch (e) {}
   }
+  return false;
 }
 
 /**
@@ -654,11 +671,6 @@ async function _ensureTabGroupOpenInternal(groupName, customUrls, tabMode = 'exi
     await focusTab(finalTabIds[0]);
   }
 
-  // Ensure all tabs are completely loaded before returning
-  for (const tid of finalTabIds) {
-    await waitForTabComplete(tid, 20000);
-  }
-
   console.log(`[BOLTHAVEN EXT] ✓ Ready: ${finalTabIds.length} tab(s) confirmed open and active for "${resolvedName}":`, finalTabIds);
   return finalTabIds;
 }
@@ -735,11 +747,8 @@ async function startAutomation(payload) {
 
   activeTabIds = activeTabIds.slice(0, maxWorkers);
 
-  // Ensure content scripts are active on all worker tabs
-  for (const tid of activeTabIds) {
-    await waitForTabComplete(tid, 20000);
-    await ensureContentScriptInjected(tid);
-  }
+  // Ensure content scripts are active on all worker tabs in parallel (fast, no blocking sequential loops)
+  await Promise.all(activeTabIds.map((tid) => ensureContentScriptInjected(tid)));
 
   // 2. If jobs not passed or empty, fetch pending jobs from the backend queue
   if ((!jobs || jobs.length === 0) && propertyId) {
@@ -801,26 +810,16 @@ async function startAutomation(payload) {
   automation.failedCount = 0;
   automation.tabSlots = activeTabIds.map((tabId) => ({ tabId, busy: false, currentJob: null }));
 
-  console.log(`[BOLTHAVEN EXT] Starting sequential tab initialization for ${automation.tabSlots.length} tabs...`);
+  console.log(`[BOLTHAVEN EXT] Starting ${automation.tabSlots.length} tab slots with queue mutex...`);
 
-  // Sequentially setup and send each tab in strict order: Tab 1 (Image 1) -> Tab 2 (Image 2) -> Tab 3 (Image 3) -> Tab 4 (Image 4)
-  (async () => {
-    for (let i = 0; i < automation.tabSlots.length; i++) {
-      if (!automation.isRunning || mySessionId !== automationSessionId) break;
-      const initialJob = jobs[i];
-      if (!initialJob) break;
-
-      console.log(`[BOLTHAVEN EXT] Starting Tab Slot ${i + 1}/${automation.tabSlots.length} with Image #${initialJob.original_position}...`);
-      processSlot(i, mySessionId, initialJob);
-
-      // Wait until this slot completes its setup & send phase before starting the next tab
-      await delay(200);
-      await acquireAttachmentMutex().then((release) => {
-        release();
-      });
-      await delay(200);
-    }
-  })();
+  // Start all tab slots: acquireAttachmentMutex inside processSlot guarantees
+  // each tab performs setup & send one-by-one in sequence without conflict!
+  for (let i = 0; i < automation.tabSlots.length; i++) {
+    if (!automation.isRunning || mySessionId !== automationSessionId) break;
+    const initialJob = jobs[i];
+    if (!initialJob) break;
+    processSlot(i, mySessionId, initialJob);
+  }
 
   return { success: true, message: `Automation started: ${jobs.length} jobs on ${activeTabIds.length} tabs` };
 }
@@ -925,10 +924,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         world: 'MAIN',
         func: (text) => {
           const pm = document.querySelector('.ProseMirror, #prompt-textarea, textarea');
-          if (!pm) return false;
+          if (!pm) return { ok: false, reason: 'no pm' };
           pm.focus();
 
-          // Try atomic execCommand insertText
+          // METHOD A: document.execCommand insertText — works in isolated worlds AND main world where deprecated API still active
           try {
             const sel = window.getSelection();
             const range = document.createRange();
@@ -937,31 +936,85 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             sel.addRange(range);
             document.execCommand('delete', false, null);
             const ok = document.execCommand('insertText', false, text);
-            if (ok && pm.textContent && pm.textContent.trim().length > 0) {
+            if (ok && pm.textContent && pm.textContent.trim().length > 3) {
               pm.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
-              pm.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
-              return true;
+              return { ok: true, method: 'execCommand' };
             }
           } catch (e) {}
 
-          // Fallback: Paragraph replacement in ProseMirror
+          // METHOD B: ProseMirror __prosemirror_state access (direct state mutation via PM API)
           try {
-            let p = pm.querySelector('p');
-            if (!p) {
-              p = document.createElement('p');
-              pm.appendChild(p);
+            const pmStateKey = Object.keys(pm).find(k => k.startsWith('__prosemirror') || k === 'pmViewDesc');
+            if (pmStateKey) {
+              const view = pm[pmStateKey]?.node ? pm[pmStateKey] : null;
+              if (view && view.dispatch && view.state) {
+                const tr = view.state.tr.insertText(text);
+                view.dispatch(tr);
+                return { ok: true, method: 'prosemirror_view' };
+              }
             }
-            p.textContent = text;
+          } catch (e) {}
+
+          // METHOD C: React fiber / synthetic event on the underlying contenteditable
+          try {
+            const reactFiberKey = Object.keys(pm).find(k => k.startsWith('__reactFiber') || k.startsWith('__reactInternals'));
+            if (reactFiberKey) {
+              // Walk up fiber tree to find the ProseMirror view
+              let fiber = pm[reactFiberKey];
+              while (fiber) {
+                if (fiber.stateNode && fiber.stateNode.dispatch && fiber.stateNode.state) {
+                  const view = fiber.stateNode;
+                  const tr = view.state.tr.insertText(text);
+                  view.dispatch(tr);
+                  return { ok: true, method: 'fiber_pm_view' };
+                }
+                fiber = fiber.return;
+              }
+            }
+          } catch (e) {}
+
+          // METHOD D: Clipboard paste simulation (most reliable for modern editors)
+          try {
+            pm.focus();
+            // Select all existing text first
+            const sel2 = window.getSelection();
+            const range2 = document.createRange();
+            range2.selectNodeContents(pm);
+            sel2.removeAllRanges();
+            sel2.addRange(range2);
+
+            const dt = new DataTransfer();
+            dt.setData('text/plain', text);
+            dt.setData('text/html', `<p>${text.replace(/\n/g, '</p><p>')}</p>`);
+
+            const pasteEvent = new ClipboardEvent('paste', {
+              bubbles: true,
+              cancelable: true,
+              composed: true,
+            });
+            Object.defineProperty(pasteEvent, 'clipboardData', { value: dt });
+            pm.dispatchEvent(pasteEvent);
+
+            // Check synchronously - no await in non-async func scope
+            if (pm.textContent && pm.textContent.trim().length > 3) {
+              return { ok: true, method: 'clipboard_paste' };
+            }
+          } catch (e) {}
+
+          // METHOD E: Direct innerHTML paragraph injection (fallback, works if React state reads innerText)
+          try {
+            const lines2 = text.split('\n');
+            pm.innerHTML = lines2.map(l => `<p>${l || '<br>'}</p>`).join('');
             pm.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, inputType: 'insertText', data: text }));
             pm.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
             pm.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
-            return true;
+            return { ok: pm.textContent.trim().length > 3, method: 'innerHTML' };
           } catch (e) {}
 
-          return false;
+          return { ok: false, reason: 'all methods failed' };
         },
         args: [textToInsert],
-      }).then((res) => sendResponse({ success: res?.[0]?.result ?? false }))
+      }).then((res) => sendResponse({ success: res?.[0]?.result?.ok ?? false, detail: res?.[0]?.result }))
         .catch((e) => sendResponse({ success: false, error: e.message }));
       return true;
     }
@@ -1663,10 +1716,11 @@ async function pollCompanion() {
 
           await ensureContentScriptInjected(chatTab.id);
           chrome.tabs.sendMessage(chatTab.id, { action: 'INSPECT_CHATGPT', tryClick: payload?.tryClick }, (resp) => {
+            const err = chrome.runtime.lastError?.message;
             fetch(`${COMPANION_URL}/report-inspect`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ ...(resp || {}), mainWorldInfo }),
+              body: JSON.stringify({ ...(resp || {}), mainWorldInfo, tabId: chatTab.id, lastError: err }),
             }).catch(() => {});
           });
         } else {

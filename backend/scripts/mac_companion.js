@@ -1952,6 +1952,20 @@ function mergeTabGroups(scannedGroups, liveGroups) {
     return res.end(JSON.stringify(result));
   }
 
+  if (url.pathname === '/test-send' && req.method === 'GET') {
+    global.lastInspectResult = null;
+    pushPendingCommand({ action: 'TEST_SETUP_AND_SEND', payload: {}, created_at: new Date().toISOString() });
+    console.log('[COMPANION] Test Setup & Send command queued');
+    let attempts = 0;
+    while (attempts < 100 && !global.lastInspectResult) {
+      await new Promise((r) => setTimeout(r, 200));
+      attempts++;
+    }
+    const result = global.lastInspectResult || { error: 'Timeout waiting for test setup & send result' };
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify(result));
+  }
+
   if (url.pathname === '/report-inspect' && req.method === 'POST') {
     let body = '';
     req.on('data', (c) => (body += c));

@@ -277,62 +277,25 @@
   }
 
   // Find stop button (indicates generation is actively running).
-  // CRITICAL: Must be strictly scoped inside the composer container!
-  // Outside composer, SVG <rect> exists on Copy, Sidebar, and other buttons and would falsely trigger!
+  // Strictly locate the active stop button in the composer
   function findStopButton() {
-    const composer = document.querySelector('form, div[class*="composer"], div[id*="composer"]');
+    const composer = getComposerContainer() || document.querySelector('form');
     if (!composer) return null;
 
-    // 1. Explicit data-testid or aria-label strictly within composer
+    // 1. Explicit stop buttons
     const byAttr = composer.querySelector(
       'button[data-testid="stop-button"], ' +
-      'button[data-testid*="stop"], ' +
       'button[aria-label*="Stop generating" i], ' +
-      'button[aria-label*="Stop streaming" i], ' +
-      'button[aria-label*="Stop message" i], ' +
-      'button[aria-label*="Stop" i]'
+      'button[aria-label*="Stop streaming" i]'
     );
-    if (byAttr && !byAttr.disabled) return byAttr;
+    if (byAttr && !byAttr.disabled && byAttr.getAttribute('aria-disabled') !== 'true') return byAttr;
 
-    // 2. Button with SVG rect strictly within composer (excluding model picker, attach, mic, copy)
+    // 2. Button strictly with aria-label or testid containing "stop" in composer (excluding voice/mic/speech)
     const composerButtons = Array.from(composer.querySelectorAll('button:not(:disabled)'));
     for (const b of composerButtons) {
       const aria = (b.getAttribute('aria-label') || '').toLowerCase();
       const testid = (b.getAttribute('data-testid') || '').toLowerCase();
-      const text = (b.textContent || '').trim().toLowerCase();
-
-      // Skip non-stop composer buttons (audio, speech, voice mic, attachments, model selector, copy)
-      if (
-        aria.includes('attach') ||
-        aria.includes('upload') ||
-        aria.includes('file') ||
-        aria.includes('voice') ||
-        aria.includes('speech') ||
-        aria.includes('audio') ||
-        aria.includes('sound') ||
-        aria.includes('mic') ||
-        aria.includes('dictate') ||
-        aria.includes('model') ||
-        testid.includes('voice') ||
-        testid.includes('speech') ||
-        testid.includes('audio') ||
-        testid.includes('sound') ||
-        testid.includes('mic') ||
-        testid.includes('dictate') ||
-        testid.includes('model') ||
-        text.includes('gpt-') ||
-        text.includes('model') ||
-        aria.includes('copy')
-      ) {
-        continue;
-      }
-
-      // Stop button in ChatGPT has either a square SVG rect or stop label
-      if (
-        b.querySelector('svg rect, svg square') ||
-        aria.includes('stop') ||
-        testid.includes('stop')
-      ) {
+      if ((aria.includes('stop') || testid.includes('stop')) && !aria.includes('voice') && !aria.includes('speech')) {
         return b;
       }
     }
@@ -345,43 +308,20 @@
     // 1. Stop button present strictly in composer -> 100% actively generating!
     if (findStopButton()) return true;
 
-    // 2. Look for "Working", "Thinking", or "Creating image" indicators across page
-    // Leaf or near-leaf elements displaying "Working" or "Thinking"
-    const textNodes = document.querySelectorAll('div, span, p, button, article');
-    for (const el of textNodes) {
-      if (el.children.length > 2) continue;
-      const txt = (el.textContent || '').trim();
-      // Match "Working", "Working...", "Working for 30s", "Thinking...", "Creating image..."
-      // But do NOT match "Worked for ..." (which indicates it finished!)
-      if ((/^Working\b/i.test(txt) && !/^Worked\b/i.test(txt)) || /^Thinking\b/i.test(txt) || /^Creating image/i.test(txt)) {
-        return true;
-      }
-    }
-
-    // 3. Look for active thinking indicators strictly inside the latest assistant turn
-    const allAssistantTurns = document.querySelectorAll(
-      'div[data-message-author-role="assistant"], article[data-testid*="conversation-turn"], article'
+    // 2. Only check inside assistant conversation turns (never whole page / sidebar)
+    const assistantTurns = document.querySelectorAll(
+      'div[data-message-author-role="assistant"], article[data-testid*="conversation-turn"]'
     );
-    if (allAssistantTurns.length > 0) {
-      const lastTurn = allAssistantTurns[allAssistantTurns.length - 1];
-      const hasSpinner = lastTurn.querySelector('svg.animate-spin, div[class*="spin"], .result-thinking, .animate-pulse');
-      if (hasSpinner) return true;
+    if (assistantTurns.length === 0) return false;
 
-      const txt = (lastTurn.textContent || '').slice(-300);
-      if (/\bWorking\.\.\./i.test(txt) || /\bThinking\.\.\./i.test(txt) || /\bCreating image\b/i.test(txt)) {
-        return true;
-      }
+    const lastTurn = assistantTurns[assistantTurns.length - 1];
+    if (lastTurn.querySelector('svg.animate-spin, div[class*="spin"], .result-thinking, .animate-pulse')) {
+      return true;
     }
 
-    // 4. Check composer action button: if active (not disabled) and has stop mode
-    const composer = document.querySelector('form, div[class*="composer"], div[id*="composer"]');
-    if (composer) {
-      const actionBtn = composer.querySelector('button[data-testid="send-button"], button[data-testid*="stop"], button[aria-label*="stop" i]');
-      if (actionBtn && !actionBtn.disabled) {
-        const aria = (actionBtn.getAttribute('aria-label') || '').toLowerCase();
-        if (aria.includes('stop')) return true;
-        if (actionBtn.querySelector('svg rect, svg square')) return true;
-      }
+    const txt = (lastTurn.textContent || '').slice(-200);
+    if (/\b(Thinking|Creating image|Working)\.{3}/i.test(txt)) {
+      return true;
     }
 
     return false;
@@ -1176,15 +1116,45 @@
     promptArea.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
 
     let ready = isPromptActuallyInserted(cleanText, promptArea);
-    if (!ready) {
-      try {
-        console.log('[BOLTHAVEN] Triggering INSERT_PROMPT_MAIN_WORLD via background script...');
-        chrome.runtime.sendMessage({ action: 'INSERT_PROMPT_MAIN_WORLD', text: cleanText }, () => {});
-      } catch (e) {}
+    if (ready) {
+      console.log(`[BOLTHAVEN] setPromptText: Method 4 (innerHTML paragraph) succeeded (${getComposerText(promptArea).length} chars)`);
+      return true;
     }
 
-    console.log(`[BOLTHAVEN] setPromptText final check: ${ready ? 'SUCCESS' : 'TRIGGERED_MAIN_WORLD'} ("${getComposerText(promptArea).slice(0, 35)}...")`);
-    return true;
+    // Method 5: MAIN world async injection via background script (bypasses Chrome isolated world for ProseMirror)
+    try {
+      console.log('[BOLTHAVEN] Triggering INSERT_PROMPT_MAIN_WORLD via background script...');
+      chrome.runtime.sendMessage({ action: 'INSERT_PROMPT_MAIN_WORLD', text: cleanText }, () => {});
+    } catch (e) {}
+
+    // NOTE: MAIN world is async — caller must wait and re-check isPromptActuallyInserted
+    console.log(`[BOLTHAVEN] setPromptText: Method 5 (MAIN world) queued — caller must await confirmation`);
+    return false; // signal caller that verification needed
+  }
+
+  // Async wrapper: set prompt text and WAIT until it is actually readable back, or timeout
+  async function setPromptTextAsync(inputEl, text, timeoutMs = 4000) {
+    // First try the sync methods
+    const syncResult = setPromptText(inputEl, text);
+    if (syncResult && isPromptActuallyInserted(text, inputEl || findPromptInput())) {
+      return true;
+    }
+
+    // Wait for MAIN world injection to take effect
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 250));
+      if (isPromptActuallyInserted(text, inputEl || findPromptInput())) {
+        const pm = inputEl || findPromptInput();
+        console.log(`[BOLTHAVEN] setPromptTextAsync: confirmed inserted (${getComposerText(pm).length} chars)`);
+        return true;
+      }
+      // Re-trigger MAIN world injection if still not inserted
+      try {
+        chrome.runtime.sendMessage({ action: 'INSERT_PROMPT_MAIN_WORLD', text }, () => {});
+      } catch (e) {}
+    }
+    return isPromptActuallyInserted(text, inputEl || findPromptInput());
   }
 
   // Convert base64 data URL to Blob synchronously (handles massive data URLs in <1ms without message passing)
@@ -1553,15 +1523,21 @@
       throw new Error('Job stopped by user');
     }
 
-    // Safety guard: If tab is currently busy generating an in-progress image, wait for it
-    const preWaitStart = Date.now();
-    while (isThinkingOrGenerating() && Date.now() - preWaitStart < 240000) {
-      if (activeJobAborted) {
-        clearPromptText(input);
-        throw new Error('Job stopped by user');
+    // Safety guard: If tab is currently busy generating an in-progress image, wait for it (only if conversation already has messages)
+    const hasExistingMessages = document.querySelectorAll(
+      'div[data-message-author-role="assistant"], article[data-testid*="conversation-turn"]'
+    ).length > 0;
+
+    if (hasExistingMessages) {
+      const preWaitStart = Date.now();
+      while (isThinkingOrGenerating() && Date.now() - preWaitStart < 15000) {
+        if (activeJobAborted) {
+          clearPromptText(input);
+          throw new Error('Job stopped by user');
+        }
+        console.log(`[BOLTHAVEN] Tab currently busy generating. Waiting before starting Image #${job.original_position || 1}...`);
+        await new Promise((r) => setTimeout(r, 1000));
       }
-      console.log(`[BOLTHAVEN] Tab currently busy generating. Waiting before starting Image #${job.original_position || 1}...`);
-      await new Promise((r) => setTimeout(r, 2000));
     }
 
     // 0. Clean prompt text and prune any leftover attachments before starting
@@ -1651,12 +1627,8 @@
     const promptText = (job.resolved_prompt || 'Enhance the attached architectural photo').trim();
     console.log(`[BOLTHAVEN] Setting prompt text (${promptText.length} chars)...`);
 
-    let textReady = false;
-    for (let attempt = 1; attempt <= 6; attempt++) {
-      textReady = setPromptText(input, promptText);
-      if (textReady) break;
-      await new Promise((r) => setTimeout(r, 400));
-    }
+    // Use async version which waits for MAIN world injection to settle
+    const textReady = await setPromptTextAsync(input, promptText, 5000);
 
     // STRICT GUARD: Prompt text MUST be verified in composer!
     const hasPrompt = isPromptActuallyInserted(promptText, input);
@@ -1774,9 +1746,9 @@
       'div[data-message-author-role="assistant"], article[data-testid*="conversation-turn"]'
     ).length;
 
-    // Set the prompt text
-    setPromptText(input, promptText || 'Analyze property details and formulate facebook ad prompt');
-    await new Promise((r) => setTimeout(r, 800));
+    // Set the prompt text (async version waits for MAIN world injection to settle)
+    await setPromptTextAsync(input, promptText || 'Analyze property details and formulate facebook ad prompt', 4000);
+    await new Promise((r) => setTimeout(r, 400));
 
     if (activeJobAborted) throw new Error('Stage 1 aborted by user');
 
@@ -2035,8 +2007,8 @@
 
     // 3. Set the prompt text BELOW all the attached images
     console.log('[BOLTHAVEN] Stage 2: Setting prompt text below attached images...');
-    setPromptText(input, extractedPrompt || 'Create facebook advertisement from the attached reference and building photos');
-    await new Promise((r) => setTimeout(r, 800));
+    await setPromptTextAsync(input, extractedPrompt || 'Create facebook advertisement from the attached reference and building photos', 5000);
+    await new Promise((r) => setTimeout(r, 400));
 
     if (activeJobAborted) throw new Error('Stage 2 aborted by user');
 
@@ -2289,50 +2261,58 @@
     }
 
     if (request.action === 'INSPECT_CHATGPT') {
-      const pm = document.querySelector('.ProseMirror, #prompt-textarea');
-      if (pm && request.tryClick) {
-        pm.focus();
-        setPromptText(pm, 'Hello test prompt');
-      }
-      const sendBtn = findSendButton();
-      const clickLog = [];
-
-      const docButtons = Array.from(document.querySelectorAll('button')).map((b) => ({
-        aria: b.getAttribute('aria-label'),
-        testid: b.getAttribute('data-testid'),
-        text: (b.innerText || b.textContent || '').trim().slice(0, 30),
-        disabled: b.disabled,
-        rect: { w: Math.round(b.getBoundingClientRect().width), h: Math.round(b.getBoundingClientRect().height), x: Math.round(b.getBoundingClientRect().x), y: Math.round(b.getBoundingClientRect().y) },
-        svgId: b.querySelector('use')?.getAttribute('href') || (b.querySelector('svg')?.outerHTML || '').slice(0, 60),
-      })).filter((b) => Boolean(b.aria || b.testid || b.svgId));
-
-      if (request.tryClick && sendBtn) {
-        clickLog.push(`Found sendBtn: <${sendBtn.tagName} type="${sendBtn.type}" aria-label="${sendBtn.getAttribute('aria-label')}">`);
-        clickLog.push(`Disabled: ${sendBtn.disabled}, aria-disabled: ${sendBtn.getAttribute('aria-disabled')}`);
-        clickLog.push(`Has form: ${Boolean(sendBtn.form)}`);
-        try {
-          const clicked = clickSendButton(sendBtn);
-          clickLog.push(`clickSendButton returned: ${clicked}`);
-        } catch (e) {
-          clickLog.push(`clickSendButton threw: ${e.message}`);
+      (async () => {
+        const pm = document.querySelector('.ProseMirror, #prompt-textarea');
+        const debugSteps = [];
+        if (pm && request.tryClick) {
+          pm.focus();
+          debugSteps.push('focused pm');
+          const res = await setPromptTextAsync(pm, 'Hello test prompt from Bolthaven Automation', 3000);
+          debugSteps.push(`setPromptTextAsync result: ${res}, composerText: "${getComposerText(pm).slice(0, 80)}"`);
         }
-      }
+        const sendBtn = findSendButton();
+        const clickLog = [];
 
-      sendResponse({
-        url: window.location.href,
-        hasPm: Boolean(pm),
-        pmId: pm?.id,
-        pmTag: pm?.tagName,
-        hasPta: Boolean(pta),
-        ptaClass: pta?.className,
-        ptaTag: pta?.tagName,
-        composerText: getComposerText(),
-        attachedCount: getAttachedImagesCount(),
-        sendBtn: Boolean(sendBtn),
-        clickLog,
-        allButtons: docButtons,
-        hasStopBtn: Boolean(findStopButton()),
-      });
+        const docButtons = Array.from(document.querySelectorAll('button')).map((b) => ({
+          aria: b.getAttribute('aria-label'),
+          testid: b.getAttribute('data-testid'),
+          text: (b.innerText || b.textContent || '').trim().slice(0, 30),
+          disabled: b.disabled,
+          rect: { w: Math.round(b.getBoundingClientRect().width), h: Math.round(b.getBoundingClientRect().height), x: Math.round(b.getBoundingClientRect().x), y: Math.round(b.getBoundingClientRect().y) },
+          svgId: b.querySelector('use')?.getAttribute('href') || (b.querySelector('svg')?.outerHTML || '').slice(0, 60),
+        })).filter((b) => Boolean(b.aria || b.testid || b.svgId));
+
+        if (request.tryClick && sendBtn) {
+          clickLog.push(`Found sendBtn: <${sendBtn.tagName} type="${sendBtn.type}" aria-label="${sendBtn.getAttribute('aria-label')}">`);
+          clickLog.push(`Disabled: ${sendBtn.disabled}, aria-disabled: ${sendBtn.getAttribute('aria-disabled')}`);
+          clickLog.push(`Has form: ${Boolean(sendBtn.form)}`);
+          try {
+            const clicked = clickSendButton(sendBtn);
+            clickLog.push(`clickSendButton returned: ${clicked}`);
+          } catch (e) {
+            clickLog.push(`clickSendButton threw: ${e.message}`);
+          }
+        }
+
+        const pta = document.querySelector('#prompt-textarea');
+        sendResponse({
+          url: window.location.href,
+          hasPm: Boolean(pm),
+          pmHtml: pm ? pm.outerHTML.slice(0, 500) : null,
+          debugSteps,
+          pmId: pm?.id,
+          pmTag: pm?.tagName,
+          hasPta: Boolean(pta),
+          ptaClass: pta?.className,
+          ptaTag: pta?.tagName,
+          composerText: getComposerText(),
+          attachedCount: getAttachedImagesCount(),
+          sendBtn: Boolean(sendBtn),
+          clickLog,
+          allButtons: docButtons,
+          hasStopBtn: Boolean(findStopButton()),
+        });
+      })();
       return true;
     }
 
