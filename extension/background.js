@@ -260,6 +260,51 @@ function waitForJobGeneration(jobId, timeoutMs = 360000) {
   });
 }
 
+/** Pre-fetch an image from local backend or remote URL and convert to Base64 data URL */
+async function fetchJobImageDataUrl(job) {
+  if (!job) return null;
+  if (job.image_data_url && typeof job.image_data_url === 'string' && job.image_data_url.startsWith('data:')) {
+    return job.image_data_url;
+  }
+  const primary = job.source_file_path || job.source_file_url || '';
+  const fallback = job.source_file_url || job.source_file_path || '';
+  const candidates = [];
+
+  if (primary && primary.includes('/storage/')) {
+    candidates.push(primary.startsWith('/') ? `${BOLTHAVEN_URL}${primary}` : primary);
+  }
+  if (fallback && fallback.includes('/storage/')) {
+    candidates.push(fallback.startsWith('/') ? `${BOLTHAVEN_URL}${fallback}` : fallback);
+  }
+  if (primary && !candidates.includes(primary)) {
+    candidates.push(primary.startsWith('/') ? `${BOLTHAVEN_URL}${primary}` : primary);
+  }
+  if (fallback && !candidates.includes(fallback)) {
+    candidates.push(fallback.startsWith('/') ? `${BOLTHAVEN_URL}${fallback}` : fallback);
+  }
+
+  for (const rawUrl of candidates) {
+    try {
+      console.log(`[BOLTHAVEN EXT] Pre-fetching image #${job.original_position || 1} for tab:`, rawUrl);
+      const r = await fetch(rawUrl);
+      if (!r.ok) continue;
+      const arrayBuffer = await r.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuffer);
+      let binary = '';
+      const chunkSize = 8192;
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+      }
+      const base64 = btoa(binary);
+      const mimeType = r.headers.get('content-type') || (rawUrl.endsWith('.png') ? 'image/png' : 'image/jpeg');
+      return `data:${mimeType};base64,${base64}`;
+    } catch (e) {
+      console.warn(`[BOLTHAVEN EXT] Pre-fetch candidate failed (${rawUrl}):`, e.message);
+    }
+  }
+  return null;
+}
+
 /**
  * Process one job on a given tab slot.
  * When done (success or fail), automatically picks the next pending job
@@ -303,11 +348,23 @@ async function processSlot(slotIndex, sessionId, initialJob = null) {
         return;
       }
 
+      // Pre-fetch image Base64 data URL in background script so tab has zero CORS/mixed-content restrictions!
+      let jobWithData = { ...job };
+      try {
+        const dataUrl = await fetchJobImageDataUrl(job);
+        if (dataUrl) {
+          jobWithData.image_data_url = dataUrl;
+          console.log(`[BOLTHAVEN EXT] Image #${job.original_position || 1} pre-fetched successfully (${Math.round(dataUrl.length / 1024)} KB data URL)`);
+        }
+      } catch (imgErr) {
+        console.warn(`[BOLTHAVEN EXT] Pre-fetch image notice for Image #${job.original_position}:`, imgErr.message);
+      }
+
       // Send SETUP_AND_SEND_JOB to the tab with retry
       let setupRes = null;
-      for (let sendAttempt = 0; sendAttempt < 3; sendAttempt++) {
+      for (let sendAttempt = 0; sendAttempt < 4; sendAttempt++) {
         setupRes = await new Promise((resolve) => {
-          chrome.tabs.sendMessage(slot.tabId, { action: 'SETUP_AND_SEND_JOB', job }, (res) => {
+          chrome.tabs.sendMessage(slot.tabId, { action: 'SETUP_AND_SEND_JOB', job: jobWithData }, (res) => {
             if (chrome.runtime.lastError) {
               resolve({ success: false, error: chrome.runtime.lastError.message });
             } else {
@@ -868,6 +925,146 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           }
         },
       }).then(() => sendResponse({ success: true })).catch((e) => sendResponse({ success: false, error: e.message }));
+      return true;
+    }
+  }
+
+  // Insert Prompt text in MAIN world context (directly interacts with ProseMirror document transaction)
+  if (request.action === 'INSERT_PROMPT_MAIN_WORLD') {
+    const tabId = sender.tab?.id;
+    const textToInsert = request.text || '';
+    if (tabId && textToInsert) {
+      chrome.scripting.executeScript({
+        target: { tabId },
+        world: 'MAIN',
+        func: (text) => {
+          const pm = document.querySelector('.ProseMirror, #prompt-textarea, textarea');
+          if (!pm) return false;
+          pm.focus();
+
+          // Try atomic execCommand insertText
+          try {
+            const sel = window.getSelection();
+            const range = document.createRange();
+            range.selectNodeContents(pm);
+            sel.removeAllRanges();
+            sel.addRange(range);
+            document.execCommand('delete', false, null);
+            const ok = document.execCommand('insertText', false, text);
+            if (ok && pm.textContent && pm.textContent.trim().length > 0) {
+              pm.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+              pm.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+              return true;
+            }
+          } catch (e) {}
+
+          // Fallback: Paragraph replacement in ProseMirror
+          try {
+            let p = pm.querySelector('p');
+            if (!p) {
+              p = document.createElement('p');
+              pm.appendChild(p);
+            }
+            p.textContent = text;
+            pm.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, inputType: 'insertText', data: text }));
+            pm.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+            pm.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+            return true;
+          } catch (e) {}
+
+          return false;
+        },
+        args: [textToInsert],
+      }).then((res) => sendResponse({ success: res?.[0]?.result ?? false }))
+        .catch((e) => sendResponse({ success: false, error: e.message }));
+      return true;
+    }
+  }
+
+  // Attach single image in MAIN world context
+  if (request.action === 'ATTACH_IMAGE_MAIN_WORLD') {
+    const tabId = sender.tab?.id;
+    const { dataUrl, filename } = request;
+    if (tabId && dataUrl) {
+      chrome.scripting.executeScript({
+        target: { tabId },
+        world: 'MAIN',
+        func: async (dUrl, fName) => {
+          try {
+            const resp = await fetch(dUrl);
+            const blob = await resp.blob();
+            const file = new File([blob], fName || 'image.jpg', { type: blob.type || 'image/jpeg' });
+            const dt = new DataTransfer();
+            dt.items.add(file);
+
+            // 1. Locate or trigger file input in DOM
+            let fileInput = document.querySelector('input[type="file"], input[accept*="image"]');
+            if (!fileInput) {
+              const attachBtn = (
+                document.querySelector('button[data-testid="attach-button"]') ||
+                document.querySelector('button[aria-label*="Attach" i]') ||
+                document.querySelector('button[aria-label*="Add files" i]') ||
+                document.querySelector('button[aria-label*="Add content" i]') ||
+                document.querySelector('button[data-testid*="attach" i]')
+              );
+              if (attachBtn) {
+                attachBtn.click();
+                await new Promise((r) => setTimeout(r, 250));
+                fileInput = document.querySelector('input[type="file"], input[accept*="image"]');
+              }
+            }
+
+            if (fileInput) {
+              try {
+                const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'files')?.set;
+                if (nativeSetter) {
+                  nativeSetter.call(fileInput, dt.files);
+                } else {
+                  fileInput.files = dt.files;
+                }
+              } catch (e) {
+                fileInput.files = dt.files;
+              }
+              if (fileInput._valueTracker) fileInput._valueTracker.setValue('');
+
+              // Trigger React onChange directly if present on fiber
+              try {
+                const reactPropsKey = Object.keys(fileInput).find((k) => k.startsWith('__reactProps$'));
+                if (reactPropsKey && fileInput[reactPropsKey]?.onChange) {
+                  fileInput[reactPropsKey].onChange({ target: fileInput, currentTarget: fileInput });
+                }
+              } catch (e) {}
+
+              fileInput.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+              fileInput.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+            }
+
+            // 2. Dispatch paste and drop on prompt textarea
+            const pm = document.querySelector('#prompt-textarea, .ProseMirror, textarea');
+            if (pm) {
+              pm.focus();
+              try {
+                const pasteEv = new ClipboardEvent('paste', { bubbles: true, cancelable: true, composed: true });
+                Object.defineProperty(pasteEv, 'clipboardData', { value: dt, writable: false });
+                pm.dispatchEvent(pasteEv);
+              } catch (e) {}
+
+              try {
+                const dropEv = new DragEvent('drop', { bubbles: true, cancelable: true, composed: true, dataTransfer: dt });
+                pm.dispatchEvent(dropEv);
+              } catch (e) {}
+            }
+
+            // Send Escape key to close any attach popup that opened
+            document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }));
+            return true;
+          } catch (e) {
+            return false;
+          }
+        },
+        args: [dataUrl, filename],
+      }).then((res) => sendResponse({ success: res?.[0]?.result ?? false }))
+        .catch((e) => sendResponse({ success: false, error: e.message }));
       return true;
     }
   }

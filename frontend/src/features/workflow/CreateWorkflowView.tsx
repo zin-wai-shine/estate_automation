@@ -129,7 +129,7 @@ export function applyListingCodeToGeneratedText(
 
 async function requestAIGeneration(payload: Record<string, any>, signal?: AbortSignal): Promise<string> {
   let resolvedModel = payload.model || 'gemini-flash-lite-latest';
-  if (resolvedModel.includes('gemini-2.5') || resolvedModel.includes('gemini-2.0') || resolvedModel.includes('gemini-1.5') || resolvedModel === 'chrome-tab-group') {
+  if (resolvedModel.includes('gemini-2.5') || resolvedModel.includes('gemini-2.0') || resolvedModel.includes('gemini-1.5')) {
     resolvedModel = 'gemini-flash-lite-latest';
   }
   const cleanPayload = { ...payload, model: resolvedModel };

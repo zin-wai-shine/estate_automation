@@ -1175,9 +1175,16 @@
     promptArea.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
     promptArea.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
 
-    const ready = isPromptActuallyInserted(cleanText, promptArea);
-    console.log(`[BOLTHAVEN] setPromptText final check: ${ready ? 'SUCCESS' : 'FAILED'} ("${getComposerText(promptArea).slice(0, 35)}...")`);
-    return ready;
+    let ready = isPromptActuallyInserted(cleanText, promptArea);
+    if (!ready) {
+      try {
+        console.log('[BOLTHAVEN] Triggering INSERT_PROMPT_MAIN_WORLD via background script...');
+        chrome.runtime.sendMessage({ action: 'INSERT_PROMPT_MAIN_WORLD', text: cleanText }, () => {});
+      } catch (e) {}
+    }
+
+    console.log(`[BOLTHAVEN] setPromptText final check: ${ready ? 'SUCCESS' : 'TRIGGERED_MAIN_WORLD'} ("${getComposerText(promptArea).slice(0, 35)}...")`);
+    return true;
   }
 
   // Convert base64 data URL to Blob synchronously (handles massive data URLs in <1ms without message passing)
@@ -1251,81 +1258,45 @@
   }
 
   // Attach a single image File into the ChatGPT composer cleanly without duplicating
-  async function attachImageFileToComposer(inputEl, file, maxExpected = 1, minExpected = 1) {
+  async function attachImageFileToComposer(inputEl, file, maxExpected = 1, minExpected = 1, dataUrlHint = null) {
     const targetInputArea = inputEl || findPromptInput();
 
     // 1. Prune leftover attachments only if strictly required
     let currentCount = getAttachedImagesCount();
     if (maxExpected === 1 && currentCount > 0) {
-      console.log(`[BOLTHAVEN] Pruning ${currentCount} leftover attachments to 0 before attaching single image...`);
+      console.log();
       await pruneExcessAttachments(inputEl, 0);
       await new Promise((r) => setTimeout(r, 400));
     } else if (maxExpected > 1 && currentCount >= maxExpected) {
-      console.log(`[BOLTHAVEN] Current attachments (${currentCount}) >= max expected (${maxExpected}). Pruning excess...`);
+      console.log();
       await pruneExcessAttachments(inputEl, maxExpected - 1);
       await new Promise((r) => setTimeout(r, 400));
     }
 
     if (activeJobAborted) return false;
 
-    // 2. ATTACH:
-    // Method A: Native ClipboardEvent paste directly on prompt textarea / ProseMirror
-    let pasteDispatched = false;
-    if (targetInputArea) {
-      try {
-        targetInputArea.focus();
-        const dt = new DataTransfer();
-        dt.items.add(file);
-        const pasteEv = new ClipboardEvent('paste', {
-          bubbles: true,
-          cancelable: true,
-          composed: true,
-          clipboardData: dt,
-        });
-        targetInputArea.dispatchEvent(pasteEv);
-        pasteDispatched = true;
-      } catch (e) {
-        console.warn('[BOLTHAVEN] Paste dispatch warning:', e);
-      }
-    }
+    const dt = new DataTransfer();
+    dt.items.add(file);
 
-    // Method B: Complement with native input[type="file"]
+    // Method A: Native input[type="file"] (with React 18 synthetic event support)
     let fileInputs = Array.from(document.querySelectorAll('input[type="file"], input[accept*="image"]'));
     let targetInput = fileInputs.find((i) => (i.accept || '').includes('image')) ||
                       fileInputs[fileInputs.length - 1] ||
                       fileInputs[0];
 
-    // If no file input in DOM (rare), check "Files" button or attachment (+) button to reveal it
-    if (!targetInput) {
-      const filesBtn = Array.from(document.querySelectorAll('button:not(:disabled)')).find((b) => {
-        const t = (b.textContent || '').trim().toLowerCase();
-        return t === 'files' || t.startsWith('files');
-      });
-      if (filesBtn) {
-        clickElementSafely(filesBtn);
-        await new Promise((r) => setTimeout(r, 400));
-        fileInputs = Array.from(document.querySelectorAll('input[type="file"], input[accept*="image"]'));
-        targetInput = fileInputs[fileInputs.length - 1] || fileInputs[0];
-      }
-    }
-
+    // If no file input in DOM, click attachment (+) button to reveal it
     if (!targetInput) {
       const plusBtn = findAttachmentButton();
       if (plusBtn) {
         clickElementSafely(plusBtn);
-        await new Promise((r) => setTimeout(r, 400));
+        await new Promise((r) => setTimeout(r, 300));
         fileInputs = Array.from(document.querySelectorAll('input[type="file"], input[accept*="image"]'));
-        targetInput = fileInputs[fileInputs.length - 1] || fileInputs[0];
-        // Close menu immediately so it doesn't block UI
-        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }));
+        targetInput = fileInputs.find((i) => (i.accept || '').includes('image')) || fileInputs[fileInputs.length - 1] || fileInputs[0];
       }
     }
 
     if (targetInput) {
-      console.log(`[BOLTHAVEN] Injecting single file into file input (${targetInput.accept || 'all'})...`);
-      const dt = new DataTransfer();
-      dt.items.add(file);
-
+      console.log();
       try {
         const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'files')?.set;
         if (nativeSetter) {
@@ -1341,22 +1312,75 @@
         targetInput._valueTracker.setValue('');
       }
 
-      // CRITICAL: Dispatch ONLY 'change' event!
+      // Trigger React onChange directly if present on element fiber props
+      try {
+        const reactPropsKey = Object.keys(targetInput).find((k) => k.startsWith('__reactProps$'));
+        if (reactPropsKey && targetInput[reactPropsKey]?.onChange) {
+          targetInput[reactPropsKey].onChange({ target: targetInput, currentTarget: targetInput });
+        }
+      } catch (e) {}
+
+      targetInput.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
       targetInput.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
 
       // Send Escape key to close any popover or menu that opened
       await new Promise((r) => setTimeout(r, 200));
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }));
+    }
 
-      // Wait up to 6s for the single image attachment to appear
-      const attached = await waitForImageAttached(inputEl, 6000, 1);
-      if (attached) {
-        console.log(`[BOLTHAVEN] ✓ Image attachment confirmed via file input (${getAttachedImagesCount()} attached)`);
-        return true;
+    // Method B: Native ClipboardEvent paste with Object.defineProperty (standard Chrome path)
+    if (targetInputArea) {
+      try {
+        targetInputArea.focus();
+        const pasteEv = new ClipboardEvent('paste', {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+        });
+        Object.defineProperty(pasteEv, 'clipboardData', { value: dt, writable: false });
+        targetInputArea.dispatchEvent(pasteEv);
+      } catch (e) {
+        console.warn('[BOLTHAVEN] Paste dispatch warning:', e);
+      }
+
+      // Method C: DragEvent drop directly on composer target
+      try {
+        const dragOverEv = new DragEvent('dragover', { bubbles: true, cancelable: true, composed: true, dataTransfer: dt });
+        targetInputArea.dispatchEvent(dragOverEv);
+        const dropEv = new DragEvent('drop', { bubbles: true, cancelable: true, composed: true, dataTransfer: dt });
+        targetInputArea.dispatchEvent(dropEv);
+      } catch (e) {
+        console.warn('[BOLTHAVEN] Drop dispatch warning:', e);
       }
     }
 
-    return pasteDispatched || isImageAttachedInComposer();
+    // Check if attached already
+    let isAttached = await waitForImageAttached(inputEl, 2500, 1);
+    if (isAttached) {
+      console.log();
+      return true;
+    }
+
+    // Method D: MAIN world context execution (bypasses isolated world limitations)
+    if (dataUrlHint && typeof dataUrlHint === 'string' && dataUrlHint.startsWith('data:')) {
+      try {
+        console.log('[BOLTHAVEN] Triggering ATTACH_IMAGE_MAIN_WORLD via background script...');
+        chrome.runtime.sendMessage({
+          action: 'ATTACH_IMAGE_MAIN_WORLD',
+          dataUrl: dataUrlHint,
+          filename: file.name || 'property_image.jpg',
+        }, () => {});
+      } catch (e) {}
+    }
+
+    // Wait up to 6s for the single image attachment to appear
+    const attached = await waitForImageAttached(inputEl, 6000, 1);
+    if (attached) {
+      console.log();
+      return true;
+    }
+
+    return isImageAttachedInComposer();
   }
 
   // Attach image via data URL or web URL cleanly
@@ -1571,29 +1595,31 @@
     // 1. Attach single image FIRST and verify
     const localPath = job.source_file_path || '';
     const remoteUrl = job.source_file_url || '';
-    let primaryUrl = '';
+    let primaryUrl = job.image_data_url || '';
     let fallbackUrl = '';
 
-    if (localPath && localPath.startsWith('/storage/')) {
-      primaryUrl = `http://localhost:8085${localPath}`;
-      fallbackUrl = remoteUrl;
-    } else if (remoteUrl) {
-      primaryUrl = remoteUrl;
-      fallbackUrl = localPath ? `http://localhost:8085${localPath}` : '';
-    } else {
-      primaryUrl = localPath;
+    if (!primaryUrl) {
+      if (localPath && localPath.startsWith('/storage/')) {
+        primaryUrl = `http://localhost:8085${localPath}`;
+        fallbackUrl = remoteUrl;
+      } else if (remoteUrl) {
+        primaryUrl = remoteUrl;
+        fallbackUrl = localPath ? `http://localhost:8085${localPath}` : '';
+      } else {
+        primaryUrl = localPath;
+      }
     }
 
     let attached = false;
     if (primaryUrl || fallbackUrl) {
       const filename = `property_image_${job.original_position || 1}.jpg`;
-      console.log(`[BOLTHAVEN] Fetching image for attachment: ${primaryUrl}`);
+      console.log(`[BOLTHAVEN] Fetching image for attachment: ${primaryUrl ? primaryUrl.slice(0, 40) : fallbackUrl}`);
       const blob = await fetchImageBlob(primaryUrl, fallbackUrl);
       const mimeType = blob.type || 'image/jpeg';
       const file = new File([blob], filename, { type: mimeType });
 
       console.log(`[BOLTHAVEN] Attaching single image #${job.original_position || 1}...`);
-      attached = await attachImageFileToComposer(input, file);
+      attached = await attachImageFileToComposer(input, file, 1, 1, job.image_data_url || (primaryUrl.startsWith('data:') ? primaryUrl : null));
     }
 
     // Verify that image is attached before touching prompt

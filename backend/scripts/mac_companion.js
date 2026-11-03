@@ -1691,13 +1691,6 @@ function mergeTabGroups(scannedGroups, liveGroups) {
 
   // ── Get Automation State (polled by frontend / backend) ──────────────────
   if (url.pathname === '/automation-status' && req.method === 'GET') {
-    if (automationState.is_running && automationState.started_at) {
-      const elapsed = Date.now() - new Date(automationState.started_at).getTime();
-      if (elapsed > 10 * 60 * 1000) {
-        automationState.is_running = false;
-        console.log('[COMPANION] ℹ️ Auto-reset stale automationState (inactive for >10m)');
-      }
-    }
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ status: 'success', automation: automationState }));
   }
@@ -1759,7 +1752,7 @@ function mergeTabGroups(scannedGroups, liveGroups) {
         });
 
         // Bring Chrome window to front to trigger tab activation and extension wake-up
-        activateChromeWindow();
+        activateChromeWindow(null, (safeGroupTabUrls && safeGroupTabUrls[0]) || '', '', profile_key);
 
         const jobCount = (jobs || []).length;
         console.log(`[COMPANION] Queued START_AUTOMATION for ${jobCount} jobs on ${safeTabIds.length} tabs (property: ${property_id})`);
