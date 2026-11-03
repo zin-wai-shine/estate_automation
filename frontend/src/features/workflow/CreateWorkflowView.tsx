@@ -377,24 +377,108 @@ export const CreateWorkflowView: React.FC = () => {
 
   // Workflow Live Execution States (Canvas execution runner)
   const [executionState, setExecutionState] = useState<WorkflowExecutionState | undefined>(undefined);
-  const [extractedContent, setExtractedContent] = useState<string>('');
+  const [extractedContent, setExtractedContent] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('estate_facebook_import_session_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed?.caption) return parsed.caption;
+      }
+    } catch {}
+    return '';
+  });
   const [extractedImages, setExtractedImages] = useState<
     Array<{
       index: number;
       facebook_photo_id?: string;
       source_url: string;
       stored_url?: string;
+      filename?: string;
       width?: number;
       height?: number;
       status?: string;
     }>
-  >([]);
-  const [watermarkedPhotos, setWatermarkedPhotos] = useState<Record<number, string>>({});
-  const [enhancedPhotos, setEnhancedPhotos] = useState<Record<number, string>>({});
-  const [aiGeneratedOutputs, setAiGeneratedOutputs] = useState<Record<string, string>>({});
-  const [aiGeneratedCopy, setAiGeneratedCopy] = useState<string>('');
-  const [projectName, setProjectName] = useState<string>('');
-  const [propertyData, setPropertyData] = useState<any>(null);
+  >(() => {
+    try {
+      const saved = localStorage.getItem('estate_facebook_import_session_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed?.images) && parsed.images.length > 0) {
+          return parsed.images.map((img: any, idx: number) => ({
+            index: typeof img.index === 'number' && img.index > 0 ? img.index : idx + 1,
+            facebook_photo_id: img.facebook_photo_id || img.id || `photo-${idx + 1}`,
+            source_url: img.source_url || img.url || '',
+            stored_url: img.stored_url || img.url || '',
+            filename: img.filename || `Photo #${idx + 1}`,
+            width: img.width,
+            height: img.height,
+            status: 'verified',
+          }));
+        }
+      }
+    } catch {}
+    return [];
+  });
+  const [watermarkedPhotos, setWatermarkedPhotos] = useState<Record<number, string>>(() => {
+    try {
+      const saved = localStorage.getItem('estate_facebook_import_session_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed?.watermarkedPhotos) return parsed.watermarkedPhotos;
+      }
+    } catch {}
+    return {};
+  });
+  const [enhancedPhotos, setEnhancedPhotos] = useState<Record<number, string>>(() => {
+    try {
+      const saved = localStorage.getItem('estate_facebook_import_session_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed?.enhancedPhotos) return parsed.enhancedPhotos;
+      }
+    } catch {}
+    return {};
+  });
+  const [aiGeneratedOutputs, setAiGeneratedOutputs] = useState<Record<string, string>>(() => {
+    try {
+      const saved = localStorage.getItem('estate_facebook_import_session_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed?.aiGeneratedOutputs) return parsed.aiGeneratedOutputs;
+      }
+    } catch {}
+    return {};
+  });
+  const [aiGeneratedCopy, setAiGeneratedCopy] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('estate_facebook_import_session_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed?.aiGeneratedCopy) return parsed.aiGeneratedCopy;
+      }
+    } catch {}
+    return '';
+  });
+  const [projectName, setProjectName] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('estate_facebook_import_session_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed?.propertyData?.project_name) return parsed.propertyData.project_name;
+      }
+    } catch {}
+    return '';
+  });
+  const [propertyData, setPropertyData] = useState<any>(() => {
+    try {
+      const saved = localStorage.getItem('estate_facebook_import_session_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed?.propertyData) return parsed.propertyData;
+      }
+    } catch {}
+    return null;
+  });
   const [isRunningWorkflow, setIsRunningWorkflow] = useState<boolean>(false);
   const [showLeaveConfirmModal, setShowLeaveConfirmModal] = useState<boolean>(false);
   const [pendingLeaveAction, setPendingLeaveAction] = useState<(() => void) | null>(null);

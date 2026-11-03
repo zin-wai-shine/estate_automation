@@ -727,6 +727,16 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     }
   }, [boxConfig.id, boxConfig.autoRun, boxConfig.imageSourceMode, boxConfig.selectedImageIndices]);
 
+  // When imageSourceMode is 'all' (default), automatically select all received images from Get Images
+  useEffect(() => {
+    if (imageSourceMode === 'all' && receivedImages.length > 0) {
+      const allIdx = receivedImages.map((img, i) =>
+        typeof img.index === 'number' && img.index > 0 ? img.index : i + 1
+      );
+      setSelectedImageIndices(allIdx);
+    }
+  }, [receivedImages, imageSourceMode]);
+
   // Fetch all available condo subfolders in the target directory
   const fetchCondoFolderList = async (folderToUse?: string) => {
     const baseDir =
@@ -1547,14 +1557,11 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     if (imageSourceMode === 'hero_only') {
       return receivedImages.slice(0, 1);
     }
-    if (
-      imageSourceMode === 'selected' ||
-      (selectedImageIndices.length > 0 && selectedImageIndices.length < receivedImages.length)
-    ) {
+    if (imageSourceMode === 'selected') {
       const list = receivedImages.filter((img, i) =>
         selectedImageIndices.includes(typeof img.index === 'number' && img.index > 0 ? img.index : i + 1)
       );
-      return list.length > 0 ? list : receivedImages.slice(0, 1);
+      return list.length > 0 ? list : receivedImages;
     }
     if (imageSourceMode === 'custom_upload' && referenceImage) {
       return [{ url: referenceImage, index: 1, filename: 'Custom Uploaded Image' }];
@@ -2682,7 +2689,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
         value={
           imageSourceMode === 'hero_only'
             ? 'hero_only'
-            : imageSourceMode === 'selected' || (selectedImageIndices.length > 0 && selectedImageIndices.length < receivedImages.length)
+            : imageSourceMode === 'selected'
             ? 'selected'
             : 'all'
         }

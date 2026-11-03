@@ -1,5 +1,5 @@
 {
-  "timestamp": 1793744475454,
+  "timestamp": 1793747686930,
   "workflow_formats": [
     {
       "config": {
@@ -298,7 +298,8 @@
             "selectedImageIndices": [
               1,
               2,
-              3
+              3,
+              4
             ],
             "selectedReferenceIndex": 1,
             "selectedUpstreamAiId": "ai-box-tabgroup-fb-hero-1792940248971",
@@ -1182,8 +1183,8 @@
           "y": 365
         },
         "panOffset": {
-          "x": 261,
-          "y": 59
+          "x": 241,
+          "y": 81
         },
         "trigger": {
           "autoClassifyProperty": true,
@@ -1201,14 +1202,14 @@
           "x": 80,
           "y": 365
         },
-        "zoom": 0.79
+        "zoom": 0.8
       },
       "createdAt": 1792648980268,
       "description": "Custom Facebook import extraction with dynamic AI prompt generator",
       "id": "format-1792648980268",
       "isPinned": true,
       "name": "Download FB Post",
-      "updatedAt": 1793744475015
+      "updatedAt": 1793747686433
     },
     {
       "config": {
