@@ -159,6 +159,20 @@ async function requestAIGeneration(payload: Record<string, any>, signal?: AbortS
   return '';
 }
 
+const getWorkflowRunStorageKey = (formatId?: string) => `ea_workflow_execution_data_${formatId || 'default'}`;
+
+const getSavedWorkflowRunData = (formatId?: string) => {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(getWorkflowRunStorageKey(formatId));
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') return parsed;
+    }
+  } catch {}
+  return null;
+};
+
 export const CreateWorkflowView: React.FC = () => {
   const { actualTheme } = useTheme();
   const isDark = actualTheme === 'dark';
@@ -376,12 +390,28 @@ export const CreateWorkflowView: React.FC = () => {
   const [runFacebookUrl, setRunFacebookUrl] = useState('');
 
   // Workflow Live Execution States (Canvas execution runner)
-  const [executionState, setExecutionState] = useState<WorkflowExecutionState | undefined>(undefined);
+  const [executionState, setExecutionState] = useState<WorkflowExecutionState | undefined>(() => {
+    const sp = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+    const formatId = sp?.get('id') || sp?.get('format') || 'default';
+    const saved = getSavedWorkflowRunData(formatId);
+    if (saved?.executionState) {
+      return {
+        ...saved.executionState,
+        isRunning: false,
+        activeNodeIds: [],
+      };
+    }
+    return undefined;
+  });
   const [extractedContent, setExtractedContent] = useState<string>(() => {
+    const sp = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+    const formatId = sp?.get('id') || sp?.get('format') || 'default';
+    const saved = getSavedWorkflowRunData(formatId);
+    if (saved?.extractedContent) return saved.extractedContent;
     try {
-      const saved = localStorage.getItem('estate_facebook_import_session_v1');
-      if (saved) {
-        const parsed = JSON.parse(saved);
+      const fbSession = localStorage.getItem('estate_facebook_import_session_v1');
+      if (fbSession) {
+        const parsed = JSON.parse(fbSession);
         if (parsed?.caption) return parsed.caption;
       }
     } catch {}
@@ -399,10 +429,16 @@ export const CreateWorkflowView: React.FC = () => {
       status?: string;
     }>
   >(() => {
+    const sp = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+    const formatId = sp?.get('id') || sp?.get('format') || 'default';
+    const saved = getSavedWorkflowRunData(formatId);
+    if (Array.isArray(saved?.extractedImages) && saved.extractedImages.length > 0) {
+      return saved.extractedImages;
+    }
     try {
-      const saved = localStorage.getItem('estate_facebook_import_session_v1');
-      if (saved) {
-        const parsed = JSON.parse(saved);
+      const fbSession = localStorage.getItem('estate_facebook_import_session_v1');
+      if (fbSession) {
+        const parsed = JSON.parse(fbSession);
         if (Array.isArray(parsed?.images) && parsed.images.length > 0) {
           return parsed.images.map((img: any, idx: number) => ({
             index: typeof img.index === 'number' && img.index > 0 ? img.index : idx + 1,
@@ -420,60 +456,90 @@ export const CreateWorkflowView: React.FC = () => {
     return [];
   });
   const [watermarkedPhotos, setWatermarkedPhotos] = useState<Record<number, string>>(() => {
+    const sp = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+    const formatId = sp?.get('id') || sp?.get('format') || 'default';
+    const saved = getSavedWorkflowRunData(formatId);
+    if (saved?.watermarkedPhotos && Object.keys(saved.watermarkedPhotos).length > 0) {
+      return saved.watermarkedPhotos;
+    }
     try {
-      const saved = localStorage.getItem('estate_facebook_import_session_v1');
-      if (saved) {
-        const parsed = JSON.parse(saved);
+      const fbSession = localStorage.getItem('estate_facebook_import_session_v1');
+      if (fbSession) {
+        const parsed = JSON.parse(fbSession);
         if (parsed?.watermarkedPhotos) return parsed.watermarkedPhotos;
       }
     } catch {}
     return {};
   });
   const [enhancedPhotos, setEnhancedPhotos] = useState<Record<number, string>>(() => {
+    const sp = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+    const formatId = sp?.get('id') || sp?.get('format') || 'default';
+    const saved = getSavedWorkflowRunData(formatId);
+    if (saved?.enhancedPhotos && Object.keys(saved.enhancedPhotos).length > 0) {
+      return saved.enhancedPhotos;
+    }
     try {
-      const saved = localStorage.getItem('estate_facebook_import_session_v1');
-      if (saved) {
-        const parsed = JSON.parse(saved);
+      const fbSession = localStorage.getItem('estate_facebook_import_session_v1');
+      if (fbSession) {
+        const parsed = JSON.parse(fbSession);
         if (parsed?.enhancedPhotos) return parsed.enhancedPhotos;
       }
     } catch {}
     return {};
   });
   const [aiGeneratedOutputs, setAiGeneratedOutputs] = useState<Record<string, string>>(() => {
+    const sp = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+    const formatId = sp?.get('id') || sp?.get('format') || 'default';
+    const saved = getSavedWorkflowRunData(formatId);
+    if (saved?.aiGeneratedOutputs && Object.keys(saved.aiGeneratedOutputs).length > 0) {
+      return saved.aiGeneratedOutputs;
+    }
     try {
-      const saved = localStorage.getItem('estate_facebook_import_session_v1');
-      if (saved) {
-        const parsed = JSON.parse(saved);
+      const fbSession = localStorage.getItem('estate_facebook_import_session_v1');
+      if (fbSession) {
+        const parsed = JSON.parse(fbSession);
         if (parsed?.aiGeneratedOutputs) return parsed.aiGeneratedOutputs;
       }
     } catch {}
     return {};
   });
   const [aiGeneratedCopy, setAiGeneratedCopy] = useState<string>(() => {
+    const sp = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+    const formatId = sp?.get('id') || sp?.get('format') || 'default';
+    const saved = getSavedWorkflowRunData(formatId);
+    if (saved?.aiGeneratedCopy) return saved.aiGeneratedCopy;
     try {
-      const saved = localStorage.getItem('estate_facebook_import_session_v1');
-      if (saved) {
-        const parsed = JSON.parse(saved);
+      const fbSession = localStorage.getItem('estate_facebook_import_session_v1');
+      if (fbSession) {
+        const parsed = JSON.parse(fbSession);
         if (parsed?.aiGeneratedCopy) return parsed.aiGeneratedCopy;
       }
     } catch {}
     return '';
   });
   const [projectName, setProjectName] = useState<string>(() => {
+    const sp = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+    const formatId = sp?.get('id') || sp?.get('format') || 'default';
+    const saved = getSavedWorkflowRunData(formatId);
+    if (saved?.projectName) return saved.projectName;
     try {
-      const saved = localStorage.getItem('estate_facebook_import_session_v1');
-      if (saved) {
-        const parsed = JSON.parse(saved);
+      const fbSession = localStorage.getItem('estate_facebook_import_session_v1');
+      if (fbSession) {
+        const parsed = JSON.parse(fbSession);
         if (parsed?.propertyData?.project_name) return parsed.propertyData.project_name;
       }
     } catch {}
     return '';
   });
   const [propertyData, setPropertyData] = useState<any>(() => {
+    const sp = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+    const formatId = sp?.get('id') || sp?.get('format') || 'default';
+    const saved = getSavedWorkflowRunData(formatId);
+    if (saved?.propertyData) return saved.propertyData;
     try {
-      const saved = localStorage.getItem('estate_facebook_import_session_v1');
-      if (saved) {
-        const parsed = JSON.parse(saved);
+      const fbSession = localStorage.getItem('estate_facebook_import_session_v1');
+      if (fbSession) {
+        const parsed = JSON.parse(fbSession);
         if (parsed?.propertyData) return parsed.propertyData;
       }
     } catch {}
@@ -708,7 +774,7 @@ export const CreateWorkflowView: React.FC = () => {
     setIsRunningWorkflow(false);
     (window as any).__isWorkflowProcessing = false;
     (window as any).__workflowConfirmLeave = null;
-    setExecutionState(undefined);
+    setExecutionState((prev) => (prev ? { ...prev, isRunning: false, activeNodeIds: [] } : undefined));
     // Halt external browser processing, companion, OpenClaw extractor, and queue dispatch immediately
     stopAutomation().catch((e) => console.warn('Failed to stop automation:', e));
   };
@@ -720,6 +786,112 @@ export const CreateWorkflowView: React.FC = () => {
       setModalFormatDesc(editingFormat.description || '');
     }
   }, [editingFormat?.id]);
+
+  // Switch / restore saved execution data when editingFormat changes
+  useEffect(() => {
+    if (!editingFormat?.id) return;
+    try {
+      const saved = getSavedWorkflowRunData(editingFormat.id);
+      if (saved) {
+        if (saved.executionState) {
+          setExecutionState({
+            ...saved.executionState,
+            isRunning: false,
+            activeNodeIds: [],
+          });
+        }
+        if (saved.extractedContent !== undefined) setExtractedContent(saved.extractedContent);
+        if (Array.isArray(saved.extractedImages) && saved.extractedImages.length > 0) {
+          setExtractedImages(saved.extractedImages);
+        }
+        if (saved.watermarkedPhotos) setWatermarkedPhotos(saved.watermarkedPhotos);
+        if (saved.enhancedPhotos) setEnhancedPhotos(saved.enhancedPhotos);
+        if (saved.aiGeneratedOutputs) setAiGeneratedOutputs(saved.aiGeneratedOutputs);
+        if (saved.aiGeneratedCopy !== undefined) setAiGeneratedCopy(saved.aiGeneratedCopy);
+        if (saved.projectName !== undefined) setProjectName(saved.projectName);
+        if (saved.propertyData !== undefined) setPropertyData(saved.propertyData);
+      }
+    } catch {}
+  }, [editingFormat?.id]);
+
+  // Automatically persist workflow run data whenever outputs or execution states update
+  useEffect(() => {
+    const targetFormatId = editingFormat?.id || activeFormatId || 'default';
+    if (!targetFormatId) return;
+
+    const hasData =
+      Boolean(executionState && (executionState.completedNodeIds?.length || 0) > 0) ||
+      extractedImages.length > 0 ||
+      Boolean(extractedContent && extractedContent.trim().length > 0) ||
+      Object.keys(aiGeneratedOutputs).length > 0 ||
+      Object.keys(watermarkedPhotos).length > 0 ||
+      Object.keys(enhancedPhotos).length > 0;
+
+    if (!hasData) return;
+
+    try {
+      const toSave = {
+        executionState: executionState
+          ? {
+              ...executionState,
+              isRunning: false,
+              activeNodeIds: [],
+            }
+          : undefined,
+        extractedContent,
+        extractedImages,
+        watermarkedPhotos,
+        enhancedPhotos,
+        aiGeneratedOutputs,
+        aiGeneratedCopy,
+        projectName,
+        propertyData,
+        timestamp: Date.now(),
+      };
+      localStorage.setItem(getWorkflowRunStorageKey(targetFormatId), JSON.stringify(toSave));
+    } catch (err) {
+      console.warn('Failed to persist workflow execution data:', err);
+    }
+  }, [
+    editingFormat?.id,
+    activeFormatId,
+    executionState,
+    extractedContent,
+    extractedImages,
+    watermarkedPhotos,
+    enhancedPhotos,
+    aiGeneratedOutputs,
+    aiGeneratedCopy,
+    projectName,
+    propertyData,
+  ]);
+
+  // Clear all extracted data and execution results on demand
+  const handleClearRunData = () => {
+    if (isRunningWorkflow) {
+      handleStopWorkflow();
+    }
+    setExecutionState(undefined);
+    setExtractedContent('');
+    setExtractedImages([]);
+    setWatermarkedPhotos({});
+    setEnhancedPhotos({});
+    setAiGeneratedOutputs({});
+    setAiGeneratedCopy('');
+    setProjectName('');
+    setPropertyData(null);
+    if (editingFormat?.id) {
+      try {
+        localStorage.removeItem(getWorkflowRunStorageKey(editingFormat.id));
+      } catch {}
+    }
+    try {
+      localStorage.removeItem(getWorkflowRunStorageKey('default'));
+    } catch {}
+    try {
+      localStorage.removeItem('estate_facebook_import_session_v1');
+    } catch {}
+  };
 
   // Sync canvas mode with AppLayout on mount and whenever isCanvasOpen changes
   useEffect(() => {
@@ -4104,6 +4276,56 @@ export const CreateWorkflowView: React.FC = () => {
               <FiCrosshair size={13} style={{ color: 'var(--text-secondary)' }} />
               <span>Reset Layout</span>
             </button>
+
+            {/* Clear Data & Results Button */}
+            {(Boolean(executionState && (executionState.completedNodeIds?.length || 0) > 0) ||
+              extractedImages.length > 0 ||
+              Boolean(extractedContent && extractedContent.trim().length > 0) ||
+              Object.keys(aiGeneratedOutputs).length > 0 ||
+              Object.keys(watermarkedPhotos).length > 0 ||
+              Object.keys(enhancedPhotos).length > 0) && (
+              <button
+                type="button"
+                onClick={handleClearRunData}
+                title="Clear all extracted post data and execution results"
+                style={{
+                  height: '32px',
+                  padding: '0 12px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  borderRadius: '6px',
+                  backgroundColor: isDark ? '#21262D' : '#F1F5F9',
+                  color: isDark ? '#F87171' : '#DC2626',
+                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                  boxShadow: 'none',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                  outline: 'none',
+                  userSelect: 'none',
+                  whiteSpace: 'nowrap',
+                  boxSizing: 'border-box',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = isDark ? '#30363D' : '#FEE2E2';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = isDark ? '#21262D' : '#F1F5F9';
+                }}
+                onMouseDown={(e) => {
+                  e.currentTarget.style.transform = 'scale(0.98)';
+                }}
+                onMouseUp={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                }}
+              >
+                <FiTrash2 size={12} style={{ color: isDark ? '#F87171' : '#DC2626' }} />
+                <span>Clear</span>
+              </button>
+            )}
           </div>,
           headerActionEl
         )}
