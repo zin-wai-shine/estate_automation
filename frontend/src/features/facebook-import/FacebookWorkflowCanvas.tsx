@@ -12528,7 +12528,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                               if (onRegenerateBoxOutput) {
                                 const res = await onRegenerateBoxOutput(currentModalAIBox.id);
                                 if (res) {
-                                  setSheetSyncSuccessMessage(`Row added to '${currentModalAIBox.googleSheetName || 'Post Properties'}'!`);
+                                  setSheetSyncSuccessMessage(`Row added to '${currentModalAIBox.googleSheetName || 'Sheet6'}'!`);
                                 }
                               }
                             } catch (err: any) {
@@ -12583,7 +12583,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                       <FiCheckCircle size={14} color="#10B981" />
                                       <span style={{ fontSize: '0.75rem', fontWeight: 700, color: isDark ? '#6EE7B7' : '#15803D' }}>
-                                        Row Successfully Added to Sheet
+                                        Row Added to "{currentModalAIBox.googleSheetName || 'Sheet6'}"
                                       </span>
                                     </div>
                                     <a

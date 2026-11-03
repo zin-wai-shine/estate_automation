@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -94,6 +95,23 @@ func ExtractSpreadsheetID(rawInput string) string {
 		return rawInput
 	}
 	return rawInput
+}
+
+// ExtractSheetGID parses the numeric gid parameter (tab ID) from a Google Sheets URL.
+// Returns -1 if no gid is present.
+func ExtractSheetGID(rawInput string) int {
+	rawInput = strings.TrimSpace(rawInput)
+	if rawInput == "" {
+		return -1
+	}
+	re := regexp.MustCompile(`[?&#]gid=([0-9]+)`)
+	matches := re.FindStringSubmatch(rawInput)
+	if len(matches) > 1 {
+		if id, err := strconv.Atoi(matches[1]); err == nil {
+			return id
+		}
+	}
+	return -1
 }
 
 // LoadCredentials loads the service account key from disk or environment.
@@ -385,15 +403,30 @@ func (s *GoogleSheetsService) LoadHeaders(ctx context.Context, spreadsheetInput 
 		return nil, fmt.Errorf("spreadsheet contains no sheets")
 	}
 
-	// Target specific sheet or default to first sheet
-	targetSheetIndex := 0
-	if sheetNameOpt != "" {
+	// Target sheet resolution: prioritize matching GID from URL if present, otherwise sheetNameOpt
+	targetGID := ExtractSheetGID(spreadsheetInput)
+	targetSheetIndex := -1
+
+	if targetGID >= 0 {
+		for i, sh := range sheetResp.Sheets {
+			if sh.Properties.SheetID == targetGID {
+				targetSheetIndex = i
+				break
+			}
+		}
+	}
+
+	if targetSheetIndex < 0 && sheetNameOpt != "" {
 		for i, sh := range sheetResp.Sheets {
 			if strings.EqualFold(sh.Properties.Title, sheetNameOpt) {
 				targetSheetIndex = i
 				break
 			}
 		}
+	}
+
+	if targetSheetIndex < 0 {
+		targetSheetIndex = 0
 	}
 
 	chosenSheet := sheetResp.Sheets[targetSheetIndex]
@@ -436,13 +469,28 @@ func (s *GoogleSheetsService) AppendRow(ctx context.Context, spreadsheetInput st
 		return nil, fmt.Errorf("authentication error: %w", err)
 	}
 
+	targetGID := ExtractSheetGID(spreadsheetInput)
 	sheetName := "Sheet1"
 	if sheetNameOpt != "" {
 		sheetName = sheetNameOpt
 	}
 
+	// If GID is present in URL, resolve the sheet name to ensure we append to the exact tab indicated by gid
+	if targetGID >= 0 {
+		meta, err := s.LoadHeaders(ctx, spreadsheetInput, "", customCredsJSON)
+		if err == nil && meta != nil && meta.SheetName != "" {
+			sheetName = meta.SheetName
+		}
+	}
+
 	// Range to append to
-	escapedSheet := url.PathEscape(sheetName)
+	var escapedSheet string
+	if strings.Contains(sheetName, " ") || strings.Contains(sheetName, "-") || strings.Contains(sheetName, "'") {
+		cleanName := strings.ReplaceAll(sheetName, "'", "''")
+		escapedSheet = url.PathEscape(fmt.Sprintf("'%s'", cleanName))
+	} else {
+		escapedSheet = url.PathEscape(sheetName)
+	}
 	apiURL := fmt.Sprintf("https://sheets.googleapis.com/v4/spreadsheets/%s/values/%s!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS", spreadsheetID, escapedSheet)
 
 	payload := map[string]interface{}{

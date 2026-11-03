@@ -199,6 +199,18 @@ func ExecuteGoogleSheetSync(c *fiber.Ctx) error {
 	headers := req.Headers
 	sheetName := req.SheetName
 
+	// If URL has a gid parameter, automatically resolve the sheet tab name from that tab
+	targetGID := services.ExtractSheetGID(urlOrID)
+	if targetGID >= 0 {
+		meta, err := sheetsService.LoadHeaders(c.Context(), urlOrID, "", req.CredentialsJSON)
+		if err == nil && meta != nil && meta.SheetName != "" {
+			sheetName = meta.SheetName
+			if len(headers) == 0 {
+				headers = meta.Headers
+			}
+		}
+	}
+
 	// If headers not supplied, fetch dynamically from sheet
 	if len(headers) == 0 {
 		meta, err := sheetsService.LoadHeaders(c.Context(), urlOrID, sheetName, req.CredentialsJSON)
@@ -265,6 +277,7 @@ func ExecuteGoogleSheetSync(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"success":       true,
 		"headers":       headers,
+		"sheet_name":    sheetName,
 		"mapped_data":   mapped,
 		"row_values":    rowValues,
 		"append_result": appendRes,

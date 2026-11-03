@@ -1,5 +1,5 @@
 {
-  "timestamp": 1793665801027,
+  "timestamp": 1793669332360,
   "workflow_formats": [
     {
       "config": {
@@ -865,7 +865,7 @@
               "Contact Info",
               "Original Link"
             ],
-            "googleSheetName": "Post Properties",
+            "googleSheetName": "Sheet6",
             "googleSheetProcessingMode": "ai_extract",
             "googleSpreadsheetId": "1lzY57D5ers2Xs6cvbV-skeqGSAK_jijbQJZt8Hn8udY",
             "googleSpreadsheetUrl": "https://docs.google.com/spreadsheets/d/1lzY57D5ers2Xs6cvbV-skeqGSAK_jijbQJZt8Hn8udY/edit?gid=234489153#gid=234489153",
@@ -1142,7 +1142,7 @@
               "Contact Info",
               "Original Link"
             ],
-            "googleSheetName": "Post Properties",
+            "googleSheetName": "Sheet6",
             "googleSpreadsheetId": "1lzY57D5ers2Xs6cvbV-skeqGSAK_jijbQJZt8Hn8udY",
             "googleSpreadsheetUrl": "https://docs.google.com/spreadsheets/d/1lzY57D5ers2Xs6cvbV-skeqGSAK_jijbQJZt8Hn8udY/edit?gid=0#gid=0",
             "id": "ai-box-google-sheet-1793608444673",
@@ -1309,7 +1309,7 @@
               "Contact Info",
               "Original Link"
             ],
-            "googleSheetName": "Post Properties",
+            "googleSheetName": "Sheet6",
             "googleSpreadsheetId": "1lzY57D5ers2Xs6cvbV-skeqGSAK_jijbQJZt8Hn8udY",
             "googleSpreadsheetUrl": "https://docs.google.com/spreadsheets/d/1lzY57D5ers2Xs6cvbV-skeqGSAK_jijbQJZt8Hn8udY/edit?gid=0#gid=0",
             "id": "ai-box-google-sheet-1793608864533",
