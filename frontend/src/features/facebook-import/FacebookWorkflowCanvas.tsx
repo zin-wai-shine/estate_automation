@@ -3531,10 +3531,15 @@ export const FacebookWorkflowCanvas = forwardRef<
   const [isRegeneratingAI, setIsRegeneratingAI] = useState(false);
   const [showFBHeroSettingsSidebox, setShowFBHeroSettingsSidebox] = useState<boolean>(false);
   const [showGoogleSheetSettingsSidebox, setShowGoogleSheetSettingsSidebox] = useState<boolean>(false);
+  const [isAddingSheetRow, setIsAddingSheetRow] = useState<boolean>(false);
+  const [sheetSyncSuccessMessage, setSheetSyncSuccessMessage] = useState<string | null>(null);
+  const [sheetSyncErrorMessage, setSheetSyncErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     setShowFBHeroSettingsSidebox(false);
     setShowGoogleSheetSettingsSidebox(false);
+    setSheetSyncSuccessMessage(null);
+    setSheetSyncErrorMessage(null);
   }, [(activeModalNode as any)?.boxId, activeModalNode?.type]);
 
   // Dedicated Connect Items Drawer (opened via [+] node button)
@@ -9224,8 +9229,9 @@ export const FacebookWorkflowCanvas = forwardRef<
 
                       const displayNodeTitle = box.title || (isWatermark && matchingCropFormat ? `Format: ${matchingCropFormat.name}` : (isWatermark ? 'Format Preset' : 'AI Node'));
 
+                      const isSheetCompleted = isGoogleSheetBox(box) && (boxStatus === 'success' || Boolean(aiGeneratedOutputs?.[box.id]));
                       const displayNodeSubtitle = isGoogleSheetBox(box)
-                        ? (box.googleSheetHeaders && box.googleSheetHeaders.length > 0 ? `${box.googleSheetHeaders.length} Columns` : (box.subtitle || 'Spreadsheet Sync'))
+                        ? (isSheetCompleted ? 'Row Added' : (box.googleSheetHeaders && box.googleSheetHeaders.length > 0 ? `${box.googleSheetHeaders.length} Columns` : (box.subtitle || 'Spreadsheet Sync')))
                         : isWatermark && matchingCropFormat
                           ? `${matchingCropFormat.targetWidth}×${matchingCropFormat.targetHeight} (${matchingCropFormat.aspect || '1:1'})`
                           : (box.subtitle || 'Crop & Watermark');
@@ -12493,6 +12499,245 @@ export const FacebookWorkflowCanvas = forwardRef<
                             Click <strong>"Load Headers"</strong> to automatically inspect and read column headers from Row 1 of your sheet.
                           </div>
                         )}
+
+                        {/* ── Add Row to Google Sheet Action & Status ── */}
+                        {(() => {
+                          const sheetBoxOutput = aiGeneratedOutputs?.[currentModalAIBox.id] || '';
+                          const hasOutput = Boolean(sheetBoxOutput && sheetBoxOutput.trim().length > 0);
+                          const isFailed = Boolean(executionState?.failedNodeIds?.includes(currentModalAIBox.id));
+                          const isRunningThisNode = Boolean(executionState?.activeNodeIds?.includes(currentModalAIBox.id)) || isAddingSheetRow;
+
+                          let parsedData: Record<string, any> | null = null;
+                          if (hasOutput) {
+                            try {
+                              parsedData = JSON.parse(sheetBoxOutput);
+                            } catch {}
+                          }
+
+                          const rawUrl = currentModalAIBox.googleSpreadsheetUrl || 'https://docs.google.com/spreadsheets/d/1lzY57D5ers2Xs6cvbV-skeqGSAK_jijbQJZt8Hn8udY/edit';
+                          const cleanOpenUrl = rawUrl.includes('https://') && rawUrl.lastIndexOf('https://') > 0
+                            ? rawUrl.substring(rawUrl.lastIndexOf('https://'))
+                            : rawUrl;
+
+                          const handleTriggerAddRow = async () => {
+                            if (isRunningThisNode || isRegeneratingAI) return;
+                            setIsAddingSheetRow(true);
+                            setSheetSyncSuccessMessage(null);
+                            setSheetSyncErrorMessage(null);
+                            try {
+                              if (onRegenerateBoxOutput) {
+                                const res = await onRegenerateBoxOutput(currentModalAIBox.id);
+                                if (res) {
+                                  setSheetSyncSuccessMessage(`Row added to '${currentModalAIBox.googleSheetName || 'Post Properties'}'!`);
+                                }
+                              }
+                            } catch (err: any) {
+                              setSheetSyncErrorMessage(err?.message || 'Failed to add row to sheet');
+                            } finally {
+                              setIsAddingSheetRow(false);
+                            }
+                          };
+
+                          return (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', marginTop: '0.5rem' }}>
+                              {/* Error Banner */}
+                              {(isFailed || sheetSyncErrorMessage) && (
+                                <div
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'flex-start',
+                                    gap: '8px',
+                                    padding: '0.65rem 0.75rem',
+                                    borderRadius: '6px',
+                                    backgroundColor: isDark ? 'rgba(239, 68, 68, 0.12)' : '#FEF2F2',
+                                    border: isDark ? '1px solid rgba(239, 68, 68, 0.35)' : '1px solid #FCA5A5',
+                                    fontSize: '0.75rem',
+                                  }}
+                                >
+                                  <FiAlertTriangle size={15} style={{ flexShrink: 0, marginTop: '2px', color: '#EF4444' }} />
+                                  <div style={{ flex: 1 }}>
+                                    <div style={{ fontWeight: 700, color: isDark ? '#FCA5A5' : '#B91C1C' }}>
+                                      Google Sheet Sync Failed
+                                    </div>
+                                    <div style={{ fontSize: '0.6875rem', color: isDark ? '#F87171' : '#DC2626', marginTop: '2px' }}>
+                                      {sheetSyncErrorMessage || executionState?.currentStepMessage?.replace(/^[❌⚠️]\s*/, '') || 'Failed to append row. Please check your columns and permissions.'}
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Success Banner */}
+                              {(hasOutput || sheetSyncSuccessMessage) && !sheetSyncErrorMessage && (
+                                <div
+                                  style={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '0.45rem',
+                                    padding: '0.65rem 0.75rem',
+                                    borderRadius: '6px',
+                                    backgroundColor: isDark ? 'rgba(16, 185, 129, 0.1)' : '#F0FDF4',
+                                    border: isDark ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid #BBF7D0',
+                                  }}
+                                >
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                      <FiCheckCircle size={14} color="#10B981" />
+                                      <span style={{ fontSize: '0.75rem', fontWeight: 700, color: isDark ? '#6EE7B7' : '#15803D' }}>
+                                        Row Successfully Added to Sheet
+                                      </span>
+                                    </div>
+                                    <a
+                                      href={cleanOpenUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                        fontSize: '0.6875rem',
+                                        fontWeight: 600,
+                                        color: isDark ? '#38BDF8' : '#0284C7',
+                                        textDecoration: 'none',
+                                      }}
+                                    >
+                                      Open Sheet <FiExternalLink size={11} />
+                                    </a>
+                                  </div>
+
+                                  {/* Mapped Row Preview */}
+                                  {parsedData && (
+                                    <div
+                                      style={{
+                                        display: 'grid',
+                                        gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                                        gap: '4px',
+                                        padding: '0.45rem',
+                                        borderRadius: '4px',
+                                        backgroundColor: isDark ? 'rgba(0, 0, 0, 0.25)' : 'rgba(255, 255, 255, 0.7)',
+                                        border: isDark ? '1px solid rgba(255, 255, 255, 0.05)' : '1px solid #E2E8F0',
+                                        fontSize: '0.65rem',
+                                        maxHeight: '120px',
+                                        overflowY: 'auto',
+                                      }}
+                                    >
+                                      {Object.entries(parsedData).slice(0, 8).map(([k, v]) => (
+                                        <div key={k} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                          <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>{k}: </span>
+                                          <span style={{ color: 'var(--text-primary)' }}>{String(v || 'N/A')}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+
+                                  {/* Action links */}
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setViewingPromptTemplate({
+                                          id: currentModalAIBox.id,
+                                          name: `${currentModalAIBox.title || 'Google Sheet'} Appended Row`,
+                                          templateText: sheetBoxOutput,
+                                          headerTitle: 'Google Sheet Appended Row',
+                                          copyButtonLabel: 'Copy Row JSON',
+                                        });
+                                      }}
+                                      style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                        background: 'none',
+                                        border: 'none',
+                                        color: 'var(--accent-primary, #3B82F6)',
+                                        fontSize: '0.6875rem',
+                                        fontWeight: 600,
+                                        cursor: 'pointer',
+                                        padding: 0,
+                                      }}
+                                    >
+                                      <FiEye size={12} /> View Full JSON
+                                    </button>
+                                    <span style={{ opacity: 0.4 }}>•</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        navigator.clipboard.writeText(sheetBoxOutput);
+                                        setCopiedPromptId(currentModalAIBox.id);
+                                        setTimeout(() => setCopiedPromptId(null), 2000);
+                                      }}
+                                      style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                        background: 'none',
+                                        border: 'none',
+                                        color: copiedPromptId === currentModalAIBox.id ? '#10B981' : 'var(--text-secondary)',
+                                        fontSize: '0.6875rem',
+                                        fontWeight: 600,
+                                        cursor: 'pointer',
+                                        padding: 0,
+                                      }}
+                                    >
+                                      {copiedPromptId === currentModalAIBox.id ? <FiCheck size={12} /> : <FiCopy size={12} />}
+                                      {copiedPromptId === currentModalAIBox.id ? 'Copied' : 'Copy JSON'}
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Primary Action Button: Add Row to Google Sheet */}
+                              <button
+                                type="button"
+                                disabled={isRunningThisNode || executionState?.isRunning}
+                                onClick={handleTriggerAddRow}
+                                style={{
+                                  width: '100%',
+                                  height: '38px',
+                                  padding: '0 1rem',
+                                  borderRadius: '6px',
+                                  border: 'none',
+                                  backgroundColor: isRunningThisNode ? (isDark ? '#21262D' : '#E2E8F0') : '#0F9D58',
+                                  color: isRunningThisNode ? 'var(--text-muted)' : '#FFFFFF',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 600,
+                                  cursor: isRunningThisNode || executionState?.isRunning ? 'not-allowed' : 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '8px',
+                                  transition: 'all 0.15s ease',
+                                  boxShadow: isRunningThisNode ? 'none' : '0 1px 3px rgba(15, 157, 88, 0.3)',
+                                }}
+                                onMouseEnter={(e) => {
+                                  if (!isRunningThisNode && !executionState?.isRunning) {
+                                    e.currentTarget.style.backgroundColor = '#0B8043';
+                                  }
+                                }}
+                                onMouseLeave={(e) => {
+                                  if (!isRunningThisNode && !executionState?.isRunning) {
+                                    e.currentTarget.style.backgroundColor = '#0F9D58';
+                                  }
+                                }}
+                              >
+                                {isRunningThisNode ? (
+                                  <>
+                                    <FiRefreshCw size={13} style={{ animation: 'spin 1s linear infinite' }} />
+                                    <span>Adding Row to Google Sheet...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <SiGooglesheets size={15} />
+                                    <span>{hasOutput ? 'Add Another Row to Sheet' : 'Add Row to Google Sheet'}</span>
+                                  </>
+                                )}
+                              </button>
+
+                              <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', textAlign: 'center', lineHeight: 1.3 }}>
+                                Reads post specs from Get Content, maps strictly to Row 1 column headers, and appends a new row to your sheet.
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>
                     ) : isExternalBrowserAIBox(currentModalAIBox) || currentModalAIBox.processType === 'chrome_profile' || isChromeTabGroupAIBox(currentModalAIBox) ? (
                       (() => {
@@ -13429,6 +13674,7 @@ export const FacebookWorkflowCanvas = forwardRef<
 
                     {/* Generated Output Preview & Editor Box (for format preset nodes with output) */}
                     {(() => {
+                      if (isGoogleSheetBox(currentModalAIBox)) return null;
                       const isMainTextAI =
                         !isTextFormatAIBox(currentModalAIBox) &&
                         (isTextAIBox(currentModalAIBox, config.connections) ||

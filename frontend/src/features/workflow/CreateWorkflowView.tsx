@@ -1806,7 +1806,7 @@ export const CreateWorkflowView: React.FC = () => {
           if (isRunStopped(myRunId) || branchFatalError) return false;
         } else if (isGoogleSheet) {
           // Resolve post link from workflow context or targetUrl (from second image: Run Workflow dialog)
-          const postLink =
+          let postLink =
             targetUrl ||
             workflowContextRef.current.targetUrl ||
             runFacebookUrl ||
@@ -1815,21 +1815,31 @@ export const CreateWorkflowView: React.FC = () => {
               : '') ||
             (cfg.trigger?.manualContent && /^https?:\/\//i.test(cfg.trigger.manualContent.trim())
               ? cfg.trigger.manualContent.trim().split(/\s+/)[0]
-              : '');
+              : '') ||
+            (propData as any)?.source_url ||
+            (propData as any)?.url ||
+            '';
+          if (postLink === 'manual://input') {
+            postLink = (cfg.trigger?.monitoredPageName && /^https?:\/\//i.test(cfg.trigger.monitoredPageName) ? cfg.trigger.monitoredPageName : '') || (propData as any)?.source_url || '';
+          }
 
           // Resolve property details from Get Content or upstream nodes
           const inConns = (cfg.connections || []).filter((c) => c.toNodeId === box.id);
           const upstreamBoxId = inConns[0]?.fromNodeId;
-          const upstreamText =
+          let upstreamText =
             (upstreamBoxId && upstreamBoxId !== 'get-content' && generatedOutputsMap[upstreamBoxId]) ||
             rawCaption ||
             workflowContextRef.current.rawCaption ||
             extractedContent ||
             primaryCopy ||
             (propData as any)?.raw_caption ||
+            (propData as any)?.description ||
             '';
 
-          const sheetUrl = (box as any).googleSpreadsheetUrl || 'https://docs.google.com/spreadsheets/d/1lzY57D5ers2Xs6cvbV-skeqGSAK_jijbQJZt8Hn8udY/edit?gid=0#gid=0';
+          let rawSheetUrl = (box as any).googleSpreadsheetUrl || 'https://docs.google.com/spreadsheets/d/1lzY57D5ers2Xs6cvbV-skeqGSAK_jijbQJZt8Hn8udY/edit?gid=0#gid=0';
+          if (rawSheetUrl.includes('https://') && rawSheetUrl.lastIndexOf('https://') > 0) {
+            rawSheetUrl = rawSheetUrl.substring(rawSheetUrl.lastIndexOf('https://'));
+          }
           const sheetName = (box as any).googleSheetName || '';
           let sheetHeaders = (box as any).googleSheetHeaders || [];
           if (!sheetHeaders || sheetHeaders.length === 0) {
@@ -1859,7 +1869,7 @@ export const CreateWorkflowView: React.FC = () => {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                spreadsheet_url: sheetUrl,
+                spreadsheet_url: rawSheetUrl,
                 sheet_name: sheetName,
                 headers: sheetHeaders,
                 content: upstreamText,
@@ -1885,20 +1895,19 @@ export const CreateWorkflowView: React.FC = () => {
             generatedOutputsMap[box.id] = formattedResult;
             if (!primaryCopy) primaryCopy = formattedResult;
             setAiGeneratedOutputs((prev) => ({ ...prev, [box.id]: formattedResult }));
+            if (workflowContextRef.current) {
+              workflowContextRef.current.generatedOutputsMap[box.id] = formattedResult;
+            }
           } catch (err: any) {
             if (isRunStopped(myRunId) || branchFatalError) return false;
             console.warn('Google Sheet step error:', err);
-            branchFatalError = true;
             safeSetExecutionState(myRunId, (prev) => ({
               ...prev!,
-              isRunning: false,
               hasError: true,
-              activeNodeIds: [box.id],
-              failedNodeIds: [box.id],
+              activeNodeIds: (prev?.activeNodeIds || []).filter((id) => id !== box.id),
+              failedNodeIds: Array.from(new Set([...(prev?.failedNodeIds || []), box.id])),
               currentStepMessage: `❌ Google Sheet Sync failed for [${box.title || 'Google Sheet'}]: ${err.message || 'Sync error'}.`,
             }));
-            setIsRunningWorkflow(false);
-            (window as any).__isWorkflowProcessing = false;
             canvasRef.current?.openNodeDrawer(box.id);
             return false;
           }
@@ -2866,14 +2875,23 @@ export const CreateWorkflowView: React.FC = () => {
     }
 
     if (isGoogleSheetBox(box)) {
-      const postLink =
+      let postLink =
         ctx?.targetUrl ||
         runFacebookUrl ||
         (cfg.trigger?.monitoredPageName && /^https?:\/\//i.test(cfg.trigger.monitoredPageName)
           ? cfg.trigger.monitoredPageName
           : '') ||
+        (propertyData as any)?.source_url ||
+        (propertyData as any)?.url ||
         '';
-      const sheetUrl = (box as any).googleSpreadsheetUrl || 'https://docs.google.com/spreadsheets/d/1lzY57D5ers2Xs6cvbV-skeqGSAK_jijbQJZt8Hn8udY/edit?gid=0#gid=0';
+      if (postLink === 'manual://input') {
+        postLink = (cfg.trigger?.monitoredPageName && /^https?:\/\//i.test(cfg.trigger.monitoredPageName) ? cfg.trigger.monitoredPageName : '') || (propertyData as any)?.source_url || '';
+      }
+
+      let rawSheetUrl = (box as any).googleSpreadsheetUrl || 'https://docs.google.com/spreadsheets/d/1lzY57D5ers2Xs6cvbV-skeqGSAK_jijbQJZt8Hn8udY/edit?gid=0#gid=0';
+      if (rawSheetUrl.includes('https://') && rawSheetUrl.lastIndexOf('https://') > 0) {
+        rawSheetUrl = rawSheetUrl.substring(rawSheetUrl.lastIndexOf('https://'));
+      }
       const sheetName = (box as any).googleSheetName || '';
       let sheetHeaders = (box as any).googleSheetHeaders || [];
       if (!sheetHeaders || sheetHeaders.length === 0) {
@@ -2898,7 +2916,7 @@ export const CreateWorkflowView: React.FC = () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            spreadsheet_url: sheetUrl,
+            spreadsheet_url: rawSheetUrl,
             sheet_name: sheetName,
             headers: sheetHeaders,
             content: upstreamText,
@@ -2927,27 +2945,49 @@ export const CreateWorkflowView: React.FC = () => {
           if (!workflowContextRef.current.primaryCopy) workflowContextRef.current.primaryCopy = formattedResult;
         }
         setExecutionState((prev) => {
-          if (!prev) return prev;
-          const nextFailed = (prev.failedNodeIds || []).filter((id) => id !== boxId);
+          const base = prev || {
+            isRunning: false,
+            isComplete: false,
+            hasError: false,
+            activeNodeIds: [],
+            completedNodeIds: [],
+            failedNodeIds: [],
+            stepIndex: 4,
+            totalSteps: 6,
+          };
+          const nextFailed = (base.failedNodeIds || []).filter((id) => id !== boxId);
           return {
-            ...prev,
+            ...base,
             failedNodeIds: nextFailed,
             hasError: nextFailed.length > 0,
-            completedNodeIds: Array.from(new Set([...(prev.completedNodeIds || []), boxId])),
-            currentStepMessage: `✓ Synced with Google Sheet [${box.title || 'Google Sheet'}] successfully!`,
+            completedNodeIds: Array.from(new Set([...(base.completedNodeIds || []), boxId])),
+            currentStepMessage: `✓ Row added to Google Sheet [${box.title || 'Google Sheet'}] successfully!`,
           };
         });
         return formattedResult;
       } catch (err: any) {
         console.warn('Google Sheet re-generate sync failed:', err);
-        setExecutionState((prev) => ({
-          ...prev!,
-          isRunning: false,
-          hasError: true,
-          failedNodeIds: Array.from(new Set([...(prev?.failedNodeIds || []), boxId])),
-          currentStepMessage: `❌ Google Sheet Sync failed: ${err.message || 'Sync error'}.`,
-        }));
-        return;
+        setExecutionState((prev) => {
+          const base = prev || {
+            isRunning: false,
+            isComplete: false,
+            hasError: false,
+            activeNodeIds: [],
+            completedNodeIds: [],
+            failedNodeIds: [],
+            stepIndex: 4,
+            totalSteps: 6,
+          };
+          return {
+            ...base,
+            isRunning: false,
+            hasError: true,
+            activeNodeIds: (base.activeNodeIds || []).filter((id) => id !== boxId),
+            failedNodeIds: Array.from(new Set([...(base.failedNodeIds || []), boxId])),
+            currentStepMessage: `❌ Google Sheet Sync failed: ${err.message || 'Sync error'}.`,
+          };
+        });
+        throw err;
       }
     }
 
