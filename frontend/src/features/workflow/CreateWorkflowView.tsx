@@ -76,13 +76,28 @@ export function injectListingCodeIntoPrompt(
 
   let updatedPrompt = prompt;
 
-  // 1. Replace explicit placeholders case-insensitively if present in format
-  // e.g. [CODE], {CODE}, <CODE>, [Listing Code], {Listing Code}, [Listing ID], {Listing ID}, [Ref], {Ref}, [Property Code]
-  const placeholderRegex = /\[(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)\]|\{(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)\}|<(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)>/gi;
+  // 1. Replace explicit bracket/brace placeholders case-insensitively
+  // e.g. [NEW RANDOM CODE], [RANDOM CODE], [CODE], [PROPERTY CODE], [LISTING CODE], [NEW CODE], [GENERATED CODE], etc.
+  const placeholderRegex =
+    /\[(?:NEW\s+)?(?:RANDOM\s+)?CODE\]|\[(?:NEW\s+)?(?:GENERATED\s+)?CODE\]|\[(?:LISTING|PROPERTY)\s*CODE\]|\[(?:LISTING\s*ID|REF|CODE_FORMAT)\]|\{(?:NEW\s+)?(?:RANDOM\s+)?CODE\}|\{(?:LISTING|PROPERTY)\s*CODE\}|\<(?:NEW\s+)?(?:RANDOM\s+)?CODE\>|\[(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)\]|\{(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)\}|<(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)>/gi;
   updatedPrompt = updatedPrompt.replace(placeholderRegex, listingCode);
 
-  // 2. Also look for patterns like "Code: [N/A]" or "Listing ID: ..." or "Code: N/A" or "Ref: N/A"
-  updatedPrompt = updatedPrompt.replace(/(?:Code|Listing\s*Code|Listing\s*ID|Ref):\s*(?:\[?(?:N\/A|null|none|\.{3}|—|-)\]?)/gi, `Code: ${listingCode}`);
+  // 2. Replace lines like "Property Code: [NEW RANDOM CODE]" or "Property Code: [N/A]" or "Code: N/A"
+  updatedPrompt = updatedPrompt.replace(
+    /((?:•\s*)?(?:Property\s*Code|Listing\s*Code|Unit\s*Code|Code|Ref|Listing\s*ID):\s*)(?:\[[^\]\r\n]*\]|N\/A|null|none|\.{3}|—|-)/gi,
+    `$1${listingCode}`
+  );
+
+  // 3. Replace generator instructions like "Always include one newly generated property code."
+  updatedPrompt = updatedPrompt.replace(
+    /(?:Always\s+include\s+one\s+newly\s+generated\s+property\s+code\.?)/gi,
+    `Always use the authorized property code "${listingCode}". Do not invent or generate a different code.`
+  );
+
+  // 4. If prompt mentions Property Code or Code, instruct the AI to strictly use the general code
+  if (/(?:Property\s*Code|Listing\s*Code|Listing\s*ID|\bCode\b)/i.test(updatedPrompt)) {
+    updatedPrompt = `${updatedPrompt}\n\n[Property Code Requirement: The authorized unique code for this listing is "${listingCode}". Whenever "Property Code" or "Code" is output, strictly use "${listingCode}". Do not generate or invent a different code.]`;
+  }
 
   return updatedPrompt;
 }
@@ -94,10 +109,21 @@ export function applyListingCodeToGeneratedText(
 ): string {
   if (!useGeneratedCode || !listingCode || !text) return text;
   let res = text;
-  // Replace leftover placeholders like [CODE], {CODE}, etc.
-  const placeholderRegex = /\[(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)\]|\{(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)\}|<(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)>/gi;
+
+  // 1. Replace leftover bracket placeholders
+  const placeholderRegex =
+    /\[(?:NEW\s+)?(?:RANDOM\s+)?CODE\]|\[(?:NEW\s+)?(?:GENERATED\s+)?CODE\]|\[(?:LISTING|PROPERTY)\s*CODE\]|\[(?:LISTING\s*ID|REF|CODE_FORMAT)\]|\{(?:NEW\s+)?(?:RANDOM\s+)?CODE\}|\{(?:LISTING|PROPERTY)\s*CODE\}|\<(?:NEW\s+)?(?:RANDOM\s+)?CODE\>|\[(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)\]|\{(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)\}|<(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)>/gi;
   res = res.replace(placeholderRegex, listingCode);
+
+  // 2. If the AI generated "Property Code: XYZ" or "• Property Code: ABC", enforce the general code!
+  const propertyCodeLineRegex = /((?:•\s*)?(?:Property\s*Code|Listing\s*Code|Unit\s*Code):\s*)([^\r\n]+)/gi;
+  res = res.replace(propertyCodeLineRegex, (_, prefix) => {
+    return `${prefix}${listingCode}`;
+  });
+
+  // 3. Leftover patterns like "Code: [N/A]"
   res = res.replace(/(?:Code|Listing\s*Code|Listing\s*ID|Ref):\s*\[?(?:N\/A|null|none|\.{3}|—|-)\]?/gi, `Code: ${listingCode}`);
+
   return res;
 }
 

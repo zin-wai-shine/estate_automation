@@ -1959,9 +1959,22 @@ function mergeTabGroups(scannedGroups, liveGroups) {
         const listingCode = payload.listingCode || payload.listing_code || '';
 
         if (listingCode) {
-          const codeRegex = /\[(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)\]|\{(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)\}|<(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)>/gi;
-          if (codeRegex.test(prompt)) {
-            prompt = prompt.replace(codeRegex, listingCode);
+          const placeholderRegex =
+            /\[(?:NEW\s+)?(?:RANDOM\s+)?CODE\]|\[(?:NEW\s+)?(?:GENERATED\s+)?CODE\]|\[(?:LISTING|PROPERTY)\s*CODE\]|\[(?:LISTING\s*ID|REF|CODE_FORMAT)\]|\{(?:NEW\s+)?(?:RANDOM\s+)?CODE\}|\{(?:LISTING|PROPERTY)\s*CODE\}|\<(?:NEW\s+)?(?:RANDOM\s+)?CODE\>|\[(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)\]|\{(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)\}|<(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)>/gi;
+          prompt = prompt.replace(placeholderRegex, listingCode);
+
+          prompt = prompt.replace(
+            /((?:•\s*)?(?:Property\s*Code|Listing\s*Code|Unit\s*Code|Code|Ref|Listing\s*ID):\s*)(?:\[[^\]\r\n]*\]|N\/A|null|none|\.{3}|—|-)/gi,
+            `$1${listingCode}`
+          );
+
+          prompt = prompt.replace(
+            /(?:Always\s+include\s+one\s+newly\s+generated\s+property\s+code\.?)/gi,
+            `Always use the authorized property code "${listingCode}". Do not invent or generate a different code.`
+          );
+
+          if (/(?:Property\s*Code|Listing\s*Code|Listing\s*ID|\bCode\b)/i.test(prompt)) {
+            prompt = `${prompt}\n\n[Property Code Requirement: The authorized unique code for this listing is "${listingCode}". Whenever "Property Code" or "Code" is output, strictly use "${listingCode}". Do not generate or invent a different code.]`;
           }
         }
 
@@ -2012,8 +2025,16 @@ function mergeTabGroups(scannedGroups, liveGroups) {
 
         if (generatedText) {
           if (listingCode) {
-            const codeRegex = /\[(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)\]|\{(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)\}|<(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)>/gi;
-            generatedText = generatedText.replace(codeRegex, listingCode);
+            const placeholderRegex =
+              /\[(?:NEW\s+)?(?:RANDOM\s+)?CODE\]|\[(?:NEW\s+)?(?:GENERATED\s+)?CODE\]|\[(?:LISTING|PROPERTY)\s*CODE\]|\[(?:LISTING\s*ID|REF|CODE_FORMAT)\]|\{(?:NEW\s+)?(?:RANDOM\s+)?CODE\}|\{(?:LISTING|PROPERTY)\s*CODE\}|\<(?:NEW\s+)?(?:RANDOM\s+)?CODE\>|\[(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)\]|\{(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)\}|<(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)>/gi;
+            generatedText = generatedText.replace(placeholderRegex, listingCode);
+
+            const propertyCodeLineRegex = /((?:•\s*)?(?:Property\s*Code|Listing\s*Code|Unit\s*Code):\s*)([^\r\n]+)/gi;
+            generatedText = generatedText.replace(propertyCodeLineRegex, (match, prefix) => {
+              return `${prefix}${listingCode}`;
+            });
+
+            generatedText = generatedText.replace(/(?:Code|Listing\s*Code|Listing\s*ID|Ref):\s*\[?(?:N\/A|null|none|\.{3}|—|-)\]?/gi, `Code: ${listingCode}`);
           }
           res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
           return res.end(JSON.stringify({ success: true, generated_content: generatedText }));

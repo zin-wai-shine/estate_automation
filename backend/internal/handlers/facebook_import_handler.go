@@ -649,9 +649,18 @@ func GenerateAICopy(c *fiber.Ctx) error {
 	// Dynamic unique listing code replacement
 	if strings.TrimSpace(req.ListingCode) != "" {
 		code := strings.TrimSpace(req.ListingCode)
-		codePlaceholderRegex := regexp.MustCompile(`(?i)\[(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)\]|\{(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)\}|<(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)>`)
-		if codePlaceholderRegex.MatchString(prompt) {
-			prompt = codePlaceholderRegex.ReplaceAllString(prompt, code)
+		codePlaceholderRegex := regexp.MustCompile(`(?i)\[(?:NEW\s+)?(?:RANDOM\s+)?CODE\]|\[(?:NEW\s+)?(?:GENERATED\s+)?CODE\]|\[(?:LISTING|PROPERTY)\s*CODE\]|\[(?:LISTING\s*ID|REF|CODE_FORMAT)\]|\{(?:NEW\s+)?(?:RANDOM\s+)?CODE\}|\{(?:LISTING|PROPERTY)\s*CODE\}|\<(?:NEW\s+)?(?:RANDOM\s+)?CODE\>|\[(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)\]|\{(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)\}|<(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)>`)
+		prompt = codePlaceholderRegex.ReplaceAllString(prompt, code)
+
+		codeLineRegex := regexp.MustCompile(`(?i)((?:•\s*)?(?:Property\s*Code|Listing\s*Code|Unit\s*Code|Code|Ref|Listing\s*ID):\s*)(?:\[[^\]\r\n]*\]|N/A|null|none|\.{3}|—|-)`)
+		prompt = codeLineRegex.ReplaceAllString(prompt, fmt.Sprintf("${1}%s", code))
+
+		codeInstructionRegex := regexp.MustCompile(`(?i)Always\s+include\s+one\s+newly\s+generated\s+property\s+code\.?`)
+		prompt = codeInstructionRegex.ReplaceAllString(prompt, fmt.Sprintf(`Always use the authorized property code "%s". Do not invent or generate a different code.`, code))
+
+		detectCodeRegex := regexp.MustCompile(`(?i)(?:Property\s*Code|Listing\s*Code|Listing\s*ID|\bCode\b)`)
+		if detectCodeRegex.MatchString(prompt) {
+			prompt = prompt + fmt.Sprintf("\n\n[Property Code Requirement: The authorized unique code for this listing is \"%s\". Whenever \"Property Code\" or \"Code\" is output, strictly use \"%s\". Do not generate or invent a different code.]", code, code)
 		}
 	}
 
@@ -680,8 +689,14 @@ func GenerateAICopy(c *fiber.Ctx) error {
 
 	if strings.TrimSpace(req.ListingCode) != "" {
 		code := strings.TrimSpace(req.ListingCode)
-		codePlaceholderRegex := regexp.MustCompile(`(?i)\[(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)\]|\{(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)\}|<(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)>`)
+		codePlaceholderRegex := regexp.MustCompile(`(?i)\[(?:NEW\s+)?(?:RANDOM\s+)?CODE\]|\[(?:NEW\s+)?(?:GENERATED\s+)?CODE\]|\[(?:LISTING|PROPERTY)\s*CODE\]|\[(?:LISTING\s*ID|REF|CODE_FORMAT)\]|\{(?:NEW\s+)?(?:RANDOM\s+)?CODE\}|\{(?:LISTING|PROPERTY)\s*CODE\}|\<(?:NEW\s+)?(?:RANDOM\s+)?CODE\>|\[(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)\]|\{(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)\}|<(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)>`)
 		generatedText = codePlaceholderRegex.ReplaceAllString(generatedText, code)
+
+		propertyCodeLineRegex := regexp.MustCompile(`(?i)((?:•\s*)?(?:Property\s*Code|Listing\s*Code|Unit\s*Code):\s*)([^\r\n]+)`)
+		generatedText = propertyCodeLineRegex.ReplaceAllString(generatedText, fmt.Sprintf("${1}%s", code))
+
+		codeNaRegex := regexp.MustCompile(`(?i)(?:Code|Listing\s*Code|Listing\s*ID|Ref):\s*\[?(?:N/A|null|none|\.{3}|—|-)\]?`)
+		generatedText = codeNaRegex.ReplaceAllString(generatedText, fmt.Sprintf("Code: %s", code))
 	}
 
 	return c.JSON(fiber.Map{
