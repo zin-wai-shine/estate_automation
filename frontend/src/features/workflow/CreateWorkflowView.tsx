@@ -76,21 +76,13 @@ export function injectListingCodeIntoPrompt(
 
   let updatedPrompt = prompt;
 
-  // 1. Replace explicit placeholders case-insensitively
+  // 1. Replace explicit placeholders case-insensitively if present in format
   // e.g. [CODE], {CODE}, <CODE>, [Listing Code], {Listing Code}, [Listing ID], {Listing ID}, [Ref], {Ref}, [Property Code]
   const placeholderRegex = /\[(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)\]|\{(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)\}|<(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)>/gi;
-
-  const hadPlaceholder = placeholderRegex.test(updatedPrompt);
   updatedPrompt = updatedPrompt.replace(placeholderRegex, listingCode);
 
   // 2. Also look for patterns like "Code: [N/A]" or "Listing ID: ..." or "Code: N/A" or "Ref: N/A"
   updatedPrompt = updatedPrompt.replace(/(?:Code|Listing\s*Code|Listing\s*ID|Ref):\s*(?:\[?(?:N\/A|null|none|\.{3}|—|-)\]?)/gi, `Code: ${listingCode}`);
-
-  // 3. If there was no explicit placeholder replaced, provide the active listing code instruction to the AI model
-  // so the AI analysis incorporates this exact code!
-  if (!hadPlaceholder) {
-    updatedPrompt = `${updatedPrompt}\n\n[Active Listing Code: ${listingCode}] (Requirement: Always use this exact listing code "${listingCode}" wherever a listing code, listing ID, or reference number is generated or referenced).`;
-  }
 
   return updatedPrompt;
 }
@@ -2639,11 +2631,7 @@ export const CreateWorkflowView: React.FC = () => {
           const shouldUseCode = (box as any).useGeneratedCode !== false;
           const currentRunListingCode = workflowContextRef.current?.listingCode || initialRunListingCode;
 
-          let effectiveCustomPrompt =
-            box.customPrompt ||
-            (isTextFormat
-              ? `Format this real estate listing according to the ${box.title || 'preset'} style. Maintain all property details, price, contact numbers, and formatting clean and attractive.`
-              : '');
+          let effectiveCustomPrompt = box.customPrompt || '';
 
           if (shouldUseCode && currentRunListingCode) {
             promptToUse = injectListingCodeIntoPrompt(promptToUse, currentRunListingCode, true);
@@ -3088,11 +3076,7 @@ export const CreateWorkflowView: React.FC = () => {
         : 'Generate a high-converting Facebook real estate rental listing copy. Highlight investment yield, BTS access, floor, and rental price.';
     }
 
-    let effectiveCustomPrompt =
-      box.customPrompt ||
-      (isTextFormat
-        ? `Format this real estate listing according to the ${box.title || 'preset'} style. Maintain all property details, price, contact numbers, and formatting clean and attractive.`
-        : '');
+    let effectiveCustomPrompt = box.customPrompt || '';
 
     if (shouldUseCode && activeListingCode) {
       promptToUse = injectListingCodeIntoPrompt(promptToUse, activeListingCode, true);

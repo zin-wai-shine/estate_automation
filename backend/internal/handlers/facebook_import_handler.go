@@ -646,14 +646,12 @@ func GenerateAICopy(c *fiber.Ctx) error {
 		prompt = "Create a professional real estate rental listing copy. Highlight key property features, monthly price, location, bedrooms, and contact details."
 	}
 
-	// Dynamic unique listing code replacement & context injection
+	// Dynamic unique listing code replacement
 	if strings.TrimSpace(req.ListingCode) != "" {
 		code := strings.TrimSpace(req.ListingCode)
 		codePlaceholderRegex := regexp.MustCompile(`(?i)\[(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)\]|\{(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)\}|<(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)>`)
 		if codePlaceholderRegex.MatchString(prompt) {
 			prompt = codePlaceholderRegex.ReplaceAllString(prompt, code)
-		} else {
-			prompt = prompt + fmt.Sprintf("\n\n[Active Listing Code: %s] (Requirement: Always use this exact listing code wherever a listing code, listing ID, or reference number is generated or referenced).", code)
 		}
 	}
 

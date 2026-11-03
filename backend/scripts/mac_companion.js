@@ -1962,8 +1962,6 @@ function mergeTabGroups(scannedGroups, liveGroups) {
           const codeRegex = /\[(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)\]|\{(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)\}|<(?:CODE|LISTING\s*CODE|LISTING\s*ID|PROPERTY\s*CODE|REF|CODE_FORMAT)>/gi;
           if (codeRegex.test(prompt)) {
             prompt = prompt.replace(codeRegex, listingCode);
-          } else {
-            prompt = `${prompt}\n\n[Active Listing Code: ${listingCode}] (Always use this exact listing code wherever a listing code, ID, or reference number is generated).`;
           }
         }
 
@@ -2021,16 +2019,8 @@ function mergeTabGroups(scannedGroups, liveGroups) {
           return res.end(JSON.stringify({ success: true, generated_content: generatedText }));
         }
 
-        if (isJSONRequest) {
-          res.writeHead(502, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-          return res.end(JSON.stringify({ success: false, error: lastError || 'All Gemini models unavailable' }));
-        }
-
-        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-        return res.end(JSON.stringify({
-          success: true,
-          generated_content: `${rawContent}\n\n[Formatted Real Estate Listing]\nPrice: Contact Agent\nUnit: Ready to move in.`,
-        }));
+        res.writeHead(502, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        return res.end(JSON.stringify({ success: false, error: lastError || 'AI generation failed' }));
       } catch (err) {
         console.warn('[COMPANION] /generate-ai fallback notice:', err.message);
         res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
