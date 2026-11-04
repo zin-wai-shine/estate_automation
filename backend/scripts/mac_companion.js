@@ -103,11 +103,18 @@ let pendingAutomationCommands = [];
 
 function pushPendingCommand(cmd) {
   if (cmd && cmd.action === 'START_AUTOMATION') {
-    // If a START_AUTOMATION command is already queued, replace it with the latest one to prevent duplicate runs
+    // If a START_AUTOMATION command for the SAME profile is already queued, replace it to prevent duplicate runs.
+    // Commands for different profiles must coexist so each profile's extension can pick up its own command.
+    const targetProfile = normalizeProfileKey(cmd.payload?.profileKey || cmd.payload?.profile_key || '');
     const beforeCount = pendingAutomationCommands.length;
-    pendingAutomationCommands = pendingAutomationCommands.filter((c) => c.action !== 'START_AUTOMATION');
+    pendingAutomationCommands = pendingAutomationCommands.filter((c) => {
+      if (c.action !== 'START_AUTOMATION') return true;
+      const existingProfile = normalizeProfileKey(c.payload?.profileKey || c.payload?.profile_key || '');
+      // Only remove if it targets the same profile (or both are unprofile-targeted)
+      return targetProfile && existingProfile ? existingProfile !== targetProfile : false;
+    });
     if (beforeCount !== pendingAutomationCommands.length) {
-      console.log('[COMPANION] ℹ️ Replaced previous pending START_AUTOMATION with latest command.');
+      console.log(`[COMPANION] ℹ️ Replaced previous pending START_AUTOMATION for profile "${targetProfile}" with latest command.`);
     }
   }
   pendingAutomationCommands.push(cmd);
@@ -1719,6 +1726,26 @@ function mergeTabGroups(scannedGroups, liveGroups) {
     return res.end(JSON.stringify({ status: 'success', automation: automationState }));
   }
 
+  // ── Requeue Command (called by extension when it receives a command for a different profile) ─
+  if (url.pathname === '/requeue-command' && req.method === 'POST') {
+    let body = '';
+    req.on('data', (d) => (body += d));
+    req.on('end', () => {
+      try {
+        const { action, payload } = JSON.parse(body);
+        const targetProfile = payload?.profileKey || payload?.profile_key || 'unknown';
+        console.log(`[COMPANION] Re-queuing command "${action}" for profile "${targetProfile}" (returned by wrong extension instance)`);
+        pushPendingCommand({ action, payload, created_at: new Date().toISOString() });
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'requeued' }));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+
   // ── Start Automation (called by BoltHaven Go backend → companion → extension) ─
   if (url.pathname === '/start-automation' && req.method === 'POST') {
     let body = '';
@@ -2564,15 +2591,16 @@ function mergeTabGroups(scannedGroups, liveGroups) {
       let cmdIndex = pendingAutomationCommands.findIndex((c) => {
         if (!c || !c.payload) return true;
         const targetRaw = c.payload.profileKey || c.payload.profile_key || '';
-        if (!targetRaw) return true;
+        if (!targetRaw) return true; // untargeted commands go to anyone
         const targetKey = normalizeProfileKey(targetRaw);
-        return !clientKey || targetKey === clientKey;
+        // If clientKey is known, only match commands for this exact profile
+        if (clientKey) return targetKey === clientKey;
+        // If clientKey is unknown (extension not yet identified), only dispatch untargeted commands
+        return false;
       });
 
-      // Fallback: If no exact profile match but there are pending commands, dispatch if clientKey is unverified or 'Profile 2'
-      if (cmdIndex === -1 && pendingAutomationCommands.length > 0) {
-        cmdIndex = 0;
-      }
+      // NOTE: No fallback dispatching — a profile-targeted command must only go to the matching profile.
+      // This prevents Profile 1's extension from stealing Profile 2's START_AUTOMATION command.
 
       if (cmdIndex !== -1) {
         const cmd = pendingAutomationCommands.splice(cmdIndex, 1)[0];

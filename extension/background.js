@@ -1795,9 +1795,27 @@ async function pollCompanion() {
           }).catch(() => {});
         }
       } else if (action === 'START_AUTOMATION') {
-        startAutomation(payload)
-          .then((result) => console.log('[BOLTHAVEN EXT] Automation start:', result))
-          .catch((err) => console.warn('[BOLTHAVEN EXT] Automation start error:', err));
+        // Safety guard: verify this command is meant for this profile before executing.
+        // The companion should already filter by profile_key, but this is a double-check
+        // to prevent cross-profile command execution when two profiles run in parallel.
+        const cmdTargetProfile = (payload?.profileKey || payload?.profile_key || '').trim();
+        const myProfile = profileKey || '';
+        const profileMatch = !cmdTargetProfile || !myProfile ||
+          cmdTargetProfile === myProfile ||
+          cmdTargetProfile.replace(/\s+/g, '').toLowerCase() === myProfile.replace(/\s+/g, '').toLowerCase();
+        if (!profileMatch) {
+          console.warn(`[BOLTHAVEN EXT] Ignoring START_AUTOMATION targeted at "${cmdTargetProfile}" — this instance is profile "${myProfile}". Command will re-queue.`);
+          // Re-push the command back to the companion so the correct profile can pick it up
+          fetch(`${COMPANION_URL}/requeue-command`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action, payload }),
+          }).catch(() => {});
+        } else {
+          startAutomation(payload)
+            .then((result) => console.log('[BOLTHAVEN EXT] Automation start:', result))
+            .catch((err) => console.warn('[BOLTHAVEN EXT] Automation start error:', err));
+        }
       } else if (action === 'START_TWO_STAGE_STAGING') {
         executeTwoStageStaging(payload).catch((err) => {
           if (twoStageAborted) return;
