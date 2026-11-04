@@ -523,6 +523,38 @@
       }
     }
 
+    // 0.5. Locate image card that has a share/export button (ChatGPT new UI: Edit button is hover-only or absent)
+    // These cards have a small circular share button (⬆) in bottom-right corner of the image
+    const allImgCards = Array.from(document.querySelectorAll('img')).filter((img) => {
+      const src = img.src || img.getAttribute('src') || '';
+      if (!src || preUrls.has(src)) return false;
+      const s = src.toLowerCase();
+      if (s.includes('avatar') || s.includes('profile') || s.includes('icon') || s.includes('emoji') || s.includes('favicon') || s.includes('logo')) return false;
+      if (img.closest('form, div[class*="composer"], nav, header, [data-message-author-role="user"]')) return false;
+      const rect = img.getBoundingClientRect();
+      const hasSize = (rect.width >= 100 && rect.height >= 100) || (img.naturalWidth >= 100 && img.naturalHeight >= 100);
+      const isOai = s.includes('oaiusercontent.com') || s.includes('file-service') || s.startsWith('blob:');
+      return (hasSize || isOai) && img.complete;
+    });
+    // Prefer images that have a nearby share/download button (confirms it's a generated image card)
+    for (let i = allImgCards.length - 1; i >= 0; i--) {
+      const img = allImgCards[i];
+      const card = img.closest('div[class*="group"], div[class*="relative"], article, section') || img.parentElement;
+      if (card) {
+        const btns = Array.from(card.querySelectorAll('button, a[download]'));
+        const hasActionBtn = btns.some((b) => {
+          const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+          const title = (b.getAttribute('title') || '').toLowerCase();
+          return aria.includes('share') || aria.includes('download') || aria.includes('export') ||
+                 title.includes('share') || title.includes('download') || title.includes('export') ||
+                 (b.textContent || '').trim() === 'Edit';
+        });
+        if (hasActionBtn) return img;
+      }
+    }
+    // Final fallback: any new fully-loaded large image in the document (not in user/composer areas)
+    if (allImgCards.length > 0) return allImgCards[allImgCards.length - 1];
+
     // 1. Assistant turns (from newest to oldest)
     const assistantTurns = Array.from(document.querySelectorAll(
       'div[data-message-author-role="assistant"], article[data-testid*="conversation-turn"], article'
@@ -600,6 +632,37 @@
         }
       }
     }
+
+    // 0.5. Look for image card with a share/action button (new ChatGPT UI: Edit is hover-only or absent)
+    const candidateImgs = Array.from(document.querySelectorAll('img')).filter((img) => {
+      const src = img.src || img.getAttribute('src') || '';
+      if (!src || preUrls.has(src)) return false;
+      const s = src.toLowerCase();
+      if (s.includes('avatar') || s.includes('profile') || s.includes('icon') || s.includes('emoji') || s.includes('favicon') || s.includes('logo')) return false;
+      if (img.closest('form, div[class*="composer"], nav, header, [data-message-author-role="user"]')) return false;
+      const rect = img.getBoundingClientRect();
+      const hasSize = (rect.width >= 100 && rect.height >= 100) || (img.naturalWidth >= 100 && img.naturalHeight >= 100);
+      const isOai = s.includes('oaiusercontent.com') || s.includes('file-service') || s.startsWith('blob:');
+      return (hasSize || isOai) && img.complete;
+    });
+    // Prefer images inside a card that has a share/download/edit action button
+    for (let i = candidateImgs.length - 1; i >= 0; i--) {
+      const img = candidateImgs[i];
+      const card = img.closest('div[class*="group"], div[class*="relative"], article, section') || img.parentElement;
+      if (card) {
+        const btns = Array.from(card.querySelectorAll('button, a[download]'));
+        const hasActionBtn = btns.some((b) => {
+          const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+          const title = (b.getAttribute('title') || '').toLowerCase();
+          return aria.includes('share') || aria.includes('download') || aria.includes('export') ||
+                 title.includes('share') || title.includes('download') || title.includes('export') ||
+                 (b.textContent || '').trim() === 'Edit';
+        });
+        if (hasActionBtn) return img;
+      }
+    }
+    // Final fallback: return any new fully-loaded large image (not in user/composer areas)
+    if (candidateImgs.length > 0) return candidateImgs[candidateImgs.length - 1];
 
     // 1. Assistant turns (strictly from newest to oldest, excluding user turns)
     const assistantTurns = Array.from(
