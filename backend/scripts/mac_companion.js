@@ -1957,7 +1957,7 @@ function mergeTabGroups(scannedGroups, liveGroups) {
   }
 
   // ── Stop Automation ─────────────────────────────────────────────────────────
-  if (url.pathname === '/stop-automation' && req.method === 'POST') {
+  if ((url.pathname === '/stop-automation' || url.pathname === '/stop-two-stage' || url.pathname === '/two-stage-stop') && req.method === 'POST') {
     pendingAutomationCommands = [];
     automationState = {
       ...automationState,
@@ -1971,9 +1971,26 @@ function mergeTabGroups(scannedGroups, liveGroups) {
       error: 'Stopped by user',
       updated_at: new Date().toISOString(),
     };
-    pushPendingCommand({ action: 'STOP_AUTOMATION', payload: {}, created_at: new Date().toISOString() });
-    console.log('[COMPANION] Stop automation command queued (cleared pending queue and stopped twoStageState)');
-    res.writeHead(200, { 'Content-Type': 'application/json' });
+    // Broadcast STOP_AUTOMATION to EVERY known profile so all browser windows/extensions halt immediately!
+    const activeProfiles = new Set([
+      ...Object.keys(lastPollTimeByProfile),
+      ...registeredProfiles.map((p) => p.profileKey),
+      'Profile 2',
+      'Profile 14',
+      'Default',
+    ]);
+    for (const pKey of activeProfiles) {
+      if (pKey) {
+        pendingAutomationCommands.push({
+          action: 'STOP_AUTOMATION',
+          payload: { profileKey: pKey },
+          created_at: new Date().toISOString(),
+        });
+      }
+    }
+    pendingAutomationCommands.push({ action: 'STOP_AUTOMATION', payload: {}, created_at: new Date().toISOString() });
+    console.log('[COMPANION] Stop automation command broadcasted to all profiles (twoStageState stopped)');
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
     return res.end(JSON.stringify({ status: 'ok' }));
   }
 

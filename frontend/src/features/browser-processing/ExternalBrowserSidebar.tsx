@@ -4340,35 +4340,98 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
               </div>
             )}
 
-            {/* Single Iconic Primary Action Button */}
+            {/* Single Iconic Primary Action Button & Stop Button */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '2px' }}>
-              <button
-                type="button"
-                onClick={handleRunTwoStageTest}
-                disabled={isRunningTwoStage}
-                style={{
-                  width: '100%',
-                  height: '42px',
-                  borderRadius: '10px',
-                  border: 'none',
-                  background: isRunningTwoStage
-                    ? '#6B7280'
-                    : 'linear-gradient(135deg, #F59E0B 0%, #D97706 100%)',
-                  color: '#000000',
-                  fontWeight: 700,
-                  fontSize: '0.78125rem',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '7px',
-                  cursor: isRunningTwoStage ? 'not-allowed' : 'pointer',
-                  boxShadow: '0 3px 10px rgba(245, 158, 11, 0.28)',
-                  transition: 'all 0.15s ease',
-                }}
-              >
-                {isRunningTwoStage ? <FiLoader className="animate-spin" size={14} /> : <FiZap size={14} />}
-                <span>{isRunningTwoStage ? 'Generating Hero Image...' : 'Run FB Hero (Generate Image)'}</span>
-              </button>
+              {isRunningTwoStage ? (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px', gap: '8px' }}>
+                  <button
+                    type="button"
+                    disabled
+                    style={{
+                      height: '42px',
+                      borderRadius: '10px',
+                      border: '1px solid rgba(245, 158, 11, 0.35)',
+                      background: isDark ? 'rgba(245, 158, 11, 0.15)' : 'rgba(245, 158, 11, 0.12)',
+                      color: isDark ? '#FCD34D' : '#D97706',
+                      fontWeight: 700,
+                      fontSize: '0.78125rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '7px',
+                      cursor: 'wait',
+                    }}
+                  >
+                    <FiLoader className="animate-spin" size={14} />
+                    <span>Generating...</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleStopGroupAutomation}
+                    title="Stop Hero Generation immediately"
+                    style={{
+                      height: '42px',
+                      borderRadius: '10px',
+                      border: 'none',
+                      background: 'linear-gradient(135deg, #EF4444 0%, #DC2626 100%)',
+                      color: '#FFFFFF',
+                      fontWeight: 700,
+                      fontSize: '0.78125rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                      cursor: 'pointer',
+                      boxShadow: '0 3px 10px rgba(239, 68, 68, 0.35)',
+                      whiteSpace: 'nowrap',
+                      transition: 'all 0.15s ease',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.filter = 'brightness(1.1)';
+                      e.currentTarget.style.transform = 'translateY(-1px)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.filter = 'none';
+                      e.currentTarget.style.transform = 'translateY(0)';
+                    }}
+                  >
+                    <FiSquare size={12} style={{ fill: '#FFFFFF' }} />
+                    <span>Stop</span>
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleRunTwoStageTest}
+                  style={{
+                    width: '100%',
+                    height: '42px',
+                    borderRadius: '10px',
+                    border: 'none',
+                    background: 'linear-gradient(135deg, #F59E0B 0%, #D97706 100%)',
+                    color: '#000000',
+                    fontWeight: 700,
+                    fontSize: '0.78125rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '7px',
+                    cursor: 'pointer',
+                    boxShadow: '0 3px 10px rgba(245, 158, 11, 0.28)',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.filter = 'brightness(1.05)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.filter = 'none';
+                  }}
+                >
+                  <FiZap size={14} />
+                  <span>Run FB Hero (Generate Image)</span>
+                </button>
+              )}
 
               {twoStageMessage && (
                 <div
@@ -4380,9 +4443,32 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                     border: '1px solid rgba(245, 158, 11, 0.25)',
                     color: '#F59E0B',
                     lineHeight: 1.35,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '8px',
                   }}
                 >
-                  {twoStageMessage}
+                  <span>{twoStageMessage}</span>
+                  {isRunningTwoStage && (
+                    <button
+                      type="button"
+                      onClick={handleStopGroupAutomation}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#EF4444',
+                        cursor: 'pointer',
+                        fontSize: '0.625rem',
+                        fontWeight: 700,
+                        textDecoration: 'underline',
+                        padding: 0,
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  )}
                 </div>
               )}
             </div>

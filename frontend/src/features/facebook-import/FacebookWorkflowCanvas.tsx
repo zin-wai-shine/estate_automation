@@ -7,6 +7,7 @@ import { Select, type SelectGroup } from '../../components/ui/Select';
 import {
   FiCpu,
   FiPlay,
+  FiSquare,
   FiRefreshCw,
   FiCheckCircle,
   FiFileText,
@@ -68,7 +69,7 @@ import { ExternalBrowserSidebar } from '../browser-processing/ExternalBrowserSid
 import { getPersistedReferenceImage } from '../browser-processing/referenceImageStorage';
 import { FBHeroSettingsSidebox, extractCleanCondoNameFromAiText } from '../browser-processing/FBHeroSettingsSidebox';
 import { GoogleSheetSettingsSidebox } from './GoogleSheetSettingsSidebox';
-import { focusBrowserTabGroup, fetchBrowserProfiles, fetchTabGroups, fetchEnhancedDownloadedImages } from '../browser-processing/browserAutomationService';
+import { focusBrowserTabGroup, fetchBrowserProfiles, fetchTabGroups, fetchEnhancedDownloadedImages, stopAutomation } from '../browser-processing/browserAutomationService';
 import type { BrowserProfile, BrowserGroupItem } from '../browser-processing/types';
 import { WatermarkNodeModal } from './WatermarkNodeModal';
 import { ToggleSwitch } from '../../components/ui/ToggleSwitch';
@@ -4153,7 +4154,13 @@ export const FacebookWorkflowCanvas = forwardRef<
     label: string = 'Run',
     side: 'top' | 'right' | 'left' = 'top'
   ) => {
-    if (executionState?.isRunning || !onRunFromStep) return null;
+    const isThisNodeRunning = Boolean(
+      (locallyRunningNodeId && locallyRunningNodeId === nodeId) ||
+      (executionState?.isRunning && executionState?.activeNodeIds?.includes(nodeId))
+    );
+
+    if (executionState?.isRunning && !isThisNodeRunning) return null;
+    if (!onRunFromStep && !isThisNodeRunning) return null;
     if (nodeId.startsWith('combine') || nodeId.includes('combine')) return null;
 
     const isSideRight = side === 'right';
@@ -4188,35 +4195,53 @@ export const FacebookWorkflowCanvas = forwardRef<
       >
         <button
           type="button"
-          className="canvas-control node-step-play-btn"
+          className={`canvas-control node-step-play-btn ${isThisNodeRunning ? 'is-running' : ''}`}
           onClick={(e) => {
             e.stopPropagation();
             e.preventDefault();
-            onRunFromStep(nodeId);
+            if (isThisNodeRunning) {
+              window.dispatchEvent(new CustomEvent('ea_workflow_stop_all'));
+              stopAutomation().catch(() => {});
+              setLocallyRunningNodeId(null);
+            } else {
+              onRunFromStep?.(nodeId);
+            }
           }}
           onMouseDown={(e) => {
             e.stopPropagation();
           }}
           onMouseEnter={() => handleNodeMouseEnter(nodeId)}
           onMouseLeave={() => handleNodeMouseLeave(nodeId)}
-          title={`Run this step (${label})`}
+          title={isThisNodeRunning ? `Stop this step (${label})` : `Run this step (${label})`}
           style={{
-            ['--play-btn-accent' as any]: color,
-            ['--play-btn-bg' as any]: isDark ? '#1F2937' : '#FFFFFF',
-            ['--play-btn-border' as any]: isDark ? '#4B5563' : '#94A3B8',
-            ['--play-btn-color' as any]: isDark ? '#9CA3AF' : '#64748B',
-            ['--play-btn-hover-bg' as any]: isDark ? '#263342' : '#F1F5F9',
+            ['--play-btn-accent' as any]: isThisNodeRunning ? '#EF4444' : color,
+            ['--play-btn-bg' as any]: isThisNodeRunning ? '#EF4444' : (isDark ? '#1F2937' : '#FFFFFF'),
+            ['--play-btn-border' as any]: isThisNodeRunning ? '#DC2626' : (isDark ? '#4B5563' : '#94A3B8'),
+            ['--play-btn-color' as any]: isThisNodeRunning ? '#FFFFFF' : (isDark ? '#9CA3AF' : '#64748B'),
+            ['--play-btn-hover-bg' as any]: isThisNodeRunning ? '#DC2626' : (isDark ? '#263342' : '#F1F5F9'),
+            ...(isThisNodeRunning ? { backgroundColor: '#EF4444', borderColor: '#DC2626' } : {}),
           }}
         >
-          <FiPlay
-            size={12}
-            style={{
-              fill: isDark ? '#9CA3AF' : '#64748B',
-              color: 'inherit',
-              marginLeft: '2px',
-              transition: 'all 0.15s ease',
-            }}
-          />
+          {isThisNodeRunning ? (
+            <FiSquare
+              size={11}
+              style={{
+                fill: '#FFFFFF',
+                color: '#FFFFFF',
+                transition: 'all 0.15s ease',
+              }}
+            />
+          ) : (
+            <FiPlay
+              size={12}
+              style={{
+                fill: isDark ? '#9CA3AF' : '#64748B',
+                color: 'inherit',
+                marginLeft: '2px',
+                transition: 'all 0.15s ease',
+              }}
+            />
+          )}
         </button>
 
         {/* Seamless Hover Bridge: Fills the entire gap between button and node */}

@@ -298,18 +298,20 @@
   // Find stop button (indicates generation is actively running).
   // Strictly locate the active stop button in the composer
   function findStopButton() {
-    const composer = getComposerContainer() || document.querySelector('form');
+    const composer = getComposerContainer() || document.querySelector('form') || document;
     if (!composer) return null;
 
     // 1. Explicit stop buttons
     const byAttr = composer.querySelector(
       'button[data-testid="stop-button"], ' +
       'button[aria-label*="Stop generating" i], ' +
-      'button[aria-label*="Stop streaming" i]'
+      'button[aria-label*="Stop streaming" i], ' +
+      'button[aria-label="Stop" i], ' +
+      'button[aria-label*="Stop" i]'
     );
     if (byAttr && !byAttr.disabled && byAttr.getAttribute('aria-disabled') !== 'true') return byAttr;
 
-    // 2. Button strictly with aria-label or testid containing "stop" in composer (excluding voice/mic/speech)
+    // 2. Button with aria-label or testid containing "stop" (excluding voice/mic/speech)
     const composerButtons = Array.from(composer.querySelectorAll('button:not(:disabled)'));
     for (const b of composerButtons) {
       const aria = (b.getAttribute('aria-label') || '').toLowerCase();
@@ -317,6 +319,9 @@
       if ((aria.includes('stop') || testid.includes('stop')) && !aria.includes('voice') && !aria.includes('speech')) {
         return b;
       }
+      // Check for square stop icon (SVG rect or square path)
+      const rect = b.querySelector('rect, [class*="square"]');
+      if (rect) return b;
     }
 
     return null;

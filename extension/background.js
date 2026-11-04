@@ -1620,6 +1620,10 @@ async function executeTwoStageStaging(payload) {
   let stage2Response = null;
   let lastSendError = null;
   for (let attempt = 1; attempt <= 3; attempt++) {
+    if (isTwoStageStopped()) {
+      console.log('[BOLTHAVEN EXT] Hero generation aborted by user before dispatch');
+      return;
+    }
     try {
       await ensureContentScriptInjected(tab2.id);
       stage2Response = await new Promise((resolve, reject) => {
@@ -1638,6 +1642,10 @@ async function executeTwoStageStaging(payload) {
       if (stage2Response) break;
     } catch (err) {
       lastSendError = err;
+      if (isTwoStageStopped()) {
+        console.log('[BOLTHAVEN EXT] Hero generation aborted by user during Stage 2');
+        return;
+      }
       console.warn(`[BOLTHAVEN EXT] Attempt ${attempt} to dispatch EXECUTE_STAGE2_STAGING failed:`, err.message);
       await delay(1000);
     }
