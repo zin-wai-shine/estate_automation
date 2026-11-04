@@ -584,6 +584,49 @@ async function loadAliveSessionTabs(groupName) {
   return remembered.filter((id) => alive.has(id));
 }
 
+// Return set of tab IDs reserved by OTHER groups so branches never steal each other's tabs
+async function getAllReservedTabIds(excludeGroupName) {
+  try {
+    const stored = await chrome.storage.local.get([SESSION_TABS_STORAGE_KEY]);
+    const map = stored[SESSION_TABS_STORAGE_KEY] || {};
+    const currentKey = sessionKeyFor(excludeGroupName);
+    const reserved = new Set();
+    const allTabs = await chrome.tabs.query({});
+    const aliveIds = new Set(allTabs.map((t) => t.id));
+
+    for (const [key, ids] of Object.entries(map)) {
+      if (key !== currentKey && Array.isArray(ids)) {
+        for (const id of ids) {
+          if (aliveIds.has(id)) {
+            reserved.add(id);
+          }
+        }
+      }
+    }
+    return reserved;
+  } catch (e) {
+    return new Set();
+  }
+}
+
+// Clean up closed tabs immediately
+chrome.tabs.onRemoved.addListener(async (closedTabId) => {
+  try {
+    const stored = await chrome.storage.local.get([SESSION_TABS_STORAGE_KEY]);
+    const map = stored[SESSION_TABS_STORAGE_KEY] || {};
+    let changed = false;
+    for (const [key, ids] of Object.entries(map)) {
+      if (Array.isArray(ids) && ids.includes(closedTabId)) {
+        map[key] = ids.filter((id) => id !== closedTabId);
+        changed = true;
+      }
+    }
+    if (changed) {
+      await chrome.storage.local.set({ [SESSION_TABS_STORAGE_KEY]: map });
+    }
+  } catch (e) {}
+});
+
 function getConversationKey(rawUrl) {
   if (!rawUrl) return '';
   const match = String(rawUrl).match(/\/c\/([a-zA-Z0-9\-]+)/i);
@@ -601,27 +644,34 @@ function getTabKey(tab) {
   return getConversationKey(tab.url || tab.pendingUrl || '');
 }
 
+const isEnsuringGroupOpenByGroup = {};
+
 async function ensureTabGroupOpen(groupName, customUrls, tabMode = 'existing_tabs', workerCount = 4, reuseSessionTabs = true) {
-  if (isEnsuringGroupOpen) {
-    console.log('[BOLTHAVEN EXT] ensureTabGroupOpen is already executing, reusing pending promise...');
-    return isEnsuringGroupOpen;
+  const key = sessionKeyFor(groupName);
+  if (isEnsuringGroupOpenByGroup[key]) {
+    console.log(`[BOLTHAVEN EXT] ensureTabGroupOpen is already executing for "${key}", reusing pending promise...`);
+    return isEnsuringGroupOpenByGroup[key];
   }
-  isEnsuringGroupOpen = (async () => {
+  isEnsuringGroupOpenByGroup[key] = (async () => {
     try {
       return await _ensureTabGroupOpenInternal(groupName, customUrls, tabMode, workerCount, reuseSessionTabs);
     } finally {
-      isEnsuringGroupOpen = null;
+      delete isEnsuringGroupOpenByGroup[key];
     }
   })();
-  return isEnsuringGroupOpen;
+  return isEnsuringGroupOpenByGroup[key];
 }
 
 async function _ensureTabGroupOpenInternal(groupName, customUrls, tabMode = 'existing_tabs', workerCount = 4, reuseSessionTabs = true) {
   const isHero = (groupName || '').toLowerCase().includes('hero');
-  const count = isHero ? 1 : Math.max(1, Math.min(8, parseInt(workerCount, 10) || 4));
-  const resolvedName = isHero ? 'FB Hero' : (groupName || 'Enhance IMG');
+  const parsedWorkers = parseInt(workerCount, 10);
+  const count = !isNaN(parsedWorkers) && parsedWorkers > 0
+    ? Math.min(8, parsedWorkers)
+    : (isHero ? 1 : 4);
+  const resolvedName = (groupName || (isHero ? 'FB Hero' : 'Enhance IMG')).trim();
+  const isFreshTabs = tabMode === 'new_tabs' || tabMode === 'fresh_tabs';
 
-  console.log(`[BOLTHAVEN EXT] 🎯 Ensuring plain worker tabs for "${resolvedName}" (count: ${count})`);
+  console.log(`[BOLTHAVEN EXT] 🎯 Ensuring worker tabs for "${resolvedName}" (count: ${count}, tabMode: ${tabMode || 'existing_tabs'}, reuseSession: ${reuseSessionTabs})`);
 
   let allTabs = await chrome.tabs.query({});
 
@@ -631,44 +681,91 @@ async function _ensureTabGroupOpenInternal(groupName, customUrls, tabMode = 'exi
     try {
       await chrome.tabs.ungroup(groupedTabIds);
       console.log(`[BOLTHAVEN EXT] ✓ Ungrouped ${groupedTabIds.length} tabs to keep plain tabs`);
-      // Refresh tab list after ungrouping
       allTabs = await chrome.tabs.query({});
     } catch (e) {
       console.warn('[BOLTHAVEN EXT] Ungroup notice:', e.message);
     }
   }
 
-  // 2. Locate existing open ChatGPT tabs in this window
-  const chatGPTTabs = allTabs.filter((t) => (t.url || t.pendingUrl || '').includes('chatgpt.com'));
+  // 2. Identify tabs reserved by OTHER tab groups/branches (e.g. Enhance IMG tabs must NOT be touched by FB Hero)
+  const reservedByOtherGroups = await getAllReservedTabIds(resolvedName);
+  console.log(`[BOLTHAVEN EXT] Tabs reserved by other groups (off-limits for "${resolvedName}"):`, Array.from(reservedByOtherGroups));
 
   let finalTabIds = [];
 
-  if (chatGPTTabs.length >= count) {
-    // We already have enough open ChatGPT tabs! Reuse the first `count` tabs, zero new tabs created
-    finalTabIds = chatGPTTabs.slice(0, count).map((t) => t.id);
-    console.log(`[BOLTHAVEN EXT] ✓ Reusing ${finalTabIds.length} existing ChatGPT worker tabs (no new tabs opened)`);
+  if (isFreshTabs) {
+    // ── CASE A: OPEN FRESH TABS ──
+    // The user explicitly requested fresh tabs for this branch/group.
+    // Do NOT reuse any existing tabs! Open brand new tabs specifically for this group.
+    console.log(`[BOLTHAVEN EXT] 🆕 Open Fresh Tabs requested for "${resolvedName}". Opening ${count} fresh tab(s)...`);
+    for (let i = 0; i < count; i++) {
+      const targetUrl = (customUrls && customUrls[i]) || 'https://chatgpt.com/';
+      try {
+        const createdTab = await chrome.tabs.create({
+          url: targetUrl,
+          active: false,
+        });
+        finalTabIds.push(createdTab.id);
+      } catch (e) {
+        console.warn('[BOLTHAVEN EXT] Error creating fresh tab:', e.message);
+      }
+    }
   } else {
-    // We have fewer than `count` tabs. Use existing and open only what is missing up to `count`
-    finalTabIds = chatGPTTabs.map((t) => t.id);
-
-    // Reuse any empty/newtab tabs first before opening new ones
-    const blankTabs = allTabs.filter(
-      (t) => (t.url || '').includes('newtab') || (t.title || '').toLowerCase() === 'new tab'
-    );
-    for (const bt of blankTabs) {
-      if (finalTabIds.length < count) {
-        try {
-          await chrome.tabs.update(bt.id, { url: 'https://chatgpt.com/' });
-          finalTabIds.push(bt.id);
-        } catch (e) {}
+    // ── CASE B: EXISTING / REUSE TABS ──
+    // 1. First priority: Reuse tabs specifically remembered for THIS group
+    if (reuseSessionTabs !== false) {
+      const myAliveSessionTabs = await loadAliveSessionTabs(resolvedName);
+      for (const tid of myAliveSessionTabs) {
+        if (!finalTabIds.includes(tid) && finalTabIds.length < count) {
+          finalTabIds.push(tid);
+        }
+      }
+      if (finalTabIds.length > 0) {
+        console.log(`[BOLTHAVEN EXT] ✓ Reusing ${finalTabIds.length} session tab(s) remembered for "${resolvedName}":`, finalTabIds);
       }
     }
 
-    // Open any remaining tabs to reach exactly `count`
+    // 2. Second priority: If more tabs needed, look for free ChatGPT tabs that DO NOT belong to any other group!
+    if (finalTabIds.length < count) {
+      const unassignedChatGPTTabs = allTabs.filter((t) => {
+        const isChat = (t.url || t.pendingUrl || '').includes('chatgpt.com');
+        return isChat && !reservedByOtherGroups.has(t.id) && !finalTabIds.includes(t.id);
+      });
+
+      for (const ft of unassignedChatGPTTabs) {
+        if (finalTabIds.length < count) {
+          finalTabIds.push(ft.id);
+        }
+      }
+    }
+
+    // 3. Third priority: Reuse any blank/newtab tabs
+    if (finalTabIds.length < count) {
+      const blankTabs = allTabs.filter(
+        (t) =>
+          !reservedByOtherGroups.has(t.id) &&
+          !finalTabIds.includes(t.id) &&
+          ((t.url || '').includes('newtab') || (t.title || '').toLowerCase() === 'new tab')
+      );
+      for (const bt of blankTabs) {
+        if (finalTabIds.length < count) {
+          try {
+            const idx = finalTabIds.length;
+            const targetUrl = (customUrls && customUrls[idx]) || 'https://chatgpt.com/';
+            await chrome.tabs.update(bt.id, { url: targetUrl });
+            finalTabIds.push(bt.id);
+          } catch (e) {}
+        }
+      }
+    }
+
+    // 4. Fourth priority: Open new tabs for any remaining needed count
     while (finalTabIds.length < count) {
       try {
+        const idx = finalTabIds.length;
+        const targetUrl = (customUrls && customUrls[idx]) || 'https://chatgpt.com/';
         const createdTab = await chrome.tabs.create({
-          url: 'https://chatgpt.com/',
+          url: targetUrl,
           active: false,
         });
         finalTabIds.push(createdTab.id);
@@ -676,7 +773,6 @@ async function _ensureTabGroupOpenInternal(groupName, customUrls, tabMode = 'exi
         break;
       }
     }
-    console.log(`[BOLTHAVEN EXT] ✓ Total ${finalTabIds.length} plain worker tabs ready for "${resolvedName}"`);
   }
 
   // 3. Close any leftover blank new tab pages if we already have our worker tabs
@@ -684,6 +780,7 @@ async function _ensureTabGroupOpenInternal(groupName, customUrls, tabMode = 'exi
     const blankTabs = (await chrome.tabs.query({})).filter(
       (t) =>
         !finalTabIds.includes(t.id) &&
+        !reservedByOtherGroups.has(t.id) &&
         ((t.url || '').includes('newtab') || (t.title || '').toLowerCase() === 'new tab')
     );
     blankTabs.forEach((bt) => chrome.tabs.remove(bt.id).catch(() => {}));
@@ -696,7 +793,7 @@ async function _ensureTabGroupOpenInternal(groupName, customUrls, tabMode = 'exi
     await focusTab(finalTabIds[0]);
   }
 
-  console.log(`[BOLTHAVEN EXT] ✓ Ready: ${finalTabIds.length} tab(s) confirmed open and active for "${resolvedName}":`, finalTabIds);
+  console.log(`[BOLTHAVEN EXT] ✓ Ready: ${finalTabIds.length} tab(s) confirmed for "${resolvedName}":`, finalTabIds);
   return finalTabIds;
 }
 
@@ -749,7 +846,8 @@ async function startAutomation(payload) {
     }
 
     if (activeTabIds.length < maxWorkers) {
-      const chatGPTTabs = allTabs.filter((t) => (t.url || '').includes('chatgpt.com'));
+      const reserved = await getAllReservedTabIds(groupName || 'Enhance IMG');
+      const chatGPTTabs = allTabs.filter((t) => (t.url || '').includes('chatgpt.com') && !reserved.has(t.id));
       for (const t of chatGPTTabs) {
         if (!activeTabIds.includes(t.id)) {
           activeTabIds.push(t.id);
@@ -1426,7 +1524,9 @@ async function executeTwoStageStaging(payload) {
   }
   if (tabs.length === 0) {
     const allTabs = await chrome.tabs.query({});
-    tabs = allTabs.filter((t) => (t.url || '').includes('chatgpt.com')).slice(0, requiredTabCount);
+    const reserved = await getAllReservedTabIds(groupName || 'FB Hero');
+    const freeTabs = allTabs.filter((t) => (t.url || '').includes('chatgpt.com') && !reserved.has(t.id));
+    tabs = freeTabs.slice(0, requiredTabCount);
   }
 
   // Ensure we have enough tabs open (1 for Direct mode, 2 for 2-Stage mode)
