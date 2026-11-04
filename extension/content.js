@@ -498,6 +498,19 @@
         }
       }
     }
+
+    // 3. Fallback: Any button with download or share SVG icon in card
+    for (const b of buttons) {
+      if ((b.textContent || '').trim().toLowerCase() === 'edit') continue;
+      const svg = b.querySelector('svg');
+      if (svg) {
+        const svgHtml = svg.innerHTML.toLowerCase();
+        if (svgHtml.includes('download') || svgHtml.includes('m19 9') || svgHtml.includes('m12 15')) {
+          return b;
+        }
+      }
+    }
+
     return null;
   }
 
@@ -1518,8 +1531,43 @@
           return;
         }
 
-        // 2. Search strictly for newly created enhanced image
-        const enhancedImg = findGeneratedEnhancedImage(preExistingImageUrls, preAssistantCount);
+        // 2. Multi-method image detection (Method A -> Method B -> Method C)
+        // Method A: Targeted search (Edit button, share-button card, assistant turn img)
+        let enhancedImg = findGeneratedEnhancedImage(preExistingImageUrls, preAssistantCount);
+
+        // Method B (Fallback): After 10s calm, search for any new oaiusercontent / file-service / blob image
+        if (!enhancedImg && elapsed > MIN_GENERATION_WAIT_MS + 10000) {
+          const oaiImgs = Array.from(document.querySelectorAll('img')).filter((img) => {
+            const src = img.src || img.getAttribute('src') || '';
+            if (!src || preExistingImageUrls.has(src)) return false;
+            if (img.closest('form, div[class*="composer"], nav, header, [data-message-author-role="user"]')) return false;
+            const s = src.toLowerCase();
+            return (s.includes('oaiusercontent.com') || s.includes('file-service') || s.startsWith('blob:')) && img.complete;
+          });
+          if (oaiImgs.length > 0) {
+            enhancedImg = oaiImgs[oaiImgs.length - 1];
+            console.log(`[BOLTHAVEN] Method B (oaiusercontent): detected enhanced image #${job.original_position || 1}:`, enhancedImg.src);
+          }
+        }
+
+        // Method C (Fallback): After 20s calm, fallback to any large loaded image on page not in composer/user bubble
+        if (!enhancedImg && elapsed > MIN_GENERATION_WAIT_MS + 20000) {
+          const anyLargeImgs = Array.from(document.querySelectorAll('img')).filter((img) => {
+            const src = img.src || img.getAttribute('src') || '';
+            if (!src || preExistingImageUrls.has(src)) return false;
+            if (img.closest('form, div[class*="composer"], nav, header, [data-message-author-role="user"]')) return false;
+            const s = src.toLowerCase();
+            if (s.includes('avatar') || s.includes('icon') || s.includes('logo') || s.includes('favicon')) return false;
+            const rect = img.getBoundingClientRect();
+            const hasSize = (rect.width >= 100 && rect.height >= 100) || (img.naturalWidth >= 100 && img.naturalHeight >= 100);
+            return hasSize && img.complete;
+          });
+          if (anyLargeImgs.length > 0) {
+            enhancedImg = anyLargeImgs[anyLargeImgs.length - 1];
+            console.log(`[BOLTHAVEN] Method C (any large img): detected enhanced image #${job.original_position || 1}:`, enhancedImg.src);
+          }
+        }
+
         if (!enhancedImg) {
           consecutiveCalmChecks = 0;
           return;
@@ -2186,8 +2234,41 @@
           }
         }
 
-        // 1. Locate newly generated Hero image
-        const heroImg = findGeneratedHeroImage(preExistingImageUrls);
+        // 1. Locate newly generated Hero image (Multi-method escalation: A -> B -> C)
+        let heroImg = findGeneratedHeroImage(preExistingImageUrls);
+
+        // Method B: After 10s calm without detection, search for any new oaiusercontent / file-service / blob image
+        if (!heroImg && elapsed > MIN_HERO_WAIT_MS + 10000) {
+          const oaiImgs = Array.from(document.querySelectorAll('img')).filter((img) => {
+            const src = img.src || img.getAttribute('src') || '';
+            if (!src || preExistingImageUrls.has(src)) return false;
+            if (img.closest('form, div[class*="composer"], nav, header, [data-message-author-role="user"]')) return false;
+            const s = src.toLowerCase();
+            return (s.includes('oaiusercontent.com') || s.includes('file-service') || s.startsWith('blob:')) && img.complete;
+          });
+          if (oaiImgs.length > 0) {
+            heroImg = oaiImgs[oaiImgs.length - 1];
+            console.log('[BOLTHAVEN] Hero Method B (oaiusercontent): detected image:', heroImg.src);
+          }
+        }
+
+        // Method C: After 20s calm, fallback to any large loaded image on page
+        if (!heroImg && elapsed > MIN_HERO_WAIT_MS + 20000) {
+          const anyLargeImgs = Array.from(document.querySelectorAll('img')).filter((img) => {
+            const src = img.src || img.getAttribute('src') || '';
+            if (!src || preExistingImageUrls.has(src)) return false;
+            if (img.closest('form, div[class*="composer"], nav, header, [data-message-author-role="user"]')) return false;
+            const s = src.toLowerCase();
+            if (s.includes('avatar') || s.includes('icon') || s.includes('logo') || s.includes('favicon')) return false;
+            const rect = img.getBoundingClientRect();
+            const hasSize = (rect.width >= 100 && rect.height >= 100) || (img.naturalWidth >= 100 && img.naturalHeight >= 100);
+            return hasSize && img.complete;
+          });
+          if (anyLargeImgs.length > 0) {
+            heroImg = anyLargeImgs[anyLargeImgs.length - 1];
+            console.log('[BOLTHAVEN] Hero Method C (any large img): detected image:', heroImg.src);
+          }
+        }
 
         // 2. Check if generation is still actively running
         const generating = isThinkingOrGenerating();
