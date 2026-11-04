@@ -201,6 +201,22 @@ async function ensureContentScriptInjected(tabId) {
   // 1. Quick test: already alive?
   if (await pingTab(tabId)) return true;
 
+  // Check if tab is stuck on Envoy / upstream gateway error
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => {
+        const text = (document.body?.innerText || '').toLowerCase();
+        return text.includes('upstream connect error') || text.includes('remote connection failure');
+      },
+    });
+    if (results?.[0]?.result) {
+      console.warn(`[BOLTHAVEN EXT] Tab ${tabId} has ChatGPT upstream connection error. Auto-reloading...`);
+      await chrome.tabs.reload(tabId);
+      await delay(2000);
+    }
+  } catch (e) {}
+
   // 2. Try immediate injection
   try {
     await chrome.scripting.executeScript({

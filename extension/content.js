@@ -12,6 +12,25 @@
 
   console.log('[BOLTHAVEN] ChatGPT Tab Worker active on:', window.location.href);
 
+  // ── Auto-Recover from Cloudflare / Envoy Upstream Error ──
+  const checkUpstreamError = () => {
+    const text = (document.body ? document.body.innerText || '' : '').toLowerCase();
+    return (
+      text.includes('upstream connect error') ||
+      text.includes('remote connection failure') ||
+      text.includes('502 bad gateway') ||
+      text.includes('504 gateway time-out')
+    );
+  };
+
+  if (checkUpstreamError()) {
+    console.warn('[BOLTHAVEN] Detected ChatGPT upstream gateway error. Auto-reloading tab in 2s...');
+    setTimeout(() => {
+      window.location.reload();
+    }, 2000);
+    return;
+  }
+
   // ── Auto Keep-Alive & Wakeup Bridge ───────────────────────────────────────
   // Automatically keeps the background service worker awake and triggers polling
   // so the user NEVER has to manually click the extension icon.
