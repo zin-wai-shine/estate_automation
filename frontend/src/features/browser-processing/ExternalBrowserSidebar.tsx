@@ -1279,20 +1279,28 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
         }
       } catch (e) {}
 
-      try {
-        const enhanced = await fetchEnhancedDownloadedImages(propertyContext?.id);
-        if (enhanced && enhanced.length > 0) {
-          setEnhancedImages(enhanced);
-          if (onEnhancedPhotosUpdate) {
-            const map: Record<number, string> = {};
-            enhanced.forEach((img) => {
-              const pos0 = (img.position || 1) - 1; // 0-based index key
-              map[pos0] = img.url;
-            });
-            onEnhancedPhotosUpdate(map);
+      if (receivedImages.length === 0) {
+        setEnhancedImages([]);
+      } else {
+        try {
+          const enhanced = await fetchEnhancedDownloadedImages(propertyContext?.id);
+          if (enhanced && enhanced.length > 0) {
+            // Only accept images if their position matches the active received images in this session
+            const valid = enhanced.filter((img) => (img.position || 1) <= receivedImages.length);
+            setEnhancedImages(valid);
+            if (onEnhancedPhotosUpdate && valid.length > 0) {
+              const map: Record<number, string> = {};
+              valid.forEach((img) => {
+                const pos0 = (img.position || 1) - 1; // 0-based index key
+                map[pos0] = img.url;
+              });
+              onEnhancedPhotosUpdate(map);
+            }
+          } else {
+            setEnhancedImages([]);
           }
-        }
-      } catch (e) {}
+        } catch (e) {}
+      }
 
       loadQueue();
     };
@@ -1303,7 +1311,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [isAutomating, propertyContext?.id]);
+  }, [isAutomating, propertyContext?.id, receivedImages.length]);
 
   // Notify parent of running state changes (never report running if this step is disabled)
   useEffect(() => {
@@ -5061,7 +5069,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       )}
 
       {/* SECTION: ENHANCED IMAGES RESULTS (Downloaded to Disk) */}
-      {enhancedImages.length > 0 && (
+      {receivedImages.length > 0 && enhancedImages.length > 0 && (
         <div
           style={{
             display: 'flex',
@@ -5216,7 +5224,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                   }}
                 >
                   <span style={{ fontSize: '0.5625rem', fontWeight: 500 }}>
-                    {Math.round(img.size / 1024)} KB
+                    {Math.round(((img as any).size_bytes || img.size || 0) / 1024)} KB
                   </span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                     <button

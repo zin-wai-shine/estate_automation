@@ -2396,6 +2396,7 @@ function mergeTabGroups(scannedGroups, liveGroups) {
   // ── List All Downloaded Enhanced Images ──
   if (url.pathname === '/enhanced-images' && req.method === 'GET') {
     try {
+      const reqPropertyId = url.searchParams.get('property_id');
       const downloadsDir = path.join(os.homedir(), 'Downloads');
       const dirsToScan = [downloadsDir, defaultProcessingDir].filter((d) => fs.existsSync(d));
       const seenPositions = new Map(); // pos -> imgObj
@@ -2407,6 +2408,7 @@ function mergeTabGroups(scannedGroups, liveGroups) {
             const lower = f.toLowerCase();
             if (!lower.startsWith('enhanced_')) continue;
             if (!lower.endsWith('.png') && !lower.endsWith('.jpg') && !lower.endsWith('.jpeg') && !lower.endsWith('.webp')) continue;
+            if (reqPropertyId && !f.includes(reqPropertyId)) continue;
 
             const m = f.match(/^enhanced_(\d+)_/i);
             const pos = m ? parseInt(m[1], 10) : 0;
@@ -2416,6 +2418,7 @@ function mergeTabGroups(scannedGroups, liveGroups) {
             const imgObj = {
               filename: f,
               full_path: fullPath,
+              size: stat.size,
               size_bytes: stat.size,
               mtime: stat.mtimeMs,
               position: pos > 0 ? pos : 1,

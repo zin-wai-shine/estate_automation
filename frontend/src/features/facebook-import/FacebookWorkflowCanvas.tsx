@@ -3220,13 +3220,18 @@ export const FacebookWorkflowCanvas = forwardRef<
   const [companionEnhancedMap, setCompanionEnhancedMap] = useState<Record<number, string>>({});
 
   useEffect(() => {
+    if (!images || images.length === 0) {
+      setCompanionEnhancedMap({});
+      return;
+    }
     let isCancelled = false;
     const pollCompanionEnhanced = async () => {
       try {
         const list = await fetchEnhancedDownloadedImages(executionState?.propertyId);
         if (list && list.length > 0 && !isCancelled) {
+          const valid = list.filter((img) => (img.position || 1) <= images.length);
           const map: Record<number, string> = {};
-          list.forEach((img) => {
+          valid.forEach((img) => {
             const pos = img.position || 1;
             const pos0 = pos - 1; // 0-based index key
             map[pos0] = img.url;
@@ -3242,7 +3247,7 @@ export const FacebookWorkflowCanvas = forwardRef<
       isCancelled = true;
       clearInterval(interval);
     };
-  }, [executionState?.propertyId]);
+  }, [executionState?.propertyId, images?.length]);
 
   const allEnhancedPhotos = useMemo(() => {
     return { ...companionEnhancedMap, ...enhancedPhotos };

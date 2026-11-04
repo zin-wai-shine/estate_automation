@@ -193,18 +193,25 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
   const [companionEnhanced, setCompanionEnhanced] = useState<Record<number, string>>({});
 
   useEffect(() => {
+    if (!effectiveImageList || effectiveImageList.length === 0) {
+      setCompanionEnhanced({});
+      return;
+    }
     let isCancelled = false;
     const loadDownloaded = async () => {
       try {
         const downloaded = await fetchEnhancedDownloadedImages();
         if (downloaded && downloaded.length > 0 && !isCancelled) {
+          const valid = downloaded.filter((img) => (img.position || 1) <= effectiveImageList.length);
           const map: Record<number, string> = {};
-          downloaded.forEach((img) => {
+          valid.forEach((img) => {
             const pos = img.position || 1;
             const pos0 = pos - 1; // 0-based index key
             map[pos0] = img.url;
           });
-          setCompanionEnhanced((prev) => ({ ...prev, ...map }));
+          setCompanionEnhanced(map);
+        } else if (!isCancelled) {
+          setCompanionEnhanced({});
         }
       } catch (e) {}
     };
@@ -214,7 +221,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
       isCancelled = true;
       clearInterval(interval);
     };
-  }, []);
+  }, [effectiveImageList?.length]);
 
   const mergedEnhancedPhotos = useMemo(() => {
     return { ...companionEnhanced, ...(enhancedPhotos || {}) };
