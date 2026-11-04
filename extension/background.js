@@ -1557,9 +1557,8 @@ let isPollingCompanion = false;
 let pollCycleCount = 0;
 
 async function getExtensionProfile() {
-  const stored = await chrome.storage.local.get(['profileName', 'profileKey', 'email', 'profileKeyVerified']);
-  // Only trust stored profileKey if it was verified via email (not guessed from companion)
-  if (stored.profileKey && stored.profileKeyVerified) {
+  const stored = await chrome.storage.local.get(['profileName', 'profileKey', 'email']);
+  if (stored.profileKey) {
     return { profileName: stored.profileName || stored.profileKey, profileKey: stored.profileKey };
   }
   try {
@@ -1573,25 +1572,11 @@ async function getExtensionProfile() {
     if (userInfo && userInfo.email) {
       const email = userInfo.email.toLowerCase().trim();
       if (email.includes('hsuyeenandar417') || email.includes('hsu')) {
-        await chrome.storage.local.set({ profileName: 'Hsu (Profile 14)', profileKey: 'Profile 14', email, profileKeyVerified: true });
+        await chrome.storage.local.set({ profileName: 'Hsu (Profile 14)', profileKey: 'Profile 14', email });
         return { profileName: 'Hsu', profileKey: 'Profile 14' };
       } else if (email.includes('notezinwai') || email.includes('zin')) {
-        await chrome.storage.local.set({ profileName: 'Note Zin Wai (Profile 2)', profileKey: 'Profile 2', email, profileKeyVerified: true });
+        await chrome.storage.local.set({ profileName: 'Note Zin Wai (Profile 2)', profileKey: 'Profile 2', email });
         return { profileName: 'Note Zin Wai', profileKey: 'Profile 2' };
-      }
-    }
-  } catch (e) {}
-
-  // Check companion's current active profile focus — do NOT store this value
-  // because it's unreliable when two profiles are open simultaneously.
-  // Only email-based detection (above) should be persisted to storage.
-  try {
-    const resp = await fetch(`${COMPANION_URL}/current-profile`, { signal: AbortSignal.timeout(1200) });
-    if (resp.ok) {
-      const info = await resp.json();
-      if (info && info.profileKey) {
-        // Return for this poll cycle only — do not persist to storage
-        return { profileName: info.profileKey, profileKey: info.profileKey };
       }
     }
   } catch (e) {}
@@ -1629,13 +1614,28 @@ async function pollCompanion() {
     if (data.status === 'command' && data.command) {
       const { action, payload } = data.command;
       console.log('[BOLTHAVEN EXT] Received command from companion:', action, payload?.groupName || '');
+
+      // Universal profile guard:
+      // If this command is targeted to a specific profile, verify it matches this extension instance.
+      // If there is a mismatch, REJECT it immediately and re-queue so the intended profile extension can pick it up!
+      const cmdTargetProfile = (payload?.profileKey || payload?.profile_key || '').trim().replace(/\s+/g, '').toLowerCase();
+      const myProfileKey = (profileKey || '').trim().replace(/\s+/g, '').toLowerCase();
+      if (cmdTargetProfile && myProfileKey && cmdTargetProfile !== myProfileKey) {
+        console.warn(`[BOLTHAVEN EXT] ⚠️ Rejecting command "${action}" targeted at "${payload?.profileKey}" — this extension is "${profileKey}". Re-queuing...`);
+        fetch(`${COMPANION_URL}/requeue-command`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action, payload }),
+        }).catch(() => {});
+        setTimeout(pollCompanion, 150);
+        return;
+      }
+
       if (payload && (payload.profileKey || payload.profile_key)) {
         const pk = payload.profileKey || payload.profile_key;
-        // Only update stored profile from commands if no email-verified profile exists yet.
-        // This prevents a cross-profile command (e.g., FOCUS_GROUP for Profile 2 arriving at Profile 14's extension)
-        // from overwriting the already-known profile identity.
-        chrome.storage.local.get(['profileKeyVerified']).then((s) => {
-          if (!s.profileKeyVerified) {
+        // Only set profileKey if not already set
+        chrome.storage.local.get(['profileKey']).then((s) => {
+          if (!s.profileKey) {
             chrome.storage.local.set({
               profileKey: pk,
               profileName: payload.profileName || payload.profile_name || pk,
@@ -1805,27 +1805,9 @@ async function pollCompanion() {
           }).catch(() => {});
         }
       } else if (action === 'START_AUTOMATION') {
-        // Safety guard: verify this command is meant for this profile before executing.
-        // The companion should already filter by profile_key, but this is a double-check
-        // to prevent cross-profile command execution when two profiles run in parallel.
-        const cmdTargetProfile = (payload?.profileKey || payload?.profile_key || '').trim();
-        const myProfile = profileKey || '';
-        const profileMatch = !cmdTargetProfile || !myProfile ||
-          cmdTargetProfile === myProfile ||
-          cmdTargetProfile.replace(/\s+/g, '').toLowerCase() === myProfile.replace(/\s+/g, '').toLowerCase();
-        if (!profileMatch) {
-          console.warn(`[BOLTHAVEN EXT] Ignoring START_AUTOMATION targeted at "${cmdTargetProfile}" — this instance is profile "${myProfile}". Command will re-queue.`);
-          // Re-push the command back to the companion so the correct profile can pick it up
-          fetch(`${COMPANION_URL}/requeue-command`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action, payload }),
-          }).catch(() => {});
-        } else {
-          startAutomation(payload)
-            .then((result) => console.log('[BOLTHAVEN EXT] Automation start:', result))
-            .catch((err) => console.warn('[BOLTHAVEN EXT] Automation start error:', err));
-        }
+        startAutomation(payload)
+          .then((result) => console.log('[BOLTHAVEN EXT] Automation start:', result))
+          .catch((err) => console.warn('[BOLTHAVEN EXT] Automation start error:', err));
       } else if (action === 'START_TWO_STAGE_STAGING') {
         executeTwoStageStaging(payload).catch((err) => {
           if (twoStageAborted) return;

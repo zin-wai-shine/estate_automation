@@ -102,19 +102,19 @@ let twoStageState = {
 let pendingAutomationCommands = [];
 
 function pushPendingCommand(cmd) {
-  if (cmd && cmd.action === 'START_AUTOMATION') {
-    // If a START_AUTOMATION command for the SAME profile is already queued, replace it to prevent duplicate runs.
+  if (cmd && (cmd.action === 'START_AUTOMATION' || cmd.action === 'START_TWO_STAGE_STAGING')) {
+    // If an automation command for the SAME action and SAME profile is already queued, replace it
     // Commands for different profiles must coexist so each profile's extension can pick up its own command.
     const targetProfile = normalizeProfileKey(cmd.payload?.profileKey || cmd.payload?.profile_key || '');
     const beforeCount = pendingAutomationCommands.length;
     pendingAutomationCommands = pendingAutomationCommands.filter((c) => {
-      if (c.action !== 'START_AUTOMATION') return true;
+      if (c.action !== cmd.action) return true;
       const existingProfile = normalizeProfileKey(c.payload?.profileKey || c.payload?.profile_key || '');
-      // Only remove if it targets the same profile (or both are unprofile-targeted)
+      // Only remove if it targets the same profile
       return targetProfile && existingProfile ? existingProfile !== targetProfile : false;
     });
     if (beforeCount !== pendingAutomationCommands.length) {
-      console.log(`[COMPANION] ℹ️ Replaced previous pending START_AUTOMATION for profile "${targetProfile}" with latest command.`);
+      console.log(`[COMPANION] ℹ️ Replaced previous pending ${cmd.action} for profile "${targetProfile}" with latest command.`);
     }
   }
   pendingAutomationCommands.push(cmd);
@@ -551,6 +551,9 @@ function activateChromeWindow(pid, fallbackUrl, matchQuery, profileKey) {
 
 // 2. Focus / Open Chrome Profile on macOS
 function normalizeProfileKey(profileKey, profileName, email) {
+  if (!profileKey && !profileName && !email) {
+    return '';
+  }
   const chromeDir = path.join(os.homedir(), 'Library', 'Application Support', 'Google', 'Chrome');
   if (profileKey && fs.existsSync(path.join(chromeDir, profileKey))) {
     return profileKey;
@@ -571,11 +574,11 @@ function normalizeProfileKey(profileKey, profileName, email) {
 
   // Known keyword matching for profiles configured in BoltHaven
   const combined = `${profileKey || ''} ${profileName || ''}`.toLowerCase();
-  if (combined.includes('notezinwai') || combined.includes('note zin wai') || combined.includes('zin wai') || combined.includes('pro')) {
+  if (combined.includes('notezinwai') || combined.includes('note zin wai') || combined.includes('zin wai') || combined.includes('pro 2') || combined.includes('profile 2')) {
     const zinMatch = profiles.find((p) => (p.email || '').toLowerCase().includes('notezinwai') || p.profile_key === 'Profile 2');
     if (zinMatch) return zinMatch.profile_key;
   }
-  if (combined.includes('hsuyeenandar417') || (combined.includes('hsu') && !combined.includes('yee'))) {
+  if (combined.includes('hsuyeenandar417') || (combined.includes('hsu') && !combined.includes('yee')) || combined.includes('profile 14') || combined.includes('pro 14')) {
     const hsuMatch = profiles.find((p) => p.profile_key === 'Profile 14' || (p.email || '').toLowerCase().includes('hsuyeenandar417'));
     if (hsuMatch) return hsuMatch.profile_key;
   }
@@ -590,7 +593,7 @@ function normalizeProfileKey(profileKey, profileName, email) {
   );
   if (match) return match.profile_key;
 
-  return 'Profile 2';
+  return profileKey || '';
 }
 
 let lastLaunchedProfile = '';
@@ -2591,28 +2594,18 @@ function mergeTabGroups(scannedGroups, liveGroups) {
 
     if (pendingAutomationCommands.length > 0) {
       // Find a command targeted for this specific client profile, or untargeted command.
-      // START_AUTOMATION: strict profile match only — prevents Profile 1 from running Profile 2's jobs.
-      // All other commands (FOCUS_GROUP, OPEN_URL, etc.): lenient — dispatch by profile if known,
-      // fallback to first available otherwise (safe since they only open/focus tabs, not run jobs).
+      // STRICT PROFILE ISOLATION:
+      // If a command specifies a profileKey (START_AUTOMATION, START_TWO_STAGE_STAGING, FOCUS_GROUP, etc.),
+      // it MUST ONLY be dispatched to the matching profile! Never dispatch Profile 2's commands to Profile 14 or vice versa!
       let cmdIndex = pendingAutomationCommands.findIndex((c) => {
         if (!c || !c.payload) return true;
         const targetRaw = c.payload.profileKey || c.payload.profile_key || '';
-        if (!targetRaw) return true; // untargeted commands go to anyone
+        // Untargeted commands (no profile specified) can go to any extension
+        if (!targetRaw) return true;
         const targetKey = normalizeProfileKey(targetRaw);
-        if (clientKey) return targetKey === clientKey; // exact profile match if client is identified
-        // For unidentified extension: allow non-START_AUTOMATION commands (tab focus etc.) through,
-        // but block START_AUTOMATION so it waits for the right profile extension to claim it.
-        return c.action !== 'START_AUTOMATION';
+        // If targetKey is specified, it MUST match this polling extension's clientKey
+        return Boolean(clientKey && targetKey === clientKey);
       });
-
-      // For START_AUTOMATION specifically: never fall back to a wrong profile.
-      // For all other commands: if no profile match found, dispatch first available.
-      if (cmdIndex === -1 && pendingAutomationCommands.length > 0) {
-        const firstNonAutomation = pendingAutomationCommands.findIndex((c) => c.action !== 'START_AUTOMATION');
-        if (firstNonAutomation !== -1) {
-          cmdIndex = firstNonAutomation;
-        }
-      }
 
       if (cmdIndex !== -1) {
         const cmd = pendingAutomationCommands.splice(cmdIndex, 1)[0];

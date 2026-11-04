@@ -1,12 +1,52 @@
 document.addEventListener('DOMContentLoaded', async () => {
   const profileNameEl = document.getElementById('profile-name');
+  const profileSelect = document.getElementById('profile-select');
   const groupsContainer = document.getElementById('groups-container');
   const syncBtn = document.getElementById('sync-btn');
 
   // Detect current Chrome profile name or fallback
-  const stored = await chrome.storage.local.get(['profileName']);
+  const stored = await chrome.storage.local.get(['profileName', 'profileKey']);
   let profileName = stored.profileName || 'Active Chrome Profile';
+  let profileKey = stored.profileKey || '';
   profileNameEl.textContent = profileName;
+
+  if (profileSelect && profileKey) {
+    profileSelect.value = profileKey;
+  }
+
+  // Fetch available profiles from companion to populate options
+  fetch('http://127.0.0.1:9224/profiles')
+    .then((r) => r.json())
+    .then((data) => {
+      if (data && data.status === 'success' && Array.isArray(data.profiles)) {
+        profileSelect.innerHTML = '<option value="">Auto-Detect Profile</option>';
+        data.profiles.forEach((p) => {
+          const opt = document.createElement('option');
+          opt.value = p.profile_key;
+          opt.textContent = `${p.display_name} (${p.profile_key})`;
+          if (p.profile_key === profileKey) {
+            opt.selected = true;
+          }
+          profileSelect.appendChild(opt);
+        });
+      }
+    })
+    .catch(() => {});
+
+  // Handle profile change
+  if (profileSelect) {
+    profileSelect.addEventListener('change', async () => {
+      const selectedKey = profileSelect.value;
+      const selectedText = profileSelect.options[profileSelect.selectedIndex]?.text || selectedKey;
+      if (selectedKey) {
+        await chrome.storage.local.set({
+          profileKey: selectedKey,
+          profileName: selectedText,
+        });
+        profileNameEl.textContent = selectedText;
+      }
+    });
+  }
 
   // Request tab groups from background script
   chrome.runtime.sendMessage({ action: 'GET_GROUPS' }, (response) => {
