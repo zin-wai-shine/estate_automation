@@ -2018,6 +2018,10 @@ export const CreateWorkflowView: React.FC = () => {
         );
 
         if (isWatermark) {
+          if (!imageList || imageList.length === 0) {
+            console.warn(`Skipping watermark box [${box.title}] because imageList is empty`);
+            return true;
+          }
           const savedFormats = getSavedCropFormats();
           const baseFormat =
             savedFormats.find((f) => f.id === box.cropFormatId || f.id === box.templateId || f.id === box.watermarkPresetId) ||
@@ -2240,6 +2244,10 @@ export const CreateWorkflowView: React.FC = () => {
           await delay(400);
           if (isRunStopped(myRunId) || branchFatalError) return false;
         } else if (isExternalBrowser) {
+          if (!imageList || imageList.length === 0) {
+            console.warn(`Skipping External Browser [${box.title}] because imageList is empty`);
+            return true;
+          }
           // Collect ALL enabled chrome_profile nodes wired to this External Browser node.
           // Each enabled profile runs in PARALLEL (like parallel AI Model nodes); disabled profiles are skipped.
           const propIdBase = (propData as any)?.id || `PROP-${Date.now()}`;
@@ -2896,7 +2904,8 @@ export const CreateWorkflowView: React.FC = () => {
             '';
 
           if (!upstreamText || upstreamText.trim().length === 0) {
-            upstreamText = 'Featured Bangkok Condo for Rent. High-floor modern unit, luxury furniture and appliances, excellent BTS transit access, monthly rental available.';
+            console.warn(`Skipping AI generation for [${box.title}] because upstream text is empty`);
+            return true;
           }
 
           let copyText = '';
@@ -3034,21 +3043,23 @@ export const CreateWorkflowView: React.FC = () => {
         if (!contentEnabled) return;
         const captionText = await waitForCaptionReady();
         if (isRunStopped(myRunId) || branchFatalError) return;
-        if (!captionText && extractFailed) {
+
+        const cleanCaption = (captionText || '').trim();
+        if (!cleanCaption) {
+          // If extracted content is empty, STOP content branch and do not execute next steps
           updateBranchNodes(
             ['get-content'],
             [],
             [],
-            '❌ Content extraction failed or link inaccessible',
+            '⚠️ No text content found in listing. Skipping content branch steps.',
             { failedNodeIds: ['get-content'] }
           );
           return;
         }
 
-        const resolvedCaption = captionText || projName || 'Property listing media extracted';
-        rawCaption = resolvedCaption;
-        workflowContextRef.current.rawCaption = resolvedCaption;
-        setExtractedContent(resolvedCaption);
+        rawCaption = cleanCaption;
+        workflowContextRef.current.rawCaption = cleanCaption;
+        setExtractedContent(cleanCaption);
 
         const hasEnabledContentBox = contentBranchBoxes.some((b) => b.enabled !== false);
         updateBranchNodes(
@@ -3081,12 +3092,14 @@ export const CreateWorkflowView: React.FC = () => {
         await extractFetchPromise;
         if (isRunStopped(myRunId) || branchFatalError) return;
         if (!imagesEnabled) return;
-        if (imageList.length === 0 && (!rawCaption || !rawCaption.trim())) {
+
+        if (!imageList || imageList.length === 0) {
+          // If extracted images are empty, STOP image branch and do not execute next steps
           updateBranchNodes(
             ['get-images'],
             [],
             [],
-            '❌ Image extraction failed or no images found',
+            '⚠️ No photos found in listing. Skipping image branch steps.',
             { failedNodeIds: ['get-images'] }
           );
           return;
@@ -3126,15 +3139,19 @@ export const CreateWorkflowView: React.FC = () => {
       await extractFetchPromise;
       if (isRunStopped(myRunId) || branchFatalError) return;
 
-      if ((!rawCaption || rawCaption.trim().length === 0) && imageList.length === 0) {
+      const hasContent = Boolean(rawCaption && rawCaption.trim().length > 0);
+      const hasImages = Boolean(imageList && imageList.length > 0);
+
+      // If BOTH content and images are empty: complete stop!
+      if (!hasContent && !hasImages) {
         safeSetExecutionState(myRunId, (prev) => ({
           ...prev!,
           isRunning: false,
           hasError: true,
           activeNodeIds: [],
           completedNodeIds: (prev?.completedNodeIds || []).filter((id) => id !== 'get-content' && id !== 'get-images'),
-          failedNodeIds: ['trigger', 'get-content', 'get-images'],
-          currentStepMessage: '❌ Could not extract content or images from the provided link. Please check the URL and try again.',
+          failedNodeIds: Array.from(new Set([...(prev?.failedNodeIds || []), 'get-content', 'get-images'])),
+          currentStepMessage: '❌ No content or images were found in the provided listing. Workflow stopped.',
         }));
         setIsRunningWorkflow(false);
         (window as any).__isWorkflowProcessing = false;
@@ -3486,6 +3503,10 @@ export const CreateWorkflowView: React.FC = () => {
         }));
 
         if (isWatermark) {
+          if (!ctx.imageList || ctx.imageList.length === 0) {
+            console.warn(`Skipping watermark box [${nextBox.title}] because imageList is empty`);
+            return;
+          }
           const savedFormats = getSavedCropFormats();
           const baseFormat =
             savedFormats.find((f) => f.id === nextBox.cropFormatId || f.id === nextBox.templateId || f.id === nextBox.watermarkPresetId) ||
@@ -3659,6 +3680,18 @@ export const CreateWorkflowView: React.FC = () => {
         const propId = workflowContextRef.current?.propData?.id || propertyData?.id || `PROP-${Date.now()}`;
         const imgs = extractedImages.length > 0 ? extractedImages : (workflowContextRef.current?.imageList || []);
 
+        if (imgs.length === 0 && !targetBox.title?.toLowerCase().includes('hero') && (targetBox as any).tabGroupMode !== 'generate') {
+          setExecutionState((prev) => ({
+            ...(prev || { completedNodeIds: [], failedNodeIds: [], hasError: false }),
+            isRunning: false,
+            activeNodeIds: [],
+            failedNodeIds: [nodeId],
+            hasError: true,
+            currentStepMessage: `❌ No photos found to process for [${groupName}]. Please extract photos first.`,
+          }));
+          return;
+        }
+
         setExecutionState((prev) => ({
           ...(prev || { completedNodeIds: [], failedNodeIds: [], hasError: false }),
           isRunning: true,
@@ -3805,18 +3838,27 @@ export const CreateWorkflowView: React.FC = () => {
           });
           if (resp.ok) {
             const data = await resp.json();
-            const cap = data.result?.caption?.original || data.raw_content || data.caption || '';
+            const cap = (data.result?.caption?.original || data.raw_content || data.caption || '').trim();
             if (cap) {
               setExtractedContent(cap);
               if (workflowContextRef.current) workflowContextRef.current.rawCaption = cap;
+              setExecutionState((prev) => ({
+                ...(prev || { completedNodeIds: [], failedNodeIds: [], hasError: false }),
+                isRunning: false,
+                activeNodeIds: [],
+                completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), 'get-content'])),
+                currentStepMessage: '✓ Content extracted successfully!',
+              }));
+              return;
             }
           }
           setExecutionState((prev) => ({
             ...(prev || { completedNodeIds: [], failedNodeIds: [], hasError: false }),
             isRunning: false,
             activeNodeIds: [],
-            completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), 'get-content'])),
-            currentStepMessage: '✓ Content extracted successfully!',
+            failedNodeIds: ['get-content'],
+            hasError: true,
+            currentStepMessage: '⚠️ No content found in post.',
           }));
         } catch (e) {
           setExecutionState((prev) => ({
@@ -3874,26 +3916,35 @@ export const CreateWorkflowView: React.FC = () => {
           if (resp.ok) {
             const data = await resp.json();
             const rawImgs = data.result?.images || data.images || [];
-            const imgs = rawImgs.map((img: any, idx: number) => ({
-              index: idx,
-              facebook_photo_id: img.facebook_photo_id,
-              source_url: img.source_url,
-              stored_url: img.stored_url,
-              status: img.status || 'verified',
-              width: img.width,
-              height: img.height,
-            }));
-            if (imgs.length > 0) {
+            if (rawImgs.length > 0) {
+              const imgs = rawImgs.map((img: any, idx: number) => ({
+                index: idx,
+                facebook_photo_id: img.facebook_photo_id,
+                source_url: img.source_url,
+                stored_url: img.stored_url,
+                status: img.status || 'verified',
+                width: img.width,
+                height: img.height,
+              }));
               setExtractedImages(imgs);
               if (workflowContextRef.current) workflowContextRef.current.imageList = imgs;
+              setExecutionState((prev) => ({
+                ...(prev || { completedNodeIds: [], failedNodeIds: [], hasError: false }),
+                isRunning: false,
+                activeNodeIds: [],
+                completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), 'get-images'])),
+                currentStepMessage: `✓ ${imgs.length} photos extracted!`,
+              }));
+              return;
             }
           }
           setExecutionState((prev) => ({
             ...(prev || { completedNodeIds: [], failedNodeIds: [], hasError: false }),
             isRunning: false,
             activeNodeIds: [],
-            completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), 'get-images'])),
-            currentStepMessage: '✓ Images extracted successfully!',
+            failedNodeIds: ['get-images'],
+            hasError: true,
+            currentStepMessage: '⚠️ No photos found in post.',
           }));
         } catch (e) {
           setExecutionState((prev) => ({
