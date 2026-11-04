@@ -1557,10 +1557,9 @@ let isPollingCompanion = false;
 let pollCycleCount = 0;
 
 async function getExtensionProfile() {
-  const stored = await chrome.storage.local.get(['profileName', 'profileKey', 'email']);
-  if (stored.profileKey) {
-    return { profileName: stored.profileName || stored.profileKey, profileKey: stored.profileKey };
-  }
+  // 1. ALWAYS check Google identity email first!
+  // If the Chrome profile is signed into Google (e.g. hsuyeenandar417@gmail.com or notezinwai@gmail.com),
+  // this is 100% authoritative and will correct any stale or poisoned profileKey!
   try {
     const userInfo = await new Promise((resolve) => {
       if (chrome.identity && chrome.identity.getProfileUserInfo) {
@@ -1572,18 +1571,24 @@ async function getExtensionProfile() {
     if (userInfo && userInfo.email) {
       const email = userInfo.email.toLowerCase().trim();
       if (email.includes('hsuyeenandar417') || email.includes('hsu')) {
-        await chrome.storage.local.set({ profileName: 'Hsu (Profile 14)', profileKey: 'Profile 14', email });
+        await chrome.storage.local.set({ profileName: 'Hsu (Profile 14)', profileKey: 'Profile 14', email, userExplicit: true });
         return { profileName: 'Hsu', profileKey: 'Profile 14' };
       } else if (email.includes('notezinwai') || email.includes('zin')) {
-        await chrome.storage.local.set({ profileName: 'Note Zin Wai (Profile 2)', profileKey: 'Profile 2', email });
+        await chrome.storage.local.set({ profileName: 'Note Zin Wai (Profile 2)', profileKey: 'Profile 2', email, userExplicit: true });
         return { profileName: 'Note Zin Wai', profileKey: 'Profile 2' };
       }
     }
   } catch (e) {}
 
+  // 2. User selection from popup (or existing stored key)
+  const stored = await chrome.storage.local.get(['profileName', 'profileKey', 'email', 'userExplicit']);
+  if (stored.profileKey) {
+    return { profileName: stored.profileName || stored.profileKey, profileKey: stored.profileKey };
+  }
+
   return {
-    profileName: stored.profileName || 'Active Chrome Profile',
-    profileKey: stored.profileKey || '',
+    profileName: 'Active Chrome Profile',
+    profileKey: '',
   };
 }
 
@@ -1631,18 +1636,6 @@ async function pollCompanion() {
         return;
       }
 
-      if (payload && (payload.profileKey || payload.profile_key)) {
-        const pk = payload.profileKey || payload.profile_key;
-        // Only set profileKey if not already set
-        chrome.storage.local.get(['profileKey']).then((s) => {
-          if (!s.profileKey) {
-            chrome.storage.local.set({
-              profileKey: pk,
-              profileName: payload.profileName || payload.profile_name || pk,
-            }).catch(() => {});
-          }
-        }).catch(() => {});
-      }
       if (action === 'RELOAD_EXTENSION') {
         console.log('[BOLTHAVEN EXT] Reloading extension via companion command...');
         chrome.runtime.reload();

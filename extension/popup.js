@@ -42,6 +42,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         await chrome.storage.local.set({
           profileKey: selectedKey,
           profileName: selectedText,
+          userExplicit: true,
         });
         profileNameEl.textContent = selectedText;
       }

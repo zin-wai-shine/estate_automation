@@ -479,6 +479,14 @@ function focusChatGPTWindow() {
 const openedProfiles = new Set();
 const launchingProfileLock = {};
 
+function isProfileRunning(resolvedKey) {
+  if (!resolvedKey) return false;
+  if (openedProfiles.has(resolvedKey)) return true;
+  if (liveTabGroupsByKey[resolvedKey] && liveTabGroupsByKey[resolvedKey].length > 0) return true;
+  if (registeredProfiles.some((p) => normalizeProfileKey(p.profileKey) === resolvedKey)) return true;
+  return false;
+}
+
 // Check if Chrome is currently running
 function isChromeProfileOpen(profileKey, profileName) {
   return isChromeRunning();
@@ -486,59 +494,60 @@ function isChromeProfileOpen(profileKey, profileName) {
 
 function activateChromeProfile(profileKey, targetUrl = '') {
   const resolvedKey = normalizeProfileKey(profileKey);
+  if (!resolvedKey) return;
   const now = Date.now();
 
-  // Debounce guard: do not re-trigger launch commands within 2 seconds
+  const chromeBinary = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+  const chromeRunning = isChromeRunning();
+
+  if (!chromeRunning) {
+    openedProfiles.clear();
+  }
+
+  // 1. If Chrome is already running and this profile window is already open/launched:
+  // ONLY bring Google Chrome to front via AppleScript!
+  // NEVER spawn the CLI binary again, because that spawns duplicate windows of the same profile!
+  if (chromeRunning && isProfileRunning(resolvedKey)) {
+    try {
+      execSync(`osascript -e 'tell application "Google Chrome" to activate' 2>/dev/null`);
+    } catch (e) {}
+    return;
+  }
+
+  // 2. Debounce guard: do not re-launch within 5 seconds
   const lastLaunch = launchingProfileLock[resolvedKey] || 0;
-  if (now - lastLaunch < 2000) {
+  if (now - lastLaunch < 5000) {
     console.log(`[COMPANION] Profile "${resolvedKey}" launch was initiated recently. Debouncing...`);
     return;
   }
   launchingProfileLock[resolvedKey] = now;
+  openedProfiles.add(resolvedKey);
+
+  console.log(`[COMPANION] 🚀 Launching Chrome profile "${resolvedKey}" for the first time...`);
 
   const targets = Array.isArray(targetUrl) && targetUrl.length > 0
     ? targetUrl
     : [typeof targetUrl === 'string' && targetUrl.trim() ? targetUrl.trim() : 'https://chatgpt.com/'];
 
-  console.log(`[COMPANION] 🚀 Activating/Opening Chrome profile "${resolvedKey}"...`);
-
-  const chromeBinary = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-  const chromeRunning = isChromeRunning();
-
   try {
-    if (chromeRunning) {
-      // Chrome is already running!
-      // Do NOT pass URL targets to the binary CLI when Chrome is running,
-      // because passing URLs to running Chrome forces it to create duplicate tabs.
-      // Instead, pass only --profile-directory to focus/open the profile window, and activate via AppleScript.
-      if (fs.existsSync(chromeBinary)) {
-        const child = spawn(chromeBinary, [`--profile-directory=${resolvedKey}`], {
-          detached: true,
-          stdio: 'ignore',
-        });
-        child.unref();
-      }
-      setTimeout(() => {
-        try {
-          execSync(`osascript -e 'tell application "Google Chrome" to activate' 2>/dev/null`);
-        } catch (e) {}
-      }, 200);
+    if (fs.existsSync(chromeBinary)) {
+      const child = spawn(chromeBinary, [`--profile-directory=${resolvedKey}`, ...(!chromeRunning ? targets : [])], {
+        detached: true,
+        stdio: 'ignore',
+      });
+      child.unref();
     } else {
-      // Chrome is completely closed: launch it fresh with the profile and initial worker URLs
-      if (fs.existsSync(chromeBinary)) {
-        const child = spawn(chromeBinary, [`--profile-directory=${resolvedKey}`, ...targets], {
-          detached: true,
-          stdio: 'ignore',
-        });
-        child.unref();
-      } else {
-        const child = spawn('open', ['-a', 'Google Chrome', '--args', `--profile-directory=${resolvedKey}`, ...targets], {
-          detached: true,
-          stdio: 'ignore',
-        });
-        child.unref();
-      }
+      const child = spawn('open', ['-a', 'Google Chrome', '--args', `--profile-directory=${resolvedKey}`, ...(!chromeRunning ? targets : [])], {
+        detached: true,
+        stdio: 'ignore',
+      });
+      child.unref();
     }
+    setTimeout(() => {
+      try {
+        execSync(`osascript -e 'tell application "Google Chrome" to activate' 2>/dev/null`);
+      } catch (e) {}
+    }, 400);
   } catch (err) {
     console.warn('[COMPANION] Error launching Chrome profile:', err.message);
   }
