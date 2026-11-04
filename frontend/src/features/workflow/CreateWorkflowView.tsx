@@ -2060,7 +2060,6 @@ export const CreateWorkflowView: React.FC = () => {
           }
           if (isRunStopped(myRunId) || branchFatalError) return false;
           setWatermarkedPhotos((prev) => ({ ...prev, ...localWatermarkedMap }));
-          setEnhancedPhotos((prev) => ({ ...prev, ...localWatermarkedMap }));
           workflowContextRef.current.localWatermarkedMap = { ...workflowContextRef.current.localWatermarkedMap, ...localWatermarkedMap };
           await delay(400);
           if (isRunStopped(myRunId) || branchFatalError) return false;
@@ -2809,11 +2808,21 @@ export const CreateWorkflowView: React.FC = () => {
                         twoStageDone = true;
                         const heroResultUrl = st.state.downloaded_data_url || st.state.result_url;
                         if (heroResultUrl) {
-                          setEnhancedPhotos((prev) => ({ ...prev, 0: heroResultUrl }));
-                          workflowContextRef.current.localWatermarkedMap = {
-                            ...workflowContextRef.current.localWatermarkedMap,
-                            0: heroResultUrl,
-                          };
+                          try {
+                            localStorage.setItem(
+                              'bolthaven_last_hero_image',
+                              JSON.stringify({
+                                url: heroResultUrl,
+                                condoName: projName,
+                                timestamp: Date.now(),
+                              })
+                            );
+                            window.dispatchEvent(
+                              new CustomEvent('bolthaven_hero_image_updated', {
+                                detail: { url: heroResultUrl, condoName: projName },
+                              })
+                            );
+                          } catch (e) {}
                         }
                         updateBranchNodes(
                           [],
@@ -3518,7 +3527,6 @@ export const CreateWorkflowView: React.FC = () => {
           }
           if (isRunStopped(myRunId)) return;
           setWatermarkedPhotos((prev) => ({ ...prev, ...ctx.localWatermarkedMap }));
-          setEnhancedPhotos((prev) => ({ ...prev, ...ctx.localWatermarkedMap }));
           await delay(400);
           if (isRunStopped(myRunId)) return;
         } else {

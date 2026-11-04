@@ -14527,6 +14527,7 @@ export const FacebookWorkflowCanvas = forwardRef<
         !connectDrawerNode && (() => {
           return (
             <aside
+              key={currentModalAIBox.id}
               className="workflow-sidebar"
               onMouseDown={(e) => e.stopPropagation()}
               onClick={(e) => e.stopPropagation()}
@@ -14703,6 +14704,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 )}
 
                 <WatermarkNodeModal
+                  key={currentModalAIBox.id}
                   box={currentModalAIBox}
                   isDark={isDark}
                   onUpdateBox={(id, updates) => handleUpdateAIBox(id, updates)}
@@ -14714,6 +14716,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                   images={images}
                   watermarkedPhotos={watermarkedPhotos}
                   enhancedPhotos={allEnhancedPhotos}
+                  workflowBoxes={config.aiBoxes}
+                  connections={config.connections}
                   onOpenLightbox={handleOpenLightbox}
                 />
               </div>

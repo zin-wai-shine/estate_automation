@@ -237,19 +237,20 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     if (imageSource === 'get_images' || imageSource === 'all') {
       if (effectiveImageList && effectiveImageList.length > 0) {
         effectiveImageList.forEach((img, idx) => {
-          const photoNum = typeof img.index === 'number' && img.index > 0 ? img.index : idx + 1;
+          const photoNum = idx + 1;
           const url =
-            watermarkedPhotos?.[img.index] ||
+            watermarkedPhotos?.[idx] ||
+            (typeof img.index === 'number' ? watermarkedPhotos?.[img.index] : undefined) ||
             (img.stored_url
               ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
               : img.source_url);
           rawList.push({
             id: `raw-${photoNum}`,
             index: photoNum,
-            displayNumber: idx + 1,
+            displayNumber: photoNum,
             url,
             source: 'get_images',
-            label: `Photo #${idx + 1}`,
+            label: `Photo #${photoNum}`,
           });
         });
       }
@@ -261,7 +262,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
       if (imageSource === 'enhance') {
         if (effectiveImageList && effectiveImageList.length > 0) {
           effectiveImageList.forEach((img, idx) => {
-            const photoNum = typeof img.index === 'number' && img.index > 0 ? img.index : idx + 1;
+            const photoNum = idx + 1;
             // Use strictly 0-based index key (idx) to match companion mapping
             const enhUrl = mergedEnhancedPhotos[idx];
 
@@ -272,10 +273,10 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
             rawList.push({
               id: `enh-${photoNum}`,
               index: photoNum,
-              displayNumber: idx + 1,
+              displayNumber: photoNum,
               url: enhUrl || fallbackUrl,
               source: 'enhance',
-              label: enhUrl ? `Enhanced #${idx + 1}` : `Photo #${idx + 1} (Enhance Source)`,
+              label: enhUrl ? `Enhanced #${photoNum}` : `Photo #${photoNum} (Enhance Source)`,
               isEnhanced: Boolean(enhUrl),
             });
           });
@@ -436,6 +437,8 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
       return;
     }
     let isCancelled = false;
+    // Clear formatted previews on active photo or format change to prevent stale display
+    setFormattedPreviewItems([]);
 
     const generatePreviews = async () => {
       const items: Array<{
