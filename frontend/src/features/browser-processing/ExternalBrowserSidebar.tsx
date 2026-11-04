@@ -3893,43 +3893,6 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                 </div>
               </div>
             </div>
-            {onOpenSettingsSidebox && (
-              <button
-                type="button"
-                onClick={() => {
-                  setShowPromptViewSidebox(false);
-                  onOpenSettingsSidebox();
-                }}
-                title="Configure in Settings"
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  padding: '3px 8px',
-                  borderRadius: '6px',
-                  border: '1px solid rgba(245, 158, 11, 0.35)',
-                  backgroundColor: 'rgba(245, 158, 11, 0.1)',
-                  color: '#F59E0B',
-                  fontSize: '0.625rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease',
-                  whiteSpace: 'nowrap',
-                  flexShrink: 0,
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.18)';
-                  e.currentTarget.style.borderColor = 'rgba(245, 158, 11, 0.5)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.1)';
-                  e.currentTarget.style.borderColor = 'rgba(245, 158, 11, 0.35)';
-                }}
-              >
-                <FiSettings size={11} />
-                <span>Settings</span>
-              </button>
-            )}
           </div>
           <div
             style={{
