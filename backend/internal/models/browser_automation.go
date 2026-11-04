@@ -119,6 +119,7 @@ type ImageProcessingJob struct {
 	OutputWidth              int                   `json:"output_width"`
 	OutputHeight             int                   `json:"output_height"`
 	OutputFileHash           string                `gorm:"type:varchar(100)" json:"output_file_hash"`
+	ListingCode              string                `gorm:"type:varchar(100)" json:"listing_code,omitempty"`
 	Status                   ImageJobStatus        `gorm:"type:varchar(50);default:'PENDING';index" json:"status"`
 	AttemptCount             int                   `gorm:"default:0" json:"attempt_count"`
 	ErrorMessage             string                `gorm:"type:text" json:"error_message"`

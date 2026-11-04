@@ -114,10 +114,18 @@ func (s *SmartImageQueueService) CreateBatchJobs(req BatchCreateJobRequest) ([]m
 		}
 		resolvedPrompt := s.ResolvePromptText(targetPrompt, req.PropertyName, req.PropertyMetadata, pos, totalImages, req.OutputWidth, req.OutputHeight)
 
+		listingCode := ""
+		if req.PropertyMetadata != nil {
+			if lc, ok := req.PropertyMetadata["listing_code"].(string); ok && lc != "" {
+				listingCode = strings.TrimSpace(lc)
+			}
+		}
+
 		job := models.ImageProcessingJob{
 			JobID:                    jobID,
 			PropertyID:               req.PropertyID,
 			PropertyName:             req.PropertyName,
+			ListingCode:              listingCode,
 			SourceImageID:            fmt.Sprintf("img-%03d", pos),
 			OriginalPosition:         pos,
 			SourceFilePath:           filePath,

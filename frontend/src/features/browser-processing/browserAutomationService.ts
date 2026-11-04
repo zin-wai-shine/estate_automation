@@ -366,6 +366,7 @@ export interface AutomationStatusResponse {
 
 export const startAutomation = async (params: {
   property_id: string;
+  listing_code?: string;
   profile_key?: string;
   group_name?: string;
   group_tab_urls?: string[];
@@ -432,8 +433,11 @@ export interface EnhancedDownloadedImage {
   url: string;
 }
 
-export const fetchEnhancedDownloadedImages = async (propertyId?: string): Promise<EnhancedDownloadedImage[]> => {
-  const q = propertyId ? `?property_id=${encodeURIComponent(propertyId)}` : '';
+export const fetchEnhancedDownloadedImages = async (propertyId?: string, listingCode?: string): Promise<EnhancedDownloadedImage[]> => {
+  const params = new URLSearchParams();
+  if (propertyId) params.append('property_id', propertyId);
+  if (listingCode) params.append('listing_code', listingCode);
+  const q = params.toString() ? `?${params.toString()}` : '';
   try {
     const res = await fetch(`http://127.0.0.1:9224/enhanced-images${q}`);
     if (res.ok) {

@@ -2967,6 +2967,7 @@ export interface WorkflowExecutionState {
   hasError?: boolean;
   errorMessage?: string;
   propertyId?: string;
+  listingCode?: string;
 }
 
 export interface FacebookWorkflowCanvasProps {
@@ -3227,7 +3228,8 @@ export const FacebookWorkflowCanvas = forwardRef<
     let isCancelled = false;
     const pollCompanionEnhanced = async () => {
       try {
-        const list = await fetchEnhancedDownloadedImages(executionState?.propertyId);
+        const activeCode = executionState?.listingCode || previewSampleCode;
+        const list = await fetchEnhancedDownloadedImages(executionState?.propertyId, activeCode);
         if (list && list.length > 0 && !isCancelled) {
           const valid = list.filter((img) => (img.position || 1) <= images.length);
           const map: Record<number, string> = {};
@@ -4030,7 +4032,9 @@ export const FacebookWorkflowCanvas = forwardRef<
       const a = document.createElement('a');
       a.href = blobUrl;
       const fileNum = index !== undefined ? index + 1 : Date.now();
-      a.download = `property-photo-${fileNum}.${ext}`;
+      const activeCode = (executionState?.listingCode || previewSampleCode || '').replace(/[\/\\?%*:|"<>]/g, '').trim();
+      const fileName = activeCode ? `${activeCode}-${fileNum}.${ext}` : `property-photo-${fileNum}.${ext}`;
+      a.download = fileName;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -4045,7 +4049,9 @@ export const FacebookWorkflowCanvas = forwardRef<
       const a = document.createElement('a');
       a.href = imgUrl;
       a.target = '_blank';
-      a.download = `property-photo-${index !== undefined ? index + 1 : Date.now()}.${ext}`;
+      const fileNum = index !== undefined ? index + 1 : Date.now();
+      const activeCode = (executionState?.listingCode || previewSampleCode || '').replace(/[\/\\?%*:|"<>]/g, '').trim();
+      a.download = activeCode ? `${activeCode}-${fileNum}.${ext}` : `property-photo-${fileNum}.${ext}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -13196,6 +13202,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                               availablePrompts={availablePrompts as any}
                               propertyContext={{
                                 id: executionState?.propertyId || '',
+                                listingCode: executionState?.listingCode || previewSampleCode,
                                 title: condoName,
                                 aboveBoxTitle: aboveBoxTitle,
                                 upstreamPrompts: effectiveUpstreamPrompts,
@@ -13223,6 +13230,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                               availablePrompts={availablePrompts as any}
                               propertyContext={{
                                 id: executionState?.propertyId || '',
+                                listingCode: executionState?.listingCode || previewSampleCode,
                                 title: condoName,
                                 aboveBoxTitle: aboveBoxTitle,
                                 upstreamPrompts: effectiveUpstreamPrompts,
@@ -14724,6 +14732,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   workflowBoxes={config.aiBoxes}
                   connections={config.connections}
                   onOpenLightbox={handleOpenLightbox}
+                  listingCode={executionState?.listingCode || previewSampleCode}
                 />
               </div>
 

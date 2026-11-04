@@ -27,6 +27,7 @@ export interface PhotoLightboxModalProps {
   initialIndex?: number;
   title?: string;
   formatSubtitle?: string;
+  listingCode?: string;
 }
 
 export const PhotoLightboxModal: React.FC<PhotoLightboxModalProps> = ({
@@ -36,6 +37,7 @@ export const PhotoLightboxModal: React.FC<PhotoLightboxModalProps> = ({
   initialIndex = 0,
   title = 'Photo Preview',
   formatSubtitle,
+  listingCode,
 }) => {
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [zoom, setZoom] = useState(1);
@@ -72,7 +74,8 @@ export const PhotoLightboxModal: React.FC<PhotoLightboxModalProps> = ({
     if (!currentPhoto?.url) return;
     const a = document.createElement('a');
     a.href = currentPhoto.url;
-    a.download = `photo-${currentIndex + 1}.jpg`;
+    const cleanCode = (listingCode || '').replace(/[\/\\?%*:|"<>]/g, '').trim();
+    a.download = cleanCode ? `${cleanCode}-${currentIndex + 1}.jpg` : (currentPhoto.name || `photo-${currentIndex + 1}.jpg`);
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

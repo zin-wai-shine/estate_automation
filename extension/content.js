@@ -1455,7 +1455,12 @@
           console.log(`[BOLTHAVEN] ✓ Generation fully finished! Enhanced Image #${job.original_position || 1}:`, finalUrl);
 
           preExistingImageUrls.add(finalUrl);
-          const fileName = `enhanced_${job.original_position || 1}_${job.job_id || Date.now()}.png`;
+          const pos = job.original_position || 1;
+          const rawCode = job.listing_code || (job.property_metadata && job.property_metadata.listing_code) || '';
+          const cleanCode = rawCode ? rawCode.replace(/[\/\\?%*:|"<>]/g, '').trim() : '';
+          const fileName = cleanCode
+            ? `${cleanCode}-${pos}.png`
+            : `enhanced_${pos}_${job.job_id || Date.now()}.png`;
 
           // Download using reliable downloader
           await downloadEnhancedImage(enhancedImg, finalUrl, fileName);
@@ -2127,7 +2132,11 @@
               .replace(/[^a-zA-Z0-9_-]+/g, '_')
               .replace(/^_+|_+$/g, '')
               .slice(0, 40) || 'hero';
-            const fileName = `fb_hero_${safeCondoSlug}_${Date.now()}.png`;
+            const rawHeroCode = (typeof payload !== 'undefined' && payload && (payload.listingCode || payload.listing_code)) || '';
+            const cleanHeroCode = rawHeroCode ? rawHeroCode.replace(/[\/\\?%*:|"<>]/g, '').trim() : '';
+            const fileName = cleanHeroCode
+              ? `${cleanHeroCode}-hero.png`
+              : `fb_hero_${safeCondoSlug}_${Date.now()}.png`;
 
             chrome.runtime.sendMessage({
               action: 'STAGE2_PROGRESS',

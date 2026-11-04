@@ -1668,6 +1668,10 @@ export const CreateWorkflowView: React.FC = () => {
       const contentEnabled = cfg.getContent?.enabled !== false;
       const imagesEnabled = cfg.getImages?.enabled !== false;
 
+      // Initialize workflow listing code
+      const codeFormatPattern = (cfg as any)?.codeFormat || 'AAA-######-AA';
+      const initialRunListingCode = generateUniqueListingCode(codeFormatPattern);
+
       // Phase 1: Trigger (Extract Link or Manual Input)
       safeSetExecutionState(myRunId, {
         isRunning: true,
@@ -1681,6 +1685,7 @@ export const CreateWorkflowView: React.FC = () => {
           : `Resolving ${platformLabel} post link and isolating listing...`,
         stepIndex: 1,
         totalSteps: 6,
+        listingCode: initialRunListingCode,
       });
 
       let rawCaption = '';
@@ -1744,6 +1749,7 @@ export const CreateWorkflowView: React.FC = () => {
             ...prev!,
             completedNodeIds: nextCompleted,
             activeNodeIds: nextActive,
+            listingCode: workflowContextRef.current?.listingCode || initialRunListingCode || prev?.listingCode,
             ...(message ? { currentStepMessage: message } : {}),
             ...(extra || {}),
           };
@@ -1751,8 +1757,6 @@ export const CreateWorkflowView: React.FC = () => {
       };
 
       // Initialize workflow context so parallel branches can populate outputs as they finish
-      const codeFormatPattern = (cfg as any)?.codeFormat || 'AAA-######-AA';
-      const initialRunListingCode = generateUniqueListingCode(codeFormatPattern);
       workflowContextRef.current = {
         rawCaption,
         imageList,
@@ -2524,6 +2528,9 @@ export const CreateWorkflowView: React.FC = () => {
                 output_width: (box as any).outputWidth || (box as any).targetWidth || 1080,
                 output_height: (box as any).outputHeight || (box as any).targetHeight || 1350,
                 strict_preservation_active: (box as any).strictPreservationActive !== false,
+                property_metadata: {
+                  listing_code: workflowContextRef.current?.listingCode || initialRunListingCode,
+                },
               };
 
               try {
@@ -2551,6 +2558,7 @@ export const CreateWorkflowView: React.FC = () => {
               try {
                 await startAutomation({
                   property_id: propId,
+                  listing_code: workflowContextRef.current?.listingCode || initialRunListingCode,
                   profile_key: profKey,
                   group_name: groupName,
                   tab_ids: Array.from({ length: workerCount }, (_, i) => i + 1),

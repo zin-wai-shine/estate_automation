@@ -102,6 +102,7 @@ interface ExternalBrowserSidebarProps {
   availablePrompts?: Array<{ id: string; name: string; templateText: string; category?: string }>;
   propertyContext?: {
     id?: string;
+    listingCode?: string;
     title?: string;
     aboveBoxTitle?: string;
     price?: string;
@@ -1283,7 +1284,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
         setEnhancedImages([]);
       } else {
         try {
-          const enhanced = await fetchEnhancedDownloadedImages(propertyContext?.id);
+          const enhanced = await fetchEnhancedDownloadedImages(propertyContext?.id, propertyContext?.listingCode);
           if (enhanced && enhanced.length > 0) {
             // Only accept images if their position matches the active received images in this session
             const valid = enhanced.filter((img) => (img.position || 1) <= receivedImages.length);
@@ -1411,6 +1412,9 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
           output_width: outputWidth,
           output_height: outputHeight,
           strict_preservation_active: strictPreservation,
+          property_metadata: {
+            listing_code: propertyContext?.listingCode || '',
+          },
         });
         if (isSidebarStoppedRef.current) return;
         await startImageQueue(propId);
@@ -1458,6 +1462,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
 
     const res = await startAutomation({
       property_id: propId,
+      listing_code: propertyContext?.listingCode || '',
       profile_key: profKey,
       group_name: effectiveGroupName,
       group_tab_urls: targetUrls,
@@ -1465,7 +1470,10 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       tab_mode: isNewTabsMode ? 'new_tabs' : ((boxConfig as any).workerTabMode || 'existing_tabs'),
       worker_count: effectiveWorkerCount,
       reuse_session_tabs: (boxConfig as any).reuseSessionTabs ?? true,
-      jobs: createdBatchJobs.length > 0 ? createdBatchJobs : queueJobs,
+      jobs: (createdBatchJobs.length > 0 ? createdBatchJobs : queueJobs).map((j) => ({
+        ...j,
+        listing_code: propertyContext?.listingCode || (j as any).listing_code || '',
+      })),
     });
     if (isSidebarStoppedRef.current) return;
 
@@ -4269,6 +4277,65 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                     {isCopied ? <FiCheck size={12} color="#10B981" /> : <FiCopy size={12} />}
                     <span>{isCopied ? 'Copied' : 'Copy'}</span>
                   </button>
+                </div>
+
+                {/* Auto-Run Toggle & Status Bar (FB Hero Node) */}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '6px 10px',
+                    borderRadius: '6px',
+                    background: autoRunEnabled ? 'rgba(16, 185, 129, 0.08)' : isDark ? 'rgba(255, 255, 255, 0.03)' : '#F8FAFC',
+                    border: autoRunEnabled ? '1px solid rgba(16, 185, 129, 0.25)' : '1px solid var(--border-color)',
+                    marginTop: '4px',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span
+                      style={{
+                        width: '7px',
+                        height: '7px',
+                        borderRadius: '50%',
+                        backgroundColor: autoRunEnabled ? '#10B981' : '#94A3B8',
+                        boxShadow: autoRunEnabled ? '0 0 8px rgba(16, 185, 129, 0.6)' : 'none',
+                      }}
+                    />
+                    <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: autoRunEnabled ? '#10B981' : 'var(--text-secondary)' }}>
+                      {autoRunCountdown !== null
+                        ? `⚡ Auto-starting in ${autoRunCountdown}s...`
+                        : autoRunEnabled
+                        ? 'Auto-Run: Active (Auto-runs tabs & photos)'
+                        : 'Auto-Run: Off (Manual click)'}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    {autoRunCountdown !== null && (
+                      <button
+                        type="button"
+                        onClick={handleCancelAutoRun}
+                        style={{
+                          border: 'none',
+                          background: 'rgba(239, 68, 68, 0.12)',
+                          color: '#EF4444',
+                          fontSize: '0.625rem',
+                          fontWeight: 600,
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    )}
+                    <ToggleSwitch
+                      checked={autoRunEnabled}
+                      onChange={(val) => handleToggleAutoRun(val)}
+                      size="sm"
+                      activeColor="#10B981"
+                    />
+                  </div>
                 </div>
               </div>
             )}

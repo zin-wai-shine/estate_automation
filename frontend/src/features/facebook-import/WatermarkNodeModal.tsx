@@ -41,6 +41,7 @@ interface WatermarkNodeModalProps {
   onOpenLightbox?: (index: number) => void;
   workflowBoxes?: DynamicAIBoxConfig[];
   connections?: WorkflowWireConnection[];
+  listingCode?: string;
 }
 
 export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
@@ -54,6 +55,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
   onOpenLightbox,
   workflowBoxes,
   connections: _connections,
+  listingCode,
 }) => {
   const [savedFormats, setSavedFormats] = useState<CropStudioFormat[]>(() => getSavedCropFormats());
   const [isEditingFormatName, setIsEditingFormatName] = useState<boolean>(false);
@@ -1206,6 +1208,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
           }))}
           title={nodeTitle || 'Crop & Cut'}
           formatSubtitle={`${currentFormat?.name || 'Crop Preset'} · ${currentFormat?.targetWidth || 1200}×${currentFormat?.targetHeight || 1200} (${currentFormat?.aspect || '1:1'})`}
+          listingCode={listingCode}
         />
       )}
     </div>

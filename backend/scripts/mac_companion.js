@@ -1728,7 +1728,8 @@ function mergeTabGroups(scannedGroups, liveGroups) {
         const payload = JSON.parse(body || '{}');
         // payload: { profile_key, tab_ids, jobs, property_id }
 
-        let { profile_key, tab_ids, jobs, property_id } = payload;
+        let { profile_key, tab_ids, jobs, property_id, listing_code } = payload;
+        const safeListingCode = listing_code || payload.listingCode || (payload.property_metadata && payload.property_metadata.listing_code) || '';
         const safeTabIds = (tab_ids && tab_ids.length > 0) ? tab_ids : [1, 2, 3, 4];
 
         automationState = {
@@ -1779,7 +1780,11 @@ function mergeTabGroups(scannedGroups, liveGroups) {
           payload: {
             profileKey: resolvedProf,
             tabIds: safeTabIds,
-            jobs: jobs || [],
+            jobs: (jobs || []).map((j) => ({
+              ...j,
+              listing_code: j.listing_code || safeListingCode,
+            })),
+            listingCode: safeListingCode,
             propertyId: property_id,
             groupName: payload.group_name || payload.groupName || 'Enhance IMG',
             groupTabUrls: safeGroupTabUrls,
@@ -2397,6 +2402,7 @@ function mergeTabGroups(scannedGroups, liveGroups) {
   if (url.pathname === '/enhanced-images' && req.method === 'GET') {
     try {
       const reqPropertyId = url.searchParams.get('property_id');
+      const reqListingCode = url.searchParams.get('listing_code');
       const downloadsDir = path.join(os.homedir(), 'Downloads');
       const dirsToScan = [downloadsDir, defaultProcessingDir].filter((d) => fs.existsSync(d));
       const seenPositions = new Map(); // pos -> imgObj
@@ -2406,12 +2412,26 @@ function mergeTabGroups(scannedGroups, liveGroups) {
           const files = fs.readdirSync(dir);
           for (const f of files) {
             const lower = f.toLowerCase();
-            if (!lower.startsWith('enhanced_')) continue;
             if (!lower.endsWith('.png') && !lower.endsWith('.jpg') && !lower.endsWith('.jpeg') && !lower.endsWith('.webp')) continue;
-            if (reqPropertyId && !f.includes(reqPropertyId)) continue;
 
-            const m = f.match(/^enhanced_(\d+)_/i);
-            const pos = m ? parseInt(m[1], 10) : 0;
+            let pos = 0;
+            const mEnhanced = f.match(/^enhanced_(\d+)_/i);
+            const mCode = f.match(/[-_](\d+)\.(?:png|jpg|jpeg|webp)$/i);
+
+            if (mEnhanced) {
+              pos = parseInt(mEnhanced[1], 10);
+            } else if (mCode) {
+              pos = parseInt(mCode[1], 10);
+            } else {
+              continue;
+            }
+
+            if (reqListingCode && !lower.includes(reqListingCode.toLowerCase())) {
+              if (!reqPropertyId || !f.includes(reqPropertyId)) continue;
+            } else if (reqPropertyId && !reqListingCode && !f.includes(reqPropertyId)) {
+              continue;
+            }
+
             const fullPath = path.join(dir, f);
             const stat = fs.statSync(fullPath);
 

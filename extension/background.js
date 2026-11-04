@@ -785,6 +785,8 @@ async function startAutomation(payload) {
     return { success: false, error: 'No pending jobs found for this property' };
   }
 
+  const sessionListingCode = payload.listingCode || payload.listing_code || '';
+
   // Strictly deduplicate jobs by original_position so each image is enhanced EXACTLY ONCE!
   const seenPositions = new Set();
   const uniqueJobs = [];
@@ -801,6 +803,7 @@ async function startAutomation(payload) {
       uniqueJobs.push({
         ...j,
         original_position: pos,
+        listing_code: j.listing_code || sessionListingCode || '',
       });
     }
   }

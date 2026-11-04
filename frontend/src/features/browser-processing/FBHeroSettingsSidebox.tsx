@@ -39,6 +39,7 @@ interface FBHeroSettingsSideboxProps {
   onUpdateBoxConfig: (updated: any) => void;
   propertyContext?: {
     id?: string;
+    listingCode?: string;
     title?: string;
     aboveBoxTitle?: string;
     upstreamPrompts?: Array<{ id: string; title: string; text?: string; generatedOutput?: string; templateId?: string }>;
