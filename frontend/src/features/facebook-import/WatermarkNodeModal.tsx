@@ -191,29 +191,40 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     return null;
   }, [heroImage, box.referenceImage, effectiveImageList]);
 
-  // Live downloaded enhanced photos polled from companion / backend
-  const [companionEnhanced, setCompanionEnhanced] = useState<Record<number, string>>({});
+  // Live downloaded enhanced photos polled from companion / backend (persisted across drive deletions)
+  const [companionEnhanced, setCompanionEnhanced] = useState<Record<number, string>>(() => {
+    try {
+      const codeKey = listingCode || 'current';
+      const saved = localStorage.getItem(`bolthaven_canvas_enhanced_${codeKey}`);
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return {};
+  });
 
   useEffect(() => {
     if (!effectiveImageList || effectiveImageList.length === 0) {
-      setCompanionEnhanced({});
       return;
     }
     let isCancelled = false;
     const loadDownloaded = async () => {
       try {
-        const downloaded = await fetchEnhancedDownloadedImages();
+        const downloaded = await fetchEnhancedDownloadedImages(undefined, listingCode);
         if (downloaded && downloaded.length > 0 && !isCancelled) {
           const valid = downloaded.filter((img) => (img.position || 1) <= effectiveImageList.length);
           const map: Record<number, string> = {};
           valid.forEach((img) => {
             const pos = img.position || 1;
             const pos0 = pos - 1; // 0-based index key
-            map[pos0] = img.url;
+            map[pos0] = img.backend_url || img.url;
           });
-          setCompanionEnhanced(map);
-        } else if (!isCancelled) {
-          setCompanionEnhanced({});
+          setCompanionEnhanced((prev) => {
+            const next = { ...prev, ...map };
+            try {
+              const codeKey = listingCode || 'current';
+              localStorage.setItem(`bolthaven_canvas_enhanced_${codeKey}`, JSON.stringify(next));
+            } catch {}
+            return next;
+          });
         }
       } catch (e) {}
     };
@@ -223,7 +234,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
       isCancelled = true;
       clearInterval(interval);
     };
-  }, [effectiveImageList?.length]);
+  }, [effectiveImageList?.length, listingCode]);
 
   const mergedEnhancedPhotos = useMemo(() => {
     return { ...companionEnhanced, ...(enhancedPhotos || {}) };

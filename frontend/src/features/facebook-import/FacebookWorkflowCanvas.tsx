@@ -3217,13 +3217,28 @@ export const FacebookWorkflowCanvas = forwardRef<
   const latestConfigRef = useRef<FacebookWorkflowConfig>(config);
   latestConfigRef.current = config;
 
+  // Listing Code Generator Preview State
+  const [previewSampleCode, setPreviewSampleCode] = useState<string>(() =>
+    generateUniqueListingCode(config.codeFormat || 'AAA-######-AA')
+  );
+
+  useEffect(() => {
+    setPreviewSampleCode(generateUniqueListingCode(config.codeFormat || 'AAA-######-AA'));
+  }, [config.codeFormat]);
+
   const [locallyRunningNodeId, setLocallyRunningNodeId] = useState<string | null>(null);
   const [locallyCompletedNodeIds, setLocallyCompletedNodeIds] = useState<string[]>([]);
-  const [companionEnhancedMap, setCompanionEnhancedMap] = useState<Record<number, string>>({});
+  const [companionEnhancedMap, setCompanionEnhancedMap] = useState<Record<number, string>>(() => {
+    try {
+      const activeCode = executionState?.listingCode || previewSampleCode || 'current';
+      const saved = localStorage.getItem(`bolthaven_canvas_enhanced_${activeCode}`);
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return {};
+  });
 
   useEffect(() => {
     if (!images || images.length === 0) {
-      setCompanionEnhancedMap({});
       return;
     }
     let isCancelled = false;
@@ -3237,9 +3252,17 @@ export const FacebookWorkflowCanvas = forwardRef<
           valid.forEach((img) => {
             const pos = img.position || 1;
             const pos0 = pos - 1; // 0-based index key
-            map[pos0] = img.url;
+            // Prefer permanent backend static upload URL if available, fallback to companion URL
+            map[pos0] = img.backend_url || img.url;
           });
-          setCompanionEnhancedMap((prev) => ({ ...prev, ...map }));
+          setCompanionEnhancedMap((prev) => {
+            const next = { ...prev, ...map };
+            try {
+              const codeKey = executionState?.listingCode || previewSampleCode || 'current';
+              localStorage.setItem(`bolthaven_canvas_enhanced_${codeKey}`, JSON.stringify(next));
+            } catch {}
+            return next;
+          });
         }
       } catch (e) {}
     };
@@ -3250,7 +3273,7 @@ export const FacebookWorkflowCanvas = forwardRef<
       isCancelled = true;
       clearInterval(interval);
     };
-  }, [executionState?.propertyId, images?.length]);
+  }, [executionState?.propertyId, images?.length, executionState?.listingCode, previewSampleCode]);
 
   const allEnhancedPhotos = useMemo(() => {
     return { ...companionEnhancedMap, ...enhancedPhotos };
@@ -3638,15 +3661,6 @@ export const FacebookWorkflowCanvas = forwardRef<
       }
     };
   }, []);
-
-  // Listing Code Generator Preview State
-  const [previewSampleCode, setPreviewSampleCode] = useState<string>(() =>
-    generateUniqueListingCode(config.codeFormat || 'AAA-######-AA')
-  );
-
-  useEffect(() => {
-    setPreviewSampleCode(generateUniqueListingCode(config.codeFormat || 'AAA-######-AA'));
-  }, [config.codeFormat]);
 
   const handleRefreshPreviewCode = () => {
     setPreviewSampleCode(generateUniqueListingCode(config.codeFormat || 'AAA-######-AA'));

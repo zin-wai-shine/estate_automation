@@ -30,6 +30,73 @@ if (!fs.existsSync(defaultProcessingDir)) {
   } catch (e) {}
 }
 
+// Dedicated canvas storage directory (persists even if user clears Downloads or drive)
+const canvasCacheDir = path.join(defaultProcessingDir, 'canvas_cache');
+if (!fs.existsSync(canvasCacheDir)) {
+  try {
+    fs.mkdirSync(canvasCacheDir, { recursive: true });
+  } catch (e) {}
+}
+
+// Backend static upload directory for direct HTTP serving via Go backend (http://localhost:8085/storage/uploads/facebook-import/enhanced)
+const backendStorageEnhancedDir = path.join(__dirname, '..', 'storage', 'uploads', 'facebook-import', 'enhanced');
+if (!fs.existsSync(backendStorageEnhancedDir)) {
+  try {
+    fs.mkdirSync(backendStorageEnhancedDir, { recursive: true });
+  } catch (e) {}
+}
+
+const CANVAS_ENHANCED_MANIFEST = path.join(defaultProcessingDir, '.canvas_enhanced_manifest.json');
+
+function persistCanvasImage(sourceFilePath, fileName) {
+  try {
+    if (!sourceFilePath || !fs.existsSync(sourceFilePath)) return null;
+    const safeName = path.basename(fileName || sourceFilePath);
+
+    // 1. Copy to canvasCacheDir
+    const cachePath = path.join(canvasCacheDir, safeName);
+    if (!fs.existsSync(cachePath) || fs.statSync(cachePath).size !== fs.statSync(sourceFilePath).size) {
+      try { fs.copyFileSync(sourceFilePath, cachePath); } catch (e) {}
+    }
+
+    // 2. Copy to defaultProcessingDir
+    const procPath = path.join(defaultProcessingDir, safeName);
+    if (!fs.existsSync(procPath) || fs.statSync(procPath).size !== fs.statSync(sourceFilePath).size) {
+      try { fs.copyFileSync(sourceFilePath, procPath); } catch (e) {}
+    }
+
+    // 3. Copy to backend storage/uploads/facebook-import/enhanced
+    const backendPath = path.join(backendStorageEnhancedDir, safeName);
+    if (!fs.existsSync(backendPath) || fs.statSync(backendPath).size !== fs.statSync(sourceFilePath).size) {
+      try { fs.copyFileSync(sourceFilePath, backendPath); } catch (e) {}
+    }
+
+    // 4. Update manifest
+    let manifest = {};
+    try {
+      if (fs.existsSync(CANVAS_ENHANCED_MANIFEST)) {
+        manifest = JSON.parse(fs.readFileSync(CANVAS_ENHANCED_MANIFEST, 'utf8'));
+      }
+    } catch (e) {}
+
+    const targetStat = fs.existsSync(cachePath) ? fs.statSync(cachePath) : fs.statSync(sourceFilePath);
+    manifest[safeName] = {
+      filename: safeName,
+      size: targetStat.size,
+      mtime: targetStat.mtimeMs,
+      cached_at: new Date().toISOString(),
+    };
+    try {
+      fs.writeFileSync(CANVAS_ENHANCED_MANIFEST, JSON.stringify(manifest, null, 2), 'utf8');
+    } catch (e) {}
+
+    return cachePath;
+  } catch (e) {
+    console.warn('[COMPANION] persistCanvasImage warning:', e.message);
+    return null;
+  }
+}
+
 const REFERENCE_IMAGE_CACHE_FILE = path.join(defaultProcessingDir, '.fb_hero_reference_image.json');
 
 function loadPersistedReferenceImageFromDisk() {
@@ -1888,10 +1955,12 @@ function mergeTabGroups(scannedGroups, liveGroups) {
 
         console.log(`[COMPANION] 📥 Direct save request for generated image: ${filename} (URL: ${imageUrl.slice(0, 80)}...)`);
 
-        // Target directories: ~/Downloads and Processing directory
+        // Target directories: ~/Downloads, Processing directory, Canvas Cache, and Backend Storage
         const downloadsDir = path.join(os.homedir(), 'Downloads');
         const downloadFilePath = path.join(downloadsDir, filename);
         const processingFilePath = path.join(defaultProcessingDir, filename);
+        const canvasCacheFilePath = path.join(canvasCacheDir, filename);
+        const backendStorageFilePath = path.join(backendStorageEnhancedDir, filename);
 
         let buffer = null;
         if (imageUrl.startsWith('data:')) {
@@ -1925,7 +1994,10 @@ function mergeTabGroups(scannedGroups, liveGroups) {
         if (buffer && buffer.length > 0) {
           try { fs.writeFileSync(downloadFilePath, buffer); } catch (e) {}
           try { fs.writeFileSync(processingFilePath, buffer); } catch (e) {}
-          console.log(`[COMPANION] ✓ Saved generated image to disk:\n  - ${downloadFilePath} (${buffer.length} bytes)\n  - ${processingFilePath}`);
+          try { fs.writeFileSync(canvasCacheFilePath, buffer); } catch (e) {}
+          try { fs.writeFileSync(backendStorageFilePath, buffer); } catch (e) {}
+          persistCanvasImage(processingFilePath, filename);
+          console.log(`[COMPANION] ✓ Saved generated image to disk & persistent storage:\n  - ${downloadFilePath} (${buffer.length} bytes)\n  - ${processingFilePath}\n  - ${canvasCacheFilePath}\n  - ${backendStorageFilePath}`);
 
           // Update twoStageState so UI instantly marks step as completed
           twoStageState = {
@@ -2437,17 +2509,33 @@ function mergeTabGroups(scannedGroups, liveGroups) {
     }
   }
 
-  // ── Serve Downloaded Enhanced Image ──
+  // ── Serve Downloaded Enhanced Image (Permanent Multi-Tier Storage) ──
   if (url.pathname === '/downloaded-image' && (req.method === 'GET' || req.method === 'HEAD')) {
     const rawFile = url.searchParams.get('file') || '';
     const safeName = path.basename(rawFile);
     const downloadsDir = path.join(os.homedir(), 'Downloads');
-    let targetPath = safeName ? path.join(downloadsDir, safeName) : '';
 
-    if (!targetPath || !fs.existsSync(targetPath)) {
-      if (safeName && fs.existsSync(path.join(defaultProcessingDir, safeName))) {
-        targetPath = path.join(defaultProcessingDir, safeName);
-      }
+    // Check multiple persistent storage locations in order:
+    const candidatePaths = [
+      safeName ? path.join(canvasCacheDir, safeName) : '',
+      safeName ? path.join(backendStorageEnhancedDir, safeName) : '',
+      safeName ? path.join(defaultProcessingDir, safeName) : '',
+      safeName ? path.join(downloadsDir, safeName) : '',
+    ].filter(Boolean);
+
+    let targetPath = candidatePaths.find((p) => fs.existsSync(p)) || '';
+
+    // If still not found, search inside all persistent directories for case-insensitive match
+    if (!targetPath && safeName) {
+      const matchInDir = (dir) => {
+        try {
+          if (!fs.existsSync(dir)) return null;
+          const files = fs.readdirSync(dir);
+          const found = files.find((f) => f.toLowerCase() === safeName.toLowerCase());
+          return found ? path.join(dir, found) : null;
+        } catch { return null; }
+      };
+      targetPath = matchInDir(canvasCacheDir) || matchInDir(backendStorageEnhancedDir) || matchInDir(defaultProcessingDir) || matchInDir(downloadsDir) || '';
     }
 
     if (!targetPath || !fs.existsSync(targetPath)) {
@@ -2469,13 +2557,29 @@ function mergeTabGroups(scannedGroups, liveGroups) {
     return;
   }
 
-  // ── List All Downloaded Enhanced Images ──
+  // ── List All Downloaded Enhanced Images (Persistent Canvas Scan) ──
   if (url.pathname === '/enhanced-images' && req.method === 'GET') {
     try {
       const reqPropertyId = url.searchParams.get('property_id');
       const reqListingCode = url.searchParams.get('listing_code');
       const downloadsDir = path.join(os.homedir(), 'Downloads');
-      const dirsToScan = [downloadsDir, defaultProcessingDir].filter((d) => fs.existsSync(d));
+
+      // Auto-persist: if any enhanced images are in ~/Downloads, immediately copy to canvasCacheDir and backend storage
+      try {
+        if (fs.existsSync(downloadsDir)) {
+          const dlFiles = fs.readdirSync(downloadsDir);
+          for (const f of dlFiles) {
+            const lower = f.toLowerCase();
+            if (!lower.endsWith('.png') && !lower.endsWith('.jpg') && !lower.endsWith('.jpeg') && !lower.endsWith('.webp')) continue;
+            if (f.match(/^enhanced_(\d+)_/i) || f.match(/[-_](\d+)\.(?:png|jpg|jpeg|webp)$/i)) {
+              persistCanvasImage(path.join(downloadsDir, f), f);
+            }
+          }
+        }
+      } catch (e) {}
+
+      // Scan all persistent locations: canvasCacheDir, backendStorageEnhancedDir, defaultProcessingDir, downloadsDir
+      const dirsToScan = [canvasCacheDir, backendStorageEnhancedDir, defaultProcessingDir, downloadsDir].filter((d) => fs.existsSync(d));
       const seenPositions = new Map(); // pos -> imgObj
 
       for (const dir of dirsToScan) {
@@ -2514,6 +2618,7 @@ function mergeTabGroups(scannedGroups, liveGroups) {
               mtime: stat.mtimeMs,
               position: pos > 0 ? pos : 1,
               url: `http://127.0.0.1:${PORT}/downloaded-image?file=${encodeURIComponent(f)}`,
+              backend_url: `http://localhost:8085/storage/uploads/facebook-import/enhanced/${encodeURIComponent(f)}`,
             };
 
             const key = imgObj.position;
@@ -2541,29 +2646,56 @@ function mergeTabGroups(scannedGroups, liveGroups) {
     }
   }
 
+  // ── Clear Canvas Images (called when user explicitly resets/cleans canvas) ──
+  if ((url.pathname === '/clear-canvas-images' || url.pathname === '/reset-canvas-images') && req.method === 'POST') {
+    try {
+      if (fs.existsSync(CANVAS_ENHANCED_MANIFEST)) {
+        try { fs.unlinkSync(CANVAS_ENHANCED_MANIFEST); } catch (e) {}
+      }
+      if (fs.existsSync(canvasCacheDir)) {
+        const files = fs.readdirSync(canvasCacheDir);
+        for (const f of files) {
+          try { fs.unlinkSync(path.join(canvasCacheDir, f)); } catch (e) {}
+        }
+      }
+      console.log('[COMPANION] 🧹 Cleared canvas images cache upon user request');
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      return res.end(JSON.stringify({ status: 'success', message: 'Canvas images cache cleared' }));
+    } catch (e) {
+      res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      return res.end(JSON.stringify({ error: e.message }));
+    }
+  }
+
   // ── Serve Downloaded Hero Image ──
   if (url.pathname === '/hero-downloaded-image' && (req.method === 'GET' || req.method === 'HEAD')) {
     const rawFile = url.searchParams.get('file') || (twoStageState && twoStageState.downloaded_file) || '';
     const safeName = path.basename(rawFile);
     const downloadsDir = path.join(os.homedir(), 'Downloads');
-    let targetPath = safeName ? path.join(downloadsDir, safeName) : '';
 
-    if (!targetPath || !fs.existsSync(targetPath)) {
-      if (safeName && fs.existsSync(path.join(defaultProcessingDir, safeName))) {
-        targetPath = path.join(defaultProcessingDir, safeName);
+    const heroCandidates = [
+      safeName ? path.join(canvasCacheDir, safeName) : '',
+      safeName ? path.join(backendStorageEnhancedDir, safeName) : '',
+      safeName ? path.join(defaultProcessingDir, safeName) : '',
+      safeName ? path.join(downloadsDir, safeName) : '',
+    ].filter(Boolean);
+
+    let targetPath = heroCandidates.find((p) => fs.existsSync(p)) || '';
+
+    if (!targetPath) {
+      for (const d of [canvasCacheDir, backendStorageEnhancedDir, defaultProcessingDir, downloadsDir]) {
+        try {
+          if (!fs.existsSync(d)) continue;
+          const files = fs.readdirSync(d)
+            .filter((f) => f.toLowerCase().startsWith('fb_hero') && f.toLowerCase().endsWith('.png'))
+            .map((f) => ({ name: f, path: path.join(d, f), mtime: fs.statSync(path.join(d, f)).mtimeMs }))
+            .sort((a, b) => b.mtime - a.mtime);
+          if (files.length > 0) {
+            targetPath = files[0].path;
+            break;
+          }
+        } catch (e) {}
       }
-    }
-
-    if (!targetPath || !fs.existsSync(targetPath)) {
-      try {
-        const files = fs.readdirSync(downloadsDir)
-          .filter((f) => f.toLowerCase().startsWith('fb_hero') && f.toLowerCase().endsWith('.png'))
-          .map((f) => ({ name: f, path: path.join(downloadsDir, f), mtime: fs.statSync(path.join(downloadsDir, f)).mtimeMs }))
-          .sort((a, b) => b.mtime - a.mtime);
-        if (files.length > 0) {
-          targetPath = files[0].path;
-        }
-      } catch (e) {}
     }
 
     if (!targetPath || !fs.existsSync(targetPath)) {

@@ -2743,6 +2743,12 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
     setShowPipelineModal(false);
     try {
       localStorage.removeItem(FB_IMPORT_SESSION_KEY);
+      Object.keys(localStorage).forEach((k) => {
+        if (k.startsWith('bolthaven_canvas_enhanced_')) {
+          localStorage.removeItem(k);
+        }
+      });
+      fetch('http://127.0.0.1:9224/clear-canvas-images', { method: 'POST' }).catch(() => {});
     } catch {}
   };
 

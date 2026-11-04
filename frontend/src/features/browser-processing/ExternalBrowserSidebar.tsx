@@ -1288,17 +1288,17 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
           if (enhanced && enhanced.length > 0) {
             // Only accept images if their position matches the active received images in this session
             const valid = enhanced.filter((img) => (img.position || 1) <= receivedImages.length);
-            setEnhancedImages(valid);
-            if (onEnhancedPhotosUpdate && valid.length > 0) {
-              const map: Record<number, string> = {};
-              valid.forEach((img) => {
-                const pos0 = (img.position || 1) - 1; // 0-based index key
-                map[pos0] = img.url;
-              });
-              onEnhancedPhotosUpdate(map);
+            if (valid.length > 0) {
+              setEnhancedImages(valid);
+              if (onEnhancedPhotosUpdate) {
+                const map: Record<number, string> = {};
+                valid.forEach((img) => {
+                  const pos0 = (img.position || 1) - 1; // 0-based index key
+                  map[pos0] = img.backend_url || img.url;
+                });
+                onEnhancedPhotosUpdate(map);
+              }
             }
-          } else {
-            setEnhancedImages([]);
           }
         } catch (e) {}
       }

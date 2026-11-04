@@ -431,6 +431,7 @@ export interface EnhancedDownloadedImage {
   mtime: number;
   position: number;
   url: string;
+  backend_url?: string;
 }
 
 export const fetchEnhancedDownloadedImages = async (propertyId?: string, listingCode?: string): Promise<EnhancedDownloadedImage[]> => {
