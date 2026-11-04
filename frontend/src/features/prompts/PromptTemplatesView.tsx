@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import * as XLSX from 'xlsx';
 import type { PromptTemplate } from '../../types';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
@@ -15,6 +16,8 @@ import {
   FiSearch,
   FiTrash2,
   FiAlertTriangle,
+  FiDownload,
+  FiUpload,
 } from 'react-icons/fi';
 
 const INITIAL_DEFAULT_TEMPLATES: PromptTemplate[] = [
@@ -258,6 +261,202 @@ export const PromptTemplatesView: React.FC = () => {
     { value: 'GENERATE_IMAGE', label: 'Generate Image' },
   ];
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [importNotification, setImportNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  const normalizeCategory = (cat: string): PromptTemplate['category'] => {
+    if (!cat) return 'FACEBOOK_RENT';
+    const c = cat.trim().toUpperCase().replace(/\s+/g, '_');
+    if (c.includes('SALE')) return 'FACEBOOK_SALE';
+    if (c.includes('RENT')) return 'FACEBOOK_RENT';
+    if (c.includes('TIKTOK')) return 'TIKTOK';
+    if (c.includes('TRANSLAT')) return 'EN_TRANSLATION';
+    if (c.includes('ENHANCE')) return 'IMAGE_ENHANCE';
+    if (c.includes('GENERATE') || c.includes('HERO')) return 'GENERATE_IMAGE';
+    if (['FACEBOOK_RENT', 'FACEBOOK_SALE', 'TIKTOK', 'EN_TRANSLATION', 'IMAGE_ENHANCE', 'GENERATE_IMAGE'].includes(c)) {
+      return c as any;
+    }
+    return 'FACEBOOK_RENT';
+  };
+
+  const parseActive = (val: any): boolean => {
+    if (typeof val === 'boolean') return val;
+    if (typeof val === 'number') return val === 1;
+    if (typeof val === 'string') {
+      const s = val.trim().toLowerCase();
+      return s === 'true' || s === 'active' || s === 'yes' || s === '1' || s === 'enabled';
+    }
+    return true;
+  };
+
+  const handleExportExcel = () => {
+    try {
+      const dataToExport = prompts.map((p) => ({
+        'Template ID': p.id,
+        'Template Name': p.name,
+        'Category': p.category,
+        'Version': p.version || 'V1.0',
+        'Status': p.active ? 'Active' : 'Inactive',
+        'Model': p.model || '',
+        'Template Text': p.templateText,
+      }));
+
+      const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+
+      worksheet['!cols'] = [
+        { wch: 18 },
+        { wch: 34 },
+        { wch: 18 },
+        { wch: 10 },
+        { wch: 12 },
+        { wch: 14 },
+        { wch: 60 },
+      ];
+
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Prompt Templates');
+
+      const dateStr = new Date().toISOString().slice(0, 10);
+      XLSX.writeFile(workbook, `prompt_templates_${dateStr}.xlsx`);
+    } catch (err) {
+      console.error('Failed to export Excel file:', err);
+      alert('Failed to export templates to Excel.');
+    }
+  };
+
+  const handleImportFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+      const firstSheetName = workbook.SheetNames[0];
+      if (!firstSheetName) {
+        setImportNotification({ message: 'The uploaded file does not contain any sheets.', type: 'error' });
+        setTimeout(() => setImportNotification(null), 4000);
+        return;
+      }
+
+      const worksheet = workbook.Sheets[firstSheetName];
+      const rows: any[] = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+
+      if (!rows || rows.length === 0) {
+        setImportNotification({ message: 'The uploaded Excel file has no rows.', type: 'error' });
+        setTimeout(() => setImportNotification(null), 4000);
+        return;
+      }
+
+      const importedTemplates: PromptTemplate[] = [];
+
+      rows.forEach((row, idx) => {
+        const name = (
+          row['Template Name'] ||
+          row['template_name'] ||
+          row['Name'] ||
+          row['name'] ||
+          row['Title'] ||
+          row['title'] ||
+          ''
+        ).toString().trim();
+
+        const templateText = (
+          row['Template Text'] ||
+          row['template_text'] ||
+          row['TemplateText'] ||
+          row['Prompt'] ||
+          row['prompt'] ||
+          row['Text'] ||
+          row['text'] ||
+          row['Content'] ||
+          row['content'] ||
+          ''
+        ).toString();
+
+        if (!name && !templateText.trim()) return;
+
+        const rawCat = (
+          row['Category'] ||
+          row['category'] ||
+          row['Type'] ||
+          row['type'] ||
+          ''
+        ).toString();
+
+        const rawVersion = (
+          row['Version'] ||
+          row['version'] ||
+          'V1.0'
+        ).toString().trim();
+
+        const rawActive =
+          row['Status'] !== undefined
+            ? row['Status']
+            : row['status'] !== undefined
+            ? row['status']
+            : row['Active'] !== undefined
+            ? row['Active']
+            : row['active'];
+
+        const rawId = (row['Template ID'] || row['ID'] || row['id'] || '').toString().trim();
+
+        importedTemplates.push({
+          id: rawId || `tpl-${Date.now()}-${idx}`,
+          name: name || `Imported Template #${idx + 1}`,
+          category: normalizeCategory(rawCat),
+          version: rawVersion || 'V1.0',
+          active: parseActive(rawActive),
+          model: (row['Model'] || row['model'] || '').toString().trim() || undefined,
+          templateText: templateText.trim(),
+        });
+      });
+
+      if (importedTemplates.length === 0) {
+        setImportNotification({ message: 'No valid prompt templates found in file.', type: 'error' });
+        setTimeout(() => setImportNotification(null), 4000);
+        return;
+      }
+
+      // Merge imported templates with existing templates without wiping out current data
+      const updatedPrompts = [...prompts];
+
+      importedTemplates.forEach((imported) => {
+        const existingIdx = updatedPrompts.findIndex(
+          (p) => String(p.id) === String(imported.id) || p.name.trim().toLowerCase() === imported.name.trim().toLowerCase()
+        );
+
+        if (existingIdx >= 0) {
+          updatedPrompts[existingIdx] = {
+            ...updatedPrompts[existingIdx],
+            ...imported,
+            id: updatedPrompts[existingIdx].id,
+          };
+        } else {
+          updatedPrompts.push(imported);
+        }
+      });
+
+      persistPromptTemplates(updatedPrompts);
+      setPrompts(updatedPrompts);
+      setImportNotification({
+        message: `✓ Successfully imported ${importedTemplates.length} template(s)!`,
+        type: 'success',
+      });
+      setTimeout(() => setImportNotification(null), 4000);
+    } catch (err: any) {
+      console.error('Error importing Excel file:', err);
+      setImportNotification({
+        message: `Failed to import Excel: ${err?.message || 'Invalid file format'}`,
+        type: 'error',
+      });
+      setTimeout(() => setImportNotification(null), 4000);
+    } finally {
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
   const filteredPrompts = prompts.filter((p) => {
     const matchesSearch =
       p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -268,6 +467,33 @@ export const PromptTemplatesView: React.FC = () => {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', width: '100%', maxWidth: '1280px', margin: '0 auto', boxSizing: 'border-box' }}>
+      {/* Notification Toast */}
+      {importNotification && (
+        <div
+          style={{
+            padding: '0.625rem 1rem',
+            borderRadius: '0.5rem',
+            fontSize: '0.8125rem',
+            fontWeight: 600,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            backgroundColor: importNotification.type === 'success' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+            color: importNotification.type === 'success' ? '#10B981' : '#EF4444',
+            border: importNotification.type === 'success' ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(239, 68, 68, 0.3)',
+          }}
+        >
+          <span>{importNotification.message}</span>
+          <button
+            type="button"
+            onClick={() => setImportNotification(null)}
+            style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: '0.875rem' }}
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       {/* Clean Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
@@ -284,15 +510,49 @@ export const PromptTemplatesView: React.FC = () => {
           </p>
         </div>
 
-        <Button
-          variant="primary"
-          size="sm"
-          leftIcon={<FiPlus />}
-          onClick={() => setIsCreating(true)}
-          style={{ height: '38px', padding: '0 1.125rem', fontSize: '0.8125rem' }}
-        >
-          Create Template
-        </Button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', flexWrap: 'wrap' }}>
+          {/* Hidden File Input for Excel Import */}
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleImportFileChange}
+            accept=".xlsx,.xls,.csv"
+            style={{ display: 'none' }}
+          />
+
+          {/* Import Excel Button */}
+          <Button
+            variant="outline"
+            size="sm"
+            leftIcon={<FiUpload />}
+            onClick={() => fileInputRef.current?.click()}
+            style={{ height: '38px', padding: '0 0.875rem', fontSize: '0.8125rem' }}
+          >
+            Import Excel
+          </Button>
+
+          {/* Export Excel Button */}
+          <Button
+            variant="outline"
+            size="sm"
+            leftIcon={<FiDownload />}
+            onClick={handleExportExcel}
+            style={{ height: '38px', padding: '0 0.875rem', fontSize: '0.8125rem' }}
+          >
+            Export Excel
+          </Button>
+
+          {/* Create Template Button */}
+          <Button
+            variant="primary"
+            size="sm"
+            leftIcon={<FiPlus />}
+            onClick={() => setIsCreating(true)}
+            style={{ height: '38px', padding: '0 1.125rem', fontSize: '0.8125rem' }}
+          >
+            Create Template
+          </Button>
+        </div>
       </div>
 
       {/* Filter Bar */}
