@@ -547,6 +547,7 @@ export const CreateWorkflowView: React.FC = () => {
   });
   const [isRunningWorkflow, setIsRunningWorkflow] = useState<boolean>(false);
   const [showLeaveConfirmModal, setShowLeaveConfirmModal] = useState<boolean>(false);
+  const [showClearConfirmModal, setShowClearConfirmModal] = useState<boolean>(false);
   const [pendingLeaveAction, setPendingLeaveAction] = useState<(() => void) | null>(null);
   const isCancelledRef = useRef<boolean>(false);
   const runIdRef = useRef<number>(0);
@@ -4353,7 +4354,7 @@ export const CreateWorkflowView: React.FC = () => {
               Object.keys(enhancedPhotos).length > 0) && (
               <button
                 type="button"
-                onClick={handleClearRunData}
+                onClick={() => setShowClearConfirmModal(true)}
                 title="Clear all extracted post data and execution results"
                 style={{
                   height: '32px',
@@ -5575,6 +5576,97 @@ export const CreateWorkflowView: React.FC = () => {
                 }}
               >
                 Leave & Cancel Process
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Clear Canvas Data & Results Confirmation Modal */}
+      {showClearConfirmModal && (
+        <Modal
+          isOpen={showClearConfirmModal}
+          onClose={() => setShowClearConfirmModal(false)}
+          title={
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+              <div
+                style={{
+                  width: '30px',
+                  height: '30px',
+                  borderRadius: '50%',
+                  backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : 'rgba(239, 68, 68, 0.12)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: isDark ? '#F87171' : '#DC2626',
+                  flexShrink: 0,
+                }}
+              >
+                <FiTrash2 size={15} />
+              </div>
+              <span style={{ fontWeight: 600, fontSize: '0.9375rem', color: 'var(--text-primary)' }}>
+                Clear Canvas Data & Results?
+              </span>
+            </div>
+          }
+          maxWidth="460px"
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', padding: '0.25rem 0' }}>
+            <p style={{ margin: 0, fontSize: '0.875rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+              Are you sure you want to clear all extracted post content, property photos, AI generated outputs, and execution results from the canvas? This will reset all nodes back to their ready state.
+            </p>
+
+            <div
+              style={{
+                fontSize: '0.75rem',
+                color: isDark ? '#10B981' : '#059669',
+                backgroundColor: isDark ? 'rgba(16, 185, 129, 0.1)' : 'rgba(16, 185, 129, 0.08)',
+                padding: '0.625rem 0.75rem',
+                borderRadius: '0.5rem',
+                border: isDark ? '1px solid rgba(16, 185, 129, 0.25)' : '1px solid rgba(16, 185, 129, 0.2)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+              }}
+            >
+              <FiCheckCircle size={15} style={{ flexShrink: 0 }} />
+              <span>Your workflow structure, prompt presets, browser profiles, and connections will remain untouched.</span>
+            </div>
+
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'flex-end',
+                gap: '0.75rem',
+                paddingTop: '0.75rem',
+                borderTop: '1px solid var(--border-color)',
+              }}
+            >
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowClearConfirmModal(false)}
+                style={{ fontWeight: 600 }}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={() => {
+                  handleClearRunData();
+                  setShowClearConfirmModal(false);
+                }}
+                leftIcon={<FiTrash2 size={13} />}
+                style={{
+                  backgroundColor: '#DC2626',
+                  borderColor: '#DC2626',
+                  color: '#FFFFFF',
+                  fontWeight: 600,
+                }}
+              >
+                Confirm Clear
               </Button>
             </div>
           </div>
