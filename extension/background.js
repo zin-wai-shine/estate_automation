@@ -1623,8 +1623,14 @@ async function pollCompanion() {
       // Universal profile guard:
       // If this command is targeted to a specific profile, verify it matches this extension instance.
       // If there is a mismatch, REJECT it immediately and re-queue so the intended profile extension can pick it up!
-      const cmdTargetProfile = (payload?.profileKey || payload?.profile_key || '').trim().replace(/\s+/g, '').toLowerCase();
-      const myProfileKey = (profileKey || '').trim().replace(/\s+/g, '').toLowerCase();
+      const normKey = (k) => {
+        const s = (k || '').trim().replace(/\s+/g, '').toLowerCase();
+        if (s === 'pro' || s === 'profile2') return 'profile2';
+        if (s === 'hsu' || s === 'profile14') return 'profile14';
+        return s;
+      };
+      const cmdTargetProfile = normKey(payload?.profileKey || payload?.profile_key || '');
+      const myProfileKey = normKey(profileKey || '');
       if (cmdTargetProfile && myProfileKey && cmdTargetProfile !== myProfileKey) {
         console.warn(`[BOLTHAVEN EXT] ⚠️ Rejecting command "${action}" targeted at "${payload?.profileKey}" — this extension is "${profileKey}". Re-queuing...`);
         fetch(`${COMPANION_URL}/requeue-command`, {

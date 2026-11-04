@@ -478,13 +478,13 @@ function focusChatGPTWindow() {
 
 const openedProfiles = new Set();
 const launchingProfileLock = {};
+const lastPollTimeByProfile = {};
 
-function isProfileRunning(resolvedKey) {
+function isProfileLive(resolvedKey) {
   if (!resolvedKey) return false;
-  if (openedProfiles.has(resolvedKey)) return true;
-  if (liveTabGroupsByKey[resolvedKey] && liveTabGroupsByKey[resolvedKey].length > 0) return true;
-  if (registeredProfiles.some((p) => normalizeProfileKey(p.profileKey) === resolvedKey)) return true;
-  return false;
+  const lastPoll = lastPollTimeByProfile[resolvedKey] || 0;
+  // If the extension for this profile polled or paired within the last 5 seconds, it's open and active
+  return (Date.now() - lastPoll) < 5000;
 }
 
 // Check if Chrome is currently running
@@ -504,26 +504,25 @@ function activateChromeProfile(profileKey, targetUrl = '') {
     openedProfiles.clear();
   }
 
-  // 1. If Chrome is already running and this profile window is already open/launched:
-  // ONLY bring Google Chrome to front via AppleScript!
-  // NEVER spawn the CLI binary again, because that spawns duplicate windows of the same profile!
-  if (chromeRunning && isProfileRunning(resolvedKey)) {
+  // 1. If Chrome is already running and this profile's extension is actively polling/paired:
+  // It is ALREADY OPEN! NEVER spawn the CLI binary again, because that spawns duplicate windows!
+  // Simply bring Google Chrome to the front via AppleScript.
+  if (chromeRunning && isProfileLive(resolvedKey)) {
     try {
       execSync(`osascript -e 'tell application "Google Chrome" to activate' 2>/dev/null`);
     } catch (e) {}
     return;
   }
 
-  // 2. Debounce guard: do not re-launch within 5 seconds
+  // 2. Debounce guard: do not re-launch the same profile within 4 seconds
   const lastLaunch = launchingProfileLock[resolvedKey] || 0;
-  if (now - lastLaunch < 5000) {
-    console.log(`[COMPANION] Profile "${resolvedKey}" launch was initiated recently. Debouncing...`);
+  if (now - lastLaunch < 4000) {
     return;
   }
   launchingProfileLock[resolvedKey] = now;
   openedProfiles.add(resolvedKey);
 
-  console.log(`[COMPANION] 🚀 Launching Chrome profile "${resolvedKey}" for the first time...`);
+  console.log(`[COMPANION] 🚀 Launching Chrome profile "${resolvedKey}" (window not currently active)...`);
 
   const targets = Array.isArray(targetUrl) && targetUrl.length > 0
     ? targetUrl
@@ -531,13 +530,13 @@ function activateChromeProfile(profileKey, targetUrl = '') {
 
   try {
     if (fs.existsSync(chromeBinary)) {
-      const child = spawn(chromeBinary, [`--profile-directory=${resolvedKey}`, ...(!chromeRunning ? targets : [])], {
+      const child = spawn(chromeBinary, [`--profile-directory=${resolvedKey}`, ...targets], {
         detached: true,
         stdio: 'ignore',
       });
       child.unref();
     } else {
-      const child = spawn('open', ['-a', 'Google Chrome', '--args', `--profile-directory=${resolvedKey}`, ...(!chromeRunning ? targets : [])], {
+      const child = spawn('open', ['-a', 'Google Chrome', '--args', `--profile-directory=${resolvedKey}`, ...targets], {
         detached: true,
         stdio: 'ignore',
       });
@@ -563,6 +562,16 @@ function normalizeProfileKey(profileKey, profileName, email) {
   if (!profileKey && !profileName && !email) {
     return '';
   }
+
+  // Authoritative fast-path: Pro / Profile 2 / Profile 14 mappings
+  const raw = String(profileKey || '').trim().toLowerCase();
+  if (raw === 'pro' || raw === 'profile 2' || raw === 'profile2') {
+    return 'Profile 2';
+  }
+  if (raw === 'profile 14' || raw === 'profile14' || raw === 'hsu') {
+    return 'Profile 14';
+  }
+
   const chromeDir = path.join(os.homedir(), 'Library', 'Application Support', 'Google', 'Chrome');
   if (profileKey && fs.existsSync(path.join(chromeDir, profileKey))) {
     return profileKey;
@@ -583,13 +592,15 @@ function normalizeProfileKey(profileKey, profileName, email) {
 
   // Known keyword matching for profiles configured in BoltHaven
   const combined = `${profileKey || ''} ${profileName || ''}`.toLowerCase();
-  if (combined.includes('notezinwai') || combined.includes('note zin wai') || combined.includes('zin wai') || combined.includes('pro 2') || combined.includes('profile 2')) {
+  if (combined.includes('notezinwai') || combined.includes('note zin wai') || combined.includes('zin wai') || combined.includes('pro') || combined.includes('profile 2')) {
     const zinMatch = profiles.find((p) => (p.email || '').toLowerCase().includes('notezinwai') || p.profile_key === 'Profile 2');
     if (zinMatch) return zinMatch.profile_key;
+    return 'Profile 2';
   }
   if (combined.includes('hsuyeenandar417') || (combined.includes('hsu') && !combined.includes('yee')) || combined.includes('profile 14') || combined.includes('pro 14')) {
     const hsuMatch = profiles.find((p) => p.profile_key === 'Profile 14' || (p.email || '').toLowerCase().includes('hsuyeenandar417'));
     if (hsuMatch) return hsuMatch.profile_key;
+    return 'Profile 14';
   }
 
   const match = profiles.find(
@@ -1662,10 +1673,14 @@ function mergeTabGroups(scannedGroups, liveGroups) {
     req.on('end', () => {
       try {
         const payload = JSON.parse(body || '{}');
-        const pKey = (payload.profileKey || payload.profile_key || '').trim();
+        const rawPKey = (payload.profileKey || payload.profile_key || '').trim();
+        const pKey = normalizeProfileKey(rawPKey);
+        if (pKey) {
+          lastPollTimeByProfile[pKey] = Date.now();
+        }
         const entry = {
           ...payload,
-          profileKey: pKey,
+          profileKey: pKey || rawPKey,
           paired_at: new Date().toISOString(),
         };
         registeredProfiles.push(entry);
@@ -2600,6 +2615,10 @@ function mergeTabGroups(scannedGroups, liveGroups) {
   if (url.pathname === '/poll-command' && req.method === 'GET') {
     const rawClientKey = url.searchParams.get('profile_key') || '';
     const clientKey = rawClientKey ? normalizeProfileKey(rawClientKey) : '';
+
+    if (clientKey) {
+      lastPollTimeByProfile[clientKey] = Date.now();
+    }
 
     if (pendingAutomationCommands.length > 0) {
       // Find a command targeted for this specific client profile, or untargeted command.
