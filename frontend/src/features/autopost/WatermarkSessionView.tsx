@@ -30,6 +30,8 @@ import {
   DEFAULT_WATERMARK_CONFIG,
   DEFAULT_PRESETS,
   SAMPLE_BADGES,
+  FONT_FAMILY_OPTIONS,
+  FONT_WEIGHT_OPTIONS,
   loadWatermarkPresets,
   saveWatermarkPresets,
   loadActiveWatermarkConfig,
@@ -1245,6 +1247,129 @@ export const WatermarkSessionView: React.FC<WatermarkSessionViewProps> = ({
                     {t.label}
                   </button>
                 ))}
+              </div>
+
+              {/* Typography: Font Style & Weight */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '6px', marginTop: '4px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                  <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>Font Style</span>
+                  <select
+                    value={config.fontFamily || FONT_FAMILY_OPTIONS[0].value}
+                    onChange={(e) => setConfig((p) => ({ ...p, fontFamily: e.target.value }))}
+                    style={{
+                      height: '28px',
+                      padding: '0 6px',
+                      borderRadius: '6px',
+                      border: '1px solid var(--border-color)',
+                      backgroundColor: 'var(--bg-main)',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.75rem',
+                      outline: 'none',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {FONT_FAMILY_OPTIONS.map((f) => (
+                      <option key={f.label} value={f.value} style={{ fontFamily: f.value, color: '#000000' }}>
+                        {f.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                  <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>Weight</span>
+                  <select
+                    value={config.fontWeight || '600'}
+                    onChange={(e) => setConfig((p) => ({ ...p, fontWeight: e.target.value }))}
+                    style={{
+                      height: '28px',
+                      padding: '0 6px',
+                      borderRadius: '6px',
+                      border: '1px solid var(--border-color)',
+                      backgroundColor: 'var(--bg-main)',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.75rem',
+                      outline: 'none',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {FONT_WEIGHT_OPTIONS.map((w) => (
+                      <option key={w.value} value={w.value} style={{ color: '#000000' }}>
+                        {w.label} ({w.value})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Italic and Uppercase Toggles */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <button
+                  type="button"
+                  title="Toggle Italic"
+                  onClick={() =>
+                    setConfig((p) => ({
+                      ...p,
+                      fontStyle: p.fontStyle === 'italic' ? 'normal' : 'italic',
+                    }))
+                  }
+                  style={{
+                    height: '24px',
+                    padding: '0 8px',
+                    borderRadius: '5px',
+                    border: config.fontStyle === 'italic'
+                      ? '1px solid var(--accent-primary)'
+                      : '1px solid var(--border-color)',
+                    backgroundColor: config.fontStyle === 'italic'
+                      ? 'var(--accent-primary-alpha, rgba(56, 189, 248, 0.15))'
+                      : 'var(--bg-secondary)',
+                    color: config.fontStyle === 'italic'
+                      ? 'var(--accent-primary)'
+                      : 'var(--text-secondary)',
+                    fontSize: '0.75rem',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                  }}
+                >
+                  <span style={{ fontStyle: 'italic', fontFamily: 'Georgia, serif', fontWeight: 700 }}>I</span>
+                  <span style={{ fontSize: '0.6875rem' }}>Italic</span>
+                </button>
+
+                <button
+                  type="button"
+                  title="Toggle All Caps"
+                  onClick={() =>
+                    setConfig((p) => ({
+                      ...p,
+                      textTransform: p.textTransform === 'uppercase' ? 'none' : 'uppercase',
+                    }))
+                  }
+                  style={{
+                    height: '24px',
+                    padding: '0 8px',
+                    borderRadius: '5px',
+                    border: config.textTransform === 'uppercase'
+                      ? '1px solid var(--accent-primary)'
+                      : '1px solid var(--border-color)',
+                    backgroundColor: config.textTransform === 'uppercase'
+                      ? 'var(--accent-primary-alpha, rgba(56, 189, 248, 0.15))'
+                      : 'var(--bg-secondary)',
+                    color: config.textTransform === 'uppercase'
+                      ? 'var(--accent-primary)'
+                      : 'var(--text-secondary)',
+                    fontSize: '0.75rem',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    fontWeight: 700,
+                  }}
+                >
+                  <span>AA</span>
+                  <span style={{ fontSize: '0.6875rem', fontWeight: 500 }}>All Caps</span>
+                </button>
               </div>
             </div>
           )}

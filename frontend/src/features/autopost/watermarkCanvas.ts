@@ -197,9 +197,18 @@ export const drawWatermarkOnContext = async (
       resolvedText = resolvedText.replace(new RegExp(`{${key}}`, 'gi'), val);
     });
 
+    if (config.textTransform === 'uppercase') {
+      resolvedText = resolvedText.toUpperCase();
+    }
+
     const scaledFontSize = Math.max(13, Math.round((width / 1000) * (config.fontSize || 24)));
+    const stylePrefix = config.fontStyle && config.fontStyle !== 'normal' ? `${config.fontStyle} ` : '';
+    const weightVal = config.fontWeight || '600';
+    const familyVal = config.fontFamily || '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif';
+    const fontString = `${stylePrefix}${weightVal} ${scaledFontSize}px ${familyVal}`;
+
     ctx.save();
-    ctx.font = `${config.fontWeight || '600'} ${scaledFontSize}px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`;
+    ctx.font = fontString;
     const metrics = ctx.measureText(resolvedText);
     const textWidth = Math.round(metrics.width);
     const textHeight = Math.round(scaledFontSize * 1.25);
@@ -212,7 +221,7 @@ export const drawWatermarkOnContext = async (
         ctx.rotate((rotation * Math.PI) / 180);
       }
       ctx.globalAlpha = opacity;
-      ctx.font = `${config.fontWeight || '600'} ${scaledFontSize}px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`;
+      ctx.font = fontString;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
 

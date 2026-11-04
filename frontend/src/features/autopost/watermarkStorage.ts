@@ -14,6 +14,26 @@ export type WatermarkScope = 'all' | 'body-only' | 'body-and-footer';
 export type WatermarkLayoutMode = 'single' | 'repeat-grid' | 'top-bottom';
 export type WatermarkBorderStyle = 'none' | 'solid-thin-white' | 'solid-dark' | 'luxury-gold' | 'modern-accent';
 
+export const FONT_FAMILY_OPTIONS = [
+  { label: 'Modern Sans', value: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif' },
+  { label: 'Luxury Serif', value: "'Playfair Display', Georgia, Cambria, 'Times New Roman', serif" },
+  { label: 'Elegant Classic', value: "'Cinzel', 'Cormorant Garamond', Garamond, Didot, serif" },
+  { label: 'Clean Geometric', value: "'Montserrat', 'Avenir Next', Avenir, 'Century Gothic', sans-serif" },
+  { label: 'Minimalist Mono', value: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' },
+  { label: 'Bold Impact', value: "'Impact', 'Arial Black', -apple-system, sans-serif" },
+  { label: 'Signature Script', value: "'Great Vibes', 'Caveat', 'Brush Script MT', cursive" },
+];
+
+export const FONT_WEIGHT_OPTIONS = [
+  { label: 'Light', value: '300' },
+  { label: 'Regular', value: '400' },
+  { label: 'Medium', value: '500' },
+  { label: 'SemiBold', value: '600' },
+  { label: 'Bold', value: '700' },
+  { label: 'ExtraBold', value: '800' },
+  { label: 'Black', value: '900' },
+];
+
 export interface WatermarkConfig {
   enabled: boolean;
   type: WatermarkType;
@@ -22,7 +42,10 @@ export interface WatermarkConfig {
   text: string;
   textColor: string;
   fontSize: number; // 16 to 48
-  fontWeight: string; // '500' | '600' | '700'
+  fontWeight: string; // '300' | '400' | '500' | '600' | '700' | '800' | '900'
+  fontFamily?: string;
+  fontStyle?: 'normal' | 'italic';
+  textTransform?: 'none' | 'uppercase';
   opacity: number; // 10 to 100
   scale: number; // 10 to 45 (% of image width)
   position: WatermarkPosition;
@@ -93,6 +116,9 @@ export const DEFAULT_WATERMARK_CONFIG: WatermarkConfig = {
   textColor: '#FFFFFF',
   fontSize: 26,
   fontWeight: '600',
+  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+  fontStyle: 'normal',
+  textTransform: 'none',
   opacity: 50,
   scale: 36,
   position: 'bottom-right',
