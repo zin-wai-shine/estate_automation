@@ -39,6 +39,7 @@ import {
 } from './watermarkStorage';
 import { renderWatermarkedImage } from './watermarkCanvas';
 import type { AutoPostImage } from './autoPostStorage';
+import { Select } from '../../components/ui/Select';
 
 interface WatermarkSessionViewProps {
   images: AutoPostImage[];
@@ -1253,52 +1254,24 @@ export const WatermarkSessionView: React.FC<WatermarkSessionViewProps> = ({
               <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '6px', marginTop: '4px' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
                   <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>Font Style</span>
-                  <select
+                  <Select
+                    options={FONT_FAMILY_OPTIONS}
                     value={config.fontFamily || FONT_FAMILY_OPTIONS[0].value}
-                    onChange={(e) => setConfig((p) => ({ ...p, fontFamily: e.target.value }))}
-                    style={{
-                      height: '28px',
-                      padding: '0 6px',
-                      borderRadius: '6px',
-                      border: '1px solid var(--border-color)',
-                      backgroundColor: 'var(--bg-main)',
-                      color: 'var(--text-primary)',
-                      fontSize: '0.75rem',
-                      outline: 'none',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {FONT_FAMILY_OPTIONS.map((f) => (
-                      <option key={f.label} value={f.value} style={{ fontFamily: f.value, color: '#000000' }}>
-                        {f.label}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(val) => setConfig((p) => ({ ...p, fontFamily: val }))}
+                    height="30px"
+                    isSearchable={false}
+                  />
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
                   <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>Weight</span>
-                  <select
+                  <Select
+                    options={FONT_WEIGHT_OPTIONS}
                     value={config.fontWeight || '600'}
-                    onChange={(e) => setConfig((p) => ({ ...p, fontWeight: e.target.value }))}
-                    style={{
-                      height: '28px',
-                      padding: '0 6px',
-                      borderRadius: '6px',
-                      border: '1px solid var(--border-color)',
-                      backgroundColor: 'var(--bg-main)',
-                      color: 'var(--text-primary)',
-                      fontSize: '0.75rem',
-                      outline: 'none',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {FONT_WEIGHT_OPTIONS.map((w) => (
-                      <option key={w.value} value={w.value} style={{ color: '#000000' }}>
-                        {w.label} ({w.value})
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(val) => setConfig((p) => ({ ...p, fontWeight: val }))}
+                    height="30px"
+                    isSearchable={false}
+                  />
                 </div>
               </div>
 
