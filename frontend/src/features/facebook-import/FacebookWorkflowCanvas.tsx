@@ -3828,64 +3828,154 @@ export const FacebookWorkflowCanvas = forwardRef<
   const [postCardExpanded, setPostCardExpanded] = useState<boolean>(false);
   const [selectedCombineFormatId, setSelectedCombineFormatId] = useState<string>('all');
   const [copiedCombineSuccess, setCopiedCombineSuccess] = useState<boolean>(false);
+  // combineMediaAssets: flat array of {url, label, formatTitle, photoIndex, isEnhanced, tileIndex}
+  // Aggregates ALL watermark/format boxes × ALL available photos (enhanced > raw)
+  interface CombineMediaAssetItem {
+    id: string;
+    url: string;
+    label: string;
+    formatTitle: string;
+    photoIndex: number;
+    tileIndex: number;
+    totalTiles: number;
+    isEnhanced: boolean;
+    formatId: string;
+  }
+  const [combineMediaAssets, setCombineMediaAssets] = useState<CombineMediaAssetItem[]>([]);
+  // Keep combineCropSlices for backward compat (populated from first watermark box, first image)
   const [combineCropSlices, setCombineCropSlices] = useState<FormattedCropSlice[]>([]);
 
   useEffect(() => {
     const watermarkBoxes = (config.aiBoxes || []).filter((b) => isWatermarkAIBox(b) && b.enabled !== false);
     if (watermarkBoxes.length === 0) {
       setCombineCropSlices([]);
+      setCombineMediaAssets([]);
       return;
     }
 
-    const cropBox = watermarkBoxes[0];
     const formats = getSavedCropFormats();
-    const fmt =
-      formats.find((f) => f.id === cropBox.cropFormatId || f.id === cropBox.templateId || f.id === cropBox.watermarkPresetId) ||
-      formats.find((f) => cropBox.title && f.name.toLowerCase().includes(cropBox.title.toLowerCase())) ||
-      formats[0];
-
-    if (!fmt) return;
-
-    let targetImgUrl = '';
-    if (cropBox.imageSource === 'generate') {
-      try {
-        const savedHero = localStorage.getItem('bolthaven_last_hero_image');
-        if (savedHero) {
-          const parsed = JSON.parse(savedHero);
-          if (parsed?.url) targetImgUrl = parsed.url;
-        }
-      } catch (e) { }
-    } else if (cropBox.imageSource === 'enhance') {
-      targetImgUrl = allEnhancedPhotos?.[0] || images?.[0]?.stored_url || images?.[0]?.source_url || '';
-    } else if (cropBox.imageSource === 'get_images' || (cropBox.imageSource as string) === 'get-images') {
-      targetImgUrl = images?.[0]?.stored_url || images?.[0]?.source_url || '';
-    } else {
-      try {
-        const savedHero = localStorage.getItem('bolthaven_last_hero_image');
-        if (savedHero) {
-          const parsed = JSON.parse(savedHero);
-          if (parsed?.url) targetImgUrl = parsed.url;
-        }
-      } catch (e) { }
-      if (!targetImgUrl && images && images.length > 0) {
-        targetImgUrl = allEnhancedPhotos?.[0] || images[0].stored_url || images[0].source_url || '';
+    const enhancedCount = Object.keys(allEnhancedPhotos || {}).length;
+    const photoList = images || [];
+    if (photoList.length === 0 && enhancedCount === 0) {
+      // Try hero image fallback for generate-source boxes
+      const hasGenerate = watermarkBoxes.some((b) => b.imageSource === 'generate');
+      if (!hasGenerate) {
+        setCombineCropSlices([]);
+        setCombineMediaAssets([]);
+        return;
       }
     }
 
-    if (!targetImgUrl) return;
-
     let isCancelled = false;
-    const effectiveFmt = cropBox.watermarkConfig
-      ? { ...fmt, watermarkConfig: { ...(fmt.watermarkConfig || {}), ...cropBox.watermarkConfig } }
-      : fmt;
 
-    formatImageWithCropFormatSlices(targetImgUrl, effectiveFmt)
-      .then((slices) => {
-        if (!isCancelled && slices && slices.length > 0) {
-          setCombineCropSlices(slices);
+    const run = async () => {
+      const allAssets: CombineMediaAssetItem[] = [];
+
+      for (const cropBox of watermarkBoxes) {
+        const fmt =
+          formats.find((f) => f.id === cropBox.cropFormatId || f.id === cropBox.templateId || f.id === cropBox.watermarkPresetId) ||
+          formats.find((f) => cropBox.title && f.name.toLowerCase().includes(cropBox.title.toLowerCase().replace(/^format:\s*/i, ''))) ||
+          formats[0];
+        if (!fmt) continue;
+
+        const effectiveFmt = cropBox.watermarkConfig
+          ? { ...fmt, watermarkConfig: { ...(fmt.watermarkConfig || {}), ...cropBox.watermarkConfig } }
+          : fmt;
+
+        const formatTitle = cropBox.title || fmt.name || 'Format';
+
+        // Build the list of source photo URLs for this box
+        const sourcePhotos: { url: string; photoIndex: number; isEnhanced: boolean }[] = [];
+
+        if (cropBox.imageSource === 'generate') {
+          try {
+            const savedHero = localStorage.getItem('bolthaven_last_hero_image');
+            if (savedHero) {
+              const parsed = JSON.parse(savedHero);
+              if (parsed?.url) sourcePhotos.push({ url: parsed.url, photoIndex: 0, isEnhanced: false });
+            }
+          } catch (e) { }
+        } else if (cropBox.imageSource === 'enhance') {
+          photoList.forEach((img, idx) => {
+            const enhUrl = allEnhancedPhotos?.[idx];
+            const rawUrl = img.stored_url ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`) : img.source_url;
+            sourcePhotos.push({ url: enhUrl || rawUrl || '', photoIndex: idx, isEnhanced: Boolean(enhUrl) });
+          });
+          // If no images array but enhanced photos available
+          if (photoList.length === 0) {
+            Object.entries(allEnhancedPhotos || {}).forEach(([k, url]) => {
+              sourcePhotos.push({ url, photoIndex: Number(k), isEnhanced: true });
+            });
+          }
+        } else if (cropBox.imageSource === 'get_images' || (cropBox.imageSource as string) === 'get-images') {
+          photoList.forEach((img, idx) => {
+            const rawUrl = img.stored_url ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`) : img.source_url;
+            sourcePhotos.push({ url: rawUrl || '', photoIndex: idx, isEnhanced: false });
+          });
+        } else {
+          // Default: prefer enhanced, fallback to raw
+          if (photoList.length > 0) {
+            photoList.forEach((img, idx) => {
+              const enhUrl = allEnhancedPhotos?.[idx];
+              const rawUrl = img.stored_url ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`) : img.source_url;
+              sourcePhotos.push({ url: enhUrl || rawUrl || '', photoIndex: idx, isEnhanced: Boolean(enhUrl) });
+            });
+          } else {
+            // Fallback hero
+            try {
+              const savedHero = localStorage.getItem('bolthaven_last_hero_image');
+              if (savedHero) {
+                const parsed = JSON.parse(savedHero);
+                if (parsed?.url) sourcePhotos.push({ url: parsed.url, photoIndex: 0, isEnhanced: false });
+              }
+            } catch (e) { }
+          }
         }
-      })
-      .catch(() => { });
+
+        // Filter out empty URLs
+        const validPhotos = sourcePhotos.filter((p) => p.url);
+        if (validPhotos.length === 0) continue;
+
+        // Format each source photo through this box's format
+        for (const photo of validPhotos) {
+          if (isCancelled) return;
+          try {
+            const slices = await formatImageWithCropFormatSlices(photo.url, effectiveFmt);
+            if (isCancelled) return;
+            if (slices && slices.length > 0) {
+              slices.forEach((slice) => {
+                allAssets.push({
+                  id: `${cropBox.id}-photo${photo.photoIndex}-tile${slice.tileIndex}`,
+                  url: slice.url,
+                  label: slices.length > 1
+                    ? `Photo #${photo.photoIndex + 1} · ${slice.label || `Tile #${slice.tileIndex}`}`
+                    : `Photo #${photo.photoIndex + 1}`,
+                  formatTitle,
+                  photoIndex: photo.photoIndex,
+                  tileIndex: slice.tileIndex,
+                  totalTiles: slice.totalTiles,
+                  isEnhanced: photo.isEnhanced,
+                  formatId: cropBox.id,
+                });
+              });
+            }
+          } catch (e) { /* skip failed photo */ }
+        }
+      }
+
+      if (!isCancelled) {
+        setCombineMediaAssets(allAssets);
+        // Legacy: populate combineCropSlices from first watermark box / first photo for backward compat
+        const firstBoxAssets = allAssets.filter((a) => a.formatId === watermarkBoxes[0]?.id && a.photoIndex === (allAssets[0]?.photoIndex ?? 0));
+        if (firstBoxAssets.length > 0) {
+          setCombineCropSlices(firstBoxAssets.map((a) => ({ url: a.url, label: a.label, tileIndex: a.tileIndex, totalTiles: a.totalTiles, width: 1080, height: 1350, aspect: '4:5' })));
+        } else {
+          setCombineCropSlices([]);
+        }
+      }
+    };
+
+    run();
 
     return () => {
       isCancelled = true;
@@ -11186,8 +11276,25 @@ export const FacebookWorkflowCanvas = forwardRef<
                                 const hasTextResult = Boolean(textOutput && textOutput.trim().length > 0);
 
                                 // Parent Image Output
-                                const hasImageResult = isImages ? Boolean(images && images.length > 0) : (isWatermark || isCrop) ? Boolean(combineCropSlices.length > 0 || (images && images.length > 0)) : false;
-                                const imageCount = isImages ? (images?.length || 0) : combineCropSlices.length > 0 ? combineCropSlices.length : (images?.length || 0);
+                                // For watermark/crop boxes: count assets from combineMediaAssets for this specific box
+                                const boxAssets = (isWatermark || isCrop) && fromBox
+                                  ? combineMediaAssets.filter((a) => a.formatId === fromBox.id)
+                                  : [];
+                                const enhancedCount = Object.keys(allEnhancedPhotos || {}).length;
+                                const hasImageResult = isImages
+                                  ? Boolean(images && images.length > 0)
+                                  : (isWatermark || isCrop)
+                                  ? Boolean(boxAssets.length > 0 || (images && images.length > 0) || enhancedCount > 0)
+                                  : isBrowser
+                                  ? Boolean(enhancedCount > 0 || (images && images.length > 0))
+                                  : false;
+                                const imageCount = isImages
+                                  ? (images?.length || 0)
+                                  : (isWatermark || isCrop)
+                                  ? (boxAssets.length > 0 ? boxAssets.length : (enhancedCount || images?.length || 0))
+                                  : isBrowser
+                                  ? (enhancedCount || images?.length || 0)
+                                  : 0;
 
                                 // Upstream format preset children connected to this AI Processor node
                                 const isTextAI = fromBox
@@ -11409,7 +11516,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                                         <button
                                           type="button"
                                           onClick={() => {
-                                            if (combineCropSlices.length > 0) {
+                                            if (boxAssets.length > 0) {
+                                              handleOpenLightbox(boxAssets[0].url);
+                                            } else if (combineCropSlices.length > 0) {
                                               handleOpenLightbox(combineCropSlices[0].url);
                                             } else if (images && images.length > 0) {
                                               handleOpenLightbox(0);
@@ -11705,7 +11814,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                           )}
 
                           {/* Merged Media Assets (Photos & Slices Ready) */}
-                          {hasImagesIn && (combineCropSlices.length > 0 || (images && images.length > 0)) && (
+                          {hasImagesIn && (combineMediaAssets.length > 0 || combineCropSlices.length > 0 || (images && images.length > 0)) && (
                             <div
                               style={{
                                 display: 'flex',
@@ -11732,19 +11841,24 @@ export const FacebookWorkflowCanvas = forwardRef<
                                       borderRadius: '4px',
                                     }}
                                   >
-                                    ✓ {combineCropSlices.length > 0
+                                    ✓ {combineMediaAssets.length > 0
+                                      ? `${combineMediaAssets.length} Photos Ready`
+                                      : combineCropSlices.length > 0
                                       ? `${combineCropSlices.length} ${combineCropSlices.length > 1 ? 'Cut Tiles' : 'Photos'} Ready · 1:1`
                                       : `${images.length} Photos Ready`}
                                   </span>
                                 </div>
-                                {combineCropSlices.length > 0 && (
+                                {(combineMediaAssets.length > 0 || combineCropSlices.length > 0) && (
                                   <button
                                     type="button"
                                     onClick={async (e) => {
                                       e.stopPropagation();
-                                      for (let s = 0; s < combineCropSlices.length; s++) {
-                                        await handleDownloadImage(combineCropSlices[s].url, s);
-                                        if (s < combineCropSlices.length - 1) {
+                                      const toDownload = combineMediaAssets.length > 0
+                                        ? combineMediaAssets.map((a) => a.url)
+                                        : combineCropSlices.map((s) => s.url);
+                                      for (let s = 0; s < toDownload.length; s++) {
+                                        await handleDownloadImage(toDownload[s], s);
+                                        if (s < toDownload.length - 1) {
                                           await new Promise((r) => setTimeout(r, 400));
                                         }
                                       }
@@ -11772,7 +11886,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                               <div
                                 style={{
                                   display: 'grid',
-                                  gridTemplateColumns: combineCropSlices.length === 2 ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
+                                  gridTemplateColumns: (combineMediaAssets.length === 2 || combineCropSlices.length === 2) ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
                                   gridAutoRows: 'max-content',
                                   gap: '6px',
                                   maxHeight: '260px',
@@ -11783,7 +11897,103 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
                                 }}
                               >
-                                {combineCropSlices.length > 0
+                                {combineMediaAssets.length > 0
+                                  ? combineMediaAssets.map((asset, idx) => (
+                                    <div
+                                      key={asset.id}
+                                      onClick={() => handleOpenLightbox(asset.url)}
+                                      style={{
+                                        position: 'relative',
+                                        width: '100%',
+                                        paddingTop: '100%',
+                                        borderRadius: '6px',
+                                        overflow: 'hidden',
+                                        backgroundColor: '#000000',
+                                        border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                        cursor: 'pointer',
+                                        transition: 'transform 0.15s ease',
+                                      }}
+                                      title={`Click to view ${asset.label} (${asset.formatTitle}) full size`}
+                                    >
+                                      <div style={{ position: 'absolute', inset: 0 }}>
+                                        <img
+                                          src={asset.url}
+                                          alt={asset.label}
+                                          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                                        />
+                                        {/* 1-Click Download */}
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleDownloadImage(asset.url, idx, e);
+                                          }}
+                                          title={`Download ${asset.label}`}
+                                          aria-label={`Download ${asset.label}`}
+                                          style={{
+                                            position: 'absolute',
+                                            top: '3px',
+                                            left: '3px',
+                                            width: '20px',
+                                            height: '20px',
+                                            borderRadius: '4px',
+                                            backgroundColor: 'rgba(0, 0, 0, 0.65)',
+                                            border: '1px solid rgba(255, 255, 255, 0.25)',
+                                            color: '#FFFFFF',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            cursor: 'pointer',
+                                            zIndex: 3,
+                                            transition: 'background-color 0.15s ease',
+                                          }}
+                                          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#3B82F6'; }}
+                                          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.65)'; }}
+                                        >
+                                          <FiDownload size={10} />
+                                        </button>
+                                        {/* Photo label badge */}
+                                        <div
+                                          style={{
+                                            position: 'absolute',
+                                            bottom: '2px',
+                                            left: '2px',
+                                            fontSize: '0.45rem',
+                                            fontWeight: 700,
+                                            padding: '1px 4px',
+                                            borderRadius: '2px',
+                                            backgroundColor: 'rgba(0,0,0,0.75)',
+                                            color: '#FFFFFF',
+                                            maxWidth: '80%',
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis',
+                                            whiteSpace: 'nowrap',
+                                          }}
+                                        >
+                                          {asset.label}
+                                        </div>
+                                        {/* Enhanced badge */}
+                                        {asset.isEnhanced && (
+                                          <div
+                                            style={{
+                                              position: 'absolute',
+                                              top: '2px',
+                                              right: '2px',
+                                              fontSize: '0.4rem',
+                                              fontWeight: 700,
+                                              padding: '1px 4px',
+                                              borderRadius: '2px',
+                                              backgroundColor: 'rgba(16, 185, 129, 0.9)',
+                                              color: '#FFFFFF',
+                                            }}
+                                          >
+                                            ✦ ENH
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))
+                                  : combineCropSlices.length > 0
                                   ? combineCropSlices.map((slice, idx) => (
                                     <div
                                       key={`combine-slice-${slice.tileIndex}-${idx}`}
@@ -11807,7 +12017,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                                           alt={slice.label}
                                           style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                                         />
-                                        {/* Direct 1-Click Tile Download Button */}
                                         <button
                                           type="button"
                                           onClick={(e) => {
@@ -11833,12 +12042,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                                             zIndex: 3,
                                             transition: 'background-color 0.15s ease',
                                           }}
-                                          onMouseEnter={(e) => {
-                                            e.currentTarget.style.backgroundColor = '#3B82F6';
-                                          }}
-                                          onMouseLeave={(e) => {
-                                            e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.65)';
-                                          }}
+                                          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#3B82F6'; }}
+                                          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.65)'; }}
                                         >
                                           <FiDownload size={10} />
                                         </button>
@@ -11932,12 +12137,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                                               zIndex: 3,
                                               transition: 'background-color 0.15s ease',
                                             }}
-                                            onMouseEnter={(e) => {
-                                              e.currentTarget.style.backgroundColor = '#3B82F6';
-                                            }}
-                                            onMouseLeave={(e) => {
-                                              e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.65)';
-                                            }}
+                                            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#3B82F6'; }}
+                                            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.65)'; }}
                                           >
                                             <FiDownload size={10} />
                                           </button>

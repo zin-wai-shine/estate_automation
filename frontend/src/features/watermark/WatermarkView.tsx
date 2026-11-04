@@ -39,6 +39,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import JSZip from 'jszip';
 import { useTheme } from '../../context/ThemeContext';
 import { SwitchToggle } from '../autopost/SwitchToggle';
+import { Select } from '../../components/ui/Select';
 import {
   type WatermarkConfig,
   type WatermarkLayoutMode,
