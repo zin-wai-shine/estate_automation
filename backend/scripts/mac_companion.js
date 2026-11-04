@@ -2574,10 +2574,13 @@ function mergeTabGroups(scannedGroups, liveGroups) {
 
   // ── Current Target Profile Query (called by extension to verify identity) ─
   if (url.pathname === '/current-profile' && req.method === 'GET') {
+    // Return the most recently focused profile key — but DON'T fall back to a hardcoded profile.
+    // Extensions should detect their own identity via email or chrome.storage; this is a last resort.
+    const detectedKey = lastFocusTabGroupKey ? lastFocusTabGroupKey.split('-')[0].trim() : '';
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({
       status: 'ok',
-      profileKey: lastFocusTabGroupKey?.split('-')?.[0] || 'Profile 14',
+      profileKey: detectedKey || '', // Empty string — let the extension handle the unidentified case
     }));
   }
 
@@ -2587,20 +2590,29 @@ function mergeTabGroups(scannedGroups, liveGroups) {
     const clientKey = rawClientKey ? normalizeProfileKey(rawClientKey) : '';
 
     if (pendingAutomationCommands.length > 0) {
-      // Find a command targeted for this specific client profile, or untargeted command
+      // Find a command targeted for this specific client profile, or untargeted command.
+      // START_AUTOMATION: strict profile match only — prevents Profile 1 from running Profile 2's jobs.
+      // All other commands (FOCUS_GROUP, OPEN_URL, etc.): lenient — dispatch by profile if known,
+      // fallback to first available otherwise (safe since they only open/focus tabs, not run jobs).
       let cmdIndex = pendingAutomationCommands.findIndex((c) => {
         if (!c || !c.payload) return true;
         const targetRaw = c.payload.profileKey || c.payload.profile_key || '';
         if (!targetRaw) return true; // untargeted commands go to anyone
         const targetKey = normalizeProfileKey(targetRaw);
-        // If clientKey is known, only match commands for this exact profile
-        if (clientKey) return targetKey === clientKey;
-        // If clientKey is unknown (extension not yet identified), only dispatch untargeted commands
-        return false;
+        if (clientKey) return targetKey === clientKey; // exact profile match if client is identified
+        // For unidentified extension: allow non-START_AUTOMATION commands (tab focus etc.) through,
+        // but block START_AUTOMATION so it waits for the right profile extension to claim it.
+        return c.action !== 'START_AUTOMATION';
       });
 
-      // NOTE: No fallback dispatching — a profile-targeted command must only go to the matching profile.
-      // This prevents Profile 1's extension from stealing Profile 2's START_AUTOMATION command.
+      // For START_AUTOMATION specifically: never fall back to a wrong profile.
+      // For all other commands: if no profile match found, dispatch first available.
+      if (cmdIndex === -1 && pendingAutomationCommands.length > 0) {
+        const firstNonAutomation = pendingAutomationCommands.findIndex((c) => c.action !== 'START_AUTOMATION');
+        if (firstNonAutomation !== -1) {
+          cmdIndex = firstNonAutomation;
+        }
+      }
 
       if (cmdIndex !== -1) {
         const cmd = pendingAutomationCommands.splice(cmdIndex, 1)[0];

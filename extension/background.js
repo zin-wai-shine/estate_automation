@@ -1557,8 +1557,9 @@ let isPollingCompanion = false;
 let pollCycleCount = 0;
 
 async function getExtensionProfile() {
-  const stored = await chrome.storage.local.get(['profileName', 'profileKey', 'email']);
-  if (stored.profileKey) {
+  const stored = await chrome.storage.local.get(['profileName', 'profileKey', 'email', 'profileKeyVerified']);
+  // Only trust stored profileKey if it was verified via email (not guessed from companion)
+  if (stored.profileKey && stored.profileKeyVerified) {
     return { profileName: stored.profileName || stored.profileKey, profileKey: stored.profileKey };
   }
   try {
@@ -1572,22 +1573,24 @@ async function getExtensionProfile() {
     if (userInfo && userInfo.email) {
       const email = userInfo.email.toLowerCase().trim();
       if (email.includes('hsuyeenandar417') || email.includes('hsu')) {
-        await chrome.storage.local.set({ profileName: 'Hsu (Profile 14)', profileKey: 'Profile 14', email });
+        await chrome.storage.local.set({ profileName: 'Hsu (Profile 14)', profileKey: 'Profile 14', email, profileKeyVerified: true });
         return { profileName: 'Hsu', profileKey: 'Profile 14' };
       } else if (email.includes('notezinwai') || email.includes('zin')) {
-        await chrome.storage.local.set({ profileName: 'Note Zin Wai (Profile 2)', profileKey: 'Profile 2', email });
+        await chrome.storage.local.set({ profileName: 'Note Zin Wai (Profile 2)', profileKey: 'Profile 2', email, profileKeyVerified: true });
         return { profileName: 'Note Zin Wai', profileKey: 'Profile 2' };
       }
     }
   } catch (e) {}
 
-  // Check companion's current active profile focus
+  // Check companion's current active profile focus — do NOT store this value
+  // because it's unreliable when two profiles are open simultaneously.
+  // Only email-based detection (above) should be persisted to storage.
   try {
     const resp = await fetch(`${COMPANION_URL}/current-profile`, { signal: AbortSignal.timeout(1200) });
     if (resp.ok) {
       const info = await resp.json();
       if (info && info.profileKey) {
-        await chrome.storage.local.set({ profileName: info.profileKey, profileKey: info.profileKey });
+        // Return for this poll cycle only — do not persist to storage
         return { profileName: info.profileKey, profileKey: info.profileKey };
       }
     }
@@ -1628,9 +1631,16 @@ async function pollCompanion() {
       console.log('[BOLTHAVEN EXT] Received command from companion:', action, payload?.groupName || '');
       if (payload && (payload.profileKey || payload.profile_key)) {
         const pk = payload.profileKey || payload.profile_key;
-        chrome.storage.local.set({
-          profileKey: pk,
-          profileName: payload.profileName || payload.profile_name || pk,
+        // Only update stored profile from commands if no email-verified profile exists yet.
+        // This prevents a cross-profile command (e.g., FOCUS_GROUP for Profile 2 arriving at Profile 14's extension)
+        // from overwriting the already-known profile identity.
+        chrome.storage.local.get(['profileKeyVerified']).then((s) => {
+          if (!s.profileKeyVerified) {
+            chrome.storage.local.set({
+              profileKey: pk,
+              profileName: payload.profileName || payload.profile_name || pk,
+            }).catch(() => {});
+          }
         }).catch(() => {});
       }
       if (action === 'RELOAD_EXTENSION') {
