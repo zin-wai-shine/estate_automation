@@ -1,5 +1,5 @@
 {
-  "timestamp": 1793747686930,
+  "timestamp": 1793751216343,
   "workflow_formats": [
     {
       "config": {
@@ -734,7 +734,6 @@
             "referenceImageMode": "custom_upload",
             "selectedImageIndices": [
               1,
-              1,
               2,
               3,
               4,
@@ -757,8 +756,7 @@
               21,
               22,
               23,
-              24,
-              26
+              25
             ],
             "subtitle": "1080×1350 (4:5)",
             "targetHeight": 1350,
@@ -1172,8 +1170,8 @@
           "enabled": true,
           "preserveOrder": true,
           "watermark": false,
-          "x": 300,
-          "y": 485
+          "x": 298.73417721518985,
+          "y": 483.73417721518985
         },
         "outputNode": {
           "enabled": false,
@@ -1183,8 +1181,8 @@
           "y": 365
         },
         "panOffset": {
-          "x": 241,
-          "y": 81
+          "x": 293,
+          "y": 134
         },
         "trigger": {
           "autoClassifyProperty": true,
@@ -1202,14 +1200,14 @@
           "x": 80,
           "y": 365
         },
-        "zoom": 0.8
+        "zoom": 0.72
       },
       "createdAt": 1792648980268,
       "description": "Custom Facebook import extraction with dynamic AI prompt generator",
       "id": "format-1792648980268",
       "isPinned": true,
       "name": "Download FB Post",
-      "updatedAt": 1793747686433
+      "updatedAt": 1793751215803
     },
     {
       "config": {

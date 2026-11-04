@@ -35,7 +35,7 @@ import { createBatchImageQueue, startImageQueue, focusBrowserTabGroup, openBrows
 import { resolvePromptForBrowserNode, getPersistedPromptKey } from '../browser-processing/browserPromptUtils';
 import { getPersistedReferenceImage, loadPersistedReferenceImageAsync } from '../browser-processing/referenceImageStorage';
 import { extractCleanCondoNameFromAiText } from '../browser-processing/FBHeroSettingsSidebox';
-import { getSavedCropFormats, formatImageWithCropFormat, type CropStudioFormat, getEffectiveStudioImages } from '../watermark/cropFormats';
+import { getSavedCropFormats, formatImageWithCropFormat, type CropStudioFormat } from '../watermark/cropFormats';
 import { loadActiveWatermarkConfig } from '../autopost/watermarkStorage';
 import {
   FiGitBranch,
@@ -4384,7 +4384,7 @@ export const CreateWorkflowView: React.FC = () => {
                     filename: img.filename || `Photo #${idx + 1}`,
                     status: 'verified',
                   }))
-                : getEffectiveStudioImages()
+                : []
             }
             watermarkedPhotos={watermarkedPhotos}
             enhancedPhotos={enhancedPhotos}

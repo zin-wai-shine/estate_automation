@@ -9,7 +9,6 @@ import {
   formatImageWithCropFormatSlices,
   type FormattedCropSlice,
   syncCropFormatToWorkflowConfig,
-  getEffectiveStudioImages,
 } from '../watermark/cropFormats';
 import type { DynamicAIBoxConfig, WorkflowWireConnection } from './FacebookWorkflowCanvas';
 import { Select, type SelectOption } from '../../components/ui/Select';
@@ -130,10 +129,10 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     (box.imageSource as any) || 'get_images'
   );
 
-  // Fallback effective images from Studio storage or sample photos if images prop is empty
+  // Effective images extracted from workflow run
   const effectiveImageList = useMemo(() => {
     if (images && images.length > 0) return images;
-    return getEffectiveStudioImages();
+    return [];
   }, [images]);
 
   // Dynamically resolve Hero / Generator node title from workflow boxes
