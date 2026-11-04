@@ -52,7 +52,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
   watermarkedPhotos,
   enhancedPhotos,
   heroImage,
-  onOpenLightbox,
+  onOpenLightbox: _onOpenLightbox,
   workflowBoxes,
   connections: _connections,
   listingCode,
@@ -1077,11 +1077,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
                   key={`crop-preview-${item.id}`}
                   onClick={() => {
                     setSelectedPhotoIndex(idx);
-                    if (onOpenLightbox) {
-                      onOpenLightbox(idx);
-                    } else {
-                      setLightboxIndex(idx);
-                    }
+                    setLightboxIndex(idx);
                   }}
                   style={{
                     position: 'relative',
