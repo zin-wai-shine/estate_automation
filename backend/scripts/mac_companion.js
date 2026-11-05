@@ -1347,23 +1347,51 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/condo-images') {
     const handleCondoRequest = (condoName, customBaseDir, customFolderPath) => {
       try {
-        const baseDir = (customBaseDir && fs.existsSync(customBaseDir)) ? customBaseDir : CONDO_BASE_DIR;
+        let baseDir = (customBaseDir && fs.existsSync(customBaseDir)) ? customBaseDir : CONDO_BASE_DIR;
         let folderPath = '';
         let matchedDir = '';
 
         if (customFolderPath && fs.existsSync(customFolderPath)) {
           folderPath = customFolderPath;
           matchedDir = path.basename(customFolderPath);
+        } else if (
+          customBaseDir &&
+          fs.existsSync(customBaseDir) &&
+          (
+            extractCondoImages123(customBaseDir).length > 0 ||
+            (condoName && normalizeCondoName(path.basename(customBaseDir)) === normalizeCondoName(condoName))
+          )
+        ) {
+          // customBaseDir is itself the matched condo folder
+          folderPath = customBaseDir;
+          matchedDir = path.basename(customBaseDir);
+          baseDir = path.dirname(customBaseDir);
         } else if (condoName && baseDir && fs.existsSync(path.join(baseDir, condoName))) {
           matchedDir = condoName;
           folderPath = path.join(baseDir, condoName);
         } else {
-          if (!fs.existsSync(baseDir)) {
-            res.writeHead(404, { 'Content-Type': 'application/json' });
-            return res.end(JSON.stringify({ status: 'error', message: `Condo directory not found: ${baseDir}`, base_dir: baseDir }));
+          // 1. Try search in baseDir
+          if (fs.existsSync(baseDir)) {
+            matchedDir = findCondoDirectory(condoName, baseDir);
+          }
+          // 2. If not found and baseDir was a subfolder, try parent
+          if (!matchedDir && baseDir && baseDir !== CONDO_BASE_DIR) {
+            const parentDir = path.dirname(baseDir);
+            if (fs.existsSync(parentDir)) {
+              matchedDir = findCondoDirectory(condoName, parentDir);
+              if (matchedDir) {
+                baseDir = parentDir;
+              }
+            }
+          }
+          // 3. Fallback to default CONDO_BASE_DIR
+          if (!matchedDir && fs.existsSync(CONDO_BASE_DIR)) {
+            matchedDir = findCondoDirectory(condoName, CONDO_BASE_DIR);
+            if (matchedDir) {
+              baseDir = CONDO_BASE_DIR;
+            }
           }
 
-          matchedDir = findCondoDirectory(condoName, baseDir);
           if (!matchedDir) {
             res.writeHead(404, { 'Content-Type': 'application/json' });
             return res.end(JSON.stringify({
@@ -1446,7 +1474,18 @@ const server = http.createServer(async (req, res) => {
   // Preview all indexed condo directories
   if ((url.pathname === '/scan-condos' || url.pathname === '/condo-folders') && (req.method === 'GET' || req.method === 'POST')) {
     const customBase = url.searchParams.get('base_dir') || url.searchParams.get('target_folder') || '';
-    const baseDir = (customBase && fs.existsSync(customBase)) ? customBase : CONDO_BASE_DIR;
+    let baseDir = (customBase && fs.existsSync(customBase)) ? customBase : CONDO_BASE_DIR;
+    if (fs.existsSync(baseDir)) {
+      const subdirs = fs.readdirSync(baseDir, { withFileTypes: true }).filter((d) => d.isDirectory());
+      if (subdirs.length === 0) {
+        const parentDir = path.dirname(baseDir);
+        if (fs.existsSync(parentDir) && fs.readdirSync(parentDir, { withFileTypes: true }).some((d) => d.isDirectory())) {
+          baseDir = parentDir;
+        } else if (fs.existsSync(CONDO_BASE_DIR)) {
+          baseDir = CONDO_BASE_DIR;
+        }
+      }
+    }
     if (!fs.existsSync(baseDir)) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify({ status: 'success', total_condos: 0, folders: [], base_dir: baseDir }));
@@ -2367,15 +2406,45 @@ function mergeTabGroups(scannedGroups, liveGroups) {
           ? payload.condo_images
           : [];
         let matchedDir = payload.matched_folder || '';
-        if (condoImages.length === 0 && useCondoImgs && condoName && fs.existsSync(baseDir)) {
-          matchedDir = findCondoDirectory(condoName, baseDir);
-          if (matchedDir) {
-            const folderPath = path.join(baseDir, matchedDir);
-            condoImages = extractCondoImages123(folderPath).map((img) => ({
+        if (condoImages.length === 0 && useCondoImgs && condoName) {
+          if (
+            customBase &&
+            fs.existsSync(customBase) &&
+            (
+              extractCondoImages123(customBase).length > 0 ||
+              normalizeCondoName(path.basename(customBase)) === normalizeCondoName(condoName)
+            )
+          ) {
+            matchedDir = path.basename(customBase);
+            condoImages = extractCondoImages123(customBase).map((img) => ({
               index: img.index,
               filename: img.filename,
               data_url: img.data_url,
             }));
+          } else {
+            let activeBase = (customBase && fs.existsSync(customBase)) ? customBase : CONDO_BASE_DIR;
+            if (fs.existsSync(activeBase)) {
+              matchedDir = findCondoDirectory(condoName, activeBase);
+            }
+            if (!matchedDir && activeBase !== CONDO_BASE_DIR) {
+              const parentDir = path.dirname(activeBase);
+              if (fs.existsSync(parentDir)) {
+                matchedDir = findCondoDirectory(condoName, parentDir);
+                if (matchedDir) activeBase = parentDir;
+              }
+            }
+            if (!matchedDir && fs.existsSync(CONDO_BASE_DIR)) {
+              matchedDir = findCondoDirectory(condoName, CONDO_BASE_DIR);
+              if (matchedDir) activeBase = CONDO_BASE_DIR;
+            }
+            if (matchedDir) {
+              const folderPath = path.join(activeBase, matchedDir);
+              condoImages = extractCondoImages123(folderPath).map((img) => ({
+                index: img.index,
+                filename: img.filename,
+                data_url: img.data_url,
+              }));
+            }
           }
         }
 

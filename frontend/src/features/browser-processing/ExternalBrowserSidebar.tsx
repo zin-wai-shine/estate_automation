@@ -451,7 +451,11 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   // Current 3 condo slots (array of length 3, each item is image object or null)
   const condoSlots = useMemo(() => {
     const slots: any[] = [null, null, null];
-    const currentImgs = matchedCondoInfo?.images || [];
+    const currentImgs = (matchedCondoInfo?.images && matchedCondoInfo.images.length > 0)
+      ? matchedCondoInfo.images
+      : (Array.isArray(boxConfig.condoImages) && boxConfig.condoImages.length > 0)
+      ? boxConfig.condoImages
+      : [];
     currentImgs.forEach((img: any, i: number) => {
       const targetIdx =
         typeof img.index === 'number' && img.index >= 1 && img.index <= 3
@@ -472,7 +476,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       }
     });
     return slots;
-  }, [matchedCondoInfo?.images]);
+  }, [matchedCondoInfo?.images, boxConfig.condoImages]);
 
   const selectedCondoCount = condoSlots.filter(Boolean).length;
 
@@ -761,8 +765,11 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
 
   // Scan condo directory from local Mac companion (Strictly Read-Only!)
   const handleScanCondo = async (queryToSearch?: string, folderToUse?: string) => {
-    const q = queryToSearch !== undefined ? queryToSearch : condoSearchQuery;
-    const baseDir = folderToUse !== undefined ? folderToUse : (boxConfig.targetFolder || localStorage.getItem('bolthaven_condo_target_folder') || '');
+    const q = (queryToSearch !== undefined ? queryToSearch : condoSearchQuery)?.trim();
+    let baseDir = folderToUse !== undefined ? folderToUse : (boxConfig.targetFolder || localStorage.getItem('bolthaven_condo_target_folder') || '');
+    if (baseDir && baseDir.includes('/Condo Building/') && !baseDir.endsWith('/Condo Building')) {
+      baseDir = baseDir.substring(0, baseDir.indexOf('/Condo Building') + '/Condo Building'.length);
+    }
     if (!q) return;
     setIsScanningCondo(true);
     try {
@@ -774,9 +781,10 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
         setMatchedCondoInfo(data);
         updateMultiConfig({
           browserCondoName: q,
-          targetFolder: baseDir,
+          targetFolder: data.base_dir || baseDir,
           browserMatchedFolder: data.matched_folder,
           browserCondoImagesCount: data.images_found,
+          condoImages: data.images || [],
         });
       } else {
         setMatchedCondoInfo(null);
@@ -878,7 +886,11 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   };
 
   useEffect(() => {
-    const folder = boxConfig.targetFolder || localStorage.getItem('bolthaven_condo_target_folder') || '';
+    let folder = boxConfig.targetFolder || localStorage.getItem('bolthaven_condo_target_folder') || '';
+    if (folder && folder.includes('/Condo Building/') && !folder.endsWith('/Condo Building')) {
+      folder = folder.substring(0, folder.indexOf('/Condo Building') + '/Condo Building'.length);
+      localStorage.setItem('bolthaven_condo_target_folder', folder);
+    }
     fetchCondoFolderList(folder);
     const q =
       aiExtractedCondoName ||

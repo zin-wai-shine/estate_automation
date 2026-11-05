@@ -420,7 +420,10 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
   // ── Scan Condo Directory from Target Folder ───────────────────────────────
   const scanCondoDirectory = async (q?: string, folder?: string) => {
     const query = (q !== undefined ? q : (aiExtractedCondoName || condoSearchQuery)).trim();
-    const baseDir = folder !== undefined ? folder : targetFolder;
+    let baseDir = folder !== undefined ? folder : targetFolder;
+    if (baseDir && baseDir.includes('/Condo Building/') && !baseDir.endsWith('/Condo Building')) {
+      baseDir = baseDir.substring(0, baseDir.indexOf('/Condo Building') + '/Condo Building'.length);
+    }
     if (!query || query === 'Featured Property Listing') {
       setMatchedCondoInfo(null);
       return;
@@ -437,9 +440,10 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
         updateSettings({
           condoNameAiBoxId: effectiveCondoAiBoxId,
           browserCondoName: query,
-          targetFolder: baseDir,
+          targetFolder: data.base_dir || baseDir,
           browserMatchedFolder: data.matched_folder,
           browserCondoImagesCount: data.images_found,
+          condoImages: data.images || [],
         });
       } else {
         setMatchedCondoInfo(null);
@@ -1100,7 +1104,9 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
                     {[1, 2, 3].map((slotIdx) => {
                       const img =
                         matchedCondoInfo?.images?.find((i: any) => i.index === slotIdx) ||
-                        matchedCondoInfo?.images?.[slotIdx - 1];
+                        matchedCondoInfo?.images?.[slotIdx - 1] ||
+                        boxConfig?.condoImages?.find((i: any) => i.index === slotIdx) ||
+                        boxConfig?.condoImages?.[slotIdx - 1];
                       const imgSrc = img?.data_url || img?.dataUrl;
                       return (
                         <div
