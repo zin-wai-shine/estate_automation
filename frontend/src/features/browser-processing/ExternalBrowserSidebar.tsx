@@ -447,6 +447,8 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   const [twoStageMessage, setTwoStageMessage] = useState<string | null>(null);
   const [isReloadingCondoName, setIsReloadingCondoName] = useState<boolean>(false);
   const [activeCondoSlot, setActiveCondoSlot] = useState<number | null>(null);
+  const lastScannedKeyRef = useRef<string>('');
+  const isScanningRef = useRef<boolean>(false);
 
   // Current 3 condo slots (array of length 3, each item is image object or null)
   const condoSlots = useMemo(() => {
@@ -602,6 +604,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
         }
       }
       if (extractedName && extractedName !== 'NOT_FOUND') {
+        lastScannedKeyRef.current = '';
         setCondoSearchQuery(extractedName);
         updateMultiConfig({
           browserCondoName: extractedName,
@@ -614,14 +617,6 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       setIsReloadingCondoName(false);
     }
   };
-
-  useEffect(() => {
-    if (aiExtractedCondoName && aiExtractedCondoName !== condoSearchQuery) {
-      setCondoSearchQuery(aiExtractedCondoName);
-      updateMultiConfig({ browserCondoName: aiExtractedCondoName });
-      handleScanCondo(aiExtractedCondoName);
-    }
-  }, [aiExtractedCondoName]);
 
   const [latestHeroImage, setLatestHeroImage] = useState<{
     url: string;
@@ -770,7 +765,18 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     if (baseDir && baseDir.includes('/Condo Building/') && !baseDir.endsWith('/Condo Building')) {
       baseDir = baseDir.substring(0, baseDir.indexOf('/Condo Building') + '/Condo Building'.length);
     }
-    if (!q) return;
+    if (baseDir.endsWith('/Desktop')) {
+      baseDir = '/Users/zinwaishine/Desktop/Condo Building';
+    }
+    if (!q || isScanningRef.current) return;
+
+    const scanKey = `${q}::${baseDir}`;
+    if (lastScannedKeyRef.current === scanKey && matchedCondoInfo) {
+      return;
+    }
+    lastScannedKeyRef.current = scanKey;
+
+    isScanningRef.current = true;
     setIsScanningCondo(true);
     try {
       const resp = await fetch(
@@ -779,13 +785,18 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       const data = await resp.json();
       if (data && data.status === 'success') {
         setMatchedCondoInfo(data);
-        updateMultiConfig({
-          browserCondoName: q,
-          targetFolder: data.base_dir || baseDir,
-          browserMatchedFolder: data.matched_folder,
-          browserCondoImagesCount: data.images_found,
-          condoImages: data.images || [],
-        });
+        if (
+          boxConfig.browserMatchedFolder !== data.matched_folder ||
+          boxConfig.browserCondoImagesCount !== data.images_found ||
+          boxConfig.browserCondoName !== q
+        ) {
+          updateMultiConfig({
+            browserCondoName: q,
+            browserMatchedFolder: data.matched_folder,
+            browserCondoImagesCount: data.images_found,
+            condoImages: data.images || [],
+          });
+        }
       } else {
         setMatchedCondoInfo(null);
       }
@@ -793,6 +804,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       console.warn('Error querying condo images from companion:', e);
       setMatchedCondoInfo(null);
     } finally {
+      isScanningRef.current = false;
       setIsScanningCondo(false);
     }
   };
@@ -886,27 +898,31 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   };
 
   useEffect(() => {
-    let folder = boxConfig.targetFolder || localStorage.getItem('bolthaven_condo_target_folder') || '';
-    if (folder && folder.includes('/Condo Building/') && !folder.endsWith('/Condo Building')) {
+    let folder = boxConfig.targetFolder || localStorage.getItem('bolthaven_condo_target_folder') || '/Users/zinwaishine/Desktop/Condo Building';
+    if (folder.includes('/Condo Building') && !folder.endsWith('/Condo Building')) {
       folder = folder.substring(0, folder.indexOf('/Condo Building') + '/Condo Building'.length);
+      localStorage.setItem('bolthaven_condo_target_folder', folder);
+    }
+    if (folder.endsWith('/Desktop')) {
+      folder = '/Users/zinwaishine/Desktop/Condo Building';
       localStorage.setItem('bolthaven_condo_target_folder', folder);
     }
     fetchCondoFolderList(folder);
     const q =
       aiExtractedCondoName ||
-      boxConfig.browserCondoName ||
       (propertyContext?.title &&
       propertyContext.title !== 'Featured Property Listing' &&
       propertyContext.title !== 'Facebook Property Post'
         ? propertyContext.title
         : '') ||
+      boxConfig.browserCondoName ||
       condoName ||
       '';
     if (q) {
       setCondoSearchQuery(q);
       handleScanCondo(q, folder);
     }
-  }, [aiExtractedCondoName, propertyContext?.title, boxConfig.browserCondoName, boxConfig.targetFolder]);
+  }, [aiExtractedCondoName, propertyContext?.title, boxConfig.targetFolder]);
 
   // Synchronize state when boxConfig is updated from FBHeroSettingsSidebox
   useEffect(() => {

@@ -1130,6 +1130,16 @@ const server = http.createServer(async (req, res) => {
   // STRICT READ-ONLY: Never alters, renames, writes, or deletes any desktop files!
   const CONDO_BASE_DIR = path.join(os.homedir(), 'Desktop', 'Condo Building');
 
+  const isTopLevelDirectory = (dirPath) => {
+    if (!dirPath) return true;
+    const p = path.resolve(dirPath);
+    const home = path.resolve(os.homedir());
+    const desktop = path.resolve(os.homedir(), 'Desktop');
+    const condoBase = path.resolve(CONDO_BASE_DIR);
+    const baseName = path.basename(p).toLowerCase();
+    return p === home || p === desktop || p === condoBase || baseName === 'desktop' || baseName === 'condo building';
+  };
+
   function normalizeCondoName(str) {
     if (!str) return '';
     return String(str)
@@ -1160,10 +1170,13 @@ const server = http.createServer(async (req, res) => {
   }
 
   function findCondoDirectory(query, customBaseDir) {
-    const baseDir = (customBaseDir && fs.existsSync(customBaseDir)) ? customBaseDir : CONDO_BASE_DIR;
+    let baseDir = (customBaseDir && fs.existsSync(customBaseDir)) ? customBaseDir : CONDO_BASE_DIR;
+    if (isTopLevelDirectory(baseDir) && path.basename(baseDir).toLowerCase() === 'desktop') {
+      baseDir = CONDO_BASE_DIR;
+    }
     if (!fs.existsSync(baseDir)) return null;
     const dirs = fs.readdirSync(baseDir, { withFileTypes: true })
-      .filter((d) => d.isDirectory())
+      .filter((d) => d.isDirectory() && !d.name.startsWith('.') && d.name.toLowerCase() !== 'desktop' && d.name.toLowerCase() !== 'condo building')
       .map((d) => d.name);
 
     const rawTrimmed = String(query || '').trim();
@@ -1227,9 +1240,13 @@ const server = http.createServer(async (req, res) => {
   }
 
   function extractCondoImages123(folderPath) {
+    if (!folderPath || !fs.existsSync(folderPath) || isTopLevelDirectory(folderPath)) {
+      return [];
+    }
     const entries = fs.readdirSync(folderPath, { withFileTypes: true });
+    const allowedSubDirNames = new Set(['watermark', 'watermarked', 'crop', 'cropped', 'photos', 'hero', 'edit', 'edited']);
     const subDirs = entries
-      .filter((d) => d.isDirectory() && !d.name.startsWith('.'))
+      .filter((d) => d.isDirectory() && !d.name.startsWith('.') && allowedSubDirNames.has(d.name.toLowerCase()))
       .map((d) => path.join(folderPath, d.name));
 
     const toImageEntry = (filePath, filename, num) => {
@@ -1347,60 +1364,57 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/condo-images') {
     const handleCondoRequest = (condoName, customBaseDir, customFolderPath) => {
       try {
-        let baseDir = (customBaseDir && fs.existsSync(customBaseDir)) ? customBaseDir : CONDO_BASE_DIR;
+        let baseDir = CONDO_BASE_DIR;
+        if (customBaseDir && fs.existsSync(customBaseDir)) {
+          const customBaseResolved = path.resolve(customBaseDir);
+          const baseName = path.basename(customBaseResolved).toLowerCase();
+          if (baseName === 'condo building') {
+            baseDir = customBaseResolved;
+          } else if (baseName === 'desktop') {
+            baseDir = CONDO_BASE_DIR;
+          } else if (path.dirname(customBaseResolved).toLowerCase().endsWith('condo building')) {
+            baseDir = path.dirname(customBaseResolved);
+          } else if (!isTopLevelDirectory(customBaseResolved)) {
+            baseDir = customBaseResolved;
+          }
+        }
+
         let folderPath = '';
         let matchedDir = '';
 
-        if (customFolderPath && fs.existsSync(customFolderPath)) {
+        if (customFolderPath && fs.existsSync(customFolderPath) && !isTopLevelDirectory(customFolderPath)) {
           folderPath = customFolderPath;
           matchedDir = path.basename(customFolderPath);
         } else if (
           customBaseDir &&
           fs.existsSync(customBaseDir) &&
-          (
-            extractCondoImages123(customBaseDir).length > 0 ||
-            (condoName && normalizeCondoName(path.basename(customBaseDir)) === normalizeCondoName(condoName))
-          )
+          !isTopLevelDirectory(customBaseDir) &&
+          condoName &&
+          normalizeCondoName(path.basename(customBaseDir)) === normalizeCondoName(condoName)
         ) {
           // customBaseDir is itself the matched condo folder
           folderPath = customBaseDir;
           matchedDir = path.basename(customBaseDir);
-          baseDir = path.dirname(customBaseDir);
         } else if (condoName && baseDir && fs.existsSync(path.join(baseDir, condoName))) {
           matchedDir = condoName;
           folderPath = path.join(baseDir, condoName);
         } else {
-          // 1. Try search in baseDir
-          if (fs.existsSync(baseDir)) {
-            matchedDir = findCondoDirectory(condoName, baseDir);
-          }
-          // 2. If not found and baseDir was a subfolder, try parent
-          if (!matchedDir && baseDir && baseDir !== CONDO_BASE_DIR) {
-            const parentDir = path.dirname(baseDir);
-            if (fs.existsSync(parentDir)) {
-              matchedDir = findCondoDirectory(condoName, parentDir);
-              if (matchedDir) {
-                baseDir = parentDir;
-              }
-            }
-          }
-          // 3. Fallback to default CONDO_BASE_DIR
-          if (!matchedDir && fs.existsSync(CONDO_BASE_DIR)) {
+          matchedDir = findCondoDirectory(condoName, baseDir);
+          if (!matchedDir && baseDir !== CONDO_BASE_DIR) {
             matchedDir = findCondoDirectory(condoName, CONDO_BASE_DIR);
-            if (matchedDir) {
-              baseDir = CONDO_BASE_DIR;
-            }
           }
+          if (matchedDir) {
+            folderPath = path.join(baseDir, matchedDir);
+          }
+        }
 
-          if (!matchedDir) {
-            res.writeHead(404, { 'Content-Type': 'application/json' });
-            return res.end(JSON.stringify({
-              status: 'error',
-              message: `No matching condo directory found for "${condoName}" in ${baseDir}`,
-              base_dir: baseDir,
-            }));
-          }
-          folderPath = path.join(baseDir, matchedDir);
+        if (!matchedDir || !folderPath || isTopLevelDirectory(folderPath)) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({
+            status: 'error',
+            message: `No matching condo directory found for "${condoName}" in ${baseDir}`,
+            base_dir: CONDO_BASE_DIR,
+          }));
         }
 
         const images = extractCondoImages123(folderPath);
@@ -1435,7 +1449,7 @@ const server = http.createServer(async (req, res) => {
           condo_query: condoName || matchedDir,
           matched_folder: matchedDir,
           folder_path: folderPath,
-          base_dir: baseDir,
+          base_dir: CONDO_BASE_DIR,
           images_found: images.length,
           images: images,
           available_images: availableImages,
@@ -1474,31 +1488,31 @@ const server = http.createServer(async (req, res) => {
   // Preview all indexed condo directories
   if ((url.pathname === '/scan-condos' || url.pathname === '/condo-folders') && (req.method === 'GET' || req.method === 'POST')) {
     const customBase = url.searchParams.get('base_dir') || url.searchParams.get('target_folder') || '';
-    let baseDir = (customBase && fs.existsSync(customBase)) ? customBase : CONDO_BASE_DIR;
-    if (fs.existsSync(baseDir)) {
-      const subdirs = fs.readdirSync(baseDir, { withFileTypes: true }).filter((d) => d.isDirectory());
-      if (subdirs.length === 0) {
-        const parentDir = path.dirname(baseDir);
-        if (fs.existsSync(parentDir) && fs.readdirSync(parentDir, { withFileTypes: true }).some((d) => d.isDirectory())) {
-          baseDir = parentDir;
-        } else if (fs.existsSync(CONDO_BASE_DIR)) {
-          baseDir = CONDO_BASE_DIR;
-        }
+    let baseDir = CONDO_BASE_DIR;
+    if (customBase && fs.existsSync(customBase)) {
+      const resolved = path.resolve(customBase);
+      const bname = path.basename(resolved).toLowerCase();
+      if (bname === 'condo building') {
+        baseDir = resolved;
+      } else if (bname === 'desktop') {
+        baseDir = CONDO_BASE_DIR;
+      } else if (!isTopLevelDirectory(resolved)) {
+        baseDir = resolved;
       }
     }
     if (!fs.existsSync(baseDir)) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ status: 'success', total_condos: 0, folders: [], base_dir: baseDir }));
+      return res.end(JSON.stringify({ status: 'success', total_condos: 0, folders: [], base_dir: CONDO_BASE_DIR }));
     }
     const dirs = fs.readdirSync(baseDir, { withFileTypes: true })
-      .filter((d) => d.isDirectory())
+      .filter((d) => d.isDirectory() && !d.name.startsWith('.') && d.name.toLowerCase() !== 'desktop')
       .map((d) => d.name);
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({
       status: 'success',
       total_condos: dirs.length,
       folders: dirs,
-      base_dir: baseDir,
+      base_dir: CONDO_BASE_DIR,
     }));
   }
 
@@ -2407,13 +2421,20 @@ function mergeTabGroups(scannedGroups, liveGroups) {
           : [];
         let matchedDir = payload.matched_folder || '';
         if (condoImages.length === 0 && useCondoImgs && condoName) {
+          let activeBase = CONDO_BASE_DIR;
+          if (customBase && fs.existsSync(customBase)) {
+            const resBase = path.resolve(customBase);
+            const bname = path.basename(resBase).toLowerCase();
+            if (bname === 'condo building') activeBase = resBase;
+            else if (bname === 'desktop') activeBase = CONDO_BASE_DIR;
+            else if (!isTopLevelDirectory(resBase)) activeBase = resBase;
+          }
+
           if (
             customBase &&
             fs.existsSync(customBase) &&
-            (
-              extractCondoImages123(customBase).length > 0 ||
-              normalizeCondoName(path.basename(customBase)) === normalizeCondoName(condoName)
-            )
+            !isTopLevelDirectory(customBase) &&
+            normalizeCondoName(path.basename(customBase)) === normalizeCondoName(condoName)
           ) {
             matchedDir = path.basename(customBase);
             condoImages = extractCondoImages123(customBase).map((img) => ({
@@ -2422,28 +2443,19 @@ function mergeTabGroups(scannedGroups, liveGroups) {
               data_url: img.data_url,
             }));
           } else {
-            let activeBase = (customBase && fs.existsSync(customBase)) ? customBase : CONDO_BASE_DIR;
-            if (fs.existsSync(activeBase)) {
-              matchedDir = findCondoDirectory(condoName, activeBase);
-            }
+            matchedDir = findCondoDirectory(condoName, activeBase);
             if (!matchedDir && activeBase !== CONDO_BASE_DIR) {
-              const parentDir = path.dirname(activeBase);
-              if (fs.existsSync(parentDir)) {
-                matchedDir = findCondoDirectory(condoName, parentDir);
-                if (matchedDir) activeBase = parentDir;
-              }
-            }
-            if (!matchedDir && fs.existsSync(CONDO_BASE_DIR)) {
               matchedDir = findCondoDirectory(condoName, CONDO_BASE_DIR);
-              if (matchedDir) activeBase = CONDO_BASE_DIR;
             }
             if (matchedDir) {
               const folderPath = path.join(activeBase, matchedDir);
-              condoImages = extractCondoImages123(folderPath).map((img) => ({
-                index: img.index,
-                filename: img.filename,
-                data_url: img.data_url,
-              }));
+              if (!isTopLevelDirectory(folderPath)) {
+                condoImages = extractCondoImages123(folderPath).map((img) => ({
+                  index: img.index,
+                  filename: img.filename,
+                  data_url: img.data_url,
+                }));
+              }
             }
           }
         }

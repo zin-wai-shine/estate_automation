@@ -219,6 +219,8 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
   const [matchedCondoInfo, setMatchedCondoInfo] = useState<any>(null);
   const [totalIndexedCondos, setTotalIndexedCondos] = useState<number | null>(null);
   const [indexedCondoFolders, setIndexedCondoFolders] = useState<string[]>([]);
+  const lastScannedSettingsKeyRef = useRef<string>('');
+  const isScanningSettingsRef = useRef<boolean>(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -424,11 +426,21 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
     if (baseDir && baseDir.includes('/Condo Building/') && !baseDir.endsWith('/Condo Building')) {
       baseDir = baseDir.substring(0, baseDir.indexOf('/Condo Building') + '/Condo Building'.length);
     }
-    if (!query || query === 'Featured Property Listing') {
-      setMatchedCondoInfo(null);
+    if (baseDir.endsWith('/Desktop')) {
+      baseDir = '/Users/zinwaishine/Desktop/Condo Building';
+    }
+    if (!query || query === 'Featured Property Listing' || isScanningSettingsRef.current) {
+      if (!query || query === 'Featured Property Listing') setMatchedCondoInfo(null);
       return;
     }
 
+    const scanKey = `${query}::${baseDir}`;
+    if (lastScannedSettingsKeyRef.current === scanKey && matchedCondoInfo) {
+      return;
+    }
+    lastScannedSettingsKeyRef.current = scanKey;
+
+    isScanningSettingsRef.current = true;
     setIsScanningFolder(true);
     try {
       const resp = await fetch(
@@ -437,14 +449,19 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
       const data = await resp.json();
       if (data && data.status === 'success') {
         setMatchedCondoInfo(data);
-        updateSettings({
-          condoNameAiBoxId: effectiveCondoAiBoxId,
-          browserCondoName: query,
-          targetFolder: data.base_dir || baseDir,
-          browserMatchedFolder: data.matched_folder,
-          browserCondoImagesCount: data.images_found,
-          condoImages: data.images || [],
-        });
+        if (
+          boxConfig.browserMatchedFolder !== data.matched_folder ||
+          boxConfig.browserCondoImagesCount !== data.images_found ||
+          boxConfig.browserCondoName !== query
+        ) {
+          updateSettings({
+            condoNameAiBoxId: effectiveCondoAiBoxId,
+            browserCondoName: query,
+            browserMatchedFolder: data.matched_folder,
+            browserCondoImagesCount: data.images_found,
+            condoImages: data.images || [],
+          });
+        }
       } else {
         setMatchedCondoInfo(null);
       }
@@ -452,6 +469,7 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
       console.warn('Error querying condo images from companion:', e);
       setMatchedCondoInfo(null);
     } finally {
+      isScanningSettingsRef.current = false;
       setIsScanningFolder(false);
     }
   };
