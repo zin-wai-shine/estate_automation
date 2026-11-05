@@ -1212,9 +1212,18 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
             index: idx,
             url: p.url,
             name: p.label,
+            width: p.width,
+            height: p.height,
           }))}
           title={nodeTitle || 'Crop & Cut'}
-          formatSubtitle={`${currentFormat?.name || 'Crop Preset'} · ${currentFormat?.targetWidth || 1200}×${currentFormat?.targetHeight || 1200} (${currentFormat?.aspect || '1:1'})`}
+          formatSubtitle={(() => {
+            const currentItem = displayPreviewItems[lightboxIndex];
+            const sizeStr = currentItem?.width && currentItem?.height
+              ? `${currentItem.width}×${currentItem.height}`
+              : (currentFormat ? `${currentFormat.targetWidth || 1200}×${currentFormat.targetHeight || 1200}` : '');
+            const aspectStr = currentItem?.aspect || currentFormat?.aspect || '1:1';
+            return `${currentFormat?.name || 'Crop Preset'}${sizeStr ? ` · ${sizeStr}` : ''}${aspectStr ? ` (${aspectStr})` : ''}`;
+          })()}
           listingCode={listingCode}
         />
       )}

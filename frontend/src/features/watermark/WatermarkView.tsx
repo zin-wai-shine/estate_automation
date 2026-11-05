@@ -3771,6 +3771,7 @@ export const WatermarkView: React.FC = () => {
                         pointerEvents: 'none',
                         overflow: 'hidden',
                         zIndex: 10,
+                        containerType: 'inline-size',
                       }}
                     >
                       {/* Image Frame / Border overlay */}
@@ -3823,11 +3824,17 @@ export const WatermarkView: React.FC = () => {
                               previewText = previewText.toUpperCase();
                             }
 
+                            const isMulti = watermarkConfig.layoutMode === 'repeat-grid' || watermarkConfig.layoutMode === 'top-bottom';
+                            const cols = isMulti ? Math.max(1, Math.min(12, watermarkConfig.columns || 6)) : 1;
+                            const textDivisor = isMulti
+                              ? Math.max(3, previewText.length * 0.45 * (cols * 0.4))
+                              : Math.max(3, previewText.length * 0.45);
+
                             return (
                               <span
                                 style={{
                                   color: watermarkConfig.textColor || '#FFFFFF',
-                                  fontSize: `clamp(13px, ${(watermarkConfig.fontSize || 24) * 0.75}px, 32px)`,
+                                  fontSize: `clamp(12px, calc(${scaleVal}cqw / ${textDivisor}), ${isMulti ? '4cqw' : '14cqw'})`,
                                   fontWeight: watermarkConfig.fontWeight || '600',
                                   fontStyle: watermarkConfig.fontStyle || 'normal',
                                   fontFamily: watermarkConfig.fontFamily || '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
@@ -7375,7 +7382,15 @@ export const WatermarkView: React.FC = () => {
                   max="50"
                   step="1"
                   value={watermarkConfig.scale}
-                  onChange={(e) => setWatermarkConfig((p) => ({ ...p, scale: parseInt(e.target.value, 10), enabled: true }))}
+                  onChange={(e) => {
+                    const s = parseInt(e.target.value, 10);
+                    setWatermarkConfig((p) => ({
+                      ...p,
+                      scale: s,
+                      fontSize: Math.round(s * 1.2),
+                      enabled: true,
+                    }));
+                  }}
                   style={{ width: '100%', accentColor: 'var(--accent-primary)', cursor: 'pointer' }}
                 />
               </div>

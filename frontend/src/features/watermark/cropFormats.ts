@@ -705,8 +705,10 @@ export const formatImageWithCropFormatSlices = async (
             ];
           }
 
-          const tileOutW = format.targetWidth || 1200;
-          const tileOutH = format.targetHeight || 1200;
+          // When 'Original' aspect is selected (None preset), preserve native tile dimensions without resizing
+          const isOriginalSize = format.aspect === 'Original' || (!format.targetWidth && !format.targetHeight);
+          const tileOutW = isOriginalSize ? 0 : (format.targetWidth || 1200); // 0 = will use tileRawW per tile
+          const tileOutH = isOriginalSize ? 0 : (format.targetHeight || 1200); // 0 = will use tileRawH per tile
           const slices: FormattedCropSlice[] = [];
 
           for (const tile of tiles) {
@@ -715,21 +717,28 @@ export const formatImageWithCropFormatSlices = async (
             const tileRawW = Math.round(tile.w * naturalW);
             const tileRawH = Math.round(tile.h * naturalH);
 
+            // For Original/None preset: output at native tile size (no crop, no resize, no distortion)
+            const outW = isOriginalSize ? tileRawW : tileOutW;
+            const outH = isOriginalSize ? tileRawH : tileOutH;
+
             const focusPos = format.tileFocusMap?.[tile.id] || tile.focus;
             const focusCoord = FOCUS_COORDS[focusPos] || { x: 0.5, y: 0.5 };
-
-            const targetAspect = tileOutW / (tileOutH || 1);
-            const tileAspect = tileRawW / (tileRawH || 1);
 
             let cropW = tileRawW;
             let cropH = tileRawH;
 
-            if (tileAspect > targetAspect) {
-              cropW = Math.round(tileRawH * targetAspect);
-              cropH = tileRawH;
-            } else {
-              cropW = tileRawW;
-              cropH = Math.round(tileRawW / targetAspect);
+            if (!isOriginalSize) {
+              // Only apply aspect-ratio crop when a target size is set
+              const targetAspect = outW / (outH || 1);
+              const tileAspect = tileRawW / (tileRawH || 1);
+
+              if (tileAspect > targetAspect) {
+                cropW = Math.round(tileRawH * targetAspect);
+                cropH = tileRawH;
+              } else {
+                cropW = tileRawW;
+                cropH = Math.round(tileRawW / targetAspect);
+              }
             }
 
             const maxOffsetX = Math.max(0, tileRawW - cropW);
@@ -741,19 +750,19 @@ export const formatImageWithCropFormatSlices = async (
             const sy = tileRawY + localY;
 
             const canvas = document.createElement('canvas');
-            canvas.width = tileOutW;
-            canvas.height = tileOutH;
+            canvas.width = outW;
+            canvas.height = outH;
             const ctx = canvas.getContext('2d');
             if (!ctx) continue;
 
             ctx.imageSmoothingEnabled = true;
             ctx.imageSmoothingQuality = 'high';
             ctx.fillStyle = '#FFFFFF';
-            ctx.fillRect(0, 0, tileOutW, tileOutH);
-            ctx.drawImage(img, sx, sy, cropW, cropH, 0, 0, tileOutW, tileOutH);
+            ctx.fillRect(0, 0, outW, outH);
+            ctx.drawImage(img, sx, sy, cropW, cropH, 0, 0, outW, outH);
 
             if (format.useWatermarkOnTiles !== false && effectiveWatermark && effectiveWatermark.enabled) {
-              await drawWatermarkOnContext(ctx, tileOutW, tileOutH, effectiveWatermark);
+              await drawWatermarkOnContext(ctx, outW, outH, effectiveWatermark);
             }
 
             slices.push({
@@ -761,8 +770,8 @@ export const formatImageWithCropFormatSlices = async (
               tileIndex: tile.id,
               totalTiles: tiles.length,
               label: tile.label,
-              width: tileOutW,
-              height: tileOutH,
+              width: outW,
+              height: outH,
               aspect: format.aspect || '1:1',
             });
           }

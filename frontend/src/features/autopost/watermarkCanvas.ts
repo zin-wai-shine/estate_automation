@@ -201,10 +201,45 @@ export const drawWatermarkOnContext = async (
       resolvedText = resolvedText.toUpperCase();
     }
 
-    const scaledFontSize = Math.max(13, Math.round((width / 1000) * (config.fontSize || 24)));
     const stylePrefix = config.fontStyle && config.fontStyle !== 'normal' ? `${config.fontStyle} ` : '';
     const weightVal = config.fontWeight || '600';
     const familyVal = config.fontFamily || '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif';
+
+    // Calculate font size using config.scale (% of image width) so text size matches Watermark Studio preview
+    let scaledFontSize: number;
+    const effectiveScale = typeof config.scale === 'number' && config.scale > 0 ? config.scale : undefined;
+
+    if (effectiveScale) {
+      // 1. Measure text width at a reference font size (100px)
+      const refSize = 100;
+      ctx.save();
+      ctx.font = `${stylePrefix}${weightVal} ${refSize}px ${familyVal}`;
+      const refMetrics = ctx.measureText(resolvedText);
+      const refWidth = Math.max(1, refMetrics.width);
+      ctx.restore();
+
+      // 2. Determine target width for text based on scale (% of width)
+      let targetTextW: number;
+      if (layoutMode === 'repeat-grid' || layoutMode === 'top-bottom') {
+        const cols = Math.max(1, Math.min(12, config.columns || 6));
+        const usableW = width * 0.85;
+        targetTextW = (usableW / cols) * (effectiveScale / 35);
+      } else {
+        // Single mark: width is directly proportional to scale%
+        targetTextW = width * (effectiveScale / 100);
+      }
+
+      // 3. Compute font size needed to achieve targetTextW
+      const calculatedFontSize = Math.round((targetTextW / refWidth) * refSize);
+
+      // 4. Bound font size: max 14% of image height, min 14px
+      const maxFontSize = Math.round(height * 0.14);
+      const minFontSize = Math.max(14, Math.round(width * 0.018));
+      scaledFontSize = Math.max(minFontSize, Math.min(maxFontSize, calculatedFontSize));
+    } else {
+      scaledFontSize = Math.max(14, Math.round((width / 1000) * (config.fontSize || 26)));
+    }
+
     const fontString = `${stylePrefix}${weightVal} ${scaledFontSize}px ${familyVal}`;
 
     ctx.save();
