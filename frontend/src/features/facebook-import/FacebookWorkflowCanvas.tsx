@@ -3702,7 +3702,7 @@ export const FacebookWorkflowCanvas = forwardRef<
   const [showPhotoCropSettingsSidebox, setShowPhotoCropSettingsSidebox] = useState<boolean>(false);
   const [showCombineMediaSidebox, setShowCombineMediaSidebox] = useState<boolean>(false);
   const [combineMediaSideboxFormatFilter, setCombineMediaSideboxFormatFilter] = useState<string>('all');
-  const [isHoveringImageStack, setIsHoveringImageStack] = useState<boolean>(false);
+  const [hoveredStackId, setHoveredStackId] = useState<string | null>(null);
   const [isAddingSheetRow, setIsAddingSheetRow] = useState<boolean>(false);
   const [sheetSyncSuccessMessage, setSheetSyncSuccessMessage] = useState<string | null>(null);
   const [sheetSyncErrorMessage, setSheetSyncErrorMessage] = useState<string | null>(null);
@@ -11522,9 +11522,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                         }
                       };
 
-                      // Collect child format presets info for summary
-                      const connectedFormatPresetsSummary: { id: string; title: string; hasResult: boolean; charCount: number }[] = [];
-
                       for (const c of combineInputs) {
                         const fromBox = config.aiBoxes.find((b) => b.id === c.fromNodeId);
                         const fromTitle = c.fromNodeId === 'get-content' ? 'Get Content' : fromBox?.title || c.fromNodeId;
@@ -11537,7 +11534,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                           : false;
 
                         if (isTextAI) {
-                          // Find format presets explicitly connected to this Text AI Box in either direction
                           let childFormatBoxes = config.aiBoxes.filter((b) => {
                             if (!isTextFormatAIBox(b)) return false;
                             if (b.processType === 'image_crop' || b.processType === 'watermark' || b.cropFormatId || b.watermarkPresetId) return false;
@@ -11548,7 +11544,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                             );
                           });
 
-                          // Fallback: if not explicitly wired, grab any unassigned text format presets not wired to another Text AI box
                           if (childFormatBoxes.length === 0) {
                             const otherTextAiIds = new Set(
                               config.aiBoxes
@@ -11572,12 +11567,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                               const chText =
                                 (aiGeneratedOutputs && (aiGeneratedOutputs[chBox.id] || (chBox.templateId && aiGeneratedOutputs[chBox.templateId]))) ||
                                 (chBox.id === config.aiBoxes[0]?.id ? (aiGeneratedCopy || '') : '');
-                              connectedFormatPresetsSummary.push({
-                                id: chBox.id,
-                                title: chBox.title || 'Format Preset',
-                                hasResult: Boolean(chText && chText.trim().length > 0),
-                                charCount: chText ? chText.length : 0,
-                              });
                               if (chText) {
                                 addTextOutput(chBox.id, chBox.title || 'Format Preset', chText);
                               }
@@ -11592,691 +11581,725 @@ export const FacebookWorkflowCanvas = forwardRef<
                         }
                       }
 
-                      const mergedText = connectedTextOutputs.length > 0
+                      const allMergedText = connectedTextOutputs.length > 0
                         ? (connectedTextOutputs.length === 1
                           ? connectedTextOutputs[0].text
                           : connectedTextOutputs.map((item) => `## ${item.title}\n\n${item.text}`).join('\n\n---\n\n'))
                         : (aiGeneratedCopy || rawContent || '');
 
-                      const wordCount = mergedText.trim() ? mergedText.trim().split(/\s+/).filter(Boolean).length : 0;
-                      const readyFormatsCount = connectedFormatPresetsSummary.filter((f) => f.hasResult).length;
-
-                      // Images logic
-                      const hasImagesIn = combineInputs.some(
-                        (c) =>
-                          c.fromNodeId === 'get-images' ||
-                          config.aiBoxes.some((b) => b.id === c.fromNodeId && (isWatermarkAIBox(b) || isEnhanceAIBox(b) || isImageAIBox(b, config.connections)))
-                      );
-
-                      // Image stack thumbnails: pick top 3 distinct images to fan out
-                      const stackThumbnails: string[] = [];
-                      if (combineMediaAssets.length > 0) {
-                        for (const a of combineMediaAssets) {
-                          if (a.url && !stackThumbnails.includes(a.url)) {
-                            stackThumbnails.push(a.url);
-                            if (stackThumbnails.length >= 3) break;
-                          }
-                        }
-                      }
-                      if (stackThumbnails.length < 3 && combineCropSlices.length > 0) {
-                        for (const s of combineCropSlices) {
-                          if (s.url && !stackThumbnails.includes(s.url)) {
-                            stackThumbnails.push(s.url);
-                            if (stackThumbnails.length >= 3) break;
-                          }
-                        }
-                      }
-                      if (stackThumbnails.length < 3 && images && images.length > 0) {
-                        for (const img of images) {
-                          const u = img.stored_url ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`) : img.source_url;
-                          if (u && !stackThumbnails.includes(u)) {
-                            stackThumbnails.push(u);
-                            if (stackThumbnails.length >= 3) break;
-                          }
-                        }
-                      }
-
-                      const totalMediaCount = combineMediaAssets.length > 0
-                        ? combineMediaAssets.length
-                        : combineCropSlices.length > 0
-                          ? combineCropSlices.length
-                          : (images?.length || 0);
-
                       return (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
-                          {/* ── CARD 1: MERGED MEDIA ASSETS (COOL 3-IMAGE LAYER STACK) ── */}
-                          {hasImagesIn && (
-                            <div
-                              style={{
-                                display: 'flex',
-                                flexDirection: 'column',
-                                gap: '0.75rem',
-                                padding: '0.875rem',
-                                borderRadius: '10px',
-                                border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF',
-                                boxShadow: isDark ? '0 2px 8px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.05)',
-                                transition: 'all 0.2s ease',
-                              }}
-                            >
-                              {/* Header Row */}
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
-                                  <div
-                                    style={{
-                                      width: '26px',
-                                      height: '26px',
-                                      borderRadius: '6px',
-                                      backgroundColor: 'rgba(16, 185, 129, 0.15)',
-                                      color: '#10B981',
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      justifyContent: 'center',
-                                    }}
-                                  >
-                                    <FiImage size={14} />
-                                  </div>
-                                  <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                                    Merged Media Assets
-                                  </span>
-                                </div>
-                                <span
-                                  style={{
-                                    fontSize: '0.625rem',
-                                    fontWeight: 700,
-                                    padding: '2px 8px',
-                                    borderRadius: '12px',
-                                    backgroundColor: totalMediaCount > 0
-                                      ? (isDark ? 'rgba(16, 185, 129, 0.18)' : '#DCFCE7')
-                                      : (isDark ? 'rgba(255,255,255,0.06)' : '#F1F5F9'),
-                                    color: totalMediaCount > 0 ? '#10B981' : 'var(--text-muted)',
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '4px',
-                                  }}
-                                >
-                                  {totalMediaCount > 0 ? `✓ ${totalMediaCount} Photos Ready` : '0 Photos'}
-                                </span>
-                              </div>
+                          {/* Render EACH connected input broken out into its own dedicated card */}
+                          {combineInputs.map((c) => {
+                            const fromBox = config.aiBoxes.find((b) => b.id === c.fromNodeId);
+                            const isContent = c.fromNodeId === 'get-content';
+                            const isImages = c.fromNodeId === 'get-images';
+                            const isCrop = fromBox ? isTextFormatAIBox(fromBox) && (fromBox.processType === 'image_crop' || fromBox.title?.toLowerCase().includes('cut') || fromBox.title?.toLowerCase().includes('crop')) : false;
+                            const isWatermark = fromBox ? isWatermarkAIBox(fromBox) : false;
+                            const isBrowser = fromBox ? isExternalBrowserAIBox(fromBox) : false;
+                            const isTextAI = fromBox
+                              ? isTextAIBox(fromBox, config.connections) ||
+                                fromBox.subtitle === 'AI Processor' ||
+                                fromBox.processType === 'text_ai' ||
+                                fromBox.title?.toLowerCase().includes('prompt generator') ||
+                                fromBox.title?.toLowerCase().includes('ai model')
+                              : false;
 
-                              {/* Interactive 3-Image Stack Box */}
-                              <div
-                                onClick={() => {
-                                  setCombineMediaSideboxFormatFilter('all');
-                                  setShowCombineMediaSidebox(true);
-                                }}
-                                onMouseEnter={() => setIsHoveringImageStack(true)}
-                                onMouseLeave={() => setIsHoveringImageStack(false)}
-                                style={{
-                                  position: 'relative',
-                                  width: '100%',
-                                  height: '140px',
-                                  borderRadius: '8px',
-                                  backgroundColor: isDark ? '#0D1117' : '#F8FAFC',
-                                  border: isHoveringImageStack
-                                    ? '1px solid #10B981'
-                                    : (isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1'),
-                                  cursor: 'pointer',
-                                  overflow: 'hidden',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
-                                }}
-                                title="Click to view all merged photos in extra sidebox"
-                              >
-                                {stackThumbnails.length > 0 ? (
-                                  <div
-                                    style={{
-                                      position: 'relative',
-                                      width: '120px',
-                                      height: '100px',
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      justifyContent: 'center',
-                                    }}
-                                  >
-                                    {/* Layer 1 (Left Tilt) */}
-                                    {stackThumbnails[1] && (
-                                      <div
-                                        style={{
-                                          position: 'absolute',
-                                          width: '78px',
-                                          height: '78px',
-                                          borderRadius: '8px',
-                                          overflow: 'hidden',
-                                          border: isDark ? '2px solid #30363D' : '2px solid #FFFFFF',
-                                          boxShadow: '0 6px 14px rgba(0, 0, 0, 0.45)',
-                                          backgroundColor: '#000000',
-                                          transform: isHoveringImageStack
-                                            ? 'rotate(-14deg) translate(-28px, -4px) scale(0.96)'
-                                            : 'rotate(-7deg) translate(-14px, 2px) scale(0.93)',
-                                          opacity: 0.85,
-                                          zIndex: 1,
-                                          transition: 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
-                                        }}
-                                      >
-                                        <img
-                                          src={stackThumbnails[1]}
-                                          alt="Stack layer 1"
-                                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                                        />
-                                      </div>
-                                    )}
+                            const fromTitle = isContent ? 'Get Content' : isImages ? 'Get Images' : fromBox?.title || c.fromNodeId;
 
-                                    {/* Layer 2 (Right Tilt) */}
-                                    {stackThumbnails[2] && (
-                                      <div
-                                        style={{
-                                          position: 'absolute',
-                                          width: '78px',
-                                          height: '78px',
-                                          borderRadius: '8px',
-                                          overflow: 'hidden',
-                                          border: isDark ? '2px solid #30363D' : '2px solid #FFFFFF',
-                                          boxShadow: '0 6px 14px rgba(0, 0, 0, 0.45)',
-                                          backgroundColor: '#000000',
-                                          transform: isHoveringImageStack
-                                            ? 'rotate(14deg) translate(28px, -4px) scale(0.96)'
-                                            : 'rotate(7deg) translate(14px, 2px) scale(0.93)',
-                                          opacity: 0.85,
-                                          zIndex: 2,
-                                          transition: 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
-                                        }}
-                                      >
-                                        <img
-                                          src={stackThumbnails[2]}
-                                          alt="Stack layer 2"
-                                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                                        />
-                                      </div>
-                                    )}
-
-                                    {/* Layer 3 (Center Front) */}
-                                    <div
-                                      style={{
-                                        position: 'relative',
-                                        width: '84px',
-                                        height: '84px',
-                                        borderRadius: '8px',
-                                        overflow: 'hidden',
-                                        border: isDark ? '2px solid #10B981' : '2px solid #10B981',
-                                        boxShadow: isHoveringImageStack
-                                          ? '0 12px 24px rgba(0, 0, 0, 0.6), 0 0 12px rgba(16, 185, 129, 0.3)'
-                                          : '0 8px 18px rgba(0, 0, 0, 0.5)',
-                                        backgroundColor: '#000000',
-                                        transform: isHoveringImageStack ? 'scale(1.08) translateY(-4px)' : 'scale(1)',
-                                        zIndex: 3,
-                                        transition: 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease',
-                                      }}
-                                    >
-                                      <img
-                                        src={stackThumbnails[0]}
-                                        alt="Stack front"
-                                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                                      />
-                                      {/* Tile / Photo count badge on bottom-right */}
-                                      <div
-                                        style={{
-                                          position: 'absolute',
-                                          bottom: '3px',
-                                          right: '3px',
-                                          fontSize: '0.5625rem',
-                                          fontWeight: 700,
-                                          padding: '1px 5px',
-                                          borderRadius: '3px',
-                                          backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                                          color: '#10B981',
-                                        }}
-                                      >
-                                        +{totalMediaCount}
-                                      </div>
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', color: 'var(--text-muted)' }}>
-                                    <FiImage size={24} style={{ opacity: 0.5 }} />
-                                    <span style={{ fontSize: '0.6875rem' }}>No media assets loaded yet</span>
-                                  </div>
-                                )}
-
-                                {/* Hover Overlay Hint */}
-                                <div
-                                  style={{
-                                    position: 'absolute',
-                                    bottom: '6px',
-                                    left: '50%',
-                                    transform: 'translateX(-50%)',
-                                    fontSize: '0.625rem',
-                                    fontWeight: 600,
-                                    color: isHoveringImageStack ? '#10B981' : 'var(--text-muted)',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '4px',
-                                    whiteSpace: 'nowrap',
-                                    transition: 'color 0.2s ease',
-                                  }}
-                                >
-                                  <span>{isHoveringImageStack ? 'Click to open sidebox viewer' : 'Click to inspect all photos'}</span>
-                                  <FiArrowRight size={10} />
-                                </div>
-                              </div>
-
-                              {/* Connected Format Badges (e.g. FB Hero Cut · 2, Bolthaven · 12, DotBkk · 12) */}
-                              {connectedImageNodesForCombine.length > 0 && (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                  <div style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                                    Connected Image Formats ({connectedImageNodesForCombine.length})
-                                  </div>
-                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
-                                    {connectedImageNodesForCombine.map((node) => (
-                                      <button
-                                        key={node.id}
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setCombineMediaSideboxFormatFilter(node.id);
-                                          setShowCombineMediaSidebox(true);
-                                        }}
-                                        style={{
-                                          display: 'inline-flex',
-                                          alignItems: 'center',
-                                          gap: '4px',
-                                          padding: '3px 7px',
-                                          borderRadius: '6px',
-                                          fontSize: '0.625rem',
-                                          fontWeight: 600,
-                                          border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F1F5F9',
-                                          color: 'var(--text-primary)',
-                                          cursor: 'pointer',
-                                          transition: 'all 0.15s ease',
-                                        }}
-                                        onMouseEnter={(e) => {
-                                          e.currentTarget.style.borderColor = '#10B981';
-                                          e.currentTarget.style.color = '#10B981';
-                                        }}
-                                        onMouseLeave={(e) => {
-                                          e.currentTarget.style.borderColor = isDark ? '#30363D' : '#CBD5E1';
-                                          e.currentTarget.style.color = 'var(--text-primary)';
-                                        }}
-                                        title={`View ${node.title} in sidebox`}
-                                      >
-                                        <FiScissors size={10} style={{ color: '#EC4899' }} />
-                                        <span>{node.title.replace(/^format:\s*/i, '')}</span>
-                                        <span style={{ color: '#10B981', fontWeight: 700 }}>({node.count})</span>
-                                      </button>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-
-                              {/* Actions Bar */}
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setCombineMediaSideboxFormatFilter('all');
-                                    setShowCombineMediaSidebox(true);
-                                  }}
-                                  style={{
-                                    flex: 1,
-                                    height: '30px',
-                                    borderRadius: '6px',
-                                    border: '1px solid rgba(16, 185, 129, 0.35)',
-                                    backgroundColor: isDark ? 'rgba(16, 185, 129, 0.12)' : '#DCFCE7',
-                                    color: '#10B981',
-                                    fontSize: '0.6875rem',
-                                    fontWeight: 700,
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    gap: '6px',
-                                    cursor: 'pointer',
-                                    transition: 'all 0.15s ease',
-                                  }}
-                                >
-                                  <FiEye size={12} />
-                                  <span>View All Photos in Extra Box →</span>
-                                </button>
-
-                                {totalMediaCount > 0 && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDownloadAllCombineAssets(combineMediaAssets)}
-                                    title="Download all merged photos"
-                                    style={{
-                                      height: '30px',
-                                      padding: '0 10px',
-                                      borderRadius: '6px',
-                                      border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC',
-                                      color: 'var(--text-secondary)',
-                                      fontSize: '0.6875rem',
-                                      fontWeight: 600,
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: '4px',
-                                      cursor: 'pointer',
-                                    }}
-                                  >
-                                    <FiDownload size={11} />
-                                    <span>Download</span>
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* ── CARD 2: MERGED CONTENT & COPY (SUMMARIZED CARD) ── */}
-                          {Boolean(mergedText) && (
-                            <div
-                              style={{
-                                display: 'flex',
-                                flexDirection: 'column',
-                                gap: '0.65rem',
-                                padding: '0.875rem',
-                                borderRadius: '10px',
-                                border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF',
-                                boxShadow: isDark ? '0 2px 8px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.05)',
-                              }}
-                            >
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
-                                  <div
-                                    style={{
-                                      width: '26px',
-                                      height: '26px',
-                                      borderRadius: '6px',
-                                      backgroundColor: 'rgba(139, 92, 246, 0.15)',
-                                      color: '#8B5CF6',
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      justifyContent: 'center',
-                                    }}
-                                  >
-                                    <HiSparkles size={14} />
-                                  </div>
-                                  <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                                    Merged Output Copy
-                                  </span>
-                                </div>
-                                <span
-                                  style={{
-                                    fontSize: '0.625rem',
-                                    fontWeight: 700,
-                                    padding: '2px 8px',
-                                    borderRadius: '12px',
-                                    backgroundColor: isDark ? 'rgba(16, 185, 129, 0.18)' : '#DCFCE7',
-                                    color: '#10B981',
-                                  }}
-                                >
-                                  {readyFormatsCount > 0 ? `✓ ${readyFormatsCount} Formats Ready` : '✓ Ready'}
-                                </span>
-                              </div>
-
-                              <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-                                {mergedText.length.toLocaleString()} characters · {wordCount.toLocaleString()} words
-                              </div>
-
-                              {/* Connected Format Presets Chips */}
-                              {connectedFormatPresetsSummary.length > 0 && (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                  <div style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                                    Format Presets ({connectedFormatPresetsSummary.length})
-                                  </div>
-                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                                    {connectedFormatPresetsSummary.map((fmt) => (
-                                      <div
-                                        key={fmt.id}
-                                        style={{
-                                          display: 'inline-flex',
-                                          alignItems: 'center',
-                                          gap: '4px',
-                                          padding: '2px 6px',
-                                          borderRadius: '4px',
-                                          fontSize: '0.5625rem',
-                                          fontWeight: 600,
-                                          backgroundColor: fmt.hasResult
-                                            ? (isDark ? 'rgba(139, 92, 246, 0.15)' : '#F3E8FF')
-                                            : (isDark ? 'rgba(255, 255, 255, 0.04)' : '#F1F5F9'),
-                                          color: fmt.hasResult ? '#8B5CF6' : 'var(--text-muted)',
-                                          border: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid #E2E8F0',
-                                        }}
-                                      >
-                                        <FiCheck size={9} style={{ color: fmt.hasResult ? '#10B981' : 'var(--text-muted)' }} />
-                                        <span>{fmt.title}</span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-
-                              {/* Actions Bar */}
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setViewingPromptTemplate({
-                                      id: currentCombineBox.id,
-                                      name: `${currentCombineBox.title || 'Combine Box'} Merged Output`,
-                                      templateText: mergedText,
-                                      headerTitle: 'Merged Output Copy',
-                                      copyButtonLabel: 'Copy Merged Output',
-                                    });
-                                  }}
-                                  style={{
-                                    flex: 1,
-                                    height: '30px',
-                                    borderRadius: '6px',
-                                    border: '1px solid rgba(139, 92, 246, 0.35)',
-                                    backgroundColor: isDark ? 'rgba(139, 92, 246, 0.12)' : '#EDE9FE',
-                                    color: '#8B5CF6',
-                                    fontSize: '0.6875rem',
-                                    fontWeight: 700,
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    gap: '6px',
-                                    cursor: 'pointer',
-                                    transition: 'all 0.15s ease',
-                                  }}
-                                >
-                                  <FiEye size={12} />
-                                  <span>View Merged Copy →</span>
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    navigator.clipboard.writeText(mergedText);
-                                    setCopiedPromptId(currentCombineBox.id);
-                                    setTimeout(() => setCopiedPromptId(null), 2000);
-                                  }}
-                                  title="Copy merged text to clipboard"
-                                  style={{
-                                    height: '30px',
-                                    padding: '0 10px',
-                                    borderRadius: '6px',
-                                    border: copiedPromptId === currentCombineBox.id
-                                      ? '1px solid rgba(16, 185, 129, 0.4)'
-                                      : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
-                                    backgroundColor: copiedPromptId === currentCombineBox.id
-                                      ? (isDark ? 'rgba(16, 185, 129, 0.18)' : '#DCFCE7')
-                                      : (isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC'),
-                                    color: copiedPromptId === currentCombineBox.id ? '#10B981' : 'var(--text-secondary)',
-                                    fontSize: '0.6875rem',
-                                    fontWeight: 600,
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '4px',
-                                    cursor: 'pointer',
-                                  }}
-                                >
-                                  {copiedPromptId === currentCombineBox.id ? (
-                                    <FiCheck size={11} style={{ color: '#10B981' }} />
-                                  ) : (
-                                    <FiCopy size={11} />
-                                  )}
-                                  <span>{copiedPromptId === currentCombineBox.id ? 'Copied' : 'Copy'}</span>
-                                </button>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* ── CARD 3: CONNECTED INPUT NODES SUMMARY (4 INPUTS) ── */}
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.25rem' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                              <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
-                                Connected Inputs Overview
-                              </label>
-                              <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)', fontWeight: 600 }}>
-                                {combineInputs.length} source{combineInputs.length !== 1 ? 's' : ''}
-                              </span>
-                            </div>
-
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-                              {combineInputs.map((c) => {
-                                const fromBox = config.aiBoxes.find((b) => b.id === c.fromNodeId);
-                                const isContent = c.fromNodeId === 'get-content';
-                                const isImages = c.fromNodeId === 'get-images';
-                                const isCrop = fromBox ? isTextFormatAIBox(fromBox) && (fromBox.processType === 'image_crop' || fromBox.title?.toLowerCase().includes('cut') || fromBox.title?.toLowerCase().includes('crop')) : false;
-                                const isWatermark = fromBox ? isWatermarkAIBox(fromBox) : false;
-                                const isBrowser = fromBox ? isExternalBrowserAIBox(fromBox) : false;
-                                const fromTitle = isContent ? 'Get Content' : isImages ? 'Get Images' : fromBox?.title || c.fromNodeId;
-
-                                const textOutput = (aiGeneratedOutputs && aiGeneratedOutputs[c.fromNodeId]) || (isContent ? (rawContent || '') : '');
-                                const hasTextResult = Boolean(textOutput && textOutput.trim().length > 0);
-
-                                const boxAssets = (isWatermark || isCrop) && fromBox
-                                  ? combineMediaAssets.filter((a) => a.formatId === fromBox.id)
-                                  : [];
-                                const imageCount = isImages
+                            // ── A) IMAGE FORMAT / WATERMARK / CROP CARD (Dedicated 3-Image Stack) ──
+                            if (isWatermark || isCrop || isImages) {
+                              const boxAssets = fromBox
+                                ? combineMediaAssets.filter((a) => a.formatId === fromBox.id)
+                                : (isImages ? combineMediaAssets : []);
+                              const boxCount = boxAssets.length > 0
+                                ? boxAssets.length
+                                : isImages
                                   ? (images?.length || 0)
-                                  : (isWatermark || isCrop)
-                                    ? (boxAssets.length > 0 ? boxAssets.length : (images?.length || 0))
-                                    : 0;
+                                  : (allEnhancedPhotos ? Object.keys(allEnhancedPhotos).length : images?.length || 0);
 
-                                return (
-                                  <div
-                                    key={c.id}
-                                    style={{
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      justifyContent: 'space-between',
-                                      padding: '0.5rem 0.65rem',
-                                      borderRadius: '6px',
-                                      border: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
-                                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#F8FAFC',
-                                    }}
-                                  >
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
-                                      {isContent ? (
-                                        <FiFileText style={{ fontSize: '13px', color: '#3B82F6', flexShrink: 0 }} />
-                                      ) : isImages ? (
-                                        <FiImage style={{ fontSize: '13px', color: '#10B981', flexShrink: 0 }} />
-                                      ) : isCrop || isWatermark ? (
-                                        <FiScissors style={{ fontSize: '13px', color: '#EC4899', flexShrink: 0 }} />
-                                      ) : isBrowser ? (
-                                        <FiMonitor style={{ fontSize: '13px', color: '#06B6D4', flexShrink: 0 }} />
-                                      ) : (
-                                        <HiSparkles style={{ fontSize: '13px', color: '#8B5CF6', flexShrink: 0 }} />
-                                      )}
-                                      <span
+                              // Top 3 thumbnails for THIS format
+                              const boxThumbnails: string[] = [];
+                              for (const a of boxAssets) {
+                                if (a.url && !boxThumbnails.includes(a.url)) {
+                                  boxThumbnails.push(a.url);
+                                  if (boxThumbnails.length >= 3) break;
+                                }
+                              }
+                              if (boxThumbnails.length === 0 && images && images.length > 0) {
+                                for (const img of images) {
+                                  const u = img.stored_url ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`) : img.source_url;
+                                  if (u && !boxThumbnails.includes(u)) {
+                                    boxThumbnails.push(u);
+                                    if (boxThumbnails.length >= 3) break;
+                                  }
+                                }
+                              }
+
+                              const isHovered = hoveredStackId === c.fromNodeId;
+
+                              return (
+                                <div
+                                  key={c.id}
+                                  style={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '0.65rem',
+                                    padding: '0.8125rem',
+                                    borderRadius: '10px',
+                                    border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF',
+                                    boxShadow: isDark ? '0 2px 8px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.05)',
+                                    transition: 'border-color 0.2s ease',
+                                  }}
+                                >
+                                  {/* Header */}
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+                                      <div
                                         style={{
-                                          fontSize: '0.75rem',
-                                          fontWeight: 600,
-                                          color: 'var(--text-primary)',
-                                          overflow: 'hidden',
-                                          textOverflow: 'ellipsis',
-                                          whiteSpace: 'nowrap',
+                                          width: '26px',
+                                          height: '26px',
+                                          borderRadius: '6px',
+                                          backgroundColor: isImages ? 'rgba(16, 185, 129, 0.15)' : 'rgba(236, 72, 153, 0.15)',
+                                          color: isImages ? '#10B981' : '#EC4899',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
                                         }}
                                       >
+                                        {isImages ? <FiImage size={13} /> : <FiScissors size={13} />}
+                                      </div>
+                                      <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--text-primary)' }}>
                                         {fromTitle}
                                       </span>
                                     </div>
+                                    <span
+                                      style={{
+                                        fontSize: '0.625rem',
+                                        fontWeight: 700,
+                                        padding: '2px 8px',
+                                        borderRadius: '12px',
+                                        backgroundColor: boxCount > 0
+                                          ? (isDark ? 'rgba(16, 185, 129, 0.18)' : '#DCFCE7')
+                                          : (isDark ? 'rgba(255,255,255,0.06)' : '#F1F5F9'),
+                                        color: boxCount > 0 ? '#10B981' : 'var(--text-muted)',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                      }}
+                                    >
+                                      {boxCount > 0 ? `✓ ${boxCount} Photos Ready` : '0 Photos'}
+                                    </span>
+                                  </div>
 
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}>
-                                      {(isWatermark || isCrop || isImages) ? (
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            if (fromBox) {
-                                              setCombineMediaSideboxFormatFilter(fromBox.id);
-                                            } else {
-                                              setCombineMediaSideboxFormatFilter('all');
-                                            }
-                                            setShowCombineMediaSidebox(true);
-                                          }}
+                                  {/* Dedicated 3-Image Stack for THIS format */}
+                                  <div
+                                    onClick={() => {
+                                      if (fromBox) {
+                                        setCombineMediaSideboxFormatFilter(fromBox.id);
+                                      } else {
+                                        setCombineMediaSideboxFormatFilter('all');
+                                      }
+                                      setShowCombineMediaSidebox(true);
+                                    }}
+                                    onMouseEnter={() => setHoveredStackId(c.fromNodeId)}
+                                    onMouseLeave={() => setHoveredStackId(null)}
+                                    style={{
+                                      position: 'relative',
+                                      width: '100%',
+                                      height: '115px',
+                                      borderRadius: '8px',
+                                      backgroundColor: isDark ? '#0D1117' : '#F8FAFC',
+                                      border: isHovered
+                                        ? '1px solid #10B981'
+                                        : (isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1'),
+                                      cursor: 'pointer',
+                                      overflow: 'hidden',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+                                    }}
+                                    title={`Click to inspect ${fromTitle} photos in extra sidebox`}
+                                  >
+                                    {boxThumbnails.length > 0 ? (
+                                      <div
+                                        style={{
+                                          position: 'relative',
+                                          width: '110px',
+                                          height: '85px',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
+                                        }}
+                                      >
+                                        {/* Layer 1 (Left Tilt) */}
+                                        {boxThumbnails[1] && (
+                                          <div
+                                            style={{
+                                              position: 'absolute',
+                                              width: '68px',
+                                              height: '68px',
+                                              borderRadius: '7px',
+                                              overflow: 'hidden',
+                                              border: isDark ? '2px solid #30363D' : '2px solid #FFFFFF',
+                                              boxShadow: '0 5px 12px rgba(0, 0, 0, 0.45)',
+                                              backgroundColor: '#000000',
+                                              transform: isHovered
+                                                ? 'rotate(-14deg) translate(-24px, -3px) scale(0.96)'
+                                                : 'rotate(-7deg) translate(-12px, 1px) scale(0.93)',
+                                              opacity: 0.85,
+                                              zIndex: 1,
+                                              transition: 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+                                            }}
+                                          >
+                                            <img
+                                              src={boxThumbnails[1]}
+                                              alt="Layer 1"
+                                              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                            />
+                                          </div>
+                                        )}
+
+                                        {/* Layer 2 (Right Tilt) */}
+                                        {boxThumbnails[2] && (
+                                          <div
+                                            style={{
+                                              position: 'absolute',
+                                              width: '68px',
+                                              height: '68px',
+                                              borderRadius: '7px',
+                                              overflow: 'hidden',
+                                              border: isDark ? '2px solid #30363D' : '2px solid #FFFFFF',
+                                              boxShadow: '0 5px 12px rgba(0, 0, 0, 0.45)',
+                                              backgroundColor: '#000000',
+                                              transform: isHovered
+                                                ? 'rotate(14deg) translate(24px, -3px) scale(0.96)'
+                                                : 'rotate(7deg) translate(12px, 1px) scale(0.93)',
+                                              opacity: 0.85,
+                                              zIndex: 2,
+                                              transition: 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+                                            }}
+                                          >
+                                            <img
+                                              src={boxThumbnails[2]}
+                                              alt="Layer 2"
+                                              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                            />
+                                          </div>
+                                        )}
+
+                                        {/* Layer 3 (Center Front) */}
+                                        <div
                                           style={{
-                                            fontSize: '0.5625rem',
-                                            fontWeight: 700,
-                                            padding: '2px 6px',
-                                            borderRadius: '4px',
-                                            border: 'none',
-                                            backgroundColor: isDark ? 'rgba(16, 185, 129, 0.14)' : '#DCFCE7',
-                                            color: '#10B981',
-                                            cursor: 'pointer',
-                                            display: 'inline-flex',
-                                            alignItems: 'center',
-                                            gap: '3px',
-                                          }}
-                                          title="View in sidebox"
-                                        >
-                                          <span>✓ {imageCount} photos</span>
-                                          <FiEye size={9} />
-                                        </button>
-                                      ) : hasTextResult ? (
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            setViewingPromptTemplate({
-                                              id: c.fromNodeId,
-                                              name: `${fromTitle} Result`,
-                                              templateText: textOutput,
-                                              headerTitle: 'Generated Output Copy',
-                                              copyButtonLabel: 'Copy Result',
-                                            });
-                                          }}
-                                          style={{
-                                            fontSize: '0.5625rem',
-                                            fontWeight: 700,
-                                            padding: '2px 6px',
-                                            borderRadius: '4px',
-                                            border: 'none',
-                                            backgroundColor: isDark ? 'rgba(139, 92, 246, 0.14)' : '#EDE9FE',
-                                            color: '#8B5CF6',
-                                            cursor: 'pointer',
-                                            display: 'inline-flex',
-                                            alignItems: 'center',
-                                            gap: '3px',
-                                          }}
-                                          title="View text output"
-                                        >
-                                          <span>✓ Ready</span>
-                                          <FiEye size={9} />
-                                        </button>
-                                      ) : (
-                                        <span
-                                          style={{
-                                            fontSize: '0.5625rem',
-                                            fontWeight: 600,
-                                            padding: '2px 6px',
-                                            borderRadius: '4px',
-                                            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#F1F5F9',
-                                            color: 'var(--text-muted)',
+                                            position: 'relative',
+                                            width: '74px',
+                                            height: '74px',
+                                            borderRadius: '7px',
+                                            overflow: 'hidden',
+                                            border: isDark ? '2px solid #10B981' : '2px solid #10B981',
+                                            boxShadow: isHovered
+                                              ? '0 10px 20px rgba(0, 0, 0, 0.6), 0 0 10px rgba(16, 185, 129, 0.3)'
+                                              : '0 6px 14px rgba(0, 0, 0, 0.45)',
+                                            backgroundColor: '#000000',
+                                            transform: isHovered ? 'scale(1.08) translateY(-3px)' : 'scale(1)',
+                                            zIndex: 3,
+                                            transition: 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease',
                                           }}
                                         >
-                                          Connected
-                                        </span>
-                                      )}
+                                          <img
+                                            src={boxThumbnails[0]}
+                                            alt="Front thumbnail"
+                                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                          />
+                                          <div
+                                            style={{
+                                              position: 'absolute',
+                                              bottom: '2px',
+                                              right: '2px',
+                                              fontSize: '0.5rem',
+                                              fontWeight: 700,
+                                              padding: '1px 4px',
+                                              borderRadius: '3px',
+                                              backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                                              color: '#10B981',
+                                            }}
+                                          >
+                                            +{boxCount}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px', color: 'var(--text-muted)' }}>
+                                        <FiImage size={20} style={{ opacity: 0.5 }} />
+                                        <span style={{ fontSize: '0.625rem' }}>No photos available</span>
+                                      </div>
+                                    )}
+
+                                    {/* Hover Hint */}
+                                    <div
+                                      style={{
+                                        position: 'absolute',
+                                        bottom: '4px',
+                                        left: '50%',
+                                        transform: 'translateX(-50%)',
+                                        fontSize: '0.5625rem',
+                                        fontWeight: 600,
+                                        color: isHovered ? '#10B981' : 'var(--text-muted)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '3px',
+                                        whiteSpace: 'nowrap',
+                                        transition: 'color 0.2s ease',
+                                      }}
+                                    >
+                                      <span>Click to view photos in extra box</span>
+                                      <FiArrowRight size={9} />
                                     </div>
                                   </div>
+
+                                  {/* Actions Bar */}
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (fromBox) {
+                                          setCombineMediaSideboxFormatFilter(fromBox.id);
+                                        } else {
+                                          setCombineMediaSideboxFormatFilter('all');
+                                        }
+                                        setShowCombineMediaSidebox(true);
+                                      }}
+                                      style={{
+                                        flex: 1,
+                                        height: '28px',
+                                        borderRadius: '5px',
+                                        border: '1px solid rgba(16, 185, 129, 0.35)',
+                                        backgroundColor: isDark ? 'rgba(16, 185, 129, 0.12)' : '#DCFCE7',
+                                        color: '#10B981',
+                                        fontSize: '0.6875rem',
+                                        fontWeight: 700,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: '5px',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.15s ease',
+                                      }}
+                                    >
+                                      <FiEye size={11} />
+                                      <span>View {boxCount} Photos in Extra Box →</span>
+                                    </button>
+
+                                    {boxAssets.length > 0 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDownloadAllCombineAssets(boxAssets)}
+                                        title={`Download all ${boxCount} photos for ${fromTitle}`}
+                                        style={{
+                                          height: '28px',
+                                          padding: '0 8px',
+                                          borderRadius: '5px',
+                                          border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC',
+                                          color: 'var(--text-secondary)',
+                                          fontSize: '0.625rem',
+                                          fontWeight: 600,
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          gap: '4px',
+                                          cursor: 'pointer',
+                                        }}
+                                      >
+                                        <FiDownload size={10} />
+                                        <span>Download</span>
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            }
+
+                            // ── B) TEXT AI / COPYWRITING NODE (e.g. General AI Processor) ──
+                            if (isTextAI && fromBox) {
+                              let childFormatBoxes = config.aiBoxes.filter((b) => {
+                                if (!isTextFormatAIBox(b)) return false;
+                                if (b.processType === 'image_crop' || b.processType === 'watermark' || b.cropFormatId || b.watermarkPresetId) return false;
+                                return (config.connections || []).some(
+                                  (conn) =>
+                                    (conn.fromNodeId === c.fromNodeId && conn.toNodeId === b.id) ||
+                                    (conn.toNodeId === c.fromNodeId && conn.fromNodeId === b.id)
                                 );
-                              })}
-                            </div>
-                          </div>
+                              });
+
+                              if (childFormatBoxes.length === 0) {
+                                const otherTextAiIds = new Set(
+                                  config.aiBoxes
+                                    .filter((b) => b.id !== c.fromNodeId && (isTextAIBox(b, config.connections) || b.processType === 'text_ai'))
+                                    .map((b) => b.id)
+                                );
+                                childFormatBoxes = config.aiBoxes.filter((b) => {
+                                  if (!isTextFormatAIBox(b)) return false;
+                                  if (b.processType === 'image_crop' || b.processType === 'watermark' || b.cropFormatId || b.watermarkPresetId) return false;
+                                  const connectedToOther = (config.connections || []).some(
+                                    (conn) =>
+                                      (otherTextAiIds.has(conn.fromNodeId) && conn.toNodeId === b.id) ||
+                                      (otherTextAiIds.has(conn.toNodeId) && conn.fromNodeId === b.id)
+                                  );
+                                  return !connectedToOther;
+                                });
+                              }
+
+                              const readyCount = childFormatBoxes.filter((ch) => {
+                                const chText =
+                                  (aiGeneratedOutputs && (aiGeneratedOutputs[ch.id] || (ch.templateId && aiGeneratedOutputs[ch.templateId]))) ||
+                                  (ch.id === config.aiBoxes[0]?.id ? (aiGeneratedCopy || '') : '');
+                                return Boolean(chText && chText.trim().length > 0);
+                              }).length;
+
+                              return (
+                                <div
+                                  key={c.id}
+                                  style={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '0.625rem',
+                                    padding: '0.8125rem',
+                                    borderRadius: '10px',
+                                    border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF',
+                                    boxShadow: isDark ? '0 2px 8px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.05)',
+                                  }}
+                                >
+                                  {/* Header */}
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+                                      <div
+                                        style={{
+                                          width: '26px',
+                                          height: '26px',
+                                          borderRadius: '6px',
+                                          backgroundColor: 'rgba(139, 92, 246, 0.15)',
+                                          color: '#8B5CF6',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
+                                        }}
+                                      >
+                                        <HiSparkles size={14} />
+                                      </div>
+                                      <div>
+                                        <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                          {fromTitle}
+                                        </span>
+                                        <div style={{ fontSize: '0.5625rem', color: 'var(--text-muted)' }}>
+                                          AI Processor · {childFormatBoxes.length} Format Presets Connected
+                                        </div>
+                                      </div>
+                                    </div>
+                                    <span
+                                      style={{
+                                        fontSize: '0.625rem',
+                                        fontWeight: 700,
+                                        padding: '2px 8px',
+                                        borderRadius: '12px',
+                                        backgroundColor: readyCount > 0
+                                          ? (isDark ? 'rgba(16, 185, 129, 0.18)' : '#DCFCE7')
+                                          : (isDark ? 'rgba(139, 92, 246, 0.14)' : '#EDE9FE'),
+                                        color: readyCount > 0 ? '#10B981' : '#8B5CF6',
+                                      }}
+                                    >
+                                      {readyCount > 0 ? `✓ ${readyCount}/${childFormatBoxes.length} Ready` : `${childFormatBoxes.length} Formats`}
+                                    </span>
+                                  </div>
+
+                                  {/* EACH Format Preset broken out individually */}
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                                    {childFormatBoxes.map((chBox) => {
+                                      const chTitle = chBox.title || 'Format Preset';
+                                      const chText =
+                                        (aiGeneratedOutputs && (aiGeneratedOutputs[chBox.id] || (chBox.templateId && aiGeneratedOutputs[chBox.templateId]))) ||
+                                        (chBox.id === config.aiBoxes[0]?.id ? (aiGeneratedCopy || '') : '');
+                                      const hasResult = Boolean(chText && chText.trim().length > 0);
+
+                                      return (
+                                        <div
+                                          key={chBox.id}
+                                          style={{
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: '0.4rem',
+                                            padding: '0.55rem 0.65rem',
+                                            borderRadius: '6px',
+                                            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#F8FAFC',
+                                            border: isDark ? '1px solid rgba(255, 255, 255, 0.07)' : '1px solid #E2E8F0',
+                                          }}
+                                        >
+                                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                                              <FiFileText style={{ fontSize: '12px', color: '#8B5CF6', flexShrink: 0 }} />
+                                              <span
+                                                style={{
+                                                  fontSize: '0.75rem',
+                                                  fontWeight: 600,
+                                                  color: 'var(--text-primary)',
+                                                  overflow: 'hidden',
+                                                  textOverflow: 'ellipsis',
+                                                  whiteSpace: 'nowrap',
+                                                }}
+                                              >
+                                                {chTitle}
+                                              </span>
+                                            </div>
+
+                                            {hasResult ? (
+                                              <span
+                                                style={{
+                                                  fontSize: '0.5625rem',
+                                                  fontWeight: 600,
+                                                  padding: '1px 5px',
+                                                  borderRadius: '4px',
+                                                  backgroundColor: isDark ? 'rgba(16, 185, 129, 0.14)' : '#DCFCE7',
+                                                  color: '#10B981',
+                                                  flexShrink: 0,
+                                                }}
+                                              >
+                                                ✓ Ready ({chText.length.toLocaleString()} chars)
+                                              </span>
+                                            ) : (
+                                              <span style={{ fontSize: '0.5625rem', color: 'var(--text-muted)', flexShrink: 0 }}>
+                                                Connected
+                                              </span>
+                                            )}
+                                          </div>
+
+                                          {hasResult && (
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  setViewingPromptTemplate({
+                                                    id: chBox.id,
+                                                    name: `${chTitle} Output`,
+                                                    templateText: chText,
+                                                    headerTitle: 'Generated Output Copy',
+                                                    copyButtonLabel: 'Copy Output',
+                                                  });
+                                                }}
+                                                style={{
+                                                  flex: 1,
+                                                  height: '26px',
+                                                  borderRadius: '4px',
+                                                  border: '1px solid var(--border-color)',
+                                                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF',
+                                                  color: 'var(--text-primary)',
+                                                  fontSize: '0.6875rem',
+                                                  fontWeight: 600,
+                                                  display: 'flex',
+                                                  alignItems: 'center',
+                                                  justifyContent: 'center',
+                                                  gap: '5px',
+                                                  cursor: 'pointer',
+                                                  transition: 'all 0.15s ease',
+                                                }}
+                                                onMouseEnter={(e) => {
+                                                  e.currentTarget.style.borderColor = '#8B5CF6';
+                                                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(139, 92, 246, 0.08)' : '#F3E8FF';
+                                                }}
+                                                onMouseLeave={(e) => {
+                                                  e.currentTarget.style.borderColor = 'var(--border-color)';
+                                                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF';
+                                                }}
+                                              >
+                                                <FiEye size={11} style={{ color: '#8B5CF6' }} />
+                                                <span>View Result</span>
+                                              </button>
+
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  navigator.clipboard.writeText(chText);
+                                                  setCopiedPromptId(chBox.id);
+                                                  setTimeout(() => setCopiedPromptId(null), 2000);
+                                                }}
+                                                title="Copy this result"
+                                                style={{
+                                                  height: '26px',
+                                                  padding: '0 8px',
+                                                  borderRadius: '4px',
+                                                  border: copiedPromptId === chBox.id
+                                                    ? '1px solid rgba(16, 185, 129, 0.35)'
+                                                    : '1px solid var(--border-color)',
+                                                  backgroundColor: copiedPromptId === chBox.id
+                                                    ? (isDark ? 'rgba(16, 185, 129, 0.16)' : '#DCFCE7')
+                                                    : (isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF'),
+                                                  color: copiedPromptId === chBox.id ? '#10B981' : 'var(--text-secondary)',
+                                                  fontSize: '0.625rem',
+                                                  fontWeight: 600,
+                                                  display: 'flex',
+                                                  alignItems: 'center',
+                                                  gap: '4px',
+                                                  cursor: 'pointer',
+                                                }}
+                                              >
+                                                {copiedPromptId === chBox.id ? <FiCheck size={10} style={{ color: '#10B981' }} /> : <FiCopy size={10} />}
+                                                <span>{copiedPromptId === chBox.id ? 'Copied' : 'Copy'}</span>
+                                              </button>
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+
+                                  {/* Quick Action: View/Copy ALL text from this AI processor */}
+                                  {readyCount > 0 && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', paddingTop: '2px' }}>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setViewingPromptTemplate({
+                                            id: currentCombineBox.id,
+                                            name: `${fromTitle} Merged Copy`,
+                                            templateText: allMergedText,
+                                            headerTitle: 'Merged Output Copy',
+                                            copyButtonLabel: 'Copy All Copy',
+                                          });
+                                        }}
+                                        style={{
+                                          flex: 1,
+                                          height: '28px',
+                                          borderRadius: '5px',
+                                          border: '1px solid rgba(139, 92, 246, 0.35)',
+                                          backgroundColor: isDark ? 'rgba(139, 92, 246, 0.12)' : '#EDE9FE',
+                                          color: '#8B5CF6',
+                                          fontSize: '0.6875rem',
+                                          fontWeight: 700,
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
+                                          gap: '5px',
+                                          cursor: 'pointer',
+                                        }}
+                                      >
+                                        <FiEye size={11} />
+                                        <span>View All Combined Copy →</span>
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            }
+
+                            // ── C) DIRECT CONTENT NODE (Get Content or other raw input) ──
+                            const textOutput = (aiGeneratedOutputs && aiGeneratedOutputs[c.fromNodeId]) || (isContent ? (rawContent || '') : '');
+                            const hasTextResult = Boolean(textOutput && textOutput.trim().length > 0);
+
+                            return (
+                              <div
+                                key={c.id}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  padding: '0.75rem',
+                                  borderRadius: '8px',
+                                  border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF',
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+                                  <div
+                                    style={{
+                                      width: '24px',
+                                      height: '24px',
+                                      borderRadius: '6px',
+                                      backgroundColor: isBrowser ? 'rgba(6, 182, 212, 0.15)' : 'rgba(59, 130, 246, 0.15)',
+                                      color: isBrowser ? '#06B6D4' : '#3B82F6',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                    }}
+                                  >
+                                    {isBrowser ? <FiMonitor size={12} /> : <FiFileText size={12} />}
+                                  </div>
+                                  <div>
+                                    <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                      {fromTitle}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                  {hasTextResult ? (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setViewingPromptTemplate({
+                                            id: c.fromNodeId,
+                                            name: `${fromTitle} Output`,
+                                            templateText: textOutput,
+                                            headerTitle: 'Content Copy',
+                                            copyButtonLabel: 'Copy Content',
+                                          });
+                                        }}
+                                        style={{
+                                          height: '26px',
+                                          padding: '0 8px',
+                                          borderRadius: '4px',
+                                          border: '1px solid var(--border-color)',
+                                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC',
+                                          color: 'var(--text-primary)',
+                                          fontSize: '0.625rem',
+                                          fontWeight: 600,
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          gap: '4px',
+                                          cursor: 'pointer',
+                                        }}
+                                      >
+                                        <FiEye size={10} style={{ color: '#3B82F6' }} />
+                                        <span>View</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          navigator.clipboard.writeText(textOutput);
+                                          setCopiedPromptId(c.fromNodeId);
+                                          setTimeout(() => setCopiedPromptId(null), 2000);
+                                        }}
+                                        style={{
+                                          height: '26px',
+                                          padding: '0 8px',
+                                          borderRadius: '4px',
+                                          border: copiedPromptId === c.fromNodeId
+                                            ? '1px solid rgba(16, 185, 129, 0.35)'
+                                            : '1px solid var(--border-color)',
+                                          backgroundColor: copiedPromptId === c.fromNodeId
+                                            ? (isDark ? 'rgba(16, 185, 129, 0.16)' : '#DCFCE7')
+                                            : (isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC'),
+                                          color: copiedPromptId === c.fromNodeId ? '#10B981' : 'var(--text-secondary)',
+                                          fontSize: '0.625rem',
+                                          fontWeight: 600,
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          gap: '4px',
+                                          cursor: 'pointer',
+                                        }}
+                                      >
+                                        {copiedPromptId === c.fromNodeId ? <FiCheck size={10} style={{ color: '#10B981' }} /> : <FiCopy size={10} />}
+                                        <span>{copiedPromptId === c.fromNodeId ? 'Copied' : 'Copy'}</span>
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <span style={{ fontSize: '0.5625rem', color: 'var(--text-muted)' }}>Connected</span>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       );
                     })()}
