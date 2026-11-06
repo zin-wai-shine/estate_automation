@@ -192,18 +192,22 @@
 
   // Find ChatGPT send button (strictly excluding desktop app, model pickers, files, mic, etc.)
   function findSendButton() {
-    // 1. Explicit modern attributes
+    // 1. Explicit modern attributes & submit buttons
     const explicit = (
       document.querySelector('button[data-testid="send-button"]') ||
       document.querySelector('button[data-testid="composer-send-button"]') ||
+      document.querySelector('button[data-testid*="send" i]') ||
       document.querySelector('button[aria-label="Send"]') ||
       document.querySelector('button[aria-label="Send prompt"]') ||
-      document.querySelector('button[aria-label="Send message"]')
+      document.querySelector('button[aria-label="Send message"]') ||
+      document.querySelector('button[aria-label*="Send" i]') ||
+      document.querySelector('form button[type="submit"]') ||
+      document.querySelector('button[type="submit"]')
     );
     if (explicit && isSendButtonReady(explicit) && !isStopButton(explicit)) return explicit;
 
     // 2. Search composer toolbar for the send button (circular button with SVG up-arrow)
-    const composer = getComposerContainer() || document;
+    const composer = getComposerContainer() || document.querySelector('form') || document;
     const buttons = Array.from(composer.querySelectorAll('button:not(:disabled)')).filter((b) => {
       const aria = (b.getAttribute('aria-label') || '').toLowerCase();
       const testid = (b.getAttribute('data-testid') || '').toLowerCase();
@@ -251,14 +255,7 @@
 
       // Send button is always a small circular button with an SVG icon
       const rect = b.getBoundingClientRect();
-      if (rect.width > 54 || rect.height > 54 || rect.width < 18 || rect.height < 18) {
-        return false;
-      }
-
-      // Must be near or below the prompt textarea, never way above in the chat history
-      const promptInput = findPromptInput();
-      const promptRect = promptInput?.getBoundingClientRect();
-      if (promptRect && rect.bottom < promptRect.top - 10) {
+      if (rect.width > 60 || rect.height > 60 || rect.width < 18 || rect.height < 18) {
         return false;
       }
 
@@ -299,27 +296,39 @@
   }
 
   // Wait for the attachment thumbnail in composer to finish uploading to OpenAI server
-  async function waitForAttachmentUploadComplete(composerEl, maxWaitMs = 4000) {
+  async function waitForAttachmentUploadComplete(composerEl, maxWaitMs = 15000) {
     const deadline = Date.now() + maxWaitMs;
     console.log('[BOLTHAVEN] Checking attachment upload status in composer...');
     while (Date.now() < deadline) {
       if (activeJobAborted) return false;
       const composer = composerEl || getComposerContainer() || document;
 
-      // Only check genuine spinning loader icons (NEVER raw SVG circle tag which matches static icons!)
-      const spinner = composer.querySelector('svg.animate-spin, [class*="animate-spin"], [role="progressbar"], div[class*="loading" i]');
+      // Check if any thumbnail card still has an active circular progress ring / spinner
+      const cards = Array.from(composer.querySelectorAll('[class*="attachment" i], [class*="thumbnail" i], div[class*="rounded"]'));
+      let hasActiveUploadRing = false;
+      for (const card of cards) {
+        const ring = card.querySelector('svg circle[stroke-dasharray], svg circle[stroke-dashoffset], svg.animate-spin, [class*="progress" i]');
+        if (ring) {
+          const r = ring.getBoundingClientRect();
+          if (r.width >= 10 && r.height >= 10) {
+            hasActiveUploadRing = true;
+            break;
+          }
+        }
+      }
+
       const sendBtn = findSendButton();
       const sendReady = isSendButtonReady(sendBtn);
 
-      if (!spinner && sendReady) {
-        await new Promise((r) => setTimeout(r, 300));
-        console.log('[BOLTHAVEN] ✓ Attachment ready in composer!');
+      if (!hasActiveUploadRing && sendReady) {
+        await new Promise((r) => setTimeout(r, 400));
+        console.log('[BOLTHAVEN] ✓ Attachment upload fully complete and Send button ready!');
         return true;
       }
 
-      await new Promise((r) => setTimeout(r, 200));
+      await new Promise((r) => setTimeout(r, 250));
     }
-    console.log('[BOLTHAVEN] Attachment settled, proceeding to prompt...');
+    console.log('[BOLTHAVEN] Attachment upload settle window closed, proceeding...');
     return true;
   }
 
@@ -1937,10 +1946,14 @@
       document.querySelector('button[data-testid="create-new-chat-button"]') ||
       document.querySelector('a[data-testid="create-new-chat-button"]') ||
       document.querySelector('button[aria-label*="New chat" i]') ||
-      document.querySelector('a[aria-label*="New chat" i]')
+      document.querySelector('a[aria-label*="New chat" i]') ||
+      document.querySelector('button[data-testid="fruitjuice-new-chat-button"]')
     );
     if (newChatBtn) {
-      newChatBtn.click();
+      try { newChatBtn.click(); return true; } catch (e) {}
+    }
+    if (window.location.pathname !== '/' || window.location.search) {
+      window.location.href = 'https://chatgpt.com/';
       return true;
     }
     return false;
@@ -1958,7 +1971,7 @@
       throw new Error('Tab was in Temporary Chat mode (image generation disabled by ChatGPT). Redirected to standard chat — retrying.');
     }
 
-    const input = await waitForElement('#prompt-textarea, div[contenteditable="true"], .ProseMirror, textarea', 25000);
+    let input = await waitForElement('#prompt-textarea, div[contenteditable="true"], .ProseMirror, textarea', 25000);
     if (!input) {
       throw new Error('Could not locate ChatGPT prompt input textarea');
     }
@@ -2008,6 +2021,7 @@
         console.log('[BOLTHAVEN] Resetting composer via New Chat button to clear leftover image...');
         startNewChatSmoothly();
         await new Promise((r) => setTimeout(r, 1200));
+        input = await waitForElement('#prompt-textarea, div[contenteditable="true"], .ProseMirror, textarea', 15000);
       }
     }
 
@@ -2103,15 +2117,27 @@
       throw new Error('Job stopped by user');
     }
 
-    // ── STRICT ATTACHMENT PRESERVATION CHECK ────────────────────────────────
-    // Ensure the image was NOT removed or detached during prompt insertion!
-    const finalAttachmentCheck = getAttachedImagesCount(findPromptInput() || liveInput);
+    // ── STRICT ATTACHMENT COUNT CHECK (STRICTLY 1 IMAGE ONLY!) ──────────
+    let finalAttachmentCheck = getAttachedImagesCount(findPromptInput() || liveInput);
     if (finalAttachmentCheck < 1) {
       clearPromptText(liveInput);
       throw new Error(`CRITICAL: Attached image was lost before sending! Refusing to send prompt without image.`);
     }
 
-    console.log(`[BOLTHAVEN] ✓ Step 2 Done: Image attached (${finalAttachmentCheck} verified) + prompt ready (${composerText.length} chars). Sending Image #${job.original_position || 1}...`);
+    // If more than 1 image got attached, prune immediately down to strictly 1!
+    if (finalAttachmentCheck > 1) {
+      console.warn(`[BOLTHAVEN] Detected ${finalAttachmentCheck} attachments (expected strictly 1). Pruning down to 1...`);
+      await pruneExcessAttachments(liveInput, 1);
+      await new Promise((r) => setTimeout(r, 400));
+      finalAttachmentCheck = getAttachedImagesCount(findPromptInput() || liveInput);
+      if (finalAttachmentCheck > 1) {
+        clearPromptText(liveInput);
+        startNewChatSmoothly();
+        throw new Error(`CRITICAL: Could not prune excess attachments down to 1 (found ${finalAttachmentCheck}). Resetting tab.`);
+      }
+    }
+
+    console.log(`[BOLTHAVEN] ✓ Step 2 Done: Strictly 1 image verified + prompt ready (${composerText.length} chars). Sending Image #${job.original_position || 1}...`);
 
     // Record pre-existing assistant turn count before sending
     const preAssistantCount = document.querySelectorAll(

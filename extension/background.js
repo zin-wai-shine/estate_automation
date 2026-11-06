@@ -516,8 +516,21 @@ async function processSlot(slotIndex, sessionId, initialJob = null) {
     slot.busy = false;
     slot.currentJob = null;
 
-    // Brief pause before this slot takes the next job from queue
-    await delay(1500);
+    // Reset this tab to New Chat so the next queue item gets a 100% clean composer with ZERO leftover images!
+    if (automation.isRunning && automation.queue.length > 0) {
+      try {
+        console.log(`[BOLTHAVEN EXT] Tab ${slot.tabId} finished! Resetting tab to New Chat before taking next queue item...`);
+        await new Promise((res) => {
+          chrome.tabs.sendMessage(slot.tabId, { action: 'RESET_TAB_CHAT' }, () => {
+            if (chrome.runtime.lastError) {}
+            res();
+          });
+        });
+        await delay(1200);
+      } catch (e) {}
+    } else {
+      await delay(1000);
+    }
   }
 
   // Check if all slots have finished
@@ -1001,50 +1014,37 @@ async function startAutomation(payload) {
     return { success: false, error: 'Automation cancelled by user' };
   }
 
-  let activeTabIds = (Array.isArray(ensuredTabIds) && ensuredTabIds.length > 0)
-    ? ensuredTabIds.slice(0, maxWorkers)
-    : [];
+  // Ensure activeTabIds contains strictly unique tab IDs, up to maxWorkers
+  let activeTabIds = Array.from(new Set(Array.isArray(ensuredTabIds) ? ensuredTabIds : [])).slice(0, maxWorkers);
 
-  // Fallback: If not enough tabs returned by ensureTabGroupOpen, locate available tabs
+  // If not enough tabs returned by ensureTabGroupOpen, find available ChatGPT tabs in Chrome
   if (activeTabIds.length < maxWorkers) {
     const allTabs = await chrome.tabs.query({});
-    const realTabIdSet = new Set(allTabs.map((t) => t.id));
-
-    if (Array.isArray(tabIds) && tabIds.length > 0) {
-      const valid = tabIds.filter((id) => typeof id === 'number' && realTabIdSet.has(id));
-      for (const vid of valid) {
-        if (!activeTabIds.includes(vid)) {
-          activeTabIds.push(vid);
-          if (activeTabIds.length >= maxWorkers) break;
-        }
-      }
-    }
-
-    if (activeTabIds.length < maxWorkers) {
-      const reserved = await getAllReservedTabIds(groupName || 'Enhance IMG');
-      const chatGPTTabs = allTabs.filter((t) => (t.url || '').includes('chatgpt.com') && !reserved.has(t.id));
-      for (const t of chatGPTTabs) {
-        if (!activeTabIds.includes(t.id)) {
-          activeTabIds.push(t.id);
-          if (activeTabIds.length >= maxWorkers) break;
-        }
+    const chatGPTTabs = allTabs.filter((t) => (t.url || '').includes('chatgpt.com'));
+    for (const t of chatGPTTabs) {
+      if (!activeTabIds.includes(t.id)) {
+        activeTabIds.push(t.id);
+        if (activeTabIds.length >= maxWorkers) break;
       }
     }
   }
 
-  // Open any remaining tabs to reach maxWorkers
-  if (activeTabIds.length < maxWorkers) {
-    const needed = maxWorkers - activeTabIds.length;
-    console.log(`[BOLTHAVEN EXT] Opening ${needed} additional ChatGPT worker tab(s)...`);
-    for (let i = 0; i < needed; i++) {
-      const idx = activeTabIds.length;
-      const targetUrl = (groupTabUrls && groupTabUrls[idx]) || 'https://chatgpt.com/';
-      const created = await chrome.tabs.create({ url: targetUrl, active: false });
+  // If STILL not enough tabs, open fresh tabs immediately so activeTabIds has exactly maxWorkers unique tabs!
+  while (activeTabIds.length < maxWorkers) {
+    const idx = activeTabIds.length;
+    console.log(`[BOLTHAVEN EXT] Opening fresh ChatGPT worker tab #${idx + 1} of ${maxWorkers}...`);
+    try {
+      const created = await chrome.tabs.create({ url: 'https://chatgpt.com/', active: false });
       activeTabIds.push(created.id);
+      await delay(300);
+    } catch (e) {
+      console.warn('[BOLTHAVEN EXT] Error creating fresh worker tab:', e.message);
+      break;
     }
   }
 
-  activeTabIds = activeTabIds.slice(0, maxWorkers);
+  activeTabIds = Array.from(new Set(activeTabIds)).slice(0, maxWorkers);
+  console.log(`[BOLTHAVEN EXT] 🚀 Bound ${activeTabIds.length} distinct worker tabs: [${activeTabIds.join(', ')}]`);
 
   // Ensure content scripts are active on all worker tabs in parallel (fast, no blocking sequential loops)
   await Promise.all(activeTabIds.map((tid) => ensureContentScriptInjected(tid)));
@@ -1149,9 +1149,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           const explicit = (
             document.querySelector('button[data-testid="send-button"]') ||
             document.querySelector('button[data-testid="composer-send-button"]') ||
+            document.querySelector('button[data-testid*="send" i]') ||
             document.querySelector('button[aria-label="Send prompt"]') ||
             document.querySelector('button[aria-label="Send message"]') ||
-            document.querySelector('button[aria-label="Send"]')
+            document.querySelector('button[aria-label="Send"]') ||
+            document.querySelector('button[aria-label*="Send" i]') ||
+            document.querySelector('form button[type="submit"]') ||
+            document.querySelector('button[type="submit"]')
           );
           let btn = (explicit && !explicit.disabled && explicit.getAttribute('aria-disabled') !== 'true' && !isStop(explicit)) ? explicit : null;
 
