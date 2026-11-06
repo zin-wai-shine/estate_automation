@@ -7,6 +7,8 @@ import {
   FiImage,
   FiCheckCircle,
   FiLayers,
+  FiFolder,
+  FiFolderPlus,
 } from 'react-icons/fi';
 import {
   type CropStudioFormat,
@@ -87,6 +89,9 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
   const [nodeTitle, setNodeTitle] = useState<string>(() => (box.title || 'Crop & Cut').replace(/^Format:\s*/i, ''));
   const [isEditingFormatName, setIsEditingFormatName] = useState(false);
   const [formatNameInput, setFormatNameInput] = useState('');
+  const [downloadFolder, setDownloadFolder] = useState<string>(() => {
+    return box.downloadFolder || localStorage.getItem('ea_crop_download_folder') || '/Downloads';
+  });
 
   useEffect(() => {
     const formatId =
@@ -864,6 +869,130 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
               </div>
             </div>
           )}
+        </div>
+
+        {/* ── 3. Storage & Download Destination ────────────────────── */}
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.75rem',
+            padding: '12px 14px',
+            borderRadius: '10px',
+            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#F8FAFC',
+            border: '1px solid var(--border-color)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div
+                style={{
+                  width: '26px',
+                  height: '26px',
+                  borderRadius: '6px',
+                  backgroundColor: '#0EA5E9',
+                  color: '#FFFFFF',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <FiFolder size={13} />
+              </div>
+              <div>
+                <div style={{ fontSize: '0.78125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                  Storage &amp; Download Destination
+                </div>
+                <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
+                  Where processed photos will be saved
+                </div>
+              </div>
+            </div>
+
+            <span
+              style={{
+                fontSize: '0.625rem',
+                fontWeight: 600,
+                padding: '2px 8px',
+                borderRadius: '10px',
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
+                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                color: 'var(--text-secondary)',
+              }}
+            >
+              Default: /Downloads
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+              Folder / Directory Path
+            </label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <input
+                type="text"
+                value={downloadFolder}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setDownloadFolder(val);
+                  onUpdateBox(box.id, { downloadFolder: val });
+                  localStorage.setItem('ea_crop_download_folder', val);
+                }}
+                placeholder="/Downloads"
+                style={{
+                  flex: 1,
+                  height: '32px',
+                  padding: '0 10px',
+                  fontSize: '0.75rem',
+                  borderRadius: '6px',
+                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                  backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
+                  color: 'var(--text-primary)',
+                  outline: 'none',
+                }}
+              />
+              <button
+                type="button"
+                onClick={async () => {
+                  if ('showDirectoryPicker' in window) {
+                    try {
+                      const handle = await (window as any).showDirectoryPicker();
+                      const path = `/${handle.name}`;
+                      setDownloadFolder(path);
+                      onUpdateBox(box.id, { downloadFolder: path });
+                      localStorage.setItem('ea_crop_download_folder', path);
+                    } catch (_) {}
+                  } else {
+                    setDownloadFolder('/Downloads');
+                    onUpdateBox(box.id, { downloadFolder: '/Downloads' });
+                    localStorage.setItem('ea_crop_download_folder', '/Downloads');
+                  }
+                }}
+                style={{
+                  height: '32px',
+                  padding: '0 10px',
+                  borderRadius: '6px',
+                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.6875rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                <FiFolderPlus size={12} />
+                <span>Browse...</span>
+              </button>
+            </div>
+            <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>
+              When downloading from &quot;{nodeTitle || box.title}&quot;, photos will be saved directly or organized into a subfolder named <code>/{(nodeTitle || box.title || 'Photo-Format').replace(/^Format:\s*/i, '').replace(/[\/\\?%*:|"<>]/g, '').trim()}</code> in this location.
+            </div>
+          </div>
         </div>
       </div>
 

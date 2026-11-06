@@ -279,6 +279,7 @@ export interface DynamicAIBoxConfig {
   subtitle?: string;
   targetPages?: 'all' | 'first-only' | 'body-only' | 'custom';
   customPages?: string;
+  downloadFolder?: string;
   x: number;
   y: number;
   n8nWorkflowId?: string;

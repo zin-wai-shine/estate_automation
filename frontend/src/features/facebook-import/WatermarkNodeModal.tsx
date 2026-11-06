@@ -1,5 +1,18 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { FiEdit2, FiMaximize2, FiCheck, FiX, FiImage, FiSettings } from 'react-icons/fi';
+import {
+  FiEdit2,
+  FiMaximize2,
+  FiCheck,
+  FiX,
+  FiImage,
+  FiSettings,
+  FiDownload,
+  FiFolderPlus,
+  FiArchive,
+  FiChevronUp,
+  FiChevronDown,
+} from 'react-icons/fi';
+import JSZip from 'jszip';
 import {
   type CropStudioFormat,
   getSavedCropFormats,
@@ -129,6 +142,190 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     height: number;
     aspect: string;
   }>>([]);
+
+  // Storage & Download state
+  const [isDownloadDropdownOpen, setIsDownloadDropdownOpen] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const downloadDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown on click outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (downloadDropdownRef.current && !downloadDropdownRef.current.contains(e.target as Node)) {
+        setIsDownloadDropdownOpen(false);
+      }
+    };
+    if (isDownloadDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isDownloadDropdownOpen]);
+
+  const configuredFolder = box.downloadFolder || localStorage.getItem('ea_crop_download_folder') || '/Downloads';
+  const displayFolderName = configuredFolder.replace(/^\//, '').trim() ? configuredFolder.replace(/^\//, '').replace(/\/$/, '') : 'Downloads';
+  const cleanBoxName = (nodeTitle || box.title || 'Photo-Format').replace(/^Format:\s*/i, '').replace(/[\/\\?%*:|"<>]/g, '').trim();
+
+  const fetchBlobFromUrl = async (url: string): Promise<Blob> => {
+    if (url.startsWith('data:')) {
+      const commaIdx = url.indexOf(',');
+      const header = url.slice(0, commaIdx);
+      const base64Data = url.slice(commaIdx + 1);
+      const mimeType = header.match(/:(.*?);/)?.[1] || 'image/jpeg';
+      const binaryStr = atob(base64Data);
+      const bytes = new Uint8Array(binaryStr.length);
+      for (let i = 0; i < binaryStr.length; i++) {
+        bytes[i] = binaryStr.charCodeAt(i);
+      }
+      return new Blob([bytes], { type: mimeType });
+    } else {
+      const fullUrl = url.startsWith('/storage') ? `http://localhost:8085${url}` : url;
+      const response = await fetch(fullUrl, { mode: 'cors' });
+      return await response.blob();
+    }
+  };
+
+  const downloadFileFromUrl = async (url: string, filename: string) => {
+    try {
+      const blob = await fetchBlobFromUrl(url);
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => {
+        try { URL.revokeObjectURL(blobUrl); } catch (_) {}
+      }, 30000);
+    } catch (err) {
+      console.warn('downloadFileFromUrl direct fallback:', err);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.target = '_blank';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+  };
+
+  const handleDownloadSinglePhoto = async (item: any, index: number, e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+    const fileNum = item.tileIndex ? `tile-${item.tileIndex}` : `${index + 1}`;
+    const ext = item.url.includes('.png') ? 'png' : 'jpg';
+    const fileName = `${cleanBoxName}-${fileNum}.${ext}`;
+    await downloadFileFromUrl(item.url, fileName);
+  };
+
+  const handleDownloadDirectly = async () => {
+    setIsDownloadDropdownOpen(false);
+    if (displayPreviewItems.length === 0) return;
+    setIsDownloading(true);
+    try {
+      for (let i = 0; i < displayPreviewItems.length; i++) {
+        const item = displayPreviewItems[i];
+        const fileNum = item.tileIndex ? `tile-${item.tileIndex}` : `${i + 1}`;
+        const ext = item.url.includes('.png') ? 'png' : 'jpg';
+        const fileName = `${cleanBoxName}-${fileNum}.${ext}`;
+        await downloadFileFromUrl(item.url, fileName);
+        if (i < displayPreviewItems.length - 1) {
+          await new Promise((r) => setTimeout(r, 250));
+        }
+      }
+    } catch (err) {
+      console.error('Direct download error:', err);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  const handleDownloadWithFolder = async () => {
+    setIsDownloadDropdownOpen(false);
+    if (displayPreviewItems.length === 0) return;
+    setIsDownloading(true);
+
+    try {
+      if ('showDirectoryPicker' in window) {
+        try {
+          const rootDirHandle = await (window as any).showDirectoryPicker({ mode: 'readwrite' });
+          const subDirHandle = await rootDirHandle.getDirectoryHandle(cleanBoxName, { create: true });
+
+          for (let i = 0; i < displayPreviewItems.length; i++) {
+            const item = displayPreviewItems[i];
+            const fileNum = item.tileIndex ? `tile-${item.tileIndex}` : `${i + 1}`;
+            const ext = item.url.includes('.png') ? 'png' : 'jpg';
+            const fileName = `${cleanBoxName}-${fileNum}.${ext}`;
+
+            const blob = await fetchBlobFromUrl(item.url);
+            const fileHandle = await subDirHandle.getFileHandle(fileName, { create: true });
+            const writable = await fileHandle.createWritable();
+            await writable.write(blob);
+            await writable.close();
+          }
+          setIsDownloading(false);
+          return;
+        } catch (pickerErr: any) {
+          if (pickerErr.name === 'AbortError') {
+            setIsDownloading(false);
+            return;
+          }
+          console.warn('showDirectoryPicker fallback to ZIP:', pickerErr);
+        }
+      }
+
+      await handleDownloadZipWithFolders();
+    } catch (err) {
+      console.error('Download with folder error:', err);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  const handleDownloadZipWithFolders = async () => {
+    setIsDownloadDropdownOpen(false);
+    if (displayPreviewItems.length === 0) return;
+    setIsDownloading(true);
+
+    try {
+      const zip = new JSZip();
+      const folder = zip.folder(cleanBoxName);
+
+      for (let i = 0; i < displayPreviewItems.length; i++) {
+        const item = displayPreviewItems[i];
+        const fileNum = item.tileIndex ? `tile-${item.tileIndex}` : `${i + 1}`;
+        const ext = item.url.includes('.png') ? 'png' : 'jpg';
+        const fileName = `${cleanBoxName}-${fileNum}.${ext}`;
+
+        const blob = await fetchBlobFromUrl(item.url);
+        if (folder) {
+          folder.file(fileName, blob);
+        } else {
+          zip.file(`${cleanBoxName}/${fileName}`, blob);
+        }
+      }
+
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const blobUrl = URL.createObjectURL(zipBlob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = `${cleanBoxName}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => {
+        try { URL.revokeObjectURL(blobUrl); } catch (_) {}
+      }, 30000);
+    } catch (err) {
+      console.error('Failed to create ZIP:', err);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
 
   // Image Source Selection: 'get_images' | 'enhance' | 'generate' | 'all'
   const [imageSource, setImageSource] = useState<'get_images' | 'enhance' | 'generate' | 'all'>(
@@ -898,17 +1095,18 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
                         display: 'block',
                       }}
                     />
-                    {/* Hover Overlay with Maximize Icon */}
+                    {/* Hover Overlay with Download & Maximize Icons */}
                     <div
                       style={{
                         position: 'absolute',
                         inset: 0,
-                        backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                        backgroundColor: 'rgba(0, 0, 0, 0.4)',
                         opacity: 0,
                         transition: 'opacity 0.15s ease',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
+                        gap: '8px',
                         color: '#FFFFFF',
                       }}
                       onMouseEnter={(e) => {
@@ -918,16 +1116,41 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
                         e.currentTarget.style.opacity = '0';
                       }}
                     >
+                      <button
+                        type="button"
+                        onClick={(e) => handleDownloadSinglePhoto(item, idx, e)}
+                        title={`Download ${item.label || `Photo #${idx + 1}`}`}
+                        style={{
+                          width: '28px',
+                          height: '28px',
+                          borderRadius: '50%',
+                          backgroundColor: 'rgba(0, 0, 0, 0.75)',
+                          border: '1px solid rgba(255, 255, 255, 0.35)',
+                          color: '#FFFFFF',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          cursor: 'pointer',
+                          transition: 'transform 0.15s ease, background-color 0.15s ease',
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.9)')}
+                        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.75)')}
+                      >
+                        <FiDownload size={13} />
+                      </button>
+
                       <div
                         style={{
-                          width: '26px',
-                          height: '26px',
+                          width: '28px',
+                          height: '28px',
                           borderRadius: '50%',
-                          backgroundColor: 'rgba(0, 0, 0, 0.65)',
+                          backgroundColor: 'rgba(0, 0, 0, 0.75)',
+                          border: '1px solid rgba(255, 255, 255, 0.35)',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
                         }}
+                        title="Click to view full size"
                       >
                         <FiMaximize2 size={13} />
                       </div>
@@ -980,6 +1203,194 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
             <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
               Click any photo to select &amp; view full size
             </span>
+          </div>
+
+          {/* Download All Button with Dropdown (Styled matching Image 4) */}
+          <div ref={downloadDropdownRef} style={{ position: 'relative', marginTop: '4px' }}>
+            <button
+              type="button"
+              disabled={isDownloading}
+              onClick={() => setIsDownloadDropdownOpen((prev) => !prev)}
+              style={{
+                width: '100%',
+                height: '38px',
+                padding: '0 14px',
+                borderRadius: '8px',
+                border: isDark ? '1px solid #484F58' : '1px solid #CBD5E1',
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#FFFFFF',
+                color: 'var(--text-primary)',
+                fontSize: '0.8125rem',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                cursor: isDownloading ? 'wait' : 'pointer',
+                transition: 'all 0.15s ease',
+                boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.3)' : '0 1px 2px rgba(0,0,0,0.05)',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.09)' : 'rgba(0, 0, 0, 0.04)';
+                e.currentTarget.style.borderColor = isDark ? '#6E7681' : '#94A3B8';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.05)' : '#FFFFFF';
+                e.currentTarget.style.borderColor = isDark ? '#484F58' : '#CBD5E1';
+              }}
+            >
+              <FiDownload size={15} style={{ color: 'var(--text-secondary)' }} />
+              <span>
+                {isDownloading
+                  ? 'Downloading...'
+                  : `Download All (${displayPreviewItems.length} ${isGridFormat && displayPreviewItems.length > 1 ? 'Tiles' : 'Photos'})`}
+              </span>
+              {isDownloadDropdownOpen ? <FiChevronUp size={15} /> : <FiChevronDown size={15} />}
+            </button>
+
+            {/* Dropdown Popover (Exact match to Image 4) */}
+            {isDownloadDropdownOpen && (
+              <div
+                style={{
+                  position: 'absolute',
+                  bottom: '100%',
+                  left: 0,
+                  right: 0,
+                  marginBottom: '8px',
+                  borderRadius: '12px',
+                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                  backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                  boxShadow: '0 12px 28px rgba(0, 0, 0, 0.55), 0 4px 10px rgba(0, 0, 0, 0.3)',
+                  padding: '6px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '4px',
+                  zIndex: 100,
+                }}
+              >
+                {/* 1. Directly to Downloads Folder */}
+                <div
+                  onClick={handleDownloadDirectly}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    transition: 'background-color 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                >
+                  <div
+                    style={{
+                      width: '36px',
+                      height: '36px',
+                      borderRadius: '8px',
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.04)',
+                      border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                      color: 'var(--text-secondary)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <FiDownload size={18} />
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
+                    <span style={{ fontSize: '0.84375rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                      Directly to {displayFolderName} Folder
+                    </span>
+                    <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                      Save all {displayPreviewItems.length} photos directly
+                    </span>
+                  </div>
+                </div>
+
+                {/* 2. Create Folders in Downloads */}
+                <div
+                  onClick={handleDownloadWithFolder}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    transition: 'background-color 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                >
+                  <div
+                    style={{
+                      width: '36px',
+                      height: '36px',
+                      borderRadius: '8px',
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.04)',
+                      border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                      color: 'var(--text-secondary)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <FiFolderPlus size={18} />
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
+                    <span style={{ fontSize: '0.84375rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                      Create Folders in {displayFolderName}
+                    </span>
+                    <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                      Creates folder /{cleanBoxName}/ with relative photos
+                    </span>
+                  </div>
+                </div>
+
+                {/* 3. Download ZIP with Folders */}
+                <div
+                  onClick={handleDownloadZipWithFolders}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    transition: 'background-color 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                >
+                  <div
+                    style={{
+                      width: '36px',
+                      height: '36px',
+                      borderRadius: '8px',
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.04)',
+                      border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                      color: 'var(--text-secondary)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <FiArchive size={18} />
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
+                    <span style={{ fontSize: '0.84375rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                      Download ZIP with Folders
+                    </span>
+                    <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                      Bundle /{cleanBoxName}/ in {cleanBoxName}.zip
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
