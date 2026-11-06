@@ -10803,7 +10803,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                 top: 0,
                 right: 0,
                 bottom: 0,
-                width: '380px',
+                width: isCombine ? '40%' : '380px',
+                minWidth: isCombine ? '420px' : undefined,
                 maxWidth: '100%',
                 backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
                 borderLeft: '1px solid var(--border-color)',
@@ -14888,7 +14889,7 @@ export const FacebookWorkflowCanvas = forwardRef<
             position: 'fixed',
             top: 0,
             bottom: 0,
-            right: '380px', // sits smoothly right alongside the 380px main sidebar inspector
+            right: activeModalNode?.type === 'combine' ? '40%' : '380px', // sits smoothly right alongside the main sidebar inspector
             width: '440px',
             maxWidth: 'calc(100vw - 420px)',
             backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
