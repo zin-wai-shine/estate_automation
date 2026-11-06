@@ -1139,6 +1139,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         target: { tabId },
         world: 'MAIN',
         func: () => {
+          const form = document.querySelector('form');
           const isStop = (el) => {
             if (!el) return false;
             const aria = (el.getAttribute('aria-label') || '').toLowerCase();
@@ -1146,48 +1147,25 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             return aria.includes('stop') || tid.includes('stop') || Boolean(el.querySelector('svg rect, svg square'));
           };
 
-          const explicit = (
+          // Priority 1: Query submit/send button strictly inside form
+          let btn = (
+            form?.querySelector('button[data-testid="send-button"]') ||
+            form?.querySelector('button[data-testid="composer-send-button"]') ||
+            form?.querySelector('button[aria-label="Send prompt"]') ||
+            form?.querySelector('button[aria-label="Send message"]') ||
+            form?.querySelector('button[aria-label="Send"]') ||
+            form?.querySelector('button[type="submit"]') ||
             document.querySelector('button[data-testid="send-button"]') ||
-            document.querySelector('button[data-testid="composer-send-button"]') ||
-            document.querySelector('button[data-testid*="send" i]') ||
-            document.querySelector('button[aria-label="Send prompt"]') ||
-            document.querySelector('button[aria-label="Send message"]') ||
-            document.querySelector('button[aria-label="Send"]') ||
-            document.querySelector('button[aria-label*="Send" i]') ||
-            document.querySelector('form button[type="submit"]') ||
-            document.querySelector('button[type="submit"]')
+            document.querySelector('form button[type="submit"]')
           );
-          let btn = (explicit && !explicit.disabled && explicit.getAttribute('aria-disabled') !== 'true' && !isStop(explicit)) ? explicit : null;
 
-          if (!btn) {
-            const promptEl = document.querySelector('.ProseMirror, #prompt-textarea, textarea');
-            const pRect = promptEl?.getBoundingClientRect();
-            const btns = Array.from(document.querySelectorAll('button:not(:disabled)')).filter((b) => {
+          if (!btn || btn.disabled || isStop(btn)) {
+            const btns = Array.from((form || document).querySelectorAll('button:not(:disabled)')).filter((b) => {
               if (b.disabled || b.getAttribute('aria-disabled') === 'true' || isStop(b)) return false;
               const aria = (b.getAttribute('aria-label') || '').toLowerCase();
               const text = (b.innerText || b.textContent || '').trim();
               if (text.length > 0) return false;
-              if (
-                aria.includes('editor') ||
-                aria.includes('copy') ||
-                aria.includes('share') ||
-                aria.includes('pin') ||
-                aria.includes('desktop') ||
-                aria.includes('app') ||
-                aria.includes('project') ||
-                aria.includes('plugin') ||
-                aria.includes('attach') ||
-                aria.includes('mic') ||
-                aria.includes('voice') ||
-                aria.includes('model') ||
-                aria.includes('dictate') ||
-                aria.includes('record')
-              ) {
-                return false;
-              }
-              const r = b.getBoundingClientRect();
-              if (r.width < 18 || r.width > 55 || r.height < 18 || r.height > 55) return false;
-              if (pRect && r.bottom < pRect.top - 10) return false;
+              if (aria.includes('attach') || aria.includes('mic') || aria.includes('voice') || aria.includes('plus')) return false;
               return Boolean(b.querySelector('svg'));
             });
             if (btns.length > 0) {
@@ -1198,32 +1176,23 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
           if (btn && !btn.disabled) {
             btn.focus();
-
-            // 1. Invoke React Fiber onClick handler directly (guarantees React 18 event capture!)
+            btn.click();
             try {
-              const reactKey = Object.keys(btn).find((k) => k.startsWith('__reactProps$') || k.startsWith('__reactEventHandlers$'));
-              if (reactKey && btn[reactKey] && typeof btn[reactKey].onClick === 'function') {
-                btn[reactKey].onClick({ preventDefault: () => {}, stopPropagation: () => {}, target: btn, currentTarget: btn, bubbles: true });
-              }
+              const svg = btn.querySelector('svg');
+              if (svg) svg.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
             } catch (e) {}
 
-            const r = btn.getBoundingClientRect();
-            const cx = r.left + r.width / 2;
-            const cy = r.top + r.height / 2;
+            try {
+              const rect = btn.getBoundingClientRect();
+              const cx = rect.left + rect.width / 2;
+              const cy = rect.top + rect.height / 2;
+              btn.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, clientX: cx, clientY: cy, button: 0 }));
+              btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: cx, clientY: cy, button: 0 }));
+              btn.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, clientX: cx, clientY: cy, button: 0 }));
+              btn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, clientX: cx, clientY: cy, button: 0 }));
+              btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: cx, clientY: cy, button: 0 }));
+            } catch (e) {}
 
-            // Pointer & Mouse down: button 0, buttons 1
-            const downOpts = { bubbles: true, cancelable: true, composed: true, view: window, clientX: cx, clientY: cy, button: 0, buttons: 1 };
-            btn.dispatchEvent(new PointerEvent('pointerdown', { ...downOpts, pointerId: 1, isPrimary: true, pointerType: 'mouse' }));
-            btn.dispatchEvent(new MouseEvent('mousedown', downOpts));
-
-            // Pointer & Mouse up + click: button 0, buttons 0 (CRITICAL: React drops clicks if buttons !== 0)
-            const upOpts = { bubbles: true, cancelable: true, composed: true, view: window, clientX: cx, clientY: cy, button: 0, buttons: 0 };
-            btn.dispatchEvent(new PointerEvent('pointerup', { ...upOpts, pointerId: 1, isPrimary: true, pointerType: 'mouse' }));
-            btn.dispatchEvent(new MouseEvent('mouseup', upOpts));
-            btn.dispatchEvent(new MouseEvent('click', upOpts));
-            btn.click();
-
-            const form = btn.closest('form') || btn.form || document.querySelector('form');
             if (form && typeof form.requestSubmit === 'function') {
               try { form.requestSubmit(btn); } catch (e) {
                 try { form.requestSubmit(); } catch (e2) {}
@@ -1242,6 +1211,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             pm.dispatchEvent(new KeyboardEvent('keypress', kOpts));
             pm.dispatchEvent(new KeyboardEvent('keyup', kOpts));
           }
+          return { clicked: true };
         },
       }).then(() => sendResponse({ success: true })).catch((e) => sendResponse({ success: false, error: e.message }));
       return true;

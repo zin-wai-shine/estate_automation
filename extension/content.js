@@ -1965,71 +1965,112 @@
     return true;
   }
 
+  // Clear prompt input cleanly (removes text and chips without touching the attached image)
+  function clearPromptInputCleanly(inputEl) {
+    const promptArea = inputEl || findPromptInput();
+    const composer = getComposerContainer(promptArea) || document.querySelector('form');
+
+    // Dismiss any text/pill chips in composer (excluding image attachment)
+    if (composer) {
+      const dismissBtns = Array.from(composer.querySelectorAll('button')).filter((b) => {
+        const chip = b.closest('[class*="pill" i], [class*="chip" i], [class*="badge" i], div[class*="rounded"]');
+        if (!chip) return false;
+        if (chip.querySelector('img, canvas')) return false; // strictly preserve image!
+        const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+        const text = (b.textContent || '').trim().toLowerCase();
+        return aria.includes('remove') || aria.includes('close') || aria.includes('dismiss') || text.includes('✕') || Boolean(b.querySelector('svg'));
+      });
+      for (const btn of dismissBtns) {
+        try { btn.click(); } catch (e) {}
+      }
+    }
+
+    if (promptArea) {
+      promptArea.focus();
+      if (promptArea.tagName === 'TEXTAREA') {
+        promptArea.value = '';
+      } else {
+        const p = promptArea.querySelector('p');
+        if (p) {
+          p.textContent = '';
+        } else {
+          promptArea.textContent = '';
+        }
+      }
+      promptArea.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+      promptArea.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+    }
+  }
+
   // Reliable prompt inserter that keeps ProseMirror document model in sync
   async function insertPromptCleanly(promptEl, promptText) {
     if (!promptEl || !promptText) return false;
     const cleanText = promptText.trim();
     promptEl.focus();
 
-    // Method 1: Native clipboard paste event (ProseMirror's native handler)
-    try {
-      const dt = new DataTransfer();
-      dt.setData('text/plain', cleanText);
-      const pasteEv = new ClipboardEvent('paste', {
-        bubbles: true,
-        cancelable: true,
-        composed: true,
-        clipboardData: dt,
-      });
-      promptEl.dispatchEvent(pasteEv);
-      await new Promise((r) => setTimeout(r, 200));
-    } catch (e) {}
+    let p = promptEl.querySelector('p');
+    if (!p) {
+      p = document.createElement('p');
+      promptEl.appendChild(p);
+    }
+    p.focus();
 
-    let current = getComposerText(promptEl);
-    if (current && current.length >= 10) return true;
-
-    // Method 2: Target <p> line by line via execCommand (handles multi-line text)
+    // Select <p> contents and replace cleanly
     try {
-      let targetP = promptEl.querySelector('p');
-      if (!targetP) {
-        targetP = document.createElement('p');
-        promptEl.appendChild(targetP);
-      }
-      targetP.focus();
       const sel = window.getSelection();
       const range = document.createRange();
-      range.selectNodeContents(targetP);
+      range.selectNodeContents(p);
       sel.removeAllRanges();
       sel.addRange(range);
-
-      const lines = cleanText.split('\n');
-      for (let i = 0; i < lines.length; i++) {
-        if (lines[i]) {
-          document.execCommand('insertText', false, lines[i]);
-        }
-        if (i < lines.length - 1) {
-          document.execCommand('insertParagraph', false, null);
-        }
-      }
-      await new Promise((r) => setTimeout(r, 200));
+      document.execCommand('delete', false, null);
     } catch (e) {}
 
-    current = getComposerText(promptEl);
-    if (current && current.length >= 10) {
-      promptEl.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
-      return true;
+    let inserted = false;
+    try {
+      inserted = document.execCommand('insertText', false, cleanText);
+    } catch (e) {}
+
+    if (!inserted || (promptEl.innerText || promptEl.textContent || '').trim().length < 5) {
+      p.textContent = cleanText;
+      p.classList.remove('placeholder');
+      p.removeAttribute('data-placeholder');
     }
 
-    // Method 3: MAIN world insertion
-    try {
-      await new Promise((res) => {
-        safeSendMessage({ action: 'INSERT_PROMPT_MAIN_WORLD', text: cleanText }, (r) => res(r));
-      });
-      await new Promise((r) => setTimeout(r, 350));
-    } catch (e) {}
+    promptEl.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, inputType: 'insertText', data: cleanText }));
+    promptEl.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+    promptEl.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+    await new Promise((r) => setTimeout(r, 200));
 
-    current = getComposerText(promptEl);
-    return Boolean(current && current.length >= 10);
+    return true;
+  }
+
+  // Find the exact send button inside the composer
+  function findComposerSendButton() {
+    const composer = getComposerContainer() || document.querySelector('form') || document;
+
+    const byTestId = composer.querySelector('button[data-testid="send-button"], button[data-testid="composer-send-button"]');
+    if (byTestId && !byTestId.disabled) return byTestId;
+
+    const byAria = composer.querySelector('button[aria-label="Send prompt"], button[aria-label="Send message"], button[aria-label="Send"]');
+    if (byAria && !byAria.disabled) return byAria;
+
+    const bySubmit = composer.querySelector('button[type="submit"]');
+    if (bySubmit && !bySubmit.disabled) return bySubmit;
+
+    const btns = Array.from(composer.querySelectorAll('button:not(:disabled)')).filter((b) => {
+      const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+      const tid = (b.getAttribute('data-testid') || '').toLowerCase();
+      if (aria.includes('attach') || aria.includes('plus') || aria.includes('mic') || aria.includes('voice')) return false;
+      if (tid.includes('attach') || tid.includes('mic') || tid.includes('voice')) return false;
+      return Boolean(b.querySelector('svg'));
+    });
+
+    if (btns.length > 0) {
+      btns.sort((a, b) => b.getBoundingClientRect().right - a.getBoundingClientRect().right);
+      return btns[0];
+    }
+
+    return null;
   }
 
   // Robust ChatGPT Send dispatcher (clicks button, requests form submit, and fires Enter key)
@@ -2073,7 +2114,7 @@
       }
 
       // 3. Dispatch full pointer/mouse sequence on Send button
-      const sendBtn = findSendButton();
+      const sendBtn = findComposerSendButton() || findSendButton();
       if (sendBtn && isSendButtonReady(sendBtn)) {
         sendBtn.focus();
         const rect = sendBtn.getBoundingClientRect();
@@ -2089,6 +2130,11 @@
         sendBtn.dispatchEvent(new MouseEvent('mouseup', upOpts));
         sendBtn.dispatchEvent(new MouseEvent('click', upOpts));
         sendBtn.click();
+
+        const svg = sendBtn.querySelector('svg');
+        if (svg) {
+          svg.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        }
 
         const form = sendBtn.closest('form') || document.querySelector('form');
         if (form && typeof form.requestSubmit === 'function') {
@@ -2107,7 +2153,7 @@
       const hasStop = Boolean(findStopButton());
       const composerTextNow = getComposerText(input);
       const attachmentsNow = getAttachedImagesCount(input);
-      const sendBtnNow = findSendButton();
+      const sendBtnNow = findComposerSendButton() || findSendButton();
       const sendGone = !sendBtnNow || !isSendButtonReady(sendBtnNow);
 
       if (generating || hasStop || (composerTextNow.length === 0 && attachmentsNow === 0) || sendGone) {
@@ -2187,11 +2233,14 @@
       throw new Error('Job stopped by user');
     }
 
-    // 3. Set prompt text cleanly
+    // 3. Clear prompt input first, then set prompt text cleanly
     const promptText = (job.resolved_prompt || 'Enhance the attached architectural photo').trim();
     console.log(`[BOLTHAVEN] Setting prompt text (${promptText.length} chars)...`);
 
     const liveInput = findPromptInput() || input;
+    clearPromptInputCleanly(liveInput);
+    await new Promise((r) => setTimeout(r, 200));
+
     await insertPromptCleanly(liveInput, promptText);
     await new Promise((r) => setTimeout(r, 400));
 
