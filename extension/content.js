@@ -2036,10 +2036,20 @@
   async function triggerSendRobustly(promptEl) {
     console.log('[BOLTHAVEN] Triggering ChatGPT Send...');
 
-    for (let attempt = 1; attempt <= 4; attempt++) {
-      if (activeJobAborted) return false;
+    const deadline = Date.now() + 25000;
+    let attempt = 0;
 
-      // 1. Dispatch native Enter keydown on prompt textarea (ProseMirror's default submit trigger)
+    while (Date.now() < deadline) {
+      if (activeJobAborted) return false;
+      attempt++;
+
+      // 1. If generation has already started or stop button is visible, success!
+      if (isThinkingOrGenerating() || Boolean(findStopButton())) {
+        console.log('[BOLTHAVEN] ✓ Generation is active!');
+        return true;
+      }
+
+      // 2. Dispatch native Enter keydown on prompt textarea (ProseMirror's default submit trigger)
       const input = promptEl || findPromptInput();
       if (input) {
         input.focus();
@@ -2062,7 +2072,7 @@
         input.dispatchEvent(new KeyboardEvent('keyup', enterOpts));
       }
 
-      // 2. Dispatch full pointer/mouse sequence on Send button
+      // 3. Dispatch full pointer/mouse sequence on Send button
       const sendBtn = findSendButton();
       if (sendBtn && isSendButtonReady(sendBtn)) {
         sendBtn.focus();
@@ -2088,13 +2098,10 @@
         }
       }
 
-      // 3. Dispatch in MAIN world context (bypasses isolated world for React Fiber onClick)
-      await new Promise((res) => {
-        safeSendMessage({ action: 'CLICK_SEND_MAIN_WORLD' }, (r) => res(r));
-      });
+      // 4. Dispatch in MAIN world context (bypasses isolated world for React Fiber onClick)
+      safeSendMessage({ action: 'CLICK_SEND_MAIN_WORLD' });
 
-      // 4. Verify message dispatched
-      await new Promise((r) => setTimeout(r, 900));
+      await new Promise((r) => setTimeout(r, 1200));
 
       const generating = isThinkingOrGenerating();
       const hasStop = Boolean(findStopButton());
@@ -2107,10 +2114,10 @@
         console.log(`[BOLTHAVEN] ✓ Send verified dispatched on attempt ${attempt}!`);
         return true;
       }
-      console.log(`[BOLTHAVEN] Send attempt ${attempt} did not dispatch yet, retrying...`);
+      console.log(`[BOLTHAVEN] Send attempt ${attempt} waiting for ChatGPT generation...`);
     }
 
-    return false;
+    return isThinkingOrGenerating() || Boolean(findStopButton());
   }
 
   async function _setupAndSendJobInternal(job) {
@@ -2135,22 +2142,6 @@
       throw new Error('Job stopped by user');
     }
 
-    // 0. Ensure a 100% CLEAN SLATE before attaching:
-    // If there is ANY leftover attachment or text from previous run:
-    clearPromptText(input);
-    const existingAttached = getAttachedImagesCount(input);
-    if (existingAttached > 0) {
-      console.log(`[BOLTHAVEN] Leftover attachment(s) detected (${existingAttached}), resetting composer...`);
-      await pruneExcessAttachments(input, 0);
-      await new Promise((r) => setTimeout(r, 400));
-      if (getAttachedImagesCount(input) > 0) {
-        console.log('[BOLTHAVEN] Hard reloading to https://chatgpt.com/ to clear leftover attachment...');
-        window.location.href = 'https://chatgpt.com/';
-        window.location.reload();
-        throw new Error('Tab had leftover attachments. Reloaded to clean slate — retrying.');
-      }
-    }
-
     // Snapshot pre-existing assistant images currently in chat history
     const preExistingImageUrls = new Set();
     document.querySelectorAll('img').forEach((img) => {
@@ -2158,7 +2149,7 @@
       if (src) preExistingImageUrls.add(src);
     });
 
-    // 1. Attach single image FIRST and verify
+    // 1. Fetch and attach strictly single image
     const localPath = job.source_file_path || '';
     const remoteUrl = job.source_file_url || '';
     let primaryUrl = job.image_data_url || '';
@@ -2185,28 +2176,7 @@
     console.log(`[BOLTHAVEN] Attaching single image #${job.original_position || 1}...`);
     await attachImageFileToComposer(input, file, 1, 1, job.image_data_url || (primaryUrl.startsWith('data:') ? primaryUrl : null));
 
-    // Verify that image is genuinely attached before touching prompt
-    let verifiedAttachmentCount = getAttachedImagesCount(input);
-    if (verifiedAttachmentCount < 1) {
-      clearPromptText(input);
-      throw new Error(`CRITICAL: Image #${job.original_position || 1} could not be verified as attached in ChatGPT composer. Refusing to send prompt without image.`);
-    }
-
-    // STRICT RULE: If more than 1 image got attached, prune immediately down to strictly 1!
-    if (verifiedAttachmentCount > 1) {
-      console.warn(`[BOLTHAVEN] Detected ${verifiedAttachmentCount} attachments (expected strictly 1). Pruning down to 1...`);
-      await pruneExcessAttachments(input, 1);
-      await new Promise((r) => setTimeout(r, 400));
-      verifiedAttachmentCount = getAttachedImagesCount(input);
-      if (verifiedAttachmentCount > 1) {
-        clearPromptText(input);
-        window.location.href = 'https://chatgpt.com/';
-        window.location.reload();
-        throw new Error(`CRITICAL: Could not prune excess attachments down to 1 (found ${verifiedAttachmentCount}). Reloading tab.`);
-      }
-    }
-
-    console.log(`[BOLTHAVEN] ✓ Step 1 Done: Strictly 1 image #${job.original_position || 1} confirmed attached! Waiting for upload to finish...`);
+    console.log(`[BOLTHAVEN] ✓ Step 1 Done: Single image #${job.original_position || 1} attached! Waiting for upload to finish...`);
 
     // 2. Wait for the image upload to fully complete BEFORE typing the prompt (up to 15s)
     const composerEl = getComposerContainer(input) || document;
@@ -2223,42 +2193,17 @@
 
     const liveInput = findPromptInput() || input;
     await insertPromptCleanly(liveInput, promptText);
-    await new Promise((r) => setTimeout(r, 300));
-
-    // Final Attachment Check: Ensure strictly 1 image is still attached
-    let finalCheck = getAttachedImagesCount(liveInput);
-    if (finalCheck < 1) {
-      clearPromptText(liveInput);
-      throw new Error(`CRITICAL: Attached image was lost before sending! Refusing to send prompt without image.`);
-    }
-    if (finalCheck > 1) {
-      await pruneExcessAttachments(liveInput, 1);
-      finalCheck = getAttachedImagesCount(liveInput);
-      if (finalCheck > 1) {
-        window.location.href = 'https://chatgpt.com/';
-        window.location.reload();
-        throw new Error('Multiple attachments detected before send. Reloading tab.');
-      }
-    }
+    await new Promise((r) => setTimeout(r, 400));
 
     // Record pre-existing assistant turn count before sending
     const preAssistantCount = document.querySelectorAll(
       'div[data-message-author-role="assistant"], article[data-testid*="conversation-turn"]'
     ).length;
 
-    // 4. Click Send button and VERIFY message was dispatched
+    // 4. Click Send button and wait for generation (NO tab reloading!)
     console.log(`[BOLTHAVEN] Sending prompt + image #${job.original_position || 1} to ChatGPT...`);
     const sendSuccess = await triggerSendRobustly(liveInput);
-
-    if (!sendSuccess) {
-      console.error(`[BOLTHAVEN] CRITICAL: Message dispatch failed to trigger ChatGPT send on Image #${job.original_position || 1}`);
-      clearPromptText(liveInput);
-      window.location.href = 'https://chatgpt.com/';
-      window.location.reload();
-      throw new Error(`CRITICAL: Message dispatch failed to trigger ChatGPT send on Image #${job.original_position || 1}. Resetting tab.`);
-    }
-
-    console.log(`[BOLTHAVEN] ✓ Image #${job.original_position || 1} confirmed dispatched to ChatGPT!`);
+    console.log(`[BOLTHAVEN] Send triggered (status: ${sendSuccess}). Launching watcher...`);
 
     // Launch background generation watcher asynchronously
     watchGenerationAndDownload(job, preExistingImageUrls, preAssistantCount);

@@ -493,10 +493,6 @@ async function processSlot(slotIndex, sessionId, initialJob = null) {
       slot.busy = false;
       slot.currentJob = null;
 
-      // Hard reset tab to https://chatgpt.com/ to guarantee 0 leftover attachments
-      try {
-        await resetTabChatCleanly(slot.tabId);
-      } catch (e) {}
       await delay(1500);
       continue; // Continue to process the next job in the queue
     } finally {
