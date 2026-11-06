@@ -1,4 +1,5 @@
 import { CombineMediaSidebox, type CombineMediaAssetItem } from './CombineMediaSidebox';
+import { GoogleSheetDataViewerSidebox } from './GoogleSheetDataViewerSidebox';
 import React, { useState, useRef, useEffect, useImperativeHandle, forwardRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '../../components/ui/Button';
@@ -3704,6 +3705,8 @@ export const FacebookWorkflowCanvas = forwardRef<
   const [regeneratingBoxId, setRegeneratingBoxId] = useState<string | null>(null);
   const [showFBHeroSettingsSidebox, setShowFBHeroSettingsSidebox] = useState<boolean>(false);
   const [showGoogleSheetSettingsSidebox, setShowGoogleSheetSettingsSidebox] = useState<boolean>(false);
+  const [showGoogleSheetDataViewer, setShowGoogleSheetDataViewer] = useState<boolean>(false);
+  const [sheetViewerBoxConfig, setSheetViewerBoxConfig] = useState<DynamicAIBoxConfig | null>(null);
   const [showPhotoCropSettingsSidebox, setShowPhotoCropSettingsSidebox] = useState<boolean>(false);
   const [showCombineMediaSidebox, setShowCombineMediaSidebox] = useState<boolean>(false);
   const [combineMediaSideboxFormatFilter, setCombineMediaSideboxFormatFilter] = useState<string>('all');
@@ -3712,9 +3715,19 @@ export const FacebookWorkflowCanvas = forwardRef<
   const [sheetSyncSuccessMessage, setSheetSyncSuccessMessage] = useState<string | null>(null);
   const [sheetSyncErrorMessage, setSheetSyncErrorMessage] = useState<string | null>(null);
 
+  const handleOpenGoogleSheetDataViewer = (box?: DynamicAIBoxConfig) => {
+    const target = box || currentModalAIBox || config.aiBoxes.find(isGoogleSheetBox);
+    if (target) {
+      setSheetViewerBoxConfig(target);
+      setShowGoogleSheetDataViewer(true);
+      setShowGoogleSheetSettingsSidebox(false);
+    }
+  };
+
   useEffect(() => {
     setShowFBHeroSettingsSidebox(false);
     setShowGoogleSheetSettingsSidebox(false);
+    setShowGoogleSheetDataViewer(false);
     setShowPhotoCropSettingsSidebox(false);
     setShowCombineMediaSidebox(false);
     setSheetSyncSuccessMessage(null);
@@ -4776,6 +4789,12 @@ export const FacebookWorkflowCanvas = forwardRef<
           e.stopImmediatePropagation();
           e.stopPropagation();
           setShowGoogleSheetSettingsSidebox(false);
+          return;
+        }
+        if (showGoogleSheetDataViewer) {
+          e.stopImmediatePropagation();
+          e.stopPropagation();
+          setShowGoogleSheetDataViewer(false);
           return;
         }
         if (showFBHeroSettingsSidebox) {
@@ -9619,8 +9638,11 @@ export const FacebookWorkflowCanvas = forwardRef<
                   onAddClick={(e) => {
                     e.stopPropagation();
                     setDragWire(null);
-                    setDragWire(null);
-                    handleOpenConnectDrawer(box.id, 'ai-box', box.title || 'AI Processor');
+                    if (isGoogleSheetBox(box)) {
+                      handleOpenGoogleSheetDataViewer(box);
+                    } else {
+                      handleOpenConnectDrawer(box.id, 'ai-box', box.title || 'AI Processor');
+                    }
                   }}
                   onTopAddClick={isTextAI ? (e) => {
                     e.stopPropagation();
@@ -11134,45 +11156,79 @@ export const FacebookWorkflowCanvas = forwardRef<
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0, position: 'relative', zIndex: 50, pointerEvents: 'auto' }}>
                   {isAIBox && currentModalAIBox && isGoogleSheetBox(currentModalAIBox) && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        if (viewingPromptTemplate) {
-                          setViewingPromptTemplate(null);
-                          setShowFBHeroSettingsSidebox(false);
-                          setShowGoogleSheetSettingsSidebox(true);
-                        } else {
-                          setShowFBHeroSettingsSidebox(false);
-                          setShowGoogleSheetSettingsSidebox((prev) => !prev);
-                        }
-                      }}
-                      title="Google Sheet & AI Agent Settings (Spreadsheet, Credentials, Model, Prompt)"
-                      aria-label="Google Sheet Settings"
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        width: '28px',
-                        height: '28px',
-                        borderRadius: '6px',
-                        border: showGoogleSheetSettingsSidebox && !viewingPromptTemplate
-                          ? '1px solid #0F9D58'
-                          : isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                        backgroundColor: showGoogleSheetSettingsSidebox && !viewingPromptTemplate
-                          ? 'rgba(15, 157, 88, 0.15)'
-                          : isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
-                        color: showGoogleSheetSettingsSidebox && !viewingPromptTemplate ? '#0F9D58' : 'var(--text-secondary)',
-                        cursor: 'pointer',
-                        flexShrink: 0,
-                        pointerEvents: 'auto',
-                        userSelect: 'none',
-                        transition: 'all 0.15s ease',
-                      }}
-                    >
-                      <FiSettings size={15} style={{ pointerEvents: 'none' }} />
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleOpenGoogleSheetDataViewer(currentModalAIBox);
+                        }}
+                        title="View Full Google Sheet Data Table (Search & Filter all columns)"
+                        aria-label="View Google Sheet Data Table"
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          width: '28px',
+                          height: '28px',
+                          borderRadius: '6px',
+                          border: showGoogleSheetDataViewer
+                            ? '1px solid #0F9D58'
+                            : isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                          backgroundColor: showGoogleSheetDataViewer
+                            ? 'rgba(15, 157, 88, 0.15)'
+                            : isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+                          color: showGoogleSheetDataViewer ? '#0F9D58' : 'var(--text-secondary)',
+                          cursor: 'pointer',
+                          flexShrink: 0,
+                          pointerEvents: 'auto',
+                          userSelect: 'none',
+                          transition: 'all 0.15s ease',
+                        }}
+                      >
+                        <SiGooglesheets size={14} color="#0F9D58" style={{ pointerEvents: 'none' }} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (viewingPromptTemplate) {
+                            setViewingPromptTemplate(null);
+                            setShowFBHeroSettingsSidebox(false);
+                            setShowGoogleSheetSettingsSidebox(true);
+                          } else {
+                            setShowFBHeroSettingsSidebox(false);
+                            setShowGoogleSheetSettingsSidebox((prev) => !prev);
+                          }
+                        }}
+                        title="Google Sheet & AI Agent Settings (Spreadsheet, Credentials, Model, Prompt)"
+                        aria-label="Google Sheet Settings"
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          width: '28px',
+                          height: '28px',
+                          borderRadius: '6px',
+                          border: showGoogleSheetSettingsSidebox && !viewingPromptTemplate
+                            ? '1px solid #0F9D58'
+                            : isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                          backgroundColor: showGoogleSheetSettingsSidebox && !viewingPromptTemplate
+                            ? 'rgba(15, 157, 88, 0.15)'
+                            : isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+                          color: showGoogleSheetSettingsSidebox && !viewingPromptTemplate ? '#0F9D58' : 'var(--text-secondary)',
+                          cursor: 'pointer',
+                          flexShrink: 0,
+                          pointerEvents: 'auto',
+                          userSelect: 'none',
+                          transition: 'all 0.15s ease',
+                        }}
+                      >
+                        <FiSettings size={15} style={{ pointerEvents: 'none' }} />
+                      </button>
+                    </>
                   )}
 
                   {isAIBox && currentModalAIBox && (
@@ -13492,22 +13548,43 @@ export const FacebookWorkflowCanvas = forwardRef<
                                         Row Added to "{currentModalAIBox.googleSheetName || 'Sheet6'}"
                                       </span>
                                     </div>
-                                    <a
-                                      href={cleanOpenUrl}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      style={{
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
-                                        gap: '4px',
-                                        fontSize: '0.6875rem',
-                                        fontWeight: 600,
-                                        color: isDark ? '#38BDF8' : '#0284C7',
-                                        textDecoration: 'none',
-                                      }}
-                                    >
-                                      Open Sheet <FiExternalLink size={11} />
-                                    </a>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenGoogleSheetDataViewer(currentModalAIBox)}
+                                        style={{
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: '4px',
+                                          fontSize: '0.6875rem',
+                                          fontWeight: 600,
+                                          color: '#0F9D58',
+                                          background: 'none',
+                                          border: 'none',
+                                          cursor: 'pointer',
+                                          padding: 0,
+                                        }}
+                                      >
+                                        <SiGooglesheets size={12} /> View Sheet Data
+                                      </button>
+                                      <span style={{ opacity: 0.3 }}>|</span>
+                                      <a
+                                        href={cleanOpenUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        style={{
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: '4px',
+                                          fontSize: '0.6875rem',
+                                          fontWeight: 600,
+                                          color: isDark ? '#38BDF8' : '#0284C7',
+                                          textDecoration: 'none',
+                                        }}
+                                      >
+                                        Open Sheet <FiExternalLink size={11} />
+                                      </a>
+                                    </div>
                                   </div>
 
                                   {/* Mapped Row Preview */}
@@ -13657,6 +13734,40 @@ export const FacebookWorkflowCanvas = forwardRef<
                                     <span>{hasOutput ? 'Add Another Row to Sheet' : 'Add Row to Google Sheet'}</span>
                                   </>
                                 )}
+                              </button>
+
+                              {/* View All Data from Sheet */}
+                              <button
+                                type="button"
+                                onClick={() => handleOpenGoogleSheetDataViewer(currentModalAIBox)}
+                                style={{
+                                  width: '100%',
+                                  height: '34px',
+                                  padding: '0 1rem',
+                                  borderRadius: '6px',
+                                  border: isDark ? '1px solid #30363D' : '1px solid #D0D7DE',
+                                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF',
+                                  color: 'var(--text-primary)',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '7px',
+                                  transition: 'all 0.15s ease',
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.borderColor = '#0F9D58';
+                                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(15, 157, 88, 0.1)' : 'rgba(15, 157, 88, 0.05)';
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.borderColor = isDark ? '#30363D' : '#D0D7DE';
+                                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF';
+                                }}
+                              >
+                                <SiGooglesheets size={14} color="#0F9D58" />
+                                <span>View All Data from Sheet</span>
                               </button>
 
                               {/* Secondary Action Button: Revert / Delete Added Row from Google Sheet */}
@@ -15095,6 +15206,17 @@ export const FacebookWorkflowCanvas = forwardRef<
           onLoadHeaders={() => handleLoadGoogleSheetHeaders(currentModalAIBox)}
           loadingHeaders={loadingSheetHeaders}
           onUrlChange={(newUrl, delay) => handleSheetUrlChange(currentModalAIBox, newUrl, delay)}
+        />
+      )}
+
+      {/* ── GOOGLE SHEET FULL DATA TABLE VIEWER (SLIDES OUT AT LEFT OF 380px SIDEBAR) ── */}
+      {showGoogleSheetDataViewer && (
+        <GoogleSheetDataViewerSidebox
+          isOpen={showGoogleSheetDataViewer}
+          onClose={() => setShowGoogleSheetDataViewer(false)}
+          isDark={isDark}
+          boxConfig={sheetViewerBoxConfig || currentModalAIBox || config.aiBoxes.find(isGoogleSheetBox) || ({} as any)}
+          isSidebarOpen={Boolean(activeModalNode)}
         />
       )}
 

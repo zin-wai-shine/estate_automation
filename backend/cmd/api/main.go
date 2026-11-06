@@ -198,6 +198,7 @@ func main() {
 	// Google Sheets Integration Routes
 	sheetsGroup := app.Group("/api/google-sheets")
 	sheetsGroup.Post("/load-headers", handlers.LoadGoogleSheetHeaders)
+	sheetsGroup.Post("/fetch-rows", handlers.FetchGoogleSheetRows)
 	sheetsGroup.Post("/prepare-data", handlers.PrepareGoogleSheetData)
 	sheetsGroup.Post("/append-row", handlers.AppendGoogleSheetRow)
 	sheetsGroup.Post("/sync", handlers.ExecuteGoogleSheetSync)

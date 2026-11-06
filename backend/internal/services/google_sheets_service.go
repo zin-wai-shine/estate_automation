@@ -1156,3 +1156,123 @@ Input JSON:
 
 	return mappedData, rowValues, nil
 }
+
+// FetchSheetDataResult represents full sheet rows and headers for data table view
+type FetchSheetDataResult struct {
+	SpreadsheetID    string     `json:"spreadsheet_id"`
+	SpreadsheetTitle string     `json:"spreadsheet_title"`
+	SheetName        string     `json:"sheet_name"`
+	Headers          []string   `json:"headers"`
+	Rows             [][]string `json:"rows"`
+	TotalRows        int        `json:"total_rows"`
+	ServiceAccount   string     `json:"service_account"`
+}
+
+// FetchAllRows fetches the table data (Row 1 headers + all subsequent data rows)
+func (s *GoogleSheetsService) FetchAllRows(ctx context.Context, spreadsheetInput string, sheetNameOpt string, customCredsJSON string, maxRows int) (*FetchSheetDataResult, error) {
+	spreadsheetID := ExtractSpreadsheetID(spreadsheetInput)
+	if spreadsheetID == "" {
+		return nil, fmt.Errorf("invalid spreadsheet URL or ID provided")
+	}
+
+	token, serviceEmail, err := s.GetTokenAndCreds(ctx, customCredsJSON)
+	if err != nil {
+		return nil, fmt.Errorf("authentication error: %w", err)
+	}
+
+	// 1. Resolve sheet metadata and true sheet name
+	meta, err := s.LoadHeaders(ctx, spreadsheetInput, sheetNameOpt, customCredsJSON)
+	if err != nil {
+		return nil, err
+	}
+
+	sheetName := meta.SheetName
+	if sheetName == "" {
+		sheetName = "Sheet1"
+	}
+
+	// 2. Fetch all values using Google Sheets API Values endpoint
+	var escapedSheet string
+	if strings.Contains(sheetName, " ") || strings.Contains(sheetName, "-") || strings.Contains(sheetName, "'") {
+		cleanName := strings.ReplaceAll(sheetName, "'", "''")
+		escapedSheet = url.PathEscape(fmt.Sprintf("'%s'", cleanName))
+	} else {
+		escapedSheet = url.PathEscape(sheetName)
+	}
+
+	apiURL := fmt.Sprintf("https://sheets.googleapis.com/v4/spreadsheets/%s/values/%s?valueRenderOption=FORMATTED_VALUE", spreadsheetID, escapedSheet)
+	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	client := &http.Client{Timeout: 25 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch sheet values: %w", err)
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Google Sheets API error (%d): %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var valuesResp struct {
+		Range  string          `json:"range"`
+		Values [][]interface{} `json:"values"`
+	}
+	if err := json.Unmarshal(bodyBytes, &valuesResp); err != nil {
+		return nil, fmt.Errorf("failed to parse Google Sheets values response: %w", err)
+	}
+
+	headers := meta.Headers
+	rows := [][]string{}
+
+	if len(valuesResp.Values) > 0 {
+		// If headers from values row 0 are more complete, use them
+		firstRow := valuesResp.Values[0]
+		extractedHeaders := make([]string, len(firstRow))
+		for i, h := range firstRow {
+			extractedHeaders[i] = strings.TrimSpace(fmt.Sprintf("%v", h))
+		}
+		if len(extractedHeaders) > 0 {
+			headers = extractedHeaders
+		}
+
+		// Subsequent rows are data
+		for idx := 1; idx < len(valuesResp.Values); idx++ {
+			if maxRows > 0 && len(rows) >= maxRows {
+				break
+			}
+			rawRow := valuesResp.Values[idx]
+			strRow := make([]string, len(headers))
+			hasContent := false
+			for colIdx := 0; colIdx < len(headers); colIdx++ {
+				if colIdx < len(rawRow) && rawRow[colIdx] != nil {
+					v := strings.TrimSpace(fmt.Sprintf("%v", rawRow[colIdx]))
+					strRow[colIdx] = v
+					if v != "" {
+						hasContent = true
+					}
+				} else {
+					strRow[colIdx] = ""
+				}
+			}
+			if hasContent {
+				rows = append(rows, strRow)
+			}
+		}
+	}
+
+	return &FetchSheetDataResult{
+		SpreadsheetID:    meta.SpreadsheetID,
+		SpreadsheetTitle: meta.SpreadsheetTitle,
+		SheetName:        meta.SheetName,
+		Headers:          headers,
+		Rows:             rows,
+		TotalRows:        len(rows),
+		ServiceAccount:   serviceEmail,
+	}, nil
+}

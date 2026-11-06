@@ -54,6 +54,49 @@ func LoadGoogleSheetHeaders(c *fiber.Ctx) error {
 	})
 }
 
+// FetchGoogleSheetRowsRequest represents the request to fetch all rows from Google Sheet
+type FetchGoogleSheetRowsRequest struct {
+	SpreadsheetURL  string `json:"spreadsheet_url"`
+	SheetName       string `json:"sheet_name"`
+	CredentialsJSON string `json:"credentials_json,omitempty"`
+	Limit           int    `json:"limit,omitempty"`
+}
+
+// FetchGoogleSheetRows - POST /api/google-sheets/fetch-rows
+func FetchGoogleSheetRows(c *fiber.Ctx) error {
+	var req FetchGoogleSheetRowsRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"success": false,
+			"error":   "Invalid request payload: " + err.Error(),
+		})
+	}
+
+	urlOrID := strings.TrimSpace(req.SpreadsheetURL)
+	if urlOrID == "" {
+		urlOrID = "https://docs.google.com/spreadsheets/d/1lzY57D5ers2Xs6cvbV-skeqGSAK_jijbQJZt8Hn8udY/edit?gid=0#gid=0"
+	}
+
+	result, err := sheetsService.FetchAllRows(c.Context(), urlOrID, req.SheetName, req.CredentialsJSON, req.Limit)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"success": false,
+			"error":   err.Error(),
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"success":           true,
+		"spreadsheet_id":    result.SpreadsheetID,
+		"spreadsheet_title": result.SpreadsheetTitle,
+		"sheet_name":        result.SheetName,
+		"headers":           result.Headers,
+		"rows":              result.Rows,
+		"total_rows":        result.TotalRows,
+		"service_account":   result.ServiceAccount,
+	})
+}
+
 // PrepareGoogleSheetDataRequest represents the request to structure listing data to sheet headers.
 type PrepareGoogleSheetDataRequest struct {
 	Headers            []string `json:"headers"`
