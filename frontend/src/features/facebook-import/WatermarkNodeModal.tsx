@@ -259,22 +259,50 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
         };
       });
 
-      const res = await fetch('http://localhost:8085/api/facebook-import/save-to-folder', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          target_directory: configuredFolder,
-          folder_name: cleanBoxName,
-          files: payloadFiles,
-        }),
-      });
+      // 1. Try native Mac Companion service (directly writes to ~/Downloads on host Mac without prompts)
+      try {
+        const res = await fetch('http://localhost:9224/save-to-folder', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            target_directory: configuredFolder,
+            folder_name: cleanBoxName,
+            files: payloadFiles,
+          }),
+        });
 
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          setIsDownloading(false);
-          return;
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && data.saved_count > 0) {
+            setIsDownloading(false);
+            return;
+          }
         }
+      } catch (compErr) {
+        console.warn('Mac companion save-to-folder error:', compErr);
+      }
+
+      // 2. Try Go backend service fallback
+      try {
+        const res = await fetch('http://localhost:8085/api/facebook-import/save-to-folder', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            target_directory: configuredFolder,
+            folder_name: cleanBoxName,
+            files: payloadFiles,
+          }),
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && data.saved_count > 0) {
+            setIsDownloading(false);
+            return;
+          }
+        }
+      } catch (backendErr) {
+        console.warn('Backend save-to-folder error:', backendErr);
       }
     } catch (err) {
       console.warn('Backend save-to-folder error, falling back to ZIP:', err);

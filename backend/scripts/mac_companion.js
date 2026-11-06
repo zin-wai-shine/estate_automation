@@ -2201,6 +2201,88 @@ function mergeTabGroups(scannedGroups, liveGroups) {
     return;
   }
 
+  // ── Save to Folder (Downloads Directory) ──────────────────────────────────
+  if (url.pathname === '/save-to-folder' && req.method === 'POST') {
+    let body = '';
+    req.on('data', (c) => (body += c));
+    req.on('end', async () => {
+      try {
+        const payload = JSON.parse(body || '{}');
+        const folderName = (payload.folder_name || 'Photos').replace(/[\/\\?%*:|"<>]/g, '_').trim();
+        const files = Array.isArray(payload.files) ? payload.files : [];
+        const customDir = payload.target_directory;
+
+        let baseDir = path.join(os.homedir(), 'Downloads');
+        if (customDir && customDir !== '/Downloads' && customDir !== 'Downloads') {
+          if (customDir.startsWith('~/')) {
+            baseDir = path.join(os.homedir(), customDir.slice(2));
+          } else if (path.isAbsolute(customDir)) {
+            baseDir = customDir;
+          } else {
+            baseDir = path.join(os.homedir(), customDir);
+          }
+        }
+
+        const targetDir = path.join(baseDir, folderName);
+        if (!fs.existsSync(targetDir)) {
+          fs.mkdirSync(targetDir, { recursive: true });
+        }
+
+        let savedCount = 0;
+        for (const file of files) {
+          const rawFilename = file.filename || `photo_${Date.now()}_${savedCount + 1}.jpg`;
+          const filename = path.basename(rawFilename.replace(/[\/\\?%*:|"<>]/g, '_'));
+          const filePath = path.join(targetDir, filename);
+          const data = file.data || file.url || '';
+
+          let buffer = null;
+          if (data.startsWith('data:')) {
+            const base64Data = data.replace(/^data:image\/\w+;base64,/, '');
+            buffer = Buffer.from(base64Data, 'base64');
+          } else if (data.startsWith('http://') || data.startsWith('https://')) {
+            buffer = await new Promise((resolve) => {
+              const httpMod = data.startsWith('https:') ? https : http;
+              httpMod.get(data, (resp) => {
+                if (resp.statusCode >= 300 && resp.statusCode < 400 && resp.headers.location) {
+                  const redMod = resp.headers.location.startsWith('https:') ? https : http;
+                  redMod.get(resp.headers.location, (redResp) => {
+                    const chunks = [];
+                    redResp.on('data', (c) => chunks.push(c));
+                    redResp.on('end', () => resolve(Buffer.concat(chunks)));
+                    redResp.on('error', () => resolve(null));
+                  }).on('error', () => resolve(null));
+                  return;
+                }
+                const chunks = [];
+                resp.on('data', (c) => chunks.push(c));
+                resp.on('end', () => resolve(Buffer.concat(chunks)));
+                resp.on('error', () => resolve(null));
+              }).on('error', () => resolve(null));
+            });
+          }
+
+          if (buffer && buffer.length > 0) {
+            fs.writeFileSync(filePath, buffer);
+            savedCount++;
+          }
+        }
+
+        try {
+          exec(`open "${targetDir}"`);
+        } catch (_) {}
+
+        console.log(`[COMPANION] 📁 Successfully saved ${savedCount} photos into: ${targetDir}`);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ success: true, folder_path: targetDir, saved_count: savedCount }));
+      } catch (err) {
+        console.error('[COMPANION] Error in /save-to-folder:', err);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ success: false, error: err.message }));
+      }
+    });
+    return;
+  }
+
   // ── Stop Automation ─────────────────────────────────────────────────────────
   if ((url.pathname === '/stop-automation' || url.pathname === '/stop-two-stage' || url.pathname === '/two-stage-stop') && req.method === 'POST') {
     pendingAutomationCommands = [];
