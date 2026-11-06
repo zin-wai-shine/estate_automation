@@ -1,3 +1,4 @@
+import { CombineMediaSidebox, type CombineMediaAssetItem } from './CombineMediaSidebox';
 import React, { useState, useRef, useEffect, useImperativeHandle, forwardRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '../../components/ui/Button';
@@ -3699,6 +3700,9 @@ export const FacebookWorkflowCanvas = forwardRef<
   const [showFBHeroSettingsSidebox, setShowFBHeroSettingsSidebox] = useState<boolean>(false);
   const [showGoogleSheetSettingsSidebox, setShowGoogleSheetSettingsSidebox] = useState<boolean>(false);
   const [showPhotoCropSettingsSidebox, setShowPhotoCropSettingsSidebox] = useState<boolean>(false);
+  const [showCombineMediaSidebox, setShowCombineMediaSidebox] = useState<boolean>(false);
+  const [combineMediaSideboxFormatFilter, setCombineMediaSideboxFormatFilter] = useState<string>('all');
+  const [isHoveringImageStack, setIsHoveringImageStack] = useState<boolean>(false);
   const [isAddingSheetRow, setIsAddingSheetRow] = useState<boolean>(false);
   const [sheetSyncSuccessMessage, setSheetSyncSuccessMessage] = useState<string | null>(null);
   const [sheetSyncErrorMessage, setSheetSyncErrorMessage] = useState<string | null>(null);
@@ -3707,6 +3711,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     setShowFBHeroSettingsSidebox(false);
     setShowGoogleSheetSettingsSidebox(false);
     setShowPhotoCropSettingsSidebox(false);
+    setShowCombineMediaSidebox(false);
     setSheetSyncSuccessMessage(null);
     setSheetSyncErrorMessage(null);
   }, [(activeModalNode as any)?.boxId, activeModalNode?.type]);
@@ -3886,6 +3891,46 @@ export const FacebookWorkflowCanvas = forwardRef<
   const [combineMediaAssets, setCombineMediaAssets] = useState<CombineMediaAssetItem[]>([]);
   // Keep combineCropSlices for backward compat (populated from first watermark box, first image)
   const [combineCropSlices, setCombineCropSlices] = useState<FormattedCropSlice[]>([]);
+
+  const handleDownloadAllCombineAssets = async (assetsToDownload: CombineMediaAssetItem[]) => {
+    for (let s = 0; s < assetsToDownload.length; s++) {
+      await handleDownloadImage(assetsToDownload[s].url, s);
+      if (s < assetsToDownload.length - 1) {
+        await new Promise((r) => setTimeout(r, 350));
+      }
+    }
+  };
+
+  const connectedImageNodesForCombine = useMemo(() => {
+    if (!activeModalNode || activeModalNode.type !== 'combine') return [];
+    const cbId = activeModalNode.combineId || (activeModalNode as any).id;
+    const currentCb = (config.combineBoxes || []).find((b) => b.id === cbId) || config.combineBoxes?.[0];
+    if (!currentCb) return [];
+    const conns = (config.connections || []).filter((c) => c.toNodeId === currentCb.id);
+    return conns
+      .map((c) => {
+        const fromBox = config.aiBoxes.find((b) => b.id === c.fromNodeId);
+        const isImages = c.fromNodeId === 'get-images';
+        const isWatermark = fromBox ? isWatermarkAIBox(fromBox) : false;
+        const isCrop = fromBox ? (fromBox.processType === 'image_crop' || fromBox.title?.toLowerCase().includes('cut') || fromBox.title?.toLowerCase().includes('crop')) : false;
+        const isEnhance = fromBox ? (isEnhanceAIBox(fromBox) || isImageAIBox(fromBox, config.connections)) : false;
+        if (isImages || isWatermark || isCrop || isEnhance) {
+          const boxAssets = fromBox ? combineMediaAssets.filter((a) => a.formatId === fromBox.id) : [];
+          const count = boxAssets.length > 0
+            ? boxAssets.length
+            : isImages
+              ? (images?.length || 0)
+              : (allEnhancedPhotos ? Object.keys(allEnhancedPhotos).length : images?.length || 0);
+          return {
+            id: c.fromNodeId,
+            title: isImages ? 'Get Images' : fromBox?.title || c.fromNodeId,
+            count,
+          };
+        }
+        return null;
+      })
+      .filter(Boolean) as { id: string; title: string; count: number }[];
+  }, [activeModalNode, config.combineBoxes, config.connections, config.aiBoxes, combineMediaAssets, images, allEnhancedPhotos]);
 
   useEffect(() => {
     const watermarkBoxes = (config.aiBoxes || []).filter((b) => isWatermarkAIBox(b) && b.enabled !== false);
@@ -4569,6 +4614,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     setShowFBHeroSettingsSidebox(false);
     setShowGoogleSheetSettingsSidebox(false);
     setShowPhotoCropSettingsSidebox(false);
+    setShowCombineMediaSidebox(false);
     setSelectedNodeIds(new Set());
     setSelectedBoxId(null);
     setViewingPromptTemplate(null);
@@ -4600,6 +4646,12 @@ export const FacebookWorkflowCanvas = forwardRef<
           e.stopImmediatePropagation();
           e.stopPropagation();
           setShowFBHeroSettingsSidebox(false);
+          return;
+        }
+        if (showCombineMediaSidebox) {
+          e.stopImmediatePropagation();
+          e.stopPropagation();
+          setShowCombineMediaSidebox(false);
           return;
         }
         if (deleteConfirmTarget) {
@@ -7963,6 +8015,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     setViewingPromptTemplate(null);
     setShowPhotoCropSettingsSidebox(false);
     setShowFBHeroSettingsSidebox(false);
+    setShowCombineMediaSidebox(false);
     setShowGoogleSheetSettingsSidebox(false);
     setActiveModalNode(node);
 
@@ -10803,12 +10856,11 @@ export const FacebookWorkflowCanvas = forwardRef<
                 top: 0,
                 right: 0,
                 bottom: 0,
-                width: isCombine ? '40%' : '380px',
-                minWidth: isCombine ? '420px' : undefined,
+                width: '380px',
                 maxWidth: '100%',
                 backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
                 borderLeft: '1px solid var(--border-color)',
-                boxShadow: (viewingPromptTemplate || showGoogleSheetSettingsSidebox)
+                boxShadow: (viewingPromptTemplate || showGoogleSheetSettingsSidebox || showCombineMediaSidebox)
                   ? 'none'
                   : isDark
                     ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
@@ -11462,23 +11514,26 @@ export const FacebookWorkflowCanvas = forwardRef<
                     {/* Connect Next Step Quick Button (top) */}
                     {renderCenteredConnectButton(currentCombineBox.id, 'combine', currentCombineBox.title || 'Combine Box')}
                     {(() => {
-                      // Collect all text outputs from parent nodes and their connected children
-                      const connectedTextOutputs: { title: string; text: string }[] = [];
-                      const addTextOutput = (title: string, text: string | undefined) => {
+                      // 1. Collect all connected text outputs from parent nodes and their connected children
+                      const connectedTextOutputs: { title: string; text: string; id: string }[] = [];
+                      const addTextOutput = (id: string, title: string, text: string | undefined) => {
                         if (text && text.trim().length > 0 && !connectedTextOutputs.some((o) => o.text === text.trim())) {
-                          connectedTextOutputs.push({ title, text: text.trim() });
+                          connectedTextOutputs.push({ id, title, text: text.trim() });
                         }
                       };
+
+                      // Collect child format presets info for summary
+                      const connectedFormatPresetsSummary: { id: string; title: string; hasResult: boolean; charCount: number }[] = [];
 
                       for (const c of combineInputs) {
                         const fromBox = config.aiBoxes.find((b) => b.id === c.fromNodeId);
                         const fromTitle = c.fromNodeId === 'get-content' ? 'Get Content' : fromBox?.title || c.fromNodeId;
                         const isTextAI = fromBox
                           ? isTextAIBox(fromBox, config.connections) ||
-                          fromBox.subtitle === 'AI Processor' ||
-                          fromBox.processType === 'text_ai' ||
-                          fromBox.title?.toLowerCase().includes('prompt generator') ||
-                          fromBox.title?.toLowerCase().includes('ai model')
+                            fromBox.subtitle === 'AI Processor' ||
+                            fromBox.processType === 'text_ai' ||
+                            fromBox.title?.toLowerCase().includes('prompt generator') ||
+                            fromBox.title?.toLowerCase().includes('ai model')
                           : false;
 
                         if (isTextAI) {
@@ -11517,17 +11572,23 @@ export const FacebookWorkflowCanvas = forwardRef<
                               const chText =
                                 (aiGeneratedOutputs && (aiGeneratedOutputs[chBox.id] || (chBox.templateId && aiGeneratedOutputs[chBox.templateId]))) ||
                                 (chBox.id === config.aiBoxes[0]?.id ? (aiGeneratedCopy || '') : '');
+                              connectedFormatPresetsSummary.push({
+                                id: chBox.id,
+                                title: chBox.title || 'Format Preset',
+                                hasResult: Boolean(chText && chText.trim().length > 0),
+                                charCount: chText ? chText.length : 0,
+                              });
                               if (chText) {
-                                addTextOutput(chBox.title || 'Format Preset', chText);
+                                addTextOutput(chBox.id, chBox.title || 'Format Preset', chText);
                               }
                             }
                           } else {
                             const parentText = (aiGeneratedOutputs && aiGeneratedOutputs[c.fromNodeId]) || '';
-                            if (parentText) addTextOutput(fromTitle, parentText);
+                            if (parentText) addTextOutput(c.fromNodeId, fromTitle, parentText);
                           }
                         } else {
                           const parentText = (aiGeneratedOutputs && aiGeneratedOutputs[c.fromNodeId]) || (c.fromNodeId === 'get-content' ? rawContent : '');
-                          if (parentText) addTextOutput(fromTitle, parentText);
+                          if (parentText) addTextOutput(c.fromNodeId, fromTitle, parentText);
                         }
                       }
 
@@ -11537,497 +11598,462 @@ export const FacebookWorkflowCanvas = forwardRef<
                           : connectedTextOutputs.map((item) => `## ${item.title}\n\n${item.text}`).join('\n\n---\n\n'))
                         : (aiGeneratedCopy || rawContent || '');
 
+                      const wordCount = mergedText.trim() ? mergedText.trim().split(/\s+/).filter(Boolean).length : 0;
+                      const readyFormatsCount = connectedFormatPresetsSummary.filter((f) => f.hasResult).length;
+
+                      // Images logic
                       const hasImagesIn = combineInputs.some(
                         (c) =>
                           c.fromNodeId === 'get-images' ||
                           config.aiBoxes.some((b) => b.id === c.fromNodeId && (isWatermarkAIBox(b) || isEnhanceAIBox(b) || isImageAIBox(b, config.connections)))
                       );
 
+                      // Image stack thumbnails: pick top 3 distinct images to fan out
+                      const stackThumbnails: string[] = [];
+                      if (combineMediaAssets.length > 0) {
+                        for (const a of combineMediaAssets) {
+                          if (a.url && !stackThumbnails.includes(a.url)) {
+                            stackThumbnails.push(a.url);
+                            if (stackThumbnails.length >= 3) break;
+                          }
+                        }
+                      }
+                      if (stackThumbnails.length < 3 && combineCropSlices.length > 0) {
+                        for (const s of combineCropSlices) {
+                          if (s.url && !stackThumbnails.includes(s.url)) {
+                            stackThumbnails.push(s.url);
+                            if (stackThumbnails.length >= 3) break;
+                          }
+                        }
+                      }
+                      if (stackThumbnails.length < 3 && images && images.length > 0) {
+                        for (const img of images) {
+                          const u = img.stored_url ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`) : img.source_url;
+                          if (u && !stackThumbnails.includes(u)) {
+                            stackThumbnails.push(u);
+                            if (stackThumbnails.length >= 3) break;
+                          }
+                        }
+                      }
+
+                      const totalMediaCount = combineMediaAssets.length > 0
+                        ? combineMediaAssets.length
+                        : combineCropSlices.length > 0
+                          ? combineCropSlices.length
+                          : (images?.length || 0);
+
                       return (
-                        <>
-                          {/* Connected Results Hierarchy: Parent Title -> Connected Children */}
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                              <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
-                                Connected Results & Outputs
-                              </label>
-                              <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
-                                {combineInputs.length} inputs
-                              </span>
-                            </div>
-
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
-                              {combineInputs.map((c) => {
-                                const fromBox = config.aiBoxes.find((b) => b.id === c.fromNodeId);
-                                const isContent = c.fromNodeId === 'get-content';
-                                const isImages = c.fromNodeId === 'get-images';
-                                const isCrop = fromBox ? isTextFormatAIBox(fromBox) && (fromBox.processType === 'image_crop' || fromBox.title.toLowerCase().includes('cut') || fromBox.title.toLowerCase().includes('crop')) : false;
-                                const isWatermark = fromBox ? isWatermarkAIBox(fromBox) : false;
-                                const isBrowser = fromBox ? isExternalBrowserAIBox(fromBox) : false;
-                                const fromTitle = isContent ? 'Get Content' : isImages ? 'Get Images' : fromBox?.title || c.fromNodeId;
-
-                                // Parent Text Output
-                                const textOutput = (aiGeneratedOutputs && aiGeneratedOutputs[c.fromNodeId]) || (isContent ? (rawContent || '') : '');
-                                const hasTextResult = Boolean(textOutput && textOutput.trim().length > 0);
-
-                                // Parent Image Output
-                                // For watermark/crop boxes: count assets from combineMediaAssets for this specific box
-                                const boxAssets = (isWatermark || isCrop) && fromBox
-                                  ? combineMediaAssets.filter((a) => a.formatId === fromBox.id)
-                                  : [];
-                                const enhancedCount = Object.keys(allEnhancedPhotos || {}).length;
-                                const hasImageResult = isImages
-                                  ? Boolean(images && images.length > 0)
-                                  : (isWatermark || isCrop)
-                                    ? Boolean(boxAssets.length > 0 || (images && images.length > 0) || enhancedCount > 0)
-                                    : isBrowser
-                                      ? Boolean(enhancedCount > 0 || (images && images.length > 0))
-                                      : false;
-                                const imageCount = isImages
-                                  ? (images?.length || 0)
-                                  : (isWatermark || isCrop)
-                                    ? (boxAssets.length > 0 ? boxAssets.length : (enhancedCount || images?.length || 0))
-                                    : isBrowser
-                                      ? (enhancedCount || images?.length || 0)
-                                      : 0;
-
-                                // Upstream format preset children connected to this AI Processor node
-                                const isTextAI = fromBox
-                                  ? isTextAIBox(fromBox, config.connections) ||
-                                  fromBox.subtitle === 'AI Processor' ||
-                                  fromBox.processType === 'text_ai' ||
-                                  fromBox.title?.toLowerCase().includes('prompt generator') ||
-                                  fromBox.title?.toLowerCase().includes('ai model')
-                                  : false;
-
-                                let childFormatBoxes: DynamicAIBoxConfig[] = [];
-                                if (isTextAI) {
-                                  // Find format presets explicitly connected to this Text AI Box in either direction
-                                  childFormatBoxes = config.aiBoxes.filter((b) => {
-                                    if (!isTextFormatAIBox(b)) return false;
-                                    if (b.processType === 'image_crop' || b.processType === 'watermark' || b.cropFormatId || b.watermarkPresetId) return false;
-                                    return (config.connections || []).some(
-                                      (conn) =>
-                                        (conn.fromNodeId === c.fromNodeId && conn.toNodeId === b.id) ||
-                                        (conn.toNodeId === c.fromNodeId && conn.fromNodeId === b.id)
-                                    );
-                                  });
-
-                                  // Fallback: if not explicitly wired, grab any unassigned text format presets not wired to another Text AI box
-                                  if (childFormatBoxes.length === 0) {
-                                    const otherTextAiIds = new Set(
-                                      config.aiBoxes
-                                        .filter((b) => b.id !== c.fromNodeId && (isTextAIBox(b, config.connections) || b.processType === 'text_ai'))
-                                        .map((b) => b.id)
-                                    );
-                                    childFormatBoxes = config.aiBoxes.filter((b) => {
-                                      if (!isTextFormatAIBox(b)) return false;
-                                      if (b.processType === 'image_crop' || b.processType === 'watermark' || b.cropFormatId || b.watermarkPresetId) return false;
-                                      const connectedToOther = (config.connections || []).some(
-                                        (conn) =>
-                                          (otherTextAiIds.has(conn.fromNodeId) && conn.toNodeId === b.id) ||
-                                          (otherTextAiIds.has(conn.toNodeId) && conn.fromNodeId === b.id)
-                                      );
-                                      return !connectedToOther;
-                                    });
-                                  }
-                                }
-
-                                const children = childFormatBoxes.map((chBox) => {
-                                  const chTitle = chBox.title || 'Format Preset';
-                                  const chText =
-                                    (aiGeneratedOutputs && (aiGeneratedOutputs[chBox.id] || (chBox.templateId && aiGeneratedOutputs[chBox.templateId]))) ||
-                                    (chBox.id === config.aiBoxes[0]?.id ? (aiGeneratedCopy || '') : '');
-                                  return {
-                                    id: chBox.id,
-                                    title: chTitle,
-                                    textOutput: chText,
-                                    hasResult: Boolean(chText && chText.trim().length > 0),
-                                  };
-                                });
-
-                                const readyChildrenCount = children.filter((ch) => ch.hasResult).length;
-
-                                const hasParentResult = hasTextResult || hasImageResult;
-
-                                return (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
+                          {/* ── CARD 1: MERGED MEDIA ASSETS (COOL 3-IMAGE LAYER STACK) ── */}
+                          {hasImagesIn && (
+                            <div
+                              style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '0.75rem',
+                                padding: '0.875rem',
+                                borderRadius: '10px',
+                                border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF',
+                                boxShadow: isDark ? '0 2px 8px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.05)',
+                                transition: 'all 0.2s ease',
+                              }}
+                            >
+                              {/* Header Row */}
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
                                   <div
-                                    key={c.id}
                                     style={{
+                                      width: '26px',
+                                      height: '26px',
+                                      borderRadius: '6px',
+                                      backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                                      color: '#10B981',
                                       display: 'flex',
-                                      flexDirection: 'column',
-                                      gap: '0.5rem',
-                                      padding: '0.75rem',
-                                      borderRadius: '8px',
-                                      border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
                                     }}
                                   >
-                                    {/* Parent Title Row (Represent Title) */}
-                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                        {isContent ? (
-                                          <FiFileText style={{ fontSize: '14px', color: '#3B82F6' }} />
-                                        ) : isImages ? (
-                                          <FiImage style={{ fontSize: '14px', color: '#10B981' }} />
-                                        ) : isCrop || isWatermark ? (
-                                          <FiScissors style={{ fontSize: '14px', color: '#EC4899' }} />
-                                        ) : isBrowser ? (
-                                          <FiMonitor style={{ fontSize: '14px', color: '#06B6D4' }} />
-                                        ) : (
-                                          <HiSparkles style={{ fontSize: '14px', color: '#8B5CF6' }} />
-                                        )}
-                                        <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                                          {fromTitle}
-                                        </span>
-                                      </div>
+                                    <FiImage size={14} />
+                                  </div>
+                                  <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                    Merged Media Assets
+                                  </span>
+                                </div>
+                                <span
+                                  style={{
+                                    fontSize: '0.625rem',
+                                    fontWeight: 700,
+                                    padding: '2px 8px',
+                                    borderRadius: '12px',
+                                    backgroundColor: totalMediaCount > 0
+                                      ? (isDark ? 'rgba(16, 185, 129, 0.18)' : '#DCFCE7')
+                                      : (isDark ? 'rgba(255,255,255,0.06)' : '#F1F5F9'),
+                                    color: totalMediaCount > 0 ? '#10B981' : 'var(--text-muted)',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                  }}
+                                >
+                                  {totalMediaCount > 0 ? `✓ ${totalMediaCount} Photos Ready` : '0 Photos'}
+                                </span>
+                              </div>
 
-                                      {children.length > 0 ? (
-                                        <span
-                                          style={{
-                                            fontSize: '0.5625rem',
-                                            fontWeight: 600,
-                                            padding: '1px 6px',
-                                            borderRadius: '4px',
-                                            backgroundColor: readyChildrenCount > 0
-                                              ? (isDark ? 'rgba(16, 185, 129, 0.14)' : '#DCFCE7')
-                                              : (isDark ? 'rgba(139, 92, 246, 0.14)' : '#EDE9FE'),
-                                            color: readyChildrenCount > 0 ? '#10B981' : '#8B5CF6',
-                                          }}
-                                        >
-                                          {readyChildrenCount > 0 ? `✓ ${readyChildrenCount}/${children.length} Ready` : `${children.length} Formats Connected`}
-                                        </span>
-                                      ) : hasParentResult ? (
-                                        <span
-                                          style={{
-                                            fontSize: '0.5625rem',
-                                            fontWeight: 600,
-                                            padding: '1px 6px',
-                                            borderRadius: '4px',
-                                            backgroundColor: isDark ? 'rgba(16, 185, 129, 0.14)' : '#DCFCE7',
-                                            color: '#10B981',
-                                          }}
-                                        >
-                                          ✓ Ready {hasTextResult ? `(${textOutput.length} chars)` : `(${imageCount} photos)`}
-                                        </span>
-                                      ) : (
-                                        <span
-                                          style={{
-                                            fontSize: '0.5625rem',
-                                            fontWeight: 500,
-                                            padding: '1px 6px',
-                                            borderRadius: '4px',
-                                            backgroundColor: isDark ? 'rgba(245, 158, 11, 0.12)' : '#FEF3C7',
-                                            color: '#D97706',
-                                          }}
-                                        >
-                                          Connected
-                                        </span>
-                                      )}
-                                    </div>
-
-                                    {/* Parent Action Buttons ONLY when it has no children (children show their own results) */}
-                                    {children.length === 0 && hasTextResult && (
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            setViewingPromptTemplate({
-                                              id: c.fromNodeId,
-                                              name: `${fromTitle} Result`,
-                                              templateText: textOutput,
-                                              headerTitle: 'Generated Output Copy',
-                                              copyButtonLabel: 'Copy Result',
-                                            });
-                                          }}
-                                          style={{
-                                            flex: 1,
-                                            height: '28px',
-                                            borderRadius: '5px',
-                                            border: '1px solid var(--border-color)',
-                                            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC',
-                                            color: 'var(--text-primary)',
-                                            fontSize: '0.6875rem',
-                                            fontWeight: 600,
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            gap: '5px',
-                                            cursor: 'pointer',
-                                            transition: 'all 0.15s ease',
-                                          }}
-                                          onMouseEnter={(e) => {
-                                            e.currentTarget.style.borderColor = 'var(--accent-primary, #3B82F6)';
-                                            e.currentTarget.style.backgroundColor = isDark ? 'rgba(59, 130, 246, 0.08)' : '#EFF6FF';
-                                          }}
-                                          onMouseLeave={(e) => {
-                                            e.currentTarget.style.borderColor = 'var(--border-color)';
-                                            e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC';
-                                          }}
-                                        >
-                                          <FiEye size={12} style={{ color: '#8B5CF6' }} />
-                                          <span>View Result</span>
-                                        </button>
-
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            navigator.clipboard.writeText(textOutput);
-                                            setCopiedPromptId(c.fromNodeId);
-                                            setTimeout(() => setCopiedPromptId(null), 2000);
-                                          }}
-                                          title="Copy result"
-                                          style={{
-                                            height: '28px',
-                                            padding: '0 10px',
-                                            borderRadius: '5px',
-                                            border: copiedPromptId === c.fromNodeId
-                                              ? '1px solid rgba(16, 185, 129, 0.35)'
-                                              : '1px solid var(--border-color)',
-                                            backgroundColor: copiedPromptId === c.fromNodeId
-                                              ? (isDark ? 'rgba(16, 185, 129, 0.16)' : '#DCFCE7')
-                                              : (isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC'),
-                                            color: copiedPromptId === c.fromNodeId ? '#10B981' : 'var(--text-secondary)',
-                                            fontSize: '0.6875rem',
-                                            fontWeight: 600,
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '4px',
-                                            cursor: 'pointer',
-                                          }}
-                                        >
-                                          {copiedPromptId === c.fromNodeId ? (
-                                            <FiCheck size={11} style={{ color: '#10B981' }} />
-                                          ) : (
-                                            <FiCopy size={11} />
-                                          )}
-                                          <span>{copiedPromptId === c.fromNodeId ? 'Copied' : 'Copy'}</span>
-                                        </button>
-                                      </div>
-                                    )}
-
-                                    {hasImageResult && (
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            if (boxAssets.length > 0) {
-                                              handleOpenLightbox(boxAssets[0].url);
-                                            } else if (combineCropSlices.length > 0) {
-                                              handleOpenLightbox(combineCropSlices[0].url);
-                                            } else if (images && images.length > 0) {
-                                              handleOpenLightbox(0);
-                                            }
-                                          }}
-                                          style={{
-                                            flex: 1,
-                                            height: '28px',
-                                            borderRadius: '5px',
-                                            border: '1px solid var(--border-color)',
-                                            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC',
-                                            color: 'var(--text-primary)',
-                                            fontSize: '0.6875rem',
-                                            fontWeight: 600,
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            gap: '5px',
-                                            cursor: 'pointer',
-                                            transition: 'all 0.15s ease',
-                                          }}
-                                        >
-                                          <FiEye size={12} style={{ color: '#EC4899' }} />
-                                          <span>View {imageCount} Photos</span>
-                                        </button>
-                                      </div>
-                                    )}
-
-                                    {/* Nested Child Nodes (e.g. BoltHaven FB -Content, Get Condo name) */}
-                                    {children.length > 0 && (
+                              {/* Interactive 3-Image Stack Box */}
+                              <div
+                                onClick={() => {
+                                  setCombineMediaSideboxFormatFilter('all');
+                                  setShowCombineMediaSidebox(true);
+                                }}
+                                onMouseEnter={() => setIsHoveringImageStack(true)}
+                                onMouseLeave={() => setIsHoveringImageStack(false)}
+                                style={{
+                                  position: 'relative',
+                                  width: '100%',
+                                  height: '140px',
+                                  borderRadius: '8px',
+                                  backgroundColor: isDark ? '#0D1117' : '#F8FAFC',
+                                  border: isHoveringImageStack
+                                    ? '1px solid #10B981'
+                                    : (isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1'),
+                                  cursor: 'pointer',
+                                  overflow: 'hidden',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+                                }}
+                                title="Click to view all merged photos in extra sidebox"
+                              >
+                                {stackThumbnails.length > 0 ? (
+                                  <div
+                                    style={{
+                                      position: 'relative',
+                                      width: '120px',
+                                      height: '100px',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                    }}
+                                  >
+                                    {/* Layer 1 (Left Tilt) */}
+                                    {stackThumbnails[1] && (
                                       <div
                                         style={{
-                                          display: 'flex',
-                                          flexDirection: 'column',
-                                          gap: '0.45rem',
-                                          marginTop: '0.35rem',
-                                          paddingLeft: '0.875rem',
-                                          marginLeft: '0.25rem',
-                                          borderLeft: isDark ? '2px solid rgba(139, 92, 246, 0.4)' : '2px solid rgba(99, 102, 241, 0.35)',
+                                          position: 'absolute',
+                                          width: '78px',
+                                          height: '78px',
+                                          borderRadius: '8px',
+                                          overflow: 'hidden',
+                                          border: isDark ? '2px solid #30363D' : '2px solid #FFFFFF',
+                                          boxShadow: '0 6px 14px rgba(0, 0, 0, 0.45)',
+                                          backgroundColor: '#000000',
+                                          transform: isHoveringImageStack
+                                            ? 'rotate(-14deg) translate(-28px, -4px) scale(0.96)'
+                                            : 'rotate(-7deg) translate(-14px, 2px) scale(0.93)',
+                                          opacity: 0.85,
+                                          zIndex: 1,
+                                          transition: 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
                                         }}
                                       >
-                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2px' }}>
-                                          <span style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                                            Connected Format Presets ({children.length})
-                                          </span>
-                                          {readyChildrenCount > 0 && (
-                                            <span style={{ fontSize: '0.5625rem', fontWeight: 600, color: '#10B981' }}>
-                                              ✓ {readyChildrenCount} Ready
-                                            </span>
-                                          )}
-                                        </div>
-
-                                        {children.map((child) => (
-                                          <div
-                                            key={child.id}
-                                            style={{
-                                              display: 'flex',
-                                              flexDirection: 'column',
-                                              gap: '0.4rem',
-                                              padding: '0.55rem 0.65rem',
-                                              borderRadius: '6px',
-                                              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#F8FAFC',
-                                              border: isDark ? '1px solid rgba(255, 255, 255, 0.07)' : '1px solid #E2E8F0',
-                                            }}
-                                          >
-                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                <FiFileText style={{ fontSize: '12px', color: '#8B5CF6' }} />
-                                                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                                                  {child.title}
-                                                </span>
-                                              </div>
-                                              {child.hasResult ? (
-                                                <span
-                                                  style={{
-                                                    fontSize: '0.5625rem',
-                                                    fontWeight: 600,
-                                                    padding: '1px 5px',
-                                                    borderRadius: '4px',
-                                                    backgroundColor: isDark ? 'rgba(16, 185, 129, 0.14)' : '#DCFCE7',
-                                                    color: '#10B981',
-                                                  }}
-                                                >
-                                                  ✓ Ready {child.textOutput ? `(${child.textOutput.length} chars)` : ''}
-                                                </span>
-                                              ) : (
-                                                <span style={{ fontSize: '0.5625rem', color: 'var(--text-muted)' }}>
-                                                  Connected
-                                                </span>
-                                              )}
-                                            </div>
-
-                                            {child.hasResult && (
-                                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
-                                                <button
-                                                  type="button"
-                                                  onClick={() => {
-                                                    setViewingPromptTemplate({
-                                                      id: child.id,
-                                                      name: `${child.title} Output`,
-                                                      templateText: child.textOutput,
-                                                      headerTitle: 'Generated Output Copy',
-                                                      copyButtonLabel: 'Copy Output',
-                                                    });
-                                                  }}
-                                                  style={{
-                                                    flex: 1,
-                                                    height: '26px',
-                                                    borderRadius: '5px',
-                                                    border: '1px solid var(--border-color)',
-                                                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF',
-                                                    color: 'var(--text-primary)',
-                                                    fontSize: '0.6875rem',
-                                                    fontWeight: 600,
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    justifyContent: 'center',
-                                                    gap: '5px',
-                                                    cursor: 'pointer',
-                                                    transition: 'all 0.15s ease',
-                                                  }}
-                                                  onMouseEnter={(e) => {
-                                                    e.currentTarget.style.borderColor = 'var(--accent-primary, #3B82F6)';
-                                                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(59, 130, 246, 0.08)' : '#EFF6FF';
-                                                  }}
-                                                  onMouseLeave={(e) => {
-                                                    e.currentTarget.style.borderColor = 'var(--border-color)';
-                                                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF';
-                                                  }}
-                                                >
-                                                  <FiEye size={11} style={{ color: '#8B5CF6' }} />
-                                                  <span>View Result</span>
-                                                </button>
-
-                                                <button
-                                                  type="button"
-                                                  onClick={() => {
-                                                    navigator.clipboard.writeText(child.textOutput);
-                                                    setCopiedPromptId(child.id);
-                                                    setTimeout(() => setCopiedPromptId(null), 2000);
-                                                  }}
-                                                  title="Copy output"
-                                                  style={{
-                                                    height: '26px',
-                                                    padding: '0 10px',
-                                                    borderRadius: '5px',
-                                                    border: copiedPromptId === child.id
-                                                      ? '1px solid rgba(16, 185, 129, 0.35)'
-                                                      : '1px solid var(--border-color)',
-                                                    backgroundColor: copiedPromptId === child.id
-                                                      ? (isDark ? 'rgba(16, 185, 129, 0.16)' : '#DCFCE7')
-                                                      : (isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF'),
-                                                    color: copiedPromptId === child.id ? '#10B981' : 'var(--text-secondary)',
-                                                    fontSize: '0.6875rem',
-                                                    fontWeight: 600,
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    gap: '4px',
-                                                    cursor: 'pointer',
-                                                  }}
-                                                >
-                                                  {copiedPromptId === child.id ? <FiCheck size={11} style={{ color: '#10B981' }} /> : <FiCopy size={11} />}
-                                                  <span>{copiedPromptId === child.id ? 'Copied' : 'Copy'}</span>
-                                                </button>
-                                              </div>
-                                            )}
-                                          </div>
-                                        ))}
+                                        <img
+                                          src={stackThumbnails[1]}
+                                          alt="Stack layer 1"
+                                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                        />
                                       </div>
                                     )}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
 
-                          {/* Merged Text Output (Copy Ready) */}
+                                    {/* Layer 2 (Right Tilt) */}
+                                    {stackThumbnails[2] && (
+                                      <div
+                                        style={{
+                                          position: 'absolute',
+                                          width: '78px',
+                                          height: '78px',
+                                          borderRadius: '8px',
+                                          overflow: 'hidden',
+                                          border: isDark ? '2px solid #30363D' : '2px solid #FFFFFF',
+                                          boxShadow: '0 6px 14px rgba(0, 0, 0, 0.45)',
+                                          backgroundColor: '#000000',
+                                          transform: isHoveringImageStack
+                                            ? 'rotate(14deg) translate(28px, -4px) scale(0.96)'
+                                            : 'rotate(7deg) translate(14px, 2px) scale(0.93)',
+                                          opacity: 0.85,
+                                          zIndex: 2,
+                                          transition: 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+                                        }}
+                                      >
+                                        <img
+                                          src={stackThumbnails[2]}
+                                          alt="Stack layer 2"
+                                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                        />
+                                      </div>
+                                    )}
+
+                                    {/* Layer 3 (Center Front) */}
+                                    <div
+                                      style={{
+                                        position: 'relative',
+                                        width: '84px',
+                                        height: '84px',
+                                        borderRadius: '8px',
+                                        overflow: 'hidden',
+                                        border: isDark ? '2px solid #10B981' : '2px solid #10B981',
+                                        boxShadow: isHoveringImageStack
+                                          ? '0 12px 24px rgba(0, 0, 0, 0.6), 0 0 12px rgba(16, 185, 129, 0.3)'
+                                          : '0 8px 18px rgba(0, 0, 0, 0.5)',
+                                        backgroundColor: '#000000',
+                                        transform: isHoveringImageStack ? 'scale(1.08) translateY(-4px)' : 'scale(1)',
+                                        zIndex: 3,
+                                        transition: 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease',
+                                      }}
+                                    >
+                                      <img
+                                        src={stackThumbnails[0]}
+                                        alt="Stack front"
+                                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                      />
+                                      {/* Tile / Photo count badge on bottom-right */}
+                                      <div
+                                        style={{
+                                          position: 'absolute',
+                                          bottom: '3px',
+                                          right: '3px',
+                                          fontSize: '0.5625rem',
+                                          fontWeight: 700,
+                                          padding: '1px 5px',
+                                          borderRadius: '3px',
+                                          backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                                          color: '#10B981',
+                                        }}
+                                      >
+                                        +{totalMediaCount}
+                                      </div>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', color: 'var(--text-muted)' }}>
+                                    <FiImage size={24} style={{ opacity: 0.5 }} />
+                                    <span style={{ fontSize: '0.6875rem' }}>No media assets loaded yet</span>
+                                  </div>
+                                )}
+
+                                {/* Hover Overlay Hint */}
+                                <div
+                                  style={{
+                                    position: 'absolute',
+                                    bottom: '6px',
+                                    left: '50%',
+                                    transform: 'translateX(-50%)',
+                                    fontSize: '0.625rem',
+                                    fontWeight: 600,
+                                    color: isHoveringImageStack ? '#10B981' : 'var(--text-muted)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                    whiteSpace: 'nowrap',
+                                    transition: 'color 0.2s ease',
+                                  }}
+                                >
+                                  <span>{isHoveringImageStack ? 'Click to open sidebox viewer' : 'Click to inspect all photos'}</span>
+                                  <FiArrowRight size={10} />
+                                </div>
+                              </div>
+
+                              {/* Connected Format Badges (e.g. FB Hero Cut · 2, Bolthaven · 12, DotBkk · 12) */}
+                              {connectedImageNodesForCombine.length > 0 && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                  <div style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                    Connected Image Formats ({connectedImageNodesForCombine.length})
+                                  </div>
+                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
+                                    {connectedImageNodesForCombine.map((node) => (
+                                      <button
+                                        key={node.id}
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setCombineMediaSideboxFormatFilter(node.id);
+                                          setShowCombineMediaSidebox(true);
+                                        }}
+                                        style={{
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: '4px',
+                                          padding: '3px 7px',
+                                          borderRadius: '6px',
+                                          fontSize: '0.625rem',
+                                          fontWeight: 600,
+                                          border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F1F5F9',
+                                          color: 'var(--text-primary)',
+                                          cursor: 'pointer',
+                                          transition: 'all 0.15s ease',
+                                        }}
+                                        onMouseEnter={(e) => {
+                                          e.currentTarget.style.borderColor = '#10B981';
+                                          e.currentTarget.style.color = '#10B981';
+                                        }}
+                                        onMouseLeave={(e) => {
+                                          e.currentTarget.style.borderColor = isDark ? '#30363D' : '#CBD5E1';
+                                          e.currentTarget.style.color = 'var(--text-primary)';
+                                        }}
+                                        title={`View ${node.title} in sidebox`}
+                                      >
+                                        <FiScissors size={10} style={{ color: '#EC4899' }} />
+                                        <span>{node.title.replace(/^format:\s*/i, '')}</span>
+                                        <span style={{ color: '#10B981', fontWeight: 700 }}>({node.count})</span>
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Actions Bar */}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setCombineMediaSideboxFormatFilter('all');
+                                    setShowCombineMediaSidebox(true);
+                                  }}
+                                  style={{
+                                    flex: 1,
+                                    height: '30px',
+                                    borderRadius: '6px',
+                                    border: '1px solid rgba(16, 185, 129, 0.35)',
+                                    backgroundColor: isDark ? 'rgba(16, 185, 129, 0.12)' : '#DCFCE7',
+                                    color: '#10B981',
+                                    fontSize: '0.6875rem',
+                                    fontWeight: 700,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '6px',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.15s ease',
+                                  }}
+                                >
+                                  <FiEye size={12} />
+                                  <span>View All Photos in Extra Box →</span>
+                                </button>
+
+                                {totalMediaCount > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDownloadAllCombineAssets(combineMediaAssets)}
+                                    title="Download all merged photos"
+                                    style={{
+                                      height: '30px',
+                                      padding: '0 10px',
+                                      borderRadius: '6px',
+                                      border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC',
+                                      color: 'var(--text-secondary)',
+                                      fontSize: '0.6875rem',
+                                      fontWeight: 600,
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '4px',
+                                      cursor: 'pointer',
+                                    }}
+                                  >
+                                    <FiDownload size={11} />
+                                    <span>Download</span>
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* ── CARD 2: MERGED CONTENT & COPY (SUMMARIZED CARD) ── */}
                           {Boolean(mergedText) && (
                             <div
                               style={{
                                 display: 'flex',
                                 flexDirection: 'column',
-                                gap: '0.5rem',
-                                padding: '0.75rem',
-                                borderRadius: '8px',
+                                gap: '0.65rem',
+                                padding: '0.875rem',
+                                borderRadius: '10px',
                                 border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#F8FAFC',
+                                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF',
+                                boxShadow: isDark ? '0 2px 8px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.05)',
                               }}
                             >
                               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                  <HiSparkles style={{ fontSize: '13px', color: '#8B5CF6' }} />
-                                  <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+                                  <div
+                                    style={{
+                                      width: '26px',
+                                      height: '26px',
+                                      borderRadius: '6px',
+                                      backgroundColor: 'rgba(139, 92, 246, 0.15)',
+                                      color: '#8B5CF6',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                    }}
+                                  >
+                                    <HiSparkles size={14} />
+                                  </div>
+                                  <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--text-primary)' }}>
                                     Merged Output Copy
                                   </span>
                                 </div>
                                 <span
                                   style={{
                                     fontSize: '0.625rem',
-                                    fontWeight: 600,
+                                    fontWeight: 700,
+                                    padding: '2px 8px',
+                                    borderRadius: '12px',
+                                    backgroundColor: isDark ? 'rgba(16, 185, 129, 0.18)' : '#DCFCE7',
                                     color: '#10B981',
-                                    backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#DCFCE7',
-                                    padding: '1px 6px',
-                                    borderRadius: '4px',
                                   }}
                                 >
-                                  ✓ Ready
+                                  {readyFormatsCount > 0 ? `✓ ${readyFormatsCount} Formats Ready` : '✓ Ready'}
                                 </span>
                               </div>
 
-                              <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
-                                {mergedText.length.toLocaleString()} characters · {mergedText.trim().split(/\s+/).filter(Boolean).length.toLocaleString()} words
+                              <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                                {mergedText.length.toLocaleString()} characters · {wordCount.toLocaleString()} words
                               </div>
 
+                              {/* Connected Format Presets Chips */}
+                              {connectedFormatPresetsSummary.length > 0 && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                  <div style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                    Format Presets ({connectedFormatPresetsSummary.length})
+                                  </div>
+                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                                    {connectedFormatPresetsSummary.map((fmt) => (
+                                      <div
+                                        key={fmt.id}
+                                        style={{
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: '4px',
+                                          padding: '2px 6px',
+                                          borderRadius: '4px',
+                                          fontSize: '0.5625rem',
+                                          fontWeight: 600,
+                                          backgroundColor: fmt.hasResult
+                                            ? (isDark ? 'rgba(139, 92, 246, 0.15)' : '#F3E8FF')
+                                            : (isDark ? 'rgba(255, 255, 255, 0.04)' : '#F1F5F9'),
+                                          color: fmt.hasResult ? '#8B5CF6' : 'var(--text-muted)',
+                                          border: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid #E2E8F0',
+                                        }}
+                                      >
+                                        <FiCheck size={9} style={{ color: fmt.hasResult ? '#10B981' : 'var(--text-muted)' }} />
+                                        <span>{fmt.title}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Actions Bar */}
                               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                 <button
                                   type="button"
@@ -12042,13 +12068,13 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   }}
                                   style={{
                                     flex: 1,
-                                    height: '32px',
+                                    height: '30px',
                                     borderRadius: '6px',
-                                    border: '1px solid var(--border-color)',
-                                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF',
-                                    color: 'var(--text-primary)',
+                                    border: '1px solid rgba(139, 92, 246, 0.35)',
+                                    backgroundColor: isDark ? 'rgba(139, 92, 246, 0.12)' : '#EDE9FE',
+                                    color: '#8B5CF6',
                                     fontSize: '0.6875rem',
-                                    fontWeight: 600,
+                                    fontWeight: 700,
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
@@ -12056,17 +12082,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                                     cursor: 'pointer',
                                     transition: 'all 0.15s ease',
                                   }}
-                                  onMouseEnter={(e) => {
-                                    e.currentTarget.style.borderColor = 'var(--accent-primary, #3B82F6)';
-                                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(59, 130, 246, 0.08)' : '#EFF6FF';
-                                  }}
-                                  onMouseLeave={(e) => {
-                                    e.currentTarget.style.borderColor = 'var(--border-color)';
-                                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF';
-                                  }}
                                 >
-                                  <FiEye size={13} style={{ color: '#8B5CF6' }} />
-                                  <span>View Merged Result</span>
+                                  <FiEye size={12} />
+                                  <span>View Merged Copy →</span>
                                 </button>
 
                                 <button
@@ -12076,17 +12094,17 @@ export const FacebookWorkflowCanvas = forwardRef<
                                     setCopiedPromptId(currentCombineBox.id);
                                     setTimeout(() => setCopiedPromptId(null), 2000);
                                   }}
-                                  title="Copy merged text"
+                                  title="Copy merged text to clipboard"
                                   style={{
-                                    height: '32px',
-                                    padding: '0 12px',
+                                    height: '30px',
+                                    padding: '0 10px',
                                     borderRadius: '6px',
                                     border: copiedPromptId === currentCombineBox.id
-                                      ? '1px solid rgba(16, 185, 129, 0.35)'
-                                      : '1px solid var(--border-color)',
+                                      ? '1px solid rgba(16, 185, 129, 0.4)'
+                                      : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
                                     backgroundColor: copiedPromptId === currentCombineBox.id
-                                      ? (isDark ? 'rgba(16, 185, 129, 0.16)' : '#DCFCE7')
-                                      : (isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF'),
+                                      ? (isDark ? 'rgba(16, 185, 129, 0.18)' : '#DCFCE7')
+                                      : (isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC'),
                                     color: copiedPromptId === currentCombineBox.id ? '#10B981' : 'var(--text-secondary)',
                                     fontSize: '0.6875rem',
                                     fontWeight: 600,
@@ -12094,13 +12112,12 @@ export const FacebookWorkflowCanvas = forwardRef<
                                     alignItems: 'center',
                                     gap: '4px',
                                     cursor: 'pointer',
-                                    transition: 'all 0.15s ease',
                                   }}
                                 >
                                   {copiedPromptId === currentCombineBox.id ? (
-                                    <FiCheck size={12} style={{ color: '#10B981' }} />
+                                    <FiCheck size={11} style={{ color: '#10B981' }} />
                                   ) : (
-                                    <FiCopy size={12} />
+                                    <FiCopy size={11} />
                                   )}
                                   <span>{copiedPromptId === currentCombineBox.id ? 'Copied' : 'Copy'}</span>
                                 </button>
@@ -12108,358 +12125,159 @@ export const FacebookWorkflowCanvas = forwardRef<
                             </div>
                           )}
 
-                          {/* Merged Media Assets (Photos & Slices Ready) */}
-                          {hasImagesIn && (combineMediaAssets.length > 0 || combineCropSlices.length > 0 || (images && images.length > 0)) && (
-                            <div
-                              style={{
-                                display: 'flex',
-                                flexDirection: 'column',
-                                gap: '0.4rem',
-                                padding: '0.625rem',
-                                borderRadius: '8px',
-                                border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#F8FAFC',
-                              }}
-                            >
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                                  <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                                    Merged Media Assets
-                                  </span>
-                                  <span
+                          {/* ── CARD 3: CONNECTED INPUT NODES SUMMARY (4 INPUTS) ── */}
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.25rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                                Connected Inputs Overview
+                              </label>
+                              <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                                {combineInputs.length} source{combineInputs.length !== 1 ? 's' : ''}
+                              </span>
+                            </div>
+
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+                              {combineInputs.map((c) => {
+                                const fromBox = config.aiBoxes.find((b) => b.id === c.fromNodeId);
+                                const isContent = c.fromNodeId === 'get-content';
+                                const isImages = c.fromNodeId === 'get-images';
+                                const isCrop = fromBox ? isTextFormatAIBox(fromBox) && (fromBox.processType === 'image_crop' || fromBox.title?.toLowerCase().includes('cut') || fromBox.title?.toLowerCase().includes('crop')) : false;
+                                const isWatermark = fromBox ? isWatermarkAIBox(fromBox) : false;
+                                const isBrowser = fromBox ? isExternalBrowserAIBox(fromBox) : false;
+                                const fromTitle = isContent ? 'Get Content' : isImages ? 'Get Images' : fromBox?.title || c.fromNodeId;
+
+                                const textOutput = (aiGeneratedOutputs && aiGeneratedOutputs[c.fromNodeId]) || (isContent ? (rawContent || '') : '');
+                                const hasTextResult = Boolean(textOutput && textOutput.trim().length > 0);
+
+                                const boxAssets = (isWatermark || isCrop) && fromBox
+                                  ? combineMediaAssets.filter((a) => a.formatId === fromBox.id)
+                                  : [];
+                                const imageCount = isImages
+                                  ? (images?.length || 0)
+                                  : (isWatermark || isCrop)
+                                    ? (boxAssets.length > 0 ? boxAssets.length : (images?.length || 0))
+                                    : 0;
+
+                                return (
+                                  <div
+                                    key={c.id}
                                     style={{
-                                      fontSize: '0.625rem',
-                                      fontWeight: 600,
-                                      color: '#10B981',
-                                      backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#DCFCE7',
-                                      padding: '1px 5px',
-                                      borderRadius: '4px',
-                                    }}
-                                  >
-                                    ✓ {combineMediaAssets.length > 0
-                                      ? `${combineMediaAssets.length} Photos Ready`
-                                      : combineCropSlices.length > 0
-                                        ? `${combineCropSlices.length} ${combineCropSlices.length > 1 ? 'Cut Tiles' : 'Photos'} Ready · 1:1`
-                                        : `${images.length} Photos Ready`}
-                                  </span>
-                                </div>
-                                {(combineMediaAssets.length > 0 || combineCropSlices.length > 0) && (
-                                  <button
-                                    type="button"
-                                    onClick={async (e) => {
-                                      e.stopPropagation();
-                                      const toDownload = combineMediaAssets.length > 0
-                                        ? combineMediaAssets.map((a) => a.url)
-                                        : combineCropSlices.map((s) => s.url);
-                                      for (let s = 0; s < toDownload.length; s++) {
-                                        await handleDownloadImage(toDownload[s], s);
-                                        if (s < toDownload.length - 1) {
-                                          await new Promise((r) => setTimeout(r, 400));
-                                        }
-                                      }
-                                    }}
-                                    title="Download all cut tiles"
-                                    style={{
-                                      display: 'inline-flex',
+                                      display: 'flex',
                                       alignItems: 'center',
-                                      gap: '4px',
-                                      padding: '2px 8px',
-                                      fontSize: '0.625rem',
-                                      fontWeight: 600,
-                                      borderRadius: '4px',
-                                      backgroundColor: isDark ? 'rgba(59, 130, 246, 0.2)' : '#EFF6FF',
-                                      color: '#3B82F6',
-                                      border: isDark ? '1px solid rgba(59, 130, 246, 0.35)' : '1px solid #BFDBFE',
-                                      cursor: 'pointer',
+                                      justifyContent: 'space-between',
+                                      padding: '0.5rem 0.65rem',
+                                      borderRadius: '6px',
+                                      border: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
+                                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#F8FAFC',
                                     }}
                                   >
-                                    <FiDownload size={10} />
-                                    <span>Download All</span>
-                                  </button>
-                                )}
-                              </div>
-                              <div
-                                style={{
-                                  display: 'grid',
-                                  gridTemplateColumns: (combineMediaAssets.length === 2 || combineCropSlices.length === 2) ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
-                                  gridAutoRows: 'max-content',
-                                  gap: '6px',
-                                  maxHeight: '260px',
-                                  overflowY: 'auto',
-                                  padding: '6px',
-                                  borderRadius: '6px',
-                                  backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
-                                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                                }}
-                              >
-                                {combineMediaAssets.length > 0
-                                  ? combineMediaAssets.map((asset, idx) => (
-                                    <div
-                                      key={asset.id}
-                                      onClick={() => handleOpenLightbox(asset.url)}
-                                      style={{
-                                        position: 'relative',
-                                        width: '100%',
-                                        paddingTop: '100%',
-                                        borderRadius: '6px',
-                                        overflow: 'hidden',
-                                        backgroundColor: '#000000',
-                                        border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                                        cursor: 'pointer',
-                                        transition: 'transform 0.15s ease',
-                                      }}
-                                      title={`Click to view ${asset.label} (${asset.formatTitle}) full size`}
-                                    >
-                                      <div style={{ position: 'absolute', inset: 0 }}>
-                                        <img
-                                          src={asset.url}
-                                          alt={asset.label}
-                                          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                                        />
-                                        {/* 1-Click Download */}
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                                      {isContent ? (
+                                        <FiFileText style={{ fontSize: '13px', color: '#3B82F6', flexShrink: 0 }} />
+                                      ) : isImages ? (
+                                        <FiImage style={{ fontSize: '13px', color: '#10B981', flexShrink: 0 }} />
+                                      ) : isCrop || isWatermark ? (
+                                        <FiScissors style={{ fontSize: '13px', color: '#EC4899', flexShrink: 0 }} />
+                                      ) : isBrowser ? (
+                                        <FiMonitor style={{ fontSize: '13px', color: '#06B6D4', flexShrink: 0 }} />
+                                      ) : (
+                                        <HiSparkles style={{ fontSize: '13px', color: '#8B5CF6', flexShrink: 0 }} />
+                                      )}
+                                      <span
+                                        style={{
+                                          fontSize: '0.75rem',
+                                          fontWeight: 600,
+                                          color: 'var(--text-primary)',
+                                          overflow: 'hidden',
+                                          textOverflow: 'ellipsis',
+                                          whiteSpace: 'nowrap',
+                                        }}
+                                      >
+                                        {fromTitle}
+                                      </span>
+                                    </div>
+
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}>
+                                      {(isWatermark || isCrop || isImages) ? (
                                         <button
                                           type="button"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            handleDownloadImage(asset.url, idx, e);
+                                          onClick={() => {
+                                            if (fromBox) {
+                                              setCombineMediaSideboxFormatFilter(fromBox.id);
+                                            } else {
+                                              setCombineMediaSideboxFormatFilter('all');
+                                            }
+                                            setShowCombineMediaSidebox(true);
                                           }}
-                                          title={`Download ${asset.label}`}
-                                          aria-label={`Download ${asset.label}`}
                                           style={{
-                                            position: 'absolute',
-                                            top: '3px',
-                                            left: '3px',
-                                            width: '20px',
-                                            height: '20px',
-                                            borderRadius: '4px',
-                                            backgroundColor: 'rgba(0, 0, 0, 0.65)',
-                                            border: '1px solid rgba(255, 255, 255, 0.25)',
-                                            color: '#FFFFFF',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            cursor: 'pointer',
-                                            zIndex: 3,
-                                            transition: 'background-color 0.15s ease',
-                                          }}
-                                          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#3B82F6'; }}
-                                          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.65)'; }}
-                                        >
-                                          <FiDownload size={10} />
-                                        </button>
-                                        {/* Photo label badge */}
-                                        <div
-                                          style={{
-                                            position: 'absolute',
-                                            bottom: '2px',
-                                            left: '2px',
-                                            fontSize: '0.45rem',
+                                            fontSize: '0.5625rem',
                                             fontWeight: 700,
-                                            padding: '1px 4px',
-                                            borderRadius: '2px',
-                                            backgroundColor: 'rgba(0,0,0,0.75)',
-                                            color: '#FFFFFF',
-                                            maxWidth: '80%',
-                                            overflow: 'hidden',
-                                            textOverflow: 'ellipsis',
-                                            whiteSpace: 'nowrap',
-                                          }}
-                                        >
-                                          {asset.label}
-                                        </div>
-                                        {/* Enhanced badge */}
-                                        {asset.isEnhanced && (
-                                          <div
-                                            style={{
-                                              position: 'absolute',
-                                              top: '2px',
-                                              right: '2px',
-                                              fontSize: '0.4rem',
-                                              fontWeight: 700,
-                                              padding: '1px 4px',
-                                              borderRadius: '2px',
-                                              backgroundColor: 'rgba(16, 185, 129, 0.9)',
-                                              color: '#FFFFFF',
-                                            }}
-                                          >
-                                            ✦ ENH
-                                          </div>
-                                        )}
-                                      </div>
-                                    </div>
-                                  ))
-                                  : combineCropSlices.length > 0
-                                    ? combineCropSlices.map((slice, idx) => (
-                                      <div
-                                        key={`combine-slice-${slice.tileIndex}-${idx}`}
-                                        onClick={() => handleOpenLightbox(idx)}
-                                        style={{
-                                          position: 'relative',
-                                          width: '100%',
-                                          paddingTop: '100%',
-                                          borderRadius: '6px',
-                                          overflow: 'hidden',
-                                          backgroundColor: '#000000',
-                                          border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                                          cursor: 'pointer',
-                                          transition: 'transform 0.15s ease',
-                                        }}
-                                        title={`Click to view Tile #${slice.tileIndex} (${slice.label}) full size`}
-                                      >
-                                        <div style={{ position: 'absolute', inset: 0 }}>
-                                          <img
-                                            src={slice.url}
-                                            alt={slice.label}
-                                            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                                          />
-                                          <button
-                                            type="button"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleDownloadImage(slice.url, idx, e);
-                                            }}
-                                            title={`Download Tile #${slice.tileIndex}`}
-                                            aria-label={`Download Tile #${slice.tileIndex}`}
-                                            style={{
-                                              position: 'absolute',
-                                              top: '3px',
-                                              left: '3px',
-                                              width: '20px',
-                                              height: '20px',
-                                              borderRadius: '4px',
-                                              backgroundColor: 'rgba(0, 0, 0, 0.65)',
-                                              border: '1px solid rgba(255, 255, 255, 0.25)',
-                                              color: '#FFFFFF',
-                                              display: 'flex',
-                                              alignItems: 'center',
-                                              justifyContent: 'center',
-                                              cursor: 'pointer',
-                                              zIndex: 3,
-                                              transition: 'background-color 0.15s ease',
-                                            }}
-                                            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#3B82F6'; }}
-                                            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.65)'; }}
-                                          >
-                                            <FiDownload size={10} />
-                                          </button>
-                                          <div
-                                            style={{
-                                              position: 'absolute',
-                                              bottom: '2px',
-                                              left: '2px',
-                                              fontSize: '0.5rem',
-                                              fontWeight: 700,
-                                              padding: '1px 4px',
-                                              borderRadius: '2px',
-                                              backgroundColor: 'rgba(0,0,0,0.7)',
-                                              color: '#FFFFFF',
-                                            }}
-                                          >
-                                            Tile #{slice.tileIndex}
-                                          </div>
-                                          {slice.totalTiles > 1 && (
-                                            <div
-                                              style={{
-                                                position: 'absolute',
-                                                top: '2px',
-                                                right: '2px',
-                                                fontSize: '0.45rem',
-                                                fontWeight: 700,
-                                                padding: '1px 4px',
-                                                borderRadius: '2px',
-                                                backgroundColor: 'rgba(139, 92, 246, 0.9)',
-                                                color: '#FFFFFF',
-                                              }}
-                                            >
-                                              {slice.tileIndex}/{slice.totalTiles}
-                                            </div>
-                                          )}
-                                        </div>
-                                      </div>
-                                    ))
-                                    : images.map((img, idx) => {
-                                      const url =
-                                        watermarkedPhotos?.[img.index] ||
-                                        allEnhancedPhotos?.[img.index] ||
-                                        img.stored_url ||
-                                        img.source_url;
-                                      return (
-                                        <div
-                                          key={`combine-img-${img.index}`}
-                                          onClick={() => handleOpenLightbox(idx)}
-                                          style={{
-                                            position: 'relative',
-                                            width: '100%',
-                                            paddingTop: '100%',
-                                            borderRadius: '6px',
-                                            overflow: 'hidden',
-                                            backgroundColor: '#000000',
-                                            border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                            padding: '2px 6px',
+                                            borderRadius: '4px',
+                                            border: 'none',
+                                            backgroundColor: isDark ? 'rgba(16, 185, 129, 0.14)' : '#DCFCE7',
+                                            color: '#10B981',
                                             cursor: 'pointer',
-                                            transition: 'transform 0.15s ease',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '3px',
                                           }}
-                                          title={`Click to view Photo #${idx + 1} full size`}
+                                          title="View in sidebox"
                                         >
-                                          <div style={{ position: 'absolute', inset: 0 }}>
-                                            <img
-                                              src={url}
-                                              alt={`Merged #${img.index + 1}`}
-                                              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                                            />
-                                            {/* Direct 1-Click Photo Download Button */}
-                                            <button
-                                              type="button"
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                handleDownloadImage(url, idx, e);
-                                              }}
-                                              title={`Download Photo #${idx + 1}`}
-                                              aria-label={`Download Photo #${idx + 1}`}
-                                              style={{
-                                                position: 'absolute',
-                                                top: '3px',
-                                                left: '3px',
-                                                width: '20px',
-                                                height: '20px',
-                                                borderRadius: '4px',
-                                                backgroundColor: 'rgba(0, 0, 0, 0.65)',
-                                                border: '1px solid rgba(255, 255, 255, 0.25)',
-                                                color: '#FFFFFF',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                cursor: 'pointer',
-                                                zIndex: 3,
-                                                transition: 'background-color 0.15s ease',
-                                              }}
-                                              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#3B82F6'; }}
-                                              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.65)'; }}
-                                            >
-                                              <FiDownload size={10} />
-                                            </button>
-                                            <div
-                                              style={{
-                                                position: 'absolute',
-                                                bottom: '2px',
-                                                left: '2px',
-                                                fontSize: '0.5rem',
-                                                fontWeight: 700,
-                                                padding: '1px 4px',
-                                                borderRadius: '2px',
-                                                backgroundColor: 'rgba(0,0,0,0.7)',
-                                                color: '#FFFFFF',
-                                              }}
-                                            >
-                                              #{idx + 1}
-                                            </div>
-                                          </div>
-                                        </div>
-                                      );
-                                    })}
-                              </div>
+                                          <span>✓ {imageCount} photos</span>
+                                          <FiEye size={9} />
+                                        </button>
+                                      ) : hasTextResult ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setViewingPromptTemplate({
+                                              id: c.fromNodeId,
+                                              name: `${fromTitle} Result`,
+                                              templateText: textOutput,
+                                              headerTitle: 'Generated Output Copy',
+                                              copyButtonLabel: 'Copy Result',
+                                            });
+                                          }}
+                                          style={{
+                                            fontSize: '0.5625rem',
+                                            fontWeight: 700,
+                                            padding: '2px 6px',
+                                            borderRadius: '4px',
+                                            border: 'none',
+                                            backgroundColor: isDark ? 'rgba(139, 92, 246, 0.14)' : '#EDE9FE',
+                                            color: '#8B5CF6',
+                                            cursor: 'pointer',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '3px',
+                                          }}
+                                          title="View text output"
+                                        >
+                                          <span>✓ Ready</span>
+                                          <FiEye size={9} />
+                                        </button>
+                                      ) : (
+                                        <span
+                                          style={{
+                                            fontSize: '0.5625rem',
+                                            fontWeight: 600,
+                                            padding: '2px 6px',
+                                            borderRadius: '4px',
+                                            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#F1F5F9',
+                                            color: 'var(--text-muted)',
+                                          }}
+                                        >
+                                          Connected
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
                             </div>
-                          )}
-                        </>
+                          </div>
+                        </div>
                       );
                     })()}
 
@@ -14879,6 +14697,22 @@ export const FacebookWorkflowCanvas = forwardRef<
         />
       )}
 
+      {/* ── COMBINE BOX MERGED MEDIA ASSETS EXTRA SIDEBOX (SLIDES OUT NEXT TO 380px SIDEBAR) ── */}
+      {activeModalNode && activeModalNode.type === 'combine' && (
+        <CombineMediaSidebox
+          isOpen={showCombineMediaSidebox}
+          onClose={() => setShowCombineMediaSidebox(false)}
+          isDark={isDark}
+          combineMediaAssets={combineMediaAssets}
+          connectedImageNodes={connectedImageNodesForCombine}
+          activeFilter={combineMediaSideboxFormatFilter}
+          onFilterChange={setCombineMediaSideboxFormatFilter}
+          onOpenLightbox={(url) => handleOpenLightbox(url)}
+          onDownloadImage={handleDownloadImage}
+          onDownloadAllImages={handleDownloadAllCombineAssets}
+        />
+      )}
+
       {/* ── PROMPT TEMPLATE VIEWER & EDITOR SLIDE-OVER (SLIDES OUT NEXT TO 380px SIDEBAR) ── */}
       {viewingPromptTemplate && (
         <div
@@ -14889,7 +14723,7 @@ export const FacebookWorkflowCanvas = forwardRef<
             position: 'fixed',
             top: 0,
             bottom: 0,
-            right: activeModalNode?.type === 'combine' ? '40%' : '380px', // sits smoothly right alongside the main sidebar inspector
+            right: '380px', // sits smoothly right alongside the main sidebar inspector
             width: '440px',
             maxWidth: 'calc(100vw - 420px)',
             backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
