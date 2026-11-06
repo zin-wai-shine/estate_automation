@@ -3921,7 +3921,7 @@ export const FacebookWorkflowCanvas = forwardRef<
 
     try {
       const payloadFiles = assetsToDownload.map((a, idx) => {
-        const ext = a.url.includes('.png') ? 'png' : 'jpg';
+        const ext = (a.url.includes('image/png') || a.url.includes('.png')) ? 'png' : (a.url.includes('image/webp') || a.url.includes('.webp')) ? 'webp' : 'jpg';
         return {
           filename: `${cleanTitle}-${idx + 1}.${ext}`,
           data: a.url,
@@ -3986,7 +3986,7 @@ export const FacebookWorkflowCanvas = forwardRef<
 
     for (let i = 0; i < assetsToDownload.length; i++) {
       const a = assetsToDownload[i];
-      const ext = a.url.includes('.png') ? 'png' : 'jpg';
+      const ext = (a.url.includes('image/png') || a.url.includes('.png')) ? 'png' : (a.url.includes('image/webp') || a.url.includes('.webp')) ? 'webp' : 'jpg';
       const filename = `${cleanTitle}-${i + 1}.${ext}`;
       try {
         let blob: Blob;

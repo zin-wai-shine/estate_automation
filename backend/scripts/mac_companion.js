@@ -2262,7 +2262,27 @@ function mergeTabGroups(scannedGroups, liveGroups) {
           }
 
           if (buffer && buffer.length > 0) {
-            fs.writeFileSync(filePath, buffer);
+            // Validate real image format from magic bytes so macOS Finder QuickLook can generate thumbnail previews
+            let realExt = '';
+            if (buffer.length >= 8 && buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47) {
+              realExt = 'png';
+            } else if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+              realExt = 'jpg';
+            } else if (buffer.length >= 12 && buffer.toString('utf8', 0, 4) === 'RIFF' && buffer.toString('utf8', 8, 12) === 'WEBP') {
+              realExt = 'webp';
+            }
+
+            let correctedFilename = filename;
+            if (realExt) {
+              if (/\.(png|jpe?g|webp|gif)$/i.test(correctedFilename)) {
+                correctedFilename = correctedFilename.replace(/\.(png|jpe?g|webp|gif)$/i, `.${realExt}`);
+              } else {
+                correctedFilename += `.${realExt}`;
+              }
+            }
+
+            const targetFilePath = path.join(targetDir, correctedFilename);
+            fs.writeFileSync(targetFilePath, buffer);
             savedCount++;
           }
         }

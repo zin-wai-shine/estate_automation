@@ -217,7 +217,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
       e.preventDefault();
     }
     const fileNum = item.tileIndex ? `tile-${item.tileIndex}` : `${index + 1}`;
-    const ext = item.url.includes('.png') ? 'png' : 'jpg';
+    const ext = (item.url.includes('image/png') || item.url.includes('.png')) ? 'png' : (item.url.includes('image/webp') || item.url.includes('.webp')) ? 'webp' : 'jpg';
     const fileName = `${cleanBoxName}-${fileNum}.${ext}`;
     await downloadFileFromUrl(item.url, fileName);
   };
@@ -230,7 +230,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
       for (let i = 0; i < displayPreviewItems.length; i++) {
         const item = displayPreviewItems[i];
         const fileNum = item.tileIndex ? `tile-${item.tileIndex}` : `${i + 1}`;
-        const ext = item.url.includes('.png') ? 'png' : 'jpg';
+        const ext = (item.url.includes('image/png') || item.url.includes('.png')) ? 'png' : (item.url.includes('image/webp') || item.url.includes('.webp')) ? 'webp' : 'jpg';
         const fileName = `${cleanBoxName}-${fileNum}.${ext}`;
         await downloadFileFromUrl(item.url, fileName);
         if (i < displayPreviewItems.length - 1) {
@@ -252,7 +252,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     try {
       const payloadFiles = displayPreviewItems.map((item, i) => {
         const fileNum = item.tileIndex ? `tile-${item.tileIndex}` : `${i + 1}`;
-        const ext = item.url.includes('.png') ? 'png' : 'jpg';
+        const ext = (item.url.includes('image/png') || item.url.includes('.png')) ? 'png' : (item.url.includes('image/webp') || item.url.includes('.webp')) ? 'webp' : 'jpg';
         return {
           filename: `${cleanBoxName}-${fileNum}.${ext}`,
           data: item.url,
@@ -323,7 +323,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
       for (let i = 0; i < displayPreviewItems.length; i++) {
         const item = displayPreviewItems[i];
         const fileNum = item.tileIndex ? `tile-${item.tileIndex}` : `${i + 1}`;
-        const ext = item.url.includes('.png') ? 'png' : 'jpg';
+        const ext = (item.url.includes('image/png') || item.url.includes('.png')) ? 'png' : (item.url.includes('image/webp') || item.url.includes('.webp')) ? 'webp' : 'jpg';
         const fileName = `${cleanBoxName}-${fileNum}.${ext}`;
 
         const blob = await fetchBlobFromUrl(item.url);

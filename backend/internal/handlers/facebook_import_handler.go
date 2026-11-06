@@ -802,6 +802,23 @@ func SavePhotosToLocalFolder(c *fiber.Ctx) error {
 		}
 
 		if len(fileBytes) > 0 {
+			realExt := ""
+			if len(fileBytes) >= 8 && fileBytes[0] == 0x89 && fileBytes[1] == 0x50 && fileBytes[2] == 0x4E && fileBytes[3] == 0x47 {
+				realExt = ".png"
+			} else if len(fileBytes) >= 3 && fileBytes[0] == 0xFF && fileBytes[1] == 0xD8 && fileBytes[2] == 0xFF {
+				realExt = ".jpg"
+			} else if len(fileBytes) >= 12 && string(fileBytes[0:4]) == "RIFF" && string(fileBytes[8:12]) == "WEBP" {
+				realExt = ".webp"
+			}
+			if realExt != "" {
+				extRe := regexp.MustCompile(`(?i)\.(png|jpe?g|webp|gif)$`)
+				if extRe.MatchString(cleanName) {
+					cleanName = extRe.ReplaceAllString(cleanName, realExt)
+				} else {
+					cleanName += realExt
+				}
+				filePath = filepath.Join(targetFolder, cleanName)
+			}
 			if err := os.WriteFile(filePath, fileBytes, 0644); err == nil {
 				savedCount++
 			}
