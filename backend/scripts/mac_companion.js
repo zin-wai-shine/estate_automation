@@ -1105,8 +1105,8 @@ function handleDetectedDownload(filePath, fileName, size) {
     const hash = crypto.createHash('sha256').update(fileBuf).digest('hex');
     console.log(`[COMPANION] Validated download: ${fileName} (${size} bytes, sha256: ${hash.slice(0, 12)})`);
 
-    // If this is a Hero image download (or twoStageState is active), attach data URL so the workflow receives the local downloaded file
-    if (fileName.toLowerCase().startsWith('fb_hero') || (twoStageState && (twoStageState.is_running || twoStageState.step === 'completed' || twoStageState.step === 'downloading_image'))) {
+    // If this is a Hero image download (or twoStageState is actively waiting for it), attach data URL so the workflow receives the local downloaded file
+    if (fileName.toLowerCase().startsWith('fb_hero') || (twoStageState && twoStageState.is_running && twoStageState.step === 'downloading_image')) {
       const ext = path.extname(fileName).toLowerCase().replace('.', '') || 'png';
       const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'webp' ? 'image/webp' : 'image/png';
       const dataUrl = `data:${mime};base64,${fileBuf.toString('base64')}`;

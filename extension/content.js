@@ -339,12 +339,8 @@
     if (assistantTurns.length === 0) return false;
 
     const lastTurn = assistantTurns[assistantTurns.length - 1];
+    // Active animated spinner or pulsing element in last turn
     if (lastTurn.querySelector('svg.animate-spin, div[class*="spin"], .result-thinking, .animate-pulse')) {
-      return true;
-    }
-
-    const txt = (lastTurn.textContent || '').slice(-200);
-    if (/\b(Thinking|Creating image|Working)\.{3}/i.test(txt)) {
       return true;
     }
 
@@ -599,19 +595,25 @@
       });
       if (compResp.ok) {
         console.log('[BOLTHAVEN] ✓ Companion wrote image directly to disk:', fileName);
+        // Direct companion save wrote cleanly to ~/Downloads without browser prompts or duplication!
+        return true;
       }
     } catch (e) {
-      console.warn('[BOLTHAVEN] Companion direct save note:', e.message);
+      console.log('[BOLTHAVEN] Companion direct save note:', e.message);
     }
 
-    // Tier 1.5: Native ChatGPT UI Download (Direct button OR Share -> Modal -> Download OR Copy Image)
+    // Tier 2: Native ChatGPT UI Download (Direct button OR Share -> Modal -> Download OR Copy Image)
     try {
-      await triggerNativeChatGPTDownload(imgEl);
+      const nativeTriggered = await triggerNativeChatGPTDownload(imgEl);
+      if (nativeTriggered) {
+        console.log('[BOLTHAVEN] ✓ Native ChatGPT download triggered for:', fileName);
+        return true;
+      }
     } catch (e) {
-      console.warn('[BOLTHAVEN] Native trigger download notice:', e.message);
+      console.log('[BOLTHAVEN] Native trigger download notice:', e.message);
     }
 
-    // Tier 2: Background chrome.downloads API (handles cross-origin, custom filename)
+    // Tier 3: Background chrome.downloads API (handles cross-origin, custom filename)
     try {
       const dlUrl = companionUrl.startsWith('data:') ? companionUrl : finalUrl;
       const response = await new Promise((resolve) => {
@@ -631,12 +633,12 @@
         console.log('[BOLTHAVEN] ✓ Successfully downloaded via chrome.downloads:', fileName);
         return true;
       }
-      console.warn('[BOLTHAVEN] chrome.downloads reported failure, attempting fallback...', response?.error);
+      console.log('[BOLTHAVEN] chrome.downloads reported failure, attempting fallback...', response?.error);
     } catch (e) {
-      console.warn('[BOLTHAVEN] chrome.downloads sendMessage failed:', e.message);
+      console.log('[BOLTHAVEN] chrome.downloads sendMessage failed:', e.message);
     }
 
-    // Tier 3: Direct in-tab blob anchor download (fallback)
+    // Tier 4: Direct in-tab blob anchor download (fallback)
     try {
       console.log('[BOLTHAVEN] Fallback: Fetching blob for direct browser download...');
       const resp = await fetch(finalUrl, { mode: 'cors' });
@@ -1683,11 +1685,19 @@
     // Method D: MAIN world attachment fallback
     if (dataUrlHint && typeof dataUrlHint === 'string' && dataUrlHint.startsWith('data:')) {
       try {
-        chrome.runtime.sendMessage({
-          action: 'ATTACH_IMAGE_MAIN_WORLD',
-          dataUrl: dataUrlHint,
-          filename: file.name || 'property_image.jpg',
-        }, () => {});
+        await new Promise((res) => {
+          chrome.runtime.sendMessage({
+            action: 'ATTACH_IMAGE_MAIN_WORLD',
+            dataUrl: dataUrlHint,
+            filename: file.name || 'property_image.jpg',
+          }, (mRes) => {
+            if (chrome.runtime.lastError) {
+              res(false);
+            } else {
+              res(mRes?.success ?? false);
+            }
+          });
+        });
       } catch (e) {}
     }
 
@@ -1732,7 +1742,7 @@
             action: 'JOB_GENERATION_FAILED',
             jobId: job.job_id,
             error: 'Job stopped by user',
-          }).catch(() => {});
+          }, () => { if (chrome.runtime.lastError) {} });
           return resolve({ success: false, error: 'Job stopped by user' });
         }
 
@@ -1743,7 +1753,7 @@
             action: 'JOB_GENERATION_FAILED',
             jobId: job.job_id,
             error: 'ChatGPT image generation timed out (6 min)',
-          }).catch(() => {});
+          }, () => { if (chrome.runtime.lastError) {} });
           return resolve({ success: false, error: 'ChatGPT image generation timed out (6 min)' });
         }
 
@@ -1772,7 +1782,7 @@
                 action: 'JOB_GENERATION_FAILED',
                 jobId: job.job_id,
                 error: 'ChatGPT generation failed: "Error in message stream" persisted after 3 retries.',
-              }).catch(() => {});
+              }, () => { if (chrome.runtime.lastError) {} });
               return resolve({ success: false, error: 'ChatGPT generation failed: "Error in message stream" persisted after 3 retries.' });
             }
           }
@@ -1860,7 +1870,7 @@
             jobId: job.job_id,
             original_position: job.original_position,
             result_url: finalUrl,
-          }).catch(() => {});
+          }, () => { if (chrome.runtime.lastError) {} });
 
           return resolve({
             success: true,

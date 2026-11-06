@@ -423,6 +423,21 @@ async function processSlot(slotIndex, sessionId, initialJob = null) {
       `[BOLTHAVEN EXT] Tab ${slot.tabId} → waiting for setup lock for Image #${job.original_position}...`
     );
 
+    // Ensure tab is on a clean, fresh chat page. If it previously generated an image, it is sitting on https://chatgpt.com/c/<id>.
+    // Resetting to FRESH_CHAT_URL ('https://chatgpt.com/') guarantees a clean composer state without stale conversation turns, attachments, or memory bloat!
+    try {
+      const currentTab = await chrome.tabs.get(slot.tabId).catch(() => null);
+      if (currentTab && currentTab.url && (currentTab.url.includes('/c/') || !currentTab.url.startsWith('https://chatgpt.com/'))) {
+        console.log(`[BOLTHAVEN EXT] Tab ${slot.tabId} is on conversation thread (${currentTab.url.slice(0, 45)}...). Resetting to fresh chat for Image #${job.original_position}...`);
+        await chrome.tabs.update(slot.tabId, { url: FRESH_CHAT_URL });
+        await waitForTabComplete(slot.tabId, 15000);
+        await delay(600);
+        await ensureContentScriptInjected(slot.tabId);
+      }
+    } catch (tabResetErr) {
+      console.log(`[BOLTHAVEN EXT] Tab ${slot.tabId} reset notice:`, tabResetErr.message);
+    }
+
     // 1. SEQUENTIAL SETUP & SEND (exclusive focus on this tab for ~3 seconds)
     const releaseLock = await acquireAttachmentMutex();
     try {
@@ -453,7 +468,7 @@ async function processSlot(slotIndex, sessionId, initialJob = null) {
           console.log(`[BOLTHAVEN EXT] Image #${job.original_position || 1} pre-fetched successfully (${Math.round(dataUrl.length / 1024)} KB data URL)`);
         }
       } catch (imgErr) {
-        console.warn(`[BOLTHAVEN EXT] Pre-fetch image notice for Image #${job.original_position}:`, imgErr.message);
+        console.log(`[BOLTHAVEN EXT] Pre-fetch image notice for Image #${job.original_position}:`, imgErr.message);
       }
 
       // Send SETUP_AND_SEND_JOB to the tab with retry
@@ -483,8 +498,13 @@ async function processSlot(slotIndex, sessionId, initialJob = null) {
       await reportJobFailed(job.job_id, setupErr.message);
       slot.busy = false;
       slot.currentJob = null;
+      // Reset tab to clean chat URL so it recovers for the next job
+      try {
+        await chrome.tabs.update(slot.tabId, { url: FRESH_CHAT_URL });
+        await waitForTabComplete(slot.tabId, 10000);
+      } catch (e) {}
       await delay(2000);
-      break;
+      continue; // NEVER abort the slot — continue to process the next job in the queue!
     } finally {
       // RELEASE THE LOCK IMMEDIATELY SO NEXT TAB GETS FULL ATTENTION!
       releaseLock();
@@ -510,6 +530,11 @@ async function processSlot(slotIndex, sessionId, initialJob = null) {
 
     slot.busy = false;
     slot.currentJob = null;
+
+    // Immediately update tab back to fresh chat URL so it is ready for the next job
+    try {
+      await chrome.tabs.update(slot.tabId, { url: FRESH_CHAT_URL });
+    } catch (e) {}
 
     // Brief pause before this slot takes the next job from queue
     await delay(1500);
@@ -1115,7 +1140,9 @@ async function startAutomation(payload) {
     if (!automation.isRunning || mySessionId !== automationSessionId) break;
     const initialJob = jobs[i];
     if (!initialJob) break;
-    processSlot(i, mySessionId, initialJob);
+    processSlot(i, mySessionId, initialJob).catch((err) => {
+      console.warn(`[BOLTHAVEN EXT] Slot ${i} error:`, err?.message || err);
+    });
   }
 
   return { success: true, message: `Automation started: ${jobs.length} jobs on ${activeTabIds.length} tabs` };
@@ -1408,34 +1435,42 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'DOWNLOAD_IMAGE') {
     const rawFilename = request.filename || `enhanced_${Date.now()}.png`;
     const cleanFilename = rawFilename.replace(/[\/\\]/g, '_').trim();
-    chrome.downloads.download(
-      {
-        url: request.url,
-        filename: cleanFilename,
-        saveAs: false,
-        conflictAction: 'overwrite',
-      },
-      (downloadId) => {
-        if (chrome.runtime.lastError) {
-          console.warn('[BOLTHAVEN EXT] chrome.downloads error:', chrome.runtime.lastError.message);
-          // Fallback without explicit filename
-          chrome.downloads.download(
-            { url: request.url, saveAs: false },
-            (id2) => {
-              if (chrome.runtime.lastError) {
-                sendResponse({ success: false, error: chrome.runtime.lastError.message });
-              } else {
-                console.log('[BOLTHAVEN EXT] ✓ chrome.downloads started with default filename, id:', id2);
-                sendResponse({ success: true, downloadId: id2 });
-              }
+    try {
+      chrome.downloads.download(
+        {
+          url: request.url,
+          filename: cleanFilename,
+          saveAs: false,
+          conflictAction: 'uniquify',
+        },
+        (downloadId) => {
+          if (chrome.runtime.lastError) {
+            console.log('[BOLTHAVEN EXT] chrome.downloads note:', chrome.runtime.lastError.message);
+            // Fallback without explicit filename
+            try {
+              chrome.downloads.download(
+                { url: request.url, saveAs: false },
+                (id2) => {
+                  if (chrome.runtime.lastError) {
+                    sendResponse({ success: false, error: chrome.runtime.lastError.message });
+                  } else {
+                    console.log('[BOLTHAVEN EXT] ✓ chrome.downloads started with default filename, id:', id2);
+                    sendResponse({ success: true, downloadId: id2 });
+                  }
+                }
+              );
+            } catch (err2) {
+              sendResponse({ success: false, error: err2.message });
             }
-          );
-        } else {
-          console.log('[BOLTHAVEN EXT] ✓ chrome.downloads started, id:', downloadId);
-          sendResponse({ success: Boolean(downloadId), downloadId });
+          } else {
+            console.log('[BOLTHAVEN EXT] ✓ chrome.downloads started, id:', downloadId);
+            sendResponse({ success: Boolean(downloadId), downloadId });
+          }
         }
-      }
-    );
+      );
+    } catch (downErr) {
+      sendResponse({ success: false, error: downErr.message });
+    }
     return true;
   }
 
