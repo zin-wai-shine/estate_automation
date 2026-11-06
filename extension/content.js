@@ -113,47 +113,75 @@
   }
   window.clickElementSafely = clickElementSafely;
 
+  // Safe sendMessage helper that always accesses chrome.runtime.lastError to avoid extension errors
+  function safeSendMessage(msg, callback) {
+    try {
+      chrome.runtime.sendMessage(msg, (res) => {
+        const err = chrome.runtime.lastError;
+        if (typeof callback === 'function') callback(res, err);
+      });
+    } catch (e) {
+      if (typeof callback === 'function') callback(null, e);
+    }
+  }
+
   // Safely click send button using native pointer, mouse, submit, and keyboard Enter events
-  function clickSendButton(btn) {
+  async function clickSendButton(btn) {
     if (!btn) return false;
     try {
       btn.focus();
 
+      // 1. Direct React Fiber onClick execution (if available in current scope)
+      try {
+        const reactKey = Object.keys(btn).find((k) => k.startsWith('__reactProps$') || k.startsWith('__reactEventHandlers$'));
+        if (reactKey && btn[reactKey] && typeof btn[reactKey].onClick === 'function') {
+          btn[reactKey].onClick({ preventDefault: () => {}, stopPropagation: () => {}, target: btn, currentTarget: btn, bubbles: true });
+        }
+      } catch (e) {}
+
       const rect = btn.getBoundingClientRect();
       const x = rect.left + rect.width / 2;
       const y = rect.top + rect.height / 2;
-      const mouseOpts = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, buttons: 1 };
 
-      btn.dispatchEvent(new PointerEvent('pointerdown', { ...mouseOpts, pointerId: 1, isPrimary: true, pointerType: 'mouse' }));
-      btn.dispatchEvent(new MouseEvent('mousedown', mouseOpts));
-      btn.dispatchEvent(new PointerEvent('pointerup', { ...mouseOpts, pointerId: 1, isPrimary: true, pointerType: 'mouse' }));
-      btn.dispatchEvent(new MouseEvent('mouseup', mouseOpts));
-      btn.dispatchEvent(new MouseEvent('click', mouseOpts));
+      // Pointer & Mouse down: button 0, buttons 1
+      const downOpts = { bubbles: true, cancelable: true, composed: true, view: window, clientX: x, clientY: y, button: 0, buttons: 1 };
+      btn.dispatchEvent(new PointerEvent('pointerdown', { ...downOpts, pointerId: 1, isPrimary: true, pointerType: 'mouse' }));
+      btn.dispatchEvent(new MouseEvent('mousedown', downOpts));
+
+      // Pointer & Mouse up + click: button 0, buttons 0 (CRITICAL: React drops clicks if buttons !== 0)
+      const upOpts = { bubbles: true, cancelable: true, composed: true, view: window, clientX: x, clientY: y, button: 0, buttons: 0 };
+      btn.dispatchEvent(new PointerEvent('pointerup', { ...upOpts, pointerId: 1, isPrimary: true, pointerType: 'mouse' }));
+      btn.dispatchEvent(new MouseEvent('mouseup', upOpts));
+      btn.dispatchEvent(new MouseEvent('click', upOpts));
       btn.click();
 
       // Also trigger form.requestSubmit if button belongs to a form
-      if (btn.form && typeof btn.form.requestSubmit === 'function') {
+      const form = btn.closest('form') || btn.form || document.querySelector('form');
+      if (form && typeof form.requestSubmit === 'function') {
         try {
-          btn.form.requestSubmit(btn);
-        } catch (e) {}
+          form.requestSubmit(btn);
+        } catch (e) {
+          try { form.requestSubmit(); } catch (e2) {}
+        }
       }
 
       // Also dispatch Enter key on prompt input
       const promptTarget = findPromptInput();
       if (promptTarget) {
         promptTarget.focus();
-        promptTarget.dispatchEvent(new KeyboardEvent('keydown', {
-          key: 'Enter', code: 'Enter', keyCode: 13, which: 13, charCode: 13, bubbles: true, cancelable: true, composed: true, shiftKey: false
-        }));
-        promptTarget.dispatchEvent(new KeyboardEvent('keyup', {
-          key: 'Enter', code: 'Enter', keyCode: 13, which: 13, charCode: 13, bubbles: true, cancelable: true, composed: true, shiftKey: false
-        }));
+        const kOpts = {
+          key: 'Enter', code: 'Enter', keyCode: 13, which: 13, charCode: 13,
+          bubbles: true, cancelable: true, composed: true, shiftKey: false, altKey: false, ctrlKey: false, metaKey: false
+        };
+        promptTarget.dispatchEvent(new KeyboardEvent('keydown', kOpts));
+        promptTarget.dispatchEvent(new KeyboardEvent('keypress', kOpts));
+        promptTarget.dispatchEvent(new KeyboardEvent('keyup', kOpts));
       }
 
-      // Also trigger click in MAIN world context (bypasses Chrome isolated world limitations for React events)
-      try {
-        chrome.runtime.sendMessage({ action: 'CLICK_SEND_MAIN_WORLD' }, () => {});
-      } catch (e) {}
+      // Synchronously execute and await click in MAIN world context
+      await new Promise((resolve) => {
+        safeSendMessage({ action: 'CLICK_SEND_MAIN_WORLD' }, (res) => resolve(res));
+      });
 
       return true;
     } catch (e) {
@@ -1973,13 +2001,13 @@
 
     const existingAttached = getAttachedImagesCount(input);
     if (existingAttached > 0) {
-      console.log(`[BOLTHAVEN] Pruning ${existingAttached} leftover attachment(s) to 0 before starting Image #${job.original_position || 1}...`);
+      console.log(`[BOLTHAVEN] Leftover attachment(s) detected (${existingAttached}), resetting composer to guarantee clean single-image slate...`);
       await pruneExcessAttachments(input, 0);
       await new Promise((r) => setTimeout(r, 400));
       if (getAttachedImagesCount(input) > 0) {
-        console.log('[BOLTHAVEN] Leftover attachments persisted, resetting composer via New Chat...');
+        console.log('[BOLTHAVEN] Resetting composer via New Chat button to clear leftover image...');
         startNewChatSmoothly();
-        await new Promise((r) => setTimeout(r, 800));
+        await new Promise((r) => setTimeout(r, 1200));
       }
     }
 
@@ -2029,9 +2057,9 @@
 
     console.log(`[BOLTHAVEN] ✓ Step 1 Done: Single image #${job.original_position || 1} confirmed attached! Waiting for upload to finish...`);
 
-    // 2. Wait for the image upload to fully complete BEFORE typing the prompt.
+    // 2. Wait for the image upload to fully complete BEFORE typing the prompt (up to 12s)
     const composerEl = getComposerContainer(input) || document;
-    await waitForAttachmentUploadComplete(composerEl, 6000);
+    await waitForAttachmentUploadComplete(composerEl, 12000);
 
     if (activeJobAborted) {
       clearPromptText(input);
@@ -2100,7 +2128,7 @@
 
       const sendBtn = findSendButton();
       if (sendBtn && isSendButtonReady(sendBtn)) {
-        clickSendButton(sendBtn);
+        await clickSendButton(sendBtn);
       }
 
       await new Promise((r) => setTimeout(r, 800));
@@ -2130,10 +2158,10 @@
     }
 
     if (!messageSent) {
-      console.warn(`[BOLTHAVEN] Message dispatch verification timeout for Image #${job.original_position || 1}. Triggering assertive Enter submit...`);
-      const sendBtn = findSendButton();
-      if (sendBtn) clickSendButton(sendBtn);
-      await new Promise((r) => setTimeout(r, 1200));
+      console.error(`[BOLTHAVEN] CRITICAL: Message dispatch failed to trigger ChatGPT send on Image #${job.original_position || 1}`);
+      clearPromptText(input);
+      startNewChatSmoothly();
+      throw new Error(`CRITICAL: Message dispatch failed to trigger ChatGPT send on Image #${job.original_position || 1}. Resetting tab to avoid accumulating unsent images.`);
     }
 
     // Launch background generation watcher asynchronously

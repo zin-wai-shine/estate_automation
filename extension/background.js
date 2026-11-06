@@ -1194,23 +1194,49 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
           if (btn && !btn.disabled) {
             btn.focus();
+
+            // 1. Invoke React Fiber onClick handler directly (guarantees React 18 event capture!)
+            try {
+              const reactKey = Object.keys(btn).find((k) => k.startsWith('__reactProps$') || k.startsWith('__reactEventHandlers$'));
+              if (reactKey && btn[reactKey] && typeof btn[reactKey].onClick === 'function') {
+                btn[reactKey].onClick({ preventDefault: () => {}, stopPropagation: () => {}, target: btn, currentTarget: btn, bubbles: true });
+              }
+            } catch (e) {}
+
             const r = btn.getBoundingClientRect();
-            const opts = { bubbles: true, cancelable: true, composed: true, view: window, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2, buttons: 1 };
-            btn.dispatchEvent(new PointerEvent('pointerdown', { ...opts, pointerId: 1, isPrimary: true, pointerType: 'mouse' }));
-            btn.dispatchEvent(new MouseEvent('mousedown', opts));
-            btn.dispatchEvent(new PointerEvent('pointerup', { ...opts, pointerId: 1, isPrimary: true, pointerType: 'mouse' }));
-            btn.dispatchEvent(new MouseEvent('mouseup', opts));
-            btn.dispatchEvent(new MouseEvent('click', opts));
+            const cx = r.left + r.width / 2;
+            const cy = r.top + r.height / 2;
+
+            // Pointer & Mouse down: button 0, buttons 1
+            const downOpts = { bubbles: true, cancelable: true, composed: true, view: window, clientX: cx, clientY: cy, button: 0, buttons: 1 };
+            btn.dispatchEvent(new PointerEvent('pointerdown', { ...downOpts, pointerId: 1, isPrimary: true, pointerType: 'mouse' }));
+            btn.dispatchEvent(new MouseEvent('mousedown', downOpts));
+
+            // Pointer & Mouse up + click: button 0, buttons 0 (CRITICAL: React drops clicks if buttons !== 0)
+            const upOpts = { bubbles: true, cancelable: true, composed: true, view: window, clientX: cx, clientY: cy, button: 0, buttons: 0 };
+            btn.dispatchEvent(new PointerEvent('pointerup', { ...upOpts, pointerId: 1, isPrimary: true, pointerType: 'mouse' }));
+            btn.dispatchEvent(new MouseEvent('mouseup', upOpts));
+            btn.dispatchEvent(new MouseEvent('click', upOpts));
             btn.click();
-            if (btn.form && typeof btn.form.requestSubmit === 'function') {
-              btn.form.requestSubmit(btn);
+
+            const form = btn.closest('form') || btn.form || document.querySelector('form');
+            if (form && typeof form.requestSubmit === 'function') {
+              try { form.requestSubmit(btn); } catch (e) {
+                try { form.requestSubmit(); } catch (e2) {}
+              }
             }
           }
 
           const pm = document.querySelector('.ProseMirror, #prompt-textarea, textarea');
           if (pm) {
             pm.focus();
-            pm.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true, composed: true }));
+            const kOpts = {
+              key: 'Enter', code: 'Enter', keyCode: 13, which: 13, charCode: 13,
+              bubbles: true, cancelable: true, composed: true, shiftKey: false, altKey: false, ctrlKey: false, metaKey: false
+            };
+            pm.dispatchEvent(new KeyboardEvent('keydown', kOpts));
+            pm.dispatchEvent(new KeyboardEvent('keypress', kOpts));
+            pm.dispatchEvent(new KeyboardEvent('keyup', kOpts));
           }
         },
       }).then(() => sendResponse({ success: true })).catch((e) => sendResponse({ success: false, error: e.message }));
@@ -1239,7 +1265,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           }
 
           // Target ONLY the paragraph inside pm, NEVER the entire pm container (which holds the attachment!)
-          const targetP = pm.querySelector('p') || pm;
+          let targetP = pm.querySelector('p');
+          if (!targetP) {
+            targetP = document.createElement('p');
+            pm.appendChild(targetP);
+          }
 
           // METHOD A: document.execCommand insertText on targetP ONLY (preserves attachments outside <p>!)
           try {
@@ -1273,7 +1303,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           try {
             const reactFiberKey = Object.keys(pm).find(k => k.startsWith('__reactFiber') || k.startsWith('__reactInternals'));
             if (reactFiberKey) {
-              // Walk up fiber tree to find the ProseMirror view
               let fiber = pm[reactFiberKey];
               while (fiber) {
                 if (fiber.stateNode && fiber.stateNode.dispatch && fiber.stateNode.state) {
@@ -1287,42 +1316,39 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             }
           } catch (e) {}
 
-          // METHOD D: Clipboard paste simulation (most reliable for modern editors)
+          // METHOD D: Clipboard paste simulation on targetP ONLY (preserves attachments outside targetP!)
           try {
-            pm.focus();
-            // Select all existing text first
+            targetP.focus();
             const sel2 = window.getSelection();
             const range2 = document.createRange();
-            range2.selectNodeContents(pm);
+            range2.selectNodeContents(targetP);
             sel2.removeAllRanges();
             sel2.addRange(range2);
 
             const dt = new DataTransfer();
             dt.setData('text/plain', text);
-            dt.setData('text/html', `<p>${text.replace(/\n/g, '</p><p>')}</p>`);
-
             const pasteEvent = new ClipboardEvent('paste', {
               bubbles: true,
               cancelable: true,
               composed: true,
             });
             Object.defineProperty(pasteEvent, 'clipboardData', { value: dt });
-            pm.dispatchEvent(pasteEvent);
+            targetP.dispatchEvent(pasteEvent);
 
-            // Check synchronously - no await in non-async func scope
             if (pm.textContent && pm.textContent.trim().length > 3) {
               return { ok: true, method: 'clipboard_paste' };
             }
           } catch (e) {}
 
-          // METHOD E: Direct innerHTML paragraph injection (fallback, works if React state reads innerText)
+          // METHOD E: Set targetP textContent ONLY (NEVER overwrite pm.innerHTML which destroys image attachments!)
           try {
-            const lines2 = text.split('\n');
-            pm.innerHTML = lines2.map(l => `<p>${l || '<br>'}</p>`).join('');
-            pm.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, inputType: 'insertText', data: text }));
+            targetP.classList.remove('placeholder');
+            targetP.removeAttribute('data-placeholder');
+            targetP.textContent = text;
+            targetP.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, inputType: 'insertText', data: text }));
             pm.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
             pm.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
-            return { ok: pm.textContent.trim().length > 3, method: 'innerHTML' };
+            return { ok: pm.textContent.trim().length > 3, method: 'targetP_textContent' };
           } catch (e) {}
 
           return { ok: false, reason: 'all methods failed' };
