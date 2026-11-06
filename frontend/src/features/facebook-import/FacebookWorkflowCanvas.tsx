@@ -284,6 +284,7 @@ export interface DynamicAIBoxConfig {
   subtitle?: string;
   targetPages?: 'all' | 'first-only' | 'body-only' | 'custom';
   customPages?: string;
+  presetOrder?: string[];
   x: number;
   y: number;
   n8nWorkflowId?: string;
@@ -409,6 +410,8 @@ export interface CombineBoxConfig {
   enabled: boolean;
   x: number;
   y: number;
+  inputOrder?: string[];
+  presetOrder?: string[];
 }
 
 export interface DestinationNodeConfig {
@@ -3714,6 +3717,14 @@ export const FacebookWorkflowCanvas = forwardRef<
   const [isAddingSheetRow, setIsAddingSheetRow] = useState<boolean>(false);
   const [sheetSyncSuccessMessage, setSheetSyncSuccessMessage] = useState<string | null>(null);
   const [sheetSyncErrorMessage, setSheetSyncErrorMessage] = useState<string | null>(null);
+
+  // Combine Box drag-and-drop state (for Cards and Presets reordering)
+  const [draggedPresetId, setDraggedPresetId] = useState<string | null>(null);
+  const [dragOverPresetId, setDragOverPresetId] = useState<string | null>(null);
+  const [dragOverPresetPos, setDragOverPresetPos] = useState<'top' | 'bottom' | null>(null);
+  const [draggedCardId, setDraggedCardId] = useState<string | null>(null);
+  const [dragOverCardId, setDragOverCardId] = useState<string | null>(null);
+  const [dragOverCardPos, setDragOverCardPos] = useState<'top' | 'bottom' | null>(null);
 
   const handleOpenGoogleSheetDataViewer = (box?: DynamicAIBoxConfig) => {
     const target = box || currentModalAIBox || config.aiBoxes.find(isGoogleSheetBox);
@@ -11070,6 +11081,134 @@ export const FacebookWorkflowCanvas = forwardRef<
             ? (config.connections || []).filter((c) => c.toNodeId === currentCombineBox.id)
             : [];
 
+          // Compute ordered combine inputs:
+          // General group (Text AI / Content) is placed FIRST (top), and image format / watermark / crop boxes appear UNDER General!
+          const orderedCombineInputs = (() => {
+            if (!combineInputs || combineInputs.length === 0) return [];
+            const savedOrder = currentCombineBox?.inputOrder;
+
+            return [...combineInputs].sort((a, b) => {
+              if (savedOrder && Array.isArray(savedOrder) && savedOrder.length > 0) {
+                const idxA = savedOrder.indexOf(a.fromNodeId);
+                const idxB = savedOrder.indexOf(b.fromNodeId);
+                if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+                if (idxA !== -1) return -1;
+                if (idxB !== -1) return 1;
+              }
+
+              const boxA = config.aiBoxes.find((bx) => bx.id === a.fromNodeId);
+              const boxB = config.aiBoxes.find((bx) => bx.id === b.fromNodeId);
+
+              const isTextA = a.fromNodeId === 'get-content' || (boxA ? (
+                isTextAIBox(boxA, config.connections) ||
+                boxA.subtitle === 'AI Processor' ||
+                boxA.processType === 'text_ai' ||
+                boxA.title?.toLowerCase().includes('prompt generator') ||
+                boxA.title?.toLowerCase().includes('ai model')
+              ) : false);
+
+              const isTextB = b.fromNodeId === 'get-content' || (boxB ? (
+                isTextAIBox(boxB, config.connections) ||
+                boxB.subtitle === 'AI Processor' ||
+                boxB.processType === 'text_ai' ||
+                boxB.title?.toLowerCase().includes('prompt generator') ||
+                boxB.title?.toLowerCase().includes('ai model')
+              ) : false);
+
+              if (isTextA && !isTextB) return -1;
+              if (!isTextA && isTextB) return 1;
+              return 0;
+            });
+          })();
+
+          const handleReorderPresets = (
+            sourceId: string,
+            targetId: string,
+            position: 'top' | 'bottom',
+            currentBoxes: DynamicAIBoxConfig[],
+            fromNodeId: string
+          ) => {
+            if (sourceId === targetId) return;
+
+            const currentIds = currentBoxes.map((b) => b.id);
+            const fromIndex = currentIds.indexOf(sourceId);
+            const toIndex = currentIds.indexOf(targetId);
+            if (fromIndex === -1 || toIndex === -1) return;
+
+            const nextIds = [...currentIds];
+            const [movedId] = nextIds.splice(fromIndex, 1);
+            const targetNewIndex = nextIds.indexOf(targetId);
+            const insertIndex = position === 'top' ? targetNewIndex : targetNewIndex + 1;
+            nextIds.splice(insertIndex, 0, movedId);
+
+            // Reorder format boxes within config.aiBoxes
+            const reorderedBoxes = [...config.aiBoxes];
+            const idRank = new Map(nextIds.map((id, idx) => [id, idx]));
+            const formatBoxesSubset = reorderedBoxes.filter((b) => idRank.has(b.id));
+            formatBoxesSubset.sort((a, b) => (idRank.get(a.id) ?? 0) - (idRank.get(b.id) ?? 0));
+
+            let subsetIdx = 0;
+            const newAiBoxes = reorderedBoxes.map((b) => {
+              if (idRank.has(b.id)) {
+                const sortedItem = formatBoxesSubset[subsetIdx];
+                subsetIdx++;
+                return sortedItem;
+              }
+              return b;
+            });
+
+            const newCombineBoxes = (config.combineBoxes || []).map((cb) => {
+              if (cb.id === currentCombineBox?.id) {
+                return { ...cb, presetOrder: nextIds };
+              }
+              return cb;
+            });
+
+            const nextConfig = {
+              ...config,
+              aiBoxes: newAiBoxes,
+              combineBoxes: newCombineBoxes,
+            };
+
+            updateConfig(nextConfig);
+            try {
+              localStorage.setItem(`combine_preset_order_${fromNodeId}`, JSON.stringify(nextIds));
+              if (currentCombineBox) {
+                localStorage.setItem(`combine_preset_order_${currentCombineBox.id}`, JSON.stringify(nextIds));
+              }
+            } catch {}
+          };
+
+          const handleReorderCombineCards = (
+            sourceNodeId: string,
+            targetNodeId: string,
+            position: 'top' | 'bottom'
+          ) => {
+            if (!currentCombineBox || sourceNodeId === targetNodeId) return;
+            const currentIds = orderedCombineInputs.map((c) => c.fromNodeId);
+            const fromIndex = currentIds.indexOf(sourceNodeId);
+            const toIndex = currentIds.indexOf(targetNodeId);
+            if (fromIndex === -1 || toIndex === -1) return;
+
+            const nextIds = [...currentIds];
+            const [movedId] = nextIds.splice(fromIndex, 1);
+            const targetNewIndex = nextIds.indexOf(targetNodeId);
+            const insertIndex = position === 'top' ? targetNewIndex : targetNewIndex + 1;
+            nextIds.splice(insertIndex, 0, movedId);
+
+            const newCombineBoxes = (config.combineBoxes || []).map((cb) => {
+              if (cb.id === currentCombineBox.id) {
+                return { ...cb, inputOrder: nextIds };
+              }
+              return cb;
+            });
+
+            updateConfig({ ...config, combineBoxes: newCombineBoxes });
+            try {
+              localStorage.setItem(`combine_card_order_${currentCombineBox.id}`, JSON.stringify(nextIds));
+            } catch {}
+          };
+
           return (
             <aside
               className="workflow-sidebar"
@@ -11746,7 +11885,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                         }
                       };
 
-                      for (const c of combineInputs) {
+                      for (const c of orderedCombineInputs) {
                         const fromBox = config.aiBoxes.find((b) => b.id === c.fromNodeId);
                         const fromTitle = c.fromNodeId === 'get-content' ? 'Get Content' : fromBox?.title || c.fromNodeId;
                         const isTextAI = fromBox
@@ -11814,7 +11953,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                       return (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                           {/* Clean, professional card for EACH connected input */}
-                          {combineInputs.map((c) => {
+                          {orderedCombineInputs.map((c) => {
                             const fromBox = config.aiBoxes.find((b) => b.id === c.fromNodeId);
                             const isContent = c.fromNodeId === 'get-content';
                             const isImages = c.fromNodeId === 'get-images';
@@ -11860,24 +11999,96 @@ export const FacebookWorkflowCanvas = forwardRef<
                               }
 
                               const isHovered = hoveredStackId === c.fromNodeId;
+                              const isCardBeingDragged = draggedCardId === c.fromNodeId;
+                              const isCardOverThis = dragOverCardId === c.fromNodeId;
 
                               return (
                                 <div
                                   key={c.id}
+                                  draggable={!draggedPresetId}
+                                  onDragStart={(e) => {
+                                    if (draggedPresetId) return;
+                                    setDraggedCardId(c.fromNodeId);
+                                    e.dataTransfer.effectAllowed = 'move';
+                                    e.dataTransfer.setData('text/combine-card', c.fromNodeId);
+                                  }}
+                                  onDragOver={(e) => {
+                                    if (draggedPresetId) return;
+                                    e.preventDefault();
+                                    e.dataTransfer.dropEffect = 'move';
+                                    const rect = e.currentTarget.getBoundingClientRect();
+                                    const midY = rect.top + rect.height / 2;
+                                    const pos = e.clientY < midY ? 'top' : 'bottom';
+                                    if (dragOverCardId !== c.fromNodeId || dragOverCardPos !== pos) {
+                                      setDragOverCardId(c.fromNodeId);
+                                      setDragOverCardPos(pos);
+                                    }
+                                  }}
+                                  onDragLeave={() => {
+                                    if (dragOverCardId === c.fromNodeId) {
+                                      setDragOverCardId(null);
+                                      setDragOverCardPos(null);
+                                    }
+                                  }}
+                                  onDrop={(e) => {
+                                    if (draggedPresetId) return;
+                                    e.preventDefault();
+                                    if (draggedCardId && draggedCardId !== c.fromNodeId && dragOverCardPos) {
+                                      handleReorderCombineCards(draggedCardId, c.fromNodeId, dragOverCardPos);
+                                    }
+                                    setDraggedCardId(null);
+                                    setDragOverCardId(null);
+                                    setDragOverCardPos(null);
+                                  }}
+                                  onDragEnd={() => {
+                                    setDraggedCardId(null);
+                                    setDragOverCardId(null);
+                                    setDragOverCardPos(null);
+                                  }}
                                   style={{
                                     display: 'flex',
                                     flexDirection: 'column',
                                     gap: '0.625rem',
                                     padding: '0.75rem',
                                     borderRadius: '8px',
-                                    border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF',
+                                    border: isCardOverThis ? '1px solid #6366F1' : (isDark ? '1px solid #30363D' : '1px solid #E2E8F0'),
+                                    borderTop: isCardOverThis && dragOverCardPos === 'top' ? '2px solid #6366F1' : (isDark ? '1px solid #30363D' : '1px solid #E2E8F0'),
+                                    borderBottom: isCardOverThis && dragOverCardPos === 'bottom' ? '2px solid #6366F1' : (isDark ? '1px solid #30363D' : '1px solid #E2E8F0'),
+                                    backgroundColor: isCardOverThis
+                                      ? (isDark ? 'rgba(99, 102, 241, 0.08)' : 'rgba(99, 102, 241, 0.04)')
+                                      : (isDark ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF'),
+                                    opacity: isCardBeingDragged ? 0.45 : 1,
                                     boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 2px rgba(0,0,0,0.04)',
+                                    transition: 'border-color 0.15s ease, background-color 0.15s ease, opacity 0.15s ease',
                                   }}
                                 >
                                   {/* Clean Neutral Header */}
                                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '7px', minWidth: 0, flex: 1 }}>
+                                      <div
+                                        style={{
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
+                                          width: '14px',
+                                          height: '14px',
+                                          color: 'var(--text-muted)',
+                                          opacity: 0.5,
+                                          cursor: 'grab',
+                                          flexShrink: 0,
+                                          marginRight: '-2px',
+                                        }}
+                                        title="Drag card to reorder"
+                                      >
+                                        <svg width="8" height="12" viewBox="0 0 8 14" fill="currentColor">
+                                          <circle cx="2" cy="2" r="1.3" />
+                                          <circle cx="6" cy="2" r="1.3" />
+                                          <circle cx="2" cy="7" r="1.3" />
+                                          <circle cx="6" cy="7" r="1.3" />
+                                          <circle cx="2" cy="12" r="1.3" />
+                                          <circle cx="6" cy="12" r="1.3" />
+                                        </svg>
+                                      </div>
                                       <div
                                         style={{
                                           width: '26px',
@@ -12287,6 +12498,28 @@ export const FacebookWorkflowCanvas = forwardRef<
                                 });
                               }
 
+                              // Retrieve saved preset order for this General group or combine box
+                              const savedPresetOrder: string[] = (currentCombineBox as any)?.presetOrder || (fromBox as any)?.presetOrder || (() => {
+                                try {
+                                  const raw = localStorage.getItem(`combine_preset_order_${fromBox.id}`) ||
+                                    (currentCombineBox ? localStorage.getItem(`combine_preset_order_${currentCombineBox.id}`) : null);
+                                  return raw ? JSON.parse(raw) : null;
+                                } catch {
+                                  return null;
+                                }
+                              })();
+
+                              if (savedPresetOrder && Array.isArray(savedPresetOrder) && savedPresetOrder.length > 0) {
+                                childFormatBoxes = [...childFormatBoxes].sort((a, b) => {
+                                  const idxA = savedPresetOrder.indexOf(a.id);
+                                  const idxB = savedPresetOrder.indexOf(b.id);
+                                  if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+                                  if (idxA !== -1) return -1;
+                                  if (idxB !== -1) return 1;
+                                  return 0;
+                                });
+                              }
+
                               const readyCount = childFormatBoxes.filter((ch) => {
                                 const chText =
                                   (aiGeneratedOutputs && (aiGeneratedOutputs[ch.id] || (chBoxTemplateIdFallback(ch) && aiGeneratedOutputs[chBoxTemplateIdFallback(ch)!]))) ||
@@ -12298,23 +12531,96 @@ export const FacebookWorkflowCanvas = forwardRef<
                                 return b.templateId;
                               }
 
+                              const isCardBeingDragged = draggedCardId === c.fromNodeId;
+                              const isCardOverThis = dragOverCardId === c.fromNodeId;
+
                               return (
                                 <div
                                   key={c.id}
+                                  draggable={!draggedPresetId}
+                                  onDragStart={(e) => {
+                                    if (draggedPresetId) return;
+                                    setDraggedCardId(c.fromNodeId);
+                                    e.dataTransfer.effectAllowed = 'move';
+                                    e.dataTransfer.setData('text/combine-card', c.fromNodeId);
+                                  }}
+                                  onDragOver={(e) => {
+                                    if (draggedPresetId) return;
+                                    e.preventDefault();
+                                    e.dataTransfer.dropEffect = 'move';
+                                    const rect = e.currentTarget.getBoundingClientRect();
+                                    const midY = rect.top + rect.height / 2;
+                                    const pos = e.clientY < midY ? 'top' : 'bottom';
+                                    if (dragOverCardId !== c.fromNodeId || dragOverCardPos !== pos) {
+                                      setDragOverCardId(c.fromNodeId);
+                                      setDragOverCardPos(pos);
+                                    }
+                                  }}
+                                  onDragLeave={() => {
+                                    if (dragOverCardId === c.fromNodeId) {
+                                      setDragOverCardId(null);
+                                      setDragOverCardPos(null);
+                                    }
+                                  }}
+                                  onDrop={(e) => {
+                                    if (draggedPresetId) return;
+                                    e.preventDefault();
+                                    if (draggedCardId && draggedCardId !== c.fromNodeId && dragOverCardPos) {
+                                      handleReorderCombineCards(draggedCardId, c.fromNodeId, dragOverCardPos);
+                                    }
+                                    setDraggedCardId(null);
+                                    setDragOverCardId(null);
+                                    setDragOverCardPos(null);
+                                  }}
+                                  onDragEnd={() => {
+                                    setDraggedCardId(null);
+                                    setDragOverCardId(null);
+                                    setDragOverCardPos(null);
+                                  }}
                                   style={{
                                     display: 'flex',
                                     flexDirection: 'column',
                                     gap: '0.625rem',
                                     padding: '0.75rem',
                                     borderRadius: '8px',
-                                    border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF',
+                                    border: isCardOverThis ? '1px solid #6366F1' : (isDark ? '1px solid #30363D' : '1px solid #E2E8F0'),
+                                    borderTop: isCardOverThis && dragOverCardPos === 'top' ? '2px solid #6366F1' : (isDark ? '1px solid #30363D' : '1px solid #E2E8F0'),
+                                    borderBottom: isCardOverThis && dragOverCardPos === 'bottom' ? '2px solid #6366F1' : (isDark ? '1px solid #30363D' : '1px solid #E2E8F0'),
+                                    backgroundColor: isCardOverThis
+                                      ? (isDark ? 'rgba(99, 102, 241, 0.08)' : 'rgba(99, 102, 241, 0.04)')
+                                      : (isDark ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF'),
+                                    opacity: isCardBeingDragged ? 0.45 : 1,
                                     boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 2px rgba(0,0,0,0.04)',
+                                    transition: 'border-color 0.15s ease, background-color 0.15s ease, opacity 0.15s ease',
                                   }}
                                 >
                                   {/* Clean Neutral Header */}
                                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '7px', minWidth: 0, flex: 1 }}>
+                                      <div
+                                        style={{
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
+                                          width: '14px',
+                                          height: '14px',
+                                          color: 'var(--text-muted)',
+                                          opacity: 0.5,
+                                          cursor: 'grab',
+                                          flexShrink: 0,
+                                          marginRight: '-2px',
+                                        }}
+                                        title="Drag card to reorder"
+                                      >
+                                        <svg width="8" height="12" viewBox="0 0 8 14" fill="currentColor">
+                                          <circle cx="2" cy="2" r="1.3" />
+                                          <circle cx="6" cy="2" r="1.3" />
+                                          <circle cx="2" cy="7" r="1.3" />
+                                          <circle cx="6" cy="7" r="1.3" />
+                                          <circle cx="2" cy="12" r="1.3" />
+                                          <circle cx="6" cy="12" r="1.3" />
+                                        </svg>
+                                      </div>
                                       <div
                                         style={{
                                           width: '26px',
@@ -12392,27 +12698,112 @@ export const FacebookWorkflowCanvas = forwardRef<
                                         (chBox.id === config.aiBoxes[0]?.id ? (aiGeneratedCopy || '') : '');
                                       const hasResult = Boolean(chText && chText.trim().length > 0);
 
+                                      const isPresetBeingDragged = draggedPresetId === chBox.id;
+                                      const isPresetOverThis = dragOverPresetId === chBox.id;
+
                                       return (
                                         <div
                                           key={chBox.id}
+                                          draggable={true}
+                                          onDragStart={(e) => {
+                                            e.stopPropagation();
+                                            setDraggedPresetId(chBox.id);
+                                            e.dataTransfer.effectAllowed = 'move';
+                                            e.dataTransfer.setData('text/preset-id', chBox.id);
+                                          }}
+                                          onDragOver={(e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            e.dataTransfer.dropEffect = 'move';
+                                            const rect = e.currentTarget.getBoundingClientRect();
+                                            const midY = rect.top + rect.height / 2;
+                                            const pos = e.clientY < midY ? 'top' : 'bottom';
+                                            if (dragOverPresetId !== chBox.id || dragOverPresetPos !== pos) {
+                                              setDragOverPresetId(chBox.id);
+                                              setDragOverPresetPos(pos);
+                                            }
+                                          }}
+                                          onDragLeave={(e) => {
+                                            e.stopPropagation();
+                                            if (dragOverPresetId === chBox.id) {
+                                              setDragOverPresetId(null);
+                                              setDragOverPresetPos(null);
+                                            }
+                                          }}
+                                          onDrop={(e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            if (draggedPresetId && draggedPresetId !== chBox.id && dragOverPresetPos) {
+                                              handleReorderPresets(draggedPresetId, chBox.id, dragOverPresetPos, childFormatBoxes, c.fromNodeId);
+                                            }
+                                            setDraggedPresetId(null);
+                                            setDragOverPresetId(null);
+                                            setDragOverPresetPos(null);
+                                          }}
+                                          onDragEnd={(e) => {
+                                            e.stopPropagation();
+                                            setDraggedPresetId(null);
+                                            setDragOverPresetId(null);
+                                            setDragOverPresetPos(null);
+                                          }}
                                           style={{
                                             display: 'flex',
                                             alignItems: 'center',
                                             justifyContent: 'space-between',
                                             padding: '0.45rem 0.65rem',
-                                            borderBottom: idx < childFormatBoxes.length - 1
-                                              ? (isDark ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid #E2E8F0')
-                                              : 'none',
-                                            transition: 'background-color 0.15s ease',
+                                            borderTop: isPresetOverThis && dragOverPresetPos === 'top' ? '2px solid #6366F1' : 'none',
+                                            borderBottom: isPresetOverThis && dragOverPresetPos === 'bottom'
+                                              ? '2px solid #6366F1'
+                                              : (idx < childFormatBoxes.length - 1
+                                                ? (isDark ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid #E2E8F0')
+                                                : 'none'),
+                                            backgroundColor: isPresetOverThis
+                                              ? (isDark ? 'rgba(99, 102, 241, 0.15)' : 'rgba(99, 102, 241, 0.08)')
+                                              : isPresetBeingDragged
+                                                ? (isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.02)')
+                                                : 'transparent',
+                                            opacity: isPresetBeingDragged ? 0.4 : 1,
+                                            cursor: isPresetBeingDragged ? 'grabbing' : 'grab',
+                                            transition: 'background-color 0.15s ease, opacity 0.15s ease, border-color 0.15s ease',
+                                            userSelect: 'none',
                                           }}
                                           onMouseEnter={(e) => {
-                                            e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.03)';
+                                            if (!draggedPresetId && !isPresetOverThis) {
+                                              e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.03)';
+                                            }
                                           }}
                                           onMouseLeave={(e) => {
-                                            e.currentTarget.style.backgroundColor = 'transparent';
+                                            if (!draggedPresetId && !isPresetOverThis) {
+                                              e.currentTarget.style.backgroundColor = 'transparent';
+                                            }
                                           }}
                                         >
                                           <div style={{ display: 'flex', alignItems: 'center', gap: '7px', minWidth: 0, flex: 1, paddingRight: '6px' }}>
+                                            {/* 6-dot Drag Grip Handle that glows on hover */}
+                                            <div
+                                              style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                width: '12px',
+                                                height: '14px',
+                                                color: isPresetOverThis ? '#6366F1' : 'var(--text-muted)',
+                                                opacity: isPresetOverThis ? 1 : 0.6,
+                                                cursor: 'grab',
+                                                flexShrink: 0,
+                                                transition: 'opacity 0.15s ease, color 0.15s ease',
+                                              }}
+                                              title="Click and drag to move and replace preset"
+                                            >
+                                              <svg width="8" height="12" viewBox="0 0 8 14" fill="currentColor">
+                                                <circle cx="2" cy="2" r="1.3" />
+                                                <circle cx="6" cy="2" r="1.3" />
+                                                <circle cx="2" cy="7" r="1.3" />
+                                                <circle cx="6" cy="7" r="1.3" />
+                                                <circle cx="2" cy="12" r="1.3" />
+                                                <circle cx="6" cy="12" r="1.3" />
+                                              </svg>
+                                            </div>
                                             <FiFileText style={{ fontSize: '12px', color: 'var(--text-muted)', flexShrink: 0 }} />
                                             <span
                                               style={{
@@ -12439,6 +12830,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                               {hasResult && (
                                                 <button
                                                   type="button"
+                                                  onMouseDown={(e) => e.stopPropagation()}
                                                   onClick={() => {
                                                     setViewingPromptTemplate({
                                                       id: chBox.id,
@@ -12482,6 +12874,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                                 <button
                                                   type="button"
                                                   disabled={isRegeneratingAI}
+                                                  onMouseDown={(e) => e.stopPropagation()}
                                                   onClick={async (e) => {
                                                     e.stopPropagation();
                                                     if (isRegeneratingAI) return;
@@ -12542,6 +12935,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                               {hasResult && (
                                                 <button
                                                   type="button"
+                                                  onMouseDown={(e) => e.stopPropagation()}
                                                   onClick={() => {
                                                     navigator.clipboard.writeText(chText);
                                                     setCopiedPromptId(chBox.id);
@@ -12589,21 +12983,93 @@ export const FacebookWorkflowCanvas = forwardRef<
                             // ── C) DIRECT CONTENT NODE (Get Content or other input) ──
                             const textOutput = (aiGeneratedOutputs && aiGeneratedOutputs[c.fromNodeId]) || (isContent ? (rawContent || '') : '');
                             const hasTextResult = Boolean(textOutput && textOutput.trim().length > 0);
+                            const isCardBeingDragged = draggedCardId === c.fromNodeId;
+                            const isCardOverThis = dragOverCardId === c.fromNodeId;
 
                             return (
                               <div
                                 key={c.id}
+                                draggable={!draggedPresetId}
+                                onDragStart={(e) => {
+                                  if (draggedPresetId) return;
+                                  setDraggedCardId(c.fromNodeId);
+                                  e.dataTransfer.effectAllowed = 'move';
+                                  e.dataTransfer.setData('text/combine-card', c.fromNodeId);
+                                }}
+                                onDragOver={(e) => {
+                                  if (draggedPresetId) return;
+                                  e.preventDefault();
+                                  e.dataTransfer.dropEffect = 'move';
+                                  const rect = e.currentTarget.getBoundingClientRect();
+                                  const midY = rect.top + rect.height / 2;
+                                  const pos = e.clientY < midY ? 'top' : 'bottom';
+                                  if (dragOverCardId !== c.fromNodeId || dragOverCardPos !== pos) {
+                                    setDragOverCardId(c.fromNodeId);
+                                    setDragOverCardPos(pos);
+                                  }
+                                }}
+                                onDragLeave={() => {
+                                  if (dragOverCardId === c.fromNodeId) {
+                                    setDragOverCardId(null);
+                                    setDragOverCardPos(null);
+                                  }
+                                }}
+                                onDrop={(e) => {
+                                  if (draggedPresetId) return;
+                                  e.preventDefault();
+                                  if (draggedCardId && draggedCardId !== c.fromNodeId && dragOverCardPos) {
+                                    handleReorderCombineCards(draggedCardId, c.fromNodeId, dragOverCardPos);
+                                  }
+                                  setDraggedCardId(null);
+                                  setDragOverCardId(null);
+                                  setDragOverCardPos(null);
+                                }}
+                                onDragEnd={() => {
+                                  setDraggedCardId(null);
+                                  setDragOverCardId(null);
+                                  setDragOverCardPos(null);
+                                }}
                                 style={{
                                   display: 'flex',
                                   alignItems: 'center',
                                   justifyContent: 'space-between',
                                   padding: '0.75rem',
                                   borderRadius: '8px',
-                                  border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF',
+                                  border: isCardOverThis ? '1px solid #6366F1' : (isDark ? '1px solid #30363D' : '1px solid #E2E8F0'),
+                                  borderTop: isCardOverThis && dragOverCardPos === 'top' ? '2px solid #6366F1' : (isDark ? '1px solid #30363D' : '1px solid #E2E8F0'),
+                                  borderBottom: isCardOverThis && dragOverCardPos === 'bottom' ? '2px solid #6366F1' : (isDark ? '1px solid #30363D' : '1px solid #E2E8F0'),
+                                  backgroundColor: isCardOverThis
+                                    ? (isDark ? 'rgba(99, 102, 241, 0.08)' : 'rgba(99, 102, 241, 0.04)')
+                                    : (isDark ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF'),
+                                  opacity: isCardBeingDragged ? 0.45 : 1,
+                                  transition: 'border-color 0.15s ease, background-color 0.15s ease, opacity 0.15s ease',
                                 }}
                               >
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '7px', minWidth: 0, flex: 1 }}>
+                                  <div
+                                    style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      width: '14px',
+                                      height: '14px',
+                                      color: 'var(--text-muted)',
+                                      opacity: 0.5,
+                                      cursor: 'grab',
+                                      flexShrink: 0,
+                                      marginRight: '-2px',
+                                    }}
+                                    title="Drag card to reorder"
+                                  >
+                                    <svg width="8" height="12" viewBox="0 0 8 14" fill="currentColor">
+                                      <circle cx="2" cy="2" r="1.3" />
+                                      <circle cx="6" cy="2" r="1.3" />
+                                      <circle cx="2" cy="7" r="1.3" />
+                                      <circle cx="6" cy="7" r="1.3" />
+                                      <circle cx="2" cy="12" r="1.3" />
+                                      <circle cx="6" cy="12" r="1.3" />
+                                    </svg>
+                                  </div>
                                   <div
                                     style={{
                                       width: '26px',
