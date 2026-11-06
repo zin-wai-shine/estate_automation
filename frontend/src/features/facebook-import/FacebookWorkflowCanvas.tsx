@@ -9844,19 +9844,12 @@ export const FacebookWorkflowCanvas = forwardRef<
                       {/* Floating Revert Row Button for Google Sheet when row has been added */}
                       {Boolean(isEffectiveEnabled) && (hoveredNodeId === box.id || isSelected) && isThisSheetCompleted && (
                         <div
-                          className="canvas-control"
+                          className="node-play-button-wrapper canvas-control"
                           onMouseEnter={() => handleNodeMouseEnter(box.id)}
                           onMouseLeave={() => handleNodeMouseLeave(box.id)}
                           style={{
-                            position: 'absolute',
                             top: '-38px',
                             left: 'calc(50% + 17px)',
-                            transform: 'translateX(-50%)',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            alignItems: 'center',
-                            zIndex: 55,
-                            pointerEvents: 'auto',
                           }}
                         >
                           <button
@@ -9868,43 +9861,33 @@ export const FacebookWorkflowCanvas = forwardRef<
                               handlePromptRevertRow(box);
                             }}
                             onMouseDown={(e) => e.stopPropagation()}
-                            onMouseEnter={(e) => {
-                              handleNodeMouseEnter(box.id);
-                              if (!isDeletingSheetRow) {
-                                e.currentTarget.style.borderColor = '#EF4444';
-                                e.currentTarget.style.backgroundColor = isDark ? 'rgba(239, 68, 68, 0.22)' : '#FEE2E2';
-                                e.currentTarget.style.transform = 'scale(1.08)';
-                              }
-                            }}
-                            onMouseLeave={(e) => {
-                              handleNodeMouseLeave(box.id);
-                              if (!isDeletingSheetRow) {
-                                e.currentTarget.style.borderColor = isDark ? 'rgba(239, 68, 68, 0.55)' : '#FCA5A5';
-                                e.currentTarget.style.backgroundColor = isDark ? '#1F2937' : '#FFFFFF';
-                                e.currentTarget.style.transform = 'scale(1)';
-                              }
-                            }}
-                            title={isDeletingSheetRow ? 'Reverting row from Google Sheet...' : 'Revert / Delete added row from Google Sheet'}
+                            onMouseEnter={() => handleNodeMouseEnter(box.id)}
+                            onMouseLeave={() => handleNodeMouseLeave(box.id)}
+                            title={isDeletingSheetRow ? 'Reverting row from Google Sheet...' : 'Revert / Delete Row from Google Sheet'}
                             disabled={isDeletingSheetRow}
                             style={{
-                              width: '28px',
-                              height: '28px',
-                              borderRadius: '7px',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              backgroundColor: isDark ? '#1F2937' : '#FFFFFF',
-                              border: isDark ? '1.5px solid rgba(239, 68, 68, 0.55)' : '1.5px solid #FCA5A5',
-                              color: isDark ? '#FCA5A5' : '#DC2626',
-                              boxShadow: '0 2px 6px rgba(0, 0, 0, 0.22)',
-                              cursor: isDeletingSheetRow ? 'not-allowed' : 'pointer',
-                              transition: 'all 0.15s ease',
-                              outline: 'none',
+                              ['--play-btn-accent' as any]: '#EF4444',
+                              ['--play-btn-bg' as any]: isDark ? '#1F2937' : '#FFFFFF',
+                              ['--play-btn-border' as any]: isDark ? '#4B5563' : '#94A3B8',
+                              ['--play-btn-color' as any]: isDark ? '#9CA3AF' : '#64748B',
+                              ['--play-btn-hover-bg' as any]: isDark ? '#263342' : '#F1F5F9',
                             }}
                           >
-                            <FiRotateCcw size={13} style={{ animation: isDeletingSheetRow ? 'spin 1s linear infinite' : 'none', color: '#EF4444' }} />
+                            <FiRotateCcw
+                              size={12}
+                              style={{
+                                color: 'inherit',
+                                animation: isDeletingSheetRow ? 'spin 1s linear infinite' : 'none',
+                                transition: 'all 0.15s ease',
+                              }}
+                            />
                           </button>
-                          <div className="node-play-hit-bridge" style={{ width: '28px' }} />
+                          <div
+                            className="canvas-control node-play-hit-bridge"
+                            onMouseEnter={() => handleNodeMouseEnter(box.id)}
+                            onMouseLeave={() => handleNodeMouseLeave(box.id)}
+                            style={{ width: '28px' }}
+                          />
                         </div>
                       )}
                     </>
