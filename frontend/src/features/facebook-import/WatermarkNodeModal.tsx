@@ -69,7 +69,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
   heroImage,
   onOpenLightbox: _onOpenLightbox,
   workflowBoxes,
-  connections: _connections,
+  connections,
   listingCode,
   onOpenSettingsSidebox,
   isSettingsSideboxOpen: _isSettingsSideboxOpen,
@@ -372,10 +372,36 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     }
   };
 
+  // Detect if this box is connected from an upstream Enhance node
+  const isUpstreamEnhance = useMemo(() => {
+    return (connections || []).some((c: any) => {
+      if (c.toNodeId !== box.id) return false;
+      if (c.fromNodeId === 'get-images' || c.fromNodeId === 'get-content') return false;
+      const upBox = (workflowBoxes || []).find((b) => b.id === c.fromNodeId);
+      if (!upBox) return false;
+      const t = (upBox.title || '').toLowerCase();
+      const g = (upBox.browserGroupName || '').toLowerCase();
+      const pk = (upBox.processKind || '').toLowerCase();
+      const tm = (upBox.tabGroupMode || '').toLowerCase();
+      const pt = (upBox.processType || '').toLowerCase();
+      return (
+        tm === 'enhance' ||
+        pk === 'enhance_images' ||
+        t.includes('enhance') ||
+        g.includes('enhance') ||
+        pt === 'image_enhance' ||
+        upBox.provider === 'runware_ai' ||
+        upBox.id?.includes('enhance')
+      );
+    });
+  }, [connections, workflowBoxes, box.id]);
+
   // Image Source Selection: 'get_images' | 'enhance' | 'generate' | 'all'
-  const [imageSource, setImageSource] = useState<'get_images' | 'enhance' | 'generate' | 'all'>(
-    (box.imageSource as any) || 'get_images'
-  );
+  const [imageSource, setImageSource] = useState<'get_images' | 'enhance' | 'generate' | 'all'>(() => {
+    if (box.imageSource) return box.imageSource as any;
+    if (isUpstreamEnhance) return 'enhance';
+    return 'get_images';
+  });
 
   // Effective images extracted from workflow run
   const effectiveImageList = useMemo(() => {
@@ -531,34 +557,34 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     }
 
     // 2. Enhanced Images
-    if (imageSource === 'enhance' || imageSource === 'all') {
+    if (imageSource === 'enhance' || (imageSource === 'all' && isUpstreamEnhance)) {
       const hasEnhanced = Object.keys(mergedEnhancedPhotos).length > 0;
-      if (imageSource === 'enhance') {
+      if (imageSource === 'enhance' || isUpstreamEnhance) {
         if (effectiveImageList && effectiveImageList.length > 0) {
           effectiveImageList.forEach((img, idx) => {
             const photoNum = idx + 1;
             // Use strictly 0-based index key (idx) to match companion mapping
-            const enhUrl = mergedEnhancedPhotos[idx];
+            const enhUrl = mergedEnhancedPhotos[idx] ?? mergedEnhancedPhotos[photoNum] ?? (typeof img.index === 'number' ? mergedEnhancedPhotos[img.index] : undefined);
 
-            const fallbackUrl = img.stored_url
-              ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
-              : img.source_url;
+            // When sourcing from Enhance, strictly ONLY include photos that were actually enhanced!
+            // Do NOT fall back to raw photos from Get Images!
+            if (!enhUrl) return;
 
             rawList.push({
               id: `enh-${photoNum}`,
               index: photoNum,
               displayNumber: photoNum,
-              url: enhUrl || fallbackUrl,
+              url: enhUrl,
               source: 'enhance',
-              label: enhUrl ? `Enhanced #${photoNum}` : `Photo #${photoNum} (Enhance Source)`,
-              isEnhanced: Boolean(enhUrl),
+              label: `Enhanced #${photoNum}`,
+              isEnhanced: true,
             });
           });
 
           // Add any extra enhanced photos beyond effectiveImageList
           Object.entries(mergedEnhancedPhotos).forEach(([k, enhUrl]) => {
             const num = Number(k) + 1;
-            if (!rawList.some((r) => r.index === num || r.displayNumber === num)) {
+            if (!rawList.some((r) => r.index === num || r.displayNumber === num) && enhUrl) {
               rawList.push({
                 id: `enh-${num}`,
                 index: num,
@@ -573,15 +599,17 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
         } else if (hasEnhanced) {
           Object.entries(mergedEnhancedPhotos).forEach(([k, enhUrl]) => {
             const num = Number(k) + 1;
-            rawList.push({
-              id: `enh-${num}`,
-              index: num,
-              displayNumber: num,
-              url: enhUrl,
-              source: 'enhance',
-              label: `Enhanced #${num}`,
-              isEnhanced: true,
-            });
+            if (enhUrl) {
+              rawList.push({
+                id: `enh-${num}`,
+                index: num,
+                displayNumber: num,
+                url: enhUrl,
+                source: 'enhance',
+                label: `Enhanced #${num}`,
+                isEnhanced: true,
+              });
+            }
           });
         }
       } else {
@@ -844,7 +872,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
 
   const sourceOptions: SelectOption[] = useMemo(() => {
     const getImagesCount = effectiveImageList.length;
-    const enhanceCount = Math.max(Object.keys(mergedEnhancedPhotos).length, getImagesCount);
+    const enhanceCount = Object.keys(mergedEnhancedPhotos).length;
     const heroCount = effectiveHeroImage ? 1 : (effectiveImageList.length > 0 ? 1 : 0);
     const totalCount = getImagesCount + (effectiveHeroImage ? 1 : 0);
 

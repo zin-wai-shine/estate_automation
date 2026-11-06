@@ -4132,6 +4132,30 @@ export const FacebookWorkflowCanvas = forwardRef<
         // Build the list of source photo URLs for this box
         const sourcePhotos: { url: string; photoIndex: number; isEnhanced: boolean }[] = [];
 
+        // Helper to check if cropBox is connected from an Enhance node in workflow
+        const incomingConns = (config.connections || []).filter((c) => c.toNodeId === cropBox.id);
+        const isConnectedFromEnhance = incomingConns.some((c) => {
+          if (c.fromNodeId === 'get-images' || c.fromNodeId === 'get-content') return false;
+          const upBox = (config.aiBoxes || []).find((b) => b.id === c.fromNodeId);
+          if (!upBox) return false;
+          const t = (upBox.title || '').toLowerCase();
+          const g = (upBox.browserGroupName || '').toLowerCase();
+          const pk = (upBox.processKind || '').toLowerCase();
+          const tm = (upBox.tabGroupMode || '').toLowerCase();
+          const pt = (upBox.processType || '').toLowerCase();
+          return (
+            tm === 'enhance' ||
+            pk === 'enhance_images' ||
+            t.includes('enhance') ||
+            g.includes('enhance') ||
+            pt === 'image_enhance' ||
+            upBox.provider === 'runware_ai' ||
+            upBox.id?.includes('enhance')
+          );
+        });
+
+        const isFromEnhance = cropBox.imageSource === 'enhance' || isConnectedFromEnhance;
+
         if (cropBox.imageSource === 'generate') {
           try {
             const savedHero = localStorage.getItem('bolthaven_last_hero_image');
@@ -4140,28 +4164,38 @@ export const FacebookWorkflowCanvas = forwardRef<
               if (parsed?.url) sourcePhotos.push({ url: parsed.url, photoIndex: 0, isEnhanced: false });
             }
           } catch (e) { }
-        } else if (cropBox.imageSource === 'enhance') {
+        } else if (isFromEnhance) {
+          // Strictly ONLY include photos that have been genuinely enhanced!
+          // NEVER fall back to raw unenhanced photos from Get Images when connected to Enhance!
+          const addedIndices = new Set<number>();
           photoList.forEach((img, idx) => {
-            const enhUrl = allEnhancedPhotos?.[idx];
-            const rawUrl = img.stored_url ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`) : img.source_url;
-            sourcePhotos.push({ url: enhUrl || rawUrl || '', photoIndex: idx, isEnhanced: Boolean(enhUrl) });
+            const photoNum = idx + 1;
+            const enhUrl = allEnhancedPhotos?.[idx] || allEnhancedPhotos?.[photoNum] || (typeof img.index === 'number' ? allEnhancedPhotos?.[img.index] : undefined);
+            if (enhUrl) {
+              addedIndices.add(idx);
+              addedIndices.add(photoNum);
+              sourcePhotos.push({ url: enhUrl, photoIndex: idx, isEnhanced: true });
+            }
           });
-          // If no images array but enhanced photos available
-          if (photoList.length === 0) {
-            Object.entries(allEnhancedPhotos || {}).forEach(([k, url]) => {
-              sourcePhotos.push({ url, photoIndex: Number(k), isEnhanced: true });
-            });
-          }
+          // Also include any extra enhanced photos in allEnhancedPhotos not mapped in photoList
+          Object.entries(allEnhancedPhotos || {}).forEach(([k, enhUrl]) => {
+            const num = Number(k);
+            const pIdx = num > 0 && num <= photoList.length ? num - 1 : num;
+            if (enhUrl && !addedIndices.has(num) && !sourcePhotos.some((p) => p.url === enhUrl)) {
+              addedIndices.add(num);
+              sourcePhotos.push({ url: enhUrl, photoIndex: pIdx, isEnhanced: true });
+            }
+          });
         } else if (cropBox.imageSource === 'get_images' || (cropBox.imageSource as string) === 'get-images') {
           photoList.forEach((img, idx) => {
             const rawUrl = img.stored_url ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`) : img.source_url;
             sourcePhotos.push({ url: rawUrl || '', photoIndex: idx, isEnhanced: false });
           });
         } else {
-          // Default: prefer enhanced, fallback to raw
+          // Default: if enhanced photos exist and box is connected from enhance, use enhanced only!
           if (photoList.length > 0) {
             photoList.forEach((img, idx) => {
-              const enhUrl = allEnhancedPhotos?.[idx];
+              const enhUrl = allEnhancedPhotos?.[idx] || allEnhancedPhotos?.[idx + 1];
               const rawUrl = img.stored_url ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`) : img.source_url;
               sourcePhotos.push({ url: enhUrl || rawUrl || '', photoIndex: idx, isEnhanced: Boolean(enhUrl) });
             });
@@ -4177,8 +4211,18 @@ export const FacebookWorkflowCanvas = forwardRef<
           }
         }
 
+        // If cropBox has selectedImageIndices specified, apply filter on sourcePhotos
+        let filteredPhotos = sourcePhotos;
+        if (Array.isArray(cropBox.selectedImageIndices) && cropBox.selectedImageIndices.length > 0) {
+          const selectedSet = new Set(cropBox.selectedImageIndices);
+          const matched = sourcePhotos.filter((p) => selectedSet.has(p.photoIndex + 1) || selectedSet.has(p.photoIndex));
+          if (matched.length > 0) {
+            filteredPhotos = matched;
+          }
+        }
+
         // Filter out empty URLs
-        const validPhotos = sourcePhotos.filter((p) => p.url);
+        const validPhotos = filteredPhotos.filter((p) => p.url);
         if (validPhotos.length === 0) continue;
 
         // Format each source photo through this box's format
