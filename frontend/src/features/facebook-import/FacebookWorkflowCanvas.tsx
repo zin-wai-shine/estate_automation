@@ -3012,6 +3012,7 @@ export interface FacebookWorkflowCanvasProps {
   formatName?: string;
   onUpdateBoxOutput?: (boxId: string, outputText: string) => void;
   onRegenerateBoxOutput?: (boxId: string) => Promise<string | void>;
+  onRevertGoogleSheetRow?: (boxId: string) => Promise<boolean>;
   onContinueWorkflow?: (fromBoxId?: string) => void;
   onRunFromStep?: (nodeId: string) => void;
 }
@@ -3188,6 +3189,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     formatName,
     onUpdateBoxOutput: _onUpdateBoxOutput,
     onRegenerateBoxOutput,
+    onRevertGoogleSheetRow,
     onContinueWorkflow,
     onRunFromStep,
   },
@@ -4381,13 +4383,65 @@ export const FacebookWorkflowCanvas = forwardRef<
 
   // Deletion Confirmation Modal State
   interface DeleteConfirmTarget {
-    type: 'connection' | 'node';
+    type: 'connection' | 'node' | 'sheet-row';
     title: string;
     description: string;
     confirmText?: string;
     onConfirm: () => void;
   }
   const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<DeleteConfirmTarget | null>(null);
+  const [isDeletingSheetRow, setIsDeletingSheetRow] = useState<boolean>(false);
+
+  // Trigger Confirmation Modal to Revert / Delete Added Row from Google Sheet
+  const handlePromptRevertRow = (box: any) => {
+    const sheetName = box.googleSheetName || 'Sheet6';
+    setDeleteConfirmTarget({
+      type: 'sheet-row',
+      title: 'Revert Row from Google Sheet?',
+      description: `Are you sure you want to delete the row previously added to "${sheetName}"? This will reverse the sync and delete that row from your Google Sheet.`,
+      confirmText: 'Delete Row from Sheet',
+      onConfirm: async () => {
+        setIsDeletingSheetRow(true);
+        try {
+          if (onRevertGoogleSheetRow) {
+            await onRevertGoogleSheetRow(box.id);
+          } else {
+            const rawUrl = box.googleSpreadsheetUrl || 'https://docs.google.com/spreadsheets/d/1lzY57D5ers2Xs6cvbV-skeqGSAK_jijbQJZt8Hn8udY/edit';
+            const cleanUrl = rawUrl.includes('https://') && rawUrl.lastIndexOf('https://') > 0
+              ? rawUrl.substring(rawUrl.lastIndexOf('https://'))
+              : rawUrl;
+            let listingCode = '';
+            const out = aiGeneratedOutputs?.[box.id] || box.outputCopy || '';
+            if (out) {
+              try {
+                const p = JSON.parse(out);
+                if (p.Code) listingCode = p.Code;
+              } catch {}
+            }
+            const res = await fetch('/api/google-sheets/delete-row', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                spreadsheet_url: cleanUrl,
+                sheet_name: box.googleSheetName || '',
+                listing_code: listingCode,
+                credentials_json: box.googleServiceAccountJson || '',
+              }),
+            });
+            const d = await res.json();
+            if (!res.ok || !d.success) throw new Error(d.error || 'Failed to delete row');
+          }
+          setSheetSyncSuccessMessage(null);
+          setSheetSyncErrorMessage(null);
+        } catch (err: any) {
+          setSheetSyncErrorMessage(err.message || 'Failed to delete row from sheet');
+        } finally {
+          setIsDeletingSheetRow(false);
+          setDeleteConfirmTarget(null);
+        }
+      },
+    });
+  };
 
   // Prompt Template Viewer Slide-Over State
   const [viewingPromptTemplate, setViewingPromptTemplate] = useState<{
@@ -9558,7 +9612,7 @@ export const FacebookWorkflowCanvas = forwardRef<
 
                       const displayNodeTitle = box.title || (isWatermark && matchingCropFormat ? `Format: ${matchingCropFormat.name}` : (isWatermark ? 'Format Preset' : 'AI Node'));
 
-                      const isSheetCompleted = isGoogleSheetBox(box) && (boxStatus === 'success' || Boolean(aiGeneratedOutputs?.[box.id]));
+                      const isSheetCompleted = isGoogleSheetBox(box) && (boxStatus === 'success' || Boolean(executionState?.completedNodeIds?.includes(box.id)) || Boolean(aiGeneratedOutputs?.[box.id]) || Boolean((box as any).outputCopy));
                       const displayNodeSubtitle = isGoogleSheetBox(box)
                         ? (isSheetCompleted ? 'Row Added' : (box.googleSheetHeaders && box.googleSheetHeaders.length > 0 ? `${box.googleSheetHeaders.length} Columns` : (box.subtitle || 'Spreadsheet Sync')))
                         : isWatermark && matchingCropFormat
@@ -9752,24 +9806,110 @@ export const FacebookWorkflowCanvas = forwardRef<
                 )}
 
                 {/* Floating Run Step Play Button */}
-                {Boolean(isEffectiveEnabled) && (hoveredNodeId === box.id || isSelected) &&
-                  renderNodePlayButton(
-                    box.id,
-                    isTextFormat
-                      ? '#6366F1'
-                      : isExternalBrowser
-                        ? '#0EA5E9'
-                        : isWatermark
-                          ? '#8B5CF6'
-                          : isTextAI
-                            ? '#A855F7'
-                            : isChromeProfile || isChromeTabGroup
-                              ? '#38BDF8'
-                              : '#A855F7',
-                    isTextAI ? { left: '24px', top: '-38px', transform: 'none' } : undefined,
-                    box.title || 'Step',
-                    isTextFormat ? 'right' : 'top'
-                  )}
+                {(() => {
+                  const isThisSheetCompleted = isGoogleSheetBox(box) && (
+                    boxStatus === 'success' ||
+                    Boolean(executionState?.completedNodeIds?.includes(box.id)) ||
+                    Boolean(aiGeneratedOutputs?.[box.id]) ||
+                    Boolean((box as any).outputCopy)
+                  );
+
+                  return (
+                    <>
+                      {Boolean(isEffectiveEnabled) && (hoveredNodeId === box.id || isSelected) &&
+                        renderNodePlayButton(
+                          box.id,
+                          isTextFormat
+                            ? '#6366F1'
+                            : isExternalBrowser
+                              ? '#0EA5E9'
+                              : isWatermark
+                                ? '#8B5CF6'
+                                : isTextAI
+                                  ? '#A855F7'
+                                  : isChromeProfile || isChromeTabGroup
+                                    ? '#38BDF8'
+                                    : isGoogleSheetBox(box)
+                                      ? '#10B981'
+                                      : '#A855F7',
+                          isTextAI
+                            ? { left: '24px', top: '-38px', transform: 'none' }
+                            : isThisSheetCompleted
+                              ? { left: 'calc(50% - 17px)' }
+                              : undefined,
+                          box.title || 'Step',
+                          isTextFormat ? 'right' : 'top'
+                        )}
+
+                      {/* Floating Revert Row Button for Google Sheet when row has been added */}
+                      {Boolean(isEffectiveEnabled) && (hoveredNodeId === box.id || isSelected) && isThisSheetCompleted && (
+                        <div
+                          className="canvas-control"
+                          onMouseEnter={() => handleNodeMouseEnter(box.id)}
+                          onMouseLeave={() => handleNodeMouseLeave(box.id)}
+                          style={{
+                            position: 'absolute',
+                            top: '-38px',
+                            left: 'calc(50% + 17px)',
+                            transform: 'translateX(-50%)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            zIndex: 55,
+                            pointerEvents: 'auto',
+                          }}
+                        >
+                          <button
+                            type="button"
+                            className="canvas-control node-step-play-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              e.preventDefault();
+                              handlePromptRevertRow(box);
+                            }}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onMouseEnter={(e) => {
+                              handleNodeMouseEnter(box.id);
+                              if (!isDeletingSheetRow) {
+                                e.currentTarget.style.borderColor = '#EF4444';
+                                e.currentTarget.style.backgroundColor = isDark ? 'rgba(239, 68, 68, 0.22)' : '#FEE2E2';
+                                e.currentTarget.style.transform = 'scale(1.08)';
+                              }
+                            }}
+                            onMouseLeave={(e) => {
+                              handleNodeMouseLeave(box.id);
+                              if (!isDeletingSheetRow) {
+                                e.currentTarget.style.borderColor = isDark ? 'rgba(239, 68, 68, 0.55)' : '#FCA5A5';
+                                e.currentTarget.style.backgroundColor = isDark ? '#1F2937' : '#FFFFFF';
+                                e.currentTarget.style.transform = 'scale(1)';
+                              }
+                            }}
+                            title={isDeletingSheetRow ? 'Reverting row from Google Sheet...' : 'Revert / Delete added row from Google Sheet'}
+                            disabled={isDeletingSheetRow}
+                            style={{
+                              width: '28px',
+                              height: '28px',
+                              borderRadius: '7px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              backgroundColor: isDark ? '#1F2937' : '#FFFFFF',
+                              border: isDark ? '1.5px solid rgba(239, 68, 68, 0.55)' : '1.5px solid #FCA5A5',
+                              color: isDark ? '#FCA5A5' : '#DC2626',
+                              boxShadow: '0 2px 6px rgba(0, 0, 0, 0.22)',
+                              cursor: isDeletingSheetRow ? 'not-allowed' : 'pointer',
+                              transition: 'all 0.15s ease',
+                              outline: 'none',
+                            }}
+                          >
+                            <FiRotateCcw size={13} style={{ animation: isDeletingSheetRow ? 'spin 1s linear infinite' : 'none', color: '#EF4444' }} />
+                          </button>
+                          <div className="node-play-hit-bridge" style={{ width: '28px' }} />
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             );
           })}
@@ -13154,6 +13294,27 @@ export const FacebookWorkflowCanvas = forwardRef<
                                       {copiedPromptId === currentModalAIBox.id ? <FiCheck size={12} /> : <FiCopy size={12} />}
                                       {copiedPromptId === currentModalAIBox.id ? 'Copied' : 'Copy JSON'}
                                     </button>
+                                    <span style={{ opacity: 0.4 }}>•</span>
+                                    <button
+                                      type="button"
+                                      disabled={isDeletingSheetRow || isRunningThisNode}
+                                      onClick={() => handlePromptRevertRow(currentModalAIBox)}
+                                      style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                        background: 'none',
+                                        border: 'none',
+                                        color: isDark ? '#FCA5A5' : '#DC2626',
+                                        fontSize: '0.6875rem',
+                                        fontWeight: 600,
+                                        cursor: isDeletingSheetRow || isRunningThisNode ? 'not-allowed' : 'pointer',
+                                        padding: 0,
+                                      }}
+                                    >
+                                      <FiRotateCcw size={12} style={{ animation: isDeletingSheetRow ? 'spin 1s linear infinite' : 'none' }} />
+                                      <span>{isDeletingSheetRow ? 'Deleting...' : 'Revert / Delete Row'}</span>
+                                    </button>
                                   </div>
                                 </div>
                               )}
@@ -13204,6 +13365,45 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   </>
                                 )}
                               </button>
+
+                              {/* Secondary Action Button: Revert / Delete Added Row from Google Sheet */}
+                              {Boolean(hasOutput || sheetSyncSuccessMessage) && (
+                                <button
+                                  type="button"
+                                  disabled={isDeletingSheetRow || isRunningThisNode}
+                                  onClick={() => handlePromptRevertRow(currentModalAIBox)}
+                                  style={{
+                                    width: '100%',
+                                    height: '34px',
+                                    padding: '0 1rem',
+                                    borderRadius: '6px',
+                                    border: isDark ? '1px solid rgba(239, 68, 68, 0.4)' : '1px solid #FECACA',
+                                    backgroundColor: isDark ? 'rgba(239, 68, 68, 0.08)' : '#FEF2F2',
+                                    color: isDark ? '#FCA5A5' : '#DC2626',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 600,
+                                    cursor: isDeletingSheetRow || isRunningThisNode ? 'not-allowed' : 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '6px',
+                                    transition: 'all 0.15s ease',
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    if (!isDeletingSheetRow && !isRunningThisNode) {
+                                      e.currentTarget.style.backgroundColor = isDark ? 'rgba(239, 68, 68, 0.18)' : '#FEE2E2';
+                                    }
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    if (!isDeletingSheetRow && !isRunningThisNode) {
+                                      e.currentTarget.style.backgroundColor = isDark ? 'rgba(239, 68, 68, 0.08)' : '#FEF2F2';
+                                    }
+                                  }}
+                                >
+                                  <FiRotateCcw size={13} style={{ animation: isDeletingSheetRow ? 'spin 1s linear infinite' : 'none' }} />
+                                  <span>{isDeletingSheetRow ? 'Reverting Row from Sheet...' : 'Revert / Delete Row from Sheet'}</span>
+                                </button>
+                              )}
 
                               <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', textAlign: 'center', lineHeight: 1.3 }}>
                                 Reads post specs from Get Content, maps strictly to Row 1 column headers, and appends a new row to your sheet.
@@ -20378,8 +20578,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                   width: '36px',
                   height: '36px',
                   borderRadius: '10px',
-                  backgroundColor: 'rgba(239, 68, 68, 0.15)',
-                  border: '1px solid rgba(239, 68, 68, 0.25)',
+                  backgroundColor: deleteConfirmTarget.type === 'sheet-row' ? 'rgba(239, 68, 68, 0.18)' : 'rgba(239, 68, 68, 0.15)',
+                  border: deleteConfirmTarget.type === 'sheet-row' ? '1px solid rgba(239, 68, 68, 0.35)' : '1px solid rgba(239, 68, 68, 0.25)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -20387,7 +20587,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   flexShrink: 0,
                 }}
               >
-                <FiTrash2 size={18} />
+                {deleteConfirmTarget.type === 'sheet-row' ? <FiRotateCcw size={18} /> : <FiTrash2 size={18} />}
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-primary)' }}>
@@ -20454,7 +20654,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   e.currentTarget.style.backgroundColor = '#EF4444';
                 }}
               >
-                <FiTrash2 size={12} />
+                {deleteConfirmTarget.type === 'sheet-row' ? <FiRotateCcw size={12} /> : <FiTrash2 size={12} />}
                 <span>{deleteConfirmTarget.confirmText || 'Confirm Delete'}</span>
               </button>
             </div>

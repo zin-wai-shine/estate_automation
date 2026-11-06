@@ -626,6 +626,156 @@ func (s *GoogleSheetsService) FormatRowsSimple(ctx context.Context, spreadsheetI
 	return nil
 }
 
+// DeleteRow deletes a row from the specified sheet using deleteDimension batchUpdate.
+// It can delete by explicit 0-indexed startRowIndex, or by searching for listingCode, or by deleting the last data row.
+func (s *GoogleSheetsService) DeleteRow(ctx context.Context, spreadsheetInput string, sheetNameOpt string, targetRowIndex int, listingCode string, customCredsJSON string) (map[string]interface{}, error) {
+	spreadsheetID := ExtractSpreadsheetID(spreadsheetInput)
+	if spreadsheetID == "" {
+		return nil, fmt.Errorf("invalid spreadsheet URL or ID provided")
+	}
+
+	token, _, err := s.GetTokenAndCreds(ctx, customCredsJSON)
+	if err != nil {
+		return nil, fmt.Errorf("authentication error: %w", err)
+	}
+
+	meta, err := s.LoadHeaders(ctx, spreadsheetInput, sheetNameOpt, customCredsJSON)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load sheet metadata: %w", err)
+	}
+
+	sheetID := int64(meta.SheetID)
+	sheetName := meta.SheetName
+
+	rowIndexToDelete := -1
+
+	// If explicit 0-indexed row index is provided (>= 1, as row 0 is header)
+	if targetRowIndex >= 1 {
+		rowIndexToDelete = targetRowIndex
+	} else if strings.TrimSpace(listingCode) != "" {
+		// Search for listingCode in the sheet values
+		var escapedSheet string
+		if strings.Contains(sheetName, " ") || strings.Contains(sheetName, "-") || strings.Contains(sheetName, "'") {
+			cleanName := strings.ReplaceAll(sheetName, "'", "''")
+			escapedSheet = url.PathEscape(fmt.Sprintf("'%s'", cleanName))
+		} else {
+			escapedSheet = url.PathEscape(sheetName)
+		}
+
+		readURL := fmt.Sprintf("https://sheets.googleapis.com/v4/spreadsheets/%s/values/%s!A:Z", spreadsheetID, escapedSheet)
+		req, err := http.NewRequestWithContext(ctx, "GET", readURL, nil)
+		if err == nil {
+			req.Header.Set("Authorization", "Bearer "+token)
+			client := &http.Client{Timeout: 15 * time.Second}
+			resp, err := client.Do(req)
+			if err == nil && resp.StatusCode == http.StatusOK {
+				defer resp.Body.Close()
+				var valuesResp struct {
+					Values [][]interface{} `json:"values"`
+				}
+				if err := json.NewDecoder(resp.Body).Decode(&valuesResp); err == nil {
+					cleanTargetCode := strings.TrimSpace(strings.ToUpper(listingCode))
+					for rIdx := len(valuesResp.Values) - 1; rIdx >= 1; rIdx-- {
+						row := valuesResp.Values[rIdx]
+						for _, cell := range row {
+							cellStr := strings.TrimSpace(strings.ToUpper(fmt.Sprintf("%v", cell)))
+							if cellStr == cleanTargetCode || (len(cleanTargetCode) >= 5 && strings.Contains(cellStr, cleanTargetCode)) {
+								rowIndexToDelete = rIdx
+								break
+							}
+						}
+						if rowIndexToDelete >= 0 {
+							break
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// If still not resolved, find the last row with data
+	if rowIndexToDelete < 1 {
+		var escapedSheet string
+		if strings.Contains(sheetName, " ") || strings.Contains(sheetName, "-") || strings.Contains(sheetName, "'") {
+			cleanName := strings.ReplaceAll(sheetName, "'", "''")
+			escapedSheet = url.PathEscape(fmt.Sprintf("'%s'", cleanName))
+		} else {
+			escapedSheet = url.PathEscape(sheetName)
+		}
+		readURL := fmt.Sprintf("https://sheets.googleapis.com/v4/spreadsheets/%s/values/%s!A:A", spreadsheetID, escapedSheet)
+		req, err := http.NewRequestWithContext(ctx, "GET", readURL, nil)
+		if err == nil {
+			req.Header.Set("Authorization", "Bearer "+token)
+			client := &http.Client{Timeout: 15 * time.Second}
+			resp, err := client.Do(req)
+			if err == nil && resp.StatusCode == http.StatusOK {
+				defer resp.Body.Close()
+				var valuesResp struct {
+					Values [][]interface{} `json:"values"`
+				}
+				if err := json.NewDecoder(resp.Body).Decode(&valuesResp); err == nil {
+					if len(valuesResp.Values) > 1 {
+						rowIndexToDelete = len(valuesResp.Values) - 1
+					}
+				}
+			}
+		}
+	}
+
+	if rowIndexToDelete < 1 {
+		return nil, fmt.Errorf("could not find a data row to delete (row must be > 1 to preserve headers)")
+	}
+
+	// Execute deleteDimension batchUpdate
+	batchURL := fmt.Sprintf("https://sheets.googleapis.com/v4/spreadsheets/%s:batchUpdate", spreadsheetID)
+	reqPayload := map[string]interface{}{
+		"requests": []map[string]interface{}{
+			{
+				"deleteDimension": map[string]interface{}{
+					"range": map[string]interface{}{
+						"sheetId":    sheetID,
+						"dimension":  "ROWS",
+						"startIndex": rowIndexToDelete,
+						"endIndex":   rowIndexToDelete + 1,
+					},
+				},
+			},
+		},
+	}
+
+	body, err := json.Marshal(reqPayload)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", batchURL, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute row deletion: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Google Sheets deleteDimension failed (HTTP %d): %s", resp.StatusCode, string(respBody))
+	}
+
+	return map[string]interface{}{
+		"success":           true,
+		"deleted_row_index": rowIndexToDelete,
+		"deleted_row_num":   rowIndexToDelete + 1,
+		"sheet_name":        sheetName,
+		"sheet_id":          sheetID,
+	}, nil
+}
+
 // parseRowIndicesFromRange parses 0-indexed start and end row indices from a range string like "Sheet6!A2:J2" or "'Sheet 1'!A10:H12"
 func parseRowIndicesFromRange(rangeStr string) (int, int) {
 	exclamationIdx := strings.LastIndex(rangeStr, "!")

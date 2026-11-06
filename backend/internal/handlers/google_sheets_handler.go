@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"log"
 	"strings"
 
@@ -303,5 +304,50 @@ func ExecuteGoogleSheetSync(c *fiber.Ctx) error {
 		"mapped_data":   mapped,
 		"row_values":    rowValues,
 		"append_result": appendRes,
+	})
+}
+
+// DeleteGoogleSheetRowRequest payload for deleting a previously added row
+type DeleteGoogleSheetRowRequest struct {
+	SpreadsheetURL  string `json:"spreadsheet_url"`
+	SheetName       string `json:"sheet_name"`
+	RowIndex        *int   `json:"row_index"`
+	ListingCode     string `json:"listing_code"`
+	CredentialsJSON string `json:"credentials_json"`
+}
+
+// DeleteGoogleSheetRow - POST /api/google-sheets/delete-row
+func DeleteGoogleSheetRow(c *fiber.Ctx) error {
+	var req DeleteGoogleSheetRowRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"success": false,
+			"error":   "Invalid request payload: " + err.Error(),
+		})
+	}
+
+	urlOrID := strings.TrimSpace(req.SpreadsheetURL)
+	if urlOrID == "" {
+		urlOrID = "1lzY57D5ers2Xs6cvbV-skeqGSAK_jijbQJZt8Hn8udY"
+	}
+
+	targetRowIdx := -1
+	if req.RowIndex != nil {
+		targetRowIdx = *req.RowIndex
+	}
+
+	res, err := sheetsService.DeleteRow(c.Context(), urlOrID, req.SheetName, targetRowIdx, req.ListingCode, req.CredentialsJSON)
+	if err != nil {
+		log.Printf("[DeleteGoogleSheetRow] DeleteRow error: %v (urlOrID: %s, sheet: %s, rowIdx: %d, code: %s)", err, urlOrID, req.SheetName, targetRowIdx, req.ListingCode)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"success": false,
+			"error":   "Failed to delete row from Google Sheet: " + err.Error(),
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"success": true,
+		"message": fmt.Sprintf("Row #%v successfully deleted from '%v'!", res["deleted_row_num"], res["sheet_name"]),
+		"result":  res,
 	})
 }

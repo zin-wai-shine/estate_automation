@@ -3611,6 +3611,70 @@ export const CreateWorkflowView: React.FC = () => {
     }
   };
 
+  // Revert / Delete row previously added to Google Sheet
+  const handleRevertGoogleSheetRow = async (boxId: string): Promise<boolean> => {
+    if (!editingFormat?.config) return false;
+    const cfg = editingFormat.config;
+    const box = cfg.aiBoxes?.find((b) => b.id === boxId);
+    if (!box) return false;
+
+    let rawSheetUrl = (box as any).googleSpreadsheetUrl || 'https://docs.google.com/spreadsheets/d/1lzY57D5ers2Xs6cvbV-skeqGSAK_jijbQJZt8Hn8udY/edit?gid=0#gid=0';
+    if (rawSheetUrl.includes('https://') && rawSheetUrl.lastIndexOf('https://') > 0) {
+      rawSheetUrl = rawSheetUrl.substring(rawSheetUrl.lastIndexOf('https://'));
+    }
+    const sheetName = (box as any).googleSheetName || '';
+    const ctx = workflowContextRef.current;
+
+    let listingCode = ctx?.listingCode || '';
+    const outputJson = aiGeneratedOutputs[boxId] || (box as any).outputCopy || '';
+    if (outputJson) {
+      try {
+        const parsed = JSON.parse(outputJson);
+        if (parsed.Code) listingCode = parsed.Code;
+      } catch {}
+    }
+
+    const delRes = await fetch('/api/google-sheets/delete-row', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        spreadsheet_url: rawSheetUrl,
+        sheet_name: sheetName,
+        listing_code: listingCode,
+        credentials_json: (box as any).googleServiceAccountJson || '',
+      }),
+    });
+
+    const delData = await delRes.json();
+    if (!delRes.ok || !delData.success) {
+      throw new Error(delData.error || 'Failed to revert row from Google Sheet');
+    }
+
+    // Clear output for this box
+    setAiGeneratedOutputs((prev) => {
+      const next = { ...prev };
+      delete next[boxId];
+      return next;
+    });
+    if (workflowContextRef.current) {
+      delete workflowContextRef.current.generatedOutputsMap[boxId];
+    }
+
+    // Reset node execution state: remove boxId from completedNodeIds so green checkmark clears!
+    setExecutionState((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        completedNodeIds: (prev.completedNodeIds || []).filter((id) => id !== boxId),
+        activeNodeIds: (prev.activeNodeIds || []).filter((id) => id !== boxId),
+        failedNodeIds: (prev.failedNodeIds || []).filter((id) => id !== boxId),
+        currentStepMessage: `✓ Row successfully reversed and deleted from Google Sheet [${box.title || 'Google Sheet'}]!`,
+      };
+    });
+
+    return true;
+  };
+
   // Continue workflow execution from a previously stopped or fixed step
   const handleContinueWorkflow = async (fromBoxId?: string) => {
     if (!editingFormat?.config || isRunningWorkflow) return;
@@ -4619,6 +4683,7 @@ export const CreateWorkflowView: React.FC = () => {
             projectName={projectName}
             onUpdateBoxOutput={handleUpdateBoxOutput}
             onRegenerateBoxOutput={handleRegenerateBoxOutput}
+            onRevertGoogleSheetRow={handleRevertGoogleSheetRow}
             onContinueWorkflow={handleContinueWorkflow}
             onRunFromStep={handleRunFromStep}
           />
