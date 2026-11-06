@@ -30,6 +30,7 @@ import {
   savePersistedReferenceImage,
   clearPersistedReferenceImage,
 } from './referenceImageStorage';
+import { fetchMemorizedTabs, clearMemorizedTabs, type MemorizedTabItem } from './browserAutomationService';
 
 interface FBHeroSettingsSideboxProps {
   isOpen: boolean;
@@ -223,6 +224,30 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
   const isScanningSettingsRef = useRef<boolean>(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Memorized Tabs State ──────────────────────────────────────────────────
+  const [memorizedTabs, setMemorizedTabs] = useState<MemorizedTabItem[]>([]);
+  const [isLoadingMemorizedTabs, setIsLoadingMemorizedTabs] = useState(false);
+  const [copiedTabUrlIndex, setCopiedTabUrlIndex] = useState<number | null>(null);
+
+  const resolvedGroupName = boxConfig.browserGroupName || (isHero ? 'FB Hero' : 'Enhance IMG');
+
+  const loadLiveMemorizedTabs = async () => {
+    setIsLoadingMemorizedTabs(true);
+    try {
+      const list = await fetchMemorizedTabs(resolvedGroupName, boxConfig.browserProfileKey);
+      setMemorizedTabs(list);
+    } catch (e) {
+    } finally {
+      setIsLoadingMemorizedTabs(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+      loadLiveMemorizedTabs();
+    }
+  }, [isOpen, resolvedGroupName]);
 
   // Synchronize internal state whenever the target node/box changes
   useEffect(() => {
@@ -1736,6 +1761,177 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
                       activeColor="#10B981"
                     />
                   </div>
+
+                  {/* ── Memorized Worker Tabs Pipeline Display ── */}
+                  {reuseSessionTabs && (
+                    <div
+                      style={{
+                        marginTop: '8px',
+                        padding: '10px',
+                        borderRadius: '8px',
+                        backgroundColor: isDark ? 'rgba(0, 0, 0, 0.25)' : '#F1F5F9',
+                        border: isDark ? '1px solid rgba(6, 182, 212, 0.25)' : '1px solid #CBD5E1',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '8px',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <FiLayers size={13} style={{ color: '#06B6D4' }} />
+                          <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                            Memorized Worker Tabs
+                          </span>
+                        </div>
+                        <span
+                          style={{
+                            fontSize: '0.5625rem',
+                            fontWeight: 700,
+                            padding: '2px 7px',
+                            borderRadius: '10px',
+                            backgroundColor: memorizedTabs.length > 0 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(100, 116, 139, 0.15)',
+                            color: memorizedTabs.length > 0 ? '#10B981' : 'var(--text-muted)',
+                            border: memorizedTabs.length > 0 ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(100, 116, 139, 0.3)',
+                          }}
+                        >
+                          {memorizedTabs.length > 0 ? `● ${memorizedTabs.length} Tabs Bound` : '○ Awaiting First Run'}
+                        </span>
+                      </div>
+
+                      <div style={{ fontSize: '0.5625rem', color: 'var(--text-muted)', lineHeight: 1.35 }}>
+                        Workflow targets and executes exclusively inside these remembered tab links. When browser reopens, these exact URLs are restored automatically.
+                      </div>
+
+                      {/* Tab Link Rows */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '2px' }}>
+                        {Array.from({ length: workerTabCount }).map((_, idx) => {
+                          const mem = memorizedTabs[idx];
+                          const tabNum = idx + 1;
+                          const displayUrl = mem?.url ? mem.url.replace('https://', '') : 'https://chatgpt.com/ (Will memorize upon processing)';
+                          const isBound = Boolean(mem?.url);
+
+                          return (
+                            <div
+                              key={tabNum}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                gap: '6px',
+                                padding: '5px 8px',
+                                borderRadius: '6px',
+                                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF',
+                                border: isDark ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid #E2E8F0',
+                                fontSize: '0.625rem',
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, flex: 1 }}>
+                                <span
+                                  style={{
+                                    fontSize: '0.5625rem',
+                                    fontWeight: 700,
+                                    padding: '1px 5px',
+                                    borderRadius: '3px',
+                                    backgroundColor: isBound ? 'rgba(6, 182, 212, 0.15)' : 'rgba(100, 116, 139, 0.15)',
+                                    color: isBound ? '#06B6D4' : 'var(--text-muted)',
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  #{tabNum}
+                                </span>
+                                <span
+                                  style={{
+                                    color: isBound ? 'var(--text-primary)' : 'var(--text-muted)',
+                                    fontWeight: isBound ? 600 : 400,
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap',
+                                  }}
+                                  title={mem?.url || 'Awaiting run to memorize tab link'}
+                                >
+                                  {displayUrl}
+                                </span>
+                              </div>
+
+                              {isBound && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (mem?.url) {
+                                        navigator.clipboard.writeText(mem.url);
+                                        setCopiedTabUrlIndex(tabNum);
+                                        setTimeout(() => setCopiedTabUrlIndex(null), 1500);
+                                      }
+                                    }}
+                                    title="Copy chat link"
+                                    style={{
+                                      background: 'none',
+                                      border: 'none',
+                                      padding: '2px',
+                                      cursor: 'pointer',
+                                      color: copiedTabUrlIndex === tabNum ? '#10B981' : 'var(--text-muted)',
+                                    }}
+                                  >
+                                    {copiedTabUrlIndex === tabNum ? <FiCheck size={11} /> : <FiCopy size={11} />}
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Actions: Refresh & Reset */}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '4px' }}>
+                        <button
+                          type="button"
+                          disabled={isLoadingMemorizedTabs}
+                          onClick={loadLiveMemorizedTabs}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            padding: 0,
+                            color: '#06B6D4',
+                            fontSize: '0.5625rem',
+                            fontWeight: 600,
+                            cursor: isLoadingMemorizedTabs ? 'wait' : 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '3px',
+                          }}
+                        >
+                          <FiRefreshCw size={10} className={isLoadingMemorizedTabs ? 'animate-spin' : ''} />
+                          <span>{isLoadingMemorizedTabs ? 'Syncing...' : 'Sync Live Tabs'}</span>
+                        </button>
+
+                        {memorizedTabs.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              await clearMemorizedTabs(resolvedGroupName);
+                              setMemorizedTabs([]);
+                            }}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              padding: 0,
+                              color: '#EF4444',
+                              fontSize: '0.5625rem',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '3px',
+                            }}
+                          >
+                            <FiTrash2 size={10} />
+                            <span>Reset Memory</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

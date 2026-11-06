@@ -2942,6 +2942,21 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                     <FiArrowLeft size={10} /> View Profile
                   </button>
                 )}
+                {boxConfig.reuseSessionTabs !== false && (
+                  <span
+                    style={{
+                      fontSize: '0.625rem',
+                      fontWeight: 600,
+                      color: '#10B981',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                    }}
+                  >
+                    <span>•</span>
+                    <span>💾 Memorized Tabs Bound</span>
+                  </span>
+                )}
               </>
             ) : isProfileNode ? (
               `${activeProfile?.profile_key || boxConfig.browserProfileKey || (profiles[0]?.profile_key || 'Pro')} · Connected Tab Groups`

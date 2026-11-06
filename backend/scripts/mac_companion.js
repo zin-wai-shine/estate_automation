@@ -135,6 +135,32 @@ function deletePersistedReferenceImageFromDisk() {
   } catch (e) {}
 }
 
+// ── Persistent Memorized Tabs Store (Per Group & Profile) ─────────────────
+const MEMORIZED_TABS_FILE = path.join(defaultProcessingDir, '.memorized_tabs_cache.json');
+let memorizedTabsByGroup = {};
+
+function loadMemorizedTabsFromDisk() {
+  try {
+    if (fs.existsSync(MEMORIZED_TABS_FILE)) {
+      const data = JSON.parse(fs.readFileSync(MEMORIZED_TABS_FILE, 'utf8'));
+      if (data && typeof data === 'object') {
+        memorizedTabsByGroup = data;
+        console.log('[COMPANION] 💾 Loaded memorized tabs from disk:', Object.keys(memorizedTabsByGroup).map((k) => `${k}(${memorizedTabsByGroup[k]?.length || 0})`).join(', '));
+      }
+    }
+  } catch (e) {
+    memorizedTabsByGroup = {};
+  }
+}
+
+function saveMemorizedTabsToDisk() {
+  try {
+    fs.writeFileSync(MEMORIZED_TABS_FILE, JSON.stringify(memorizedTabsByGroup, null, 2), 'utf8');
+  } catch (e) {}
+}
+
+loadMemorizedTabsFromDisk();
+
 let activeWatchDir = defaultProcessingDir;
 let processedFiles = new Set();
 let registeredProfiles = [];   // [{ profileKey, profileName, tabGroups, paired_at }]
@@ -776,6 +802,14 @@ function focusChromeTabGroup(profileKey, groupName, tabId, defaultUrl, explicitT
         });
       }
 
+      if (groupTabUrls.length === 0 && reuseSessionTabs !== false) {
+        const memTabs = memorizedTabsByGroup[(groupName || '').toLowerCase().trim()];
+        if (Array.isArray(memTabs) && memTabs.length > 0) {
+          groupTabUrls = memTabs.map((t) => t.url).filter(Boolean);
+          console.log(`[COMPANION] 💾 Using ${groupTabUrls.length} memorized tab URLs for "${groupName}":`, groupTabUrls);
+        }
+      }
+
       if (groupTabUrls.length === 0) {
         // Check live data pushed by extension (most accurate)
         const liveGroups = liveTabGroupsByKey[resolvedKey] || [];
@@ -816,7 +850,17 @@ function focusChromeTabGroup(profileKey, groupName, tabId, defaultUrl, explicitT
     // 2. Queue command for Chrome Extension to expand and focus all tabs in group
     pushPendingCommand({
       action: 'FOCUS_GROUP',
-      payload: { groupName, tabId, profileKey: resolvedKey, targetUrl, groupTabUrls, tabMode, workerCount: count, reuseSessionTabs },
+      payload: {
+        groupName,
+        tabId,
+        profileKey: resolvedKey,
+        targetUrl,
+        groupTabUrls,
+        tabMode,
+        workerCount: count,
+        reuseSessionTabs,
+        memorizedTabs: memorizedTabsByGroup[(groupName || '').toLowerCase().trim()] || [],
+      },
       created_at: new Date().toISOString(),
     });
 
@@ -1737,6 +1781,65 @@ function mergeTabGroups(scannedGroups, liveGroups) {
 
   return result;
 }
+
+  // ── Memorized Tabs Endpoints ──────────────────────────────────────────
+  if (url.pathname === '/memorized-tabs' && req.method === 'GET') {
+    const rawGroupName = url.searchParams.get('group_name') || 'Enhance IMG';
+    const groupKey = rawGroupName.toLowerCase().trim();
+    const tabs = memorizedTabsByGroup[groupKey] || [];
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ status: 'success', group_name: rawGroupName, tabs }));
+  }
+
+  if (url.pathname === '/report-memorized-tabs' && req.method === 'POST') {
+    let body = '';
+    req.on('data', (c) => (body += c));
+    req.on('end', () => {
+      try {
+        const payload = JSON.parse(body || '{}');
+        const rawGroupName = payload.groupName || payload.group_name || 'Enhance IMG';
+        const groupKey = rawGroupName.toLowerCase().trim();
+        const tabs = Array.isArray(payload.tabs) ? payload.tabs : [];
+        if (tabs.length > 0) {
+          memorizedTabsByGroup[groupKey] = tabs;
+          saveMemorizedTabsToDisk();
+          console.log(`[COMPANION] 💾 Memorized ${tabs.length} tabs for "${rawGroupName}":`, tabs.map((t) => t.url || t.id).join(', '));
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'success', saved: tabs.length }));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'error', message: e.message }));
+      }
+    });
+    return;
+  }
+
+  if (url.pathname === '/clear-memorized-tabs' && req.method === 'POST') {
+    let body = '';
+    req.on('data', (c) => (body += c));
+    req.on('end', () => {
+      try {
+        const payload = JSON.parse(body || '{}');
+        const rawGroupName = payload.groupName || payload.group_name || 'Enhance IMG';
+        const groupKey = rawGroupName.toLowerCase().trim();
+        delete memorizedTabsByGroup[groupKey];
+        saveMemorizedTabsToDisk();
+        pushPendingCommand({
+          action: 'CLEAR_MEMORIZED_TABS',
+          payload: { groupName: rawGroupName },
+          created_at: new Date().toISOString(),
+        });
+        console.log(`[COMPANION] ✕ Cleared memorized tabs for "${rawGroupName}"`);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'success', cleared: true }));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'error', message: e.message }));
+      }
+    });
+    return;
+  }
 
   // Query live tab groups for a profile (profile-specific read from Chrome saved data + live extension groups)
   if (url.pathname === '/profile-groups' && req.method === 'GET') {

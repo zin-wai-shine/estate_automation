@@ -2,122 +2,338 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>BoltHaven Companion</title>
+  <title>BoltHaven Pro Companion</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      width: 320px;
+      width: 350px;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      background: #0f172a;
-      color: #f8fafc;
+      background: #090D16;
+      color: #F8FAFC;
       padding: 14px;
       font-size: 13px;
+      user-select: none;
     }
+
+    /* Header */
     .header {
       display: flex;
       align-items: center;
-      gap: 10px;
+      justify-content: space-between;
       padding-bottom: 12px;
-      border-bottom: 1px solid #1e293b;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
       margin-bottom: 12px;
     }
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
     .logo-badge {
-      width: 28px;
-      height: 28px;
-      border-radius: 6px;
-      background: #06b6d4;
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #06B6D4 0%, #3B82F6 50%, #8B5CF6 100%);
       display: flex;
       align-items: center;
       justify-content: center;
-      font-weight: bold;
-      color: #0f172a;
+      font-weight: 800;
+      color: #FFFFFF;
+      font-size: 13px;
+      box-shadow: 0 2px 8px rgba(6, 182, 212, 0.35);
+    }
+    .title {
       font-size: 14px;
+      font-weight: 700;
+      color: #F8FAFC;
+      display: flex;
+      align-items: center;
+      gap: 6px;
     }
-    .title { font-size: 14px; font-weight: 600; color: #f8fafc; }
-    .subtitle { font-size: 11px; color: #94a3b8; }
-    .card {
-      background: #1e293b;
-      border-radius: 8px;
-      padding: 12px;
-      margin-bottom: 10px;
-      border: 1px solid #334155;
+    .version-pill {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 1px 5px;
+      border-radius: 4px;
+      background: rgba(6, 182, 212, 0.18);
+      color: #06B6D4;
+      border: 1px solid rgba(6, 182, 212, 0.35);
     }
-    .card-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b; font-weight: 600; margin-bottom: 6px; }
-    .status-row { display: flex; align-items: center; justify-content: space-between; }
-    .badge {
+    .subtitle { font-size: 11px; color: #94A3B8; }
+
+    .status-beacon {
       display: inline-flex;
       align-items: center;
       gap: 5px;
-      padding: 2px 8px;
+      padding: 3px 8px;
       border-radius: 12px;
-      font-size: 11px;
-      font-weight: 500;
-      background: rgba(16, 185, 129, 0.15);
-      color: #10b981;
+      font-size: 10px;
+      font-weight: 600;
+      background: rgba(16, 185, 129, 0.12);
+      color: #10B981;
       border: 1px solid rgba(16, 185, 129, 0.3);
     }
-    .badge-dot { width: 6px; height: 6px; border-radius: 50%; background: #10b981; }
-    .groups-list { display: flex; flex-direction: column; gap: 6px; max-height: 140px; overflow-y: auto; margin-top: 8px; }
-    .group-item {
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #10B981;
+      box-shadow: 0 0 6px #10B981;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.9); }
+      100% { opacity: 1; transform: scale(1); }
+    }
+
+    /* Cards */
+    .card {
+      background: #111827;
+      border-radius: 10px;
+      padding: 12px;
+      margin-bottom: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+    }
+    .card-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 6px 8px;
-      background: #0f172a;
-      border-radius: 6px;
-      font-size: 12px;
+      margin-bottom: 8px;
     }
-    .group-tag { display: flex; align-items: center; gap: 6px; font-weight: 500; }
-    .group-color { width: 8px; height: 8px; border-radius: 50%; }
+    .card-label {
+      font-size: 10.5px;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: #94A3B8;
+      font-weight: 700;
+    }
+
+    /* Profile select */
+    .profile-select {
+      width: 100%;
+      padding: 7px 10px;
+      border-radius: 6px;
+      background: #090D16;
+      color: #F8FAFC;
+      border: 1px solid #374151;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      outline: none;
+      transition: all 0.15s ease;
+    }
+    .profile-select:focus {
+      border-color: #06B6D4;
+      box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.2);
+    }
+
+    /* Memorized Groups & Tabs */
+    .groups-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 220px;
+      overflow-y: auto;
+      padding-right: 2px;
+    }
+    .groups-list::-webkit-scrollbar {
+      width: 4px;
+    }
+    .groups-list::-webkit-scrollbar-thumb {
+      background: #374151;
+      border-radius: 4px;
+    }
+
+    .group-section {
+      background: #090D16;
+      border-radius: 8px;
+      padding: 9px;
+      border: 1px solid #1F2937;
+    }
+    .group-section-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 11.5px;
+      font-weight: 700;
+      color: #E2E8F0;
+      margin-bottom: 6px;
+    }
+    .group-badge {
+      font-size: 9.5px;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: rgba(59, 130, 246, 0.15);
+      color: #60A5FA;
+      border: 1px solid rgba(59, 130, 246, 0.3);
+    }
+
+    .tab-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 5px 7px;
+      background: rgba(255, 255, 255, 0.02);
+      border-radius: 5px;
+      border: 1px solid rgba(255, 255, 255, 0.04);
+      margin-bottom: 4px;
+      font-size: 11px;
+      transition: all 0.15s ease;
+    }
+    .tab-item:last-child { margin-bottom: 0; }
+    .tab-item:hover {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: rgba(6, 182, 212, 0.3);
+    }
+    .tab-left {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+      flex: 1;
+    }
+    .tab-idx {
+      font-size: 9.5px;
+      font-weight: 700;
+      padding: 1px 5px;
+      border-radius: 3px;
+      background: #1F2937;
+      color: #94A3B8;
+      flex-shrink: 0;
+    }
+    .tab-info {
+      min-width: 0;
+      flex: 1;
+    }
+    .tab-title {
+      font-weight: 600;
+      color: #F1F5F9;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .tab-url {
+      font-size: 9.5px;
+      color: #64748B;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .focus-btn {
+      padding: 3px 6px;
+      font-size: 10px;
+      font-weight: 600;
+      border-radius: 4px;
+      border: 1px solid #374151;
+      background: #1F2937;
+      color: #06B6D4;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      flex-shrink: 0;
+      transition: all 0.15s ease;
+    }
+    .focus-btn:hover {
+      background: #06B6D4;
+      color: #090D16;
+      border-color: #06B6D4;
+    }
+
+    /* Buttons */
     .btn {
       width: 100%;
-      padding: 8px;
-      border-radius: 6px;
+      height: 36px;
+      border-radius: 7px;
       border: none;
-      background: #06b6d4;
-      color: #0f172a;
-      font-weight: 600;
+      background: linear-gradient(135deg, #06B6D4 0%, #2563EB 100%);
+      color: #FFFFFF;
+      font-weight: 700;
       font-size: 12px;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 6px;
-      margin-top: 8px;
+      gap: 7px;
+      box-shadow: 0 2px 8px rgba(6, 182, 212, 0.25);
+      transition: all 0.15s ease;
     }
-    .btn:hover { background: #0891b2; color: #ffffff; }
+    .btn:hover {
+      filter: brightness(1.1);
+      transform: translateY(-1px);
+    }
+    .btn:active {
+      transform: translateY(0);
+    }
+    .btn-secondary {
+      background: #1F2937;
+      border: 1px solid #374151;
+      color: #E2E8F0;
+      box-shadow: none;
+      margin-top: 6px;
+      height: 32px;
+      font-size: 11px;
+    }
+    .btn-secondary:hover {
+      background: #374151;
+      color: #FFFFFF;
+    }
   </style>
 </head>
 <body>
+  <!-- Header -->
   <div class="header">
-    <div class="logo-badge">BH</div>
-    <div>
-      <div class="title">BoltHaven Companion</div>
-      <div class="subtitle">External Browser Integration</div>
+    <div class="header-left">
+      <div class="logo-badge">BH</div>
+      <div>
+        <div class="title">
+          <span>BoltHaven Pro</span>
+          <span class="version-pill">v2.5</span>
+        </div>
+        <div class="subtitle">Smart Tab Memory & Automation</div>
+      </div>
+    </div>
+    <div class="status-beacon" id="companion-beacon">
+      <span class="status-dot"></span>
+      <span id="beacon-text">Online (:9224)</span>
     </div>
   </div>
 
+  <!-- Current Chrome Profile Card -->
   <div class="card">
-    <div class="card-label">Current Chrome Profile</div>
-    <div class="status-row" style="margin-bottom: 8px;">
-      <strong id="profile-name">Connecting...</strong>
-      <span class="badge"><span class="badge-dot"></span> Authorized</span>
+    <div class="card-header">
+      <span class="card-label">Active Chrome Profile</span>
+      <span id="profile-status" style="font-size: 10px; color: #10B981; font-weight: 600;">● Bound</span>
     </div>
-    <select id="profile-select" style="width: 100%; padding: 6px 8px; border-radius: 6px; background: #0f172a; color: #f8fafc; border: 1px solid #334155; font-size: 12px; margin-top: 4px; cursor: pointer;">
+    <select id="profile-select" class="profile-select">
       <option value="">Detecting profile...</option>
       <option value="Profile 14">Hsu (Profile 14)</option>
       <option value="Profile 2">Note Zin Wai (Profile 2)</option>
     </select>
   </div>
 
+  <!-- Memorized Worker Pipelines Card -->
   <div class="card">
-    <div class="card-label">Discovered Tab Groups</div>
+    <div class="card-header">
+      <span class="card-label">Memorized Worker Pipelines</span>
+      <span id="tabs-summary" style="font-size: 10px; color: #06B6D4; font-weight: 600;">Live Memory</span>
+    </div>
     <div class="groups-list" id="groups-container">
-      <div style="color: #64748b; font-size: 11px;">Scanning open tab groups...</div>
+      <div style="color: #64748B; font-size: 11px; padding: 10px 0; text-align: center;">Scanning memorized & active worker tabs...</div>
     </div>
   </div>
 
-  <button class="btn" id="sync-btn">Sync to BoltHaven</button>
+  <!-- Action Buttons -->
+  <button class="btn" id="sync-btn">
+    <span>⚡ Sync Memory to BoltHaven Site</span>
+  </button>
+  <button class="btn btn-secondary" id="open-workers-btn">
+    <span>🚀 Open & Focus Worker Tabs</span>
+  </button>
 
   <script src="popup.js"></script>
 </body>

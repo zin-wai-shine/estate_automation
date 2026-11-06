@@ -1,21 +1,42 @@
 document.addEventListener('DOMContentLoaded', async () => {
-  const profileNameEl = document.getElementById('profile-name');
   const profileSelect = document.getElementById('profile-select');
   const groupsContainer = document.getElementById('groups-container');
   const syncBtn = document.getElementById('sync-btn');
+  const openWorkersBtn = document.getElementById('open-workers-btn');
+  const beaconText = document.getElementById('beacon-text');
+  const companionBeacon = document.getElementById('companion-beacon');
+  const tabsSummary = document.getElementById('tabs-summary');
 
-  // Detect current Chrome profile name or fallback
-  const stored = await chrome.storage.local.get(['profileName', 'profileKey']);
-  let profileName = stored.profileName || 'Active Chrome Profile';
+  const COMPANION_URL = 'http://127.0.0.1:9224';
+
+  // 1. Detect current Chrome profile name or fallback
+  const stored = await chrome.storage.local.get(['profileName', 'profileKey', 'bolthavenMemorizedTabsV2']);
   let profileKey = stored.profileKey || '';
-  profileNameEl.textContent = profileName;
 
   if (profileSelect && profileKey) {
     profileSelect.value = profileKey;
   }
 
+  // Check Mac Companion Health
+  fetch(`${COMPANION_URL}/status`)
+    .then((r) => r.json())
+    .then((data) => {
+      if (data && data.status === 'online') {
+        beaconText.textContent = 'Online (:9224)';
+        companionBeacon.style.background = 'rgba(16, 185, 129, 0.12)';
+        companionBeacon.style.color = '#10B981';
+        companionBeacon.style.borderColor = 'rgba(16, 185, 129, 0.3)';
+      }
+    })
+    .catch(() => {
+      beaconText.textContent = 'Offline (:9224)';
+      companionBeacon.style.background = 'rgba(239, 68, 68, 0.12)';
+      companionBeacon.style.color = '#EF4444';
+      companionBeacon.style.borderColor = 'rgba(239, 68, 68, 0.3)';
+    });
+
   // Fetch available profiles from companion to populate options
-  fetch('http://127.0.0.1:9224/profiles')
+  fetch(`${COMPANION_URL}/profiles`)
     .then((r) => r.json())
     .then((data) => {
       if (data && data.status === 'success' && Array.isArray(data.profiles)) {
@@ -44,62 +65,132 @@ document.addEventListener('DOMContentLoaded', async () => {
           profileName: selectedText,
           userExplicit: true,
         });
-        profileNameEl.textContent = selectedText;
       }
     });
   }
 
-  // Request tab groups from background script
-  chrome.runtime.sendMessage({ action: 'GET_GROUPS' }, (response) => {
-    if (!response || !response.groups || response.groups.length === 0) {
-      groupsContainer.innerHTML = '<div style="color: #64748b; font-size: 11px;">No active tab groups found. Open or create groups like "Raw", "FB Hero", or "Bolt-Tiktok".</div>';
+  // Render tab groups & memorized tabs
+  const renderGroups = (groups) => {
+    if (!groups || groups.length === 0) {
+      groupsContainer.innerHTML = '<div style="color: #64748B; font-size: 11px; padding: 12px 0; text-align: center;">No active or memorized tabs yet. Open ChatGPT tabs or run a workflow node.</div>';
+      if (tabsSummary) tabsSummary.textContent = '0 Tabs';
       return;
     }
 
+    let totalTabs = 0;
     groupsContainer.innerHTML = '';
-    response.groups.forEach((g) => {
-      const item = document.createElement('div');
-      item.className = 'group-item';
 
-      const colorMap = {
-        grey: '#64748b',
-        blue: '#3b82f6',
-        red: '#ef4444',
-        yellow: '#f59e0b',
-        green: '#10b981',
-        pink: '#ec4899',
-        purple: '#8b5cf6',
-        cyan: '#06b6d4',
-        orange: '#f97316',
-      };
+    groups.forEach((g) => {
+      const section = document.createElement('div');
+      section.className = 'group-section';
 
-      const dotColor = colorMap[g.color] || '#64748b';
-      item.innerHTML = `
-        <div class="group-tag">
-          <span class="group-color" style="background-color: ${dotColor}"></span>
+      const tabCount = Array.isArray(g.tabs) ? g.tabs.length : (g.tabsCount || 0);
+      totalTabs += tabCount;
+
+      const isHero = (g.title || '').toLowerCase().includes('hero');
+      const badgeText = isHero ? `${tabCount} Hero Worker` : `${tabCount} Worker Tabs`;
+
+      section.innerHTML = `
+        <div class="group-section-title">
           <span>${g.title}</span>
+          <span class="group-badge">${badgeText}</span>
         </div>
-        <span style="color: #94a3b8; font-size: 11px;">${g.tabsCount} tabs</span>
+        <div class="group-tabs-list"></div>
       `;
-      groupsContainer.appendChild(item);
+
+      const listEl = section.querySelector('.group-tabs-list');
+
+      if (Array.isArray(g.tabs) && g.tabs.length > 0) {
+        g.tabs.forEach((t, idx) => {
+          const row = document.createElement('div');
+          row.className = 'tab-item';
+
+          const cleanUrl = t.url ? t.url.replace('https://', '') : 'chatgpt.com';
+          const truncatedUrl = cleanUrl.length > 32 ? cleanUrl.substring(0, 32) + '...' : cleanUrl;
+          const cleanTitle = t.title || `ChatGPT Tab #${idx + 1}`;
+
+          row.innerHTML = `
+            <div class="tab-left">
+              <span class="tab-idx">#${idx + 1}</span>
+              <div class="tab-info">
+                <div class="tab-title" title="${t.title || ''}">${cleanTitle}</div>
+                <div class="tab-url" title="${t.url || ''}">${truncatedUrl}</div>
+              </div>
+            </div>
+            <button class="focus-btn" data-tab-id="${t.id}" title="Focus this tab in Chrome">
+              Focus ↗
+            </button>
+          `;
+
+          // Focus button handler
+          const focusBtn = row.querySelector('.focus-btn');
+          if (focusBtn && t.id) {
+            focusBtn.addEventListener('click', () => {
+              chrome.runtime.sendMessage({ action: 'FOCUS_TAB', tabId: t.id });
+            });
+          }
+
+          listEl.appendChild(row);
+        });
+      } else {
+        listEl.innerHTML = '<div style="color: #64748B; font-size: 10px; font-style: italic;">No tabs assigned yet</div>';
+      }
+
+      groupsContainer.appendChild(section);
     });
+
+    if (tabsSummary) {
+      tabsSummary.textContent = `${totalTabs} Memorized Tabs`;
+    }
+  };
+
+  // Request tab groups from background script
+  chrome.runtime.sendMessage({ action: 'GET_GROUPS' }, (response) => {
+    if (response && Array.isArray(response.groups)) {
+      renderGroups(response.groups);
+    }
   });
 
   // Sync button handler
-  syncBtn.addEventListener('click', () => {
-    syncBtn.textContent = 'Syncing...';
-    chrome.runtime.sendMessage({ action: 'SYNC_NOW' }, (res) => {
-      if (res && res.success) {
-        syncBtn.textContent = '✓ Synchronized';
-        setTimeout(() => {
-          syncBtn.textContent = 'Sync to BoltHaven';
-        }, 2000);
-      } else {
-        syncBtn.textContent = 'Sync Failed';
-        setTimeout(() => {
-          syncBtn.textContent = 'Sync to BoltHaven';
-        }, 2000);
-      }
+  if (syncBtn) {
+    syncBtn.addEventListener('click', () => {
+      syncBtn.textContent = 'Syncing memory...';
+      chrome.runtime.sendMessage({ action: 'SYNC_NOW' }, (res) => {
+        if (res && res.success) {
+          syncBtn.textContent = '✓ Memory Synchronized';
+          setTimeout(() => {
+            syncBtn.textContent = '⚡ Sync Memory to BoltHaven Site';
+          }, 2000);
+        } else {
+          syncBtn.textContent = 'Sync Failed';
+          setTimeout(() => {
+            syncBtn.textContent = '⚡ Sync Memory to BoltHaven Site';
+          }, 2000);
+        }
+      });
     });
-  });
+  }
+
+  // Open & Focus Worker Tabs button
+  if (openWorkersBtn) {
+    openWorkersBtn.addEventListener('click', async () => {
+      openWorkersBtn.textContent = 'Opening & Focusing...';
+      chrome.runtime.sendMessage({
+        action: 'FOCUS_GROUP',
+        payload: {
+          groupName: 'Enhance IMG',
+          workerCount: 4,
+          reuseSessionTabs: true,
+        },
+      });
+      setTimeout(() => {
+        openWorkersBtn.textContent = '🚀 Open & Focus Worker Tabs';
+        chrome.runtime.sendMessage({ action: 'GET_GROUPS' }, (response) => {
+          if (response && Array.isArray(response.groups)) {
+            renderGroups(response.groups);
+          }
+        });
+      }, 1000);
+    });
+  }
 });

@@ -586,4 +586,38 @@ export const waitForBrowserTabsReady = async (params: {
   return { verified: false, message: 'Timed out waiting for tabs to confirm' };
 };
 
+export interface MemorizedTabItem {
+  id: number | string;
+  url: string;
+  title: string;
+  index: number;
+  groupName?: string;
+  updatedAt?: string;
+}
+
+export const fetchMemorizedTabs = async (groupName: string, _profileKey?: string): Promise<MemorizedTabItem[]> => {
+  try {
+    const res = await fetch(`http://127.0.0.1:9224/memorized-tabs?group_name=${encodeURIComponent(groupName || 'Enhance IMG')}`);
+    if (res.ok) {
+      const data = await res.json();
+      return Array.isArray(data.tabs) ? data.tabs : [];
+    }
+  } catch (e) {}
+  return [];
+};
+
+export const clearMemorizedTabs = async (groupName: string): Promise<boolean> => {
+  try {
+    const res = await fetch('http://127.0.0.1:9224/clear-memorized-tabs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ group_name: groupName }),
+    });
+    return res.ok;
+  } catch (e) {
+    return false;
+  }
+};
+
+
 

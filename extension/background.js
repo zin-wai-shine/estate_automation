@@ -43,7 +43,39 @@ async function getTabGroupsWithTabs() {
       };
     });
 
-    // If tabs are ungrouped (plain tabs), provide live ChatGPT tabs as the default worker group
+    // Enrich with memorized groups (Enhance IMG, FB Hero, etc.)
+    try {
+      const stored = await chrome.storage.local.get([MEMORIZED_TABS_STORAGE_KEY]);
+      const map = stored[MEMORIZED_TABS_STORAGE_KEY] || {};
+      for (const [key, memTabs] of Object.entries(map)) {
+        if (!Array.isArray(memTabs) || memTabs.length === 0) continue;
+        const groupTitle = key === 'enhance img' ? 'Enhance IMG' : key === 'fb hero' ? 'FB Hero' : key.toUpperCase();
+        const exists = result.find((g) => (g.title || '').toLowerCase() === groupTitle.toLowerCase());
+        if (!exists) {
+          result.push({
+            id: `mem-${key}`,
+            title: groupTitle,
+            color: groupTitle === 'FB Hero' ? 'yellow' : 'blue',
+            collapsed: false,
+            is_memorized: true,
+            tabsCount: memTabs.length,
+            tabs: memTabs.map((m) => {
+              const liveT = tabs.find((t) => t.id === m.id);
+              return {
+                id: m.id,
+                title: (liveT && liveT.title) || m.title || `Worker Tab #${m.index || 1}`,
+                url: (liveT && (liveT.url || liveT.pendingUrl)) || m.url || '',
+                favIconUrl: liveT?.favIconUrl || '',
+                isChatGPT: true,
+                is_alive: Boolean(liveT),
+              };
+            }),
+          });
+        }
+      }
+    } catch (e) {}
+
+    // Fallback: If tabs are ungrouped and no memorized groups yet, provide live ChatGPT tabs
     const chatGPTTabs = tabs.filter((t) => (t.url || '').includes('chatgpt.com'));
     if (result.length === 0 && chatGPTTabs.length > 0) {
       result.push({
@@ -57,6 +89,7 @@ async function getTabGroupsWithTabs() {
           url: t.url || '',
           favIconUrl: t.favIconUrl || '',
           isChatGPT: true,
+          is_alive: true,
         })),
         tabsCount: Math.min(4, chatGPTTabs.length),
       });
@@ -550,10 +583,56 @@ let isEnsuringGroupOpen = null;
 // persisted in chrome.storage.local, because the MV3 service worker is killed when idle and loses memory.
 // Groups are NOT created in Chrome: these are normal tabs that the site simply remembers.
 const SESSION_TABS_STORAGE_KEY = 'bolthavenSessionTabsByGroup';
+const MEMORIZED_TABS_STORAGE_KEY = 'bolthavenMemorizedTabsV2';
 const FRESH_CHAT_URL = 'https://chatgpt.com/';
 
 function sessionKeyFor(groupName) {
   return String(groupName || 'default').toLowerCase().trim();
+}
+
+async function loadMemorizedTabs(groupName) {
+  try {
+    const stored = await chrome.storage.local.get([MEMORIZED_TABS_STORAGE_KEY]);
+    const map = stored[MEMORIZED_TABS_STORAGE_KEY] || {};
+    const list = map[sessionKeyFor(groupName)];
+    return Array.isArray(list) ? list : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+async function saveMemorizedTabs(groupName, tabs) {
+  try {
+    const stored = await chrome.storage.local.get([MEMORIZED_TABS_STORAGE_KEY]);
+    const map = stored[MEMORIZED_TABS_STORAGE_KEY] || {};
+    map[sessionKeyFor(groupName)] = tabs;
+    await chrome.storage.local.set({ [MEMORIZED_TABS_STORAGE_KEY]: map });
+  } catch (e) {}
+}
+
+async function reportMemorizedTabsToCompanion(groupName, tabs) {
+  try {
+    const { profileKey, profileName } = await getExtensionProfile().catch(() => ({}));
+    await fetch(`${COMPANION_URL}/report-memorized-tabs`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        groupName,
+        profileKey,
+        profileName,
+        tabs,
+      }),
+    }).catch(() => {});
+  } catch (e) {}
+}
+
+async function clearMemorizedTabsForGroup(groupName) {
+  try {
+    const stored = await chrome.storage.local.get([MEMORIZED_TABS_STORAGE_KEY]);
+    const map = stored[MEMORIZED_TABS_STORAGE_KEY] || {};
+    delete map[sessionKeyFor(groupName)];
+    await chrome.storage.local.set({ [MEMORIZED_TABS_STORAGE_KEY]: map });
+  } catch (e) {}
 }
 
 async function loadSessionTabs(groupName) {
@@ -712,12 +791,51 @@ async function _ensureTabGroupOpenInternal(groupName, customUrls, tabMode = 'exi
     }
   } else {
     // ── CASE B: EXISTING / REUSE TABS ──
-    // 1. First priority: Reuse tabs specifically remembered for THIS group
+    // 1. First priority: Reconnect or re-open the exact memorized chat links for THIS group
     if (reuseSessionTabs !== false) {
-      const myAliveSessionTabs = await loadAliveSessionTabs(resolvedName);
-      for (const tid of myAliveSessionTabs) {
-        if (!finalTabIds.includes(tid) && finalTabIds.length < count) {
-          finalTabIds.push(tid);
+      const memorizedList = await loadMemorizedTabs(resolvedName);
+      if (memorizedList.length > 0) {
+        console.log(`[BOLTHAVEN EXT] 💾 Found ${memorizedList.length} memorized tab definitions for "${resolvedName}"`);
+        for (let i = 0; i < Math.min(count, memorizedList.length); i++) {
+          const mem = memorizedList[i];
+          if (!mem || !mem.url) continue;
+
+          // Check if tab ID is still alive
+          let aliveTab = allTabs.find((t) => t.id === mem.id);
+
+          // If ID not alive, check if any open tab has this exact memorized URL
+          if (!aliveTab) {
+            aliveTab = allTabs.find((t) => {
+              const u = t.url || t.pendingUrl || '';
+              return u && (u === mem.url || (mem.url.includes('/c/') && u.includes(mem.url.split('?')[0]))) && !reservedByOtherGroups.has(t.id) && !finalTabIds.includes(t.id);
+            });
+          }
+
+          if (aliveTab) {
+            if (!finalTabIds.includes(aliveTab.id) && finalTabIds.length < count) {
+              finalTabIds.push(aliveTab.id);
+              console.log(`[BOLTHAVEN EXT] ✓ Re-bound to open memorized tab [Tab #${i + 1}]: ${aliveTab.url}`);
+            }
+          } else {
+            // Re-open the saved memorized chat URL directly!
+            try {
+              console.log(`[BOLTHAVEN EXT] 🚀 Re-opening saved memorized tab URL [Tab #${i + 1}]: ${mem.url}`);
+              const createdTab = await chrome.tabs.create({ url: mem.url, active: false });
+              finalTabIds.push(createdTab.id);
+            } catch (e) {
+              console.warn('[BOLTHAVEN EXT] Error restoring memorized tab:', e.message);
+            }
+          }
+        }
+      }
+
+      // If more tabs needed, check alive numeric session tab IDs
+      if (finalTabIds.length < count) {
+        const myAliveSessionTabs = await loadAliveSessionTabs(resolvedName);
+        for (const tid of myAliveSessionTabs) {
+          if (!finalTabIds.includes(tid) && finalTabIds.length < count) {
+            finalTabIds.push(tid);
+          }
         }
       }
       if (finalTabIds.length > 0) {
@@ -788,6 +906,23 @@ async function _ensureTabGroupOpenInternal(groupName, customUrls, tabMode = 'exi
 
   finalTabIds = finalTabIds.slice(0, count);
   await saveSessionTabs(resolvedName, finalTabIds);
+
+  // Capture current URLs & titles of finalTabIds to keep memory up-to-date
+  const liveMemorizedTabs = [];
+  for (let i = 0; i < finalTabIds.length; i++) {
+    const tid = finalTabIds[i];
+    const tObj = await chrome.tabs.get(tid).catch(() => null);
+    liveMemorizedTabs.push({
+      id: tid,
+      url: (tObj && (tObj.url || tObj.pendingUrl)) || (customUrls && customUrls[i]) || 'https://chatgpt.com/',
+      title: (tObj && tObj.title) || `ChatGPT Worker #${i + 1}`,
+      index: i + 1,
+      groupName: resolvedName,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+  await saveMemorizedTabs(resolvedName, liveMemorizedTabs);
+  reportMemorizedTabsToCompanion(resolvedName, liveMemorizedTabs);
 
   if (finalTabIds.length > 0) {
     await focusTab(finalTabIds[0]);
@@ -1449,10 +1584,40 @@ try {
   });
 } catch (e) {}
 
-// Browser tab and window events wake up the service worker when Chrome opens or focuses
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+// Browser tab and window events wake up the service worker and update memorized URLs
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   if (tab.url && tab.url.includes('chatgpt.com')) {
     pollCompanion();
+
+    // Check if this tab is one of our memorized tabs and its URL/title has updated
+    try {
+      const stored = await chrome.storage.local.get([MEMORIZED_TABS_STORAGE_KEY]);
+      const map = stored[MEMORIZED_TABS_STORAGE_KEY] || {};
+      let changedGroup = null;
+
+      for (const [groupKey, list] of Object.entries(map)) {
+        if (!Array.isArray(list)) continue;
+        const target = list.find((t) => t.id === tabId);
+        if (target) {
+          const freshUrl = tab.url || changeInfo.url || target.url;
+          const freshTitle = tab.title || changeInfo.title || target.title;
+          if (freshUrl !== target.url || (freshTitle && freshTitle !== target.title)) {
+            target.url = freshUrl;
+            target.title = freshTitle;
+            target.updatedAt = new Date().toISOString();
+            changedGroup = target.groupName || groupKey;
+          }
+        }
+      }
+
+      if (changedGroup) {
+        await chrome.storage.local.set({ [MEMORIZED_TABS_STORAGE_KEY]: map });
+        const list = map[sessionKeyFor(changedGroup)];
+        if (Array.isArray(list)) {
+          reportMemorizedTabsToCompanion(changedGroup, list);
+        }
+      }
+    } catch (e) {}
   }
 });
 
@@ -1941,6 +2106,12 @@ async function pollCompanion() {
             body: JSON.stringify({ is_running: false, step: 'error', error: err.message }),
           }).catch(() => {});
         });
+      } else if (action === 'CLEAR_MEMORIZED_TABS') {
+        const { groupName } = payload || {};
+        if (groupName) {
+          await clearMemorizedTabsForGroup(groupName);
+          console.log(`[BOLTHAVEN EXT] ✕ Cleared memorized tabs for "${groupName}"`);
+        }
       } else if (action === 'STOP_AUTOMATION') {
         await stopAllExtensionAutomation();
         console.log('[BOLTHAVEN EXT] Automation stopped by companion: all tabs aborted');
