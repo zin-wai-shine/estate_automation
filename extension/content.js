@@ -1564,8 +1564,17 @@
   async function attachImageFileToComposer(inputEl, file, maxExpected = 1, minExpected = 1, dataUrlHint = null) {
     const targetInputArea = inputEl || findPromptInput();
 
-    // 1. Prune leftover attachments only if strictly required
+    // 0. If image is already attached, do not attach again!
     let currentCount = getAttachedImagesCount(inputEl);
+    if (currentCount >= minExpected) {
+      console.log(`[BOLTHAVEN] Image already present in composer (${currentCount} attached). Skipping duplicate attach.`);
+      if (maxExpected === 1 && currentCount > 1) {
+        await pruneExcessAttachments(inputEl, 1);
+      }
+      return true;
+    }
+
+    // 1. Prune leftover attachments only if strictly required
     if (maxExpected === 1 && currentCount > 0) {
       console.log(`[BOLTHAVEN] Clearing ${currentCount} leftover attachments before attaching single image...`);
       await pruneExcessAttachments(inputEl, 0);
@@ -1620,15 +1629,18 @@
       await new Promise((r) => setTimeout(r, 150));
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }));
 
-      const attachedMethodA = await waitForImageAttached(inputEl, 2000, minExpected);
+      const attachedMethodA = await waitForImageAttached(inputEl, 1500, minExpected);
       if (attachedMethodA) {
         console.log(`[BOLTHAVEN] ✓ Method A (file input) attached image successfully (${getAttachedImagesCount(inputEl)}/${minExpected} attached)`);
+        if (maxExpected === 1 && getAttachedImagesCount(inputEl) > 1) {
+          await pruneExcessAttachments(inputEl, 1);
+        }
         return true;
       }
     }
 
-    // Method B: MAIN world attachment injection (bypasses isolated world boundaries)
-    if (effectiveDataUrl && typeof effectiveDataUrl === 'string' && effectiveDataUrl.startsWith('data:')) {
+    // Method B (ONLY if Method A didn't attach): MAIN world attachment injection
+    if (getAttachedImagesCount(inputEl) < minExpected && effectiveDataUrl && typeof effectiveDataUrl === 'string' && effectiveDataUrl.startsWith('data:')) {
       try {
         console.log('[BOLTHAVEN] Injecting ATTACH_IMAGE_MAIN_WORLD into MAIN world context...');
         await new Promise((res) => {
@@ -1645,9 +1657,12 @@
           });
         });
 
-        const attachedMethodB = await waitForImageAttached(inputEl, 3000, minExpected);
+        const attachedMethodB = await waitForImageAttached(inputEl, 2000, minExpected);
         if (attachedMethodB) {
           console.log(`[BOLTHAVEN] ✓ Method B (MAIN world) attached image successfully (${getAttachedImagesCount(inputEl)}/${minExpected} attached)`);
+          if (maxExpected === 1 && getAttachedImagesCount(inputEl) > 1) {
+            await pruneExcessAttachments(inputEl, 1);
+          }
           return true;
         }
       } catch (e) {
@@ -1655,38 +1670,38 @@
       }
     }
 
-    // Method C: Synthetic paste event
-    if (targetInputArea) {
+    // Method C (ONLY if Method A and B didn't attach): Single drop on prompt textarea
+    if (getAttachedImagesCount(inputEl) < minExpected && targetInputArea) {
+      try {
+        const dropEv = new DragEvent('drop', { bubbles: true, cancelable: true, composed: true, dataTransfer: dt });
+        targetInputArea.dispatchEvent(dropEv);
+      } catch (e) {}
+
+      const attachedMethodC = await waitForImageAttached(inputEl, 1500, minExpected);
+      if (attachedMethodC) {
+        console.log(`[BOLTHAVEN] ✓ Method C (drop) attached image successfully (${getAttachedImagesCount(inputEl)}/${minExpected} attached)`);
+        if (maxExpected === 1 && getAttachedImagesCount(inputEl) > 1) {
+          await pruneExcessAttachments(inputEl, 1);
+        }
+        return true;
+      }
+    }
+
+    // Method D (ONLY if all else failed): Synthetic paste event
+    if (getAttachedImagesCount(inputEl) < minExpected && targetInputArea) {
       try {
         targetInputArea.focus();
         const pasteEv = new ClipboardEvent('paste', { bubbles: true, cancelable: true, composed: true });
         Object.defineProperty(pasteEv, 'clipboardData', { value: dt, writable: false });
         targetInputArea.dispatchEvent(pasteEv);
       } catch (e) {}
-
-      const attachedMethodC = await waitForImageAttached(inputEl, 2000, minExpected);
-      if (attachedMethodC) {
-        console.log(`[BOLTHAVEN] ✓ Method C (paste) attached image successfully (${getAttachedImagesCount(inputEl)}/${minExpected} attached)`);
-        return true;
-      }
     }
 
-    // Method D: Drag & Drop
-    const dropTargets = [
-      targetInputArea,
-      document.querySelector('form'),
-      getComposerContainer(inputEl),
-      document.body
-    ].filter(Boolean);
-
-    for (const dropTarget of dropTargets) {
-      try {
-        const dropEv = new DragEvent('drop', { bubbles: true, cancelable: true, composed: true, dataTransfer: dt });
-        dropTarget.dispatchEvent(dropEv);
-      } catch (e) {}
+    const finalAttached = await waitForImageAttached(inputEl, 2000, minExpected);
+    if (finalAttached && maxExpected === 1 && getAttachedImagesCount(inputEl) > 1) {
+      await pruneExcessAttachments(inputEl, 1);
     }
-
-    return await waitForImageAttached(inputEl, 3000, minExpected);
+    return finalAttached;
   }
 
   // Attach image via data URL or web URL cleanly
@@ -1884,6 +1899,22 @@
     }
   }
 
+  // Navigate to New Chat smoothly without hard tab reloads
+  function startNewChatSmoothly() {
+    const newChatBtn = (
+      document.querySelector('a[href="/"]') ||
+      document.querySelector('button[data-testid="create-new-chat-button"]') ||
+      document.querySelector('a[data-testid="create-new-chat-button"]') ||
+      document.querySelector('button[aria-label*="New chat" i]') ||
+      document.querySelector('a[aria-label*="New chat" i]')
+    );
+    if (newChatBtn) {
+      newChatBtn.click();
+      return true;
+    }
+    return false;
+  }
+
   async function _setupAndSendJobInternal(job) {
     activeJobAborted = false;
     console.log(`[BOLTHAVEN] [Setup Phase] Setting up Image #${job.original_position || 1} (Job ${job.job_id})...`);
@@ -1929,11 +1960,16 @@
       }
     } catch (e) {}
 
-    const existingAttached = getAttachedImagesCount();
+    const existingAttached = getAttachedImagesCount(input);
     if (existingAttached > 0) {
       console.log(`[BOLTHAVEN] Pruning ${existingAttached} leftover attachment(s) to 0 before starting Image #${job.original_position || 1}...`);
       await pruneExcessAttachments(input, 0);
       await new Promise((r) => setTimeout(r, 400));
+      if (getAttachedImagesCount(input) > 0) {
+        console.log('[BOLTHAVEN] Leftover attachments persisted, resetting composer via New Chat...');
+        startNewChatSmoothly();
+        await new Promise((r) => setTimeout(r, 800));
+      }
     }
 
     // Snapshot pre-existing assistant images currently in chat history

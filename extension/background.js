@@ -456,21 +456,16 @@ async function processSlot(slotIndex, sessionId, initialJob = null) {
         console.log(`[BOLTHAVEN EXT] Pre-fetch image notice for Image #${job.original_position}:`, imgErr.message);
       }
 
-      // Send SETUP_AND_SEND_JOB to the tab with retry
-      let setupRes = null;
-      for (let sendAttempt = 0; sendAttempt < 4; sendAttempt++) {
-        setupRes = await new Promise((resolve) => {
-          chrome.tabs.sendMessage(slot.tabId, { action: 'SETUP_AND_SEND_JOB', job: jobWithData }, (res) => {
-            if (chrome.runtime.lastError) {
-              resolve({ success: false, error: chrome.runtime.lastError.message });
-            } else {
-              resolve(res || { success: false, error: 'No response from tab setup' });
-            }
-          });
+      // Send SETUP_AND_SEND_JOB to the tab
+      let setupRes = await new Promise((resolve) => {
+        chrome.tabs.sendMessage(slot.tabId, { action: 'SETUP_AND_SEND_JOB', job: jobWithData }, (res) => {
+          if (chrome.runtime.lastError) {
+            resolve({ success: false, error: chrome.runtime.lastError.message });
+          } else {
+            resolve(res || { success: false, error: 'No response from tab setup' });
+          }
         });
-        if (setupRes && setupRes.success) break;
-        await delay(1200);
-      }
+      });
 
       if (!setupRes || !setupRes.success) {
         throw new Error(setupRes?.error || 'Failed to setup and send image in ChatGPT tab');
@@ -1376,6 +1371,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
               }
             }
 
+            // If fileInput is present, inject file into fileInput ONLY and return!
             if (fileInput) {
               try {
                 const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'files')?.set;
@@ -1398,34 +1394,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
               fileInput.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
               fileInput.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+
+              // Close popover and exit immediately
+              document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }));
+              return true;
             }
 
-            // Close popovers
-            document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }));
-
-            // 2. Dispatch Drag & Drop and Paste events across composer
-            const dropTargets = [
-              document.querySelector('#prompt-textarea'),
-              document.querySelector('.ProseMirror'),
-              document.querySelector('form'),
-              document.querySelector('[class*="composer" i]'),
-              document.body,
-            ].filter(Boolean);
-
-            for (const target of dropTargets) {
-              try {
-                const dropEv = new DragEvent('drop', { bubbles: true, cancelable: true, composed: true, dataTransfer: dt });
-                target.dispatchEvent(dropEv);
-              } catch (e) {}
-            }
-
+            // FALLBACK ONLY: If no file input could be mounted, dispatch single drop on prompt textarea
             const pm = document.querySelector('#prompt-textarea, .ProseMirror, textarea');
             if (pm) {
               pm.focus();
               try {
-                const pasteEv = new ClipboardEvent('paste', { bubbles: true, cancelable: true, composed: true });
-                Object.defineProperty(pasteEv, 'clipboardData', { value: dt, writable: false });
-                pm.dispatchEvent(pasteEv);
+                const dropEv = new DragEvent('drop', { bubbles: true, cancelable: true, composed: true, dataTransfer: dt });
+                pm.dispatchEvent(dropEv);
+                return true;
               } catch (e) {}
             }
 
