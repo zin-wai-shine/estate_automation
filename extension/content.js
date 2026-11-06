@@ -354,19 +354,106 @@
   // Set to prevent duplicate downloads of the exact same image/filename in this tab session
   const downloadedFileNames = new Set();
 
+  // Auto-skip ChatGPT RLHF / image comparison prompt ("Which image do you like more?")
+  function autoSkipComparisonPrompt() {
+    const buttons = Array.from(document.querySelectorAll('button'));
+    // 1. Look for explicit "Skip" button (top right of comparison banner)
+    const skipBtn = buttons.find((b) => {
+      const txt = (b.textContent || '').trim().toLowerCase();
+      const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+      return (txt === 'skip' || aria === 'skip') && !b.disabled;
+    });
+
+    if (skipBtn) {
+      console.log('[BOLTHAVEN] ⏩ Detected "Which image do you like more?" prompt! Auto-clicking "Skip"...');
+      clickElementSafely(skipBtn);
+      return true;
+    }
+
+    // 2. Fallback: If "Image 1 is better" choice button is present
+    const choice1Btn = buttons.find((b) => {
+      const txt = (b.textContent || '').trim().toLowerCase();
+      return txt.includes('image 1 is better') && !b.disabled;
+    });
+    if (choice1Btn) {
+      console.log('[BOLTHAVEN] ⏩ Auto-selecting "Image 1 is better" to clear comparison prompt...');
+      clickElementSafely(choice1Btn);
+      return true;
+    }
+
+    return false;
+  }
+
+  // Periodic background listener: auto-skip comparison prompt whenever it pops up
+  setInterval(autoSkipComparisonPrompt, 1500);
+
   // Trigger reliable native ChatGPT download actions:
   // 1. Direct Download button on card
-  // 2. Share icon [ ↑ ] on image card -> Opens Share Modal -> Clicks "Download" button inside modal
-  // 3. "Copy image" button in assistant turn footer
+  // 2. Lightbox / Preview Download button -> Select "Download image" (downloads single image, skips series)
+  // 3. Share icon [ ↑ ] on image card -> Opens Share Modal -> Clicks "Download" button inside modal
+  // 4. "Copy image" button in assistant turn footer
   async function triggerNativeChatGPTDownload(imgEl) {
     if (!imgEl) return false;
     const card = imgEl.closest('div[class*="group"], div[class*="relative"], article, section') || imgEl.parentElement;
+
+    // 0. Check if a download series dropdown menu is currently visible on screen (Image 3)
+    // When ChatGPT generates 2 images in a series, clicking download shows:
+    // "Download image" vs "Download 2 images in this series".
+    // We strictly click "Download image" to download just ONE image!
+    const seriesMenuOption = Array.from(document.querySelectorAll('[role="menuitem"], [role="menu"] button, div[class*="popover"] button, div[class*="menu"] button, div[class*="dropdown"] button, button')).find((b) => {
+      const txt = (b.textContent || '').trim().toLowerCase();
+      return txt === 'download image' || (txt.startsWith('download image') && !txt.includes('series') && !txt.includes('all'));
+    });
+    if (seriesMenuOption) {
+      console.log('[BOLTHAVEN] ✓ Found "Download image" dropdown option, downloading just one image...');
+      clickElementSafely(seriesMenuOption);
+      await new Promise((r) => setTimeout(r, 800));
+      return true;
+    }
+
+    // 0.5. Check for topbar Download button in ChatGPT full image viewer (Image 3)
+    const lightboxDownloadBtn = Array.from(document.querySelectorAll('button')).find((b) => {
+      const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+      const title = (b.getAttribute('title') || '').toLowerCase();
+      const txt = (b.textContent || '').trim().toLowerCase();
+      if (b.closest('form, div[class*="composer"]')) return false;
+      const isDownload = aria.includes('download') || title.includes('download') || txt.includes('download');
+      const r = b.getBoundingClientRect();
+      return isDownload && r.top <= 100 && r.right >= window.innerWidth - 300;
+    });
+
+    if (lightboxDownloadBtn) {
+      console.log('[BOLTHAVEN] Found topbar lightbox download button, clicking...');
+      clickElementSafely(lightboxDownloadBtn);
+      await new Promise((r) => setTimeout(r, 400));
+      // Now check if the dropdown menu appeared: "Download image" vs "Download 2 images in this series"
+      const singleOption = Array.from(document.querySelectorAll('[role="menuitem"], [role="menu"] button, div[class*="popover"] button, div[class*="menu"] button, button')).find((b) => {
+        const txt = (b.textContent || '').trim().toLowerCase();
+        return txt === 'download image' || (txt.startsWith('download image') && !txt.includes('series'));
+      });
+      if (singleOption) {
+        console.log('[BOLTHAVEN] ✓ Selecting "Download image" (single image from series)...');
+        clickElementSafely(singleOption);
+        await new Promise((r) => setTimeout(r, 800));
+        return true;
+      }
+    }
 
     // 1. Check for a direct download button on the image card
     const directBtn = findGeneratedImageDownloadButton(imgEl);
     if (directBtn) {
       console.log('[BOLTHAVEN] Clicking direct native download button on card...');
       clickElementSafely(directBtn);
+      await new Promise((r) => setTimeout(r, 400));
+      // Check if clicking this opened a series dropdown ("Download image" vs "Download 2 images in this series")
+      const singleOption = Array.from(document.querySelectorAll('[role="menuitem"], [role="menu"] button, div[class*="popover"] button, div[class*="menu"] button, button')).find((b) => {
+        const txt = (b.textContent || '').trim().toLowerCase();
+        return txt === 'download image' || (txt.startsWith('download image') && !txt.includes('series'));
+      });
+      if (singleOption) {
+        console.log('[BOLTHAVEN] ✓ Selecting "Download image" from card dropdown...');
+        clickElementSafely(singleOption);
+      }
       await new Promise((r) => setTimeout(r, 800));
       return true;
     }
@@ -1662,6 +1749,9 @@
 
         const currentlyGenerating = isThinkingOrGenerating();
 
+        // ── Auto-skip "Which image do you like more?" comparison prompt ──
+        autoSkipComparisonPrompt();
+
         // ── Auto-retry on "Error in message stream" ───────────────────────
         const now = Date.now();
         if (!currentlyGenerating && now - lastRetryClickTime > 4000) {
@@ -2100,6 +2190,9 @@
 
         const currentlyGenerating = isThinkingOrGenerating();
 
+        // ── Auto-skip "Which image do you like more?" comparison prompt ──
+        autoSkipComparisonPrompt();
+
         // Auto-retry on "Error in message stream"
         const now = Date.now();
         if (!currentlyGenerating && now - lastRetryClickTime > 4000) {
@@ -2382,6 +2475,9 @@
         }
 
         const currentlyGenerating = isThinkingOrGenerating();
+
+        // ── Auto-skip "Which image do you like more?" comparison prompt ──
+        autoSkipComparisonPrompt();
 
         // Auto-retry if "Error in message stream" occurs
         const now = Date.now();
