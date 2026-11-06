@@ -11870,7 +11870,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                                       <button
                                         type="button"
                                         onClick={() => handleDownloadAllCombineAssets(boxAssets)}
-                                        title={`Download all ${boxCount} photos`}
                                         style={{
                                           height: '28px',
                                           padding: '0 10px',
@@ -11938,10 +11937,14 @@ export const FacebookWorkflowCanvas = forwardRef<
 
                               const readyCount = childFormatBoxes.filter((ch) => {
                                 const chText =
-                                  (aiGeneratedOutputs && (aiGeneratedOutputs[ch.id] || (ch.templateId && aiGeneratedOutputs[ch.templateId]))) ||
+                                  (aiGeneratedOutputs && (aiGeneratedOutputs[ch.id] || (chBoxTemplateIdFallback(ch) && aiGeneratedOutputs[chBoxTemplateIdFallback(ch)!]))) ||
                                   (ch.id === config.aiBoxes[0]?.id ? (aiGeneratedCopy || '') : '');
                                 return Boolean(chText && chText.trim().length > 0);
                               }).length;
+
+                              function chBoxTemplateIdFallback(b: any) {
+                                return b.templateId;
+                              }
 
                               return (
                                 <div
@@ -11999,9 +12002,18 @@ export const FacebookWorkflowCanvas = forwardRef<
                                     </span>
                                   </div>
 
-                                  {/* Clean Format Preset Rows */}
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-                                    {childFormatBoxes.map((chBox) => {
+                                  {/* Clean, Sleek Compact Format Preset List (No nested cards, single-line rows) */}
+                                  <div
+                                    style={{
+                                      display: 'flex',
+                                      flexDirection: 'column',
+                                      borderRadius: '6px',
+                                      border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.015)' : '#F8FAFC',
+                                      overflow: 'hidden',
+                                    }}
+                                  >
+                                    {childFormatBoxes.map((chBox, idx) => {
                                       const chTitle = chBox.title || 'Format Preset';
                                       const chText =
                                         (aiGeneratedOutputs && (aiGeneratedOutputs[chBox.id] || (chBox.templateId && aiGeneratedOutputs[chBox.templateId]))) ||
@@ -12013,123 +12025,129 @@ export const FacebookWorkflowCanvas = forwardRef<
                                           key={chBox.id}
                                           style={{
                                             display: 'flex',
-                                            flexDirection: 'column',
-                                            gap: '0.35rem',
-                                            padding: '0.5rem 0.6rem',
-                                            borderRadius: '6px',
-                                            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#F8FAFC',
-                                            border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                            alignItems: 'center',
+                                            justifyContent: 'space-between',
+                                            padding: '0.45rem 0.65rem',
+                                            borderBottom: idx < childFormatBoxes.length - 1
+                                              ? (isDark ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid #E2E8F0')
+                                              : 'none',
+                                            transition: 'background-color 0.15s ease',
+                                          }}
+                                          onMouseEnter={(e) => {
+                                            e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.03)';
+                                          }}
+                                          onMouseLeave={(e) => {
+                                            e.currentTarget.style.backgroundColor = 'transparent';
                                           }}
                                         >
-                                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
-                                              <FiFileText style={{ fontSize: '12px', color: 'var(--text-muted)', flexShrink: 0 }} />
-                                              <span
-                                                style={{
-                                                  fontSize: '0.75rem',
-                                                  fontWeight: 500,
-                                                  color: 'var(--text-primary)',
-                                                  overflow: 'hidden',
-                                                  textOverflow: 'ellipsis',
-                                                  whiteSpace: 'nowrap',
-                                                }}
-                                              >
-                                                {chTitle}
-                                              </span>
-                                            </div>
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: '7px', minWidth: 0, flex: 1, paddingRight: '6px' }}>
+                                            <FiFileText style={{ fontSize: '12px', color: 'var(--text-muted)', flexShrink: 0 }} />
+                                            <span
+                                              style={{
+                                                fontSize: '0.75rem',
+                                                fontWeight: 500,
+                                                color: 'var(--text-primary)',
+                                                overflow: 'hidden',
+                                                textOverflow: 'ellipsis',
+                                                whiteSpace: 'nowrap',
+                                              }}
+                                            >
+                                              {chTitle}
+                                            </span>
+                                          </div>
 
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
                                             {hasResult && (
-                                              <span style={{ fontSize: '0.5625rem', color: 'var(--text-muted)', flexShrink: 0 }}>
+                                              <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
                                                 {chText.length.toLocaleString()} chars
                                               </span>
                                             )}
+
+                                            {hasResult && (
+                                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    setViewingPromptTemplate({
+                                                      id: chBox.id,
+                                                      name: `${chTitle} Output`,
+                                                      templateText: chText,
+                                                      headerTitle: 'Generated Output Copy',
+                                                      copyButtonLabel: 'Copy Output',
+                                                    });
+                                                  }}
+                                                  style={{
+                                                    height: '24px',
+                                                    padding: '0 8px',
+                                                    borderRadius: '4px',
+                                                    border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#FFFFFF',
+                                                    color: 'var(--text-primary)',
+                                                    fontSize: '0.625rem',
+                                                    fontWeight: 500,
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '4px',
+                                                    cursor: 'pointer',
+                                                    transition: 'all 0.15s ease',
+                                                  }}
+                                                  onMouseEnter={(e) => {
+                                                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.09)' : 'rgba(0, 0, 0, 0.06)';
+                                                    e.currentTarget.style.borderColor = isDark ? '#484F58' : '#CBD5E1';
+                                                  }}
+                                                  onMouseLeave={(e) => {
+                                                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.05)' : '#FFFFFF';
+                                                    e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
+                                                  }}
+                                                >
+                                                  <FiEye size={10} style={{ color: 'var(--text-secondary)' }} />
+                                                  <span>View</span>
+                                                </button>
+
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    navigator.clipboard.writeText(chText);
+                                                    setCopiedPromptId(chBox.id);
+                                                    setTimeout(() => setCopiedPromptId(null), 2000);
+                                                  }}
+                                                  style={{
+                                                    height: '24px',
+                                                    width: '24px',
+                                                    borderRadius: '4px',
+                                                    border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#FFFFFF',
+                                                    color: 'var(--text-secondary)',
+                                                    fontSize: '0.625rem',
+                                                    fontWeight: 500,
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    cursor: 'pointer',
+                                                    transition: 'all 0.15s ease',
+                                                  }}
+                                                  onMouseEnter={(e) => {
+                                                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.09)' : 'rgba(0, 0, 0, 0.06)';
+                                                    e.currentTarget.style.borderColor = isDark ? '#484F58' : '#CBD5E1';
+                                                    e.currentTarget.style.color = 'var(--text-primary)';
+                                                  }}
+                                                  onMouseLeave={(e) => {
+                                                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.05)' : '#FFFFFF';
+                                                    e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
+                                                    e.currentTarget.style.color = 'var(--text-secondary)';
+                                                  }}
+                                                >
+                                                  {copiedPromptId === chBox.id ? <FiCheck size={10} style={{ color: '#10B981' }} /> : <FiCopy size={10} />}
+                                                </button>
+                                              </div>
+                                            )}
                                           </div>
-
-                                          {hasResult && (
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                                              <button
-                                                type="button"
-                                                onClick={() => {
-                                                  setViewingPromptTemplate({
-                                                    id: chBox.id,
-                                                    name: `${chTitle} Output`,
-                                                    templateText: chText,
-                                                    headerTitle: 'Generated Output Copy',
-                                                    copyButtonLabel: 'Copy Output',
-                                                  });
-                                                }}
-                                                style={{
-                                                  flex: 1,
-                                                  height: '24px',
-                                                  borderRadius: '5px',
-                                                  border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                                                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
-                                                  color: 'var(--text-primary)',
-                                                  fontSize: '0.625rem',
-                                                  fontWeight: 500,
-                                                  display: 'flex',
-                                                  alignItems: 'center',
-                                                  justifyContent: 'center',
-                                                  gap: '4px',
-                                                  cursor: 'pointer',
-                                                  transition: 'all 0.15s ease',
-                                                }}
-                                                onMouseEnter={(e) => {
-                                                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.09)' : 'rgba(0, 0, 0, 0.08)';
-                                                  e.currentTarget.style.borderColor = isDark ? '#484F58' : '#CBD5E1';
-                                                }}
-                                                onMouseLeave={(e) => {
-                                                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)';
-                                                  e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
-                                                }}
-                                              >
-                                                <FiEye size={10} style={{ color: 'var(--text-secondary)' }} />
-                                                <span>View Result</span>
-                                              </button>
-
-                                              <button
-                                                type="button"
-                                                onClick={() => {
-                                                  navigator.clipboard.writeText(chText);
-                                                  setCopiedPromptId(chBox.id);
-                                                  setTimeout(() => setCopiedPromptId(null), 2000);
-                                                }}
-                                                title="Copy this result"
-                                                style={{
-                                                  height: '24px',
-                                                  padding: '0 8px',
-                                                  borderRadius: '5px',
-                                                  border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                                                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
-                                                  color: 'var(--text-secondary)',
-                                                  fontSize: '0.625rem',
-                                                  fontWeight: 500,
-                                                  display: 'flex',
-                                                  alignItems: 'center',
-                                                  gap: '4px',
-                                                  cursor: 'pointer',
-                                                  transition: 'all 0.15s ease',
-                                                }}
-                                                onMouseEnter={(e) => {
-                                                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.09)' : 'rgba(0, 0, 0, 0.08)';
-                                                  e.currentTarget.style.borderColor = isDark ? '#484F58' : '#CBD5E1';
-                                                }}
-                                                onMouseLeave={(e) => {
-                                                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)';
-                                                  e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
-                                                }}
-                                              >
-                                                {copiedPromptId === chBox.id ? <FiCheck size={10} style={{ color: '#10B981' }} /> : <FiCopy size={10} />}
-                                                <span>{copiedPromptId === chBox.id ? 'Copied' : 'Copy'}</span>
-                                              </button>
-                                            </div>
-                                          )}
                                         </div>
                                       );
                                     })}
                                   </div>
 
-                                  {/* Clean Neutral Action: View Combined Copy */}
+                                  {/* Clean Neutral Action: View Combined Copy & Copy All */}
                                   {readyCount > 0 && (
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', paddingTop: '2px' }}>
                                       <button
@@ -12169,7 +12187,44 @@ export const FacebookWorkflowCanvas = forwardRef<
                                         }}
                                       >
                                         <FiEye size={11} style={{ color: 'var(--text-secondary)' }} />
-                                        <span>View Combined Copy →</span>
+                                        <span>View Combined Copy</span>
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          navigator.clipboard.writeText(allMergedText);
+                                          setCopiedPromptId(currentCombineBox.id);
+                                          setTimeout(() => setCopiedPromptId(null), 2000);
+                                        }}
+                                        style={{
+                                          height: '28px',
+                                          padding: '0 10px',
+                                          borderRadius: '6px',
+                                          border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+                                          color: 'var(--text-secondary)',
+                                          fontSize: '0.6875rem',
+                                          fontWeight: 600,
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          gap: '4px',
+                                          cursor: 'pointer',
+                                          transition: 'all 0.15s ease',
+                                        }}
+                                        onMouseEnter={(e) => {
+                                          e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.09)' : 'rgba(0, 0, 0, 0.08)';
+                                          e.currentTarget.style.borderColor = isDark ? '#484F58' : '#CBD5E1';
+                                          e.currentTarget.style.color = 'var(--text-primary)';
+                                        }}
+                                        onMouseLeave={(e) => {
+                                          e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)';
+                                          e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
+                                          e.currentTarget.style.color = 'var(--text-secondary)';
+                                        }}
+                                      >
+                                        {copiedPromptId === currentCombineBox.id ? <FiCheck size={11} style={{ color: '#10B981' }} /> : <FiCopy size={11} />}
+                                        <span>{copiedPromptId === currentCombineBox.id ? 'Copied' : 'Copy All'}</span>
                                       </button>
                                     </div>
                                   )}
