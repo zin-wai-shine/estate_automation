@@ -15059,6 +15059,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                                     color: 'var(--text-primary)',
                                     fontSize: '0.6875rem',
                                     fontWeight: 600,
+                                    whiteSpace: 'nowrap',
+                                    flexShrink: 0,
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
@@ -15069,7 +15071,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   }}
                                 >
                                   <FiRefreshCw size={12} style={{ animation: isRegeneratingAI ? 'spin 1s linear infinite' : 'none' }} />
-                                  <span>{isRegeneratingAI ? 'Generating...' : 'Re-generate'}</span>
+                                  <span style={{ whiteSpace: 'nowrap' }}>{isRegeneratingAI ? 'Generating...' : 'Regenerate'}</span>
                                 </button>
                               )}
 
@@ -15328,7 +15330,7 @@ export const FacebookWorkflowCanvas = forwardRef<
               </div>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', flexShrink: 0 }}>
               {/* Direct Re-generate button inside viewer when viewing generated output */}
               {isViewingOutput && onRegenerateBoxOutput && viewingPromptTemplate.id && (
                 <button
@@ -15348,10 +15350,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                     }
                   }}
                   disabled={isRegeneratingAI}
-                  title="Re-generate content with AI"
+                  title="Regenerate content with AI"
                   style={{
                     height: '28px',
-                    padding: '0 0.5rem',
+                    padding: '0 0.625rem',
                     borderRadius: '6px',
                     border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
                     backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
@@ -15360,6 +15362,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                     alignItems: 'center',
                     gap: '4px',
                     fontSize: '0.75rem',
+                    fontWeight: 500,
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
                     cursor: isRegeneratingAI ? 'not-allowed' : 'pointer',
                     opacity: isRegeneratingAI ? 0.7 : 1,
                     transition: 'all 0.15s ease',
@@ -15374,10 +15379,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                           : 'none',
                     }}
                   />
-                  <span>
+                  <span style={{ whiteSpace: 'nowrap' }}>
                     {isRegeneratingAI && regeneratingBoxId === viewingPromptTemplate.id
                       ? 'Generating...'
-                      : 'Re-generate'}
+                      : 'Regenerate'}
                   </span>
                 </button>
               )}
@@ -15395,7 +15400,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 title={isViewerPromptCopied ? 'Copied!' : (viewingPromptTemplate.copyButtonLabel || 'Copy Prompt')}
                 style={{
                   height: '28px',
-                  padding: '0 0.5rem',
+                  padding: '0 0.625rem',
                   borderRadius: '6px',
                   border: '1px solid var(--border-color)',
                   backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF',
@@ -15404,12 +15409,14 @@ export const FacebookWorkflowCanvas = forwardRef<
                   alignItems: 'center',
                   gap: '4px',
                   fontSize: '0.75rem',
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0,
                   cursor: 'pointer',
                   transition: 'all 0.15s ease',
                 }}
               >
                 {isViewerPromptCopied ? <FiCheck size={13} /> : <FiCopy size={13} />}
-                <span>{isViewerPromptCopied ? 'Copied' : 'Copy'}</span>
+                <span style={{ whiteSpace: 'nowrap' }}>{isViewerPromptCopied ? 'Copied' : 'Copy'}</span>
               </button>
 
               <button
@@ -15426,6 +15433,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
+                  flexShrink: 0,
                   cursor: 'pointer',
                 }}
               >

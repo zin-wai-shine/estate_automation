@@ -1,5 +1,5 @@
 {
-  "timestamp": 1793977720518,
+  "timestamp": 1793979775937,
   "workflow_formats": [
     {
       "config": {
@@ -529,14 +529,14 @@
             "workerTabCount": 4,
             "workerTabMode": "existing_tabs",
             "x": 320,
-            "y": 860
+            "y": 858.6111111111111
           },
           {
             "_liveGroupTabs": [
               {
-                "id": "1778611986",
-                "title": "ChatGPT",
-                "url": "https://chatgpt.com/"
+                "id": "1778612004",
+                "title": "Create Facebook Advertisement",
+                "url": "https://chatgpt.com/c/6aedf343-b610-83ec-9144-39649420c182"
               }
             ],
             "autoRun": false,
@@ -544,14 +544,14 @@
             "browserCondoName": "Niche Mono Sukhumvit - Bearing",
             "browserGroupName": "FB Hero",
             "browserGroupTabUrls": [
-              "https://chatgpt.com/"
+              "https://chatgpt.com/c/6aedf343-b610-83ec-9144-39649420c182"
             ],
             "browserMatchedFolder": "Niche MONO Sukhumvit Bearing",
             "browserProfileId": 11,
             "browserProfileKey": "Profile 14",
             "browserProfileName": "Hsu",
-            "browserTabId": "1778611986",
-            "browserTabTitle": "ChatGPT",
+            "browserTabId": "1778612004",
+            "browserTabTitle": "Create Facebook Advertisement",
             "browserWorkerCount": 1,
             "condoImages": [
               {
@@ -607,7 +607,7 @@
             "usePromptConfig": true,
             "useReferenceImage": true,
             "workerTabCount": 1,
-            "workerTabMode": "new_tabs",
+            "workerTabMode": "existing_tabs",
             "x": 485,
             "y": 860
           },
@@ -1285,7 +1285,7 @@
       "id": "format-1792648980268",
       "isPinned": true,
       "name": "Download FB Post",
-      "updatedAt": 1793977719999
+      "updatedAt": 1793979775302
     },
     {
       "config": {
