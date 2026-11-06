@@ -593,19 +593,18 @@ function activateChromeProfile(profileKey, targetUrl = '') {
   const chromeBinary = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
   const chromeRunning = isChromeRunning();
 
-  if (!chromeRunning) {
-    openedProfiles.clear();
-  }
-
-  // 1. If Chrome is already running and this profile's extension is actively polling/paired:
-  // It is ALREADY OPEN! NEVER spawn the CLI binary again, because that spawns duplicate windows!
-  // Simply bring Google Chrome to the front via AppleScript.
-  if (chromeRunning && isProfileLive(resolvedKey)) {
+  // 1. If Chrome is already running:
+  // NEVER spawn the CLI binary with URLs! That creates duplicate tabs on every call!
+  // The extension inside Chrome exclusively creates and manages worker tabs.
+  // Simply bring Google Chrome to the front.
+  if (chromeRunning) {
     try {
       execSync(`osascript -e 'tell application "Google Chrome" to activate' 2>/dev/null`);
     } catch (e) {}
     return;
   }
+
+  openedProfiles.clear();
 
   // 2. Debounce guard: do not re-launch the same profile within 4 seconds
   const lastLaunch = launchingProfileLock[resolvedKey] || 0;
@@ -615,21 +614,17 @@ function activateChromeProfile(profileKey, targetUrl = '') {
   launchingProfileLock[resolvedKey] = now;
   openedProfiles.add(resolvedKey);
 
-  console.log(`[COMPANION] 🚀 Launching Chrome profile "${resolvedKey}" (window not currently active)...`);
-
-  const targets = Array.isArray(targetUrl) && targetUrl.length > 0
-    ? targetUrl
-    : [typeof targetUrl === 'string' && targetUrl.trim() ? targetUrl.trim() : 'https://chatgpt.com/'];
+  console.log(`[COMPANION] 🚀 Launching Chrome profile "${resolvedKey}" (cold start)...`);
 
   try {
     if (fs.existsSync(chromeBinary)) {
-      const child = spawn(chromeBinary, [`--profile-directory=${resolvedKey}`, ...targets], {
+      const child = spawn(chromeBinary, [`--profile-directory=${resolvedKey}`], {
         detached: true,
         stdio: 'ignore',
       });
       child.unref();
     } else {
-      const child = spawn('open', ['-a', 'Google Chrome', '--args', `--profile-directory=${resolvedKey}`, ...targets], {
+      const child = spawn('open', ['-a', 'Google Chrome', '--args', `--profile-directory=${resolvedKey}`], {
         detached: true,
         stdio: 'ignore',
       });

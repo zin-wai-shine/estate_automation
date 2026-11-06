@@ -724,16 +724,37 @@ function getTabKey(tab) {
 }
 
 const isEnsuringGroupOpenByGroup = {};
+const lastEnsuredResultByGroup = {};
+const lastEnsuredTimeByGroup = {};
 
 async function ensureTabGroupOpen(groupName, customUrls, tabMode = 'existing_tabs', workerCount = 4, reuseSessionTabs = true) {
   const key = sessionKeyFor(groupName);
+  const now = Date.now();
+
+  // 1. Debounce cache: if ensureTabGroupOpen succeeded within the last 2500ms, reuse those alive tabs
+  if (lastEnsuredResultByGroup[key] && (now - (lastEnsuredTimeByGroup[key] || 0) < 2500)) {
+    const cachedIds = lastEnsuredResultByGroup[key];
+    try {
+      const allTabs = await chrome.tabs.query({});
+      const liveSet = new Set(allTabs.map((t) => t.id));
+      const stillAlive = cachedIds.filter((id) => liveSet.has(id));
+      if (stillAlive.length > 0 && stillAlive.length === cachedIds.length) {
+        console.log(`[BOLTHAVEN EXT] ⚡ Reusing recently ensured tab IDs for "${key}" (cached):`, stillAlive);
+        return stillAlive;
+      }
+    } catch (e) {}
+  }
+
   if (isEnsuringGroupOpenByGroup[key]) {
     console.log(`[BOLTHAVEN EXT] ensureTabGroupOpen is already executing for "${key}", reusing pending promise...`);
     return isEnsuringGroupOpenByGroup[key];
   }
   isEnsuringGroupOpenByGroup[key] = (async () => {
     try {
-      return await _ensureTabGroupOpenInternal(groupName, customUrls, tabMode, workerCount, reuseSessionTabs);
+      const result = await _ensureTabGroupOpenInternal(groupName, customUrls, tabMode, workerCount, reuseSessionTabs);
+      lastEnsuredResultByGroup[key] = result;
+      lastEnsuredTimeByGroup[key] = Date.now();
+      return result;
     } finally {
       delete isEnsuringGroupOpenByGroup[key];
     }
@@ -770,12 +791,18 @@ async function _ensureTabGroupOpenInternal(groupName, customUrls, tabMode = 'exi
   const reservedByOtherGroups = await getAllReservedTabIds(resolvedName);
   console.log(`[BOLTHAVEN EXT] Tabs reserved by other groups (off-limits for "${resolvedName}"):`, Array.from(reservedByOtherGroups));
 
+  // Find all unassigned ChatGPT tabs currently open in the browser
+  const availableChatTabs = allTabs.filter((t) => {
+    const u = t.url || t.pendingUrl || '';
+    return u.includes('chatgpt.com') && !reservedByOtherGroups.has(t.id);
+  });
+
   let finalTabIds = [];
 
   if (isFreshTabs) {
     // ── CASE A: OPEN FRESH TABS ──
     // The user explicitly requested fresh tabs for this branch/group.
-    // Do NOT reuse any existing tabs! Open brand new tabs specifically for this group.
+    // Open brand new tabs specifically for this group.
     console.log(`[BOLTHAVEN EXT] 🆕 Open Fresh Tabs requested for "${resolvedName}". Opening ${count} fresh tab(s)...`);
     for (let i = 0; i < count; i++) {
       const targetUrl = (customUrls && customUrls[i]) || 'https://chatgpt.com/';
@@ -801,7 +828,7 @@ async function _ensureTabGroupOpenInternal(groupName, customUrls, tabMode = 'exi
           if (!mem || !mem.url) continue;
 
           // Check if tab ID is still alive
-          let aliveTab = allTabs.find((t) => t.id === mem.id);
+          let aliveTab = allTabs.find((t) => t.id === mem.id && !reservedByOtherGroups.has(t.id) && !finalTabIds.includes(t.id));
 
           // If ID not alive, check if any open tab has this exact memorized URL
           if (!aliveTab) {
@@ -811,19 +838,32 @@ async function _ensureTabGroupOpenInternal(groupName, customUrls, tabMode = 'exi
             });
           }
 
+          // If still not matched, check if an unassigned open ChatGPT tab exists and repurpose it
+          if (!aliveTab) {
+            const freeChatTab = availableChatTabs.find((t) => !finalTabIds.includes(t.id));
+            if (freeChatTab) {
+              aliveTab = freeChatTab;
+              if (mem.url && mem.url !== 'https://chatgpt.com/' && !(freeChatTab.url || '').includes(mem.url.split('?')[0])) {
+                chrome.tabs.update(freeChatTab.id, { url: mem.url }).catch(() => {});
+              }
+            }
+          }
+
           if (aliveTab) {
             if (!finalTabIds.includes(aliveTab.id) && finalTabIds.length < count) {
               finalTabIds.push(aliveTab.id);
               console.log(`[BOLTHAVEN EXT] ✓ Re-bound to open memorized tab [Tab #${i + 1}]: ${aliveTab.url}`);
             }
           } else {
-            // Re-open the saved memorized chat URL directly!
-            try {
-              console.log(`[BOLTHAVEN EXT] 🚀 Re-opening saved memorized tab URL [Tab #${i + 1}]: ${mem.url}`);
-              const createdTab = await chrome.tabs.create({ url: mem.url, active: false });
-              finalTabIds.push(createdTab.id);
-            } catch (e) {
-              console.warn('[BOLTHAVEN EXT] Error restoring memorized tab:', e.message);
+            // Only create if we have fewer tabs than count and no open tabs to repurpose
+            if (finalTabIds.length < count) {
+              try {
+                console.log(`[BOLTHAVEN EXT] 🚀 Re-opening saved memorized tab URL [Tab #${i + 1}]: ${mem.url}`);
+                const createdTab = await chrome.tabs.create({ url: mem.url, active: false });
+                finalTabIds.push(createdTab.id);
+              } catch (e) {
+                console.warn('[BOLTHAVEN EXT] Error restoring memorized tab:', e.message);
+              }
             }
           }
         }
@@ -833,7 +873,7 @@ async function _ensureTabGroupOpenInternal(groupName, customUrls, tabMode = 'exi
       if (finalTabIds.length < count) {
         const myAliveSessionTabs = await loadAliveSessionTabs(resolvedName);
         for (const tid of myAliveSessionTabs) {
-          if (!finalTabIds.includes(tid) && finalTabIds.length < count) {
+          if (!finalTabIds.includes(tid) && !reservedByOtherGroups.has(tid) && finalTabIds.length < count) {
             finalTabIds.push(tid);
           }
         }
@@ -843,15 +883,10 @@ async function _ensureTabGroupOpenInternal(groupName, customUrls, tabMode = 'exi
       }
     }
 
-    // 2. Second priority: If more tabs needed, look for free ChatGPT tabs that DO NOT belong to any other group!
+    // 2. Second priority: If more tabs needed, reuse any free ChatGPT tabs that are already open
     if (finalTabIds.length < count) {
-      const unassignedChatGPTTabs = allTabs.filter((t) => {
-        const isChat = (t.url || t.pendingUrl || '').includes('chatgpt.com');
-        return isChat && !reservedByOtherGroups.has(t.id) && !finalTabIds.includes(t.id);
-      });
-
-      for (const ft of unassignedChatGPTTabs) {
-        if (finalTabIds.length < count) {
+      for (const ft of availableChatTabs) {
+        if (!finalTabIds.includes(ft.id) && finalTabIds.length < count) {
           finalTabIds.push(ft.id);
         }
       }
@@ -877,7 +912,7 @@ async function _ensureTabGroupOpenInternal(groupName, customUrls, tabMode = 'exi
       }
     }
 
-    // 4. Fourth priority: Open new tabs for any remaining needed count
+    // 4. Fourth priority: ONLY open new tabs if we strictly have fewer than count tabs!
     while (finalTabIds.length < count) {
       try {
         const idx = finalTabIds.length;
