@@ -11588,8 +11588,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                         : (aiGeneratedCopy || rawContent || '');
 
                       return (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
-                          {/* Render EACH connected input broken out into its own dedicated card */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                          {/* Clean, professional card for EACH connected input */}
                           {combineInputs.map((c) => {
                             const fromBox = config.aiBoxes.find((b) => b.id === c.fromNodeId);
                             const isContent = c.fromNodeId === 'get-content';
@@ -11607,7 +11607,7 @@ export const FacebookWorkflowCanvas = forwardRef<
 
                             const fromTitle = isContent ? 'Get Content' : isImages ? 'Get Images' : fromBox?.title || c.fromNodeId;
 
-                            // ── A) IMAGE FORMAT / WATERMARK / CROP CARD (Dedicated 3-Image Stack) ──
+                            // ── A) IMAGE FORMAT / WATERMARK / CROP CARD ──
                             if (isWatermark || isCrop || isImages) {
                               const boxAssets = fromBox
                                 ? combineMediaAssets.filter((a) => a.formatId === fromBox.id)
@@ -11618,7 +11618,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   ? (images?.length || 0)
                                   : (allEnhancedPhotos ? Object.keys(allEnhancedPhotos).length : images?.length || 0);
 
-                              // Top 3 thumbnails for THIS format
                               const boxThumbnails: string[] = [];
                               for (const a of boxAssets) {
                                 if (a.url && !boxThumbnails.includes(a.url)) {
@@ -11644,16 +11643,15 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   style={{
                                     display: 'flex',
                                     flexDirection: 'column',
-                                    gap: '0.65rem',
-                                    padding: '0.8125rem',
-                                    borderRadius: '10px',
+                                    gap: '0.625rem',
+                                    padding: '0.75rem',
+                                    borderRadius: '8px',
                                     border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
                                     backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF',
-                                    boxShadow: isDark ? '0 2px 8px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.05)',
-                                    transition: 'border-color 0.2s ease',
+                                    boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 2px rgba(0,0,0,0.04)',
                                   }}
                                 >
-                                  {/* Header */}
+                                  {/* Clean Neutral Header */}
                                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
                                       <div
@@ -11661,8 +11659,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                                           width: '26px',
                                           height: '26px',
                                           borderRadius: '6px',
-                                          backgroundColor: isImages ? 'rgba(16, 185, 129, 0.15)' : 'rgba(236, 72, 153, 0.15)',
-                                          color: isImages ? '#10B981' : '#EC4899',
+                                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+                                          border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                          color: 'var(--text-secondary)',
                                           display: 'flex',
                                           alignItems: 'center',
                                           justifyContent: 'center',
@@ -11670,30 +11669,26 @@ export const FacebookWorkflowCanvas = forwardRef<
                                       >
                                         {isImages ? <FiImage size={13} /> : <FiScissors size={13} />}
                                       </div>
-                                      <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                      <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                                         {fromTitle}
                                       </span>
                                     </div>
                                     <span
                                       style={{
                                         fontSize: '0.625rem',
-                                        fontWeight: 700,
+                                        fontWeight: 600,
                                         padding: '2px 8px',
-                                        borderRadius: '12px',
-                                        backgroundColor: boxCount > 0
-                                          ? (isDark ? 'rgba(16, 185, 129, 0.18)' : '#DCFCE7')
-                                          : (isDark ? 'rgba(255,255,255,0.06)' : '#F1F5F9'),
-                                        color: boxCount > 0 ? '#10B981' : 'var(--text-muted)',
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
-                                        gap: '4px',
+                                        borderRadius: '6px',
+                                        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+                                        border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                        color: 'var(--text-secondary)',
                                       }}
                                     >
-                                      {boxCount > 0 ? `✓ ${boxCount} Photos Ready` : '0 Photos'}
+                                      {boxCount} {boxCount === 1 ? 'photo' : 'photos'} ready
                                     </span>
                                   </div>
 
-                                  {/* Dedicated 3-Image Stack for THIS format */}
+                                  {/* Cool 3-Image Stack directly in the card without extra container */}
                                   <div
                                     onClick={() => {
                                       if (fromBox) {
@@ -11708,27 +11703,20 @@ export const FacebookWorkflowCanvas = forwardRef<
                                     style={{
                                       position: 'relative',
                                       width: '100%',
-                                      height: '115px',
-                                      borderRadius: '8px',
-                                      backgroundColor: isDark ? '#0D1117' : '#F8FAFC',
-                                      border: isHovered
-                                        ? '1px solid #10B981'
-                                        : (isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1'),
-                                      cursor: 'pointer',
-                                      overflow: 'hidden',
+                                      height: '95px',
                                       display: 'flex',
                                       alignItems: 'center',
                                       justifyContent: 'center',
-                                      transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+                                      cursor: 'pointer',
                                     }}
-                                    title={`Click to inspect ${fromTitle} photos in extra sidebox`}
+                                    title={`Click to view ${fromTitle} photos`}
                                   >
                                     {boxThumbnails.length > 0 ? (
                                       <div
                                         style={{
                                           position: 'relative',
                                           width: '110px',
-                                          height: '85px',
+                                          height: '80px',
                                           display: 'flex',
                                           alignItems: 'center',
                                           justifyContent: 'center',
@@ -11739,24 +11727,24 @@ export const FacebookWorkflowCanvas = forwardRef<
                                           <div
                                             style={{
                                               position: 'absolute',
-                                              width: '68px',
-                                              height: '68px',
-                                              borderRadius: '7px',
+                                              width: '64px',
+                                              height: '64px',
+                                              borderRadius: '6px',
                                               overflow: 'hidden',
-                                              border: isDark ? '2px solid #30363D' : '2px solid #FFFFFF',
-                                              boxShadow: '0 5px 12px rgba(0, 0, 0, 0.45)',
+                                              border: isDark ? '1px solid rgba(255, 255, 255, 0.15)' : '1px solid rgba(0, 0, 0, 0.12)',
+                                              boxShadow: '0 4px 10px rgba(0, 0, 0, 0.4)',
                                               backgroundColor: '#000000',
                                               transform: isHovered
                                                 ? 'rotate(-14deg) translate(-24px, -3px) scale(0.96)'
                                                 : 'rotate(-7deg) translate(-12px, 1px) scale(0.93)',
-                                              opacity: 0.85,
+                                              opacity: 0.8,
                                               zIndex: 1,
-                                              transition: 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+                                              transition: 'transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
                                             }}
                                           >
                                             <img
                                               src={boxThumbnails[1]}
-                                              alt="Layer 1"
+                                              alt="Thumb 1"
                                               style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                                             />
                                           </div>
@@ -11767,24 +11755,24 @@ export const FacebookWorkflowCanvas = forwardRef<
                                           <div
                                             style={{
                                               position: 'absolute',
-                                              width: '68px',
-                                              height: '68px',
-                                              borderRadius: '7px',
+                                              width: '64px',
+                                              height: '64px',
+                                              borderRadius: '6px',
                                               overflow: 'hidden',
-                                              border: isDark ? '2px solid #30363D' : '2px solid #FFFFFF',
-                                              boxShadow: '0 5px 12px rgba(0, 0, 0, 0.45)',
+                                              border: isDark ? '1px solid rgba(255, 255, 255, 0.15)' : '1px solid rgba(0, 0, 0, 0.12)',
+                                              boxShadow: '0 4px 10px rgba(0, 0, 0, 0.4)',
                                               backgroundColor: '#000000',
                                               transform: isHovered
                                                 ? 'rotate(14deg) translate(24px, -3px) scale(0.96)'
                                                 : 'rotate(7deg) translate(12px, 1px) scale(0.93)',
-                                              opacity: 0.85,
+                                              opacity: 0.8,
                                               zIndex: 2,
-                                              transition: 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+                                              transition: 'transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
                                             }}
                                           >
                                             <img
                                               src={boxThumbnails[2]}
-                                              alt="Layer 2"
+                                              alt="Thumb 2"
                                               style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                                             />
                                           </div>
@@ -11794,23 +11782,23 @@ export const FacebookWorkflowCanvas = forwardRef<
                                         <div
                                           style={{
                                             position: 'relative',
-                                            width: '74px',
-                                            height: '74px',
-                                            borderRadius: '7px',
+                                            width: '72px',
+                                            height: '72px',
+                                            borderRadius: '6px',
                                             overflow: 'hidden',
-                                            border: isDark ? '2px solid #10B981' : '2px solid #10B981',
+                                            border: isDark ? '1px solid rgba(255, 255, 255, 0.25)' : '1px solid rgba(0, 0, 0, 0.18)',
                                             boxShadow: isHovered
-                                              ? '0 10px 20px rgba(0, 0, 0, 0.6), 0 0 10px rgba(16, 185, 129, 0.3)'
-                                              : '0 6px 14px rgba(0, 0, 0, 0.45)',
+                                              ? '0 8px 18px rgba(0, 0, 0, 0.6)'
+                                              : '0 4px 12px rgba(0, 0, 0, 0.4)',
                                             backgroundColor: '#000000',
-                                            transform: isHovered ? 'scale(1.08) translateY(-3px)' : 'scale(1)',
+                                            transform: isHovered ? 'scale(1.06) translateY(-3px)' : 'scale(1)',
                                             zIndex: 3,
-                                            transition: 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease',
+                                            transition: 'transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease',
                                           }}
                                         >
                                           <img
                                             src={boxThumbnails[0]}
-                                            alt="Front thumbnail"
+                                            alt="Front thumb"
                                             style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                                           />
                                           <div
@@ -11819,11 +11807,11 @@ export const FacebookWorkflowCanvas = forwardRef<
                                               bottom: '2px',
                                               right: '2px',
                                               fontSize: '0.5rem',
-                                              fontWeight: 700,
+                                              fontWeight: 600,
                                               padding: '1px 4px',
                                               borderRadius: '3px',
-                                              backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                                              color: '#10B981',
+                                              backgroundColor: 'rgba(0, 0, 0, 0.75)',
+                                              color: '#FFFFFF',
                                             }}
                                           >
                                             +{boxCount}
@@ -11832,34 +11820,13 @@ export const FacebookWorkflowCanvas = forwardRef<
                                       </div>
                                     ) : (
                                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px', color: 'var(--text-muted)' }}>
-                                        <FiImage size={20} style={{ opacity: 0.5 }} />
+                                        <FiImage size={20} style={{ opacity: 0.4 }} />
                                         <span style={{ fontSize: '0.625rem' }}>No photos available</span>
                                       </div>
                                     )}
-
-                                    {/* Hover Hint */}
-                                    <div
-                                      style={{
-                                        position: 'absolute',
-                                        bottom: '4px',
-                                        left: '50%',
-                                        transform: 'translateX(-50%)',
-                                        fontSize: '0.5625rem',
-                                        fontWeight: 600,
-                                        color: isHovered ? '#10B981' : 'var(--text-muted)',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '3px',
-                                        whiteSpace: 'nowrap',
-                                        transition: 'color 0.2s ease',
-                                      }}
-                                    >
-                                      <span>Click to view photos in extra box</span>
-                                      <FiArrowRight size={9} />
-                                    </div>
                                   </div>
 
-                                  {/* Actions Bar */}
+                                  {/* Clean Neutral Action Buttons */}
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                     <button
                                       type="button"
@@ -11874,12 +11841,12 @@ export const FacebookWorkflowCanvas = forwardRef<
                                       style={{
                                         flex: 1,
                                         height: '28px',
-                                        borderRadius: '5px',
-                                        border: '1px solid rgba(16, 185, 129, 0.35)',
-                                        backgroundColor: isDark ? 'rgba(16, 185, 129, 0.12)' : '#DCFCE7',
-                                        color: '#10B981',
+                                        borderRadius: '6px',
+                                        border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+                                        color: 'var(--text-primary)',
                                         fontSize: '0.6875rem',
-                                        fontWeight: 700,
+                                        fontWeight: 600,
                                         display: 'flex',
                                         alignItems: 'center',
                                         justifyContent: 'center',
@@ -11887,32 +11854,51 @@ export const FacebookWorkflowCanvas = forwardRef<
                                         cursor: 'pointer',
                                         transition: 'all 0.15s ease',
                                       }}
+                                      onMouseEnter={(e) => {
+                                        e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.09)' : 'rgba(0, 0, 0, 0.08)';
+                                        e.currentTarget.style.borderColor = isDark ? '#484F58' : '#CBD5E1';
+                                      }}
+                                      onMouseLeave={(e) => {
+                                        e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)';
+                                        e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
+                                      }}
                                     >
-                                      <FiEye size={11} />
-                                      <span>View {boxCount} Photos in Extra Box →</span>
+                                      <FiEye size={12} style={{ color: 'var(--text-secondary)' }} />
+                                      <span>View {boxCount} Photos</span>
                                     </button>
 
                                     {boxAssets.length > 0 && (
                                       <button
                                         type="button"
                                         onClick={() => handleDownloadAllCombineAssets(boxAssets)}
-                                        title={`Download all ${boxCount} photos for ${fromTitle}`}
+                                        title={`Download all ${boxCount} photos`}
                                         style={{
                                           height: '28px',
-                                          padding: '0 8px',
-                                          borderRadius: '5px',
-                                          border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC',
+                                          padding: '0 10px',
+                                          borderRadius: '6px',
+                                          border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
                                           color: 'var(--text-secondary)',
-                                          fontSize: '0.625rem',
+                                          fontSize: '0.6875rem',
                                           fontWeight: 600,
                                           display: 'flex',
                                           alignItems: 'center',
                                           gap: '4px',
                                           cursor: 'pointer',
+                                          transition: 'all 0.15s ease',
+                                        }}
+                                        onMouseEnter={(e) => {
+                                          e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.09)' : 'rgba(0, 0, 0, 0.08)';
+                                          e.currentTarget.style.borderColor = isDark ? '#484F58' : '#CBD5E1';
+                                          e.currentTarget.style.color = 'var(--text-primary)';
+                                        }}
+                                        onMouseLeave={(e) => {
+                                          e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)';
+                                          e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
+                                          e.currentTarget.style.color = 'var(--text-secondary)';
                                         }}
                                       >
-                                        <FiDownload size={10} />
+                                        <FiDownload size={11} />
                                         <span>Download</span>
                                       </button>
                                     )}
@@ -11921,7 +11907,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                               );
                             }
 
-                            // ── B) TEXT AI / COPYWRITING NODE (e.g. General AI Processor) ──
+                            // ── B) TEXT AI / COPYWRITING NODE (General AI Processor) ──
                             if (isTextAI && fromBox) {
                               let childFormatBoxes = config.aiBoxes.filter((b) => {
                                 if (!isTextFormatAIBox(b)) return false;
@@ -11965,14 +11951,14 @@ export const FacebookWorkflowCanvas = forwardRef<
                                     display: 'flex',
                                     flexDirection: 'column',
                                     gap: '0.625rem',
-                                    padding: '0.8125rem',
-                                    borderRadius: '10px',
+                                    padding: '0.75rem',
+                                    borderRadius: '8px',
                                     border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
                                     backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF',
-                                    boxShadow: isDark ? '0 2px 8px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.05)',
+                                    boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 2px rgba(0,0,0,0.04)',
                                   }}
                                 >
-                                  {/* Header */}
+                                  {/* Clean Neutral Header */}
                                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
                                       <div
@@ -11980,42 +11966,42 @@ export const FacebookWorkflowCanvas = forwardRef<
                                           width: '26px',
                                           height: '26px',
                                           borderRadius: '6px',
-                                          backgroundColor: 'rgba(139, 92, 246, 0.15)',
-                                          color: '#8B5CF6',
+                                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+                                          border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                          color: 'var(--text-secondary)',
                                           display: 'flex',
                                           alignItems: 'center',
                                           justifyContent: 'center',
                                         }}
                                       >
-                                        <HiSparkles size={14} />
+                                        <HiSparkles size={13} />
                                       </div>
                                       <div>
-                                        <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                        <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                                           {fromTitle}
                                         </span>
                                         <div style={{ fontSize: '0.5625rem', color: 'var(--text-muted)' }}>
-                                          AI Processor · {childFormatBoxes.length} Format Presets Connected
+                                          AI Processor · {childFormatBoxes.length} Presets
                                         </div>
                                       </div>
                                     </div>
                                     <span
                                       style={{
                                         fontSize: '0.625rem',
-                                        fontWeight: 700,
+                                        fontWeight: 600,
                                         padding: '2px 8px',
-                                        borderRadius: '12px',
-                                        backgroundColor: readyCount > 0
-                                          ? (isDark ? 'rgba(16, 185, 129, 0.18)' : '#DCFCE7')
-                                          : (isDark ? 'rgba(139, 92, 246, 0.14)' : '#EDE9FE'),
-                                        color: readyCount > 0 ? '#10B981' : '#8B5CF6',
+                                        borderRadius: '6px',
+                                        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+                                        border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                        color: 'var(--text-secondary)',
                                       }}
                                     >
-                                      {readyCount > 0 ? `✓ ${readyCount}/${childFormatBoxes.length} Ready` : `${childFormatBoxes.length} Formats`}
+                                      {readyCount}/{childFormatBoxes.length} ready
                                     </span>
                                   </div>
 
-                                  {/* EACH Format Preset broken out individually */}
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                                  {/* Clean Format Preset Rows */}
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
                                     {childFormatBoxes.map((chBox) => {
                                       const chTitle = chBox.title || 'Format Preset';
                                       const chText =
@@ -12029,20 +12015,20 @@ export const FacebookWorkflowCanvas = forwardRef<
                                           style={{
                                             display: 'flex',
                                             flexDirection: 'column',
-                                            gap: '0.4rem',
-                                            padding: '0.55rem 0.65rem',
+                                            gap: '0.35rem',
+                                            padding: '0.5rem 0.6rem',
                                             borderRadius: '6px',
-                                            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#F8FAFC',
-                                            border: isDark ? '1px solid rgba(255, 255, 255, 0.07)' : '1px solid #E2E8F0',
+                                            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#F8FAFC',
+                                            border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
                                           }}
                                         >
                                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
-                                              <FiFileText style={{ fontSize: '12px', color: '#8B5CF6', flexShrink: 0 }} />
+                                              <FiFileText style={{ fontSize: '12px', color: 'var(--text-muted)', flexShrink: 0 }} />
                                               <span
                                                 style={{
                                                   fontSize: '0.75rem',
-                                                  fontWeight: 600,
+                                                  fontWeight: 500,
                                                   color: 'var(--text-primary)',
                                                   overflow: 'hidden',
                                                   textOverflow: 'ellipsis',
@@ -12053,23 +12039,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                                               </span>
                                             </div>
 
-                                            {hasResult ? (
-                                              <span
-                                                style={{
-                                                  fontSize: '0.5625rem',
-                                                  fontWeight: 600,
-                                                  padding: '1px 5px',
-                                                  borderRadius: '4px',
-                                                  backgroundColor: isDark ? 'rgba(16, 185, 129, 0.14)' : '#DCFCE7',
-                                                  color: '#10B981',
-                                                  flexShrink: 0,
-                                                }}
-                                              >
-                                                ✓ Ready ({chText.length.toLocaleString()} chars)
-                                              </span>
-                                            ) : (
+                                            {hasResult && (
                                               <span style={{ fontSize: '0.5625rem', color: 'var(--text-muted)', flexShrink: 0 }}>
-                                                Connected
+                                                {chText.length.toLocaleString()} chars
                                               </span>
                                             )}
                                           </div>
@@ -12089,30 +12061,30 @@ export const FacebookWorkflowCanvas = forwardRef<
                                                 }}
                                                 style={{
                                                   flex: 1,
-                                                  height: '26px',
-                                                  borderRadius: '4px',
-                                                  border: '1px solid var(--border-color)',
-                                                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF',
+                                                  height: '24px',
+                                                  borderRadius: '5px',
+                                                  border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
                                                   color: 'var(--text-primary)',
-                                                  fontSize: '0.6875rem',
-                                                  fontWeight: 600,
+                                                  fontSize: '0.625rem',
+                                                  fontWeight: 500,
                                                   display: 'flex',
                                                   alignItems: 'center',
                                                   justifyContent: 'center',
-                                                  gap: '5px',
+                                                  gap: '4px',
                                                   cursor: 'pointer',
                                                   transition: 'all 0.15s ease',
                                                 }}
                                                 onMouseEnter={(e) => {
-                                                  e.currentTarget.style.borderColor = '#8B5CF6';
-                                                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(139, 92, 246, 0.08)' : '#F3E8FF';
+                                                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.09)' : 'rgba(0, 0, 0, 0.08)';
+                                                  e.currentTarget.style.borderColor = isDark ? '#484F58' : '#CBD5E1';
                                                 }}
                                                 onMouseLeave={(e) => {
-                                                  e.currentTarget.style.borderColor = 'var(--border-color)';
-                                                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF';
+                                                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)';
+                                                  e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
                                                 }}
                                               >
-                                                <FiEye size={11} style={{ color: '#8B5CF6' }} />
+                                                <FiEye size={10} style={{ color: 'var(--text-secondary)' }} />
                                                 <span>View Result</span>
                                               </button>
 
@@ -12125,22 +12097,27 @@ export const FacebookWorkflowCanvas = forwardRef<
                                                 }}
                                                 title="Copy this result"
                                                 style={{
-                                                  height: '26px',
+                                                  height: '24px',
                                                   padding: '0 8px',
-                                                  borderRadius: '4px',
-                                                  border: copiedPromptId === chBox.id
-                                                    ? '1px solid rgba(16, 185, 129, 0.35)'
-                                                    : '1px solid var(--border-color)',
-                                                  backgroundColor: copiedPromptId === chBox.id
-                                                    ? (isDark ? 'rgba(16, 185, 129, 0.16)' : '#DCFCE7')
-                                                    : (isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF'),
-                                                  color: copiedPromptId === chBox.id ? '#10B981' : 'var(--text-secondary)',
+                                                  borderRadius: '5px',
+                                                  border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+                                                  color: 'var(--text-secondary)',
                                                   fontSize: '0.625rem',
-                                                  fontWeight: 600,
+                                                  fontWeight: 500,
                                                   display: 'flex',
                                                   alignItems: 'center',
                                                   gap: '4px',
                                                   cursor: 'pointer',
+                                                  transition: 'all 0.15s ease',
+                                                }}
+                                                onMouseEnter={(e) => {
+                                                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.09)' : 'rgba(0, 0, 0, 0.08)';
+                                                  e.currentTarget.style.borderColor = isDark ? '#484F58' : '#CBD5E1';
+                                                }}
+                                                onMouseLeave={(e) => {
+                                                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)';
+                                                  e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
                                                 }}
                                               >
                                                 {copiedPromptId === chBox.id ? <FiCheck size={10} style={{ color: '#10B981' }} /> : <FiCopy size={10} />}
@@ -12153,7 +12130,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                     })}
                                   </div>
 
-                                  {/* Quick Action: View/Copy ALL text from this AI processor */}
+                                  {/* Clean Neutral Action: View Combined Copy */}
                                   {readyCount > 0 && (
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', paddingTop: '2px' }}>
                                       <button
@@ -12170,21 +12147,30 @@ export const FacebookWorkflowCanvas = forwardRef<
                                         style={{
                                           flex: 1,
                                           height: '28px',
-                                          borderRadius: '5px',
-                                          border: '1px solid rgba(139, 92, 246, 0.35)',
-                                          backgroundColor: isDark ? 'rgba(139, 92, 246, 0.12)' : '#EDE9FE',
-                                          color: '#8B5CF6',
+                                          borderRadius: '6px',
+                                          border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+                                          color: 'var(--text-primary)',
                                           fontSize: '0.6875rem',
-                                          fontWeight: 700,
+                                          fontWeight: 600,
                                           display: 'flex',
                                           alignItems: 'center',
                                           justifyContent: 'center',
                                           gap: '5px',
                                           cursor: 'pointer',
+                                          transition: 'all 0.15s ease',
+                                        }}
+                                        onMouseEnter={(e) => {
+                                          e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.09)' : 'rgba(0, 0, 0, 0.08)';
+                                          e.currentTarget.style.borderColor = isDark ? '#484F58' : '#CBD5E1';
+                                        }}
+                                        onMouseLeave={(e) => {
+                                          e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)';
+                                          e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
                                         }}
                                       >
-                                        <FiEye size={11} />
-                                        <span>View All Combined Copy →</span>
+                                        <FiEye size={11} style={{ color: 'var(--text-secondary)' }} />
+                                        <span>View Combined Copy →</span>
                                       </button>
                                     </div>
                                   )}
@@ -12192,7 +12178,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                               );
                             }
 
-                            // ── C) DIRECT CONTENT NODE (Get Content or other raw input) ──
+                            // ── C) DIRECT CONTENT NODE (Get Content or other input) ──
                             const textOutput = (aiGeneratedOutputs && aiGeneratedOutputs[c.fromNodeId]) || (isContent ? (rawContent || '') : '');
                             const hasTextResult = Boolean(textOutput && textOutput.trim().length > 0);
 
@@ -12212,11 +12198,12 @@ export const FacebookWorkflowCanvas = forwardRef<
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
                                   <div
                                     style={{
-                                      width: '24px',
-                                      height: '24px',
+                                      width: '26px',
+                                      height: '26px',
                                       borderRadius: '6px',
-                                      backgroundColor: isBrowser ? 'rgba(6, 182, 212, 0.15)' : 'rgba(59, 130, 246, 0.15)',
-                                      color: isBrowser ? '#06B6D4' : '#3B82F6',
+                                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+                                      border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                      color: 'var(--text-secondary)',
                                       display: 'flex',
                                       alignItems: 'center',
                                       justifyContent: 'center',
@@ -12224,11 +12211,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   >
                                     {isBrowser ? <FiMonitor size={12} /> : <FiFileText size={12} />}
                                   </div>
-                                  <div>
-                                    <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                                      {fromTitle}
-                                    </span>
-                                  </div>
+                                  <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                    {fromTitle}
+                                  </span>
                                 </div>
 
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
@@ -12248,9 +12233,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                                         style={{
                                           height: '26px',
                                           padding: '0 8px',
-                                          borderRadius: '4px',
-                                          border: '1px solid var(--border-color)',
-                                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC',
+                                          borderRadius: '5px',
+                                          border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
                                           color: 'var(--text-primary)',
                                           fontSize: '0.625rem',
                                           fontWeight: 600,
@@ -12260,7 +12245,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                           cursor: 'pointer',
                                         }}
                                       >
-                                        <FiEye size={10} style={{ color: '#3B82F6' }} />
+                                        <FiEye size={10} style={{ color: 'var(--text-secondary)' }} />
                                         <span>View</span>
                                       </button>
                                       <button
@@ -12273,14 +12258,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                                         style={{
                                           height: '26px',
                                           padding: '0 8px',
-                                          borderRadius: '4px',
-                                          border: copiedPromptId === c.fromNodeId
-                                            ? '1px solid rgba(16, 185, 129, 0.35)'
-                                            : '1px solid var(--border-color)',
-                                          backgroundColor: copiedPromptId === c.fromNodeId
-                                            ? (isDark ? 'rgba(16, 185, 129, 0.16)' : '#DCFCE7')
-                                            : (isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC'),
-                                          color: copiedPromptId === c.fromNodeId ? '#10B981' : 'var(--text-secondary)',
+                                          borderRadius: '5px',
+                                          border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+                                          color: 'var(--text-secondary)',
                                           fontSize: '0.625rem',
                                           fontWeight: 600,
                                           display: 'flex',
@@ -12304,6 +12285,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                       );
                     })()}
 
+                    {/* Bottom Add Combine Box Button (Clean neutral style) */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: 'auto', paddingTop: '1rem' }}>
                       <button
                         type="button"
@@ -12321,9 +12303,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                         style={{
                           height: '32px',
                           borderRadius: '6px',
-                          border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                          backgroundColor: isDark ? 'rgba(245, 158, 11, 0.1)' : '#FFFBEB',
-                          color: '#D97706',
+                          border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+                          color: 'var(--text-secondary)',
                           fontSize: '0.75rem',
                           fontWeight: 600,
                           cursor: 'pointer',
@@ -12331,6 +12313,17 @@ export const FacebookWorkflowCanvas = forwardRef<
                           alignItems: 'center',
                           justifyContent: 'center',
                           gap: '6px',
+                          transition: 'all 0.15s ease',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.09)' : 'rgba(0, 0, 0, 0.08)';
+                          e.currentTarget.style.borderColor = isDark ? '#484F58' : '#CBD5E1';
+                          e.currentTarget.style.color = 'var(--text-primary)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)';
+                          e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
+                          e.currentTarget.style.color = 'var(--text-secondary)';
                         }}
                       >
                         <FiPlus size={13} />
