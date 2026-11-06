@@ -254,7 +254,6 @@ export const CombineMediaSidebox: React.FC<CombineMediaSideboxProps> = ({
                   e.currentTarget.style.transform = 'translateY(0)';
                   e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)';
                 }}
-                title={`Click to view ${asset.label} (${asset.formatTitle})`}
               >
                 <div style={{ position: 'absolute', inset: 0 }}>
                   <img

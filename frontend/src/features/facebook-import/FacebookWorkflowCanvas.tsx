@@ -11709,7 +11709,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                                       justifyContent: 'center',
                                       cursor: 'pointer',
                                     }}
-                                    title={`Click to view ${fromTitle} photos`}
                                   >
                                     {boxThumbnails.length > 0 ? (
                                       <div
