@@ -12063,8 +12063,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                                               </span>
                                             )}
 
-                                            {hasResult && (
-                                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                              {hasResult && (
                                                 <button
                                                   type="button"
                                                   onClick={() => {
@@ -12103,7 +12103,71 @@ export const FacebookWorkflowCanvas = forwardRef<
                                                   <FiEye size={10} style={{ color: 'var(--text-secondary)' }} />
                                                   <span>View</span>
                                                 </button>
+                                              )}
 
+                                              {/* Regenerate button for this format preset */}
+                                              {onRegenerateBoxOutput && (
+                                                <button
+                                                  type="button"
+                                                  disabled={isRegeneratingAI}
+                                                  onClick={async (e) => {
+                                                    e.stopPropagation();
+                                                    if (isRegeneratingAI) return;
+                                                    setIsRegeneratingAI(true);
+                                                    setRegeneratingBoxId(chBox.id);
+                                                    try {
+                                                      const fresh = await onRegenerateBoxOutput(chBox.id);
+                                                      if (fresh && typeof fresh === 'string') {
+                                                        setViewingPromptTemplate((prev) => {
+                                                          if (prev && prev.id === chBox.id) {
+                                                            return { ...prev, templateText: fresh };
+                                                          }
+                                                          return prev;
+                                                        });
+                                                      }
+                                                    } finally {
+                                                      setIsRegeneratingAI(false);
+                                                      setRegeneratingBoxId(null);
+                                                    }
+                                                  }}
+                                                  aria-label="Regenerate format copy"
+                                                  style={{
+                                                    height: '24px',
+                                                    width: '24px',
+                                                    borderRadius: '4px',
+                                                    border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#FFFFFF',
+                                                    color: isRegeneratingAI && regeneratingBoxId === chBox.id ? 'var(--accent-primary, #6366F1)' : 'var(--text-secondary)',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    cursor: isRegeneratingAI ? 'not-allowed' : 'pointer',
+                                                    opacity: isRegeneratingAI && regeneratingBoxId !== chBox.id ? 0.5 : 1,
+                                                    transition: 'all 0.15s ease',
+                                                  }}
+                                                  onMouseEnter={(e) => {
+                                                    if (!isRegeneratingAI) {
+                                                      e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.09)' : 'rgba(0, 0, 0, 0.06)';
+                                                      e.currentTarget.style.borderColor = isDark ? '#484F58' : '#CBD5E1';
+                                                      e.currentTarget.style.color = 'var(--text-primary)';
+                                                    }
+                                                  }}
+                                                  onMouseLeave={(e) => {
+                                                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.05)' : '#FFFFFF';
+                                                    e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
+                                                    e.currentTarget.style.color = isRegeneratingAI && regeneratingBoxId === chBox.id ? 'var(--accent-primary, #6366F1)' : 'var(--text-secondary)';
+                                                  }}
+                                                >
+                                                  <FiRefreshCw
+                                                    size={10}
+                                                    style={{
+                                                      animation: isRegeneratingAI && regeneratingBoxId === chBox.id ? 'spin 1s linear infinite' : 'none',
+                                                    }}
+                                                  />
+                                                </button>
+                                              )}
+
+                                              {hasResult && (
                                                 <button
                                                   type="button"
                                                   onClick={() => {
@@ -12139,15 +12203,15 @@ export const FacebookWorkflowCanvas = forwardRef<
                                                 >
                                                   {copiedPromptId === chBox.id ? <FiCheck size={10} style={{ color: '#10B981' }} /> : <FiCopy size={10} />}
                                                 </button>
-                                              </div>
-                                            )}
+                                              )}
+                                            </div>
                                           </div>
                                         </div>
                                       );
                                     })}
                                   </div>
 
-                                  {/* Clean Neutral Action: View Combined Copy & Copy All */}
+                                  {/* Clean Neutral Action: View Combined Copy, Regenerate All, & Copy All */}
                                   {readyCount > 0 && (
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', paddingTop: '2px' }}>
                                       <button
@@ -12189,6 +12253,61 @@ export const FacebookWorkflowCanvas = forwardRef<
                                         <FiEye size={11} style={{ color: 'var(--text-secondary)' }} />
                                         <span>View Combined Copy</span>
                                       </button>
+
+                                      {onRegenerateBoxOutput && (
+                                        <button
+                                          type="button"
+                                          disabled={isRegeneratingAI}
+                                          onClick={async () => {
+                                            if (isRegeneratingAI) return;
+                                            setIsRegeneratingAI(true);
+                                            try {
+                                              for (const ch of childFormatBoxes) {
+                                                setRegeneratingBoxId(ch.id);
+                                                await onRegenerateBoxOutput(ch.id);
+                                              }
+                                            } finally {
+                                              setIsRegeneratingAI(false);
+                                              setRegeneratingBoxId(null);
+                                            }
+                                          }}
+                                          style={{
+                                            height: '28px',
+                                            padding: '0 8px',
+                                            borderRadius: '6px',
+                                            border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+                                            color: isRegeneratingAI ? 'var(--accent-primary, #6366F1)' : 'var(--text-secondary)',
+                                            fontSize: '0.6875rem',
+                                            fontWeight: 600,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '4px',
+                                            cursor: isRegeneratingAI ? 'not-allowed' : 'pointer',
+                                            transition: 'all 0.15s ease',
+                                          }}
+                                          onMouseEnter={(e) => {
+                                            if (!isRegeneratingAI) {
+                                              e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.09)' : 'rgba(0, 0, 0, 0.08)';
+                                              e.currentTarget.style.borderColor = isDark ? '#484F58' : '#CBD5E1';
+                                              e.currentTarget.style.color = 'var(--text-primary)';
+                                            }
+                                          }}
+                                          onMouseLeave={(e) => {
+                                            e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)';
+                                            e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
+                                            e.currentTarget.style.color = isRegeneratingAI ? 'var(--accent-primary, #6366F1)' : 'var(--text-secondary)';
+                                          }}
+                                        >
+                                          <FiRefreshCw
+                                            size={11}
+                                            style={{
+                                              animation: isRegeneratingAI ? 'spin 1s linear infinite' : 'none',
+                                            }}
+                                          />
+                                          <span>{isRegeneratingAI ? 'Regenerating...' : 'Regen All'}</span>
+                                        </button>
+                                      )}
 
                                       <button
                                         type="button"
@@ -12302,6 +12421,44 @@ export const FacebookWorkflowCanvas = forwardRef<
                                         <FiEye size={10} style={{ color: 'var(--text-secondary)' }} />
                                         <span>View</span>
                                       </button>
+
+                                      {onRegenerateBoxOutput && fromBox && (
+                                        <button
+                                          type="button"
+                                          disabled={isRegeneratingAI}
+                                          onClick={async () => {
+                                            if (isRegeneratingAI) return;
+                                            setIsRegeneratingAI(true);
+                                            setRegeneratingBoxId(c.fromNodeId);
+                                            try {
+                                              await onRegenerateBoxOutput(c.fromNodeId);
+                                            } finally {
+                                              setIsRegeneratingAI(false);
+                                              setRegeneratingBoxId(null);
+                                            }
+                                          }}
+                                          aria-label="Regenerate output"
+                                          style={{
+                                            height: '26px',
+                                            width: '26px',
+                                            borderRadius: '5px',
+                                            border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+                                            color: isRegeneratingAI && regeneratingBoxId === c.fromNodeId ? '#6366F1' : 'var(--text-secondary)',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            cursor: isRegeneratingAI ? 'not-allowed' : 'pointer',
+                                          }}
+                                        >
+                                          <FiRefreshCw
+                                            size={10}
+                                            style={{
+                                              animation: isRegeneratingAI && regeneratingBoxId === c.fromNodeId ? 'spin 1s linear infinite' : 'none',
+                                            }}
+                                          />
+                                        </button>
+                                      )}
                                       <button
                                         type="button"
                                         onClick={() => {
