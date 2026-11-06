@@ -164,13 +164,70 @@ const getWorkflowRunStorageKey = (formatId?: string) => `ea_workflow_execution_d
 const getSavedWorkflowRunData = (formatId?: string) => {
   if (typeof window === 'undefined') return null;
   try {
-    const raw = localStorage.getItem(getWorkflowRunStorageKey(formatId));
-    if (raw) {
-      const parsed = JSON.parse(raw);
+    // 1. Check specified format ID
+    if (formatId && formatId !== 'default') {
+      const raw = localStorage.getItem(getWorkflowRunStorageKey(formatId));
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') return parsed;
+      }
+    }
+    // 2. Check active workflow format ID from storage
+    try {
+      const activeId = getActiveWorkflowFormatId();
+      if (activeId && activeId !== formatId) {
+        const raw = localStorage.getItem(getWorkflowRunStorageKey(activeId));
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === 'object') return parsed;
+        }
+      }
+    } catch {}
+    // 3. Check global active execution key
+    const activeRaw = localStorage.getItem('ea_workflow_execution_data_active');
+    if (activeRaw) {
+      const parsed = JSON.parse(activeRaw);
       if (parsed && typeof parsed === 'object') return parsed;
+    }
+    // 4. Check default format key
+    const defRaw = localStorage.getItem(getWorkflowRunStorageKey('default'));
+    if (defRaw) {
+      const parsed = JSON.parse(defRaw);
+      if (parsed && typeof parsed === 'object') return parsed;
+    }
+    // 5. Scan any workflow execution data keys in localStorage
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith('ea_workflow_execution_data_')) {
+        const raw = localStorage.getItem(k);
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw);
+            if (
+              parsed &&
+              typeof parsed === 'object' &&
+              (parsed.extractedImages?.length > 0 ||
+                (parsed.extractedContent && parsed.extractedContent.trim().length > 0) ||
+                parsed.executionState ||
+                (parsed.aiGeneratedOutputs && Object.keys(parsed.aiGeneratedOutputs).length > 0))
+            ) {
+              return parsed;
+            }
+          } catch {}
+        }
+      }
     }
   } catch {}
   return null;
+};
+
+const resolveCurrentFormatId = () => {
+  try {
+    const sp = new URLSearchParams(window.location.search);
+    return sp.get('id') || sp.get('format') || getActiveWorkflowFormatId() || 'default';
+  } catch {
+    return 'default';
+  }
 };
 
 export const CreateWorkflowView: React.FC = () => {
@@ -387,12 +444,23 @@ export const CreateWorkflowView: React.FC = () => {
   // Undo & Run States
   const [undoStack, setUndoStack] = useState<FacebookWorkflowConfig[]>([]);
   const [isRunModalOpen, setIsRunModalOpen] = useState(false);
-  const [runFacebookUrl, setRunFacebookUrl] = useState('');
+  const [runFacebookUrl, setRunFacebookUrl] = useState<string>(() => {
+    const formatId = resolveCurrentFormatId();
+    const saved = getSavedWorkflowRunData(formatId);
+    if (saved?.runFacebookUrl) return saved.runFacebookUrl;
+    try {
+      const fbSession = localStorage.getItem('estate_facebook_import_session_v1');
+      if (fbSession) {
+        const parsed = JSON.parse(fbSession);
+        if (parsed?.url) return parsed.url;
+      }
+    } catch {}
+    return '';
+  });
 
   // Workflow Live Execution States (Canvas execution runner)
   const [executionState, setExecutionState] = useState<WorkflowExecutionState | undefined>(() => {
-    const sp = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-    const formatId = sp?.get('id') || sp?.get('format') || 'default';
+    const formatId = resolveCurrentFormatId();
     const saved = getSavedWorkflowRunData(formatId);
     if (saved?.executionState) {
       return {
@@ -404,8 +472,7 @@ export const CreateWorkflowView: React.FC = () => {
     return undefined;
   });
   const [extractedContent, setExtractedContent] = useState<string>(() => {
-    const sp = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-    const formatId = sp?.get('id') || sp?.get('format') || 'default';
+    const formatId = resolveCurrentFormatId();
     const saved = getSavedWorkflowRunData(formatId);
     if (saved?.extractedContent) return saved.extractedContent;
     try {
@@ -429,8 +496,7 @@ export const CreateWorkflowView: React.FC = () => {
       status?: string;
     }>
   >(() => {
-    const sp = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-    const formatId = sp?.get('id') || sp?.get('format') || 'default';
+    const formatId = resolveCurrentFormatId();
     const saved = getSavedWorkflowRunData(formatId);
     if (Array.isArray(saved?.extractedImages) && saved.extractedImages.length > 0) {
       return saved.extractedImages;
@@ -456,8 +522,7 @@ export const CreateWorkflowView: React.FC = () => {
     return [];
   });
   const [watermarkedPhotos, setWatermarkedPhotos] = useState<Record<number, string>>(() => {
-    const sp = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-    const formatId = sp?.get('id') || sp?.get('format') || 'default';
+    const formatId = resolveCurrentFormatId();
     const saved = getSavedWorkflowRunData(formatId);
     if (saved?.watermarkedPhotos && Object.keys(saved.watermarkedPhotos).length > 0) {
       return saved.watermarkedPhotos;
@@ -472,8 +537,7 @@ export const CreateWorkflowView: React.FC = () => {
     return {};
   });
   const [enhancedPhotos, setEnhancedPhotos] = useState<Record<number, string>>(() => {
-    const sp = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-    const formatId = sp?.get('id') || sp?.get('format') || 'default';
+    const formatId = resolveCurrentFormatId();
     const saved = getSavedWorkflowRunData(formatId);
     if (saved?.enhancedPhotos && Object.keys(saved.enhancedPhotos).length > 0) {
       return saved.enhancedPhotos;
@@ -488,8 +552,7 @@ export const CreateWorkflowView: React.FC = () => {
     return {};
   });
   const [aiGeneratedOutputs, setAiGeneratedOutputs] = useState<Record<string, string>>(() => {
-    const sp = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-    const formatId = sp?.get('id') || sp?.get('format') || 'default';
+    const formatId = resolveCurrentFormatId();
     const saved = getSavedWorkflowRunData(formatId);
     if (saved?.aiGeneratedOutputs && Object.keys(saved.aiGeneratedOutputs).length > 0) {
       return saved.aiGeneratedOutputs;
@@ -504,8 +567,7 @@ export const CreateWorkflowView: React.FC = () => {
     return {};
   });
   const [aiGeneratedCopy, setAiGeneratedCopy] = useState<string>(() => {
-    const sp = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-    const formatId = sp?.get('id') || sp?.get('format') || 'default';
+    const formatId = resolveCurrentFormatId();
     const saved = getSavedWorkflowRunData(formatId);
     if (saved?.aiGeneratedCopy) return saved.aiGeneratedCopy;
     try {
@@ -518,8 +580,7 @@ export const CreateWorkflowView: React.FC = () => {
     return '';
   });
   const [projectName, setProjectName] = useState<string>(() => {
-    const sp = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-    const formatId = sp?.get('id') || sp?.get('format') || 'default';
+    const formatId = resolveCurrentFormatId();
     const saved = getSavedWorkflowRunData(formatId);
     if (saved?.projectName) return saved.projectName;
     try {
@@ -532,8 +593,7 @@ export const CreateWorkflowView: React.FC = () => {
     return '';
   });
   const [propertyData, setPropertyData] = useState<any>(() => {
-    const sp = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-    const formatId = sp?.get('id') || sp?.get('format') || 'default';
+    const formatId = resolveCurrentFormatId();
     const saved = getSavedWorkflowRunData(formatId);
     if (saved?.propertyData) return saved.propertyData;
     try {
@@ -745,7 +805,7 @@ export const CreateWorkflowView: React.FC = () => {
     setIsRunningWorkflow(false);
     (window as any).__isWorkflowProcessing = false;
     (window as any).__workflowConfirmLeave = null;
-    setExecutionState(undefined);
+    setExecutionState((prev) => (prev ? { ...prev, isRunning: false, activeNodeIds: [] } : undefined));
     setShowLeaveConfirmModal(false);
     stopAutomation().catch((e) => console.warn('Failed to stop automation:', e));
 
@@ -790,9 +850,9 @@ export const CreateWorkflowView: React.FC = () => {
 
   // Switch / restore saved execution data when editingFormat changes
   useEffect(() => {
-    if (!editingFormat?.id) return;
+    const targetId = editingFormat?.id || activeFormatId || getActiveWorkflowFormatId() || 'default';
     try {
-      const saved = getSavedWorkflowRunData(editingFormat.id);
+      const saved = getSavedWorkflowRunData(targetId);
       if (saved) {
         if (saved.executionState) {
           setExecutionState({
@@ -801,6 +861,7 @@ export const CreateWorkflowView: React.FC = () => {
             activeNodeIds: [],
           });
         }
+        if (saved.runFacebookUrl !== undefined) setRunFacebookUrl(saved.runFacebookUrl);
         if (saved.extractedContent !== undefined) setExtractedContent(saved.extractedContent);
         if (Array.isArray(saved.extractedImages) && saved.extractedImages.length > 0) {
           setExtractedImages(saved.extractedImages);
@@ -810,6 +871,7 @@ export const CreateWorkflowView: React.FC = () => {
         if (saved.aiGeneratedOutputs) setAiGeneratedOutputs(saved.aiGeneratedOutputs);
         if (saved.aiGeneratedCopy !== undefined) setAiGeneratedCopy(saved.aiGeneratedCopy);
         if (saved.projectName !== undefined) setProjectName(saved.projectName);
+        else if (saved.propertyData?.project_name) setProjectName(saved.propertyData.project_name);
         if (saved.propertyData !== undefined) setPropertyData(saved.propertyData);
       }
     } catch {}
@@ -817,7 +879,7 @@ export const CreateWorkflowView: React.FC = () => {
 
   // Automatically persist workflow run data whenever outputs or execution states update
   useEffect(() => {
-    const targetFormatId = editingFormat?.id || activeFormatId || 'default';
+    const targetFormatId = editingFormat?.id || activeFormatId || getActiveWorkflowFormatId() || 'default';
     if (!targetFormatId) return;
 
     const hasData =
@@ -826,7 +888,8 @@ export const CreateWorkflowView: React.FC = () => {
       Boolean(extractedContent && extractedContent.trim().length > 0) ||
       Object.keys(aiGeneratedOutputs).length > 0 ||
       Object.keys(watermarkedPhotos).length > 0 ||
-      Object.keys(enhancedPhotos).length > 0;
+      Object.keys(enhancedPhotos).length > 0 ||
+      Boolean(runFacebookUrl && runFacebookUrl.trim().length > 0);
 
     if (!hasData) return;
 
@@ -839,6 +902,7 @@ export const CreateWorkflowView: React.FC = () => {
               activeNodeIds: [],
             }
           : undefined,
+        runFacebookUrl: runFacebookUrl || '',
         extractedContent,
         extractedImages,
         watermarkedPhotos,
@@ -850,6 +914,27 @@ export const CreateWorkflowView: React.FC = () => {
         timestamp: Date.now(),
       };
       localStorage.setItem(getWorkflowRunStorageKey(targetFormatId), JSON.stringify(toSave));
+      localStorage.setItem('ea_workflow_execution_data_active', JSON.stringify(toSave));
+
+      // Also keep estate_facebook_import_session_v1 synchronized so navigating to FB import or other views retains everything
+      try {
+        const existingRaw = localStorage.getItem('estate_facebook_import_session_v1');
+        const parsed = existingRaw ? JSON.parse(existingRaw) : {};
+        localStorage.setItem(
+          'estate_facebook_import_session_v1',
+          JSON.stringify({
+            ...parsed,
+            url: runFacebookUrl || parsed.url || '',
+            caption: extractedContent || parsed.caption || '',
+            images: extractedImages.length > 0 ? extractedImages : parsed.images || [],
+            watermarkedPhotos: Object.keys(watermarkedPhotos).length > 0 ? watermarkedPhotos : parsed.watermarkedPhotos || {},
+            enhancedPhotos: Object.keys(enhancedPhotos).length > 0 ? enhancedPhotos : parsed.enhancedPhotos || {},
+            aiGeneratedOutputs: Object.keys(aiGeneratedOutputs).length > 0 ? aiGeneratedOutputs : parsed.aiGeneratedOutputs || {},
+            aiGeneratedCopy: aiGeneratedCopy || parsed.aiGeneratedCopy || '',
+            propertyData: propertyData || parsed.propertyData || { project_name: projectName },
+          })
+        );
+      } catch {}
     } catch (err) {
       console.warn('Failed to persist workflow execution data:', err);
     }
@@ -857,6 +942,7 @@ export const CreateWorkflowView: React.FC = () => {
     editingFormat?.id,
     activeFormatId,
     executionState,
+    runFacebookUrl,
     extractedContent,
     extractedImages,
     watermarkedPhotos,
@@ -867,12 +953,13 @@ export const CreateWorkflowView: React.FC = () => {
     propertyData,
   ]);
 
-  // Clear all extracted data and execution results on demand
+  // Clear all extracted data and execution results on demand ONLY when user clicks Clear
   const handleClearRunData = () => {
     if (isRunningWorkflow) {
       handleStopWorkflow();
     }
     setExecutionState(undefined);
+    setRunFacebookUrl('');
     setExtractedContent('');
     setExtractedImages([]);
     setWatermarkedPhotos({});
@@ -890,8 +977,18 @@ export const CreateWorkflowView: React.FC = () => {
       localStorage.removeItem(getWorkflowRunStorageKey('default'));
     } catch {}
     try {
+      localStorage.removeItem('ea_workflow_execution_data_active');
+    } catch {}
+    try {
       localStorage.removeItem('estate_facebook_import_session_v1');
     } catch {}
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith('ea_workflow_execution_data_')) {
+        localStorage.removeItem(k);
+      }
+    }
+    window.dispatchEvent(new CustomEvent('ea_workflow_cleared'));
   };
 
   // Sync canvas mode with AppLayout on mount and whenever isCanvasOpen changes
