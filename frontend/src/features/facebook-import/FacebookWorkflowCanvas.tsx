@@ -1,5 +1,4 @@
 import { CombineMediaSidebox, type CombineMediaAssetItem } from './CombineMediaSidebox';
-import { GoogleSheetDataViewerSidebox } from './GoogleSheetDataViewerSidebox';
 import React, { useState, useRef, useEffect, useImperativeHandle, forwardRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '../../components/ui/Button';
@@ -52,15 +51,15 @@ import {
   FiDownload,
   FiGitMerge,
   FiFolder,
+  FiFolderPlus,
+  FiArchive,
+  FiChevronUp,
   FiCornerDownRight,
   FiServer,
   FiMonitor,
   FiSettings,
   FiTag,
   FiHash,
-  FiFolderPlus,
-  FiArchive,
-  FiChevronUp,
 } from 'react-icons/fi';
 import JSZip from 'jszip';
 import { FaFacebook, FaFacebookF, FaInstagram, FaTiktok, FaChrome } from 'react-icons/fa';
@@ -284,7 +283,6 @@ export interface DynamicAIBoxConfig {
   subtitle?: string;
   targetPages?: 'all' | 'first-only' | 'body-only' | 'custom';
   customPages?: string;
-  downloadFolder?: string;
   x: number;
   y: number;
   n8nWorkflowId?: string;
@@ -329,6 +327,7 @@ export interface DynamicAIBoxConfig {
   browserCondoName?: string;
   useCondoImages?: boolean;
   showImagesToEnhance?: boolean;
+  downloadFolder?: string;
   showCondoProjectCard?: boolean;
   showEnhancementPrompt?: boolean;
   usePromptConfig?: boolean;
@@ -3705,8 +3704,6 @@ export const FacebookWorkflowCanvas = forwardRef<
   const [regeneratingBoxId, setRegeneratingBoxId] = useState<string | null>(null);
   const [showFBHeroSettingsSidebox, setShowFBHeroSettingsSidebox] = useState<boolean>(false);
   const [showGoogleSheetSettingsSidebox, setShowGoogleSheetSettingsSidebox] = useState<boolean>(false);
-  const [showGoogleSheetDataViewer, setShowGoogleSheetDataViewer] = useState<boolean>(false);
-  const [sheetViewerBoxConfig, setSheetViewerBoxConfig] = useState<DynamicAIBoxConfig | null>(null);
   const [showPhotoCropSettingsSidebox, setShowPhotoCropSettingsSidebox] = useState<boolean>(false);
   const [showCombineMediaSidebox, setShowCombineMediaSidebox] = useState<boolean>(false);
   const [combineMediaSideboxFormatFilter, setCombineMediaSideboxFormatFilter] = useState<string>('all');
@@ -3715,19 +3712,9 @@ export const FacebookWorkflowCanvas = forwardRef<
   const [sheetSyncSuccessMessage, setSheetSyncSuccessMessage] = useState<string | null>(null);
   const [sheetSyncErrorMessage, setSheetSyncErrorMessage] = useState<string | null>(null);
 
-  const handleOpenGoogleSheetDataViewer = (box?: DynamicAIBoxConfig) => {
-    const target = box || currentModalAIBox || config.aiBoxes.find(isGoogleSheetBox);
-    if (target) {
-      setSheetViewerBoxConfig(target);
-      setShowGoogleSheetDataViewer(true);
-      setShowGoogleSheetSettingsSidebox(false);
-    }
-  };
-
   useEffect(() => {
     setShowFBHeroSettingsSidebox(false);
     setShowGoogleSheetSettingsSidebox(false);
-    setShowGoogleSheetDataViewer(false);
     setShowPhotoCropSettingsSidebox(false);
     setShowCombineMediaSidebox(false);
     setSheetSyncSuccessMessage(null);
@@ -3915,127 +3902,148 @@ export const FacebookWorkflowCanvas = forwardRef<
     for (let s = 0; s < assetsToDownload.length; s++) {
       await handleDownloadImage(assetsToDownload[s].url, s);
       if (s < assetsToDownload.length - 1) {
-        await new Promise((r) => setTimeout(r, 350));
+        await new Promise((r) => setTimeout(r, 250));
       }
     }
   };
 
-  const [activeCombineDownloadMenuId, setActiveCombineDownloadMenuId] = useState<string | null>(null);
+  const [combineDownloadDropdownFormatId, setCombineDownloadDropdownFormatId] = useState<string | null>(null);
+  const [isDownloadingCombineFormat, setIsDownloadingCombineFormat] = useState<string | null>(null);
 
-  const handleDownloadCombineAssetsDirectly = async (assetsToDownload: CombineMediaAssetItem[]) => {
-    setActiveCombineDownloadMenuId(null);
-    await handleDownloadAllCombineAssets(assetsToDownload);
+  const handleDownloadCombineFormatDirectly = async (assets: CombineMediaAssetItem[], formatTitle: string) => {
+    setCombineDownloadDropdownFormatId(null);
+    if (!assets || assets.length === 0) return;
+    setIsDownloadingCombineFormat(formatTitle);
+    try {
+      for (let s = 0; s < assets.length; s++) {
+        await handleDownloadImage(assets[s].url, s);
+        if (s < assets.length - 1) {
+          await new Promise((r) => setTimeout(r, 250));
+        }
+      }
+    } finally {
+      setIsDownloadingCombineFormat(null);
+    }
   };
 
-  const handleDownloadCombineAssetsToFolder = async (assetsToDownload: CombineMediaAssetItem[], title: string, boxConfig?: any) => {
-    setActiveCombineDownloadMenuId(null);
-    const cleanTitle = (title || 'Photos').replace(/^Format:\s*/i, '').replace(/[\/\\?%*:|"<>]/g, '').trim();
-    const targetDir = boxConfig?.downloadFolder || localStorage.getItem('ea_crop_download_folder') || '/Downloads';
+  const handleDownloadCombineFormatWithFolder = async (assets: CombineMediaAssetItem[], formatTitle: string) => {
+    setCombineDownloadDropdownFormatId(null);
+    if (!assets || assets.length === 0) return;
+    setIsDownloadingCombineFormat(formatTitle);
+    const cleanFolder = formatTitle.replace(/^Format:\s*/i, '').replace(/[\/\\?%*:|"<>]/g, '').trim() || 'Photos';
 
     try {
-      const payloadFiles = assetsToDownload.map((a, idx) => {
-        const ext = (a.url.includes('image/png') || a.url.includes('.png')) ? 'png' : (a.url.includes('image/webp') || a.url.includes('.webp')) ? 'webp' : 'jpg';
-        return {
-          filename: `${cleanTitle}-${idx + 1}.${ext}`,
-          data: a.url,
-        };
-      });
+      const payloadFiles = await Promise.all(
+        assets.map(async (item, i) => {
+          const fileNum = item.tileIndex ? `tile-${item.tileIndex}` : `${i + 1}`;
+          const ext = (item.url.includes('image/png') || item.url.includes('.png')) ? 'png' : 'jpg';
+          const filename = `${cleanFolder}-${fileNum}.${ext}`;
 
-      // 1. Try native Mac Companion service (directly writes to ~/Downloads on host Mac without prompts)
+          let base64Data = item.url;
+          if (item.url.startsWith('blob:') || item.url.startsWith('/storage') || item.url.startsWith('http')) {
+            try {
+              const fullUrl = item.url.startsWith('/storage') ? `http://localhost:8085${item.url}` : item.url;
+              const resp = await fetch(fullUrl);
+              const blob = await resp.blob();
+              base64Data = await new Promise<string>((resolve) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result as string);
+                reader.onerror = () => resolve(item.url);
+                reader.readAsDataURL(blob);
+              });
+            } catch (convErr) {}
+          }
+          return { filename, data: base64Data };
+        })
+      );
+
+      // 1. Try Mac Companion service directly (zero prompt, saves directly to ~/Downloads/<cleanFolder>)
       try {
         const res = await fetch('http://localhost:9224/save-to-folder', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            target_directory: targetDir,
-            folder_name: cleanTitle,
+            folder_name: cleanFolder,
             files: payloadFiles,
           }),
         });
-
         if (res.ok) {
-          const data = await res.json();
-          if (data.success && data.saved_count > 0) {
+          const d = await res.json();
+          if (d.success && d.saved_count > 0) {
+            setIsDownloadingCombineFormat(null);
             return;
           }
         }
-      } catch (compErr) {
-        console.warn('Mac companion save-to-folder error:', compErr);
-      }
+      } catch (_) {}
 
-      // 2. Try Go backend service fallback
+      // 2. Try Go backend fallback
       try {
         const res = await fetch('http://localhost:8085/api/facebook-import/save-to-folder', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            target_directory: targetDir,
-            folder_name: cleanTitle,
+            folder_name: cleanFolder,
             files: payloadFiles,
           }),
         });
-
         if (res.ok) {
-          const data = await res.json();
-          if (data.success && data.saved_count > 0) {
+          const d = await res.json();
+          if (d.success && d.saved_count > 0) {
+            setIsDownloadingCombineFormat(null);
             return;
           }
         }
-      } catch (backendErr) {
-        console.warn('Backend save-to-folder error:', backendErr);
-      }
-    } catch (err) {
-      console.warn('Backend save-to-folder error, falling back to ZIP:', err);
-    }
+      } catch (_) {}
+    } catch (_) {}
 
-    await handleDownloadCombineAssetsZip(assetsToDownload, cleanTitle);
+    // Fallback to direct download
+    await handleDownloadCombineFormatDirectly(assets, formatTitle);
+    setIsDownloadingCombineFormat(null);
   };
 
-  const handleDownloadCombineAssetsZip = async (assetsToDownload: CombineMediaAssetItem[], title: string) => {
-    setActiveCombineDownloadMenuId(null);
-    const cleanTitle = (title || 'Photos').replace(/^Format:\s*/i, '').replace(/[\/\\?%*:|"<>]/g, '').trim();
-    const zip = new JSZip();
-    const folder = zip.folder(cleanTitle);
+  const handleDownloadCombineFormatZip = async (assets: CombineMediaAssetItem[], formatTitle: string) => {
+    setCombineDownloadDropdownFormatId(null);
+    if (!assets || assets.length === 0) return;
+    setIsDownloadingCombineFormat(formatTitle);
+    const cleanFolder = formatTitle.replace(/^Format:\s*/i, '').replace(/[\/\\?%*:|"<>]/g, '').trim() || 'Photos';
 
-    for (let i = 0; i < assetsToDownload.length; i++) {
-      const a = assetsToDownload[i];
-      const ext = (a.url.includes('image/png') || a.url.includes('.png')) ? 'png' : (a.url.includes('image/webp') || a.url.includes('.webp')) ? 'webp' : 'jpg';
-      const filename = `${cleanTitle}-${i + 1}.${ext}`;
-      try {
-        let blob: Blob;
-        if (a.url.startsWith('data:')) {
-          const commaIdx = a.url.indexOf(',');
-          const base64Data = a.url.slice(commaIdx + 1);
-          const binaryStr = atob(base64Data);
-          const bytes = new Uint8Array(binaryStr.length);
-          for (let b = 0; b < binaryStr.length; b++) bytes[b] = binaryStr.charCodeAt(b);
-          blob = new Blob([bytes], { type: ext === 'png' ? 'image/png' : 'image/jpeg' });
-        } else {
-          const fullUrl = a.url.startsWith('/storage') ? `http://localhost:8085${a.url}` : a.url;
-          const resp = await fetch(fullUrl, { mode: 'cors' });
-          blob = await resp.blob();
-        }
+    try {
+      const zip = new JSZip();
+      const folder = zip.folder(cleanFolder);
+
+      for (let i = 0; i < assets.length; i++) {
+        const item = assets[i];
+        const fileNum = item.tileIndex ? `tile-${item.tileIndex}` : `${i + 1}`;
+        const ext = (item.url.includes('image/png') || item.url.includes('.png')) ? 'png' : 'jpg';
+        const fileName = `${cleanFolder}-${fileNum}.${ext}`;
+
+        const fullUrl = item.url.startsWith('/storage') ? `http://localhost:8085${item.url}` : item.url;
+        const resp = await fetch(fullUrl);
+        const blob = await resp.blob();
+
         if (folder) {
-          folder.file(filename, blob);
+          folder.file(fileName, blob);
         } else {
-          zip.file(`${cleanTitle}/${filename}`, blob);
+          zip.file(`${cleanFolder}/${fileName}`, blob);
         }
-      } catch (err) {
-        console.warn('Zip asset fetch error:', err);
       }
-    }
 
-    const zipBlob = await zip.generateAsync({ type: 'blob' });
-    const blobUrl = URL.createObjectURL(zipBlob);
-    const anchor = document.createElement('a');
-    anchor.href = blobUrl;
-    anchor.download = `${cleanTitle}.zip`;
-    document.body.appendChild(anchor);
-    anchor.click();
-    document.body.removeChild(anchor);
-    setTimeout(() => {
-      try { URL.revokeObjectURL(blobUrl); } catch (_) {}
-    }, 30000);
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const blobUrl = URL.createObjectURL(zipBlob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = `${cleanFolder}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => {
+        try { URL.revokeObjectURL(blobUrl); } catch (_) {}
+      }, 15000);
+    } catch (err) {
+      console.warn('ZIP download error:', err);
+    } finally {
+      setIsDownloadingCombineFormat(null);
+    }
   };
 
   const connectedImageNodesForCombine = useMemo(() => {
@@ -4789,12 +4797,6 @@ export const FacebookWorkflowCanvas = forwardRef<
           e.stopImmediatePropagation();
           e.stopPropagation();
           setShowGoogleSheetSettingsSidebox(false);
-          return;
-        }
-        if (showGoogleSheetDataViewer) {
-          e.stopImmediatePropagation();
-          e.stopPropagation();
-          setShowGoogleSheetDataViewer(false);
           return;
         }
         if (showFBHeroSettingsSidebox) {
@@ -9638,11 +9640,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                   onAddClick={(e) => {
                     e.stopPropagation();
                     setDragWire(null);
-                    if (isGoogleSheetBox(box)) {
-                      handleOpenGoogleSheetDataViewer(box);
-                    } else {
-                      handleOpenConnectDrawer(box.id, 'ai-box', box.title || 'AI Processor');
-                    }
+                    setDragWire(null);
+                    handleOpenConnectDrawer(box.id, 'ai-box', box.title || 'AI Processor');
                   }}
                   onTopAddClick={isTextAI ? (e) => {
                     e.stopPropagation();
@@ -11019,7 +11018,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 maxWidth: '100%',
                 backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
                 borderLeft: '1px solid var(--border-color)',
-                boxShadow: (viewingPromptTemplate || showGoogleSheetSettingsSidebox || showGoogleSheetDataViewer || showCombineMediaSidebox)
+                boxShadow: (viewingPromptTemplate || showGoogleSheetSettingsSidebox || showCombineMediaSidebox)
                   ? 'none'
                   : isDark
                     ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
@@ -11156,79 +11155,45 @@ export const FacebookWorkflowCanvas = forwardRef<
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0, position: 'relative', zIndex: 50, pointerEvents: 'auto' }}>
                   {isAIBox && currentModalAIBox && isGoogleSheetBox(currentModalAIBox) && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          handleOpenGoogleSheetDataViewer(currentModalAIBox);
-                        }}
-                        title="View Full Google Sheet Data Table (Search & Filter all columns)"
-                        aria-label="View Google Sheet Data Table"
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          width: '28px',
-                          height: '28px',
-                          borderRadius: '6px',
-                          border: showGoogleSheetDataViewer
-                            ? '1px solid #0F9D58'
-                            : isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                          backgroundColor: showGoogleSheetDataViewer
-                            ? 'rgba(15, 157, 88, 0.15)'
-                            : isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
-                          color: showGoogleSheetDataViewer ? '#0F9D58' : 'var(--text-secondary)',
-                          cursor: 'pointer',
-                          flexShrink: 0,
-                          pointerEvents: 'auto',
-                          userSelect: 'none',
-                          transition: 'all 0.15s ease',
-                        }}
-                      >
-                        <SiGooglesheets size={14} color="#0F9D58" style={{ pointerEvents: 'none' }} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          if (viewingPromptTemplate) {
-                            setViewingPromptTemplate(null);
-                            setShowFBHeroSettingsSidebox(false);
-                            setShowGoogleSheetSettingsSidebox(true);
-                          } else {
-                            setShowFBHeroSettingsSidebox(false);
-                            setShowGoogleSheetSettingsSidebox((prev) => !prev);
-                          }
-                        }}
-                        title="Google Sheet & AI Agent Settings (Spreadsheet, Credentials, Model, Prompt)"
-                        aria-label="Google Sheet Settings"
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          width: '28px',
-                          height: '28px',
-                          borderRadius: '6px',
-                          border: showGoogleSheetSettingsSidebox && !viewingPromptTemplate
-                            ? '1px solid #0F9D58'
-                            : isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                          backgroundColor: showGoogleSheetSettingsSidebox && !viewingPromptTemplate
-                            ? 'rgba(15, 157, 88, 0.15)'
-                            : isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
-                          color: showGoogleSheetSettingsSidebox && !viewingPromptTemplate ? '#0F9D58' : 'var(--text-secondary)',
-                          cursor: 'pointer',
-                          flexShrink: 0,
-                          pointerEvents: 'auto',
-                          userSelect: 'none',
-                          transition: 'all 0.15s ease',
-                        }}
-                      >
-                        <FiSettings size={15} style={{ pointerEvents: 'none' }} />
-                      </button>
-                    </>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (viewingPromptTemplate) {
+                          setViewingPromptTemplate(null);
+                          setShowFBHeroSettingsSidebox(false);
+                          setShowGoogleSheetSettingsSidebox(true);
+                        } else {
+                          setShowFBHeroSettingsSidebox(false);
+                          setShowGoogleSheetSettingsSidebox((prev) => !prev);
+                        }
+                      }}
+                      title="Google Sheet & AI Agent Settings (Spreadsheet, Credentials, Model, Prompt)"
+                      aria-label="Google Sheet Settings"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: '28px',
+                        height: '28px',
+                        borderRadius: '6px',
+                        border: showGoogleSheetSettingsSidebox && !viewingPromptTemplate
+                          ? '1px solid #0F9D58'
+                          : isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                        backgroundColor: showGoogleSheetSettingsSidebox && !viewingPromptTemplate
+                          ? 'rgba(15, 157, 88, 0.15)'
+                          : isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+                        color: showGoogleSheetSettingsSidebox && !viewingPromptTemplate ? '#0F9D58' : 'var(--text-secondary)',
+                        cursor: 'pointer',
+                        flexShrink: 0,
+                        pointerEvents: 'auto',
+                        userSelect: 'none',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      <FiSettings size={15} style={{ pointerEvents: 'none' }} />
+                    </button>
                   )}
 
                   {isAIBox && currentModalAIBox && (
@@ -11720,10 +11685,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                         const fromTitle = c.fromNodeId === 'get-content' ? 'Get Content' : fromBox?.title || c.fromNodeId;
                         const isTextAI = fromBox
                           ? isTextAIBox(fromBox, config.connections) ||
-                            fromBox.subtitle === 'AI Processor' ||
-                            fromBox.processType === 'text_ai' ||
-                            fromBox.title?.toLowerCase().includes('prompt generator') ||
-                            fromBox.title?.toLowerCase().includes('ai model')
+                          fromBox.subtitle === 'AI Processor' ||
+                          fromBox.processType === 'text_ai' ||
+                          fromBox.title?.toLowerCase().includes('prompt generator') ||
+                          fromBox.title?.toLowerCase().includes('ai model')
                           : false;
 
                         if (isTextAI) {
@@ -11780,48 +11745,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                           : connectedTextOutputs.map((item) => `## ${item.title}\n\n${item.text}`).join('\n\n---\n\n'))
                         : (aiGeneratedCopy || rawContent || '');
 
-                      // Prioritize text groups (AI Processor, Get Content) above all image groups (Watermark, Crop, Get Images)
-                      const sortedCombineInputs = [...combineInputs].sort((a, b) => {
-                        const fromBoxA = config.aiBoxes.find((box) => box.id === a.fromNodeId);
-                        const fromBoxB = config.aiBoxes.find((box) => box.id === b.fromNodeId);
-
-                        const isImageA = a.fromNodeId === 'get-images' || (fromBoxA ? (
-                          isWatermarkAIBox(fromBoxA) ||
-                          (isTextFormatAIBox(fromBoxA) && (fromBoxA.processType === 'image_crop' || fromBoxA.title?.toLowerCase().includes('cut') || fromBoxA.title?.toLowerCase().includes('crop')))
-                        ) : false);
-
-                        const isImageB = b.fromNodeId === 'get-images' || (fromBoxB ? (
-                          isWatermarkAIBox(fromBoxB) ||
-                          (isTextFormatAIBox(fromBoxB) && (fromBoxB.processType === 'image_crop' || fromBoxB.title?.toLowerCase().includes('cut') || fromBoxB.title?.toLowerCase().includes('crop')))
-                        ) : false);
-
-                        const isTextA = a.fromNodeId === 'get-content' || (fromBoxA ? (
-                          isTextAIBox(fromBoxA, config.connections) ||
-                          fromBoxA.subtitle === 'AI Processor' ||
-                          fromBoxA.processType === 'text_ai' ||
-                          fromBoxA.title?.toLowerCase().includes('prompt generator') ||
-                          fromBoxA.title?.toLowerCase().includes('ai model')
-                        ) : false);
-
-                        const isTextB = b.fromNodeId === 'get-content' || (fromBoxB ? (
-                          isTextAIBox(fromBoxB, config.connections) ||
-                          fromBoxB.subtitle === 'AI Processor' ||
-                          fromBoxB.processType === 'text_ai' ||
-                          fromBoxB.title?.toLowerCase().includes('prompt generator') ||
-                          fromBoxB.title?.toLowerCase().includes('ai model')
-                        ) : false);
-
-                        if (isTextA && !isTextB) return -1;
-                        if (!isTextA && isTextB) return 1;
-                        if (!isImageA && isImageB) return -1;
-                        if (isImageA && !isImageB) return 1;
-                        return 0;
-                      });
-
                       return (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                           {/* Clean, professional card for EACH connected input */}
-                          {sortedCombineInputs.map((c) => {
+                          {combineInputs.map((c) => {
                             const fromBox = config.aiBoxes.find((b) => b.id === c.fromNodeId);
                             const isContent = c.fromNodeId === 'get-content';
                             const isImages = c.fromNodeId === 'get-images';
@@ -11830,10 +11757,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                             const isBrowser = fromBox ? isExternalBrowserAIBox(fromBox) : false;
                             const isTextAI = fromBox
                               ? isTextAIBox(fromBox, config.connections) ||
-                                fromBox.subtitle === 'AI Processor' ||
-                                fromBox.processType === 'text_ai' ||
-                                fromBox.title?.toLowerCase().includes('prompt generator') ||
-                                fromBox.title?.toLowerCase().includes('ai model')
+                              fromBox.subtitle === 'AI Processor' ||
+                              fromBox.processType === 'text_ai' ||
+                              fromBox.title?.toLowerCase().includes('prompt generator') ||
+                              fromBox.title?.toLowerCase().includes('ai model')
                               : false;
 
                             const fromTitle = isContent ? 'Get Content' : isImages ? 'Get Images' : fromBox?.title || c.fromNodeId;
@@ -11883,7 +11810,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   }}
                                 >
                                   {/* Clean Neutral Header */}
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '7px', minWidth: 0, flex: 1 }}>
                                       <div
                                         style={{
@@ -11914,6 +11841,21 @@ export const FacebookWorkflowCanvas = forwardRef<
                                         {fromTitle}
                                       </span>
                                     </div>
+                                    <span
+                                      style={{
+                                        fontSize: '0.625rem',
+                                        fontWeight: 600,
+                                        padding: '2px 8px',
+                                        borderRadius: '6px',
+                                        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+                                        border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                        color: 'var(--text-secondary)',
+                                        whiteSpace: 'nowrap',
+                                        flexShrink: 0,
+                                      }}
+                                    >
+                                      {boxCount} {boxCount === 1 ? 'photo' : 'photos'} ready
+                                    </span>
                                   </div>
 
                                   {/* Cool 3-Image Stack directly in the card without extra container */}
@@ -12053,191 +11995,198 @@ export const FacebookWorkflowCanvas = forwardRef<
                                     )}
                                   </div>
 
-                                  {/* Clean Neutral Download Button & Dropdown */}
-                                  {boxAssets.length > 0 && (
-                                    <div style={{ position: 'relative' }}>
-                                      <button
-                                        type="button"
-                                        onClick={() => setActiveCombineDownloadMenuId((prev) => (prev === c.id ? null : c.id))}
+                                  {/* Clean Neutral Download Action Button with Dropdown (matching Image 4) */}
+                                  <div style={{ position: 'relative', marginTop: '2px' }}>
+                                    <button
+                                      type="button"
+                                      disabled={isDownloadingCombineFormat === fromTitle}
+                                      onClick={() => {
+                                        setCombineDownloadDropdownFormatId((prev) => prev === c.fromNodeId ? null : c.fromNodeId);
+                                      }}
+                                      style={{
+                                        width: '100%',
+                                        height: '32px',
+                                        padding: '0 12px',
+                                        borderRadius: '6px',
+                                        border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+                                        color: 'var(--text-secondary)',
+                                        fontSize: '0.75rem',
+                                        fontWeight: 600,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: '6px',
+                                        cursor: isDownloadingCombineFormat === fromTitle ? 'wait' : 'pointer',
+                                        transition: 'all 0.15s ease',
+                                      }}
+                                      onMouseEnter={(e) => {
+                                        e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.09)' : 'rgba(0, 0, 0, 0.08)';
+                                        e.currentTarget.style.borderColor = isDark ? '#484F58' : '#CBD5E1';
+                                        e.currentTarget.style.color = 'var(--text-primary)';
+                                      }}
+                                      onMouseLeave={(e) => {
+                                        e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)';
+                                        e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
+                                        e.currentTarget.style.color = 'var(--text-secondary)';
+                                      }}
+                                    >
+                                      <FiDownload size={12} />
+                                      <span>
+                                        {isDownloadingCombineFormat === fromTitle
+                                          ? 'Downloading...'
+                                          : 'Download'}
+                                      </span>
+                                      {combineDownloadDropdownFormatId === c.fromNodeId ? <FiChevronUp size={12} /> : <FiChevronDown size={12} />}
+                                    </button>
+
+                                    {/* Dropdown Menu */}
+                                    {combineDownloadDropdownFormatId === c.fromNodeId && (
+                                      <div
                                         style={{
-                                          width: '100%',
-                                          height: '28px',
-                                          borderRadius: '6px',
+                                          position: 'absolute',
+                                          top: '100%',
+                                          left: 0,
+                                          right: 0,
+                                          marginTop: '4px',
+                                          borderRadius: '8px',
                                           border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
-                                          color: 'var(--text-secondary)',
-                                          fontSize: '0.6875rem',
-                                          fontWeight: 600,
+                                          backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                                          boxShadow: isDark
+                                            ? '0 10px 25px rgba(0, 0, 0, 0.6), 0 2px 6px rgba(0, 0, 0, 0.4)'
+                                            : '0 8px 20px rgba(0, 0, 0, 0.12)',
+                                          padding: '4px',
                                           display: 'flex',
-                                          alignItems: 'center',
-                                          justifyContent: 'center',
-                                          gap: '5px',
-                                          cursor: 'pointer',
-                                          transition: 'all 0.15s ease',
-                                        }}
-                                        onMouseEnter={(e) => {
-                                          e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.09)' : 'rgba(0, 0, 0, 0.08)';
-                                          e.currentTarget.style.borderColor = isDark ? '#484F58' : '#CBD5E1';
-                                          e.currentTarget.style.color = 'var(--text-primary)';
-                                        }}
-                                        onMouseLeave={(e) => {
-                                          e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)';
-                                          e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
-                                          e.currentTarget.style.color = 'var(--text-secondary)';
+                                          flexDirection: 'column',
+                                          gap: '2px',
+                                          zIndex: 100,
                                         }}
                                       >
-                                        <FiDownload size={11} />
-                                        <span>Download</span>
-                                        {activeCombineDownloadMenuId === c.id ? <FiChevronUp size={11} /> : <FiChevronDown size={11} />}
-                                      </button>
-
-                                      {activeCombineDownloadMenuId === c.id && (
+                                        {/* 1. Directly to Downloads */}
                                         <div
+                                          onClick={() => handleDownloadCombineFormatDirectly(boxAssets, fromTitle)}
                                           style={{
-                                            position: 'absolute',
-                                            top: '100%',
-                                            left: 0,
-                                            right: 0,
-                                            marginTop: '4px',
-                                            borderRadius: '8px',
-                                            border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                                            backgroundColor: isDark ? '#161B22' : '#FFFFFF',
-                                            boxShadow: isDark
-                                              ? '0 10px 25px rgba(0, 0, 0, 0.6), 0 2px 6px rgba(0, 0, 0, 0.4)'
-                                              : '0 8px 20px rgba(0, 0, 0, 0.12)',
-                                            padding: '4px',
                                             display: 'flex',
-                                            flexDirection: 'column',
-                                            gap: '2px',
-                                            zIndex: 100,
+                                            alignItems: 'center',
+                                            gap: '10px',
+                                            padding: '8px 10px',
+                                            borderRadius: '6px',
+                                            cursor: 'pointer',
+                                            transition: 'background-color 0.15s ease',
                                           }}
+                                          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.07)' : 'rgba(0, 0, 0, 0.04)')}
+                                          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
                                         >
-                                          {/* Directly to Downloads */}
                                           <div
-                                            onClick={() => handleDownloadCombineAssetsDirectly(boxAssets)}
                                             style={{
+                                              width: '28px',
+                                              height: '28px',
+                                              borderRadius: '6px',
+                                              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
+                                              border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                              color: 'var(--text-secondary)',
                                               display: 'flex',
                                               alignItems: 'center',
-                                              gap: '8px',
-                                              padding: '6px 8px',
-                                              borderRadius: '6px',
-                                              cursor: 'pointer',
-                                              transition: 'background-color 0.15s ease',
+                                              justifyContent: 'center',
+                                              flexShrink: 0,
                                             }}
-                                            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.07)' : 'rgba(0, 0, 0, 0.04)')}
-                                            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
                                           >
-                                            <div
-                                              style={{
-                                                width: '26px',
-                                                height: '26px',
-                                                borderRadius: '6px',
-                                                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
-                                                border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                                                color: 'var(--text-secondary)',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                flexShrink: 0,
-                                              }}
-                                            >
-                                              <FiDownload size={13} />
-                                            </div>
-                                            <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-                                              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                                                Directly to Downloads Folder
-                                              </span>
-                                              <span style={{ fontSize: '0.59375rem', color: 'var(--text-muted)' }}>
-                                                Save all {boxAssets.length} photos directly
-                                              </span>
-                                            </div>
+                                            <FiDownload size={14} />
                                           </div>
-
-                                          {/* Create Folders in Downloads */}
-                                          <div
-                                            onClick={() => handleDownloadCombineAssetsToFolder(boxAssets, fromTitle, fromBox)}
-                                            style={{
-                                              display: 'flex',
-                                              alignItems: 'center',
-                                              gap: '8px',
-                                              padding: '6px 8px',
-                                              borderRadius: '6px',
-                                              cursor: 'pointer',
-                                              transition: 'background-color 0.15s ease',
-                                            }}
-                                            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.07)' : 'rgba(0, 0, 0, 0.04)')}
-                                            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
-                                          >
-                                            <div
-                                              style={{
-                                                width: '26px',
-                                                height: '26px',
-                                                borderRadius: '6px',
-                                                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
-                                                border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                                                color: 'var(--text-secondary)',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                flexShrink: 0,
-                                              }}
-                                            >
-                                              <FiFolderPlus size={13} />
-                                            </div>
-                                            <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-                                              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                                                Create Folders in Downloads
-                                              </span>
-                                              <span style={{ fontSize: '0.59375rem', color: 'var(--text-muted)' }}>
-                                                Saves directly into /Downloads/{(fromTitle || 'Photos').replace(/^Format:\s*/i, '')}/
-                                              </span>
-                                            </div>
-                                          </div>
-
-                                          {/* Download ZIP with Folders */}
-                                          <div
-                                            onClick={() => handleDownloadCombineAssetsZip(boxAssets, fromTitle)}
-                                            style={{
-                                              display: 'flex',
-                                              alignItems: 'center',
-                                              gap: '8px',
-                                              padding: '6px 8px',
-                                              borderRadius: '6px',
-                                              cursor: 'pointer',
-                                              transition: 'background-color 0.15s ease',
-                                            }}
-                                            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.07)' : 'rgba(0, 0, 0, 0.04)')}
-                                            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
-                                          >
-                                            <div
-                                              style={{
-                                                width: '26px',
-                                                height: '26px',
-                                                borderRadius: '6px',
-                                                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
-                                                border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                                                color: 'var(--text-secondary)',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                flexShrink: 0,
-                                              }}
-                                            >
-                                              <FiArchive size={13} />
-                                            </div>
-                                            <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-                                              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                                                Download ZIP with Folders
-                                              </span>
-                                              <span style={{ fontSize: '0.59375rem', color: 'var(--text-muted)' }}>
-                                                Bundle in {(fromTitle || 'Photos').replace(/^Format:\s*/i, '')}.zip
-                                              </span>
-                                            </div>
+                                          <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                                            <span style={{ fontSize: '0.78125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                              Directly to Downloads Folder
+                                            </span>
+                                            <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
+                                              Save all {boxAssets.length} photos directly
+                                            </span>
                                           </div>
                                         </div>
-                                      )}
-                                    </div>
-                                  )}
+
+                                        {/* 2. Create Folders in Downloads */}
+                                        <div
+                                          onClick={() => handleDownloadCombineFormatWithFolder(boxAssets, fromTitle)}
+                                          style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '10px',
+                                            padding: '8px 10px',
+                                            borderRadius: '6px',
+                                            cursor: 'pointer',
+                                            transition: 'background-color 0.15s ease',
+                                          }}
+                                          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.07)' : 'rgba(0, 0, 0, 0.04)')}
+                                          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                                        >
+                                          <div
+                                            style={{
+                                              width: '28px',
+                                              height: '28px',
+                                              borderRadius: '6px',
+                                              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
+                                              border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                              color: 'var(--text-secondary)',
+                                              display: 'flex',
+                                              alignItems: 'center',
+                                              justifyContent: 'center',
+                                              flexShrink: 0,
+                                            }}
+                                          >
+                                            <FiFolderPlus size={14} />
+                                          </div>
+                                          <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                                            <span style={{ fontSize: '0.78125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                              Create Folders in Downloads
+                                            </span>
+                                            <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
+                                              Creates folder /{fromTitle.replace(/^Format:\s*/i, '').trim()}/ with relative photos
+                                            </span>
+                                          </div>
+                                        </div>
+
+                                        {/* 3. Download ZIP with Folders */}
+                                        <div
+                                          onClick={() => handleDownloadCombineFormatZip(boxAssets, fromTitle)}
+                                          style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '10px',
+                                            padding: '8px 10px',
+                                            borderRadius: '6px',
+                                            cursor: 'pointer',
+                                            transition: 'background-color 0.15s ease',
+                                          }}
+                                          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.07)' : 'rgba(0, 0, 0, 0.04)')}
+                                          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                                        >
+                                          <div
+                                            style={{
+                                              width: '28px',
+                                              height: '28px',
+                                              borderRadius: '6px',
+                                              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
+                                              border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                              color: 'var(--text-secondary)',
+                                              display: 'flex',
+                                              alignItems: 'center',
+                                              justifyContent: 'center',
+                                              flexShrink: 0,
+                                            }}
+                                          >
+                                            <FiArchive size={14} />
+                                          </div>
+                                          <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                                            <span style={{ fontSize: '0.78125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                              Download ZIP with Folders
+                                            </span>
+                                            <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
+                                              Bundle in {fromTitle.replace(/^Format:\s*/i, '').trim()}.zip with folder structure
+                                            </span>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
                               );
                             }
@@ -13534,27 +13483,17 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   style={{
                                     display: 'flex',
                                     flexDirection: 'column',
-                                    gap: '0.5rem',
-                                    padding: '0.75rem',
-                                    borderRadius: '8px',
-                                    backgroundColor: isDark ? 'rgba(16, 185, 129, 0.08)' : '#F0FDF4',
-                                    border: isDark ? '1px solid rgba(16, 185, 129, 0.25)' : '1px solid #BBF7D0',
+                                    gap: '0.45rem',
+                                    padding: '0.65rem 0.75rem',
+                                    borderRadius: '6px',
+                                    backgroundColor: isDark ? 'rgba(16, 185, 129, 0.1)' : '#F0FDF4',
+                                    border: isDark ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid #BBF7D0',
                                   }}
                                 >
-                                  {/* Clean Single-Line Header */}
-                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, flex: 1 }}>
-                                      <FiCheckCircle size={14} color="#10B981" style={{ flexShrink: 0 }} />
-                                      <span
-                                        style={{
-                                          fontSize: '0.78125rem',
-                                          fontWeight: 600,
-                                          color: isDark ? '#6EE7B7' : '#15803D',
-                                          whiteSpace: 'nowrap',
-                                          overflow: 'hidden',
-                                          textOverflow: 'ellipsis',
-                                        }}
-                                      >
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                      <FiCheckCircle size={14} color="#10B981" />
+                                      <span style={{ fontSize: '0.75rem', fontWeight: 700, color: isDark ? '#6EE7B7' : '#15803D' }}>
                                         Row Added to "{currentModalAIBox.googleSheetName || 'Sheet6'}"
                                       </span>
                                     </div>
@@ -13567,11 +13506,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                                         alignItems: 'center',
                                         gap: '4px',
                                         fontSize: '0.6875rem',
-                                        fontWeight: 500,
+                                        fontWeight: 600,
                                         color: isDark ? '#38BDF8' : '#0284C7',
                                         textDecoration: 'none',
-                                        whiteSpace: 'nowrap',
-                                        flexShrink: 0,
                                       }}
                                     >
                                       Open Sheet <FiExternalLink size={11} />
@@ -13584,10 +13521,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                                       style={{
                                         display: 'grid',
                                         gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-                                        gap: '4px 8px',
-                                        padding: '0.45rem 0.55rem',
-                                        borderRadius: '5px',
-                                        backgroundColor: isDark ? 'rgba(0, 0, 0, 0.28)' : 'rgba(255, 255, 255, 0.7)',
+                                        gap: '4px',
+                                        padding: '0.45rem',
+                                        borderRadius: '4px',
+                                        backgroundColor: isDark ? 'rgba(0, 0, 0, 0.25)' : 'rgba(255, 255, 255, 0.7)',
                                         border: isDark ? '1px solid rgba(255, 255, 255, 0.05)' : '1px solid #E2E8F0',
                                         fontSize: '0.65rem',
                                         maxHeight: '120px',
@@ -13603,93 +13540,78 @@ export const FacebookWorkflowCanvas = forwardRef<
                                     </div>
                                   )}
 
-                                  {/* Action Links Row (Single clean line, no text wrapping) */}
-                                  <div
-                                    style={{
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      justifyContent: 'space-between',
-                                      gap: '8px',
-                                      marginTop: '2px',
-                                      paddingTop: '6px',
-                                      borderTop: isDark ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid #E2E8F0',
-                                    }}
-                                  >
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setViewingPromptTemplate({
-                                            id: currentModalAIBox.id,
-                                            name: `${currentModalAIBox.title || 'Google Sheet'} Appended Row`,
-                                            templateText: sheetBoxOutput,
-                                            headerTitle: 'Google Sheet Appended Row',
-                                            copyButtonLabel: 'Copy Row JSON',
-                                          });
-                                        }}
-                                        style={{
-                                          display: 'inline-flex',
-                                          alignItems: 'center',
-                                          gap: '4px',
-                                          background: 'none',
-                                          border: 'none',
-                                          color: 'var(--accent-primary, #3B82F6)',
-                                          fontSize: '0.6875rem',
-                                          fontWeight: 600,
-                                          cursor: 'pointer',
-                                          padding: 0,
-                                          whiteSpace: 'nowrap',
-                                        }}
-                                      >
-                                        <FiEye size={12} /> View Full JSON
-                                      </button>
-                                      <span style={{ opacity: 0.3 }}>•</span>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          navigator.clipboard.writeText(sheetBoxOutput);
-                                          setCopiedPromptId(currentModalAIBox.id);
-                                          setTimeout(() => setCopiedPromptId(null), 2000);
-                                        }}
-                                        style={{
-                                          display: 'inline-flex',
-                                          alignItems: 'center',
-                                          gap: '4px',
-                                          background: 'none',
-                                          border: 'none',
-                                          color: copiedPromptId === currentModalAIBox.id ? '#10B981' : 'var(--text-secondary)',
-                                          fontSize: '0.6875rem',
-                                          fontWeight: 600,
-                                          cursor: 'pointer',
-                                          padding: 0,
-                                          whiteSpace: 'nowrap',
-                                        }}
-                                      >
-                                        {copiedPromptId === currentModalAIBox.id ? <FiCheck size={12} /> : <FiCopy size={12} />}
-                                        <span>{copiedPromptId === currentModalAIBox.id ? 'Copied' : 'Copy JSON'}</span>
-                                      </button>
-                                    </div>
-
+                                  {/* Action links */}
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setViewingPromptTemplate({
+                                          id: currentModalAIBox.id,
+                                          name: `${currentModalAIBox.title || 'Google Sheet'} Appended Row`,
+                                          templateText: sheetBoxOutput,
+                                          headerTitle: 'Google Sheet Appended Row',
+                                          copyButtonLabel: 'Copy Row JSON',
+                                        });
+                                      }}
+                                      style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                        background: 'none',
+                                        border: 'none',
+                                        color: 'var(--accent-primary, #3B82F6)',
+                                        fontSize: '0.6875rem',
+                                        fontWeight: 600,
+                                        cursor: 'pointer',
+                                        padding: 0,
+                                      }}
+                                    >
+                                      <FiEye size={12} /> View Full JSON
+                                    </button>
+                                    <span style={{ opacity: 0.4 }}>•</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        navigator.clipboard.writeText(sheetBoxOutput);
+                                        setCopiedPromptId(currentModalAIBox.id);
+                                        setTimeout(() => setCopiedPromptId(null), 2000);
+                                      }}
+                                      style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                        background: 'none',
+                                        border: 'none',
+                                        color: copiedPromptId === currentModalAIBox.id ? '#10B981' : 'var(--text-secondary)',
+                                        fontSize: '0.6875rem',
+                                        fontWeight: 600,
+                                        cursor: 'pointer',
+                                        padding: 0,
+                                      }}
+                                    >
+                                      {copiedPromptId === currentModalAIBox.id ? <FiCheck size={12} /> : <FiCopy size={12} />}
+                                      {copiedPromptId === currentModalAIBox.id ? 'Copied' : 'Copy JSON'}
+                                    </button>
+                                    <span style={{ opacity: 0.4 }}>•</span>
                                     <button
                                       type="button"
                                       disabled={isDeletingSheetRow || isRunningThisNode}
                                       onClick={() => handlePromptRevertRow(currentModalAIBox)}
                                       style={{
-                                        display: 'inline-flex',
+                                        display: 'flex',
                                         alignItems: 'center',
                                         gap: '4px',
                                         background: 'none',
                                         border: 'none',
-                                        color: isDark ? '#F87171' : '#DC2626',
+                                        color: isDark ? '#FCA5A5' : '#DC2626',
                                         fontSize: '0.6875rem',
                                         fontWeight: 600,
                                         cursor: isDeletingSheetRow || isRunningThisNode ? 'not-allowed' : 'pointer',
                                         padding: 0,
-                                        whiteSpace: 'nowrap',
                                       }}
                                     >
-                                      <FiRotateCcw size={11} style={{ animation: isDeletingSheetRow ? 'spin 1s linear infinite' : 'none' }} />
-                                      <span>{isDeletingSheetRow ? 'Deleting...' : 'Revert Row'}</span>
+                                      <FiRotateCcw size={12} style={{ animation: isDeletingSheetRow ? 'spin 1s linear infinite' : 'none' }} />
+                                      <span>{isDeletingSheetRow ? 'Deleting...' : 'Revert / Delete Row'}</span>
                                     </button>
                                   </div>
                                 </div>
@@ -13702,13 +13624,13 @@ export const FacebookWorkflowCanvas = forwardRef<
                                 onClick={handleTriggerAddRow}
                                 style={{
                                   width: '100%',
-                                  height: '36px',
+                                  height: '38px',
                                   padding: '0 1rem',
                                   borderRadius: '6px',
                                   border: 'none',
                                   backgroundColor: isRunningThisNode ? (isDark ? '#21262D' : '#E2E8F0') : '#0F9D58',
-                                  color: '#FFFFFF',
-                                  fontSize: '0.78125rem',
+                                  color: isRunningThisNode ? 'var(--text-muted)' : '#FFFFFF',
+                                  fontSize: '0.75rem',
                                   fontWeight: 600,
                                   cursor: isRunningThisNode || executionState?.isRunning ? 'not-allowed' : 'pointer',
                                   display: 'flex',
@@ -13716,8 +13638,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   justifyContent: 'center',
                                   gap: '8px',
                                   transition: 'all 0.15s ease',
-                                  boxShadow: 'none',
-                                  outline: 'none',
+                                  boxShadow: isRunningThisNode ? 'none' : '0 1px 3px rgba(15, 157, 88, 0.3)',
                                 }}
                                 onMouseEnter={(e) => {
                                   if (!isRunningThisNode && !executionState?.isRunning) {
@@ -13737,49 +13658,52 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   </>
                                 ) : (
                                   <>
-                                    <SiGooglesheets size={14} />
+                                    <SiGooglesheets size={15} />
                                     <span>{hasOutput ? 'Add Another Row to Sheet' : 'Add Row to Google Sheet'}</span>
                                   </>
                                 )}
                               </button>
 
-                              {/* Secondary Action Button: View All Data from Sheet (Clean Neutral Style) */}
-                              <button
-                                type="button"
-                                onClick={() => handleOpenGoogleSheetDataViewer(currentModalAIBox)}
-                                style={{
-                                  width: '100%',
-                                  height: '36px',
-                                  padding: '0 1rem',
-                                  borderRadius: '6px',
-                                  border: isDark ? '1px solid #30363D' : '1px solid #D0D7DE',
-                                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF',
-                                  color: 'var(--text-primary)',
-                                  fontSize: '0.78125rem',
-                                  fontWeight: 600,
-                                  cursor: 'pointer',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  gap: '8px',
-                                  transition: 'all 0.15s ease',
-                                  boxShadow: 'none',
-                                  outline: 'none',
-                                }}
-                                onMouseEnter={(e) => {
-                                  e.currentTarget.style.borderColor = isDark ? '#484F58' : '#CBD5E1';
-                                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.03)';
-                                }}
-                                onMouseLeave={(e) => {
-                                  e.currentTarget.style.borderColor = isDark ? '#30363D' : '#D0D7DE';
-                                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF';
-                                }}
-                              >
-                                <SiGooglesheets size={14} color="#0F9D58" />
-                                <span>View All Data from Sheet</span>
-                              </button>
+                              {/* Secondary Action Button: Revert / Delete Added Row from Google Sheet */}
+                              {Boolean(hasOutput || sheetSyncSuccessMessage) && (
+                                <button
+                                  type="button"
+                                  disabled={isDeletingSheetRow || isRunningThisNode}
+                                  onClick={() => handlePromptRevertRow(currentModalAIBox)}
+                                  style={{
+                                    width: '100%',
+                                    height: '34px',
+                                    padding: '0 1rem',
+                                    borderRadius: '6px',
+                                    border: isDark ? '1px solid rgba(239, 68, 68, 0.4)' : '1px solid #FECACA',
+                                    backgroundColor: isDark ? 'rgba(239, 68, 68, 0.08)' : '#FEF2F2',
+                                    color: isDark ? '#FCA5A5' : '#DC2626',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 600,
+                                    cursor: isDeletingSheetRow || isRunningThisNode ? 'not-allowed' : 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '6px',
+                                    transition: 'all 0.15s ease',
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    if (!isDeletingSheetRow && !isRunningThisNode) {
+                                      e.currentTarget.style.backgroundColor = isDark ? 'rgba(239, 68, 68, 0.18)' : '#FEE2E2';
+                                    }
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    if (!isDeletingSheetRow && !isRunningThisNode) {
+                                      e.currentTarget.style.backgroundColor = isDark ? 'rgba(239, 68, 68, 0.08)' : '#FEF2F2';
+                                    }
+                                  }}
+                                >
+                                  <FiRotateCcw size={13} style={{ animation: isDeletingSheetRow ? 'spin 1s linear infinite' : 'none' }} />
+                                  <span>{isDeletingSheetRow ? 'Reverting Row from Sheet...' : 'Revert / Delete Row from Sheet'}</span>
+                                </button>
+                              )}
 
-                              <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', textAlign: 'center', lineHeight: 1.3, marginTop: '2px' }}>
+                              <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', textAlign: 'center', lineHeight: 1.3 }}>
                                 Reads post specs from Get Content, maps strictly to Row 1 column headers, and appends a new row to your sheet.
                               </div>
                             </div>
@@ -15179,17 +15103,6 @@ export const FacebookWorkflowCanvas = forwardRef<
         />
       )}
 
-      {/* ── GOOGLE SHEET FULL DATA TABLE VIEWER (SLIDES OUT AT LEFT OF 380px SIDEBAR) ── */}
-      {showGoogleSheetDataViewer && (
-        <GoogleSheetDataViewerSidebox
-          isOpen={showGoogleSheetDataViewer}
-          onClose={() => setShowGoogleSheetDataViewer(false)}
-          isDark={isDark}
-          boxConfig={sheetViewerBoxConfig || currentModalAIBox || config.aiBoxes.find(isGoogleSheetBox) || ({} as any)}
-          isSidebarOpen={Boolean(activeModalNode)}
-        />
-      )}
-
       {/* ── COMBINE BOX MERGED MEDIA ASSETS EXTRA SIDEBOX (SLIDES OUT NEXT TO 380px SIDEBAR) ── */}
       {activeModalNode && activeModalNode.type === 'combine' && (
         <CombineMediaSidebox
@@ -15608,7 +15521,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   maxWidth: '100%',
                   backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
                   borderLeft: '1px solid var(--border-color)',
-                  boxShadow: (viewingPromptTemplate || showGoogleSheetSettingsSidebox || showGoogleSheetDataViewer || showPhotoCropSettingsSidebox)
+                  boxShadow: (viewingPromptTemplate || showGoogleSheetSettingsSidebox || showPhotoCropSettingsSidebox)
                     ? 'none'
                     : isDark
                       ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
@@ -16462,7 +16375,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 maxWidth: '100%',
                 backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
                 borderLeft: '1px solid var(--border-color)',
-                boxShadow: (viewingPromptTemplate || showGoogleSheetSettingsSidebox || showGoogleSheetDataViewer)
+                boxShadow: (viewingPromptTemplate || showGoogleSheetSettingsSidebox)
                   ? 'none'
                   : isDark
                     ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
@@ -16726,7 +16639,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 maxWidth: '100%',
                 backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
                 borderLeft: '1px solid var(--border-color)',
-                boxShadow: (viewingPromptTemplate || showGoogleSheetSettingsSidebox || showGoogleSheetDataViewer)
+                boxShadow: (viewingPromptTemplate || showGoogleSheetSettingsSidebox)
                   ? 'none'
                   : isDark
                     ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
@@ -16981,7 +16894,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 maxWidth: '100%',
                 backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
                 borderLeft: '1px solid var(--border-color)',
-                boxShadow: (viewingPromptTemplate || showGoogleSheetSettingsSidebox || showGoogleSheetDataViewer)
+                boxShadow: (viewingPromptTemplate || showGoogleSheetSettingsSidebox)
                   ? 'none'
                   : isDark
                     ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
@@ -17385,7 +17298,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 maxWidth: '100%',
                 backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
                 borderLeft: '1px solid var(--border-color)',
-                boxShadow: (viewingPromptTemplate || showGoogleSheetSettingsSidebox || showGoogleSheetDataViewer)
+                boxShadow: (viewingPromptTemplate || showGoogleSheetSettingsSidebox)
                   ? 'none'
                   : isDark
                     ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
@@ -21263,9 +21176,9 @@ export const FacebookWorkflowCanvas = forwardRef<
             <button
               type="button"
               onClick={() => {
-              setLightboxImageIndex(null);
-              setCustomLightboxGallery(null);
-            }}
+                setLightboxImageIndex(null);
+                setCustomLightboxGallery(null);
+              }}
               aria-label="Close preview"
               title="Close (ESC)"
               style={{

@@ -250,14 +250,34 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     setIsDownloading(true);
 
     try {
-      const payloadFiles = displayPreviewItems.map((item, i) => {
-        const fileNum = item.tileIndex ? `tile-${item.tileIndex}` : `${i + 1}`;
-        const ext = (item.url.includes('image/png') || item.url.includes('.png')) ? 'png' : (item.url.includes('image/webp') || item.url.includes('.webp')) ? 'webp' : 'jpg';
-        return {
-          filename: `${cleanBoxName}-${fileNum}.${ext}`,
-          data: item.url,
-        };
-      });
+      // Convert all preview item URLs (including browser blob: URLs) to genuine base64 data URLs
+      const payloadFiles = await Promise.all(
+        displayPreviewItems.map(async (item, i) => {
+          const fileNum = item.tileIndex ? `tile-${item.tileIndex}` : `${i + 1}`;
+          const ext = (item.url.includes('image/png') || item.url.includes('.png')) ? 'png' : (item.url.includes('image/webp') || item.url.includes('.webp')) ? 'webp' : 'jpg';
+          const filename = `${cleanBoxName}-${fileNum}.${ext}`;
+
+          let base64Data = item.url;
+          if (item.url.startsWith('blob:') || item.url.startsWith('/storage') || item.url.startsWith('http')) {
+            try {
+              const blob = await fetchBlobFromUrl(item.url);
+              base64Data = await new Promise<string>((resolve) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result as string);
+                reader.onerror = () => resolve(item.url);
+                reader.readAsDataURL(blob);
+              });
+            } catch (convErr) {
+              console.warn('Error converting item to base64 for folder save:', convErr);
+            }
+          }
+
+          return {
+            filename,
+            data: base64Data,
+          };
+        })
+      );
 
       // 1. Try native Mac Companion service (directly writes to ~/Downloads on host Mac without prompts)
       try {

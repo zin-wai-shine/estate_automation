@@ -794,10 +794,15 @@ func SavePhotosToLocalFolder(c *fiber.Ctx) error {
 				fileBytes = b
 			}
 		} else if strings.HasPrefix(f.Data, "/storage/") {
-			localPath := filepath.Join("storage", strings.TrimPrefix(f.Data, "/storage/"))
-			b, err := os.ReadFile(localPath)
-			if err == nil {
-				fileBytes = b
+			candidates := []string{
+				filepath.Join("storage", strings.TrimPrefix(f.Data, "/storage/")),
+				filepath.Join("backend", "storage", strings.TrimPrefix(f.Data, "/storage/")),
+			}
+			for _, c := range candidates {
+				if b, err := os.ReadFile(c); err == nil && len(b) > 0 {
+					fileBytes = b
+					break
+				}
 			}
 		}
 

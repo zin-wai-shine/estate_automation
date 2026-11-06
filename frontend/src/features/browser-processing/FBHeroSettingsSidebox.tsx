@@ -32,7 +32,7 @@ import {
   savePersistedReferenceImage,
   clearPersistedReferenceImage,
 } from './referenceImageStorage';
-import { fetchMemorizedTabs, clearMemorizedTabs, type MemorizedTabItem } from './browserAutomationService';
+import { fetchMemorizedTabs, clearMemorizedTabs, focusBrowserTabGroup, type MemorizedTabItem } from './browserAutomationService';
 
 interface FBHeroSettingsSideboxProps {
   isOpen: boolean;
@@ -204,6 +204,7 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
   // ── Memorized Tabs State ──────────────────────────────────────────────────
   const [memorizedTabs, setMemorizedTabs] = useState<MemorizedTabItem[]>([]);
   const [isLoadingMemorizedTabs, setIsLoadingMemorizedTabs] = useState(false);
+  const [isOpeningFreshTabs, setIsOpeningFreshTabs] = useState(false);
   const [copiedTabUrlIndex, setCopiedTabUrlIndex] = useState<number | null>(null);
 
   const resolvedGroupName = boxConfig.browserGroupName || (isHero ? 'FB Hero' : 'Enhance IMG');
@@ -216,6 +217,39 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
     } catch (e) {
     } finally {
       setIsLoadingMemorizedTabs(false);
+    }
+  };
+
+  const handleOpenFreshTabs = async () => {
+    setIsOpeningFreshTabs(true);
+    try {
+      const resolvedGroup = boxConfig.browserGroupName || boxConfig.title || 'Enhance IMG';
+      const profKey = boxConfig.browserProfileKey;
+      const effectiveCount = isHero && stagingMode === 'direct_tab2' ? 1 : workerTabCount;
+
+      // 1. Open fresh clean ChatGPT tabs in Chrome and memorize them
+      await focusBrowserTabGroup({
+        groupName: resolvedGroup,
+        profileKey: profKey,
+        tabMode: 'new_tabs',
+        workerCount: effectiveCount,
+        reuseSessionTabs: false,
+        force: true,
+      });
+
+      // 2. Fetch the newly opened and memorized tabs
+      await new Promise((r) => setTimeout(r, 1400));
+      const freshTabs = await fetchMemorizedTabs(resolvedGroup, profKey);
+      if (freshTabs && freshTabs.length > 0) {
+        setMemorizedTabs(freshTabs);
+      }
+    } catch (err) {
+      console.warn('Failed to open fresh tabs:', err);
+    } finally {
+      setIsOpeningFreshTabs(false);
+      // 3. Automatically switch button back to "Existing Group Tabs"!
+      setWorkerTabMode('existing_tabs');
+      updateSettings({ workerTabMode: 'existing_tabs' });
     }
   };
 
@@ -1618,26 +1652,29 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
                           setWorkerTabMode('existing_tabs');
                           updateSettings({ workerTabMode: 'existing_tabs' });
                         }}
-                        style={{ ...getAppleSegmentStyle(workerTabMode === 'existing_tabs'), textAlign: 'center', justifyContent: 'center' }}
+                        style={{ ...getAppleSegmentStyle(workerTabMode === 'existing_tabs' && !isOpeningFreshTabs), textAlign: 'center', justifyContent: 'center' }}
                       >
                         Existing Group Tabs
                       </button>
 
                       <button
                         type="button"
-                        onClick={() => {
-                          setWorkerTabMode('new_tabs');
-                          updateSettings({ workerTabMode: 'new_tabs' });
+                        disabled={isOpeningFreshTabs}
+                        onClick={handleOpenFreshTabs}
+                        style={{
+                          ...getAppleSegmentStyle(workerTabMode === 'new_tabs' || isOpeningFreshTabs),
+                          textAlign: 'center',
+                          justifyContent: 'center',
+                          opacity: isOpeningFreshTabs ? 0.75 : 1,
                         }}
-                        style={{ ...getAppleSegmentStyle(workerTabMode === 'new_tabs'), textAlign: 'center', justifyContent: 'center' }}
                       >
-                        Open Fresh Tabs
+                        {isOpeningFreshTabs ? 'Opening Tabs...' : 'Open Fresh Tabs'}
                       </button>
                     </div>
                     <div style={{ fontSize: '0.5625rem', color: 'var(--text-muted)', paddingLeft: '2px' }}>
                       {workerTabMode === 'existing_tabs'
                         ? 'Uses pre-configured conversation worker URLs.'
-                        : 'Opens clean ChatGPT tabs without past chat history and remembers them.'}
+                        : 'Opens clean ChatGPT tabs without past chat history, memorizes them, and switches to existing tabs.'}
                     </div>
                   </div>
 

@@ -2237,8 +2237,24 @@ function mergeTabGroups(scannedGroups, liveGroups) {
 
           let buffer = null;
           if (data.startsWith('data:')) {
-            const base64Data = data.replace(/^data:image\/\w+;base64,/, '');
+            const base64Data = data.includes(',') ? data.split(',')[1] : data;
             buffer = Buffer.from(base64Data, 'base64');
+          } else if (data.startsWith('/storage/')) {
+            const localCandidate = path.join(__dirname, '../..', data);
+            if (fs.existsSync(localCandidate)) {
+              try { buffer = fs.readFileSync(localCandidate); } catch (_) {}
+            }
+            if (!buffer) {
+              const fullHttp = `http://localhost:8085${data}`;
+              buffer = await new Promise((resolve) => {
+                http.get(fullHttp, (resp) => {
+                  const chunks = [];
+                  resp.on('data', (c) => chunks.push(c));
+                  resp.on('end', () => resolve(Buffer.concat(chunks)));
+                  resp.on('error', () => resolve(null));
+                }).on('error', () => resolve(null));
+              });
+            }
           } else if (data.startsWith('http://') || data.startsWith('https://')) {
             buffer = await new Promise((resolve) => {
               const httpMod = data.startsWith('https:') ? https : http;

@@ -1039,30 +1039,31 @@
   function getComposerContainer(inputEl) {
     const input = inputEl || findPromptInput();
     if (!input) {
-      return document.querySelector('[class*="ComposerLayoutBody" i], [class*="ComposerLayoutRoot" i], form') || document.body;
+      const explicit = document.querySelector('[class*="ComposerLayoutBody" i], [class*="ComposerLayoutRoot" i], form');
+      return explicit || null;
     }
 
     // Modern ChatGPT structure:
     // Level 0: ProseMirror (#prompt-textarea)
     // Level 2: ComposerLayoutInput
     // Level 6: ComposerLayoutBody (contains attachments row, input, and footer toolbar with Send button)
-    const layoutBody = input.closest('[class*="ComposerLayoutBody" i]') || input.closest('[class*="ComposerLayoutRoot" i]');
+    const layoutBody = input.closest('[class*="ComposerLayoutBody" i], [class*="ComposerLayoutRoot" i], [class*="composer" i]');
     if (layoutBody) return layoutBody;
 
     // Check standard form
     const form = input.closest('form');
     if (form) return form;
 
-    // Walk up until we reach a parent that has both the input AND buttons (Send, Attach)
+    // Walk up until we reach a parent that contains the input AND the send button
     let cur = input.parentElement;
-    for (let depth = 0; depth < 8 && cur && cur !== document.body; depth++) {
-      if (cur.querySelectorAll('button').length >= 3) {
+    for (let depth = 0; depth < 5 && cur && cur !== document.body && cur !== document.documentElement; depth++) {
+      if (cur.querySelector('button[data-testid*="send" i], button[aria-label*="Send" i], button[data-testid*="fruitjuice-send-button"]')) {
         return cur;
       }
       cur = cur.parentElement;
     }
 
-    return cur || document.body;
+    return input.parentElement && input.parentElement.parentElement ? input.parentElement.parentElement : null;
   }
 
   // Find the attachment (+) button on the ChatGPT composer
@@ -1109,81 +1110,10 @@
     return null;
   }
 
-  // Find all genuine thumbnail preview img elements strictly inside the ChatGPT composer
-  function getComposerAttachmentThumbnails() {
-    const allImgs = Array.from(document.querySelectorAll('img'));
-
-    const imgs = allImgs.filter((img) => {
-      // Exclude messages in conversation history turns, header, and sidebar
-      if (img.closest('article, [data-message-author-role], [data-testid*="conversation-turn"], nav, header, aside, [data-testid*="sidebar"]')) {
-        return false;
-      }
-
-      const src = img.src || img.getAttribute('src') || '';
-      if (!src) return false;
-      const lowerSrc = src.toLowerCase();
-      if (
-        lowerSrc.includes('avatar') ||
-        lowerSrc.includes('profile') ||
-        lowerSrc.includes('icon') ||
-        lowerSrc.includes('emoji') ||
-        lowerSrc.includes('logo') ||
-        lowerSrc.includes('favicon')
-      ) {
-        return false;
-      }
-      const alt = (img.alt || '').toLowerCase();
-      if (alt.includes('avatar') || alt.includes('profile') || alt.includes('logo')) {
-        return false;
-      }
-
-      // If it's a blob, data URL, or oaiusercontent, it's definitely an attachment preview!
-      if (lowerSrc.startsWith('blob:') || lowerSrc.startsWith('data:') || lowerSrc.includes('oaiusercontent') || lowerSrc.includes('files')) {
-        return true;
-      }
-
-      const rect = img.getBoundingClientRect();
-      return (rect.width >= 15 && rect.height >= 15) || (img.naturalWidth >= 15 && img.naturalHeight >= 15);
-    });
-
-    return imgs;
-  }
-
-  // Find all genuine thumbnail preview canvas elements strictly inside the ChatGPT composer
-  function getComposerAttachmentCanvases(inputEl) {
-    const composer = getComposerContainer(inputEl);
-    if (!composer) return [];
-
-    return Array.from(composer.querySelectorAll('canvas')).filter((canvas) => {
-      if (canvas.closest('article, [data-message-author-role], [data-testid*="conversation-turn"], nav, header, aside, [data-testid*="sidebar"]')) return false;
-      const rect = canvas.getBoundingClientRect();
-      return (rect.width >= 15 && rect.height >= 15) || canvas.width >= 15;
-    });
-  }
-
-  // Find any thumbnail containers with background-image inside composer
-  function getComposerAttachmentBgDivs(inputEl) {
-    const composer = getComposerContainer(inputEl);
-    if (!composer) return [];
-
-    return Array.from(composer.querySelectorAll('div[style*="background-image"], [data-testid*="attachment"]')).filter((el) => {
-      if (el.closest('article, [data-message-author-role], [data-testid*="conversation-turn"], nav, header, aside, [data-testid*="sidebar"]')) return false;
-      if (el.querySelector('img, canvas')) return false;
-      const style = el.getAttribute('style') || '';
-      return style.includes('blob:') || style.includes('data:image');
-    });
-  }
-
-  // Find thumbnail preview img element strictly inside the ChatGPT composer
-  function getComposerAttachmentThumbnail(inputEl) {
-    const thumbs = getComposerAttachmentThumbnails(inputEl);
-    return thumbs.length > 0 ? thumbs[0] : null;
-  }
-
   // Find thumbnail delete / remove buttons strictly inside the composer (excluding attach/plus button!)
   function findAttachmentRemoveButtons(inputEl) {
     const composer = getComposerContainer(inputEl);
-    if (!composer) return [];
+    if (!composer || composer === document.body || composer === document.documentElement) return [];
 
     const allButtons = Array.from(composer.querySelectorAll('button:not(:disabled)'));
 
@@ -1226,20 +1156,25 @@
   // Count distinct genuine image attachments present in the composer
   function getAttachedImagesCount(inputEl) {
     const composer = getComposerContainer(inputEl);
-    if (!composer) return 0;
+    if (!composer || composer === document.body || composer === document.documentElement) return 0;
 
     // 1. Remove buttons strictly inside composer (each attached file has exactly one remove button!)
     const removeBtns = findAttachmentRemoveButtons(composer);
     if (removeBtns.length > 0) return removeBtns.length;
 
-    // 2. Thumbnail images strictly inside composer (excluding icons/avatars)
+    // 2. Attached thumbnail containers
+    const attachmentCards = composer.querySelectorAll('[data-testid*="attachment" i], [class*="attachment" i], [class*="thumbnail" i]');
+    if (attachmentCards.length > 0) return attachmentCards.length;
+
+    // 3. Thumbnail images strictly inside composer (excluding icons/avatars)
     const thumbImgs = Array.from(composer.querySelectorAll('img')).filter((img) => {
       const src = img.src || img.getAttribute('src') || '';
       if (!src) return false;
       const lower = src.toLowerCase();
-      if (lower.includes('avatar') || lower.includes('profile') || lower.includes('icon') || lower.includes('logo')) return false;
+      if (lower.includes('avatar') || lower.includes('profile') || lower.includes('icon') || lower.includes('logo') || lower.includes('svg')) return false;
+      if (lower.startsWith('blob:') || lower.startsWith('data:') || lower.includes('oaiusercontent') || lower.includes('files')) return true;
       const rect = img.getBoundingClientRect();
-      return (rect.width >= 30 && rect.height >= 30);
+      return (rect.width >= 35 && rect.height >= 35);
     });
     if (thumbImgs.length > 0) return thumbImgs.length;
 
@@ -1583,12 +1518,22 @@
     return await resp.blob();
   }
 
+  // Helper to convert File/Blob to Base64 data URL
+  function fileToDataUrl(file) {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(file);
+    });
+  }
+
   // Attach a single image File into the ChatGPT composer cleanly without duplicating
   async function attachImageFileToComposer(inputEl, file, maxExpected = 1, minExpected = 1, dataUrlHint = null) {
     const targetInputArea = inputEl || findPromptInput();
 
     // 1. Prune leftover attachments only if strictly required
-    let currentCount = getAttachedImagesCount();
+    let currentCount = getAttachedImagesCount(inputEl);
     if (maxExpected === 1 && currentCount > 0) {
       console.log(`[BOLTHAVEN] Clearing ${currentCount} leftover attachments before attaching single image...`);
       await pruneExcessAttachments(inputEl, 0);
@@ -1599,6 +1544,14 @@
     }
 
     if (activeJobAborted) return false;
+
+    // Convert file to DataURL if not provided, ensuring MAIN world script has valid data
+    let effectiveDataUrl = dataUrlHint;
+    if ((!effectiveDataUrl || typeof effectiveDataUrl !== 'string' || !effectiveDataUrl.startsWith('data:')) && file) {
+      try {
+        effectiveDataUrl = await fileToDataUrl(file);
+      } catch (e) {}
+    }
 
     const dt = new DataTransfer();
     dt.items.add(file);
@@ -1650,45 +1603,21 @@
       await new Promise((r) => setTimeout(r, 150));
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }));
 
-      // If Method A attached the image, RETURN IMMEDIATELY! Do NOT dispatch paste/drop!
-      const attachedMethodA = await waitForImageAttached(inputEl, 2500, minExpected);
+      const attachedMethodA = await waitForImageAttached(inputEl, 2000, minExpected);
       if (attachedMethodA) {
         console.log(`[BOLTHAVEN] ✓ Method A (file input) attached image successfully (${getAttachedImagesCount(inputEl)}/${minExpected} attached)`);
         return true;
       }
     }
 
-    // Method B: Synthetic paste event (only if Method A didn't attach)
-    if (targetInputArea) {
+    // Method B: MAIN world attachment injection (bypasses isolated world boundaries)
+    if (effectiveDataUrl && typeof effectiveDataUrl === 'string' && effectiveDataUrl.startsWith('data:')) {
       try {
-        targetInputArea.focus();
-        const pasteEv = new ClipboardEvent('paste', { bubbles: true, cancelable: true, composed: true });
-        Object.defineProperty(pasteEv, 'clipboardData', { value: dt, writable: false });
-        targetInputArea.dispatchEvent(pasteEv);
-      } catch (e) {}
-
-      const attachedMethodB = await waitForImageAttached(inputEl, 2500, minExpected);
-      if (attachedMethodB) {
-        console.log(`[BOLTHAVEN] ✓ Method B (paste) attached image successfully (${getAttachedImagesCount(inputEl)}/${minExpected} attached)`);
-        return true;
-      }
-    }
-
-    // Method C: Drag & Drop
-    if (targetInputArea) {
-      try {
-        const dropEv = new DragEvent('drop', { bubbles: true, cancelable: true, composed: true, dataTransfer: dt });
-        targetInputArea.dispatchEvent(dropEv);
-      } catch (e) {}
-    }
-
-    // Method D: MAIN world attachment fallback
-    if (dataUrlHint && typeof dataUrlHint === 'string' && dataUrlHint.startsWith('data:')) {
-      try {
+        console.log('[BOLTHAVEN] Injecting ATTACH_IMAGE_MAIN_WORLD into MAIN world context...');
         await new Promise((res) => {
           chrome.runtime.sendMessage({
             action: 'ATTACH_IMAGE_MAIN_WORLD',
-            dataUrl: dataUrlHint,
+            dataUrl: effectiveDataUrl,
             filename: file.name || 'property_image.jpg',
           }, (mRes) => {
             if (chrome.runtime.lastError) {
@@ -1698,10 +1627,42 @@
             }
           });
         });
+
+        const attachedMethodB = await waitForImageAttached(inputEl, 3000, minExpected);
+        if (attachedMethodB) {
+          console.log(`[BOLTHAVEN] ✓ Method B (MAIN world) attached image successfully (${getAttachedImagesCount(inputEl)}/${minExpected} attached)`);
+          return true;
+        }
+      } catch (e) {
+        console.warn('[BOLTHAVEN] Method B error:', e);
+      }
+    }
+
+    // Method C: Synthetic paste event
+    if (targetInputArea) {
+      try {
+        targetInputArea.focus();
+        const pasteEv = new ClipboardEvent('paste', { bubbles: true, cancelable: true, composed: true });
+        Object.defineProperty(pasteEv, 'clipboardData', { value: dt, writable: false });
+        targetInputArea.dispatchEvent(pasteEv);
+      } catch (e) {}
+
+      const attachedMethodC = await waitForImageAttached(inputEl, 2000, minExpected);
+      if (attachedMethodC) {
+        console.log(`[BOLTHAVEN] ✓ Method C (paste) attached image successfully (${getAttachedImagesCount(inputEl)}/${minExpected} attached)`);
+        return true;
+      }
+    }
+
+    // Method D: Drag & Drop
+    if (targetInputArea) {
+      try {
+        const dropEv = new DragEvent('drop', { bubbles: true, cancelable: true, composed: true, dataTransfer: dt });
+        targetInputArea.dispatchEvent(dropEv);
       } catch (e) {}
     }
 
-    return await waitForImageAttached(inputEl, 4000, minExpected);
+    return await waitForImageAttached(inputEl, 3000, minExpected);
   }
 
   // Attach image via data URL or web URL cleanly
@@ -1988,11 +1949,11 @@
       attached = await attachImageFileToComposer(input, file, 1, 1, job.image_data_url || (primaryUrl.startsWith('data:') ? primaryUrl : null));
     }
 
-    // Verify that image is attached before touching prompt
+    // Verify that image is genuinely attached before touching prompt
     let verifiedAttachmentCount = getAttachedImagesCount(input);
-    if (!attached && verifiedAttachmentCount < 1) {
+    if (verifiedAttachmentCount < 1) {
       clearPromptText(input);
-      throw new Error(`Image #${job.original_position || 1} could not be attached to ChatGPT composer.`);
+      throw new Error(`CRITICAL: Image #${job.original_position || 1} could not be verified as attached in ChatGPT composer. Refusing to send prompt without image.`);
     }
 
     // If more than 1 image is attached, prune down to exactly 1 so it never fails or duplicates!
