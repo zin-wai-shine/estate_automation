@@ -354,6 +354,108 @@
   // Set to prevent duplicate downloads of the exact same image/filename in this tab session
   const downloadedFileNames = new Set();
 
+  // Trigger reliable native ChatGPT download actions:
+  // 1. Direct Download button on card
+  // 2. Share icon [ ↑ ] on image card -> Opens Share Modal -> Clicks "Download" button inside modal
+  // 3. "Copy image" button in assistant turn footer
+  async function triggerNativeChatGPTDownload(imgEl) {
+    if (!imgEl) return false;
+    const card = imgEl.closest('div[class*="group"], div[class*="relative"], article, section') || imgEl.parentElement;
+
+    // 1. Check for a direct download button on the image card
+    const directBtn = findGeneratedImageDownloadButton(imgEl);
+    if (directBtn) {
+      console.log('[BOLTHAVEN] Clicking direct native download button on card...');
+      clickElementSafely(directBtn);
+      await new Promise((r) => setTimeout(r, 800));
+      return true;
+    }
+
+    // 2. Locate the Share button [ ↑ ] on the image card (ChatGPT modern UI)
+    // In ChatGPT modern UI, the circular button with an upward arrow inside a tray is positioned in the bottom right corner
+    if (card) {
+      const cardButtons = Array.from(card.querySelectorAll('button'));
+      const shareBtn = cardButtons.find((b) => {
+        const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+        const title = (b.getAttribute('title') || '').toLowerCase();
+        if (aria.includes('share') || title.includes('share') || aria.includes('export') || title.includes('export')) {
+          return true;
+        }
+        const svg = b.querySelector('svg');
+        if (svg) {
+          const html = svg.innerHTML.toLowerCase();
+          if (html.includes('m12') || html.includes('arrow') || html.includes('share') || html.includes('upload')) {
+            return true;
+          }
+        }
+        // Circular overlay button in bottom-right corner of image
+        const imgR = imgEl.getBoundingClientRect();
+        const bR = b.getBoundingClientRect();
+        if (bR.width >= 24 && bR.width <= 60 && bR.height >= 24 && bR.height <= 60) {
+          if (bR.right >= imgR.right - 80 && bR.bottom >= imgR.bottom - 80) {
+            return true;
+          }
+        }
+        return false;
+      });
+
+      if (shareBtn) {
+        console.log('[BOLTHAVEN] 🚀 Found Share button on image card, opening Download modal...');
+        clickElementSafely(shareBtn);
+        // Wait for the modal dialog ("Share a public link to this image") to appear
+        await new Promise((r) => setTimeout(r, 650));
+
+        const modal = document.querySelector('[role="dialog"], div[class*="modal"], div[class*="popover"]');
+        if (modal) {
+          const modalBtns = Array.from(modal.querySelectorAll('button, a'));
+          const modalDownloadBtn = modalBtns.find((b) => {
+            const txt = (b.textContent || '').trim().toLowerCase();
+            const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+            return txt.includes('download') || aria.includes('download');
+          });
+
+          if (modalDownloadBtn) {
+            console.log('[BOLTHAVEN] ✓ Found "Download" button inside Share modal! Clicking to trigger native download...');
+            clickElementSafely(modalDownloadBtn);
+            await new Promise((r) => setTimeout(r, 800));
+
+            // Close the modal dialog so user screen remains clean
+            const closeBtn = modal.querySelector('button[aria-label*="close" i], button[aria-label*="Close"]') ||
+                             modalBtns.find((b) => {
+                               const t = (b.textContent || '').trim();
+                               return t === '✕' || t === '×' || t === 'Close';
+                             });
+            if (closeBtn) {
+              clickElementSafely(closeBtn);
+            } else {
+              document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }));
+            }
+            return true;
+          }
+        }
+      }
+    }
+
+    // 3. Fallback: "Copy image" button in turn toolbar below the image
+    const turn = imgEl.closest('article, [data-message-author-role="assistant"], div[class*="agent-turn"]') || (card && card.parentElement);
+    if (turn) {
+      const turnBtns = Array.from(turn.querySelectorAll('button'));
+      const copyImgBtn = turnBtns.find((b) => {
+        const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+        const title = (b.getAttribute('title') || '').toLowerCase();
+        return aria.includes('copy image') || title.includes('copy image') || aria === 'copy' || title === 'copy';
+      });
+      if (copyImgBtn) {
+        console.log('[BOLTHAVEN] 📋 Found "Copy image" button on assistant turn, triggering copy...');
+        clickElementSafely(copyImgBtn);
+        await new Promise((r) => setTimeout(r, 400));
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   // Trigger reliable multi-tier image download to disk and browser downloads directory
   async function downloadEnhancedImage(imgEl, finalUrl, fileName) {
     if (!finalUrl || !fileName) return false;
@@ -367,9 +469,24 @@
 
     console.log('[BOLTHAVEN] ⬇️ Triggering reliable multi-tier download:', fileName, finalUrl);
 
-    // Convert blob: URL to data: URL if needed, so companion direct save can write to disk without network failure
+    // Render image element to canvas to get high-fidelity base64 data URL
     let companionUrl = finalUrl;
-    if (finalUrl.startsWith('blob:')) {
+    if (imgEl && (imgEl.naturalWidth > 50 || imgEl.width > 50)) {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = imgEl.naturalWidth || imgEl.width;
+        canvas.height = imgEl.naturalHeight || imgEl.height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(imgEl, 0, 0);
+        companionUrl = canvas.toDataURL('image/png');
+        console.log('[BOLTHAVEN] ✓ Rendered image to canvas data URL for 100% reliable local save');
+      } catch (canvasErr) {
+        console.log('[BOLTHAVEN] Canvas render note (CORS tainted):', canvasErr.message);
+      }
+    }
+
+    // Convert blob: URL to data: URL if needed, so companion direct save can write to disk without network failure
+    if (companionUrl.startsWith('blob:') || (!companionUrl.startsWith('data:') && finalUrl.startsWith('blob:'))) {
       try {
         const bResp = await fetch(finalUrl);
         if (bResp.ok) {
@@ -400,23 +517,19 @@
       console.warn('[BOLTHAVEN] Companion direct save note:', e.message);
     }
 
-    // Tier 1.5: Native ChatGPT download button on image card (if visible/available)
+    // Tier 1.5: Native ChatGPT UI Download (Direct button OR Share -> Modal -> Download OR Copy Image)
     try {
-      const nativeBtn = findGeneratedImageDownloadButton(imgEl);
-      if (nativeBtn) {
-        console.log('[BOLTHAVEN] Clicking native ChatGPT image download button...');
-        clickElementSafely(nativeBtn);
-        await new Promise((r) => setTimeout(r, 600));
-      }
+      await triggerNativeChatGPTDownload(imgEl);
     } catch (e) {
-      console.warn('[BOLTHAVEN] Native download button click notice:', e.message);
+      console.warn('[BOLTHAVEN] Native trigger download notice:', e.message);
     }
 
     // Tier 2: Background chrome.downloads API (handles cross-origin, custom filename)
     try {
+      const dlUrl = companionUrl.startsWith('data:') ? companionUrl : finalUrl;
       const response = await new Promise((resolve) => {
         chrome.runtime.sendMessage(
-          { action: 'DOWNLOAD_IMAGE', url: finalUrl, filename: fileName },
+          { action: 'DOWNLOAD_IMAGE', url: dlUrl, filename: fileName },
           (res) => {
             if (chrome.runtime.lastError) {
               resolve({ success: false, error: chrome.runtime.lastError.message });
@@ -541,6 +654,33 @@
       }
     }
 
+    // 0.1. Inspect newest assistant turn directly for output image
+    const assistantTurns = Array.from(document.querySelectorAll(
+      'div[data-message-author-role="assistant"], article[data-testid*="conversation-turn"], article'
+    )).filter((turn) => {
+      if (turn.getAttribute('data-message-author-role') === 'user') return false;
+      if (turn.querySelector('[data-message-author-role="user"]')) return false;
+      const c = (turn.className || '').toLowerCase();
+      return !c.includes('user-turn') && !c.includes('user-message');
+    });
+
+    if (assistantTurns.length > 0) {
+      const latestTurn = assistantTurns[assistantTurns.length - 1];
+      const turnImgs = Array.from(latestTurn.querySelectorAll('img')).filter((img) => {
+        const src = img.src || img.getAttribute('src') || '';
+        if (!src) return false;
+        const s = src.toLowerCase();
+        if (s.includes('avatar') || s.includes('profile') || s.includes('icon') || s.includes('emoji') || s.includes('logo')) return false;
+        if (img.closest('form, div[class*="composer"], [data-message-author-role="user"], header, nav')) return false;
+        const rect = img.getBoundingClientRect();
+        const hasSize = (rect.width >= 100 && rect.height >= 100) || (img.naturalWidth >= 100 && img.naturalHeight >= 100);
+        return (hasSize || s.includes('oaiusercontent.com') || s.includes('file-service') || s.startsWith('blob:')) && img.complete;
+      });
+      if (turnImgs.length > 0) {
+        return turnImgs[turnImgs.length - 1];
+      }
+    }
+
     // 0.5. Locate image card that has a share/export button (ChatGPT new UI: Edit button is hover-only or absent)
     // These cards have a small circular share button (⬆) in bottom-right corner of the image
     const allImgCards = Array.from(document.querySelectorAll('img')).filter((img) => {
@@ -648,6 +788,33 @@
             }
           }
         }
+      }
+    }
+
+    // 0.1. Inspect newest assistant turn directly for output image
+    const assistantTurns = Array.from(document.querySelectorAll(
+      'div[data-message-author-role="assistant"], article[data-testid*="conversation-turn"], article'
+    )).filter((turn) => {
+      if (turn.getAttribute('data-message-author-role') === 'user') return false;
+      if (turn.querySelector('[data-message-author-role="user"]')) return false;
+      const c = (turn.className || '').toLowerCase();
+      return !c.includes('user-turn') && !c.includes('user-message');
+    });
+
+    if (assistantTurns.length > 0) {
+      const latestTurn = assistantTurns[assistantTurns.length - 1];
+      const turnImgs = Array.from(latestTurn.querySelectorAll('img')).filter((img) => {
+        const src = img.src || img.getAttribute('src') || '';
+        if (!src) return false;
+        const s = src.toLowerCase();
+        if (s.includes('avatar') || s.includes('profile') || s.includes('icon') || s.includes('emoji') || s.includes('logo')) return false;
+        if (img.closest('form, div[class*="composer"], [data-message-author-role="user"], header, nav')) return false;
+        const rect = img.getBoundingClientRect();
+        const hasSize = (rect.width >= 100 && rect.height >= 100) || (img.naturalWidth >= 100 && img.naturalHeight >= 100);
+        return (hasSize || s.includes('oaiusercontent.com') || s.includes('file-service') || s.startsWith('blob:')) && img.complete;
+      });
+      if (turnImgs.length > 0) {
+        return turnImgs[turnImgs.length - 1];
       }
     }
 
@@ -1458,12 +1625,8 @@
   async function watchGenerationAndDownload(job, preExistingImageUrls, preAssistantCount) {
     console.log(`[BOLTHAVEN] [Generation Phase] Monitoring ChatGPT generation for Image #${job.original_position || 1}...`);
 
-    // Minimum wait for prompt dispatch and user's input image turn to render
-    await new Promise((r) => setTimeout(r, 3500));
-    document.querySelectorAll('img').forEach((img) => {
-      const src = img.src || img.getAttribute('src') || '';
-      if (src) preExistingImageUrls.add(src);
-    });
+    // Wait 2s for prompt dispatch
+    await new Promise((r) => setTimeout(r, 2000));
 
     const startTime = Date.now();
     const maxWaitMs = 360000; // 6 minutes max
