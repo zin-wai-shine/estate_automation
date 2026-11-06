@@ -3272,6 +3272,16 @@ export const FacebookWorkflowCanvas = forwardRef<
             map[pos0] = img.backend_url || img.url;
           });
           setCompanionEnhancedMap((prev) => {
+            let hasChange = false;
+            for (const [k, v] of Object.entries(map)) {
+              if (prev[Number(k)] !== v) {
+                hasChange = true;
+                break;
+              }
+            }
+            if (!hasChange && Object.keys(map).length === Object.keys(prev).length) {
+              return prev;
+            }
             const next = { ...prev, ...map };
             try {
               const codeKey = executionState?.listingCode || previewSampleCode || 'current';
@@ -3284,12 +3294,18 @@ export const FacebookWorkflowCanvas = forwardRef<
     };
 
     pollCompanionEnhanced();
-    const interval = setInterval(pollCompanionEnhanced, 3500);
+    const isRunning = Boolean(locallyRunningNodeId || executionState?.isRunning);
+    if (!isRunning) {
+      return () => {
+        isCancelled = true;
+      };
+    }
+    const interval = setInterval(pollCompanionEnhanced, 4000);
     return () => {
       isCancelled = true;
       clearInterval(interval);
     };
-  }, [executionState?.propertyId, images?.length, executionState?.listingCode, previewSampleCode]);
+  }, [executionState?.propertyId, images?.length, executionState?.listingCode, previewSampleCode, locallyRunningNodeId, executionState?.isRunning]);
 
   const allEnhancedPhotos = useMemo(() => {
     return { ...companionEnhancedMap, ...enhancedPhotos };

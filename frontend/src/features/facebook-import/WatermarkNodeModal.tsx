@@ -218,6 +218,16 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
             map[pos0] = img.backend_url || img.url;
           });
           setCompanionEnhanced((prev) => {
+            let hasChange = false;
+            for (const [k, v] of Object.entries(map)) {
+              if (prev[Number(k)] !== v) {
+                hasChange = true;
+                break;
+              }
+            }
+            if (!hasChange && Object.keys(map).length === Object.keys(prev).length) {
+              return prev;
+            }
             const next = { ...prev, ...map };
             try {
               const codeKey = listingCode || 'current';
@@ -228,13 +238,12 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
         }
       } catch (e) {}
     };
+    // Load once when clicking this box / when modal opens
     loadDownloaded();
-    const interval = setInterval(loadDownloaded, 3500);
     return () => {
       isCancelled = true;
-      clearInterval(interval);
     };
-  }, [effectiveImageList?.length, listingCode]);
+  }, [box.id, listingCode]);
 
   const mergedEnhancedPhotos = useMemo(() => {
     return { ...companionEnhanced, ...(enhancedPhotos || {}) };
@@ -449,15 +458,22 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     return base;
   }, [savedFormats, selectedFormatId, box.cropFormatId, box.templateId, box.watermarkPresetId, box.templateText, box.title, box.watermarkConfig]);
 
+  const lastRenderedKeyRef = useRef<string>('');
+
   // Live offscreen formatting for instant preview (supports standard crops, multi-tile grid cuts & watermarks)
   useEffect(() => {
     if (activePhotosToFormat.length === 0 || !currentFormat) {
       setFormattedPreviewItems([]);
+      lastRenderedKeyRef.current = '';
       return;
     }
+
+    const currentKey = `${activePhotosToFormat.map((p) => `${p.id}:${p.url}`).join('|')}__${currentFormat.id}_${currentFormat.targetWidth}_${currentFormat.targetHeight}_${currentFormat.aspect}_${currentFormat.mode}_${currentFormat.gridLayoutId}_${JSON.stringify(currentFormat.watermarkConfig || {})}`;
+    if (lastRenderedKeyRef.current === currentKey) {
+      return; // Already rendered this exact configuration, do NOT re-render or flash!
+    }
+
     let isCancelled = false;
-    // Clear formatted previews on active photo or format change to prevent stale display
-    setFormattedPreviewItems([]);
 
     const generatePreviews = async () => {
       const items: Array<{
@@ -526,6 +542,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
         }
       }
       if (!isCancelled) {
+        lastRenderedKeyRef.current = currentKey;
         setFormattedPreviewItems(items);
         setLiveFormattedPhotos(resultMap);
       }
