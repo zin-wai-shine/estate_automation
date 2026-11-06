@@ -15,7 +15,7 @@
       "columns": 6,
       "enabled": true,
       "fontFamily": "'Impact', 'Arial Black', -apple-system, sans-serif",
-      "fontSize": 60,
+      "fontSize": 35,
       "fontStyle": "normal",
       "fontWeight": "500",
       "gapSpacing": 8,
@@ -25,19 +25,19 @@
       "logoUrl": "/watermarks/bolthaven-watermark.png",
       "margin": 4,
       "offsetAlternateRows": false,
-      "opacity": 55,
+      "opacity": 20,
       "position": "bottom-right",
       "rotation": 0,
       "rows": 2,
-      "scale": 50,
+      "scale": 29,
       "smartScope": "all",
       "text": "dot bkk property",
-      "textColor": "#919191",
+      "textColor": "#ffffff",
       "textTransform": "uppercase",
       "type": "text"
     },
     "createdAt": 1793782711715,
-    "updatedAt": 1793801802098
+    "updatedAt": 1793934678686
   },
   {
     "id": "format-1793540333291",
@@ -55,7 +55,7 @@
       "columns": 6,
       "enabled": true,
       "fontFamily": "'Impact', 'Arial Black', -apple-system, sans-serif",
-      "fontSize": 60,
+      "fontSize": 36,
       "fontWeight": "900",
       "gapSpacing": 8,
       "hasShadow": true,
@@ -64,11 +64,11 @@
       "logoUrl": "/watermarks/bolthaven-watermark.png",
       "margin": 4,
       "offsetAlternateRows": false,
-      "opacity": 25,
+      "opacity": 20,
       "position": "bottom-right",
       "rotation": 0,
       "rows": 2,
-      "scale": 50,
+      "scale": 30,
       "smartScope": "all",
       "text": "BoltHaven Property",
       "textColor": "#ffffff",
@@ -76,7 +76,7 @@
       "type": "text"
     },
     "createdAt": 1793540333291,
-    "updatedAt": 1793844735688
+    "updatedAt": 1793934715303
   },
   {
     "id": "format-grid-2split",

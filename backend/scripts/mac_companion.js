@@ -2524,9 +2524,19 @@ function mergeTabGroups(scannedGroups, liveGroups) {
         if (payload.reference_image && typeof payload.reference_image === 'string') {
           savePersistedReferenceImageToDisk(payload.reference_image, payload.box_id || '');
         }
-        const referenceImage = useRef
+        let referenceImage = useRef
           ? (payload.reference_image || loadPersistedReferenceImageFromDisk() || null)
           : null;
+        if (referenceImage && typeof referenceImage === 'string' && !referenceImage.startsWith('data:') && !referenceImage.startsWith('http')) {
+          if (fs.existsSync(referenceImage)) {
+            try {
+              const ext = path.extname(referenceImage).toLowerCase().replace('.', '') || 'png';
+              const mime = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+              const buf = fs.readFileSync(referenceImage);
+              referenceImage = `data:${mime};base64,${buf.toString('base64')}`;
+            } catch (e) {}
+          }
+        }
         const useCondoImgs = payload.use_condo_images !== false;
         const customBase = payload.target_folder || payload.base_dir;
         const baseDir = (customBase && fs.existsSync(customBase)) ? customBase : CONDO_BASE_DIR;
@@ -2541,7 +2551,26 @@ function mergeTabGroups(scannedGroups, liveGroups) {
 
         // Read local condo images 1, 2, 3 (Strictly Read-Only!)
         let condoImages = Array.isArray(payload.condo_images) && payload.condo_images.length > 0
-          ? payload.condo_images
+          ? payload.condo_images.slice(0, 3).map((img, i) => {
+              const localPath = img.full_path || (typeof img.url === 'string' && img.url.startsWith('/') ? img.url : null);
+              if (localPath && fs.existsSync(localPath) && (!img.data_url || !img.data_url.startsWith('data:'))) {
+                try {
+                  const ext = path.extname(localPath).toLowerCase().replace('.', '') || 'png';
+                  const mime = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+                  const buf = fs.readFileSync(localPath);
+                  return {
+                    ...img,
+                    index: img.index || i + 1,
+                    data_url: `data:${mime};base64,${buf.toString('base64')}`,
+                  };
+                } catch (e) {}
+              }
+              return {
+                ...img,
+                index: img.index || i + 1,
+                data_url: img.data_url || img.url || '',
+              };
+            })
           : [];
         let matchedDir = payload.matched_folder || '';
         if (condoImages.length === 0 && useCondoImgs && condoName) {

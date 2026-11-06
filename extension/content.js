@@ -1649,9 +1649,9 @@
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }));
 
       // If Method A attached the image, RETURN IMMEDIATELY! Do NOT dispatch paste/drop!
-      const attachedMethodA = await waitForImageAttached(inputEl, 2000, 1);
+      const attachedMethodA = await waitForImageAttached(inputEl, 2500, minExpected);
       if (attachedMethodA) {
-        console.log(`[BOLTHAVEN] ✓ Method A (file input) attached image successfully (${getAttachedImagesCount(inputEl)} attached)`);
+        console.log(`[BOLTHAVEN] ✓ Method A (file input) attached image successfully (${getAttachedImagesCount(inputEl)}/${minExpected} attached)`);
         return true;
       }
     }
@@ -1665,9 +1665,9 @@
         targetInputArea.dispatchEvent(pasteEv);
       } catch (e) {}
 
-      const attachedMethodB = await waitForImageAttached(inputEl, 2000, 1);
+      const attachedMethodB = await waitForImageAttached(inputEl, 2500, minExpected);
       if (attachedMethodB) {
-        console.log(`[BOLTHAVEN] ✓ Method B (paste) attached image successfully (${getAttachedImagesCount(inputEl)} attached)`);
+        console.log(`[BOLTHAVEN] ✓ Method B (paste) attached image successfully (${getAttachedImagesCount(inputEl)}/${minExpected} attached)`);
         return true;
       }
     }
@@ -1691,7 +1691,7 @@
       } catch (e) {}
     }
 
-    return await waitForImageAttached(inputEl, 4000, 1);
+    return await waitForImageAttached(inputEl, 4000, minExpected);
   }
 
   // Attach image via data URL or web URL cleanly

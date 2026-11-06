@@ -1014,10 +1014,40 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       const activeProf = profiles.find((p) => p.id === selectedProfileId);
       const profKey = activeProf?.profile_key || boxConfig.browserProfileKey || (profiles[0]?.profile_key || 'Pro');
 
+      const selectedCondoImgs = condoSlots.filter(Boolean);
+      let condoImagesToUse: any[] = [];
+      if (selectedCondoImgs.length > 0) {
+        condoImagesToUse = selectedCondoImgs;
+      } else if (matchedCondoInfo?.images && matchedCondoInfo.images.length > 0) {
+        condoImagesToUse = matchedCondoInfo.images;
+      } else if (Array.isArray(boxConfig.condoImages) && boxConfig.condoImages.length > 0) {
+        condoImagesToUse = boxConfig.condoImages;
+      } else if (propertyContext?.images && propertyContext.images.length > 0) {
+        condoImagesToUse = propertyContext.images.slice(0, 3).map((img, i) => ({
+          index: i + 1,
+          filename: img.filename || `Condo Photo #${i + 1}`,
+          url: img.url,
+          data_url: img.url,
+        }));
+      }
+
       const promptToUse = (resolvedPromptPreview || currentPromptText || 'Create facebook advertisement from the attached reference and building photos').trim();
-      const refImgToUse = activeReferenceImage?.url || referenceImage || null;
+      const refImgToUse = activeReferenceImage?.url || referenceImage || boxConfig.referenceImage || (propertyContext?.images && propertyContext.images[0]?.url) || null;
       const effectiveHeroGroupName = currentGroup?.name || targetGroupName || 'FB Hero';
       const isDirectStaging = boxConfig.stagingMode !== 'two_stage';
+
+      // 0. Instantly focus Chrome profile and ChatGPT tab
+      focusBrowserTabGroup({
+        profileId: activeProf?.id || selectedProfileId,
+        profileKey: profKey,
+        groupName: effectiveHeroGroupName,
+        groupTabUrls: ['https://chatgpt.com/'],
+        url: 'https://chatgpt.com/',
+        tabMode: boxConfig.workerTabMode || 'existing_tabs',
+        workerCount: isDirectStaging ? 1 : 2,
+        reuseSessionTabs: boxConfig.reuseSessionTabs !== false,
+        force: true,
+      }).catch(() => {});
 
       const resp = await fetch('http://127.0.0.1:9224/start-two-stage-staging', {
         method: 'POST',
@@ -1027,7 +1057,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
           group_name: effectiveHeroGroupName,
           condo_name: matchedCondoInfo?.matched_folder || aiExtractedCondoName || condoSearchQuery || condoName,
           matched_folder: matchedCondoInfo?.matched_folder || '',
-          condo_images: matchedCondoInfo?.images || [],
+          condo_images: condoImagesToUse.slice(0, 3),
           initial_prompt: promptToUse,
           reference_image: refImgToUse,
           reference_image_index: activeReferenceImage?.index || 1,
@@ -2877,7 +2907,6 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', paddingBottom: '2rem' }}>
       {/* Node Header Banner */}
-      {!isHeroNode && (
       <div
         style={{
           display: 'flex',
@@ -2912,7 +2941,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
             {isTabGroupNode
-              ? `Tab Group — ${currentGroup.name || boxConfig.browserGroupName || boxConfig.title || 'Enhance IMG'}`
+              ? `Tab Group — ${currentGroup.name || boxConfig.browserGroupName || boxConfig.title || (isHeroNode ? 'FB Hero' : 'Enhance IMG')}`
               : isProfileNode
               ? `Chrome Profile — ${activeProfile?.display_name || boxConfig.browserProfileName || 'Hsu'}`
               : 'External Browser Node'}
@@ -2966,7 +2995,6 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
           </div>
         </div>
       </div>
-      )}
 
       {!isProfileNode && !isTabGroupNode ? (
         <>
@@ -4383,138 +4411,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
               </div>
             )}
 
-            {/* Single Iconic Primary Action Button & Stop Button */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '2px' }}>
-              {isRunningTwoStage ? (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px', gap: '8px' }}>
-                  <button
-                    type="button"
-                    disabled
-                    style={{
-                      height: '42px',
-                      borderRadius: '10px',
-                      border: '1px solid rgba(245, 158, 11, 0.35)',
-                      background: isDark ? 'rgba(245, 158, 11, 0.15)' : 'rgba(245, 158, 11, 0.12)',
-                      color: isDark ? '#FCD34D' : '#D97706',
-                      fontWeight: 700,
-                      fontSize: '0.78125rem',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '7px',
-                      cursor: 'wait',
-                    }}
-                  >
-                    <FiLoader className="animate-spin" size={14} />
-                    <span>Generating...</span>
-                  </button>
 
-                  <button
-                    type="button"
-                    onClick={handleStopGroupAutomation}
-                    title="Stop Hero Generation immediately"
-                    style={{
-                      height: '42px',
-                      borderRadius: '10px',
-                      border: 'none',
-                      background: 'linear-gradient(135deg, #EF4444 0%, #DC2626 100%)',
-                      color: '#FFFFFF',
-                      fontWeight: 700,
-                      fontSize: '0.78125rem',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '6px',
-                      cursor: 'pointer',
-                      boxShadow: '0 3px 10px rgba(239, 68, 68, 0.35)',
-                      whiteSpace: 'nowrap',
-                      transition: 'all 0.15s ease',
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.filter = 'brightness(1.1)';
-                      e.currentTarget.style.transform = 'translateY(-1px)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.filter = 'none';
-                      e.currentTarget.style.transform = 'translateY(0)';
-                    }}
-                  >
-                    <FiSquare size={12} style={{ fill: '#FFFFFF' }} />
-                    <span>Stop</span>
-                  </button>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleRunTwoStageTest}
-                  style={{
-                    width: '100%',
-                    height: '42px',
-                    borderRadius: '10px',
-                    border: 'none',
-                    background: 'linear-gradient(135deg, #F59E0B 0%, #D97706 100%)',
-                    color: '#000000',
-                    fontWeight: 700,
-                    fontSize: '0.78125rem',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '7px',
-                    cursor: 'pointer',
-                    boxShadow: '0 3px 10px rgba(245, 158, 11, 0.28)',
-                    transition: 'all 0.15s ease',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.filter = 'brightness(1.05)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.filter = 'none';
-                  }}
-                >
-                  <FiZap size={14} />
-                  <span>Run FB Hero (Generate Image)</span>
-                </button>
-              )}
-
-              {twoStageMessage && (
-                <div
-                  style={{
-                    fontSize: '0.625rem',
-                    padding: '6px 10px',
-                    borderRadius: '6px',
-                    backgroundColor: isDark ? 'rgba(245, 158, 11, 0.1)' : 'rgba(245, 158, 11, 0.08)',
-                    border: '1px solid rgba(245, 158, 11, 0.25)',
-                    color: '#F59E0B',
-                    lineHeight: 1.35,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: '8px',
-                  }}
-                >
-                  <span>{twoStageMessage}</span>
-                  {isRunningTwoStage && (
-                    <button
-                      type="button"
-                      onClick={handleStopGroupAutomation}
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: '#EF4444',
-                        cursor: 'pointer',
-                        fontSize: '0.625rem',
-                        fontWeight: 700,
-                        textDecoration: 'underline',
-                        padding: 0,
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
 
             {/* ── 4. Generated Hero Advertisement Preview Card ── */}
             {latestHeroImage && Boolean((condoName || condoSearchQuery) && (
@@ -4961,91 +4858,132 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
               </div>
             </div>
             )}
+          </div>
+        )}
 
-            {/* Run Action Button (Theme Primary Clean Normal Button) */}
-            <button
-              type="button"
-              disabled={isAutomating || isRunningTwoStage}
-              onClick={() => {
-                if (isHeroNode) {
-                  handleRunTwoStageTest();
-                } else {
-                  setSelectedGroupName(currentGroup.name || boxConfig.browserGroupName || 'Enhance IMG');
-                  handleStartGroupAutomation();
-                }
-              }}
-              style={{
-                width: '100%',
-                height: '38px',
-                borderRadius: '8px',
-                border: '1px solid var(--accent-primary, #2563EB)',
-                backgroundColor: (isAutomating || isRunningTwoStage)
-                  ? 'rgba(37, 99, 235, 0.6)'
-                  : 'var(--accent-primary, #2563EB)',
-                color: '#FFFFFF',
-                fontSize: '0.8125rem',
-                fontWeight: 600,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px',
-                cursor: (isAutomating || isRunningTwoStage) ? 'not-allowed' : 'pointer',
-                boxShadow: 'none',
-                transition: 'all 0.15s ease',
-              }}
-              onMouseEnter={(e) => {
-                if (!isAutomating && !isRunningTwoStage) {
-                  e.currentTarget.style.backgroundColor = 'var(--accent-primary-hover, #1D4ED8)';
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (!isAutomating && !isRunningTwoStage) {
-                  e.currentTarget.style.backgroundColor = 'var(--accent-primary, #2563EB)';
-                }
-              }}
-            >
-              {isAutomating || isRunningTwoStage ? (
-                <>
-                  <FiLoader className="animate-spin" size={14} />
-                  <span>
-                    {isHeroNode
-                      ? 'Generating Hero Image...'
-                      : `Processing ${activeImages.length} Images in ${boxConfig.workerTabCount || (isHeroNode ? 1 : 4)} Tabs...`}
-                  </span>
-                </>
-              ) : (
-                <>
-                  <FiPlay size={13} />
-                  <span>
-                    {isHeroNode
-                      ? `Run ${currentGroup.name} (Generate Image)`
-                      : `Run ${currentGroup.name} (${activeImages.length} Images · ${boxConfig.workerTabCount || (isHeroNode ? 1 : 4)} Tabs)`}
-                  </span>
-                </>
-              )}
-            </button>
-
-            {/* Stop Automation Button */}
-            {(isAutomating || isRunningTwoStage) && (
-              <Button
-                size="sm"
-                variant="danger"
+        {/* Two-Stage Hero Feedback Banner (when running or status message present) */}
+        {isHeroNode && twoStageMessage && (
+          <div
+            style={{
+              fontSize: '0.6875rem',
+              fontWeight: 500,
+              padding: '7px 11px',
+              borderRadius: '8px',
+              backgroundColor: isDark ? 'rgba(59, 130, 246, 0.12)' : 'rgba(59, 130, 246, 0.08)',
+              border: '1px solid rgba(59, 130, 246, 0.25)',
+              color: isDark ? '#93C5FD' : '#2563EB',
+              lineHeight: 1.35,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '8px',
+            }}
+          >
+            <span>{twoStageMessage}</span>
+            {isRunningTwoStage && (
+              <button
+                type="button"
                 onClick={handleStopGroupAutomation}
                 style={{
-                  fontSize: '0.6875rem',
-                  fontWeight: 600,
-                  width: '100%',
-                  marginTop: '6px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '6px',
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#EF4444',
+                  cursor: 'pointer',
+                  fontSize: '0.625rem',
+                  fontWeight: 700,
+                  textDecoration: 'underline',
+                  padding: 0,
+                  whiteSpace: 'nowrap',
                 }}
               >
-                <FiSquare size={11} /> Stop Automation
-              </Button>
+                Cancel
+              </button>
             )}
           </div>
+        )}
+
+        {/* Run Action Button (Theme Primary Clean Apple Style) */}
+        <button
+          type="button"
+          disabled={isAutomating || isRunningTwoStage}
+          onClick={() => {
+            if (isHeroNode) {
+              handleRunTwoStageTest();
+            } else {
+              setSelectedGroupName(currentGroup.name || boxConfig.browserGroupName || 'Enhance IMG');
+              handleStartGroupAutomation();
+            }
+          }}
+          style={{
+            width: '100%',
+            height: '38px',
+            borderRadius: '8px',
+            border: '1px solid var(--accent-primary, #2563EB)',
+            backgroundColor: (isAutomating || isRunningTwoStage)
+              ? 'rgba(37, 99, 235, 0.6)'
+              : 'var(--accent-primary, #2563EB)',
+            color: '#FFFFFF',
+            fontSize: '0.8125rem',
+            fontWeight: 600,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px',
+            cursor: (isAutomating || isRunningTwoStage) ? 'not-allowed' : 'pointer',
+            boxShadow: 'none',
+            transition: 'all 0.15s ease',
+          }}
+          onMouseEnter={(e) => {
+            if (!isAutomating && !isRunningTwoStage) {
+              e.currentTarget.style.backgroundColor = 'var(--accent-primary-hover, #1D4ED8)';
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (!isAutomating && !isRunningTwoStage) {
+              e.currentTarget.style.backgroundColor = 'var(--accent-primary, #2563EB)';
+            }
+          }}
+        >
+          {isAutomating || isRunningTwoStage ? (
+            <>
+              <FiLoader className="animate-spin" size={14} />
+              <span>
+                {isHeroNode
+                  ? 'Generating Hero Image (1 Ref + 3 Condo Photos)...'
+                  : `Processing ${activeImages.length} Images in ${boxConfig.workerTabCount || (isHeroNode ? 1 : 4)} Tabs...`}
+              </span>
+            </>
+          ) : (
+            <>
+              <FiPlay size={13} />
+              <span>
+                {isHeroNode
+                  ? `Run ${currentGroup.name || 'FB Hero'} (1 Ref + 3 Condo Photos · 1 Tab)`
+                  : `Run ${currentGroup.name || 'Enhance IMG'} (${activeImages.length} Images · ${boxConfig.workerTabCount || (isHeroNode ? 1 : 4)} Tabs)`}
+              </span>
+            </>
+          )}
+        </button>
+
+        {/* Stop Automation Button */}
+        {(isAutomating || isRunningTwoStage) && (
+          <Button
+            size="sm"
+            variant="danger"
+            onClick={handleStopGroupAutomation}
+            style={{
+              fontSize: '0.6875rem',
+              fontWeight: 600,
+              width: '100%',
+              marginTop: '6px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+            }}
+          >
+            <FiSquare size={11} /> Stop Automation
+          </Button>
         )}
       </div>
 
