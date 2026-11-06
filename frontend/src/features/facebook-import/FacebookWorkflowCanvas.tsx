@@ -69,6 +69,7 @@ import { ExternalBrowserSidebar } from '../browser-processing/ExternalBrowserSid
 import { getPersistedReferenceImage } from '../browser-processing/referenceImageStorage';
 import { FBHeroSettingsSidebox, extractCleanCondoNameFromAiText } from '../browser-processing/FBHeroSettingsSidebox';
 import { GoogleSheetSettingsSidebox } from './GoogleSheetSettingsSidebox';
+import { PhotoCropSettingsSidebox } from './PhotoCropSettingsSidebox';
 import { focusBrowserTabGroup, fetchBrowserProfiles, fetchTabGroups, fetchEnhancedDownloadedImages, stopAutomation } from '../browser-processing/browserAutomationService';
 import type { BrowserProfile, BrowserGroupItem } from '../browser-processing/types';
 import { WatermarkNodeModal } from './WatermarkNodeModal';
@@ -3707,6 +3708,7 @@ export const FacebookWorkflowCanvas = forwardRef<
   const [regeneratingBoxId, setRegeneratingBoxId] = useState<string | null>(null);
   const [showFBHeroSettingsSidebox, setShowFBHeroSettingsSidebox] = useState<boolean>(false);
   const [showGoogleSheetSettingsSidebox, setShowGoogleSheetSettingsSidebox] = useState<boolean>(false);
+  const [showPhotoCropSettingsSidebox, setShowPhotoCropSettingsSidebox] = useState<boolean>(false);
   const [isAddingSheetRow, setIsAddingSheetRow] = useState<boolean>(false);
   const [sheetSyncSuccessMessage, setSheetSyncSuccessMessage] = useState<string | null>(null);
   const [sheetSyncErrorMessage, setSheetSyncErrorMessage] = useState<string | null>(null);
@@ -3714,6 +3716,7 @@ export const FacebookWorkflowCanvas = forwardRef<
   useEffect(() => {
     setShowFBHeroSettingsSidebox(false);
     setShowGoogleSheetSettingsSidebox(false);
+    setShowPhotoCropSettingsSidebox(false);
     setSheetSyncSuccessMessage(null);
     setSheetSyncErrorMessage(null);
   }, [(activeModalNode as any)?.boxId, activeModalNode?.type]);
@@ -4563,6 +4566,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     if (viewingPromptTemplate) {
       setShowGoogleSheetSettingsSidebox(false);
       setShowFBHeroSettingsSidebox(false);
+      setShowPhotoCropSettingsSidebox(false);
     }
   }, [viewingPromptTemplate]);
   const [copiedPromptId, setCopiedPromptId] = useState<string | null>(null);
@@ -4574,6 +4578,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     setIsAISettingsDrawerOpen(false);
     setShowFBHeroSettingsSidebox(false);
     setShowGoogleSheetSettingsSidebox(false);
+    setShowPhotoCropSettingsSidebox(false);
     setSelectedNodeIds(new Set());
     setSelectedBoxId(null);
     setViewingPromptTemplate(null);
@@ -4587,6 +4592,12 @@ export const FacebookWorkflowCanvas = forwardRef<
           e.stopImmediatePropagation();
           e.stopPropagation();
           setViewingPromptTemplate(null);
+          return;
+        }
+        if (showPhotoCropSettingsSidebox) {
+          e.stopImmediatePropagation();
+          e.stopPropagation();
+          setShowPhotoCropSettingsSidebox(false);
           return;
         }
         if (showGoogleSheetSettingsSidebox) {
@@ -15219,236 +15230,291 @@ export const FacebookWorkflowCanvas = forwardRef<
         isWatermarkAIBox(currentModalAIBox) &&
         !connectDrawerNode && (() => {
           return (
-            <aside
-              key={currentModalAIBox.id}
-              className="workflow-sidebar"
-              onMouseDown={(e) => e.stopPropagation()}
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                position: 'absolute',
-                top: 0,
-                right: 0,
-                bottom: 0,
-                width: '380px',
-                maxWidth: '100%',
-                backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
-                borderLeft: '1px solid var(--border-color)',
-                boxShadow: (viewingPromptTemplate || showGoogleSheetSettingsSidebox)
-                  ? 'none'
-                  : isDark
-                    ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
-                    : '-3px 0 16px rgba(0, 0, 0, 0.06)',
-                transition: 'box-shadow 0.28s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.28s ease',
-                zIndex: 170,
-                display: 'flex',
-                flexDirection: 'column',
-                animation: 'sidebarSlideIn 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
-              }}
-            >
-              {/* Top Navigation Bar with Title & Close [X] */}
-              <div
+            <>
+              <aside
+                key={currentModalAIBox.id}
+                className="workflow-sidebar"
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '1rem',
-                  padding: '0.875rem 1rem',
-                  height: '62px',
-                  boxSizing: 'border-box',
-                  borderBottom: 'none',
+                  position: 'absolute',
+                  top: 0,
+                  right: 0,
+                  bottom: 0,
+                  width: '380px',
+                  maxWidth: '100%',
                   backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', minWidth: 0 }}>
-                  <div
-                    style={{
-                      width: '30px',
-                      height: '30px',
-                      borderRadius: '8px',
-                      backgroundColor: 'var(--accent-primary-alpha, rgba(37, 99, 235, 0.1))',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      color: 'var(--accent-primary, #3B82F6)',
-                      flexShrink: 0,
-                    }}
-                  >
-                    <FiScissors size={16} />
-                  </div>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.2 }}>
-                      Photo Format & Crop
-                    </div>
-                    <div style={{ fontSize: '0.6875rem', color: isDark ? '#8B949E' : '#64748B' }}>
-                      Crop & Cut Studio
-                    </div>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleCloseModal();
-                  }}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  title="Close Inspector (Esc)"
-                  aria-label="Close"
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    width: '28px',
-                    height: '28px',
-                    borderRadius: '6px',
-                    border: '1px solid var(--border-color)',
-                    backgroundColor: isDark ? 'var(--bg-surface)' : 'rgba(0, 0, 0, 0.04)',
-                    color: 'var(--text-secondary)',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <FiX size={15} />
-                </button>
-              </div>
-
-              {/* Scrollable Body with WatermarkNodeModal */}
-              <div
-                style={{
-                  flex: 1,
-                  overflowY: 'auto',
-                  padding: '1rem',
+                  borderLeft: '1px solid var(--border-color)',
+                  boxShadow: (viewingPromptTemplate || showGoogleSheetSettingsSidebox || showPhotoCropSettingsSidebox)
+                    ? 'none'
+                    : isDark
+                      ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
+                      : '-3px 0 16px rgba(0, 0, 0, 0.06)',
+                  transition: 'box-shadow 0.28s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.28s ease',
+                  zIndex: 170,
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: '1rem',
+                  animation: 'sidebarSlideIn 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
                 }}
               >
-                {/* Connect Next Step Quick Button (top) */}
-                {renderCenteredConnectButton(currentModalAIBox.id, 'ai-box', currentModalAIBox.title || 'Format Preset')}
-
-                {/* Node Status Toggle Card */}
+                {/* Top Navigation Bar with Title & Close [X] */}
                 <div
                   style={{
                     display: 'flex',
-                    justifyContent: 'space-between',
                     alignItems: 'center',
-                    padding: '0.75rem 0.875rem',
-                    borderRadius: '8px',
-                    border: '1px solid var(--border-color)',
-                    backgroundColor: isDark ? 'var(--bg-surface)' : '#F8FAFC',
+                    justifyContent: 'space-between',
+                    gap: '1rem',
+                    padding: '0.875rem 1rem',
+                    height: '62px',
+                    boxSizing: 'border-box',
+                    borderBottom: 'none',
+                    backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
                   }}
                 >
-                  <div>
-                    <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                      Node Status
-                    </div>
-                    <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                      {currentModalAIBox.enabled !== false
-                        ? 'Executing during workflow run'
-                        : 'Node is bypassed (will skip during workflow run)'}
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
-                    <span
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', minWidth: 0 }}>
+                    <div
                       style={{
-                        fontSize: '0.75rem',
-                        fontWeight: 600,
-                        color: currentModalAIBox.enabled !== false ? '#10B981' : 'var(--text-muted)',
+                        width: '30px',
+                        height: '30px',
+                        borderRadius: '8px',
+                        backgroundColor: 'var(--accent-primary-alpha, rgba(37, 99, 235, 0.1))',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '4px',
+                        justifyContent: 'center',
+                        color: 'var(--accent-primary, #3B82F6)',
+                        flexShrink: 0,
                       }}
                     >
-                      <span
-                        style={{
-                          width: '6px',
-                          height: '6px',
-                          borderRadius: '50%',
-                          backgroundColor: currentModalAIBox.enabled !== false ? '#10B981' : '#6B7280',
-                        }}
-                      />
-                      <span>{currentModalAIBox.enabled !== false ? 'Active' : 'Disabled'}</span>
-                    </span>
-                    <ToggleSwitch
-                      checked={currentModalAIBox.enabled !== false}
-                      onChange={() => handleToggleAIBox(currentModalAIBox.id)}
-                      activeColor="#10B981"
-                      size="md"
-                    />
+                      <FiScissors size={16} />
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.2 }}>
+                        Photo Format & Crop
+                      </div>
+                      <div style={{ fontSize: '0.6875rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                        Crop & Cut Studio
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowFBHeroSettingsSidebox(false);
+                        setShowGoogleSheetSettingsSidebox(false);
+                        setShowPhotoCropSettingsSidebox((prev) => !prev);
+                      }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      title="Photo Format & Crop Settings (Preset, Format, Framing, Image Source)"
+                      aria-label="Format & Crop Settings"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: '28px',
+                        height: '28px',
+                        borderRadius: '6px',
+                        border: showPhotoCropSettingsSidebox
+                          ? '1px solid var(--accent-primary, #3B82F6)'
+                          : isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                        backgroundColor: showPhotoCropSettingsSidebox
+                          ? 'rgba(59, 130, 246, 0.15)'
+                          : isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+                        color: showPhotoCropSettingsSidebox ? 'var(--accent-primary, #3B82F6)' : 'var(--text-secondary)',
+                        cursor: 'pointer',
+                        flexShrink: 0,
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      <FiSettings size={15} />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleCloseModal();
+                      }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      title="Close Inspector (Esc)"
+                      aria-label="Close"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: '28px',
+                        height: '28px',
+                        borderRadius: '6px',
+                        border: '1px solid var(--border-color)',
+                        backgroundColor: isDark ? 'var(--bg-surface)' : 'rgba(0, 0, 0, 0.04)',
+                        color: 'var(--text-secondary)',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <FiX size={15} />
+                    </button>
                   </div>
                 </div>
 
-                {currentModalAIBox.enabled === false && (
-                  <div
-                    style={{
-                      padding: '0.625rem 0.75rem',
-                      borderRadius: '6px',
-                      backgroundColor: isDark ? 'rgba(239, 68, 68, 0.08)' : '#FEF2F2',
-                      border: isDark ? '1px solid rgba(239, 68, 68, 0.2)' : '1px solid #FCA5A5',
-                      color: isDark ? '#FCA5A5' : '#B91C1C',
-                      fontSize: '0.6875rem',
-                      lineHeight: 1.4,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                    }}
-                  >
-                    <FiAlertTriangle size={13} style={{ flexShrink: 0 }} />
-                    <span>Photo Format & Crop is disabled. This step will be bypassed during workflow runs.</span>
-                  </div>
-                )}
-
-                <WatermarkNodeModal
-                  key={currentModalAIBox.id}
-                  box={currentModalAIBox}
-                  isDark={isDark}
-                  onUpdateBox={(id, updates) => handleUpdateAIBox(id, updates)}
-                  onDeleteBox={(id) => {
-                    handleDeleteAIBox(id);
-                    handleCloseModal();
-                  }}
-                  onClose={handleCloseModal}
-                  images={images}
-                  watermarkedPhotos={watermarkedPhotos}
-                  enhancedPhotos={allEnhancedPhotos}
-                  workflowBoxes={config.aiBoxes}
-                  connections={config.connections}
-                  onOpenLightbox={handleOpenLightbox}
-                  listingCode={executionState?.listingCode || previewSampleCode}
-                />
-              </div>
-
-              {/* Bottom Pinned Footer: Full Width Delete Button */}
-              <div
-                style={{
-                  padding: '0.875rem 1rem',
-                  borderTop: 'none',
-                  backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
-                }}
-              >
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={(e) => {
-                    handleDeleteAIBox(currentModalAIBox.id, e);
-                    handleCloseModal();
-                  }}
-                  leftIcon={<FiTrash2 size={13} style={{ color: 'var(--text-secondary)' }} />}
+                {/* Scrollable Body with WatermarkNodeModal */}
+                <div
                   style={{
-                    width: '100%',
-                    height: '34px',
-                    fontSize: '0.75rem',
-                    fontWeight: 500,
-                    color: 'var(--text-primary)',
-                    backgroundColor: isDark ? 'var(--bg-surface)' : '#F1F5F9',
-                    borderColor: 'var(--border-color)',
+                    flex: 1,
+                    overflowY: 'auto',
+                    padding: '1rem',
                     display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
+                    flexDirection: 'column',
+                    gap: '1rem',
                   }}
                 >
-                  Delete
-                </Button>
-              </div>
-            </aside>
+                  {/* Connect Next Step Quick Button (top) */}
+                  {renderCenteredConnectButton(currentModalAIBox.id, 'ai-box', currentModalAIBox.title || 'Format Preset')}
+
+                  {/* Node Status Toggle Card */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      padding: '0.75rem 0.875rem',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-color)',
+                      backgroundColor: isDark ? 'var(--bg-surface)' : '#F8FAFC',
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                        Node Status
+                      </div>
+                      <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                        {currentModalAIBox.enabled !== false
+                          ? 'Executing during workflow run'
+                          : 'Node is bypassed (will skip during workflow run)'}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+                      <span
+                        style={{
+                          fontSize: '0.75rem',
+                          fontWeight: 600,
+                          color: currentModalAIBox.enabled !== false ? '#10B981' : 'var(--text-muted)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                        }}
+                      >
+                        <span
+                          style={{
+                            width: '6px',
+                            height: '6px',
+                            borderRadius: '50%',
+                            backgroundColor: currentModalAIBox.enabled !== false ? '#10B981' : '#6B7280',
+                          }}
+                        />
+                        <span>{currentModalAIBox.enabled !== false ? 'Active' : 'Disabled'}</span>
+                      </span>
+                      <ToggleSwitch
+                        checked={currentModalAIBox.enabled !== false}
+                        onChange={() => handleToggleAIBox(currentModalAIBox.id)}
+                        activeColor="#10B981"
+                        size="md"
+                      />
+                    </div>
+                  </div>
+
+                  {currentModalAIBox.enabled === false && (
+                    <div
+                      style={{
+                        padding: '0.625rem 0.75rem',
+                        borderRadius: '6px',
+                        backgroundColor: isDark ? 'rgba(239, 68, 68, 0.08)' : '#FEF2F2',
+                        border: isDark ? '1px solid rgba(239, 68, 68, 0.2)' : '1px solid #FCA5A5',
+                        color: isDark ? '#FCA5A5' : '#B91C1C',
+                        fontSize: '0.6875rem',
+                        lineHeight: 1.4,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                      }}
+                    >
+                      <FiAlertTriangle size={13} style={{ flexShrink: 0 }} />
+                      <span>Photo Format & Crop is disabled. This step will be bypassed during workflow runs.</span>
+                    </div>
+                  )}
+
+                  <WatermarkNodeModal
+                    key={currentModalAIBox.id}
+                    box={currentModalAIBox}
+                    isDark={isDark}
+                    onUpdateBox={(id, updates) => handleUpdateAIBox(id, updates)}
+                    onDeleteBox={(id) => {
+                      handleDeleteAIBox(id);
+                      handleCloseModal();
+                    }}
+                    onClose={handleCloseModal}
+                    images={images}
+                    watermarkedPhotos={watermarkedPhotos}
+                    enhancedPhotos={allEnhancedPhotos}
+                    workflowBoxes={config.aiBoxes}
+                    connections={config.connections}
+                    onOpenLightbox={handleOpenLightbox}
+                    listingCode={executionState?.listingCode || previewSampleCode}
+                    onOpenSettingsSidebox={() => setShowPhotoCropSettingsSidebox(true)}
+                    isSettingsSideboxOpen={showPhotoCropSettingsSidebox}
+                  />
+                </div>
+
+                {/* Bottom Pinned Footer: Full Width Delete Button */}
+                <div
+                  style={{
+                    padding: '0.875rem 1rem',
+                    borderTop: 'none',
+                    backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
+                  }}
+                >
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={(e) => {
+                      handleDeleteAIBox(currentModalAIBox.id, e);
+                      handleCloseModal();
+                    }}
+                    leftIcon={<FiTrash2 size={13} style={{ color: 'var(--text-secondary)' }} />}
+                    style={{
+                      width: '100%',
+                      height: '34px',
+                      fontSize: '0.75rem',
+                      fontWeight: 500,
+                      color: 'var(--text-primary)',
+                      backgroundColor: isDark ? 'var(--bg-surface)' : '#F1F5F9',
+                      borderColor: 'var(--border-color)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    Delete
+                  </Button>
+                </div>
+              </aside>
+
+              <PhotoCropSettingsSidebox
+                key={currentModalAIBox.id}
+                isOpen={showPhotoCropSettingsSidebox}
+                onClose={() => setShowPhotoCropSettingsSidebox(false)}
+                isDark={isDark}
+                box={currentModalAIBox}
+                onUpdateBox={(id, updates) => handleUpdateAIBox(id, updates)}
+                images={images}
+                workflowBoxes={config.aiBoxes}
+                connections={config.connections}
+                enhancedPhotos={allEnhancedPhotos}
+                watermarkedPhotos={watermarkedPhotos}
+                listingCode={executionState?.listingCode || previewSampleCode}
+              />
+            </>
           );
         })()}
 
