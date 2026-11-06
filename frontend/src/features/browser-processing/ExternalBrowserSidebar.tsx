@@ -5010,7 +5010,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                   <span>
                     {isHeroNode
                       ? 'Generating Hero Image...'
-                      : `Processing ${activeImages.length} Images in ${currentGroup.tabs_count || currentGroup.tabs?.length || 4} Tabs...`}
+                      : `Processing ${activeImages.length} Images in ${boxConfig.workerTabCount || (isHeroNode ? 1 : 4)} Tabs...`}
                   </span>
                 </>
               ) : (
@@ -5019,7 +5019,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                   <span>
                     {isHeroNode
                       ? `Run ${currentGroup.name} (Generate Image)`
-                      : `Run ${currentGroup.name} (${activeImages.length} Images · ${currentGroup.tabs_count || currentGroup.tabs?.length || 4} Tabs)`}
+                      : `Run ${currentGroup.name} (${activeImages.length} Images · ${boxConfig.workerTabCount || (isHeroNode ? 1 : 4)} Tabs)`}
                   </span>
                 </>
               )}

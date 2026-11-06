@@ -593,18 +593,35 @@ function activateChromeProfile(profileKey, targetUrl = '') {
   const chromeBinary = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
   const chromeRunning = isChromeRunning();
 
-  // 1. If Chrome is already running:
-  // NEVER spawn the CLI binary with URLs! That creates duplicate tabs on every call!
-  // The extension inside Chrome exclusively creates and manages worker tabs.
-  // Simply bring Google Chrome to the front.
-  if (chromeRunning) {
+  // 1. If Chrome is already running and this profile is actively polling/paired:
+  // It is ALREADY OPEN! NEVER spawn the CLI binary again, because that spawns duplicate windows/tabs!
+  // Bring the ChatGPT window of Google Chrome to the front via AppleScript.
+  if (chromeRunning && isProfileLive(resolvedKey)) {
     try {
-      execSync(`osascript -e 'tell application "Google Chrome" to activate' 2>/dev/null`);
-    } catch (e) {}
+      execSync(`osascript -e '
+tell application "Google Chrome"
+  set winList to every window
+  repeat with w in winList
+    set tabCount to count of tabs of w
+    repeat with i from 1 to tabCount
+      set t to tab i of w
+      if URL of t contains "chatgpt.com" then
+        set active tab index of w to i
+        set index of w to 1
+        activate
+        return
+      end if
+    end repeat
+  end repeat
+  activate
+end tell' 2>/dev/null`);
+    } catch (e) {
+      try {
+        execSync(`osascript -e 'tell application "Google Chrome" to activate' 2>/dev/null`);
+      } catch (err2) {}
+    }
     return;
   }
-
-  openedProfiles.clear();
 
   // 2. Debounce guard: do not re-launch the same profile within 4 seconds
   const lastLaunch = launchingProfileLock[resolvedKey] || 0;
@@ -614,17 +631,22 @@ function activateChromeProfile(profileKey, targetUrl = '') {
   launchingProfileLock[resolvedKey] = now;
   openedProfiles.add(resolvedKey);
 
-  console.log(`[COMPANION] 🚀 Launching Chrome profile "${resolvedKey}" (cold start)...`);
+  console.log(`[COMPANION] 🚀 Launching Chrome profile "${resolvedKey}" (window not active)...`);
+
+  // When opening a profile window on macOS, pass exactly ONE initial URL ("https://chatgpt.com/")
+  // so Chrome opens the window. (Passing no URLs causes macOS Chrome to ignore --profile-directory
+  // when an existing session is running; passing multiple URLs forces macOS to open duplicate tabs).
+  const initialUrl = 'https://chatgpt.com/';
 
   try {
     if (fs.existsSync(chromeBinary)) {
-      const child = spawn(chromeBinary, [`--profile-directory=${resolvedKey}`], {
+      const child = spawn(chromeBinary, [`--profile-directory=${resolvedKey}`, initialUrl], {
         detached: true,
         stdio: 'ignore',
       });
       child.unref();
     } else {
-      const child = spawn('open', ['-a', 'Google Chrome', '--args', `--profile-directory=${resolvedKey}`], {
+      const child = spawn('open', ['-a', 'Google Chrome', '--args', `--profile-directory=${resolvedKey}`, initialUrl], {
         detached: true,
         stdio: 'ignore',
       });
