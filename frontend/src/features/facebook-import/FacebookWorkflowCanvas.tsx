@@ -11724,10 +11724,48 @@ export const FacebookWorkflowCanvas = forwardRef<
                           : connectedTextOutputs.map((item) => `## ${item.title}\n\n${item.text}`).join('\n\n---\n\n'))
                         : (aiGeneratedCopy || rawContent || '');
 
+                      // Prioritize text groups (AI Processor, Get Content) above all image groups (Watermark, Crop, Get Images)
+                      const sortedCombineInputs = [...combineInputs].sort((a, b) => {
+                        const fromBoxA = config.aiBoxes.find((box) => box.id === a.fromNodeId);
+                        const fromBoxB = config.aiBoxes.find((box) => box.id === b.fromNodeId);
+
+                        const isImageA = a.fromNodeId === 'get-images' || (fromBoxA ? (
+                          isWatermarkAIBox(fromBoxA) ||
+                          (isTextFormatAIBox(fromBoxA) && (fromBoxA.processType === 'image_crop' || fromBoxA.title?.toLowerCase().includes('cut') || fromBoxA.title?.toLowerCase().includes('crop')))
+                        ) : false);
+
+                        const isImageB = b.fromNodeId === 'get-images' || (fromBoxB ? (
+                          isWatermarkAIBox(fromBoxB) ||
+                          (isTextFormatAIBox(fromBoxB) && (fromBoxB.processType === 'image_crop' || fromBoxB.title?.toLowerCase().includes('cut') || fromBoxB.title?.toLowerCase().includes('crop')))
+                        ) : false);
+
+                        const isTextA = a.fromNodeId === 'get-content' || (fromBoxA ? (
+                          isTextAIBox(fromBoxA, config.connections) ||
+                          fromBoxA.subtitle === 'AI Processor' ||
+                          fromBoxA.processType === 'text_ai' ||
+                          fromBoxA.title?.toLowerCase().includes('prompt generator') ||
+                          fromBoxA.title?.toLowerCase().includes('ai model')
+                        ) : false);
+
+                        const isTextB = b.fromNodeId === 'get-content' || (fromBoxB ? (
+                          isTextAIBox(fromBoxB, config.connections) ||
+                          fromBoxB.subtitle === 'AI Processor' ||
+                          fromBoxB.processType === 'text_ai' ||
+                          fromBoxB.title?.toLowerCase().includes('prompt generator') ||
+                          fromBoxB.title?.toLowerCase().includes('ai model')
+                        ) : false);
+
+                        if (isTextA && !isTextB) return -1;
+                        if (!isTextA && isTextB) return 1;
+                        if (!isImageA && isImageB) return -1;
+                        if (isImageA && !isImageB) return 1;
+                        return 0;
+                      });
+
                       return (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                           {/* Clean, professional card for EACH connected input */}
-                          {combineInputs.map((c) => {
+                          {sortedCombineInputs.map((c) => {
                             const fromBox = config.aiBoxes.find((b) => b.id === c.fromNodeId);
                             const isContent = c.fromNodeId === 'get-content';
                             const isImages = c.fromNodeId === 'get-images';
