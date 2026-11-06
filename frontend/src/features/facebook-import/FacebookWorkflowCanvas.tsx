@@ -11019,7 +11019,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 maxWidth: '100%',
                 backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
                 borderLeft: '1px solid var(--border-color)',
-                boxShadow: (viewingPromptTemplate || showGoogleSheetSettingsSidebox || showCombineMediaSidebox)
+                boxShadow: (viewingPromptTemplate || showGoogleSheetSettingsSidebox || showGoogleSheetDataViewer || showCombineMediaSidebox)
                   ? 'none'
                   : isDark
                     ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
@@ -15638,7 +15638,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   maxWidth: '100%',
                   backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
                   borderLeft: '1px solid var(--border-color)',
-                  boxShadow: (viewingPromptTemplate || showGoogleSheetSettingsSidebox || showPhotoCropSettingsSidebox)
+                  boxShadow: (viewingPromptTemplate || showGoogleSheetSettingsSidebox || showGoogleSheetDataViewer || showPhotoCropSettingsSidebox)
                     ? 'none'
                     : isDark
                       ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
@@ -16492,7 +16492,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 maxWidth: '100%',
                 backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
                 borderLeft: '1px solid var(--border-color)',
-                boxShadow: (viewingPromptTemplate || showGoogleSheetSettingsSidebox)
+                boxShadow: (viewingPromptTemplate || showGoogleSheetSettingsSidebox || showGoogleSheetDataViewer)
                   ? 'none'
                   : isDark
                     ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
@@ -16756,7 +16756,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 maxWidth: '100%',
                 backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
                 borderLeft: '1px solid var(--border-color)',
-                boxShadow: (viewingPromptTemplate || showGoogleSheetSettingsSidebox)
+                boxShadow: (viewingPromptTemplate || showGoogleSheetSettingsSidebox || showGoogleSheetDataViewer)
                   ? 'none'
                   : isDark
                     ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
@@ -17011,7 +17011,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 maxWidth: '100%',
                 backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
                 borderLeft: '1px solid var(--border-color)',
-                boxShadow: (viewingPromptTemplate || showGoogleSheetSettingsSidebox)
+                boxShadow: (viewingPromptTemplate || showGoogleSheetSettingsSidebox || showGoogleSheetDataViewer)
                   ? 'none'
                   : isDark
                     ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
@@ -17415,7 +17415,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 maxWidth: '100%',
                 backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
                 borderLeft: '1px solid var(--border-color)',
-                boxShadow: (viewingPromptTemplate || showGoogleSheetSettingsSidebox)
+                boxShadow: (viewingPromptTemplate || showGoogleSheetSettingsSidebox || showGoogleSheetDataViewer)
                   ? 'none'
                   : isDark
                     ? '-8px 0 28px rgba(0, 0, 0, 0.75)'

@@ -242,21 +242,18 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
         position: 'fixed',
         top: 0,
         bottom: 0,
+        left: 0,
         right: isExpanded ? 0 : isSidebarOpen ? '380px' : 0,
-        left: isExpanded ? 0 : 'auto',
-        width: isExpanded ? '100vw' : 'calc(100vw - 420px)',
-        maxWidth: isExpanded ? '100vw' : '1440px',
-        minWidth: isExpanded ? '100vw' : '720px',
+        width: isExpanded ? '100vw' : isSidebarOpen ? 'calc(100vw - 380px)' : '100vw',
+        maxWidth: 'none',
         backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
-        borderLeft: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+        borderLeft: 'none',
         borderRight: isExpanded ? 'none' : isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-        boxShadow: isDark
-          ? '-16px 0 35px rgba(0, 0, 0, 0.85)'
-          : '-8px 0 24px rgba(0, 0, 0, 0.1)',
-        zIndex: 168,
+        boxShadow: 'none',
+        zIndex: isExpanded ? 220 : 168,
         display: 'flex',
         flexDirection: 'column',
-        animation: 'sidebarSlideIn 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
+        animation: isExpanded ? 'none' : 'sidebarSlideIn 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
         userSelect: 'text',
       }}
     >
