@@ -1299,7 +1299,7 @@
     return current.trim().length > 3;
   }
 
-  // Safely clear ONLY prompt text (preserving any attached images)
+  // Safely clear ONLY prompt text (strictly preserving all attached images!)
   function clearPromptText(inputEl) {
     const promptArea = inputEl || findPromptInput();
     if (!promptArea) return;
@@ -1311,12 +1311,17 @@
         return;
       }
       promptArea.focus();
-      const sel = window.getSelection();
-      const range = document.createRange();
-      range.selectNodeContents(promptArea);
-      sel.removeAllRanges();
-      sel.addRange(range);
-      document.execCommand('delete', false, null);
+      // Target ONLY the text paragraph inside promptArea, NEVER the container (which holds the attachment!)
+      const p = promptArea.querySelector('p');
+      if (p) {
+        p.textContent = '';
+      } else {
+        Array.from(promptArea.childNodes).forEach((node) => {
+          if (node.nodeType === Node.TEXT_NODE) {
+            node.textContent = '';
+          }
+        });
+      }
       promptArea.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
       promptArea.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
     } catch (e) {}
@@ -1347,27 +1352,34 @@
     // CASE 2: ProseMirror / contenteditable div
     promptArea.focus();
 
-    // Method 0: Select all and execute atomic insertText (preserves ProseMirror document transaction)
+    // Target the specific text paragraph <p> inside promptArea, NEVER the container itself!
+    let targetP = promptArea.querySelector('p');
+    if (!targetP) {
+      targetP = document.createElement('p');
+      promptArea.appendChild(targetP);
+    }
+
+    // Method 0: Select ONLY targetP and execute insertText (preserves attachments outside <p>!)
     try {
       const sel = window.getSelection();
       const range = document.createRange();
-      range.selectNodeContents(promptArea);
+      range.selectNodeContents(targetP);
       sel.removeAllRanges();
       sel.addRange(range);
       const inserted = document.execCommand('insertText', false, cleanText);
       if (inserted && isPromptActuallyInserted(cleanText, promptArea)) {
         promptArea.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
-        console.log(`[BOLTHAVEN] setPromptText: Method 0 (execCommand insertText) succeeded (${getComposerText(promptArea).length} chars)`);
+        console.log(`[BOLTHAVEN] setPromptText: Method 0 (execCommand insertText on <p>) succeeded (${getComposerText(promptArea).length} chars)`);
         return true;
       }
     } catch (e) {}
 
-    // Method 1: Synthetic beforeinput with insertFromPaste (ProseMirror's primary native path)
+    // Method 1: Synthetic beforeinput on targetP
     try {
-      promptArea.focus();
+      targetP.focus();
       const dt = new DataTransfer();
       dt.setData('text/plain', cleanText);
-      promptArea.dispatchEvent(new InputEvent('beforeinput', {
+      targetP.dispatchEvent(new InputEvent('beforeinput', {
         bubbles: true,
         cancelable: true,
         composed: true,
@@ -1382,9 +1394,9 @@
       return true;
     }
 
-    // Method 2: Synthetic paste event with clipboardData (ProseMirror paste plugin)
+    // Method 2: Synthetic paste event on targetP
     try {
-      promptArea.focus();
+      targetP.focus();
       const dt = new DataTransfer();
       dt.setData('text/plain', cleanText);
       const pasteEv = new ClipboardEvent('paste', {
@@ -1393,7 +1405,7 @@
         composed: true,
       });
       Object.defineProperty(pasteEv, 'clipboardData', { value: dt });
-      promptArea.dispatchEvent(pasteEv);
+      targetP.dispatchEvent(pasteEv);
     } catch (e) {}
 
     if (isPromptActuallyInserted(cleanText, promptArea)) {
@@ -1402,12 +1414,12 @@
       return true;
     }
 
-    // Method 3: Line-by-line insertion with insertText and insertParagraph
+    // Method 3: Line-by-line insertion on targetP
     try {
-      promptArea.focus();
+      targetP.focus();
       const sel = window.getSelection();
       const range = document.createRange();
-      range.selectNodeContents(promptArea);
+      range.selectNodeContents(targetP);
       range.collapse(false);
       sel.removeAllRanges();
       sel.addRange(range);
@@ -1429,11 +1441,12 @@
       return true;
     }
 
-    // Method 4: Direct paragraph structure + input event (reliable when switching tabs)
+    // Method 4: Target paragraph textContent (preserves sibling attachments!)
     try {
-      const lines = cleanText.split('\n');
-      promptArea.innerHTML = lines.map((l) => `<p>${l || '<br>'}</p>`).join('');
-      promptArea.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, inputType: 'insertText' }));
+      targetP.classList.remove('placeholder');
+      targetP.removeAttribute('data-placeholder');
+      targetP.textContent = cleanText;
+      targetP.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, inputType: 'insertText', data: cleanText }));
     } catch (e) {}
 
     promptArea.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
@@ -1441,7 +1454,7 @@
 
     let ready = isPromptActuallyInserted(cleanText, promptArea);
     if (ready) {
-      console.log(`[BOLTHAVEN] setPromptText: Method 4 (innerHTML paragraph) succeeded (${getComposerText(promptArea).length} chars)`);
+      console.log(`[BOLTHAVEN] setPromptText: Method 4 (targetP textContent) succeeded (${getComposerText(promptArea).length} chars)`);
       return true;
     }
 
@@ -1909,6 +1922,14 @@
     activeJobAborted = false;
     console.log(`[BOLTHAVEN] [Setup Phase] Setting up Image #${job.original_position || 1} (Job ${job.job_id})...`);
 
+    // Detect Temporary Chat mode — image generation is blocked by ChatGPT in temporary chat!
+    if (window.location.search.includes('temporary-chat') || window.location.href.includes('temporary-chat')) {
+      console.warn('[BOLTHAVEN] ⚠️ Temporary Chat detected! Image generation is blocked by ChatGPT in temporary chat. Switching to standard chat...');
+      window.location.href = 'https://chatgpt.com/';
+      await new Promise((r) => setTimeout(r, 2500));
+      throw new Error('Tab was in Temporary Chat mode (image generation disabled by ChatGPT). Redirected to standard chat — retrying.');
+    }
+
     const input = await waitForElement('#prompt-textarea, div[contenteditable="true"], .ProseMirror, textarea', 25000);
     if (!input) {
       throw new Error('Could not locate ChatGPT prompt input textarea');
@@ -2006,13 +2027,6 @@
       throw new Error(`CRITICAL: Image #${job.original_position || 1} could not be verified as attached in ChatGPT composer. Refusing to send prompt without image.`);
     }
 
-    // If more than 1 image is attached, prune down to exactly 1 so it never fails or duplicates!
-    if (verifiedAttachmentCount > 1) {
-      console.warn(`[BOLTHAVEN] Detected ${verifiedAttachmentCount} attachments. Pruning down to exactly 1...`);
-      await pruneExcessAttachments(input, 1);
-      verifiedAttachmentCount = getAttachedImagesCount(input);
-    }
-
     console.log(`[BOLTHAVEN] ✓ Step 1 Done: Single image #${job.original_position || 1} confirmed attached! Waiting for upload to finish...`);
 
     // 2. Wait for the image upload to fully complete BEFORE typing the prompt.
@@ -2031,7 +2045,7 @@
     const liveInput = findPromptInput() || input;
     await setPromptTextAsync(liveInput, promptText, 4000);
 
-    // If still empty, apply direct ProseMirror paragraph insertion
+    // If still empty, apply direct ProseMirror paragraph insertion (WITHOUT touching attachments!)
     let composerText = getComposerText(findPromptInput() || liveInput);
     if (!composerText || composerText.length < 5) {
       try {
@@ -2041,7 +2055,6 @@
           let p = pm.querySelector('p');
           if (!p) {
             p = document.createElement('p');
-            pm.innerHTML = '';
             pm.appendChild(p);
           }
           p.classList.remove('placeholder');
@@ -2062,7 +2075,15 @@
       throw new Error('Job stopped by user');
     }
 
-    console.log(`[BOLTHAVEN] ✓ Step 2 Done: Image attached + prompt ready (${composerText.length} chars). Sending Image #${job.original_position || 1}...`);
+    // ── STRICT ATTACHMENT PRESERVATION CHECK ────────────────────────────────
+    // Ensure the image was NOT removed or detached during prompt insertion!
+    const finalAttachmentCheck = getAttachedImagesCount(findPromptInput() || liveInput);
+    if (finalAttachmentCheck < 1) {
+      clearPromptText(liveInput);
+      throw new Error(`CRITICAL: Attached image was lost before sending! Refusing to send prompt without image.`);
+    }
+
+    console.log(`[BOLTHAVEN] ✓ Step 2 Done: Image attached (${finalAttachmentCheck} verified) + prompt ready (${composerText.length} chars). Sending Image #${job.original_position || 1}...`);
 
     // Record pre-existing assistant turn count before sending
     const preAssistantCount = document.querySelectorAll(

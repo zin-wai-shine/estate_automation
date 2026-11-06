@@ -1231,11 +1231,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           if (!pm) return { ok: false, reason: 'no pm' };
           pm.focus();
 
-          // METHOD A: document.execCommand insertText — works in isolated worlds AND main world where deprecated API still active
+          if (pm.tagName === 'TEXTAREA') {
+            pm.value = text;
+            pm.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+            pm.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+            return { ok: true, method: 'textarea' };
+          }
+
+          // Target ONLY the paragraph inside pm, NEVER the entire pm container (which holds the attachment!)
+          const targetP = pm.querySelector('p') || pm;
+
+          // METHOD A: document.execCommand insertText on targetP ONLY (preserves attachments outside <p>!)
           try {
             const sel = window.getSelection();
             const range = document.createRange();
-            range.selectNodeContents(pm);
+            range.selectNodeContents(targetP);
             sel.removeAllRanges();
             sel.addRange(range);
             document.execCommand('delete', false, null);
