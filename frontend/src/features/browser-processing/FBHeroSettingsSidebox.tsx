@@ -23,6 +23,8 @@ import { Select } from '../../components/ui/Select';
 import { Button } from '../../components/ui/Button';
 import { ToggleSwitch } from '../../components/ui/ToggleSwitch';
 import { loadAvailablePromptTemplates } from '../facebook-import/FacebookWorkflowCanvas';
+import { extractCleanCondoNameFromAiText } from './browserPromptUtils';
+export { extractCleanCondoNameFromAiText };
 import { isEnhanceCategory, isGenerateCategory } from './browserPromptUtils';
 import {
   getPersistedReferenceImage,
@@ -49,32 +51,6 @@ interface FBHeroSettingsSideboxProps {
     rawPostContent?: string;
   };
   availablePrompts?: Array<{ id: string | number; name: string; category?: string; instructions?: string; templateText?: string }>;
-}
-
-export function extractCleanCondoNameFromAiText(raw?: string): string {
-  if (!raw) return '';
-  const trimmed = String(raw).trim();
-  if (!trimmed || trimmed.length > 260) return '';
-  if (
-    trimmed.includes('UNIVERSAL FACEBOOK') ||
-    trimmed.includes('STRICT RULES:') ||
-    trimmed.includes('Convert the raw property data') ||
-    trimmed.includes('Generate a hero real estate')
-  ) {
-    return '';
-  }
-  const firstLine =
-    trimmed
-      .split(/\r?\n/)
-      .map((l) =>
-        l
-          .replace(/^[\s\*#\-•`"'"]+/, '')
-          .replace(/[\s\*`"'"]+$/, '')
-          .replace(/^(condo name|project name|condominium|project|ชื่อโครงการ|โครงการ)[\s:：\-–—]+/i, '')
-          .trim()
-      )
-      .find((l) => l.length > 0 && l.toUpperCase() !== 'NOT_FOUND') || '';
-  return firstLine;
 }
 
 export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({

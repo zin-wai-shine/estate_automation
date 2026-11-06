@@ -7,6 +7,32 @@ export interface BrowserPromptOption {
   instructions: string;
 }
 
+export function extractCleanCondoNameFromAiText(raw?: string): string {
+  if (!raw) return '';
+  const trimmed = String(raw).trim();
+  if (!trimmed || trimmed.length > 260) return '';
+  if (
+    trimmed.includes('UNIVERSAL FACEBOOK') ||
+    trimmed.includes('STRICT RULES:') ||
+    trimmed.includes('Convert the raw property data') ||
+    trimmed.includes('Generate a hero real estate')
+  ) {
+    return '';
+  }
+  const firstLine =
+    trimmed
+      .split(/\r?\n/)
+      .map((l) =>
+        l
+          .replace(/^[\s\*#\-•`"'"]+/, '')
+          .replace(/[\s\*`"'"]+$/, '')
+          .replace(/^(condo name|project name|condominium|project|ชื่อโครงการ|โครงการ)[\s:：\-–—]+/i, '')
+          .trim()
+      )
+      .find((l) => l.length > 0 && l.toUpperCase() !== 'NOT_FOUND') || '';
+  return firstLine;
+}
+
 export const STANDARD_BROWSER_PROMPTS: BrowserPromptOption[] = [
   {
     id: 'fb_hero_master',

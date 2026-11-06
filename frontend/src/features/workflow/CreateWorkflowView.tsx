@@ -102,7 +102,7 @@ export function injectListingCodeIntoPrompt(
   return updatedPrompt;
 }
 
-export function applyListingCodeToGeneratedText(
+function applyListingCodeToGeneratedText(
   text: string,
   listingCode: string,
   useGeneratedCode: boolean = true

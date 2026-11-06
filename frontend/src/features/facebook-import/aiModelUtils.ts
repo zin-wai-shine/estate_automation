@@ -1,5 +1,15 @@
 import type { SelectGroup } from '../../components/ui/Select';
 
+export const CONTENT_AI_MODEL_OPTIONS = [
+  // Google Gemini Models (Active & Verified with Available Credits)
+  { value: 'google_ai|gemini-flash-latest', label: 'Google · Gemini Flash (Fast & Active)' },
+  { value: 'google_ai|gemini-1.5-flash', label: 'Google · Gemini 1.5 Flash (Balanced)' },
+  { value: 'google_ai|gemini-1.5-pro', label: 'Google · Gemini 1.5 Pro (Deep Reasoning)' },
+  { value: 'google_ai|gemini-2.0-flash', label: 'Google · Gemini 2.0 Flash (Next Gen)' },
+  { value: 'google_ai|gemini-2.5-flash', label: 'Google · Gemini 2.5 Flash (Ultra Fast)' },
+  { value: 'google_ai|gemini-pro-latest', label: 'Google · Gemini Pro (High Precision)' },
+];
+
 export const AI_ENGINE_MODEL_GROUPS: SelectGroup[] = [
   {
     label: 'Google Gemini',

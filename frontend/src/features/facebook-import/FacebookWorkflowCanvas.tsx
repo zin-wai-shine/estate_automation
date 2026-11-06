@@ -63,7 +63,7 @@ import { HiSparkles } from 'react-icons/hi2';
 import { useScrollLock } from '../../hooks/useScrollLock';
 import { AITrainingChatbot, ModelSelectorMenu, LaoZhangIcon, RunwareIcon } from './AITrainingChatbot';
 import { useTheme } from '../../context/ThemeContext';
-import { getAIModelDisplayName, isImageAIBox, isImageModel, isWatermarkAIBox, isEnhanceAIBox, isAIBoxConnected, isTextFormatAIBox, isTextAIBox, isN8NAIBox, isExternalBrowserAIBox, isChromeProfileAIBox, isChromeTabGroupAIBox, isGoogleSheetBox, AI_ENGINE_MODEL_GROUPS } from './aiModelUtils';
+import { getAIModelDisplayName, isImageAIBox, isImageModel, isWatermarkAIBox, isEnhanceAIBox, isAIBoxConnected, isTextFormatAIBox, isTextAIBox, isN8NAIBox, isExternalBrowserAIBox, isChromeProfileAIBox, isChromeTabGroupAIBox, isGoogleSheetBox, AI_ENGINE_MODEL_GROUPS, CONTENT_AI_MODEL_OPTIONS } from './aiModelUtils';
 import { AIImageStudio } from './AIImageStudio';
 import { ExternalBrowserSidebar } from '../browser-processing/ExternalBrowserSidebar';
 import { getPersistedReferenceImage } from '../browser-processing/referenceImageStorage';
@@ -509,16 +509,6 @@ export const RUNWARE_IMAGE_MODEL_OPTIONS = [
   { value: 'google:nano-banana@2.1', label: 'Runware AI · Nano Banana 2.1 (Google)' },
   { value: 'google:nano-banana@2-lite', label: 'Runware AI · Nano Banana 2 Lite' },
   { value: 'runware:upscale', label: 'Runware AI · Upscale & Restore' },
-];
-
-export const CONTENT_AI_MODEL_OPTIONS = [
-  // Google Gemini Models (Active & Verified with Available Credits)
-  { value: 'google_ai|gemini-flash-latest', label: 'Google · Gemini Flash (Fast & Active)' },
-  { value: 'google_ai|gemini-1.5-flash', label: 'Google · Gemini 1.5 Flash (Balanced)' },
-  { value: 'google_ai|gemini-1.5-pro', label: 'Google · Gemini 1.5 Pro (Deep Reasoning)' },
-  { value: 'google_ai|gemini-2.0-flash', label: 'Google · Gemini 2.0 Flash (Next Gen)' },
-  { value: 'google_ai|gemini-2.5-flash', label: 'Google · Gemini 2.5 Flash (Ultra Fast)' },
-  { value: 'google_ai|gemini-pro-latest', label: 'Google · Gemini Pro (High Precision)' },
 ];
 
 export const DEFAULT_FB_WORKFLOW_CONFIG: FacebookWorkflowConfig = {
@@ -7874,6 +7864,8 @@ export const FacebookWorkflowCanvas = forwardRef<
         }
       }
     }
+    // Always clear hasMoved on mouseup so subsequent node clicks are never blocked
+    hasMoved.current = false;
   };
 
   const handleWheel = (e: React.WheelEvent) => {
@@ -7943,28 +7935,48 @@ export const FacebookWorkflowCanvas = forwardRef<
     if (e.shiftKey) {
       return;
     }
-    if (!hasMoved.current) {
-      handleToggleGeneralSettings(false);
-      setConnectDrawerNode(null);
-      setQuickAddPopover(null);
-      setViewingPromptTemplate(null);
-      setShowPhotoCropSettingsSidebox(false);
-      setShowFBHeroSettingsSidebox(false);
-      setShowGoogleSheetSettingsSidebox(false);
-      setActiveModalNode(node);
+    if (hasMoved.current) {
+      hasMoved.current = false;
+      return;
+    }
 
-      if (node) {
-        let nodeId = '';
-        if (node.type === 'trigger') nodeId = 'trigger';
-        else if (node.type === 'get-content') nodeId = 'get-content';
-        else if (node.type === 'get-images') nodeId = 'get-images';
-        else if (node.type === 'ai-box') nodeId = node.boxId;
-        else if (node.type === 'combine') nodeId = node.combineId || (node as any).id;
-        else if (node.type === 'destination') nodeId = node.destinationId || 'destination';
-        if (nodeId) {
-          setSelectedNodeIds(new Set([nodeId]));
-          setSelectedBoxId(nodeId);
-        }
+    // TOGGLE OFF: If clicking the node that is already active/open in sidebar, CLOSE IT!
+    const isSameNode =
+      Boolean(activeModalNode && node) &&
+      activeModalNode?.type === node?.type &&
+      (node?.type === 'ai-box'
+        ? (activeModalNode as any).boxId === (node as any).boxId
+        : node?.type === 'combine'
+          ? (activeModalNode as any).combineId === (node as any).combineId
+          : node?.type === 'destination'
+            ? (activeModalNode as any).destinationId === (node as any).destinationId
+            : activeModalNode?.type === node?.type);
+
+    if (isSameNode) {
+      handleCloseModal();
+      return;
+    }
+
+    handleToggleGeneralSettings(false);
+    setConnectDrawerNode(null);
+    setQuickAddPopover(null);
+    setViewingPromptTemplate(null);
+    setShowPhotoCropSettingsSidebox(false);
+    setShowFBHeroSettingsSidebox(false);
+    setShowGoogleSheetSettingsSidebox(false);
+    setActiveModalNode(node);
+
+    if (node) {
+      let nodeId = '';
+      if (node.type === 'trigger') nodeId = 'trigger';
+      else if (node.type === 'get-content') nodeId = 'get-content';
+      else if (node.type === 'get-images') nodeId = 'get-images';
+      else if (node.type === 'ai-box') nodeId = node.boxId;
+      else if (node.type === 'combine') nodeId = node.combineId || (node as any).id;
+      else if (node.type === 'destination') nodeId = node.destinationId || 'destination';
+      if (nodeId) {
+        setSelectedNodeIds(new Set([nodeId]));
+        setSelectedBoxId(nodeId);
       }
     }
   };
@@ -15242,7 +15254,6 @@ export const FacebookWorkflowCanvas = forwardRef<
           return (
             <>
               <aside
-                key={currentModalAIBox.id}
                 className="workflow-sidebar"
                 onMouseDown={(e) => e.stopPropagation()}
                 onClick={(e) => e.stopPropagation()}
@@ -15479,7 +15490,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                     connections={config.connections}
                     onOpenLightbox={handleOpenLightbox}
                     listingCode={executionState?.listingCode || previewSampleCode}
-                    onOpenSettingsSidebox={() => setShowPhotoCropSettingsSidebox(true)}
+                    onOpenSettingsSidebox={() => setShowPhotoCropSettingsSidebox((prev) => !prev)}
                     isSettingsSideboxOpen={showPhotoCropSettingsSidebox}
                   />
                 </div>
