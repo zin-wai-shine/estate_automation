@@ -771,7 +771,11 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
         {onOpenSettingsSidebox && (
           <button
             type="button"
-            onClick={onOpenSettingsSidebox}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onOpenSettingsSidebox();
+            }}
             title="Configure Crop Format & Source in Settings"
             style={{
               display: 'flex',
@@ -786,11 +790,13 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
               fontWeight: 500,
               cursor: 'pointer',
               flexShrink: 0,
+              pointerEvents: 'auto',
+              userSelect: 'none',
               transition: 'all 0.15s ease',
             }}
           >
-            <FiSettings size={12} />
-            <span>Settings</span>
+            <FiSettings size={12} style={{ pointerEvents: 'none' }} />
+            <span style={{ pointerEvents: 'none' }}>Settings</span>
           </button>
         )}
       </div>

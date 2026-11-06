@@ -15297,16 +15297,19 @@ export const FacebookWorkflowCanvas = forwardRef<
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0, position: 'relative', zIndex: 50, pointerEvents: 'auto' }}>
                     <button
                       type="button"
                       onClick={(e) => {
+                        e.preventDefault();
                         e.stopPropagation();
+                        if (viewingPromptTemplate) {
+                          setViewingPromptTemplate(null);
+                        }
                         setShowFBHeroSettingsSidebox(false);
                         setShowGoogleSheetSettingsSidebox(false);
                         setShowPhotoCropSettingsSidebox((prev) => !prev);
                       }}
-                      onMouseDown={(e) => e.stopPropagation()}
                       title="Photo Format & Crop Settings (Preset, Format, Framing, Image Source)"
                       aria-label="Format & Crop Settings"
                       style={{
@@ -15325,19 +15328,21 @@ export const FacebookWorkflowCanvas = forwardRef<
                         color: showPhotoCropSettingsSidebox ? 'var(--accent-primary, #3B82F6)' : 'var(--text-secondary)',
                         cursor: 'pointer',
                         flexShrink: 0,
+                        pointerEvents: 'auto',
+                        userSelect: 'none',
                         transition: 'all 0.15s ease',
                       }}
                     >
-                      <FiSettings size={15} />
+                      <FiSettings size={15} style={{ pointerEvents: 'none' }} />
                     </button>
 
                     <button
                       type="button"
                       onClick={(e) => {
+                        e.preventDefault();
                         e.stopPropagation();
                         handleCloseModal();
                       }}
-                      onMouseDown={(e) => e.stopPropagation()}
                       title="Close Inspector (Esc)"
                       aria-label="Close"
                       style={{
@@ -15351,9 +15356,12 @@ export const FacebookWorkflowCanvas = forwardRef<
                         backgroundColor: isDark ? 'var(--bg-surface)' : 'rgba(0, 0, 0, 0.04)',
                         color: 'var(--text-secondary)',
                         cursor: 'pointer',
+                        pointerEvents: 'auto',
+                        userSelect: 'none',
+                        transition: 'all 0.15s ease',
                       }}
                     >
-                      <FiX size={15} />
+                      <FiX size={15} style={{ pointerEvents: 'none' }} />
                     </button>
                   </div>
                 </div>
