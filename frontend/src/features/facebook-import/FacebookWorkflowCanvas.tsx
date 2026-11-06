@@ -2253,15 +2253,22 @@ const CANVAS_NODE_ACTION_CSS = `
   top: 50% !important;
   left: 100% !important;
   transform: translateY(-50%) !important;
-  margin-left: 8px !important;
-  flex-direction: row-reverse !important;
+  margin-left: 0 !important;
+  padding-left: 6px !important;
+  flex-direction: row !important;
 }
 
 .node-play-button-wrapper.is-right .node-play-hit-bridge {
-  width: 14px !important;
-  height: 48px !important;
-  margin-top: 0 !important;
-  margin-right: -2px !important;
+  position: absolute !important;
+  left: -14px !important;
+  top: -8px !important;
+  bottom: -8px !important;
+  width: 26px !important;
+  height: auto !important;
+  margin: 0 !important;
+  background: transparent !important;
+  z-index: 1 !important;
+  pointer-events: auto !important;
 }
 
 .node-play-button-wrapper.is-left {
@@ -2269,15 +2276,22 @@ const CANVAS_NODE_ACTION_CSS = `
   right: 100% !important;
   left: auto !important;
   transform: translateY(-50%) !important;
-  margin-right: 8px !important;
-  flex-direction: row !important;
+  margin-right: 0 !important;
+  padding-right: 6px !important;
+  flex-direction: row-reverse !important;
 }
 
 .node-play-button-wrapper.is-left .node-play-hit-bridge {
-  width: 14px !important;
-  height: 48px !important;
-  margin-top: 0 !important;
-  margin-left: -2px !important;
+  position: absolute !important;
+  right: -14px !important;
+  top: -8px !important;
+  bottom: -8px !important;
+  width: 26px !important;
+  height: auto !important;
+  margin: 0 !important;
+  background: transparent !important;
+  z-index: 1 !important;
+  pointer-events: auto !important;
 }
 `;
 
@@ -3235,7 +3249,7 @@ export const FacebookWorkflowCanvas = forwardRef<
       const activeCode = executionState?.listingCode || previewSampleCode || 'current';
       const saved = localStorage.getItem(`bolthaven_canvas_enhanced_${activeCode}`);
       if (saved) return JSON.parse(saved);
-    } catch {}
+    } catch { }
     return {};
   });
 
@@ -3262,11 +3276,11 @@ export const FacebookWorkflowCanvas = forwardRef<
             try {
               const codeKey = executionState?.listingCode || previewSampleCode || 'current';
               localStorage.setItem(`bolthaven_canvas_enhanced_${codeKey}`, JSON.stringify(next));
-            } catch {}
+            } catch { }
             return next;
           });
         }
-      } catch (e) {}
+      } catch (e) { }
     };
 
     pollCompanionEnhanced();
@@ -3651,9 +3665,11 @@ export const FacebookWorkflowCanvas = forwardRef<
   const handleNodeMouseLeave = (nodeId: string) => {
     if (hoverLeaveTimeoutRef.current) {
       clearTimeout(hoverLeaveTimeoutRef.current);
-      hoverLeaveTimeoutRef.current = null;
     }
-    setHoveredNodeId((curr) => (curr === nodeId ? null : curr));
+    hoverLeaveTimeoutRef.current = setTimeout(() => {
+      setHoveredNodeId((curr) => (curr === nodeId ? null : curr));
+      hoverLeaveTimeoutRef.current = null;
+    }, 180);
   };
 
   useEffect(() => {
@@ -4284,8 +4300,9 @@ export const FacebookWorkflowCanvas = forwardRef<
               top: '50%',
               left: '100%',
               transform: 'translateY(-50%)',
-              marginLeft: '8px',
-              flexDirection: 'row-reverse',
+              marginLeft: 0,
+              paddingLeft: '6px',
+              flexDirection: 'row',
             }
             : isSideLeft
               ? {
@@ -4293,8 +4310,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                 right: '100%',
                 left: 'auto',
                 transform: 'translateY(-50%)',
-                marginRight: '8px',
-                flexDirection: 'row',
+                marginRight: 0,
+                paddingRight: '6px',
+                flexDirection: 'row-reverse',
               }
               : {}),
           ...positionStyle,
@@ -4308,7 +4326,7 @@ export const FacebookWorkflowCanvas = forwardRef<
             e.preventDefault();
             if (isThisNodeRunning) {
               window.dispatchEvent(new CustomEvent('ea_workflow_stop_all'));
-              stopAutomation().catch(() => {});
+              stopAutomation().catch(() => { });
               setLocallyRunningNodeId(null);
             } else {
               onRunFromStep?.(nodeId);
@@ -4359,17 +4377,23 @@ export const FacebookWorkflowCanvas = forwardRef<
           style={{
             ...(isSideRight
               ? {
-                width: '14px',
-                height: '48px',
-                marginTop: 0,
-                marginRight: '-2px',
+                position: 'absolute',
+                left: '-14px',
+                top: '-8px',
+                bottom: '-8px',
+                width: '26px',
+                height: 'auto',
+                margin: 0,
               }
               : isSideLeft
                 ? {
-                  width: '14px',
-                  height: '48px',
-                  marginTop: 0,
-                  marginLeft: '-2px',
+                  position: 'absolute',
+                  right: '-14px',
+                  top: '-8px',
+                  bottom: '-8px',
+                  width: '26px',
+                  height: 'auto',
+                  margin: 0,
                 }
                 : {}),
           }}
@@ -4416,7 +4440,7 @@ export const FacebookWorkflowCanvas = forwardRef<
               try {
                 const p = JSON.parse(out);
                 if (p.Code) listingCode = p.Code;
-              } catch {}
+              } catch { }
             }
             const res = await fetch('/api/google-sheets/delete-row', {
               method: 'POST',
@@ -4459,12 +4483,12 @@ export const FacebookWorkflowCanvas = forwardRef<
   // Derive unique key for currently active modal node
   const activeModalNodeKey = activeModalNode
     ? (activeModalNode.type === 'ai-box'
-        ? `ai-box:${activeModalNode.boxId}`
-        : activeModalNode.type === 'combine'
+      ? `ai-box:${activeModalNode.boxId}`
+      : activeModalNode.type === 'combine'
         ? `combine:${activeModalNode.combineId || (activeModalNode as any).id}`
         : activeModalNode.type === 'destination'
-        ? `destination:${activeModalNode.destinationId || 'destination'}`
-        : activeModalNode.type)
+          ? `destination:${activeModalNode.destinationId || 'destination'}`
+          : activeModalNode.type)
     : null;
 
   const prevModalNodeKeyRef = useRef<string | null>(null);
@@ -9844,12 +9868,19 @@ export const FacebookWorkflowCanvas = forwardRef<
                       {/* Floating Revert Row Button for Google Sheet when row has been added */}
                       {Boolean(isEffectiveEnabled) && (hoveredNodeId === box.id || isSelected) && isThisSheetCompleted && (
                         <div
-                          className="node-play-button-wrapper canvas-control"
+                          className="canvas-control"
                           onMouseEnter={() => handleNodeMouseEnter(box.id)}
                           onMouseLeave={() => handleNodeMouseLeave(box.id)}
                           style={{
+                            position: 'absolute',
                             top: '-38px',
                             left: 'calc(50% + 17px)',
+                            transform: 'translateX(-50%)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            zIndex: 55,
+                            pointerEvents: 'auto',
                           }}
                         >
                           <button
@@ -9861,33 +9892,43 @@ export const FacebookWorkflowCanvas = forwardRef<
                               handlePromptRevertRow(box);
                             }}
                             onMouseDown={(e) => e.stopPropagation()}
-                            onMouseEnter={() => handleNodeMouseEnter(box.id)}
-                            onMouseLeave={() => handleNodeMouseLeave(box.id)}
-                            title={isDeletingSheetRow ? 'Reverting row from Google Sheet...' : 'Revert / Delete Row from Google Sheet'}
+                            onMouseEnter={(e) => {
+                              handleNodeMouseEnter(box.id);
+                              if (!isDeletingSheetRow) {
+                                e.currentTarget.style.borderColor = '#EF4444';
+                                e.currentTarget.style.backgroundColor = isDark ? 'rgba(239, 68, 68, 0.22)' : '#FEE2E2';
+                                e.currentTarget.style.transform = 'scale(1.08)';
+                              }
+                            }}
+                            onMouseLeave={(e) => {
+                              handleNodeMouseLeave(box.id);
+                              if (!isDeletingSheetRow) {
+                                e.currentTarget.style.borderColor = isDark ? 'rgba(239, 68, 68, 0.55)' : '#FCA5A5';
+                                e.currentTarget.style.backgroundColor = isDark ? '#1F2937' : '#FFFFFF';
+                                e.currentTarget.style.transform = 'scale(1)';
+                              }
+                            }}
+                            title={isDeletingSheetRow ? 'Reverting row from Google Sheet...' : 'Revert / Delete added row from Google Sheet'}
                             disabled={isDeletingSheetRow}
                             style={{
-                              ['--play-btn-accent' as any]: '#EF4444',
-                              ['--play-btn-bg' as any]: isDark ? '#1F2937' : '#FFFFFF',
-                              ['--play-btn-border' as any]: isDark ? '#4B5563' : '#94A3B8',
-                              ['--play-btn-color' as any]: isDark ? '#9CA3AF' : '#64748B',
-                              ['--play-btn-hover-bg' as any]: isDark ? '#263342' : '#F1F5F9',
+                              width: '28px',
+                              height: '28px',
+                              borderRadius: '7px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              backgroundColor: isDark ? '#1F2937' : '#FFFFFF',
+                              border: isDark ? '1.5px solid rgba(239, 68, 68, 0.55)' : '1.5px solid #FCA5A5',
+                              color: isDark ? '#FCA5A5' : '#DC2626',
+                              boxShadow: '0 2px 6px rgba(0, 0, 0, 0.22)',
+                              cursor: isDeletingSheetRow ? 'not-allowed' : 'pointer',
+                              transition: 'all 0.15s ease',
+                              outline: 'none',
                             }}
                           >
-                            <FiRotateCcw
-                              size={12}
-                              style={{
-                                color: 'inherit',
-                                animation: isDeletingSheetRow ? 'spin 1s linear infinite' : 'none',
-                                transition: 'all 0.15s ease',
-                              }}
-                            />
+                            <FiRotateCcw size={13} style={{ animation: isDeletingSheetRow ? 'spin 1s linear infinite' : 'none', color: '#EF4444' }} />
                           </button>
-                          <div
-                            className="canvas-control node-play-hit-bridge"
-                            onMouseEnter={() => handleNodeMouseEnter(box.id)}
-                            onMouseLeave={() => handleNodeMouseLeave(box.id)}
-                            style={{ width: '28px' }}
-                          />
+                          <div className="node-play-hit-bridge" style={{ width: '28px' }} />
                         </div>
                       )}
                     </>
@@ -11488,17 +11529,17 @@ export const FacebookWorkflowCanvas = forwardRef<
                                 const hasImageResult = isImages
                                   ? Boolean(images && images.length > 0)
                                   : (isWatermark || isCrop)
-                                  ? Boolean(boxAssets.length > 0 || (images && images.length > 0) || enhancedCount > 0)
-                                  : isBrowser
-                                  ? Boolean(enhancedCount > 0 || (images && images.length > 0))
-                                  : false;
+                                    ? Boolean(boxAssets.length > 0 || (images && images.length > 0) || enhancedCount > 0)
+                                    : isBrowser
+                                      ? Boolean(enhancedCount > 0 || (images && images.length > 0))
+                                      : false;
                                 const imageCount = isImages
                                   ? (images?.length || 0)
                                   : (isWatermark || isCrop)
-                                  ? (boxAssets.length > 0 ? boxAssets.length : (enhancedCount || images?.length || 0))
-                                  : isBrowser
-                                  ? (enhancedCount || images?.length || 0)
-                                  : 0;
+                                    ? (boxAssets.length > 0 ? boxAssets.length : (enhancedCount || images?.length || 0))
+                                    : isBrowser
+                                      ? (enhancedCount || images?.length || 0)
+                                      : 0;
 
                                 // Upstream format preset children connected to this AI Processor node
                                 const isTextAI = fromBox
@@ -12048,8 +12089,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                                     ✓ {combineMediaAssets.length > 0
                                       ? `${combineMediaAssets.length} Photos Ready`
                                       : combineCropSlices.length > 0
-                                      ? `${combineCropSlices.length} ${combineCropSlices.length > 1 ? 'Cut Tiles' : 'Photos'} Ready · 1:1`
-                                      : `${images.length} Photos Ready`}
+                                        ? `${combineCropSlices.length} ${combineCropSlices.length > 1 ? 'Cut Tiles' : 'Photos'} Ready · 1:1`
+                                        : `${images.length} Photos Ready`}
                                   </span>
                                 </div>
                                 {(combineMediaAssets.length > 0 || combineCropSlices.length > 0) && (
@@ -12198,103 +12239,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                                     </div>
                                   ))
                                   : combineCropSlices.length > 0
-                                  ? combineCropSlices.map((slice, idx) => (
-                                    <div
-                                      key={`combine-slice-${slice.tileIndex}-${idx}`}
-                                      onClick={() => handleOpenLightbox(idx)}
-                                      style={{
-                                        position: 'relative',
-                                        width: '100%',
-                                        paddingTop: '100%',
-                                        borderRadius: '6px',
-                                        overflow: 'hidden',
-                                        backgroundColor: '#000000',
-                                        border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                                        cursor: 'pointer',
-                                        transition: 'transform 0.15s ease',
-                                      }}
-                                      title={`Click to view Tile #${slice.tileIndex} (${slice.label}) full size`}
-                                    >
-                                      <div style={{ position: 'absolute', inset: 0 }}>
-                                        <img
-                                          src={slice.url}
-                                          alt={slice.label}
-                                          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                                        />
-                                        <button
-                                          type="button"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            handleDownloadImage(slice.url, idx, e);
-                                          }}
-                                          title={`Download Tile #${slice.tileIndex}`}
-                                          aria-label={`Download Tile #${slice.tileIndex}`}
-                                          style={{
-                                            position: 'absolute',
-                                            top: '3px',
-                                            left: '3px',
-                                            width: '20px',
-                                            height: '20px',
-                                            borderRadius: '4px',
-                                            backgroundColor: 'rgba(0, 0, 0, 0.65)',
-                                            border: '1px solid rgba(255, 255, 255, 0.25)',
-                                            color: '#FFFFFF',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            cursor: 'pointer',
-                                            zIndex: 3,
-                                            transition: 'background-color 0.15s ease',
-                                          }}
-                                          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#3B82F6'; }}
-                                          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.65)'; }}
-                                        >
-                                          <FiDownload size={10} />
-                                        </button>
-                                        <div
-                                          style={{
-                                            position: 'absolute',
-                                            bottom: '2px',
-                                            left: '2px',
-                                            fontSize: '0.5rem',
-                                            fontWeight: 700,
-                                            padding: '1px 4px',
-                                            borderRadius: '2px',
-                                            backgroundColor: 'rgba(0,0,0,0.7)',
-                                            color: '#FFFFFF',
-                                          }}
-                                        >
-                                          Tile #{slice.tileIndex}
-                                        </div>
-                                        {slice.totalTiles > 1 && (
-                                          <div
-                                            style={{
-                                              position: 'absolute',
-                                              top: '2px',
-                                              right: '2px',
-                                              fontSize: '0.45rem',
-                                              fontWeight: 700,
-                                              padding: '1px 4px',
-                                              borderRadius: '2px',
-                                              backgroundColor: 'rgba(139, 92, 246, 0.9)',
-                                              color: '#FFFFFF',
-                                            }}
-                                          >
-                                            {slice.tileIndex}/{slice.totalTiles}
-                                          </div>
-                                        )}
-                                      </div>
-                                    </div>
-                                  ))
-                                  : images.map((img, idx) => {
-                                    const url =
-                                      watermarkedPhotos?.[img.index] ||
-                                      allEnhancedPhotos?.[img.index] ||
-                                      img.stored_url ||
-                                      img.source_url;
-                                    return (
+                                    ? combineCropSlices.map((slice, idx) => (
                                       <div
-                                        key={`combine-img-${img.index}`}
+                                        key={`combine-slice-${slice.tileIndex}-${idx}`}
                                         onClick={() => handleOpenLightbox(idx)}
                                         style={{
                                           position: 'relative',
@@ -12307,23 +12254,22 @@ export const FacebookWorkflowCanvas = forwardRef<
                                           cursor: 'pointer',
                                           transition: 'transform 0.15s ease',
                                         }}
-                                        title={`Click to view Photo #${idx + 1} full size`}
+                                        title={`Click to view Tile #${slice.tileIndex} (${slice.label}) full size`}
                                       >
                                         <div style={{ position: 'absolute', inset: 0 }}>
                                           <img
-                                            src={url}
-                                            alt={`Merged #${img.index + 1}`}
+                                            src={slice.url}
+                                            alt={slice.label}
                                             style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                                           />
-                                          {/* Direct 1-Click Photo Download Button */}
                                           <button
                                             type="button"
                                             onClick={(e) => {
                                               e.stopPropagation();
-                                              handleDownloadImage(url, idx, e);
+                                              handleDownloadImage(slice.url, idx, e);
                                             }}
-                                            title={`Download Photo #${idx + 1}`}
-                                            aria-label={`Download Photo #${idx + 1}`}
+                                            title={`Download Tile #${slice.tileIndex}`}
+                                            aria-label={`Download Tile #${slice.tileIndex}`}
                                             style={{
                                               position: 'absolute',
                                               top: '3px',
@@ -12359,12 +12305,107 @@ export const FacebookWorkflowCanvas = forwardRef<
                                               color: '#FFFFFF',
                                             }}
                                           >
-                                            #{idx + 1}
+                                            Tile #{slice.tileIndex}
                                           </div>
+                                          {slice.totalTiles > 1 && (
+                                            <div
+                                              style={{
+                                                position: 'absolute',
+                                                top: '2px',
+                                                right: '2px',
+                                                fontSize: '0.45rem',
+                                                fontWeight: 700,
+                                                padding: '1px 4px',
+                                                borderRadius: '2px',
+                                                backgroundColor: 'rgba(139, 92, 246, 0.9)',
+                                                color: '#FFFFFF',
+                                              }}
+                                            >
+                                              {slice.tileIndex}/{slice.totalTiles}
+                                            </div>
+                                          )}
                                         </div>
                                       </div>
-                                    );
-                                  })}
+                                    ))
+                                    : images.map((img, idx) => {
+                                      const url =
+                                        watermarkedPhotos?.[img.index] ||
+                                        allEnhancedPhotos?.[img.index] ||
+                                        img.stored_url ||
+                                        img.source_url;
+                                      return (
+                                        <div
+                                          key={`combine-img-${img.index}`}
+                                          onClick={() => handleOpenLightbox(idx)}
+                                          style={{
+                                            position: 'relative',
+                                            width: '100%',
+                                            paddingTop: '100%',
+                                            borderRadius: '6px',
+                                            overflow: 'hidden',
+                                            backgroundColor: '#000000',
+                                            border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                            cursor: 'pointer',
+                                            transition: 'transform 0.15s ease',
+                                          }}
+                                          title={`Click to view Photo #${idx + 1} full size`}
+                                        >
+                                          <div style={{ position: 'absolute', inset: 0 }}>
+                                            <img
+                                              src={url}
+                                              alt={`Merged #${img.index + 1}`}
+                                              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                                            />
+                                            {/* Direct 1-Click Photo Download Button */}
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleDownloadImage(url, idx, e);
+                                              }}
+                                              title={`Download Photo #${idx + 1}`}
+                                              aria-label={`Download Photo #${idx + 1}`}
+                                              style={{
+                                                position: 'absolute',
+                                                top: '3px',
+                                                left: '3px',
+                                                width: '20px',
+                                                height: '20px',
+                                                borderRadius: '4px',
+                                                backgroundColor: 'rgba(0, 0, 0, 0.65)',
+                                                border: '1px solid rgba(255, 255, 255, 0.25)',
+                                                color: '#FFFFFF',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                cursor: 'pointer',
+                                                zIndex: 3,
+                                                transition: 'background-color 0.15s ease',
+                                              }}
+                                              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#3B82F6'; }}
+                                              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.65)'; }}
+                                            >
+                                              <FiDownload size={10} />
+                                            </button>
+                                            <div
+                                              style={{
+                                                position: 'absolute',
+                                                bottom: '2px',
+                                                left: '2px',
+                                                fontSize: '0.5rem',
+                                                fontWeight: 700,
+                                                padding: '1px 4px',
+                                                borderRadius: '2px',
+                                                backgroundColor: 'rgba(0,0,0,0.7)',
+                                                color: '#FFFFFF',
+                                              }}
+                                            >
+                                              #{idx + 1}
+                                            </div>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
                               </div>
                             </div>
                           )}
@@ -13107,7 +13148,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                           if (hasOutput) {
                             try {
                               parsedData = JSON.parse(sheetBoxOutput);
-                            } catch {}
+                            } catch { }
                           }
 
                           const rawUrl = currentModalAIBox.googleSpreadsheetUrl || 'https://docs.google.com/spreadsheets/d/1lzY57D5ers2Xs6cvbV-skeqGSAK_jijbQJZt8Hn8udY/edit';
