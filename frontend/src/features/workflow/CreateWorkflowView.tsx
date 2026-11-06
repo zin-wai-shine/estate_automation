@@ -2021,21 +2021,42 @@ export const CreateWorkflowView: React.FC = () => {
           depsMap.set(b.id, new Set(directUpstream));
         });
 
+        // Break mutual 2-node cycles gracefully (e.g. if A -> B and B -> A)
+        boxes.forEach((b1) => {
+          const b1Deps = depsMap.get(b1.id);
+          if (!b1Deps) return;
+          boxes.forEach((b2) => {
+            if (b1.id === b2.id) return;
+            const b2Deps = depsMap.get(b2.id);
+            if (b1Deps.has(b2.id) && b2Deps?.has(b1.id)) {
+              if (b2.id === 'ai-box-content-main') {
+                b1Deps.delete(b2.id);
+              } else {
+                b2Deps.delete(b1.id);
+              }
+            }
+          });
+        });
+
         const waves: any[][] = [];
         const completedIds = new Set<string>();
         let remainingBoxes = [...boxes];
 
         while (remainingBoxes.length > 0) {
           // Current wave: any box whose dependencies in this branch are all completed
-          const currentWave = remainingBoxes.filter((b) => {
+          let currentWave = remainingBoxes.filter((b) => {
             const deps = depsMap.get(b.id) || new Set();
             return Array.from(deps).every((dId) => completedIds.has(dId));
           });
 
-          // Safeguard against circular dependencies
+          // Safeguard against circular dependencies: pick the box with fewest unfulfilled dependencies
           if (currentWave.length === 0) {
-            waves.push(remainingBoxes);
-            break;
+            remainingBoxes.sort((a, b) => {
+              const aDeps = Array.from(depsMap.get(a.id) || []).filter((d) => !completedIds.has(d)).length;
+              const bDeps = Array.from(depsMap.get(b.id) || []).filter((d) => !completedIds.has(d)).length;
+              return aDeps - bDeps;
+            });
+            currentWave = [remainingBoxes[0]];
           }
 
           waves.push(currentWave);
@@ -3003,11 +3024,27 @@ export const CreateWorkflowView: React.FC = () => {
               upstreamParts.push(out);
             }
           }
-          let upstreamText =
-            upstreamParts.filter(Boolean).join('\n\n') ||
-            primaryCopy ||
-            rawCaption ||
-            '';
+
+          const rawListingFacts = (rawCaption || extractedContent || workflowContextRef.current?.rawCaption || '').trim();
+
+          // For format presets, prompt templates, and condo extractors:
+          // ALWAYS guarantee they receive the complete raw listing facts so all property details, price, floor, and amenities are preserved!
+          const isFormatOrPromptBox =
+            isTextFormat ||
+            box.processType === 'text_format' ||
+            !!box.templateId ||
+            (box.title && /format|prompt|content|condo/i.test(box.title));
+
+          let upstreamText = '';
+          if (isFormatOrPromptBox) {
+            upstreamText = rawListingFacts || upstreamParts.filter(Boolean).join('\n\n') || primaryCopy || '';
+          } else {
+            upstreamText =
+              upstreamParts.filter(Boolean).join('\n\n') ||
+              rawListingFacts ||
+              primaryCopy ||
+              '';
+          }
 
           if (!upstreamText || upstreamText.trim().length === 0) {
             console.warn(`Skipping AI generation for [${box.title}] because upstream text is empty`);
@@ -3017,7 +3054,12 @@ export const CreateWorkflowView: React.FC = () => {
           let copyText = '';
           const aiProvider = box.provider || (box.model?.startsWith('gpt-') ? 'openai' : 'google_ai');
           let aiModel = box.model || (aiProvider === 'openai' ? 'gpt-4o' : 'gemini-flash-lite-latest');
-          if (aiModel === 'gemini-2.5-flash' || aiModel === 'gemini-2.0-flash' || aiModel === 'gemini-1.5-flash') {
+          if (
+            aiModel.includes('gemini-2.5') ||
+            aiModel.includes('gemini-2.0') ||
+            aiModel.includes('gemini-1.5') ||
+            aiModel.includes('pro')
+          ) {
             aiModel = 'gemini-flash-lite-latest';
           }
 
@@ -3063,10 +3105,26 @@ export const CreateWorkflowView: React.FC = () => {
 
           if (isRunStopped(myRunId) || branchFatalError) return false;
 
-          // If AI response was empty, fall back to formatted upstream text instead of failing the workflow!
+          // If AI response was empty or aborted, retry once with gemini-flash-lite-latest
           if (!copyText || copyText.trim().length === 0) {
-            copyText = upstreamText;
+            try {
+              console.warn(`[AI Generation] Retrying [${box.title}] with gemini-flash-lite-latest...`);
+              copyText = await requestAIGeneration({
+                provider: 'google_ai',
+                model: 'gemini-flash-lite-latest',
+                template_id: box.templateId || '',
+                template_name: box.title || 'Dynamic Real Estate Copywriter',
+                template_text: promptToUse,
+                raw_content: upstreamText,
+                custom_prompt: effectiveCustomPrompt,
+                listing_code: shouldUseCode ? currentRunListingCode : '',
+              }, signal);
+            } catch (retryErr) {
+              console.warn('AI retry also failed:', retryErr);
+            }
           }
+
+          if (isRunStopped(myRunId) || branchFatalError) return false;
 
           if (shouldUseCode && currentRunListingCode && copyText) {
             copyText = applyListingCodeToGeneratedText(copyText, currentRunListingCode, true);
@@ -3189,8 +3247,14 @@ export const CreateWorkflowView: React.FC = () => {
               `⚡ Executing ${wave.length} AI format presets in parallel...`
             );
           }
-          const results = await Promise.all(wave.map((box) => executeSingleAIBox(box)));
-          if (results.some((ok) => !ok) || branchFatalError) return;
+          // Batch execution in pairs (batchSize = 2) to maintain responsiveness without LLM timeouts
+          const batchSize = 2;
+          for (let i = 0; i < wave.length; i += batchSize) {
+            if (isRunStopped(myRunId) || branchFatalError) return;
+            const batch = wave.slice(i, i + batchSize);
+            const results = await Promise.all(batch.map((box) => executeSingleAIBox(box)));
+            if (results.some((ok) => !ok) || branchFatalError) return;
+          }
         }
       };
 
@@ -3473,7 +3537,12 @@ export const CreateWorkflowView: React.FC = () => {
     const isTextFormat = isTextFormatAIBox(box);
     const aiProvider = box.provider || (box.model?.startsWith('gpt-') ? 'openai' : 'google_ai');
     let aiModel = box.model || (aiProvider === 'openai' ? 'gpt-4o' : 'gemini-flash-lite-latest');
-    if (aiModel === 'gemini-2.5-flash' || aiModel === 'gemini-2.0-flash' || aiModel === 'gemini-1.5-flash') {
+    if (
+      aiModel.includes('gemini-2.5') ||
+      aiModel.includes('gemini-2.0') ||
+      aiModel.includes('gemini-1.5') ||
+      aiModel.includes('pro')
+    ) {
       aiModel = 'gemini-flash-lite-latest';
     }
 

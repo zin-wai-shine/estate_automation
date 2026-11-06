@@ -18,7 +18,13 @@ type GoogleAIService struct {
 }
 
 type GeminiGenerateRequest struct {
-	Contents []GeminiContent `json:"contents"`
+	Contents         []GeminiContent         `json:"contents"`
+	GenerationConfig *GeminiGenerationConfig `json:"generationConfig,omitempty"`
+}
+
+type GeminiGenerationConfig struct {
+	MaxOutputTokens int     `json:"maxOutputTokens,omitempty"`
+	Temperature     float64 `json:"temperature,omitempty"`
 }
 
 type GeminiContent struct {
@@ -94,7 +100,7 @@ func (s *GoogleAIService) GenerateContent(templateText string, rawContent string
 
 	// Models to try in order of capability and quota reliability
 	resolvedModel := modelOverride
-	if resolvedModel == "gemini-2.5-flash" || resolvedModel == "gemini-2.0-flash" || resolvedModel == "gemini-1.5-flash" {
+	if strings.Contains(resolvedModel, "gemini-2.5") || strings.Contains(resolvedModel, "gemini-2.0") || strings.Contains(resolvedModel, "gemini-1.5") || strings.Contains(resolvedModel, "pro") {
 		resolvedModel = "gemini-flash-lite-latest"
 	}
 
@@ -131,6 +137,10 @@ func (s *GoogleAIService) GenerateContent(templateText string, rawContent string
 					{Text: fullPrompt.String()},
 				},
 			},
+		},
+		GenerationConfig: &GeminiGenerationConfig{
+			MaxOutputTokens: 8192,
+			Temperature:     0.2,
 		},
 	}
 
@@ -418,7 +428,7 @@ func (s *GoogleAIService) GenerateContentWithLaoZhangAI(templateText string, raw
 
 func callCompanionGenerateAI(templateText, rawContent, apiKey, model string) (string, error) {
 	companionHosts := []string{"http://host.docker.internal:9224", "http://127.0.0.1:9224", "http://localhost:9224"}
-	client := &http.Client{Timeout: 8 * time.Second}
+	client := &http.Client{Timeout: 60 * time.Second}
 
 	payload := map[string]string{
 		"prompt":      templateText,

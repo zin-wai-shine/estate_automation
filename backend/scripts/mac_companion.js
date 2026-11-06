@@ -2236,7 +2236,7 @@ function mergeTabGroups(scannedGroups, liveGroups) {
         const isJSONRequest = prompt.includes('JSON') || prompt.includes('headers') || prompt.includes('spreadsheet') || prompt.includes('parseable');
 
         let initialModel = payload.model || 'gemini-flash-lite-latest';
-        if (initialModel.includes('gemini-2.5') || initialModel.includes('gemini-2.0') || initialModel.includes('gemini-1.5')) {
+        if (initialModel.includes('gemini-2.5') || initialModel.includes('gemini-2.0') || initialModel.includes('gemini-1.5') || initialModel.includes('pro')) {
           initialModel = 'gemini-flash-lite-latest';
         }
 
@@ -2250,13 +2250,17 @@ function mergeTabGroups(scannedGroups, liveGroups) {
           try {
             const geminiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${candidateModel}:generateContent?key=${key}`;
             const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), 12000);
+            const timeout = setTimeout(() => controller.abort(), 60000);
 
             const aiResp = await fetch(geminiEndpoint, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 contents: [{ parts: [{ text: isJSONRequest ? `${prompt}\n\n=== CONTENT ===\n${rawContent}` : fullPrompt }] }],
+                generationConfig: {
+                  maxOutputTokens: 8192,
+                  temperature: 0.2,
+                },
               }),
               signal: controller.signal,
             });

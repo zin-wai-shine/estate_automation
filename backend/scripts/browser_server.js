@@ -2795,27 +2795,42 @@ const server = http.createServer(async (req, res) => {
           return;
         }
 
-        // 4. Expand "See more" / "ดูเพิ่มเติม" across the visible post area
+        // 4. Expand "See more" / "ดูเพิ่มเติม" across the visible post area thoroughly
         await page.evaluate(() => {
-          const clickables = Array.from(document.querySelectorAll('div[role="button"], span[role="button"], a[role="button"]'));
-          clickables.forEach((btn) => {
+          const clickAllSeeMore = () => {
+            const clickables = Array.from(document.querySelectorAll('div[role="button"], span[role="button"], a[role="button"], span[dir="auto"], [aria-label*="See more"], [aria-label*="ดูเพิ่มเติม"], [aria-label*="နောက်ထပ်"]'));
+            clickables.forEach((btn) => {
+              const txt = (btn.innerText || btn.getAttribute('aria-label') || '').trim();
+              if (
+                txt === 'See more' ||
+                txt === 'ดูเพิ่มเติม' ||
+                txt === 'See More' ||
+                txt === 'နောက်ထပ်ကြည့်ရန်' ||
+                txt.includes('See more') ||
+                txt.includes('ดูเพิ่มเติม') ||
+                txt.includes('နောက်ထပ်')
+              ) {
+                try {
+                  btn.click();
+                } catch (e) {}
+              }
+            });
+          };
+          clickAllSeeMore();
+        }).catch(() => {});
+        await page.waitForTimeout(1200);
+
+        // Second pass in case of nested expansion or delayed DOM render
+        await page.evaluate(() => {
+          const remaining = Array.from(document.querySelectorAll('div[role="button"], span[role="button"], a[role="button"]'));
+          remaining.forEach((btn) => {
             const txt = (btn.innerText || '').trim();
-            if (
-              txt === 'See more' ||
-              txt === 'ดูเพิ่มเติม' ||
-              txt === 'See More' ||
-              txt === 'နောက်ထပ်ကြည့်ရန်' ||
-              txt.includes('See more') ||
-              txt.includes('ดูเพิ่มเติม') ||
-              txt.includes('နောက်ထပ်')
-            ) {
-              try {
-                btn.click();
-              } catch (e) {}
+            if (txt.includes('See more') || txt.includes('ดูเพิ่มเติม') || txt.includes('နောက်ထပ်')) {
+              try { btn.click(); } catch (e) {}
             }
           });
         }).catch(() => {});
-        await page.waitForTimeout(800);
+        await page.waitForTimeout(600);
 
         // 5. Identify the TARGET POST container — direct message locator + comment exclusion
         console.log('[FACEBOOK_EXTRACT] Identifying and locking TargetPostContext...');
