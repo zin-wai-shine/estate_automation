@@ -521,16 +521,9 @@ async function processSlot(slotIndex, sessionId, initialJob = null) {
     slot.busy = false;
     slot.currentJob = null;
 
-    // Reset this tab to New Chat so the next queue item gets a 100% clean composer with ZERO leftover images!
-    if (automation.isRunning && automation.queue.length > 0) {
-      try {
-        console.log(`[BOLTHAVEN EXT] Tab ${slot.tabId} finished! Resetting tab to New Chat before taking next queue item...`);
-        await resetTabChatCleanly(slot.tabId);
-        await delay(1000);
-      } catch (e) {}
-    } else {
-      await delay(1000);
-    }
+    // Stay in this chat thread so the next queue item continues in the existing conversation smoothly!
+    // No reloading or navigating to New Chat!
+    await delay(1500);
   }
 
   // Check if all slots have finished

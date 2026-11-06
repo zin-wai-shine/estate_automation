@@ -789,11 +789,11 @@
       return !c.includes('user-turn') && !c.includes('user-message');
     });
 
-    if (assistantTurns.length > 0) {
+    if (assistantTurns.length > preAssistantCount) {
       const latestTurn = assistantTurns[assistantTurns.length - 1];
       const turnImgs = Array.from(latestTurn.querySelectorAll('img')).filter((img) => {
         const src = img.src || img.getAttribute('src') || '';
-        if (!src) return false;
+        if (!src || preUrls.has(src)) return false;
         const s = src.toLowerCase();
         if (s.includes('avatar') || s.includes('profile') || s.includes('icon') || s.includes('emoji') || s.includes('logo')) return false;
         if (img.closest('form, div[class*="composer"], [data-message-author-role="user"], header, nav')) return false;
@@ -926,11 +926,11 @@
       return !c.includes('user-turn') && !c.includes('user-message');
     });
 
-    if (assistantTurns.length > 0) {
+    if (assistantTurns.length > preAssistantCount) {
       const latestTurn = assistantTurns[assistantTurns.length - 1];
       const turnImgs = Array.from(latestTurn.querySelectorAll('img')).filter((img) => {
         const src = img.src || img.getAttribute('src') || '';
-        if (!src) return false;
+        if (!src || preUrls.has(src)) return false;
         const s = src.toLowerCase();
         if (s.includes('avatar') || s.includes('profile') || s.includes('icon') || s.includes('emoji') || s.includes('logo')) return false;
         if (img.closest('form, div[class*="composer"], [data-message-author-role="user"], header, nav')) return false;
@@ -1650,17 +1650,11 @@
   async function attachImageFileToComposer(inputEl, file, maxExpected = 1, minExpected = 1, dataUrlHint = null) {
     const targetInputArea = inputEl || findPromptInput();
 
-    // 0. If image is already attached, do not attach again!
-    let currentCount = getAttachedImagesCount(inputEl);
-    if (currentCount >= minExpected) {
-      console.log(`[BOLTHAVEN] Image already present in composer (${currentCount} attached). Skipping duplicate attach.`);
-      return true;
-    }
-
-    // 1. Prune leftover attachments only if strictly required
-    if (maxExpected === 1 && currentCount > 0) {
-      console.log(`[BOLTHAVEN] Clearing ${currentCount} leftover attachments before attaching single image...`);
-      await pruneExcessAttachments(inputEl, 0);
+    // 0. Clear any leftover attachments before attaching this job's image
+    let currentCount = getAttachedImagesCount(targetInputArea);
+    if (currentCount > 0) {
+      console.log(`[BOLTHAVEN] Clearing ${currentCount} leftover attachments before attaching new image...`);
+      await pruneExcessAttachments(targetInputArea, 0);
       await new Promise((r) => setTimeout(r, 300));
     }
 
@@ -1711,7 +1705,11 @@
 
       // Wait up to 8 seconds for the single attachment to register
       const attachedMethodA = await waitForImageAttached(inputEl, 8000, minExpected);
-      if (attachedMethodA) {
+      if (getAttachedImagesCount(inputEl) > maxExpected) {
+        console.log(`[BOLTHAVEN] Pruning excess attachments down to ${maxExpected}...`);
+        await pruneExcessAttachments(inputEl, maxExpected);
+      }
+      if (attachedMethodA || getAttachedImagesCount(inputEl) >= minExpected) {
         console.log(`[BOLTHAVEN] ✓ Attached image successfully (${getAttachedImagesCount(inputEl)} attached)`);
         return true;
       }
@@ -2194,6 +2192,12 @@
       const src = img.src || img.getAttribute('src') || '';
       if (src) preExistingImageUrls.add(src);
     });
+
+    // 0. RESET COMPOSER: Clean out any leftover attachments and residual text from previous runs completely
+    console.log(`[BOLTHAVEN] Resetting composer: removing leftover attachments & text for Image #${job.original_position || 1}...`);
+    await pruneExcessAttachments(input, 0);
+    clearPromptInputCleanly(input);
+    await new Promise((r) => setTimeout(r, 400));
 
     // 1. Fetch and attach strictly single image
     const localPath = job.source_file_path || '';
