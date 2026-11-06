@@ -1726,16 +1726,20 @@ async function executeTwoStageStaging(payload) {
     tabMode,
     reuseSessionTabs,
     workerCount: reqWorkerCount,
-  } = payload;
-  const isDirectMode = Boolean(skipTab1) || reqWorkerCount === 1;
-  const requiredTabCount = isDirectMode ? 1 : Math.max(1, parseInt(reqWorkerCount, 10) || 2);
+  } = payload || {};
+  const resolvedRefImg = referenceImage || payload?.reference_image || '';
+  const resolvedCondoImgs = condoImages || payload?.condo_images || [];
+  const resolvedPrompt = (initialPrompt || payload?.initial_prompt || payload?.extractedPrompt || '').trim();
+  const resolvedCondoName = condoName || payload?.condo_name || '';
+  const isDirectMode = Boolean(skipTab1 || payload?.skip_tab1) || reqWorkerCount === 1 || payload?.worker_count === 1;
+  const requiredTabCount = isDirectMode ? 1 : Math.max(1, parseInt(reqWorkerCount || payload?.worker_count, 10) || 2);
   const mySessionId = ++automationSessionId;
   twoStageAborted = false;
   setupMutex = Promise.resolve();
   const isTwoStageStopped = () => twoStageAborted || mySessionId !== automationSessionId;
 
   console.log(
-    `[BOLTHAVEN EXT] 🚀 Starting ${isDirectMode ? 'Direct 1-Tab' : '2-Stage (2-Tab)'} Hero Generation for "${condoName}" in group "${groupName}" (tabMode: ${tabMode || 'existing_tabs'}, tabs: ${requiredTabCount})...`
+    `[BOLTHAVEN EXT] 🚀 Starting ${isDirectMode ? 'Direct 1-Tab' : '2-Stage (2-Tab)'} Hero Generation for "${resolvedCondoName}" in group "${groupName || 'FB Hero'}" (tabMode: ${tabMode || 'existing_tabs'}, tabs: ${requiredTabCount})...`
   );
 
   await fetch(`${COMPANION_URL}/two-stage-status`, {
@@ -1744,7 +1748,7 @@ async function executeTwoStageStaging(payload) {
     body: JSON.stringify({
       is_running: true,
       step: 'locating_tab_group',
-      condo_name: condoName,
+      condo_name: resolvedCondoName,
       message: `Opening connected browser & ${requiredTabCount === 1 ? '1 worker tab' : `${requiredTabCount} worker tabs`} in [${groupName || 'FB Hero'}]...`,
     }),
   }).catch(() => {});
@@ -1876,10 +1880,10 @@ async function executeTwoStageStaging(payload) {
       stage2Response = await new Promise((resolve, reject) => {
         chrome.tabs.sendMessage(tab2.id, {
           action: 'EXECUTE_STAGE2_STAGING',
-          extractedPrompt,
-          referenceImage, // 1st: manual reference image
-          condoImages,    // 2nd: 1.png, 2.png, 3.png
-          condoName,
+          extractedPrompt: extractedPrompt || resolvedPrompt,
+          referenceImage: resolvedRefImg, // 1st: manual reference image
+          condoImages: resolvedCondoImgs, // 2nd: 1.png, 2.png, 3.png
+          condoName: resolvedCondoName,
         }, (res) => {
           if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
           if (!res || !res.success) return reject(new Error(res?.error || 'Failed to execute Hero image generation'));

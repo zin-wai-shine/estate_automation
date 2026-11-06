@@ -1650,9 +1650,9 @@
   async function attachImageFileToComposer(inputEl, file, maxExpected = 1, minExpected = 1, dataUrlHint = null) {
     const targetInputArea = inputEl || findPromptInput();
 
-    // 0. Clear any leftover attachments before attaching this job's image
+    // 0. Clear leftover attachments before attaching this job's image (single-image mode only)
     let currentCount = getAttachedImagesCount(targetInputArea);
-    if (currentCount > 0) {
+    if (maxExpected === 1 && currentCount > 0) {
       console.log(`[BOLTHAVEN] Clearing ${currentCount} leftover attachments before attaching new image...`);
       await pruneExcessAttachments(targetInputArea, 0);
       await new Promise((r) => setTimeout(r, 300));
@@ -2456,9 +2456,10 @@
     }
 
     if (Array.isArray(condoImages) && condoImages.length > 0) {
-      console.log(`[BOLTHAVEN] Stage 2: Preparing ${condoImages.length} condo building images (2nd, 3rd, 4th)...`);
-      for (let i = 0; i < condoImages.length; i++) {
-        const img = condoImages[i];
+      const condoSubset = condoImages.slice(0, 3); // STRICTLY at most 3 condo building photos!
+      console.log(`[BOLTHAVEN] Stage 2: Preparing ${condoSubset.length} condo building images (2nd, 3rd, 4th)...`);
+      for (let i = 0; i < condoSubset.length; i++) {
+        const img = condoSubset[i];
         const imgUrl = img.data_url || img.url || img.full_path;
         if (!imgUrl) continue;
         try {
@@ -2478,7 +2479,7 @@
     let totalImagesPasted = 0;
 
     if (targetTotalImages > 0) {
-      // Step A: Attempt batch injection into ChatGPT file input (handles multiple files simultaneously!)
+      // Step A: Inject all 4 files into ChatGPT file input at once
       const composer = getComposerContainer(input);
       let fileInputs = Array.from(document.querySelectorAll('input[type="file"], input[accept*="image"]'));
       if (fileInputs.length === 0 && composer) {
@@ -2505,63 +2506,61 @@
         }
       }
 
-      let batchSuccess = false;
-      if (fileInputs.length > 0) {
+      let targetInput = fileInputs.find((i) => (i.accept || '').includes('image')) ||
+                        fileInputs[fileInputs.length - 1] ||
+                        fileInputs[0];
+
+      if (targetInput) {
+        console.log(`[BOLTHAVEN] Injecting ${filesToAttach.length} files into file input (${targetInput.accept || 'all'})...`);
+        const dt = new DataTransfer();
+        for (const file of filesToAttach) {
+          dt.items.add(file);
+        }
+        targetInput.multiple = true;
         try {
-          const targetInput = fileInputs.find((i) => (i.accept || '').includes('image')) ||
-                            fileInputs[fileInputs.length - 1] ||
-                            fileInputs[0];
-          console.log(`[BOLTHAVEN] Injecting ${filesToAttach.length} files into file input (${targetInput.accept || 'all'})...`);
-          const dt = new DataTransfer();
-          for (const file of filesToAttach) {
-            dt.items.add(file);
-          }
-          targetInput.multiple = true;
-          try {
-            const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'files')?.set;
-            if (nativeSetter) {
-              nativeSetter.call(targetInput, dt.files);
-            } else {
-              targetInput.files = dt.files;
-            }
-          } catch (e) {
+          const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'files')?.set;
+          if (nativeSetter) {
+            nativeSetter.call(targetInput, dt.files);
+          } else {
             targetInput.files = dt.files;
           }
-          if (targetInput._valueTracker) {
-            targetInput._valueTracker.setValue('');
-          }
-          targetInput.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
-          targetInput.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
-          document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }));
-
-          // Wait up to 10s for all attachments to register
-          await waitForImageAttached(input, 10000, targetTotalImages);
-          const curCount = getAttachedImagesCount(input);
-          if (curCount >= targetTotalImages) {
-            batchSuccess = true;
-            totalImagesPasted = curCount;
-            console.log(`[BOLTHAVEN] ✓ Batch attached all ${curCount} images at once!`);
-          }
         } catch (e) {
-          console.warn('[BOLTHAVEN] Batch injection notice:', e);
+          targetInput.files = dt.files;
         }
-      }
+        if (targetInput._valueTracker) {
+          targetInput._valueTracker.setValue('');
+        }
+        try {
+          const reactPropsKey = Object.keys(targetInput).find((k) => k.startsWith('__reactProps$') || k.startsWith('__reactEventHandlers$'));
+          if (reactPropsKey && targetInput[reactPropsKey]?.onChange) {
+            targetInput[reactPropsKey].onChange({ target: targetInput, currentTarget: targetInput });
+          }
+        } catch (e) {}
 
-      // Step B: If batch injection didn't attach all images (e.g. file input only accepted 1),
-      // sequentially attach the rest one by one!
-      if (!batchSuccess) {
-        console.log('[BOLTHAVEN] Sequential attachment mode for remaining images...');
-        let curCount = getAttachedImagesCount(input);
-        for (let i = curCount; i < filesToAttach.length; i++) {
+        targetInput.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+        targetInput.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }));
+
+        // Wait up to 20s for the 4 attachments to register in composer
+        await waitForImageAttached(input, 20000, targetTotalImages);
+      } else {
+        // Fallback ONLY if file input was never found: attach sequentially
+        console.log('[BOLTHAVEN] File input not found, attaching sequentially...');
+        for (let i = 0; i < filesToAttach.length; i++) {
           if (activeJobAborted) throw new Error('Stage 2 aborted by user');
           const file = filesToAttach[i];
-          const expectedTarget = i + 1;
-          console.log(`[BOLTHAVEN] Attaching file ${expectedTarget}/${targetTotalImages}: "${file.name}"...`);
-          await attachImageFileToComposer(input, file, targetTotalImages, expectedTarget);
-          await new Promise((r) => setTimeout(r, 1200));
+          await attachImageFileToComposer(input, file, targetTotalImages, i + 1);
+          await new Promise((r) => setTimeout(r, 1000));
         }
-        totalImagesPasted = getAttachedImagesCount(input);
       }
+
+      // If more than targetTotalImages (4) are in composer, strictly prune excess attachments down to targetTotalImages
+      if (getAttachedImagesCount(input) > targetTotalImages) {
+        console.log(`[BOLTHAVEN] Pruning excess attachments down to ${targetTotalImages}...`);
+        await pruneExcessAttachments(input, targetTotalImages);
+      }
+
+      totalImagesPasted = getAttachedImagesCount(input);
     }
 
     if (activeJobAborted) throw new Error('Stage 2 aborted by user');
@@ -2572,32 +2571,28 @@
       throw new Error(`Failed to attach images: expected ${targetTotalImages} images (1 Reference + 3 Condo Photos), but 0 were attached to ChatGPT. Aborting to prevent sending prompt without photos.`);
     }
 
-    // 3. Set the prompt text BELOW all the attached images
-    console.log('[BOLTHAVEN] Stage 2: Setting prompt text below attached images...');
-    await setPromptTextAsync(input, extractedPrompt || 'Create facebook advertisement from the attached reference and building photos', 5000);
+    // 4. Wait for all 4 image attachments (Reference + 1, 2, 3) to finish uploading to OpenAI
+    const composer = getComposerContainer(input) || document;
+    await waitForAttachmentUploadComplete(composer, 30000);
+
+    if (activeJobAborted) throw new Error('Stage 2 aborted by user');
+
+    // 3. Clear prompt input first, then insert prompt text cleanly
+    const liveInput = findPromptInput() || input;
+    clearPromptInputCleanly(liveInput);
+    await new Promise((r) => setTimeout(r, 200));
+
+    const promptText = (extractedPrompt || 'Create facebook advertisement from the attached reference and building photos').trim();
+    console.log(`[BOLTHAVEN] Stage 2: Setting prompt text (${promptText.length} chars)...`);
+    await insertPromptCleanly(liveInput, promptText);
     await new Promise((r) => setTimeout(r, 400));
 
     if (activeJobAborted) throw new Error('Stage 2 aborted by user');
 
-    // 4. Wait for all image attachments (Reference + 1, 2, 3) to finish uploading to OpenAI
-    const composer = getComposerContainer(input);
-    await waitForAttachmentUploadComplete(composer, 25000);
-
-    if (activeJobAborted) throw new Error('Stage 2 aborted by user');
-
-    // 5. Wait for send button and click Send
-    let sendBtn = findSendButton();
-    let attempts = 0;
-    while ((!sendBtn || !isSendButtonReady(sendBtn)) && attempts < 30) {
-      if (activeJobAborted) throw new Error('Stage 2 aborted by user');
-      await new Promise((r) => setTimeout(r, 350));
-      sendBtn = findSendButton();
-      attempts++;
-    }
-
-    if (!sendBtn) throw new Error('Send button could not be activated');
-    clickSendButton(sendBtn);
-    console.log(`[BOLTHAVEN] ✓ Stage 2: Submitted ${totalImagesPasted} images + prompt! Waiting for Hero Image generation...`);
+    // 5. Submit prompt + 4 attached images using robust submit
+    console.log(`[BOLTHAVEN] Stage 2: Submitting ${totalImagesPasted} images + prompt to ChatGPT...`);
+    const sendSuccess = await triggerSendRobustly(liveInput);
+    console.log(`[BOLTHAVEN] ✓ Stage 2: Send triggered (status: ${sendSuccess}). Waiting for Hero Image generation...`);
 
     chrome.runtime.sendMessage({
       action: 'STAGE2_PROGRESS',
