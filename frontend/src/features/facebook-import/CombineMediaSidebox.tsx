@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { FiX, FiDownload, FiImage, FiScissors, FiCheck } from 'react-icons/fi';
+import { FiX, FiDownload, FiImage } from 'react-icons/fi';
 
 export interface CombineMediaAssetItem {
   id: string;
@@ -26,7 +26,7 @@ interface CombineMediaSideboxProps {
   combineMediaAssets: CombineMediaAssetItem[];
   connectedImageNodes: ConnectedImageFormatNode[];
   activeFilter: string; // 'all' or formatId
-  onFilterChange: (formatId: string) => void;
+  onFilterChange?: (formatId: string) => void;
   onOpenLightbox: (url: string) => void;
   onDownloadImage: (url: string, index: number, e?: React.MouseEvent) => void;
   onDownloadAllImages: (assets: CombineMediaAssetItem[]) => void;
@@ -39,7 +39,6 @@ export const CombineMediaSidebox: React.FC<CombineMediaSideboxProps> = ({
   combineMediaAssets,
   connectedImageNodes,
   activeFilter,
-  onFilterChange,
   onOpenLightbox,
   onDownloadImage,
   onDownloadAllImages,
@@ -48,6 +47,14 @@ export const CombineMediaSidebox: React.FC<CombineMediaSideboxProps> = ({
     if (activeFilter === 'all') return combineMediaAssets;
     return combineMediaAssets.filter((a) => a.formatId === activeFilter);
   }, [activeFilter, combineMediaAssets]);
+
+  const currentFormatNode = useMemo(() => {
+    return connectedImageNodes.find((n) => n.id === activeFilter);
+  }, [activeFilter, connectedImageNodes]);
+
+  const activeTitle = currentFormatNode
+    ? currentFormatNode.title
+    : (filteredAssets[0]?.formatTitle || 'Processed Media Assets');
 
   if (!isOpen) return null;
 
@@ -103,7 +110,7 @@ export const CombineMediaSidebox: React.FC<CombineMediaSideboxProps> = ({
           <div style={{ minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.2 }}>
-                Merged Media Assets
+                {activeTitle}
               </span>
               <span
                 style={{
@@ -116,11 +123,11 @@ export const CombineMediaSidebox: React.FC<CombineMediaSideboxProps> = ({
                   whiteSpace: 'nowrap',
                 }}
               >
-                ✓ {combineMediaAssets.length} Photos Ready
+                ✓ {filteredAssets.length} Photos Ready
               </span>
             </div>
             <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-              {connectedImageNodes.length} Format Presets Connected · High-Res Convergence
+              Formatted & Watermarked Output
             </div>
           </div>
         </div>
@@ -187,102 +194,7 @@ export const CombineMediaSidebox: React.FC<CombineMediaSideboxProps> = ({
         </div>
       </div>
 
-      {/* ── Format Preset Filter Tabs ────────────────────────────────────────── */}
-      {connectedImageNodes.length > 1 && (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            padding: '0.625rem 1rem',
-            overflowX: 'auto',
-            borderBottom: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
-            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.015)' : '#F8FAFC',
-          }}
-        >
-          <button
-            type="button"
-            onClick={() => onFilterChange('all')}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '5px',
-              padding: '4px 10px',
-              borderRadius: '6px',
-              fontSize: '0.6875rem',
-              fontWeight: 600,
-              cursor: 'pointer',
-              border: activeFilter === 'all'
-                ? '1px solid #3B82F6'
-                : '1px solid var(--border-color)',
-              backgroundColor: activeFilter === 'all'
-                ? (isDark ? 'rgba(59, 130, 246, 0.2)' : '#EFF6FF')
-                : (isDark ? 'var(--bg-surface)' : '#FFFFFF'),
-              color: activeFilter === 'all' ? '#3B82F6' : 'var(--text-secondary)',
-              transition: 'all 0.15s ease',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            <span>All Photos</span>
-            <span
-              style={{
-                fontSize: '0.5625rem',
-                padding: '0 4px',
-                borderRadius: '3px',
-                backgroundColor: activeFilter === 'all' ? '#3B82F6' : (isDark ? '#30363D' : '#E2E8F0'),
-                color: activeFilter === 'all' ? '#FFFFFF' : 'var(--text-secondary)',
-              }}
-            >
-              {combineMediaAssets.length}
-            </span>
-          </button>
 
-          {connectedImageNodes.map((node) => {
-            const isActive = activeFilter === node.id;
-            const nodeAssetCount = combineMediaAssets.filter((a) => a.formatId === node.id).length || node.count;
-            return (
-              <button
-                key={node.id}
-                type="button"
-                onClick={() => onFilterChange(node.id)}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '5px',
-                  padding: '4px 10px',
-                  borderRadius: '6px',
-                  fontSize: '0.6875rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  border: isActive
-                    ? '1px solid #EC4899'
-                    : '1px solid var(--border-color)',
-                  backgroundColor: isActive
-                    ? (isDark ? 'rgba(236, 72, 153, 0.2)' : '#FDF2F8')
-                    : (isDark ? 'var(--bg-surface)' : '#FFFFFF'),
-                  color: isActive ? '#EC4899' : 'var(--text-secondary)',
-                  transition: 'all 0.15s ease',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                <FiScissors size={11} />
-                <span>{node.title.replace(/^Format:\s*/i, '')}</span>
-                <span
-                  style={{
-                    fontSize: '0.5625rem',
-                    padding: '0 4px',
-                    borderRadius: '3px',
-                    backgroundColor: isActive ? '#EC4899' : (isDark ? '#30363D' : '#E2E8F0'),
-                    color: isActive ? '#FFFFFF' : 'var(--text-secondary)',
-                  }}
-                >
-                  {nodeAssetCount}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      )}
 
       {/* ── Scrollable Photo Grid ────────────────────────────────────────────── */}
       <div
@@ -498,7 +410,7 @@ export const CombineMediaSidebox: React.FC<CombineMediaSideboxProps> = ({
         }}
       >
         <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-          Showing {filteredAssets.length} of {combineMediaAssets.length} processed photos
+          {filteredAssets.length} photos ready
         </span>
 
         <button
