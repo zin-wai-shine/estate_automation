@@ -11666,8 +11666,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   }}
                                 >
                                   {/* Clean Neutral Header */}
-                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '7px', minWidth: 0, flex: 1 }}>
                                       <div
                                         style={{
                                           width: '26px',
@@ -11679,11 +11679,21 @@ export const FacebookWorkflowCanvas = forwardRef<
                                           display: 'flex',
                                           alignItems: 'center',
                                           justifyContent: 'center',
+                                          flexShrink: 0,
                                         }}
                                       >
                                         {isImages ? <FiImage size={13} /> : <FiScissors size={13} />}
                                       </div>
-                                      <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                      <span
+                                        style={{
+                                          fontSize: '0.8125rem',
+                                          fontWeight: 600,
+                                          color: 'var(--text-primary)',
+                                          whiteSpace: 'nowrap',
+                                          overflow: 'hidden',
+                                          textOverflow: 'ellipsis',
+                                        }}
+                                      >
                                         {fromTitle}
                                       </span>
                                     </div>
@@ -11696,6 +11706,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                                         backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
                                         border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
                                         color: 'var(--text-secondary)',
+                                        whiteSpace: 'nowrap',
+                                        flexShrink: 0,
                                       }}
                                     >
                                       {boxCount} {boxCount === 1 ? 'photo' : 'photos'} ready
@@ -11975,8 +11987,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   }}
                                 >
                                   {/* Clean Neutral Header */}
-                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '7px', minWidth: 0, flex: 1 }}>
                                       <div
                                         style={{
                                           width: '26px',
@@ -11988,15 +12000,33 @@ export const FacebookWorkflowCanvas = forwardRef<
                                           display: 'flex',
                                           alignItems: 'center',
                                           justifyContent: 'center',
+                                          flexShrink: 0,
                                         }}
                                       >
                                         <HiSparkles size={13} />
                                       </div>
-                                      <div>
-                                        <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                      <div style={{ minWidth: 0, flex: 1 }}>
+                                        <div
+                                          style={{
+                                            fontSize: '0.8125rem',
+                                            fontWeight: 600,
+                                            color: 'var(--text-primary)',
+                                            whiteSpace: 'nowrap',
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis',
+                                          }}
+                                        >
                                           {fromTitle}
-                                        </span>
-                                        <div style={{ fontSize: '0.5625rem', color: 'var(--text-muted)' }}>
+                                        </div>
+                                        <div
+                                          style={{
+                                            fontSize: '0.5625rem',
+                                            color: 'var(--text-muted)',
+                                            whiteSpace: 'nowrap',
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis',
+                                          }}
+                                        >
                                           AI Processor · {childFormatBoxes.length} Presets
                                         </div>
                                       </div>
@@ -12010,6 +12040,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                                         backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
                                         border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
                                         color: 'var(--text-secondary)',
+                                        whiteSpace: 'nowrap',
+                                        flexShrink: 0,
                                       }}
                                     >
                                       {readyCount}/{childFormatBoxes.length} ready
@@ -12245,7 +12277,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF',
                                 }}
                               >
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '7px', minWidth: 0, flex: 1 }}>
                                   <div
                                     style={{
                                       width: '26px',
@@ -12257,11 +12289,21 @@ export const FacebookWorkflowCanvas = forwardRef<
                                       display: 'flex',
                                       alignItems: 'center',
                                       justifyContent: 'center',
+                                      flexShrink: 0,
                                     }}
                                   >
                                     {isBrowser ? <FiMonitor size={12} /> : <FiFileText size={12} />}
                                   </div>
-                                  <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                  <span
+                                    style={{
+                                      fontSize: '0.8125rem',
+                                      fontWeight: 600,
+                                      color: 'var(--text-primary)',
+                                      whiteSpace: 'nowrap',
+                                      overflow: 'hidden',
+                                      textOverflow: 'ellipsis',
+                                    }}
+                                  >
                                     {fromTitle}
                                   </span>
                                 </div>
