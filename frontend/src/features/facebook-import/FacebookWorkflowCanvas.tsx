@@ -3866,7 +3866,8 @@ export const FacebookWorkflowCanvas = forwardRef<
 
   // Lightbox & image compiled preview
   const [lightboxImageIndex, setLightboxImageIndex] = useState<number | null>(null);
-  const [lightboxGalleryType, setLightboxGalleryType] = useState<'raw' | 'compiled'>('compiled');
+  const [lightboxGalleryType, setLightboxGalleryType] = useState<'raw' | 'compiled' | 'custom'>('compiled');
+  const [customLightboxGallery, setCustomLightboxGallery] = useState<{ finalUrl: string; isWatermarked?: boolean; isEnhanced?: boolean; label?: string }[] | null>(null);
   const [zoomScale, setZoomScale] = useState<number>(1);
 
   // Output & Combine Copy / Media states
@@ -4160,13 +4161,25 @@ export const FacebookWorkflowCanvas = forwardRef<
     return list;
   }, [images, watermarkedPhotos, allEnhancedPhotos, combineCropSlices]);
 
-  const handleOpenLightbox = (indexOrUrl: number | string, galleryType: 'raw' | 'compiled' = 'compiled') => {
+  const handleOpenLightbox = (
+    indexOrUrl: number | string,
+    galleryType: 'raw' | 'compiled' | 'custom' = 'compiled',
+    customList?: { finalUrl: string; isWatermarked?: boolean; isEnhanced?: boolean; label?: string }[]
+  ) => {
     setLightboxGalleryType(galleryType);
-    const gallery = galleryType === 'raw' ? rawExtractedImages : compiledImages;
+    if (customList && customList.length > 0) {
+      setCustomLightboxGallery(customList);
+    } else {
+      setCustomLightboxGallery(null);
+    }
+    const gallery = (customList && customList.length > 0)
+      ? customList
+      : (galleryType === 'raw' ? rawExtractedImages : compiledImages);
+
     if (typeof indexOrUrl === 'number') {
       setLightboxImageIndex(indexOrUrl);
     } else {
-      const foundIdx = gallery.findIndex((img) => img.finalUrl === indexOrUrl || img.source_url === indexOrUrl);
+      const foundIdx = gallery.findIndex((img: any) => img.finalUrl === indexOrUrl || img.source_url === indexOrUrl || img.url === indexOrUrl);
       setLightboxImageIndex(foundIdx >= 0 ? foundIdx : 0);
     }
     setZoomScale(1);
@@ -4682,6 +4695,7 @@ export const FacebookWorkflowCanvas = forwardRef<
           e.stopImmediatePropagation();
           e.stopPropagation();
           setLightboxImageIndex(null);
+          setCustomLightboxGallery(null);
           return;
         }
         if (quickAddPopover) {
@@ -14934,7 +14948,21 @@ export const FacebookWorkflowCanvas = forwardRef<
           connectedImageNodes={connectedImageNodesForCombine}
           activeFilter={combineMediaSideboxFormatFilter}
           onFilterChange={setCombineMediaSideboxFormatFilter}
-          onOpenLightbox={(url) => handleOpenLightbox(url)}
+          onOpenLightbox={(url, index, customAssets) => {
+            const assetsToUse = customAssets || (combineMediaSideboxFormatFilter === 'all'
+              ? combineMediaAssets
+              : combineMediaAssets.filter((a) => a.formatId === combineMediaSideboxFormatFilter));
+            const customList = assetsToUse.map((a) => ({
+              finalUrl: a.url,
+              isWatermarked: true,
+              isEnhanced: a.isEnhanced,
+              label: a.label,
+            }));
+            const targetIdx = typeof index === 'number'
+              ? index
+              : customList.findIndex((item) => item.finalUrl === url);
+            handleOpenLightbox(targetIdx >= 0 ? targetIdx : 0, 'custom', customList);
+          }}
           onDownloadImage={handleDownloadImage}
           onDownloadAllImages={handleDownloadAllCombineAssets}
         />
@@ -20878,7 +20906,7 @@ export const FacebookWorkflowCanvas = forwardRef<
 
       {/* Lightbox Image Preview Modal - Exact Match to Second Image */}
       {lightboxImageIndex !== null && (() => {
-        const activeGallery = lightboxGalleryType === 'raw' ? rawExtractedImages : compiledImages;
+        const activeGallery = customLightboxGallery || (lightboxGalleryType === 'raw' ? rawExtractedImages : compiledImages);
         if (!activeGallery || activeGallery.length === 0 || !activeGallery[lightboxImageIndex]) return null;
         const activeIdx = lightboxImageIndex;
         const activeImg = activeGallery[activeIdx];
@@ -20903,7 +20931,10 @@ export const FacebookWorkflowCanvas = forwardRef<
               userSelect: 'none',
               animation: 'fadeIn 0.15s ease',
             }}
-            onClick={() => setLightboxImageIndex(null)}
+            onClick={() => {
+              setLightboxImageIndex(null);
+              setCustomLightboxGallery(null);
+            }}
           >
             {/* Top-Left: Image Counter Pill & Enhanced / Watermarked Badges */}
             <div
@@ -20979,7 +21010,10 @@ export const FacebookWorkflowCanvas = forwardRef<
             {/* Top-Right: Close Button (Circle with X) */}
             <button
               type="button"
-              onClick={() => setLightboxImageIndex(null)}
+              onClick={() => {
+              setLightboxImageIndex(null);
+              setCustomLightboxGallery(null);
+            }}
               aria-label="Close preview"
               title="Close (ESC)"
               style={{
@@ -21110,8 +21144,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                 referrerPolicy="no-referrer"
                 crossOrigin="anonymous"
                 onError={(e) => {
-                  if (activeImg?.source_url && !e.currentTarget.src.includes('/proxy-image')) {
-                    e.currentTarget.src = `http://127.0.0.1:9224/proxy-image?url=${encodeURIComponent(activeImg.source_url)}`;
+                  const srcUrl = (activeImg as any)?.source_url;
+                  if (srcUrl && !e.currentTarget.src.includes('/proxy-image')) {
+                    e.currentTarget.src = `http://127.0.0.1:9224/proxy-image?url=${encodeURIComponent(srcUrl)}`;
                   }
                 }}
                 style={{

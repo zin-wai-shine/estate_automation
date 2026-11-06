@@ -27,7 +27,7 @@ interface CombineMediaSideboxProps {
   connectedImageNodes: ConnectedImageFormatNode[];
   activeFilter: string; // 'all' or formatId
   onFilterChange?: (formatId: string) => void;
-  onOpenLightbox: (url: string) => void;
+  onOpenLightbox: (url: string, index?: number, customAssets?: CombineMediaAssetItem[]) => void;
   onDownloadImage: (url: string, index: number, e?: React.MouseEvent) => void;
   onDownloadAllImages: (assets: CombineMediaAssetItem[]) => void;
 }
@@ -262,7 +262,7 @@ export const CombineMediaSidebox: React.FC<CombineMediaSideboxProps> = ({
             {filteredAssets.map((asset, idx) => (
               <div
                 key={asset.id}
-                onClick={() => onOpenLightbox(asset.url)}
+                onClick={() => onOpenLightbox(asset.url, idx, filteredAssets)}
                 style={{
                   position: 'relative',
                   width: '100%',
@@ -445,7 +445,7 @@ export const CombineMediaSidebox: React.FC<CombineMediaSideboxProps> = ({
           type="button"
           onClick={() => {
             if (filteredAssets.length > 0) {
-              onOpenLightbox(filteredAssets[0].url);
+              onOpenLightbox(filteredAssets[0].url, 0, filteredAssets);
             }
           }}
           disabled={filteredAssets.length === 0}
