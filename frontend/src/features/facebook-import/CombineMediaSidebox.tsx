@@ -86,53 +86,69 @@ export const CombineMediaSidebox: React.FC<CombineMediaSideboxProps> = ({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
+          gap: '12px',
           padding: '0.875rem 1.125rem',
+          height: '62px',
+          boxSizing: 'border-box',
           borderBottom: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
           backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', minWidth: 0, flex: 1 }}>
           <div
             style={{
               width: '32px',
               height: '32px',
               borderRadius: '8px',
-              backgroundColor: 'rgba(16, 185, 129, 0.15)',
-              color: '#10B981',
+              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+              border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+              color: 'var(--text-secondary)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               flexShrink: 0,
             }}
           >
-            <FiImage size={17} />
+            <FiImage size={16} />
           </div>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.2 }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+              <span
+                style={{
+                  fontSize: '0.8125rem',
+                  fontWeight: 600,
+                  color: 'var(--text-primary)',
+                  lineHeight: 1.2,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
                 {activeTitle}
               </span>
               <span
                 style={{
                   fontSize: '0.625rem',
                   fontWeight: 600,
-                  color: '#10B981',
-                  backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#DCFCE7',
-                  padding: '1px 6px',
-                  borderRadius: '4px',
+                  color: 'var(--text-secondary)',
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+                  border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                  padding: '2px 8px',
+                  borderRadius: '6px',
                   whiteSpace: 'nowrap',
+                  flexShrink: 0,
                 }}
               >
-                ✓ {filteredAssets.length} Photos Ready
+                {filteredAssets.length} photos ready
               </span>
             </div>
-            <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+            <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               Formatted & Watermarked Output
             </div>
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
           {filteredAssets.length > 0 && (
             <button
               type="button"
@@ -140,26 +156,30 @@ export const CombineMediaSidebox: React.FC<CombineMediaSideboxProps> = ({
                 e.stopPropagation();
                 onDownloadAllImages(filteredAssets);
               }}
-              title="Download all photos"
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: '5px',
-                padding: '5px 10px',
+                height: '28px',
+                padding: '0 10px',
                 fontSize: '0.6875rem',
                 fontWeight: 600,
                 borderRadius: '6px',
-                backgroundColor: isDark ? 'rgba(59, 130, 246, 0.2)' : '#EFF6FF',
-                color: '#3B82F6',
-                border: isDark ? '1px solid rgba(59, 130, 246, 0.35)' : '1px solid #BFDBFE',
+                border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+                color: 'var(--text-secondary)',
                 cursor: 'pointer',
                 transition: 'all 0.15s ease',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = isDark ? 'rgba(59, 130, 246, 0.3)' : '#DBEAFE';
+                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.09)' : 'rgba(0, 0, 0, 0.08)';
+                e.currentTarget.style.borderColor = isDark ? '#484F58' : '#CBD5E1';
+                e.currentTarget.style.color = 'var(--text-primary)';
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = isDark ? 'rgba(59, 130, 246, 0.2)' : '#EFF6FF';
+                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)';
+                e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
+                e.currentTarget.style.color = 'var(--text-secondary)';
               }}
             >
               <FiDownload size={12} />
@@ -174,13 +194,12 @@ export const CombineMediaSidebox: React.FC<CombineMediaSideboxProps> = ({
               e.stopPropagation();
               onClose();
             }}
-            title="Close viewer"
             style={{
               width: '28px',
               height: '28px',
               borderRadius: '6px',
-              border: '1px solid var(--border-color)',
-              backgroundColor: isDark ? 'var(--bg-surface)' : 'rgba(0, 0, 0, 0.04)',
+              border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
               color: 'var(--text-secondary)',
               display: 'flex',
               alignItems: 'center',
@@ -188,8 +207,18 @@ export const CombineMediaSidebox: React.FC<CombineMediaSideboxProps> = ({
               cursor: 'pointer',
               transition: 'all 0.15s ease',
             }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.09)' : 'rgba(0, 0, 0, 0.08)';
+              e.currentTarget.style.borderColor = isDark ? '#484F58' : '#CBD5E1';
+              e.currentTarget.style.color = 'var(--text-primary)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)';
+              e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
+              e.currentTarget.style.color = 'var(--text-secondary)';
+            }}
           >
-            <FiX size={15} style={{ pointerEvents: 'none' }} />
+            <FiX size={14} style={{ pointerEvents: 'none' }} />
           </button>
         </div>
       </div>
@@ -424,15 +453,27 @@ export const CombineMediaSidebox: React.FC<CombineMediaSideboxProps> = ({
             display: 'inline-flex',
             alignItems: 'center',
             gap: '5px',
-            padding: '5px 12px',
+            height: '28px',
+            padding: '0 12px',
             fontSize: '0.6875rem',
             fontWeight: 600,
             borderRadius: '6px',
-            border: '1px solid var(--border-color)',
-            backgroundColor: isDark ? 'var(--bg-surface)' : '#F1F5F9',
+            border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
             color: 'var(--text-primary)',
             cursor: filteredAssets.length === 0 ? 'not-allowed' : 'pointer',
             opacity: filteredAssets.length === 0 ? 0.5 : 1,
+            transition: 'all 0.15s ease',
+          }}
+          onMouseEnter={(e) => {
+            if (filteredAssets.length > 0) {
+              e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.09)' : 'rgba(0, 0, 0, 0.08)';
+              e.currentTarget.style.borderColor = isDark ? '#484F58' : '#CBD5E1';
+            }
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)';
+            e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
           }}
         >
           <span>Open Fullscreen Gallery</span>
