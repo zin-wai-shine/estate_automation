@@ -770,11 +770,20 @@ func SavePhotosToLocalFolder(c *fiber.Ctx) error {
 	}
 
 	savedCount := 0
+	usedNames := make(map[string]int)
 	for _, f := range req.Files {
 		if f.Filename == "" || f.Data == "" {
 			continue
 		}
 		cleanName := filepath.Base(invalidChars.ReplaceAllString(f.Filename, "-"))
+		if count, exists := usedNames[cleanName]; exists {
+			usedNames[cleanName] = count + 1
+			ext := filepath.Ext(cleanName)
+			base := strings.TrimSuffix(cleanName, ext)
+			cleanName = fmt.Sprintf("%s_%d%s", base, count+1, ext)
+		} else {
+			usedNames[cleanName] = 1
+		}
 		filePath := filepath.Join(targetFolder, cleanName)
 
 		var fileBytes []byte

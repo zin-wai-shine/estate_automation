@@ -216,9 +216,10 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
       e.stopPropagation();
       e.preventDefault();
     }
-    const fileNum = item.tileIndex ? `tile-${item.tileIndex}` : `${index + 1}`;
+    const photoNum = typeof (item as any).photoIndex === 'number' ? (item as any).photoIndex + 1 : index + 1;
+    const tileSuffix = item.totalTiles && item.totalTiles > 1 ? `-tile-${item.tileIndex || 1}` : '';
     const ext = (item.url.includes('image/png') || item.url.includes('.png')) ? 'png' : (item.url.includes('image/webp') || item.url.includes('.webp')) ? 'webp' : 'jpg';
-    const fileName = `${cleanBoxName}-${fileNum}.${ext}`;
+    const fileName = `${cleanBoxName}-${photoNum}${tileSuffix}.${ext}`;
     await downloadFileFromUrl(item.url, fileName);
   };
 
@@ -227,11 +228,17 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     if (displayPreviewItems.length === 0) return;
     setIsDownloading(true);
     try {
+      const seenDirectNames = new Set<string>();
       for (let i = 0; i < displayPreviewItems.length; i++) {
         const item = displayPreviewItems[i];
-        const fileNum = item.tileIndex ? `tile-${item.tileIndex}` : `${i + 1}`;
+        const photoNum = typeof (item as any).photoIndex === 'number' ? (item as any).photoIndex + 1 : i + 1;
+        const tileSuffix = item.totalTiles && item.totalTiles > 1 ? `-tile-${item.tileIndex || 1}` : '';
         const ext = (item.url.includes('image/png') || item.url.includes('.png')) ? 'png' : (item.url.includes('image/webp') || item.url.includes('.webp')) ? 'webp' : 'jpg';
-        const fileName = `${cleanBoxName}-${fileNum}.${ext}`;
+        let fileName = `${cleanBoxName}-${photoNum}${tileSuffix}.${ext}`;
+        if (seenDirectNames.has(fileName)) {
+          fileName = `${cleanBoxName}-${photoNum}-${i + 1}${tileSuffix}.${ext}`;
+        }
+        seenDirectNames.add(fileName);
         await downloadFileFromUrl(item.url, fileName);
         if (i < displayPreviewItems.length - 1) {
           await new Promise((r) => setTimeout(r, 250));
@@ -251,11 +258,17 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
 
     try {
       // Convert all preview item URLs (including browser blob: URLs) to genuine base64 data URLs
+      const seenFolderNames = new Set<string>();
       const payloadFiles = await Promise.all(
         displayPreviewItems.map(async (item, i) => {
-          const fileNum = item.tileIndex ? `tile-${item.tileIndex}` : `${i + 1}`;
+          const photoNum = typeof (item as any).photoIndex === 'number' ? (item as any).photoIndex + 1 : i + 1;
+          const tileSuffix = item.totalTiles && item.totalTiles > 1 ? `-tile-${item.tileIndex || 1}` : '';
           const ext = (item.url.includes('image/png') || item.url.includes('.png')) ? 'png' : (item.url.includes('image/webp') || item.url.includes('.webp')) ? 'webp' : 'jpg';
-          const filename = `${cleanBoxName}-${fileNum}.${ext}`;
+          let filename = `${cleanBoxName}-${photoNum}${tileSuffix}.${ext}`;
+          if (seenFolderNames.has(filename)) {
+            filename = `${cleanBoxName}-${photoNum}-${i + 1}${tileSuffix}.${ext}`;
+          }
+          seenFolderNames.add(filename);
 
           let base64Data = item.url;
           if (item.url.startsWith('blob:') || item.url.startsWith('/storage') || item.url.startsWith('http')) {
@@ -339,12 +352,18 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     try {
       const zip = new JSZip();
       const folder = zip.folder(cleanBoxName);
+      const seenZipNames = new Set<string>();
 
       for (let i = 0; i < displayPreviewItems.length; i++) {
         const item = displayPreviewItems[i];
-        const fileNum = item.tileIndex ? `tile-${item.tileIndex}` : `${i + 1}`;
+        const photoNum = typeof (item as any).photoIndex === 'number' ? (item as any).photoIndex + 1 : i + 1;
+        const tileSuffix = item.totalTiles && item.totalTiles > 1 ? `-tile-${item.tileIndex || 1}` : '';
         const ext = (item.url.includes('image/png') || item.url.includes('.png')) ? 'png' : (item.url.includes('image/webp') || item.url.includes('.webp')) ? 'webp' : 'jpg';
-        const fileName = `${cleanBoxName}-${fileNum}.${ext}`;
+        let fileName = `${cleanBoxName}-${photoNum}${tileSuffix}.${ext}`;
+        if (seenZipNames.has(fileName)) {
+          fileName = `${cleanBoxName}-${photoNum}-${i + 1}${tileSuffix}.${ext}`;
+        }
+        seenZipNames.add(fileName);
 
         const blob = await fetchBlobFromUrl(item.url);
         if (folder) {

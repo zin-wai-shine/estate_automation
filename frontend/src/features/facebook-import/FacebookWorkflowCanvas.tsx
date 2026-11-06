@@ -3957,11 +3957,17 @@ export const FacebookWorkflowCanvas = forwardRef<
     const cleanFolder = formatTitle.replace(/^Format:\s*/i, '').replace(/[\/\\?%*:|"<>]/g, '').trim() || 'Photos';
 
     try {
+      const seenNames = new Set<string>();
       const payloadFiles = await Promise.all(
         assets.map(async (item, i) => {
-          const fileNum = item.tileIndex ? `tile-${item.tileIndex}` : `${i + 1}`;
+          const photoNum = typeof item.photoIndex === 'number' ? item.photoIndex + 1 : i + 1;
+          const tileSuffix = item.totalTiles && item.totalTiles > 1 ? `-tile-${item.tileIndex || 1}` : '';
           const ext = (item.url.includes('image/png') || item.url.includes('.png')) ? 'png' : 'jpg';
-          const filename = `${cleanFolder}-${fileNum}.${ext}`;
+          let filename = `${cleanFolder}-${photoNum}${tileSuffix}.${ext}`;
+          if (seenNames.has(filename)) {
+            filename = `${cleanFolder}-${photoNum}-${i + 1}${tileSuffix}.${ext}`;
+          }
+          seenNames.add(filename);
 
           let base64Data = item.url;
           if (item.url.startsWith('blob:') || item.url.startsWith('/storage') || item.url.startsWith('http')) {
@@ -4034,12 +4040,18 @@ export const FacebookWorkflowCanvas = forwardRef<
     try {
       const zip = new JSZip();
       const folder = zip.folder(cleanFolder);
+      const seenZipNames = new Set<string>();
 
       for (let i = 0; i < assets.length; i++) {
         const item = assets[i];
-        const fileNum = item.tileIndex ? `tile-${item.tileIndex}` : `${i + 1}`;
+        const photoNum = typeof item.photoIndex === 'number' ? item.photoIndex + 1 : i + 1;
+        const tileSuffix = item.totalTiles && item.totalTiles > 1 ? `-tile-${item.tileIndex || 1}` : '';
         const ext = (item.url.includes('image/png') || item.url.includes('.png')) ? 'png' : 'jpg';
-        const fileName = `${cleanFolder}-${fileNum}.${ext}`;
+        let fileName = `${cleanFolder}-${photoNum}${tileSuffix}.${ext}`;
+        if (seenZipNames.has(fileName)) {
+          fileName = `${cleanFolder}-${photoNum}-${i + 1}${tileSuffix}.${ext}`;
+        }
+        seenZipNames.add(fileName);
 
         const fullUrl = item.url.startsWith('/storage') ? `http://localhost:8085${item.url}` : item.url;
         const resp = await fetch(fullUrl);

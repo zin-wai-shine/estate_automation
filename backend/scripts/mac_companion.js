@@ -2231,6 +2231,7 @@ function mergeTabGroups(scannedGroups, liveGroups) {
         }
 
         let savedCount = 0;
+        const usedFilenames = new Set();
         for (const file of files) {
           const rawFilename = file.filename || `photo_${Date.now()}_${savedCount + 1}.jpg`;
           const filename = path.basename(rawFilename.replace(/[\/\\?%*:|"<>]/g, '_'));
@@ -2298,6 +2299,13 @@ function mergeTabGroups(scannedGroups, liveGroups) {
                 correctedFilename += `.${realExt}`;
               }
             }
+
+            if (usedFilenames.has(correctedFilename)) {
+              const ext = path.extname(correctedFilename);
+              const base = path.basename(correctedFilename, ext);
+              correctedFilename = `${base}_${savedCount + 1}${ext}`;
+            }
+            usedFilenames.add(correctedFilename);
 
             const targetFilePath = path.join(targetDir, correctedFilename);
             fs.writeFileSync(targetFilePath, buffer);
