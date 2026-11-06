@@ -423,21 +423,6 @@ async function processSlot(slotIndex, sessionId, initialJob = null) {
       `[BOLTHAVEN EXT] Tab ${slot.tabId} → waiting for setup lock for Image #${job.original_position}...`
     );
 
-    // Ensure tab is on a clean, fresh chat page. If it previously generated an image, it is sitting on https://chatgpt.com/c/<id>.
-    // Resetting to FRESH_CHAT_URL ('https://chatgpt.com/') guarantees a clean composer state without stale conversation turns, attachments, or memory bloat!
-    try {
-      const currentTab = await chrome.tabs.get(slot.tabId).catch(() => null);
-      if (currentTab && currentTab.url && (currentTab.url.includes('/c/') || !currentTab.url.startsWith('https://chatgpt.com/'))) {
-        console.log(`[BOLTHAVEN EXT] Tab ${slot.tabId} is on conversation thread (${currentTab.url.slice(0, 45)}...). Resetting to fresh chat for Image #${job.original_position}...`);
-        await chrome.tabs.update(slot.tabId, { url: FRESH_CHAT_URL });
-        await waitForTabComplete(slot.tabId, 15000);
-        await delay(600);
-        await ensureContentScriptInjected(slot.tabId);
-      }
-    } catch (tabResetErr) {
-      console.log(`[BOLTHAVEN EXT] Tab ${slot.tabId} reset notice:`, tabResetErr.message);
-    }
-
     // 1. SEQUENTIAL SETUP & SEND (exclusive focus on this tab for ~3 seconds)
     const releaseLock = await acquireAttachmentMutex();
     try {
@@ -498,13 +483,8 @@ async function processSlot(slotIndex, sessionId, initialJob = null) {
       await reportJobFailed(job.job_id, setupErr.message);
       slot.busy = false;
       slot.currentJob = null;
-      // Reset tab to clean chat URL so it recovers for the next job
-      try {
-        await chrome.tabs.update(slot.tabId, { url: FRESH_CHAT_URL });
-        await waitForTabComplete(slot.tabId, 10000);
-      } catch (e) {}
       await delay(2000);
-      continue; // NEVER abort the slot — continue to process the next job in the queue!
+      continue; // Continue to process the next job in the queue without reloading the tab!
     } finally {
       // RELEASE THE LOCK IMMEDIATELY SO NEXT TAB GETS FULL ATTENTION!
       releaseLock();
@@ -530,11 +510,6 @@ async function processSlot(slotIndex, sessionId, initialJob = null) {
 
     slot.busy = false;
     slot.currentJob = null;
-
-    // Immediately update tab back to fresh chat URL so it is ready for the next job
-    try {
-      await chrome.tabs.update(slot.tabId, { url: FRESH_CHAT_URL });
-    } catch (e) {}
 
     // Brief pause before this slot takes the next job from queue
     await delay(1500);
@@ -1352,16 +1327,27 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       chrome.scripting.executeScript({
         target: { tabId },
         world: 'MAIN',
-        func: async (dUrl, fName) => {
+        func: (dUrl, fName) => {
           try {
-            const resp = await fetch(dUrl);
-            const blob = await resp.blob();
-            const file = new File([blob], fName || 'image.jpg', { type: blob.type || 'image/jpeg' });
+            // Safe synchronous Base64 conversion without fetch (immune to ChatGPT CSP!)
+            const parts = dUrl.split(',');
+            if (parts.length < 2) return false;
+            const mime = parts[0].match(/:(.*?);/)?.[1] || 'image/jpeg';
+            const bin = atob(parts[1]);
+            const bytes = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+            const blob = new Blob([bytes], { type: mime });
+            const file = new File([blob], fName || 'image.jpg', { type: mime });
+
             const dt = new DataTransfer();
             dt.items.add(file);
 
-            // 1. Locate or trigger file input in DOM
-            let fileInput = document.querySelector('input[type="file"], input[accept*="image"]');
+            // 1. Locate file input in DOM and set files
+            let fileInputs = Array.from(document.querySelectorAll('input[type="file"]'));
+            let fileInput = fileInputs.find((i) => (i.accept || '').includes('image')) ||
+                            fileInputs[fileInputs.length - 1] ||
+                            fileInputs[0];
+
             if (!fileInput) {
               const attachBtn = (
                 document.querySelector('button[data-testid="attach-button"]') ||
@@ -1372,8 +1358,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
               );
               if (attachBtn) {
                 attachBtn.click();
-                await new Promise((r) => setTimeout(r, 250));
-                fileInput = document.querySelector('input[type="file"], input[accept*="image"]');
+                const menuItems = Array.from(document.querySelectorAll('[role="menuitem"], [role="menu"] button, div[class*="popover"] button'));
+                const uploadItem = menuItems.find((el) => {
+                  const t = (el.textContent || '').toLowerCase();
+                  return t.includes('upload') || t.includes('computer') || t.includes('photo') || t.includes('file');
+                });
+                if (uploadItem) uploadItem.click();
+
+                fileInputs = Array.from(document.querySelectorAll('input[type="file"]'));
+                fileInput = fileInputs.find((i) => (i.accept || '').includes('image')) ||
+                            fileInputs[fileInputs.length - 1] ||
+                            fileInputs[0];
               }
             }
 
@@ -1390,9 +1385,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
               }
               if (fileInput._valueTracker) fileInput._valueTracker.setValue('');
 
-              // Trigger React onChange directly if present on fiber
               try {
-                const reactPropsKey = Object.keys(fileInput).find((k) => k.startsWith('__reactProps$'));
+                const reactPropsKey = Object.keys(fileInput).find((k) => k.startsWith('__reactProps$') || k.startsWith('__reactEventHandlers$'));
                 if (reactPropsKey && fileInput[reactPropsKey]?.onChange) {
                   fileInput[reactPropsKey].onChange({ target: fileInput, currentTarget: fileInput });
                 }
@@ -1402,7 +1396,25 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
               fileInput.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
             }
 
-            // 2. Dispatch paste and drop on prompt textarea
+            // Close popovers
+            document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }));
+
+            // 2. Dispatch Drag & Drop and Paste events across composer
+            const dropTargets = [
+              document.querySelector('#prompt-textarea'),
+              document.querySelector('.ProseMirror'),
+              document.querySelector('form'),
+              document.querySelector('[class*="composer" i]'),
+              document.body,
+            ].filter(Boolean);
+
+            for (const target of dropTargets) {
+              try {
+                const dropEv = new DragEvent('drop', { bubbles: true, cancelable: true, composed: true, dataTransfer: dt });
+                target.dispatchEvent(dropEv);
+              } catch (e) {}
+            }
+
             const pm = document.querySelector('#prompt-textarea, .ProseMirror, textarea');
             if (pm) {
               pm.focus();
@@ -1411,15 +1423,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 Object.defineProperty(pasteEv, 'clipboardData', { value: dt, writable: false });
                 pm.dispatchEvent(pasteEv);
               } catch (e) {}
-
-              try {
-                const dropEv = new DragEvent('drop', { bubbles: true, cancelable: true, composed: true, dataTransfer: dt });
-                pm.dispatchEvent(dropEv);
-              } catch (e) {}
             }
 
-            // Send Escape key to close any attach popup that opened
-            document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }));
             return true;
           } catch (e) {
             return false;

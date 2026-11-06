@@ -1122,17 +1122,18 @@
       const testid = (btn.getAttribute('data-testid') || '').toLowerCase();
       const text = (btn.textContent || '').trim().toLowerCase();
 
-      // Exclude Send, Attach, Model, Voice
+      // Exclude Send, Attach (+), Model, Voice, Upload
       if (
-        aria.includes('send') || aria.includes('plus') || aria.includes('add files') ||
+        aria.includes('send') || aria.includes('plus') || aria.includes('add') ||
+        aria.includes('attach') || aria.includes('upload') ||
         aria.includes('voice') || aria.includes('mic') || aria.includes('dictate') ||
         aria.includes('model') || text === 'files' || text === 'send' ||
-        testid.includes('send') || testid.includes('attach')
+        testid.includes('send') || testid.includes('attach') || testid.includes('upload')
       ) {
         return false;
       }
 
-      // Explicit remove/delete labels in ChatGPT (e.g. "Remove image_001.jpg", "Dismiss")
+      // Explicit remove/delete labels on thumbnail cards (e.g. "Remove image_001.jpg", "Dismiss")
       if (
         aria.startsWith('remove') ||
         aria.includes('remove') ||
@@ -1144,7 +1145,7 @@
         return true;
       }
 
-      const parentThumb = btn.closest('[class*="attachment" i], [class*="thumbnail" i], [data-testid*="attachment" i]');
+      const parentThumb = btn.closest('[class*="thumbnail" i]');
       if (parentThumb && btn.querySelector('svg')) {
         return true;
       }
@@ -1162,11 +1163,7 @@
     const removeBtns = findAttachmentRemoveButtons(composer);
     if (removeBtns.length > 0) return removeBtns.length;
 
-    // 2. Attached thumbnail containers
-    const attachmentCards = composer.querySelectorAll('[data-testid*="attachment" i], [class*="attachment" i], [class*="thumbnail" i]');
-    if (attachmentCards.length > 0) return attachmentCards.length;
-
-    // 3. Thumbnail images strictly inside composer (excluding icons/avatars)
+    // 2. Thumbnail images strictly inside composer (excluding icons/avatars)
     const thumbImgs = Array.from(composer.querySelectorAll('img')).filter((img) => {
       const src = img.src || img.getAttribute('src') || '';
       if (!src) return false;
@@ -1528,6 +1525,41 @@
     });
   }
 
+  // Robustly locate or mount ChatGPT's native file input
+  async function ensureChatGPTFileInput() {
+    let fileInputs = Array.from(document.querySelectorAll('input[type="file"], input[accept*="image"]'));
+    let targetInput = fileInputs.find((i) => (i.accept || '').includes('image')) ||
+                      fileInputs[fileInputs.length - 1] ||
+                      fileInputs[0];
+    if (targetInput) return targetInput;
+
+    const plusBtn = findAttachmentButton();
+    if (plusBtn) {
+      console.log('[BOLTHAVEN] Clicking plus button to reveal upload menu...');
+      clickElementSafely(plusBtn);
+      await new Promise((r) => setTimeout(r, 250));
+
+      const menuItems = Array.from(
+        document.querySelectorAll('[role="menuitem"], [role="menu"] button, div[class*="popover"] button, div[role="dialog"] button, [data-radix-collection-item]')
+      );
+      const uploadItem = menuItems.find((el) => {
+        const t = (el.textContent || '').toLowerCase();
+        return t.includes('upload') || t.includes('computer') || t.includes('photo') || t.includes('file');
+      });
+      if (uploadItem) {
+        console.log('[BOLTHAVEN] Clicking upload menu item:', uploadItem.textContent?.trim());
+        clickElementSafely(uploadItem);
+        await new Promise((r) => setTimeout(r, 250));
+      }
+
+      fileInputs = Array.from(document.querySelectorAll('input[type="file"], input[accept*="image"]'));
+      targetInput = fileInputs.find((i) => (i.accept || '').includes('image')) ||
+                    fileInputs[fileInputs.length - 1] ||
+                    fileInputs[0];
+    }
+    return targetInput || null;
+  }
+
   // Attach a single image File into the ChatGPT composer cleanly without duplicating
   async function attachImageFileToComposer(inputEl, file, maxExpected = 1, minExpected = 1, dataUrlHint = null) {
     const targetInputArea = inputEl || findPromptInput();
@@ -1557,22 +1589,7 @@
     dt.items.add(file);
 
     // Method A: Native input[type="file"]
-    let fileInputs = Array.from(document.querySelectorAll('input[type="file"], input[accept*="image"]'));
-    let targetInput = fileInputs.find((i) => (i.accept || '').includes('image')) ||
-                      fileInputs[fileInputs.length - 1] ||
-                      fileInputs[0];
-
-    // If no file input in DOM, click attachment (+) button to reveal it
-    if (!targetInput) {
-      const plusBtn = findAttachmentButton();
-      if (plusBtn) {
-        clickElementSafely(plusBtn);
-        await new Promise((r) => setTimeout(r, 250));
-        fileInputs = Array.from(document.querySelectorAll('input[type="file"], input[accept*="image"]'));
-        targetInput = fileInputs.find((i) => (i.accept || '').includes('image')) || fileInputs[fileInputs.length - 1] || fileInputs[0];
-      }
-    }
-
+    const targetInput = await ensureChatGPTFileInput();
     if (targetInput) {
       try {
         const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'files')?.set;
@@ -1655,10 +1672,17 @@
     }
 
     // Method D: Drag & Drop
-    if (targetInputArea) {
+    const dropTargets = [
+      targetInputArea,
+      document.querySelector('form'),
+      getComposerContainer(inputEl),
+      document.body
+    ].filter(Boolean);
+
+    for (const dropTarget of dropTargets) {
       try {
         const dropEv = new DragEvent('drop', { bubbles: true, cancelable: true, composed: true, dataTransfer: dt });
-        targetInputArea.dispatchEvent(dropEv);
+        dropTarget.dispatchEvent(dropEv);
       } catch (e) {}
     }
 
