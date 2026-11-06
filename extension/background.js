@@ -1327,7 +1327,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       chrome.scripting.executeScript({
         target: { tabId },
         world: 'MAIN',
-        func: (dUrl, fName) => {
+        func: async (dUrl, fName) => {
           try {
             // Safe synchronous Base64 conversion without fetch (immune to ChatGPT CSP!)
             const parts = dUrl.split(',');
@@ -1358,12 +1358,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
               );
               if (attachBtn) {
                 attachBtn.click();
+                await new Promise((r) => setTimeout(r, 250));
                 const menuItems = Array.from(document.querySelectorAll('[role="menuitem"], [role="menu"] button, div[class*="popover"] button'));
                 const uploadItem = menuItems.find((el) => {
                   const t = (el.textContent || '').toLowerCase();
                   return t.includes('upload') || t.includes('computer') || t.includes('photo') || t.includes('file');
                 });
-                if (uploadItem) uploadItem.click();
+                if (uploadItem) {
+                  uploadItem.click();
+                  await new Promise((r) => setTimeout(r, 250));
+                }
 
                 fileInputs = Array.from(document.querySelectorAll('input[type="file"]'));
                 fileInput = fileInputs.find((i) => (i.accept || '').includes('image')) ||

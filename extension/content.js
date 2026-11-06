@@ -803,12 +803,12 @@
     if (allImgCards.length > 0) return allImgCards[allImgCards.length - 1];
 
     // 1. Assistant turns (from newest to oldest)
-    const assistantTurns = Array.from(document.querySelectorAll(
+    const allAssistantTurns = Array.from(document.querySelectorAll(
       'div[data-message-author-role="assistant"], article[data-testid*="conversation-turn"], article'
     ));
 
-    for (let i = assistantTurns.length - 1; i >= 0; i--) {
-      const turn = assistantTurns[i];
+    for (let i = allAssistantTurns.length - 1; i >= 0; i--) {
+      const turn = allAssistantTurns[i];
       if (turn.getAttribute('data-message-author-role') === 'user') continue;
       if (turn.querySelector('[data-message-author-role="user"]')) continue;
 
@@ -939,7 +939,7 @@
     if (candidateImgs.length > 0) return candidateImgs[candidateImgs.length - 1];
 
     // 1. Assistant turns (strictly from newest to oldest, excluding user turns)
-    const assistantTurns = Array.from(
+    const allAssistantTurns = Array.from(
       document.querySelectorAll(
         'div[data-message-author-role="assistant"], article[data-testid*="conversation-turn"], article'
       )
@@ -951,8 +951,8 @@
       return true;
     });
 
-    for (let i = assistantTurns.length - 1; i >= 0; i--) {
-      const turn = assistantTurns[i];
+    for (let i = allAssistantTurns.length - 1; i >= 0; i--) {
+      const turn = allAssistantTurns[i];
       const imgs = Array.from(turn.querySelectorAll('img')).filter((img) => {
         const src = img.src || img.getAttribute('src') || '';
         if (!src || preUrls.has(src)) return false;
