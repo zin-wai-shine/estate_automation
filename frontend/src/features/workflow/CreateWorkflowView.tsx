@@ -67,7 +67,7 @@ import { HiSparkles } from 'react-icons/hi2';
 import { BsPinAngle, BsPinAngleFill } from 'react-icons/bs';
 import { useTheme } from '../../context/ThemeContext';
 
-export function injectListingCodeIntoPrompt(
+function injectListingCodeIntoPrompt(
   prompt: string,
   listingCode: string,
   useGeneratedCode: boolean = true
