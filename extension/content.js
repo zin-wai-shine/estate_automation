@@ -1568,9 +1568,6 @@
     let currentCount = getAttachedImagesCount(inputEl);
     if (currentCount >= minExpected) {
       console.log(`[BOLTHAVEN] Image already present in composer (${currentCount} attached). Skipping duplicate attach.`);
-      if (maxExpected === 1 && currentCount > 1) {
-        await pruneExcessAttachments(inputEl, 1);
-      }
       return true;
     }
 
@@ -1578,9 +1575,6 @@
     if (maxExpected === 1 && currentCount > 0) {
       console.log(`[BOLTHAVEN] Clearing ${currentCount} leftover attachments before attaching single image...`);
       await pruneExcessAttachments(inputEl, 0);
-      await new Promise((r) => setTimeout(r, 300));
-    } else if (maxExpected > 1 && currentCount >= maxExpected) {
-      await pruneExcessAttachments(inputEl, maxExpected - 1);
       await new Promise((r) => setTimeout(r, 300));
     }
 
@@ -1597,7 +1591,7 @@
     const dt = new DataTransfer();
     dt.items.add(file);
 
-    // Method A: Native input[type="file"]
+    // PRIMARY: Native input[type="file"]
     const targetInput = await ensureChatGPTFileInput();
     if (targetInput) {
       try {
@@ -1629,40 +1623,31 @@
       await new Promise((r) => setTimeout(r, 150));
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }));
 
-      const attachedMethodA = await waitForImageAttached(inputEl, 1500, minExpected);
+      // Wait up to 6 seconds for the single attachment to register
+      const attachedMethodA = await waitForImageAttached(inputEl, 6000, minExpected);
       if (attachedMethodA) {
-        console.log(`[BOLTHAVEN] ✓ Method A (file input) attached image successfully (${getAttachedImagesCount(inputEl)}/${minExpected} attached)`);
-        if (maxExpected === 1 && getAttachedImagesCount(inputEl) > 1) {
-          await pruneExcessAttachments(inputEl, 1);
-        }
+        console.log(`[BOLTHAVEN] ✓ Attached image successfully (${getAttachedImagesCount(inputEl)} attached)`);
         return true;
       }
     }
 
-    // Method B (ONLY if Method A didn't attach): MAIN world attachment injection
+    // FALLBACK ONLY: If native file input didn't register after 6s, try MAIN world injection ONCE
     if (getAttachedImagesCount(inputEl) < minExpected && effectiveDataUrl && typeof effectiveDataUrl === 'string' && effectiveDataUrl.startsWith('data:')) {
       try {
-        console.log('[BOLTHAVEN] Injecting ATTACH_IMAGE_MAIN_WORLD into MAIN world context...');
+        console.log('[BOLTHAVEN] Fallback: Injecting ATTACH_IMAGE_MAIN_WORLD into MAIN world context...');
         await new Promise((res) => {
           chrome.runtime.sendMessage({
             action: 'ATTACH_IMAGE_MAIN_WORLD',
             dataUrl: effectiveDataUrl,
             filename: file.name || 'property_image.jpg',
           }, (mRes) => {
-            if (chrome.runtime.lastError) {
-              res(false);
-            } else {
-              res(mRes?.success ?? false);
-            }
+            res(mRes?.success ?? false);
           });
         });
 
-        const attachedMethodB = await waitForImageAttached(inputEl, 2000, minExpected);
+        const attachedMethodB = await waitForImageAttached(inputEl, 6000, minExpected);
         if (attachedMethodB) {
-          console.log(`[BOLTHAVEN] ✓ Method B (MAIN world) attached image successfully (${getAttachedImagesCount(inputEl)}/${minExpected} attached)`);
-          if (maxExpected === 1 && getAttachedImagesCount(inputEl) > 1) {
-            await pruneExcessAttachments(inputEl, 1);
-          }
+          console.log(`[BOLTHAVEN] ✓ Attached image via MAIN world (${getAttachedImagesCount(inputEl)} attached)`);
           return true;
         }
       } catch (e) {
@@ -1670,38 +1655,7 @@
       }
     }
 
-    // Method C (ONLY if Method A and B didn't attach): Single drop on prompt textarea
-    if (getAttachedImagesCount(inputEl) < minExpected && targetInputArea) {
-      try {
-        const dropEv = new DragEvent('drop', { bubbles: true, cancelable: true, composed: true, dataTransfer: dt });
-        targetInputArea.dispatchEvent(dropEv);
-      } catch (e) {}
-
-      const attachedMethodC = await waitForImageAttached(inputEl, 1500, minExpected);
-      if (attachedMethodC) {
-        console.log(`[BOLTHAVEN] ✓ Method C (drop) attached image successfully (${getAttachedImagesCount(inputEl)}/${minExpected} attached)`);
-        if (maxExpected === 1 && getAttachedImagesCount(inputEl) > 1) {
-          await pruneExcessAttachments(inputEl, 1);
-        }
-        return true;
-      }
-    }
-
-    // Method D (ONLY if all else failed): Synthetic paste event
-    if (getAttachedImagesCount(inputEl) < minExpected && targetInputArea) {
-      try {
-        targetInputArea.focus();
-        const pasteEv = new ClipboardEvent('paste', { bubbles: true, cancelable: true, composed: true });
-        Object.defineProperty(pasteEv, 'clipboardData', { value: dt, writable: false });
-        targetInputArea.dispatchEvent(pasteEv);
-      } catch (e) {}
-    }
-
-    const finalAttached = await waitForImageAttached(inputEl, 2000, minExpected);
-    if (finalAttached && maxExpected === 1 && getAttachedImagesCount(inputEl) > 1) {
-      await pruneExcessAttachments(inputEl, 1);
-    }
-    return finalAttached;
+    return getAttachedImagesCount(inputEl) >= minExpected;
   }
 
   // Attach image via data URL or web URL cleanly
@@ -2034,17 +1988,18 @@
       throw new Error('Job stopped by user');
     }
 
-    // 3. Set prompt text below the attached image
+    // 3. Set prompt text below the attached image (re-query DOM for live input in case of React remount)
     const promptText = (job.resolved_prompt || 'Enhance the attached architectural photo').trim();
     console.log(`[BOLTHAVEN] Setting prompt text (${promptText.length} chars)...`);
 
-    await setPromptTextAsync(input, promptText, 3500);
+    const liveInput = findPromptInput() || input;
+    await setPromptTextAsync(liveInput, promptText, 4000);
 
     // If still empty, apply direct ProseMirror paragraph insertion
-    let composerText = getComposerText(input);
+    let composerText = getComposerText(findPromptInput() || liveInput);
     if (!composerText || composerText.length < 5) {
       try {
-        const pm = input || findPromptInput();
+        const pm = findPromptInput() || liveInput;
         if (pm) {
           pm.focus();
           let p = pm.querySelector('p');
@@ -2063,7 +2018,7 @@
       } catch (e) {}
     }
 
-    composerText = getComposerText(input);
+    composerText = getComposerText(findPromptInput() || liveInput);
     await new Promise((r) => setTimeout(r, 300));
 
     if (activeJobAborted) {
