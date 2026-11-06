@@ -1,5 +1,5 @@
 {
-  "timestamp": 1793944374342,
+  "timestamp": 1793946943623,
   "workflow_formats": [
     {
       "config": {
@@ -1040,11 +1040,6 @@
             "toNodeId": "combine-box-1793369429228"
           },
           {
-            "fromNodeId": "ai-box-watermark-1793452054039",
-            "id": "conn-wm2-to-combine",
-            "toNodeId": "combine-box-1793369429228"
-          },
-          {
             "fromNodeId": "ai-box-1793055437331",
             "id": "conn-preset-ai-box-1793055437331",
             "toNodeId": "ai-box-content-main"
@@ -1219,7 +1214,7 @@
       "id": "format-1792648980268",
       "isPinned": true,
       "name": "Download FB Post",
-      "updatedAt": 1793944373824
+      "updatedAt": 1793946943114
     },
     {
       "config": {

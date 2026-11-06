@@ -3716,6 +3716,27 @@ export const FacebookWorkflowCanvas = forwardRef<
     setSheetSyncErrorMessage(null);
   }, [(activeModalNode as any)?.boxId, activeModalNode?.type]);
 
+  // Automatically disconnect FB Hero Cut from Combine Box if connected
+  useEffect(() => {
+    const hasHeroToCombine = (config.connections || []).some((c) => {
+      const isCombine = c.toNodeId.startsWith('combine-box') || (config.combineBoxes || []).some((b) => b.id === c.toNodeId);
+      if (!isCombine) return false;
+      const fromBox = config.aiBoxes.find((b) => b.id === c.fromNodeId);
+      return Boolean(fromBox && (fromBox.title?.toLowerCase().includes('hero cut') || fromBox.cropFormatId === 'format-grid-2split' || fromBox.imageSource === 'generate'));
+    });
+    if (hasHeroToCombine) {
+      updateConfig({
+        ...config,
+        connections: (config.connections || []).filter((c) => {
+          const isCombine = c.toNodeId.startsWith('combine-box') || (config.combineBoxes || []).some((b) => b.id === c.toNodeId);
+          if (!isCombine) return true;
+          const fromBox = config.aiBoxes.find((b) => b.id === c.fromNodeId);
+          return !Boolean(fromBox && (fromBox.title?.toLowerCase().includes('hero cut') || fromBox.cropFormatId === 'format-grid-2split' || fromBox.imageSource === 'generate'));
+        }),
+      });
+    }
+  }, [config.connections, config.combineBoxes, config.aiBoxes]);
+
   // Dedicated Connect Items Drawer (opened via [+] node button)
   const [connectDrawerNode, setConnectDrawerNode] = useState<{
     nodeId: string;
@@ -3910,6 +3931,10 @@ export const FacebookWorkflowCanvas = forwardRef<
     return conns
       .map((c) => {
         const fromBox = config.aiBoxes.find((b) => b.id === c.fromNodeId);
+        // Exclude FB Hero Cut from Combine Box
+        if (fromBox && (fromBox.title?.toLowerCase().includes('hero cut') || fromBox.cropFormatId === 'format-grid-2split' || fromBox.imageSource === 'generate')) {
+          return null;
+        }
         const isImages = c.fromNodeId === 'get-images';
         const isWatermark = fromBox ? isWatermarkAIBox(fromBox) : false;
         const isCrop = fromBox ? (fromBox.processType === 'image_crop' || fromBox.title?.toLowerCase().includes('cut') || fromBox.title?.toLowerCase().includes('crop')) : false;
@@ -3933,7 +3958,14 @@ export const FacebookWorkflowCanvas = forwardRef<
   }, [activeModalNode, config.combineBoxes, config.connections, config.aiBoxes, combineMediaAssets, images, allEnhancedPhotos]);
 
   useEffect(() => {
-    const watermarkBoxes = (config.aiBoxes || []).filter((b) => isWatermarkAIBox(b) && b.enabled !== false);
+    const watermarkBoxes = (config.aiBoxes || []).filter(
+      (b) =>
+        isWatermarkAIBox(b) &&
+        b.enabled !== false &&
+        !b.title?.toLowerCase().includes('hero cut') &&
+        b.cropFormatId !== 'format-grid-2split' &&
+        b.imageSource !== 'generate'
+    );
     if (watermarkBoxes.length === 0) {
       setCombineCropSlices([]);
       setCombineMediaAssets([]);
@@ -5096,6 +5128,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     if (isTargetCombine) {
       if (fromId === 'trigger' || fromId === toId) return false;
       if (fromBox && isTextFormatAIBox(fromBox)) return false;
+      if (fromBox && (fromBox.title?.toLowerCase().includes('hero cut') || fromBox.cropFormatId === 'format-grid-2split' || fromBox.imageSource === 'generate')) return false;
       return true;
     }
 
@@ -10843,7 +10876,15 @@ export const FacebookWorkflowCanvas = forwardRef<
             ? (config.combineBoxes || []).find((b) => b.id === combineId) || config.combineBoxes?.[0]
             : null;
           const combineInputs = isCombine && currentCombineBox
-            ? (config.connections || []).filter((c) => c.toNodeId === currentCombineBox.id)
+            ? (config.connections || [])
+                .filter((c) => c.toNodeId === currentCombineBox.id)
+                .filter((c) => {
+                  const fromBox = config.aiBoxes.find((b) => b.id === c.fromNodeId);
+                  if (fromBox && (fromBox.title?.toLowerCase().includes('hero cut') || fromBox.cropFormatId === 'format-grid-2split' || fromBox.imageSource === 'generate')) {
+                    return false;
+                  }
+                  return true;
+                })
             : [];
 
           return (
