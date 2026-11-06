@@ -57,7 +57,11 @@ import {
   FiSettings,
   FiTag,
   FiHash,
+  FiFolderPlus,
+  FiArchive,
+  FiChevronUp,
 } from 'react-icons/fi';
+import JSZip from 'jszip';
 import { FaFacebook, FaFacebookF, FaInstagram, FaTiktok, FaChrome } from 'react-icons/fa';
 import { SiGooglegemini, SiGooglesheets } from 'react-icons/si';
 import { HiSparkles } from 'react-icons/hi2';
@@ -3901,6 +3905,97 @@ export const FacebookWorkflowCanvas = forwardRef<
         await new Promise((r) => setTimeout(r, 350));
       }
     }
+  };
+
+  const [activeCombineDownloadMenuId, setActiveCombineDownloadMenuId] = useState<string | null>(null);
+
+  const handleDownloadCombineAssetsDirectly = async (assetsToDownload: CombineMediaAssetItem[]) => {
+    setActiveCombineDownloadMenuId(null);
+    await handleDownloadAllCombineAssets(assetsToDownload);
+  };
+
+  const handleDownloadCombineAssetsToFolder = async (assetsToDownload: CombineMediaAssetItem[], title: string, boxConfig?: any) => {
+    setActiveCombineDownloadMenuId(null);
+    const cleanTitle = (title || 'Photos').replace(/^Format:\s*/i, '').replace(/[\/\\?%*:|"<>]/g, '').trim();
+    const targetDir = boxConfig?.downloadFolder || localStorage.getItem('ea_crop_download_folder') || '/Downloads';
+
+    try {
+      const payloadFiles = assetsToDownload.map((a, idx) => {
+        const ext = a.url.includes('.png') ? 'png' : 'jpg';
+        return {
+          filename: `${cleanTitle}-${idx + 1}.${ext}`,
+          data: a.url,
+        };
+      });
+
+      const res = await fetch('http://localhost:8085/api/facebook-import/save-to-folder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          target_directory: targetDir,
+          folder_name: cleanTitle,
+          files: payloadFiles,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn('Backend save-to-folder error, falling back to ZIP:', err);
+    }
+
+    await handleDownloadCombineAssetsZip(assetsToDownload, cleanTitle);
+  };
+
+  const handleDownloadCombineAssetsZip = async (assetsToDownload: CombineMediaAssetItem[], title: string) => {
+    setActiveCombineDownloadMenuId(null);
+    const cleanTitle = (title || 'Photos').replace(/^Format:\s*/i, '').replace(/[\/\\?%*:|"<>]/g, '').trim();
+    const zip = new JSZip();
+    const folder = zip.folder(cleanTitle);
+
+    for (let i = 0; i < assetsToDownload.length; i++) {
+      const a = assetsToDownload[i];
+      const ext = a.url.includes('.png') ? 'png' : 'jpg';
+      const filename = `${cleanTitle}-${i + 1}.${ext}`;
+      try {
+        let blob: Blob;
+        if (a.url.startsWith('data:')) {
+          const commaIdx = a.url.indexOf(',');
+          const base64Data = a.url.slice(commaIdx + 1);
+          const binaryStr = atob(base64Data);
+          const bytes = new Uint8Array(binaryStr.length);
+          for (let b = 0; b < binaryStr.length; b++) bytes[b] = binaryStr.charCodeAt(b);
+          blob = new Blob([bytes], { type: ext === 'png' ? 'image/png' : 'image/jpeg' });
+        } else {
+          const fullUrl = a.url.startsWith('/storage') ? `http://localhost:8085${a.url}` : a.url;
+          const resp = await fetch(fullUrl, { mode: 'cors' });
+          blob = await resp.blob();
+        }
+        if (folder) {
+          folder.file(filename, blob);
+        } else {
+          zip.file(`${cleanTitle}/${filename}`, blob);
+        }
+      } catch (err) {
+        console.warn('Zip asset fetch error:', err);
+      }
+    }
+
+    const zipBlob = await zip.generateAsync({ type: 'blob' });
+    const blobUrl = URL.createObjectURL(zipBlob);
+    const anchor = document.createElement('a');
+    anchor.href = blobUrl;
+    anchor.download = `${cleanTitle}.zip`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    setTimeout(() => {
+      try { URL.revokeObjectURL(blobUrl); } catch (_) {}
+    }, 30000);
   };
 
   const connectedImageNodesForCombine = useMemo(() => {
@@ -11837,12 +11932,12 @@ export const FacebookWorkflowCanvas = forwardRef<
                                     )}
                                   </div>
 
-                                  {/* Clean Neutral Download Button */}
+                                  {/* Clean Neutral Download Button & Dropdown */}
                                   {boxAssets.length > 0 && (
-                                    <div style={{ display: 'flex', alignItems: 'center' }}>
+                                    <div style={{ position: 'relative' }}>
                                       <button
                                         type="button"
-                                        onClick={() => handleDownloadAllCombineAssets(boxAssets)}
+                                        onClick={() => setActiveCombineDownloadMenuId((prev) => (prev === c.id ? null : c.id))}
                                         style={{
                                           width: '100%',
                                           height: '28px',
@@ -11872,7 +11967,154 @@ export const FacebookWorkflowCanvas = forwardRef<
                                       >
                                         <FiDownload size={11} />
                                         <span>Download</span>
+                                        {activeCombineDownloadMenuId === c.id ? <FiChevronUp size={11} /> : <FiChevronDown size={11} />}
                                       </button>
+
+                                      {activeCombineDownloadMenuId === c.id && (
+                                        <div
+                                          style={{
+                                            position: 'absolute',
+                                            top: '100%',
+                                            left: 0,
+                                            right: 0,
+                                            marginTop: '4px',
+                                            borderRadius: '8px',
+                                            border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                            backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                                            boxShadow: isDark
+                                              ? '0 10px 25px rgba(0, 0, 0, 0.6), 0 2px 6px rgba(0, 0, 0, 0.4)'
+                                              : '0 8px 20px rgba(0, 0, 0, 0.12)',
+                                            padding: '4px',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: '2px',
+                                            zIndex: 100,
+                                          }}
+                                        >
+                                          {/* Directly to Downloads */}
+                                          <div
+                                            onClick={() => handleDownloadCombineAssetsDirectly(boxAssets)}
+                                            style={{
+                                              display: 'flex',
+                                              alignItems: 'center',
+                                              gap: '8px',
+                                              padding: '6px 8px',
+                                              borderRadius: '6px',
+                                              cursor: 'pointer',
+                                              transition: 'background-color 0.15s ease',
+                                            }}
+                                            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.07)' : 'rgba(0, 0, 0, 0.04)')}
+                                            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                                          >
+                                            <div
+                                              style={{
+                                                width: '26px',
+                                                height: '26px',
+                                                borderRadius: '6px',
+                                                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
+                                                border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                                color: 'var(--text-secondary)',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                flexShrink: 0,
+                                              }}
+                                            >
+                                              <FiDownload size={13} />
+                                            </div>
+                                            <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                                              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                                Directly to Downloads Folder
+                                              </span>
+                                              <span style={{ fontSize: '0.59375rem', color: 'var(--text-muted)' }}>
+                                                Save all {boxAssets.length} photos directly
+                                              </span>
+                                            </div>
+                                          </div>
+
+                                          {/* Create Folders in Downloads */}
+                                          <div
+                                            onClick={() => handleDownloadCombineAssetsToFolder(boxAssets, fromTitle, fromBox)}
+                                            style={{
+                                              display: 'flex',
+                                              alignItems: 'center',
+                                              gap: '8px',
+                                              padding: '6px 8px',
+                                              borderRadius: '6px',
+                                              cursor: 'pointer',
+                                              transition: 'background-color 0.15s ease',
+                                            }}
+                                            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.07)' : 'rgba(0, 0, 0, 0.04)')}
+                                            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                                          >
+                                            <div
+                                              style={{
+                                                width: '26px',
+                                                height: '26px',
+                                                borderRadius: '6px',
+                                                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
+                                                border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                                color: 'var(--text-secondary)',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                flexShrink: 0,
+                                              }}
+                                            >
+                                              <FiFolderPlus size={13} />
+                                            </div>
+                                            <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                                              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                                Create Folders in Downloads
+                                              </span>
+                                              <span style={{ fontSize: '0.59375rem', color: 'var(--text-muted)' }}>
+                                                Saves directly into /Downloads/{(fromTitle || 'Photos').replace(/^Format:\s*/i, '')}/
+                                              </span>
+                                            </div>
+                                          </div>
+
+                                          {/* Download ZIP with Folders */}
+                                          <div
+                                            onClick={() => handleDownloadCombineAssetsZip(boxAssets, fromTitle)}
+                                            style={{
+                                              display: 'flex',
+                                              alignItems: 'center',
+                                              gap: '8px',
+                                              padding: '6px 8px',
+                                              borderRadius: '6px',
+                                              cursor: 'pointer',
+                                              transition: 'background-color 0.15s ease',
+                                            }}
+                                            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.07)' : 'rgba(0, 0, 0, 0.04)')}
+                                            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                                          >
+                                            <div
+                                              style={{
+                                                width: '26px',
+                                                height: '26px',
+                                                borderRadius: '6px',
+                                                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
+                                                border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                                color: 'var(--text-secondary)',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                flexShrink: 0,
+                                              }}
+                                            >
+                                              <FiArchive size={13} />
+                                            </div>
+                                            <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                                              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                                Download ZIP with Folders
+                                              </span>
+                                              <span style={{ fontSize: '0.59375rem', color: 'var(--text-muted)' }}>
+                                                Bundle in {(fromTitle || 'Photos').replace(/^Format:\s*/i, '')}.zip
+                                              </span>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      )}
                                     </div>
                                   )}
                                 </div>

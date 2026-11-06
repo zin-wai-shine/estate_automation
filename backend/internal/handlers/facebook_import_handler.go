@@ -1,9 +1,13 @@
 package handlers
 
 import (
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -704,6 +708,113 @@ func GenerateAICopy(c *fiber.Ctx) error {
 		"generated_content": generatedText,
 		"template_name":     req.TemplateName,
 		"provider":          provider,
+	})
+}
+
+type LocalFolderFile struct {
+	Filename string `json:"filename"`
+	Data     string `json:"data"` // base64 data-url or http url
+}
+
+type SaveToFolderRequest struct {
+	TargetDirectory string            `json:"target_directory"`
+	FolderName      string            `json:"folder_name"`
+	Files           []LocalFolderFile `json:"files"`
+}
+
+// SavePhotosToLocalFolder saves photo files directly into the user's Downloads or specified local folder
+func SavePhotosToLocalFolder(c *fiber.Ctx) error {
+	var req SaveToFolderRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"success": false,
+			"error":   "Invalid request payload",
+		})
+	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		homeDir = "/tmp"
+	}
+
+	baseDir := filepath.Join(homeDir, "Downloads")
+	if req.TargetDirectory != "" && req.TargetDirectory != "/Downloads" && req.TargetDirectory != "Downloads" {
+		expanded := req.TargetDirectory
+		if strings.HasPrefix(expanded, "~/") {
+			expanded = filepath.Join(homeDir, expanded[2:])
+		} else if strings.HasPrefix(expanded, "/Downloads") {
+			expanded = filepath.Join(homeDir, expanded[1:])
+		} else if !filepath.IsAbs(expanded) {
+			expanded = filepath.Join(homeDir, expanded)
+		}
+		baseDir = expanded
+	}
+
+	folderName := strings.TrimSpace(req.FolderName)
+	if folderName == "" {
+		folderName = "Photos"
+	}
+	invalidChars := regexp.MustCompile(`[/\\?%*:|"<>]+`)
+	cleanFolderName := invalidChars.ReplaceAllString(folderName, "-")
+	cleanFolderName = strings.Trim(cleanFolderName, " .-")
+	if cleanFolderName == "" {
+		cleanFolderName = "Photos"
+	}
+
+	targetFolder := filepath.Join(baseDir, cleanFolderName)
+	if err := os.MkdirAll(targetFolder, 0755); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"success": false,
+			"error":   fmt.Sprintf("Failed to create folder: %v", err),
+		})
+	}
+
+	savedCount := 0
+	for _, f := range req.Files {
+		if f.Filename == "" || f.Data == "" {
+			continue
+		}
+		cleanName := filepath.Base(invalidChars.ReplaceAllString(f.Filename, "-"))
+		filePath := filepath.Join(targetFolder, cleanName)
+
+		var fileBytes []byte
+		if strings.HasPrefix(f.Data, "data:") {
+			parts := strings.SplitN(f.Data, ",", 2)
+			if len(parts) == 2 {
+				b, err := base64.StdEncoding.DecodeString(parts[1])
+				if err == nil {
+					fileBytes = b
+				}
+			}
+		} else if strings.HasPrefix(f.Data, "http://") || strings.HasPrefix(f.Data, "https://") {
+			resp, err := http.Get(f.Data)
+			if err == nil && resp.StatusCode == 200 {
+				b, _ := io.ReadAll(resp.Body)
+				resp.Body.Close()
+				fileBytes = b
+			}
+		} else if strings.HasPrefix(f.Data, "/storage/") {
+			localPath := filepath.Join("storage", strings.TrimPrefix(f.Data, "/storage/"))
+			b, err := os.ReadFile(localPath)
+			if err == nil {
+				fileBytes = b
+			}
+		}
+
+		if len(fileBytes) > 0 {
+			if err := os.WriteFile(filePath, fileBytes, 0644); err == nil {
+				savedCount++
+			}
+		}
+	}
+
+	// Reveal in Finder if possible
+	_ = exec.Command("open", targetFolder).Start()
+
+	return c.JSON(fiber.Map{
+		"success":     true,
+		"folder_path": targetFolder,
+		"saved_count": savedCount,
 	})
 }
 

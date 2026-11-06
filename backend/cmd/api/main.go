@@ -160,6 +160,7 @@ func main() {
 	fbImport.Get("/proxy-image", handlers.ProxyFacebookImage)
 	fbImport.Post("/generate-ai", handlers.GenerateAICopy)
 	fbImport.Post("/enhance-image", handlers.EnhanceVisionImage)
+	fbImport.Post("/save-to-folder", handlers.SavePhotosToLocalFolder)
 
 	// Property Import & Multi-Provider Pipeline Routes
 	props := app.Group("/api/properties")

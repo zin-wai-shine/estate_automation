@@ -250,40 +250,37 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     setIsDownloading(true);
 
     try {
-      if ('showDirectoryPicker' in window) {
-        try {
-          const rootDirHandle = await (window as any).showDirectoryPicker({ mode: 'readwrite' });
-          const subDirHandle = await rootDirHandle.getDirectoryHandle(cleanBoxName, { create: true });
+      const payloadFiles = displayPreviewItems.map((item, i) => {
+        const fileNum = item.tileIndex ? `tile-${item.tileIndex}` : `${i + 1}`;
+        const ext = item.url.includes('.png') ? 'png' : 'jpg';
+        return {
+          filename: `${cleanBoxName}-${fileNum}.${ext}`,
+          data: item.url,
+        };
+      });
 
-          for (let i = 0; i < displayPreviewItems.length; i++) {
-            const item = displayPreviewItems[i];
-            const fileNum = item.tileIndex ? `tile-${item.tileIndex}` : `${i + 1}`;
-            const ext = item.url.includes('.png') ? 'png' : 'jpg';
-            const fileName = `${cleanBoxName}-${fileNum}.${ext}`;
+      const res = await fetch('http://localhost:8085/api/facebook-import/save-to-folder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          target_directory: configuredFolder,
+          folder_name: cleanBoxName,
+          files: payloadFiles,
+        }),
+      });
 
-            const blob = await fetchBlobFromUrl(item.url);
-            const fileHandle = await subDirHandle.getFileHandle(fileName, { create: true });
-            const writable = await fileHandle.createWritable();
-            await writable.write(blob);
-            await writable.close();
-          }
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
           setIsDownloading(false);
           return;
-        } catch (pickerErr: any) {
-          if (pickerErr.name === 'AbortError') {
-            setIsDownloading(false);
-            return;
-          }
-          console.warn('showDirectoryPicker fallback to ZIP:', pickerErr);
         }
       }
-
-      await handleDownloadZipWithFolders();
     } catch (err) {
-      console.error('Download with folder error:', err);
-    } finally {
-      setIsDownloading(false);
+      console.warn('Backend save-to-folder error, falling back to ZIP:', err);
     }
+
+    await handleDownloadZipWithFolders();
   };
 
   const handleDownloadZipWithFolders = async () => {
@@ -1205,7 +1202,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
             </span>
           </div>
 
-          {/* Download All Button with Dropdown (Styled matching Image 4) */}
+          {/* Download All Button with Dropdown (Sleek Studio Design) */}
           <div ref={downloadDropdownRef} style={{ position: 'relative', marginTop: '4px' }}>
             <button
               type="button"
@@ -1213,57 +1210,60 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
               onClick={() => setIsDownloadDropdownOpen((prev) => !prev)}
               style={{
                 width: '100%',
-                height: '38px',
-                padding: '0 14px',
-                borderRadius: '8px',
-                border: isDark ? '1px solid #484F58' : '1px solid #CBD5E1',
-                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#FFFFFF',
-                color: 'var(--text-primary)',
-                fontSize: '0.8125rem',
+                height: '32px',
+                padding: '0 12px',
+                borderRadius: '6px',
+                border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+                color: 'var(--text-secondary)',
+                fontSize: '0.75rem',
                 fontWeight: 600,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: '8px',
+                gap: '6px',
                 cursor: isDownloading ? 'wait' : 'pointer',
                 transition: 'all 0.15s ease',
-                boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.3)' : '0 1px 2px rgba(0,0,0,0.05)',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.09)' : 'rgba(0, 0, 0, 0.04)';
-                e.currentTarget.style.borderColor = isDark ? '#6E7681' : '#94A3B8';
+                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.09)' : 'rgba(0, 0, 0, 0.08)';
+                e.currentTarget.style.borderColor = isDark ? '#484F58' : '#CBD5E1';
+                e.currentTarget.style.color = 'var(--text-primary)';
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.05)' : '#FFFFFF';
-                e.currentTarget.style.borderColor = isDark ? '#484F58' : '#CBD5E1';
+                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)';
+                e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
+                e.currentTarget.style.color = 'var(--text-secondary)';
               }}
             >
-              <FiDownload size={15} style={{ color: 'var(--text-secondary)' }} />
+              <FiDownload size={12} />
               <span>
                 {isDownloading
                   ? 'Downloading...'
                   : `Download All (${displayPreviewItems.length} ${isGridFormat && displayPreviewItems.length > 1 ? 'Tiles' : 'Photos'})`}
               </span>
-              {isDownloadDropdownOpen ? <FiChevronUp size={15} /> : <FiChevronDown size={15} />}
+              {isDownloadDropdownOpen ? <FiChevronUp size={12} /> : <FiChevronDown size={12} />}
             </button>
 
-            {/* Dropdown Popover (Exact match to Image 4) */}
+            {/* Dropdown Popover (Opens downward, clean compact design) */}
             {isDownloadDropdownOpen && (
               <div
                 style={{
                   position: 'absolute',
-                  bottom: '100%',
+                  top: '100%',
                   left: 0,
                   right: 0,
-                  marginBottom: '8px',
-                  borderRadius: '12px',
-                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                  marginTop: '4px',
+                  borderRadius: '8px',
+                  border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
                   backgroundColor: isDark ? '#161B22' : '#FFFFFF',
-                  boxShadow: '0 12px 28px rgba(0, 0, 0, 0.55), 0 4px 10px rgba(0, 0, 0, 0.3)',
-                  padding: '6px',
+                  boxShadow: isDark
+                    ? '0 10px 25px rgba(0, 0, 0, 0.6), 0 2px 6px rgba(0, 0, 0, 0.4)'
+                    : '0 8px 20px rgba(0, 0, 0, 0.12)',
+                  padding: '4px',
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: '4px',
+                  gap: '2px',
                   zIndex: 100,
                 }}
               >
@@ -1273,21 +1273,21 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '12px',
-                    padding: '10px 12px',
-                    borderRadius: '8px',
+                    gap: '10px',
+                    padding: '8px 10px',
+                    borderRadius: '6px',
                     cursor: 'pointer',
                     transition: 'background-color 0.15s ease',
                   }}
-                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)')}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.07)' : 'rgba(0, 0, 0, 0.04)')}
                   onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
                 >
                   <div
                     style={{
-                      width: '36px',
-                      height: '36px',
-                      borderRadius: '8px',
-                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.04)',
+                      width: '28px',
+                      height: '28px',
+                      borderRadius: '6px',
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
                       border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
                       color: 'var(--text-secondary)',
                       display: 'flex',
@@ -1296,13 +1296,13 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
                       flexShrink: 0,
                     }}
                   >
-                    <FiDownload size={18} />
+                    <FiDownload size={14} />
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
-                    <span style={{ fontSize: '0.84375rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                    <span style={{ fontSize: '0.78125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                       Directly to {displayFolderName} Folder
                     </span>
-                    <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                    <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
                       Save all {displayPreviewItems.length} photos directly
                     </span>
                   </div>
@@ -1314,21 +1314,21 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '12px',
-                    padding: '10px 12px',
-                    borderRadius: '8px',
+                    gap: '10px',
+                    padding: '8px 10px',
+                    borderRadius: '6px',
                     cursor: 'pointer',
                     transition: 'background-color 0.15s ease',
                   }}
-                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)')}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.07)' : 'rgba(0, 0, 0, 0.04)')}
                   onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
                 >
                   <div
                     style={{
-                      width: '36px',
-                      height: '36px',
-                      borderRadius: '8px',
-                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.04)',
+                      width: '28px',
+                      height: '28px',
+                      borderRadius: '6px',
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
                       border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
                       color: 'var(--text-secondary)',
                       display: 'flex',
@@ -1337,13 +1337,13 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
                       flexShrink: 0,
                     }}
                   >
-                    <FiFolderPlus size={18} />
+                    <FiFolderPlus size={14} />
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
-                    <span style={{ fontSize: '0.84375rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                    <span style={{ fontSize: '0.78125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                       Create Folders in {displayFolderName}
                     </span>
-                    <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                    <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
                       Creates folder /{cleanBoxName}/ with relative photos
                     </span>
                   </div>
@@ -1355,21 +1355,21 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '12px',
-                    padding: '10px 12px',
-                    borderRadius: '8px',
+                    gap: '10px',
+                    padding: '8px 10px',
+                    borderRadius: '6px',
                     cursor: 'pointer',
                     transition: 'background-color 0.15s ease',
                   }}
-                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)')}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.07)' : 'rgba(0, 0, 0, 0.04)')}
                   onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
                 >
                   <div
                     style={{
-                      width: '36px',
-                      height: '36px',
-                      borderRadius: '8px',
-                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.04)',
+                      width: '28px',
+                      height: '28px',
+                      borderRadius: '6px',
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
                       border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
                       color: 'var(--text-secondary)',
                       display: 'flex',
@@ -1378,14 +1378,14 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
                       flexShrink: 0,
                     }}
                   >
-                    <FiArchive size={18} />
+                    <FiArchive size={14} />
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
-                    <span style={{ fontSize: '0.84375rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                    <span style={{ fontSize: '0.78125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                       Download ZIP with Folders
                     </span>
-                    <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-                      Bundle /{cleanBoxName}/ in {cleanBoxName}.zip
+                    <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
+                      Bundle in {cleanBoxName}.zip with folder structure
                     </span>
                   </div>
                 </div>
