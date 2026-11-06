@@ -2165,7 +2165,9 @@ function mergeTabGroups(scannedGroups, liveGroups) {
         }
 
         if (buffer && buffer.length > 0) {
-          try { fs.writeFileSync(downloadFilePath, buffer); } catch (e) {}
+          if (!fs.existsSync(downloadFilePath)) {
+            try { fs.writeFileSync(downloadFilePath, buffer); } catch (e) {}
+          }
           try { fs.writeFileSync(processingFilePath, buffer); } catch (e) {}
           try { fs.writeFileSync(canvasCacheFilePath, buffer); } catch (e) {}
           try { fs.writeFileSync(backendStorageFilePath, buffer); } catch (e) {}

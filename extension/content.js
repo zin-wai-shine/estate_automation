@@ -585,35 +585,7 @@
       }
     }
 
-    // Tier 1: Direct Node.js Companion download and disk write (bypasses all browser sandbox & CORS restrictions!)
-    try {
-      console.log('[BOLTHAVEN] Tier 1: Requesting Node companion direct save for:', fileName);
-      const compResp = await fetch('http://127.0.0.1:9224/save-generated-image', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: companionUrl, filename: fileName }),
-      });
-      if (compResp.ok) {
-        console.log('[BOLTHAVEN] ✓ Companion wrote image directly to disk:', fileName);
-        // Direct companion save wrote cleanly to ~/Downloads without browser prompts or duplication!
-        return true;
-      }
-    } catch (e) {
-      console.log('[BOLTHAVEN] Companion direct save note:', e.message);
-    }
-
-    // Tier 2: Native ChatGPT UI Download (Direct button OR Share -> Modal -> Download OR Copy Image)
-    try {
-      const nativeTriggered = await triggerNativeChatGPTDownload(imgEl);
-      if (nativeTriggered) {
-        console.log('[BOLTHAVEN] ✓ Native ChatGPT download triggered for:', fileName);
-        return true;
-      }
-    } catch (e) {
-      console.log('[BOLTHAVEN] Native trigger download notice:', e.message);
-    }
-
-    // Tier 3: Background chrome.downloads API (handles cross-origin, custom filename)
+    // Tier 1: Primary Background chrome.downloads API (natively writes exact filename to ~/Downloads with 0 duplicates!)
     try {
       const dlUrl = companionUrl.startsWith('data:') ? companionUrl : finalUrl;
       const response = await new Promise((resolve) => {
@@ -630,12 +602,39 @@
       });
 
       if (response && response.success) {
-        console.log('[BOLTHAVEN] ✓ Successfully downloaded via chrome.downloads:', fileName);
+        console.log('[BOLTHAVEN] ✓ Downloaded cleanly via chrome.downloads:', fileName);
         return true;
       }
-      console.log('[BOLTHAVEN] chrome.downloads reported failure, attempting fallback...', response?.error);
+      console.log('[BOLTHAVEN] chrome.downloads note, trying fallback...', response?.error);
     } catch (e) {
       console.log('[BOLTHAVEN] chrome.downloads sendMessage failed:', e.message);
+    }
+
+    // Tier 2: Direct Node.js Companion download and disk write (fallback)
+    try {
+      console.log('[BOLTHAVEN] Tier 2: Requesting Node companion save for:', fileName);
+      const compResp = await fetch('http://127.0.0.1:9224/save-generated-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: companionUrl, filename: fileName }),
+      });
+      if (compResp.ok) {
+        console.log('[BOLTHAVEN] ✓ Companion wrote image directly to disk:', fileName);
+        return true;
+      }
+    } catch (e) {
+      console.log('[BOLTHAVEN] Companion direct save note:', e.message);
+    }
+
+    // Tier 3: Native ChatGPT UI Download (Direct button OR Share -> Modal -> Download OR Copy Image)
+    try {
+      const nativeTriggered = await triggerNativeChatGPTDownload(imgEl);
+      if (nativeTriggered) {
+        console.log('[BOLTHAVEN] ✓ Native ChatGPT download triggered for:', fileName);
+        return true;
+      }
+    } catch (e) {
+      console.log('[BOLTHAVEN] Native trigger download notice:', e.message);
     }
 
     // Tier 4: Direct in-tab blob anchor download (fallback)
@@ -1156,24 +1155,61 @@
 
   // Count distinct genuine image attachments present in the composer
   function getAttachedImagesCount(inputEl) {
-    const composer = getComposerContainer(inputEl);
-    if (!composer || composer === document.body || composer === document.documentElement) return 0;
+    const composer = getComposerContainer(inputEl) || document.querySelector('form, div#composer-background, [class*="composer" i]');
 
-    // 1. Remove buttons strictly inside composer (each attached file has exactly one remove button!)
-    const removeBtns = findAttachmentRemoveButtons(composer);
+    // 1. Remove buttons strictly inside composer or document
+    const removeBtns = findAttachmentRemoveButtons(composer || document);
     if (removeBtns.length > 0) return removeBtns.length;
 
-    // 2. Thumbnail images strictly inside composer (excluding icons/avatars)
-    const thumbImgs = Array.from(composer.querySelectorAll('img')).filter((img) => {
-      const src = img.src || img.getAttribute('src') || '';
-      if (!src) return false;
-      const lower = src.toLowerCase();
-      if (lower.includes('avatar') || lower.includes('profile') || lower.includes('icon') || lower.includes('logo') || lower.includes('svg')) return false;
-      if (lower.startsWith('blob:') || lower.startsWith('data:') || lower.includes('oaiusercontent') || lower.includes('files')) return true;
-      const rect = img.getBoundingClientRect();
-      return (rect.width >= 35 && rect.height >= 35);
-    });
-    if (thumbImgs.length > 0) return thumbImgs.length;
+    // 2. Thumbnail cards / tiles in ChatGPT composer (including active upload cards with spinners!)
+    if (composer) {
+      const cards = Array.from(composer.querySelectorAll(
+        '[data-testid*="attachment" i], ' +
+        '[data-testid*="file-tile" i], ' +
+        '[class*="attachment-tile" i], ' +
+        '[class*="file-tile" i], ' +
+        'div[class*="relative"][class*="rounded"]'
+      )).filter((el) => {
+        if (el.tagName === 'BUTTON' || el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') return false;
+        if (el.closest('button, nav, header')) return false;
+        const r = el.getBoundingClientRect();
+        const isCardSize = r.width >= 35 && r.width <= 260 && r.height >= 35 && r.height <= 260;
+        if (!isCardSize) return false;
+        const hasImg = el.querySelector('img, canvas');
+        const hasSpinner = el.querySelector('svg, circle, [class*="spin" i]');
+        const hasBgImg = (el.style?.backgroundImage || '').includes('blob:') || (el.style?.backgroundImage || '').includes('data:');
+        return Boolean(hasImg || hasSpinner || hasBgImg);
+      });
+      if (cards.length > 0) return cards.length;
+
+      // 3. Thumbnail images strictly inside composer (excluding icons/avatars)
+      const thumbImgs = Array.from(composer.querySelectorAll('img')).filter((img) => {
+        const src = img.src || img.getAttribute('src') || '';
+        if (!src) return false;
+        const lower = src.toLowerCase();
+        if (lower.includes('avatar') || lower.includes('profile') || lower.includes('icon') || lower.includes('logo') || lower.includes('svg')) return false;
+        if (lower.startsWith('blob:') || lower.startsWith('data:') || lower.includes('oaiusercontent') || lower.includes('files')) return true;
+        const rect = img.getBoundingClientRect();
+        return (rect.width >= 24 && rect.height >= 24);
+      });
+      if (thumbImgs.length > 0) return thumbImgs.length;
+
+      // 4. Any upload spinners / progress rings in composer (image actively uploading)
+      const spinners = Array.from(composer.querySelectorAll('svg circle, [class*="animate-spin" i], [class*="progress" i]')).filter((s) => {
+        const r = s.getBoundingClientRect();
+        return r.width >= 14 && r.height >= 14;
+      });
+      if (spinners.length > 0) return spinners.length;
+    }
+
+    // 5. Send button active while textarea is empty (in ChatGPT, Send button only enables with 0 text if image is attached!)
+    const composerText = getComposerText(inputEl);
+    if (!composerText || composerText.length === 0) {
+      const sendBtn = findSendButton();
+      if (sendBtn && isSendButtonReady(sendBtn)) {
+        return 1;
+      }
+    }
 
     return 0;
   }
@@ -1623,16 +1659,16 @@
       await new Promise((r) => setTimeout(r, 150));
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }));
 
-      // Wait up to 6 seconds for the single attachment to register
-      const attachedMethodA = await waitForImageAttached(inputEl, 6000, minExpected);
+      // Wait up to 8 seconds for the single attachment to register
+      const attachedMethodA = await waitForImageAttached(inputEl, 8000, minExpected);
       if (attachedMethodA) {
         console.log(`[BOLTHAVEN] ✓ Attached image successfully (${getAttachedImagesCount(inputEl)} attached)`);
         return true;
       }
     }
 
-    // FALLBACK ONLY: If native file input didn't register after 6s, try MAIN world injection ONCE
-    if (getAttachedImagesCount(inputEl) < minExpected && effectiveDataUrl && typeof effectiveDataUrl === 'string' && effectiveDataUrl.startsWith('data:')) {
+    // FALLBACK ONLY: ONLY if native file input was missing from DOM, try MAIN world injection ONCE
+    if (!targetInput && getAttachedImagesCount(inputEl) < minExpected && effectiveDataUrl && typeof effectiveDataUrl === 'string' && effectiveDataUrl.startsWith('data:')) {
       try {
         console.log('[BOLTHAVEN] Fallback: Injecting ATTACH_IMAGE_MAIN_WORLD into MAIN world context...');
         await new Promise((res) => {
@@ -2609,9 +2645,11 @@
       return true;
     }
 
-    if (request.action === 'RESET_COMPOSER') {
+    if (request.action === 'RESET_TAB_CHAT' || request.action === 'RESET_COMPOSER') {
       (async () => {
         try {
+          startNewChatSmoothly();
+          await new Promise((r) => setTimeout(r, 400));
           const input = findPromptInput();
           if (input) {
             await pruneExcessAttachments(input, 0);

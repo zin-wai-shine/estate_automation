@@ -14,6 +14,7 @@
 
 const COMPANION_URL = 'http://127.0.0.1:9224';
 const BOLTHAVEN_URL = 'http://localhost:8085';
+const sessionDownloadedFilenames = new Set();
 
 // ─── Tab-group discovery ────────────────────────────────────────────────────
 
@@ -478,8 +479,17 @@ async function processSlot(slotIndex, sessionId, initialJob = null) {
       await reportJobFailed(job.job_id, setupErr.message);
       slot.busy = false;
       slot.currentJob = null;
+      // Reset tab composer smoothly to ensure no leftover un-sent attachments carry into the next queue item
+      try {
+        await new Promise((res) => {
+          chrome.tabs.sendMessage(slot.tabId, { action: 'RESET_TAB_CHAT' }, () => {
+            if (chrome.runtime.lastError) {}
+            res();
+          });
+        });
+      } catch (e) {}
       await delay(2000);
-      continue; // Continue to process the next job in the queue without reloading the tab!
+      continue; // Continue to process the next job in the queue
     } finally {
       // RELEASE THE LOCK IMMEDIATELY SO NEXT TAB GETS FULL ATTENTION!
       releaseLock();
@@ -1426,13 +1436,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'DOWNLOAD_IMAGE') {
     const rawFilename = request.filename || `enhanced_${Date.now()}.png`;
     const cleanFilename = rawFilename.replace(/[\/\\]/g, '_').trim();
+
+    if (sessionDownloadedFilenames.has(cleanFilename)) {
+      console.log('[BOLTHAVEN EXT] Skipping duplicate chrome.downloads for:', cleanFilename);
+      sendResponse({ success: true, skipped: true });
+      return true;
+    }
+    sessionDownloadedFilenames.add(cleanFilename);
+
     try {
       chrome.downloads.download(
         {
           url: request.url,
           filename: cleanFilename,
           saveAs: false,
-          conflictAction: 'uniquify',
+          conflictAction: 'overwrite',
         },
         (downloadId) => {
           if (chrome.runtime.lastError) {
@@ -1440,7 +1458,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             // Fallback without explicit filename
             try {
               chrome.downloads.download(
-                { url: request.url, saveAs: false },
+                { url: request.url, saveAs: false, conflictAction: 'overwrite' },
                 (id2) => {
                   if (chrome.runtime.lastError) {
                     sendResponse({ success: false, error: chrome.runtime.lastError.message });
