@@ -11666,7 +11666,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   }}
                                 >
                                   {/* Clean Neutral Header */}
-                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '7px', minWidth: 0, flex: 1 }}>
                                       <div
                                         style={{
@@ -11697,21 +11697,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                                         {fromTitle}
                                       </span>
                                     </div>
-                                    <span
-                                      style={{
-                                        fontSize: '0.625rem',
-                                        fontWeight: 600,
-                                        padding: '2px 8px',
-                                        borderRadius: '6px',
-                                        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
-                                        border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                                        color: 'var(--text-secondary)',
-                                        whiteSpace: 'nowrap',
-                                        flexShrink: 0,
-                                      }}
-                                    >
-                                      {boxCount} {boxCount === 1 ? 'photo' : 'photos'} ready
-                                    </span>
                                   </div>
 
                                   {/* Cool 3-Image Stack directly in the card without extra container */}
@@ -11851,54 +11836,15 @@ export const FacebookWorkflowCanvas = forwardRef<
                                     )}
                                   </div>
 
-                                  {/* Clean Neutral Action Buttons */}
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        if (fromBox) {
-                                          setCombineMediaSideboxFormatFilter(fromBox.id);
-                                        } else {
-                                          setCombineMediaSideboxFormatFilter('all');
-                                        }
-                                        setShowCombineMediaSidebox(true);
-                                      }}
-                                      style={{
-                                        flex: 1,
-                                        height: '28px',
-                                        borderRadius: '6px',
-                                        border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                                        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
-                                        color: 'var(--text-primary)',
-                                        fontSize: '0.6875rem',
-                                        fontWeight: 600,
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        gap: '5px',
-                                        cursor: 'pointer',
-                                        transition: 'all 0.15s ease',
-                                      }}
-                                      onMouseEnter={(e) => {
-                                        e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.09)' : 'rgba(0, 0, 0, 0.08)';
-                                        e.currentTarget.style.borderColor = isDark ? '#484F58' : '#CBD5E1';
-                                      }}
-                                      onMouseLeave={(e) => {
-                                        e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)';
-                                        e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
-                                      }}
-                                    >
-                                      <FiEye size={12} style={{ color: 'var(--text-secondary)' }} />
-                                      <span>View {boxCount} Photos</span>
-                                    </button>
-
-                                    {boxAssets.length > 0 && (
+                                  {/* Clean Neutral Download Button */}
+                                  {boxAssets.length > 0 && (
+                                    <div style={{ display: 'flex', alignItems: 'center' }}>
                                       <button
                                         type="button"
                                         onClick={() => handleDownloadAllCombineAssets(boxAssets)}
                                         style={{
+                                          width: '100%',
                                           height: '28px',
-                                          padding: '0 10px',
                                           borderRadius: '6px',
                                           border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
                                           backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
@@ -11907,7 +11853,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                                           fontWeight: 600,
                                           display: 'flex',
                                           alignItems: 'center',
-                                          gap: '4px',
+                                          justifyContent: 'center',
+                                          gap: '5px',
                                           cursor: 'pointer',
                                           transition: 'all 0.15s ease',
                                         }}
@@ -11925,8 +11872,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                                         <FiDownload size={11} />
                                         <span>Download</span>
                                       </button>
-                                    )}
-                                  </div>
+                                    </div>
+                                  )}
                                 </div>
                               );
                             }
