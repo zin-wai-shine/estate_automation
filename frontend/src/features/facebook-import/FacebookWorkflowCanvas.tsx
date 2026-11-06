@@ -3670,6 +3670,7 @@ export const FacebookWorkflowCanvas = forwardRef<
   const [activeModalNode, setActiveModalNode] = useState<ActiveModalNode>(null);
   const [isAISettingsDrawerOpen, setIsAISettingsDrawerOpen] = useState(false);
   const [isRegeneratingAI, setIsRegeneratingAI] = useState(false);
+  const [regeneratingBoxId, setRegeneratingBoxId] = useState<string | null>(null);
   const [showFBHeroSettingsSidebox, setShowFBHeroSettingsSidebox] = useState<boolean>(false);
   const [showGoogleSheetSettingsSidebox, setShowGoogleSheetSettingsSidebox] = useState<boolean>(false);
   const [isAddingSheetRow, setIsAddingSheetRow] = useState<boolean>(false);
@@ -4397,7 +4398,71 @@ export const FacebookWorkflowCanvas = forwardRef<
     copyButtonLabel?: string;
     isEditable?: boolean;
     boxId?: string;
+    nodeId?: string;
+    isOutputView?: boolean;
   } | null>(null);
+
+  // Derive unique key for currently active modal node
+  const activeModalNodeKey = activeModalNode
+    ? (activeModalNode.type === 'ai-box'
+        ? `ai-box:${activeModalNode.boxId}`
+        : activeModalNode.type === 'combine'
+        ? `combine:${activeModalNode.combineId || (activeModalNode as any).id}`
+        : activeModalNode.type === 'destination'
+        ? `destination:${activeModalNode.destinationId || 'destination'}`
+        : activeModalNode.type)
+    : null;
+
+  const prevModalNodeKeyRef = useRef<string | null>(null);
+
+  // Synchronize extra slide-over box with the main sidebox:
+  // 1. If main sidebox is closed, close extra preview box immediately.
+  // 2. If user changes / clicks to a different box, close extra preview box.
+  useEffect(() => {
+    if (!activeModalNodeKey) {
+      setViewingPromptTemplate(null);
+    } else if (prevModalNodeKeyRef.current && prevModalNodeKeyRef.current !== activeModalNodeKey) {
+      setViewingPromptTemplate(null);
+    }
+    prevModalNodeKeyRef.current = activeModalNodeKey;
+  }, [activeModalNodeKey]);
+
+  // Live auto-sync: when aiGeneratedOutputs updates for the viewed node, update viewingPromptTemplate instantly!
+  useEffect(() => {
+    if (viewingPromptTemplate && !viewingPromptTemplate.isEditable && viewingPromptTemplate.id) {
+      const liveText = aiGeneratedOutputs?.[viewingPromptTemplate.id];
+      if (liveText && liveText !== viewingPromptTemplate.templateText) {
+        setViewingPromptTemplate((prev) => (prev ? { ...prev, templateText: liveText } : null));
+      }
+    }
+  }, [aiGeneratedOutputs, viewingPromptTemplate?.id]);
+
+  const isViewingOutput = Boolean(
+    viewingPromptTemplate &&
+    !viewingPromptTemplate.isEditable &&
+    (viewingPromptTemplate.isOutputView ||
+      viewingPromptTemplate.headerTitle?.includes('Output') ||
+      viewingPromptTemplate.headerTitle?.includes('Result'))
+  );
+
+  const activeDisplayText = useMemo(() => {
+    if (!viewingPromptTemplate) return '';
+    if (viewingPromptTemplate.isEditable) return viewingPromptTemplate.templateText || '';
+    if (isViewingOutput && viewingPromptTemplate.id) {
+      const liveOutput = aiGeneratedOutputs?.[viewingPromptTemplate.id];
+      if (liveOutput) return liveOutput;
+      const matchedBox = (config.aiBoxes || []).find((b) => b.id === viewingPromptTemplate.id);
+      if ((matchedBox as any)?.outputCopy) return (matchedBox as any).outputCopy;
+    }
+    return viewingPromptTemplate.templateText || '';
+  }, [viewingPromptTemplate, isViewingOutput, aiGeneratedOutputs, config.aiBoxes]);
+
+  const isRegeneratingCurrentView = Boolean(
+    isRegeneratingAI &&
+    viewingPromptTemplate &&
+    (regeneratingBoxId === viewingPromptTemplate.id ||
+      (activeModalNode?.type === 'ai-box' && activeModalNode.boxId === viewingPromptTemplate.id))
+  );
 
   // Mutually exclusive slide-over sidebars: when opening Prompt Viewer/Editor, close setting sideboxes
   useEffect(() => {
@@ -7362,6 +7427,7 @@ export const FacebookWorkflowCanvas = forwardRef<
       },
       getDeletedBoxesCount: () => deletedBoxes.length,
       openNodeDrawer: (nodeId: string) => {
+        setViewingPromptTemplate(null);
         if (nodeId === 'trigger') {
           setActiveModalNode({ type: 'trigger' });
         } else if (nodeId === 'get-content') {
@@ -7776,6 +7842,7 @@ export const FacebookWorkflowCanvas = forwardRef<
       handleToggleGeneralSettings(false);
       setConnectDrawerNode(null);
       setQuickAddPopover(null);
+      setViewingPromptTemplate(null);
       setActiveModalNode(node);
 
       if (node) {
@@ -14301,10 +14368,13 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   onClick={() => {
                                     setViewingPromptTemplate({
                                       id: currentModalAIBox.id,
+                                      nodeId: currentModalAIBox.id,
                                       name: `${currentModalAIBox.title || 'Format Preset'} Output`,
                                       templateText: boxOutput,
                                       headerTitle: 'Generated Output Copy',
                                       copyButtonLabel: 'Copy Output',
+                                      isOutputView: true,
+                                      boxId: currentModalAIBox.id,
                                     });
                                   }}
                                   style={{
@@ -14343,10 +14413,20 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   onClick={async () => {
                                     if (isRegeneratingAI) return;
                                     setIsRegeneratingAI(true);
+                                    setRegeneratingBoxId(currentModalAIBox.id);
                                     try {
-                                      await onRegenerateBoxOutput(currentModalAIBox.id);
+                                      const fresh = await onRegenerateBoxOutput(currentModalAIBox.id);
+                                      if (fresh && typeof fresh === 'string') {
+                                        setViewingPromptTemplate((prev) => {
+                                          if (prev && prev.id === currentModalAIBox.id) {
+                                            return { ...prev, templateText: fresh };
+                                          }
+                                          return prev;
+                                        });
+                                      }
                                     } finally {
                                       setIsRegeneratingAI(false);
+                                      setRegeneratingBoxId(null);
                                     }
                                   }}
                                   disabled={isRegeneratingAI}
@@ -14589,11 +14669,65 @@ export const FacebookWorkflowCanvas = forwardRef<
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+              {/* Direct Re-generate button inside viewer when viewing generated output */}
+              {isViewingOutput && onRegenerateBoxOutput && viewingPromptTemplate.id && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (isRegeneratingAI) return;
+                    setIsRegeneratingAI(true);
+                    setRegeneratingBoxId(viewingPromptTemplate.id);
+                    try {
+                      const fresh = await onRegenerateBoxOutput(viewingPromptTemplate.id);
+                      if (fresh && typeof fresh === 'string') {
+                        setViewingPromptTemplate((prev) => (prev ? { ...prev, templateText: fresh } : null));
+                      }
+                    } finally {
+                      setIsRegeneratingAI(false);
+                      setRegeneratingBoxId(null);
+                    }
+                  }}
+                  disabled={isRegeneratingAI}
+                  title="Re-generate content with AI"
+                  style={{
+                    height: '28px',
+                    padding: '0 0.5rem',
+                    borderRadius: '6px',
+                    border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
+                    color: 'var(--text-primary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    fontSize: '0.75rem',
+                    cursor: isRegeneratingAI ? 'not-allowed' : 'pointer',
+                    opacity: isRegeneratingAI ? 0.7 : 1,
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  <FiRefreshCw
+                    size={12}
+                    style={{
+                      animation:
+                        isRegeneratingAI && regeneratingBoxId === viewingPromptTemplate.id
+                          ? 'spin 1s linear infinite'
+                          : 'none',
+                    }}
+                  />
+                  <span>
+                    {isRegeneratingAI && regeneratingBoxId === viewingPromptTemplate.id
+                      ? 'Generating...'
+                      : 'Re-generate'}
+                  </span>
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={() => {
-                  if (viewingPromptTemplate.templateText) {
-                    navigator.clipboard.writeText(viewingPromptTemplate.templateText);
+                  const textToCopy = activeDisplayText || viewingPromptTemplate.templateText || '';
+                  if (textToCopy) {
+                    navigator.clipboard.writeText(textToCopy);
                     setIsViewerPromptCopied(true);
                     setTimeout(() => setIsViewerPromptCopied(false), 2000);
                   }
@@ -14747,25 +14881,91 @@ export const FacebookWorkflowCanvas = forwardRef<
               </div>
             </div>
           ) : (
-            <div
-              style={{
-                flex: 1,
-                overflowY: 'auto',
-                padding: '1.25rem 1.375rem 3.5rem 1.375rem',
-                fontFamily:
-                  '"Helvetica Neue", Helvetica, Arial, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                fontSize: '0.84375rem',
-                fontWeight: 400,
-                lineHeight: '1.7',
-                letterSpacing: '-0.005em',
-                color: isDark ? '#E2E8F0' : '#1E293B',
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-word',
-              }}
-            >
-              {viewingPromptTemplate.templateText || 'No content available.'}
-              <div style={{ height: '2.5rem' }} />
-            </div>
+            <>
+              <div
+                style={{
+                  flex: 1,
+                  overflowY: 'auto',
+                  padding: '1.25rem 1.375rem 2rem 1.375rem',
+                  fontFamily:
+                    '"Helvetica Neue", Helvetica, Arial, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                  fontSize: '0.84375rem',
+                  fontWeight: 400,
+                  lineHeight: '1.7',
+                  letterSpacing: '-0.005em',
+                  color: isDark ? '#E2E8F0' : '#1E293B',
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                  position: 'relative',
+                }}
+              >
+                {isRegeneratingCurrentView && (
+                  <div
+                    style={{
+                      position: 'sticky',
+                      top: 0,
+                      marginBottom: '1rem',
+                      padding: '0.625rem 0.875rem',
+                      borderRadius: '6px',
+                      backgroundColor: isDark ? 'rgba(59, 130, 246, 0.16)' : '#EFF6FF',
+                      border: '1px solid rgba(59, 130, 246, 0.35)',
+                      color: '#3B82F6',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      zIndex: 5,
+                      boxShadow: '0 2px 8px rgba(0, 0, 0, 0.12)',
+                    }}
+                  >
+                    <FiRefreshCw size={13} style={{ animation: 'spin 1s linear infinite' }} />
+                    <span>Regenerating fresh content with AI...</span>
+                  </div>
+                )}
+                {activeDisplayText || (isRegeneratingCurrentView ? 'Generating content with AI...' : 'No content available.')}
+                <div style={{ height: '1.5rem' }} />
+              </div>
+
+              {/* Read-Only Output / Prompt Viewer Bottom Status Bar */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '0.625rem 1.125rem',
+                  borderTop: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
+                  backgroundColor: isDark ? 'rgba(0, 0, 0, 0.2)' : '#F8FAFC',
+                  fontSize: '0.6875rem',
+                  color: 'var(--text-muted)',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span>{activeDisplayText.length.toLocaleString()} characters</span>
+                  <span>•</span>
+                  <span>
+                    {activeDisplayText.trim()
+                      ? activeDisplayText.trim().split(/\s+/).filter(Boolean).length.toLocaleString()
+                      : 0}{' '}
+                    words
+                  </span>
+                </div>
+                {isViewingOutput && (
+                  <span
+                    style={{
+                      fontSize: '0.6875rem',
+                      color: '#10B981',
+                      fontWeight: 600,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                    }}
+                  >
+                    ● Live Output Synced
+                  </span>
+                )}
+              </div>
+            </>
           )}
         </div>
       )}
