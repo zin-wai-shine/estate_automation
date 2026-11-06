@@ -167,15 +167,23 @@ export const resolvePromptForBrowserNode = (
   const savedKey = getPersistedPromptKey();
   const savedText = getPersistedPromptText();
 
-  // Template key: prioritize explicit key on box, but fallback to saved persistent key
+  const isHero = isGenerateCategory(
+    box?.category,
+    box?.title || box?.name || box?.browserGroupName || box?.stagingGroupName || ''
+  );
+
+  // Template key: prioritize explicit key on box, but fallback to saved persistent key ONLY for Enhance nodes!
   let templateKey = String(box?.browserPromptTemplateKey || box?.templateId || '').trim();
-  if ((!templateKey || templateKey === 'photo_retouch') && savedKey) {
+  if (!isHero && (!templateKey || templateKey === 'photo_retouch') && savedKey) {
     templateKey = savedKey;
+  }
+  if (isHero && (!templateKey || templateKey === 'photo_retouch')) {
+    templateKey = 'fb_hero_master';
   }
 
   // 1. If explicit custom prompt is selected
   if (templateKey === 'custom_prompt') {
-    rawPrompt = box?.browserCustomPrompt || box?.customPrompt || getPersistedCustomPrompt();
+    rawPrompt = box?.browserCustomPrompt || box?.customPrompt || (!isHero ? getPersistedCustomPrompt() : '');
   }
 
   // 2. Look up the chosen template key in the user's prompt library (localStorage)
@@ -207,8 +215,8 @@ export const resolvePromptForBrowserNode = (
     }
   }
 
-  // 4. If template matches persisted key, check persisted text
-  if (!rawPrompt && savedText && (templateKey === savedKey || !templateKey)) {
+  // 4. If template matches persisted key, check persisted text ONLY for Enhance nodes
+  if (!rawPrompt && savedText && !isHero && (templateKey === savedKey || !templateKey)) {
     rawPrompt = savedText;
   }
 
@@ -225,14 +233,20 @@ export const resolvePromptForBrowserNode = (
     }
   }
 
-  // 6. If still no prompt, use persisted text if available
-  if (!rawPrompt && savedText) {
+  // 6. If still no prompt, use persisted text ONLY for Enhance nodes; for Hero nodes use fb_hero_master!
+  if (!rawPrompt && savedText && !isHero) {
     rawPrompt = savedText;
+  }
+  if (!rawPrompt && isHero) {
+    const heroStd = STANDARD_BROWSER_PROMPTS.find((p) => p.id === 'fb_hero_master');
+    rawPrompt = heroStd?.instructions || 'Generate a hero real estate listing image based on condo unit context and reference styling. Maintain realistic architectural aesthetics, high dynamic range, and authentic materials.';
   }
 
   // 7. Ultimate fallback
   if (!rawPrompt || rawPrompt.trim() === '') {
-    rawPrompt = STANDARD_BROWSER_PROMPTS[0].instructions;
+    rawPrompt = isHero
+      ? STANDARD_BROWSER_PROMPTS[0].instructions
+      : STANDARD_BROWSER_PROMPTS[1].instructions;
   }
 
   // Context variable replacements

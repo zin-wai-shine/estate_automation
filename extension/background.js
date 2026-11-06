@@ -153,6 +153,13 @@ async function stopAllExtensionAutomation() {
   }
   pendingJobGenerations.clear();
 
+  for (const [heroJobId, resolver] of pendingHeroGenerations.entries()) {
+    try {
+      resolver({ success: false, error: 'Automation stopped by user' });
+    } catch (e) {}
+  }
+  pendingHeroGenerations.clear();
+
   const notifiedTabIds = new Set();
   if (Array.isArray(automation.tabSlots)) {
     for (const slot of automation.tabSlots) {
@@ -351,6 +358,23 @@ function waitForJobGeneration(jobId, timeoutMs = 360000) {
     }, timeoutMs);
 
     pendingJobGenerations.set(jobId, (result) => {
+      clearTimeout(timer);
+      resolve(result);
+    });
+  });
+}
+
+// ─── Concurrent Hero Generation Map (FB Hero) ───────────────────────────────────
+const pendingHeroGenerations = new Map();
+
+function waitForHeroGeneration(heroJobId, timeoutMs = 360000) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      pendingHeroGenerations.delete(heroJobId);
+      resolve({ success: false, error: `Hero image generation timed out after ${Math.round(timeoutMs / 1000)}s` });
+    }, timeoutMs);
+
+    pendingHeroGenerations.set(heroJobId, (result) => {
       clearTimeout(timer);
       resolve(result);
     });
@@ -1618,6 +1642,23 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  // ── Notify Hero generation complete/failed from content script (FB Hero) ──
+  if (request.action === 'HERO_GENERATION_COMPLETE' || request.action === 'HERO_GENERATION_FAILED') {
+    const resolver = pendingHeroGenerations.get(request.heroJobId);
+    if (resolver) {
+      pendingHeroGenerations.delete(request.heroJobId);
+      resolver({
+        success: request.action === 'HERO_GENERATION_COMPLETE',
+        result_url: request.result_url || '',
+        filename: request.filename || '',
+        imagesAttached: request.imagesAttached || 0,
+        error: request.error || '',
+      });
+    }
+    sendResponse({ ok: true });
+    return true;
+  }
+
   // ── Notify attachment phase complete for this job ──────────────────
   if (request.action === 'ATTACHMENT_PHASE_COMPLETE') {
     const resolver = pendingAttachmentResolvers.get(request.jobId);
@@ -1868,9 +1909,11 @@ async function executeTwoStageStaging(payload) {
     }),
   }).catch(() => {});
 
+  const heroJobId = `hero_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
   let stage2Response = null;
   let lastSendError = null;
-  for (let attempt = 1; attempt <= 3; attempt++) {
+
+  for (let attempt = 1; attempt <= 2; attempt++) {
     if (isTwoStageStopped()) {
       console.log('[BOLTHAVEN EXT] Hero generation aborted by user before dispatch');
       return;
@@ -1880,13 +1923,14 @@ async function executeTwoStageStaging(payload) {
       stage2Response = await new Promise((resolve, reject) => {
         chrome.tabs.sendMessage(tab2.id, {
           action: 'EXECUTE_STAGE2_STAGING',
+          heroJobId,
           extractedPrompt: extractedPrompt || resolvedPrompt,
           referenceImage: resolvedRefImg, // 1st: manual reference image
           condoImages: resolvedCondoImgs, // 2nd: 1.png, 2.png, 3.png
           condoName: resolvedCondoName,
         }, (res) => {
           if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
-          if (!res || !res.success) return reject(new Error(res?.error || 'Failed to execute Hero image generation'));
+          if (!res || !res.success) return reject(new Error(res?.error || 'Failed to submit Hero staging to ChatGPT'));
           resolve(res);
         });
       });
@@ -1908,7 +1952,17 @@ async function executeTwoStageStaging(payload) {
 
   if (isTwoStageStopped()) return;
 
-  console.log('[BOLTHAVEN EXT] ✓ Hero Image generated & downloaded!', stage2Response);
+  console.log('[BOLTHAVEN EXT] ✓ Hero Staging submitted to ChatGPT tab. Awaiting AI generation & download (heroJobId:', heroJobId, ')...');
+
+  // Wait for content script to detect finished Hero image, trigger download, and notify background
+  const heroGenResult = await waitForHeroGeneration(heroJobId, 360000);
+  if (!heroGenResult || !heroGenResult.success) {
+    throw new Error(heroGenResult?.error || 'ChatGPT Hero image generation timed out or failed');
+  }
+
+  if (isTwoStageStopped()) return;
+
+  console.log('[BOLTHAVEN EXT] ✓ Hero Image generated & downloaded!', heroGenResult);
   await fetch(`${COMPANION_URL}/two-stage-status`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1916,10 +1970,10 @@ async function executeTwoStageStaging(payload) {
       is_running: false,
       step: 'completed',
       extracted_prompt: extractedPrompt,
-      images_attached: stage2Response.imagesAttached || 0,
-      result_url: stage2Response.result_url || '',
-      downloaded_file: stage2Response.filename || '',
-      message: `✓ Hero Image generated and downloaded (${stage2Response.filename || 'fb_hero.png'})!`,
+      images_attached: heroGenResult.imagesAttached || stage2Response.imagesAttached || 4,
+      result_url: heroGenResult.result_url || '',
+      downloaded_file: heroGenResult.filename || '',
+      message: `✓ Hero Image generated and downloaded (${heroGenResult.filename || 'fb_hero.png'})!`,
     }),
   }).catch(() => {});
 }

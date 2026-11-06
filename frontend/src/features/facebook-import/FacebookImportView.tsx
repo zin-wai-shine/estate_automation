@@ -1887,11 +1887,37 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
             const stagingBox: any = connectedTabGroupBox || extBox;
             const stagingGroupTarget = stagingBox.stagingGroupName || (extBox as any).stagingGroupName || 'FB Hero';
             const propTitle = (result.property as any)?.project_name || (result.property as any)?.title || 'Featured Property Listing';
-            const initialPrompt = resolvePromptForBrowserNode(stagingBox, {
-              title: propTitle,
-              width: stagingBox.outputWidth || (extBox as any).outputWidth || 1080,
-              height: stagingBox.outputHeight || (extBox as any).outputHeight || 1350,
-            });
+
+            // First priority: Check if an upstream AI prompt node (e.g. BoltHaven-FB Hero Prompt) generated a prompt!
+            const targetPromptAiId =
+              stagingBox.selectedUpstreamAiId ||
+              (extBox as any).selectedUpstreamAiId ||
+              workflowConfig.aiBoxes.find((b: any) =>
+                (b.title?.toLowerCase().includes('hero') && b.title?.toLowerCase().includes('prompt')) ||
+                b.title?.toLowerCase().includes('hero prompt')
+              )?.id;
+
+            let heroPrompt = '';
+            if (targetPromptAiId && generatedCopiesMap[targetPromptAiId]) {
+              heroPrompt = generatedCopiesMap[targetPromptAiId];
+            } else if (targetPromptAiId && aiGeneratedOutputs[targetPromptAiId]) {
+              heroPrompt = aiGeneratedOutputs[targetPromptAiId];
+            } else if (stagingBox.browserPromptText && stagingBox.browserPromptText.trim() !== '') {
+              heroPrompt = stagingBox.browserPromptText;
+            } else if (stagingBox.resolvedPrompt && stagingBox.resolvedPrompt.trim() !== '') {
+              heroPrompt = stagingBox.resolvedPrompt;
+            } else if (stagingBox.customPrompt && stagingBox.customPrompt.trim() !== '') {
+              heroPrompt = stagingBox.customPrompt;
+            }
+
+            if (!heroPrompt || heroPrompt.trim() === '') {
+              heroPrompt = resolvePromptForBrowserNode(stagingBox, {
+                title: propTitle,
+                width: stagingBox.outputWidth || (extBox as any).outputWidth || 1080,
+                height: stagingBox.outputHeight || (extBox as any).outputHeight || 1350,
+              });
+            }
+            const initialPrompt = heroPrompt;
             const useRefImg = stagingBox.useReferenceImage !== false && (extBox as any).useReferenceImage !== false;
             const resolvedRefImage = useRefImg
               ? (stagingBox.referenceImage ||
