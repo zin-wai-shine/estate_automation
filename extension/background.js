@@ -403,6 +403,19 @@ async function fetchJobImageDataUrl(job) {
 }
 
 /**
+ * Completely reset a worker tab to a fresh https://chatgpt.com/ state.
+ * Eradicates all leftover text, images, and attachments from previous runs.
+ */
+async function resetTabChatCleanly(tabId) {
+  try {
+    await chrome.tabs.update(tabId, { url: 'https://chatgpt.com/' });
+    await waitForTabComplete(tabId, 15000);
+    await delay(800);
+    await ensureContentScriptInjected(tabId);
+  } catch (e) {}
+}
+
+/**
  * Process one job on a given tab slot.
  * When done (success or fail), automatically picks the next pending job
  * from the shared queue and processes it on the same slot.
@@ -479,16 +492,12 @@ async function processSlot(slotIndex, sessionId, initialJob = null) {
       await reportJobFailed(job.job_id, setupErr.message);
       slot.busy = false;
       slot.currentJob = null;
-      // Reset tab composer smoothly to ensure no leftover un-sent attachments carry into the next queue item
+
+      // Hard reset tab to https://chatgpt.com/ to guarantee 0 leftover attachments
       try {
-        await new Promise((res) => {
-          chrome.tabs.sendMessage(slot.tabId, { action: 'RESET_TAB_CHAT' }, () => {
-            if (chrome.runtime.lastError) {}
-            res();
-          });
-        });
+        await resetTabChatCleanly(slot.tabId);
       } catch (e) {}
-      await delay(2000);
+      await delay(1500);
       continue; // Continue to process the next job in the queue
     } finally {
       // RELEASE THE LOCK IMMEDIATELY SO NEXT TAB GETS FULL ATTENTION!
@@ -520,13 +529,8 @@ async function processSlot(slotIndex, sessionId, initialJob = null) {
     if (automation.isRunning && automation.queue.length > 0) {
       try {
         console.log(`[BOLTHAVEN EXT] Tab ${slot.tabId} finished! Resetting tab to New Chat before taking next queue item...`);
-        await new Promise((res) => {
-          chrome.tabs.sendMessage(slot.tabId, { action: 'RESET_TAB_CHAT' }, () => {
-            if (chrome.runtime.lastError) {}
-            res();
-          });
-        });
-        await delay(1200);
+        await resetTabChatCleanly(slot.tabId);
+        await delay(1000);
       } catch (e) {}
     } else {
       await delay(1000);

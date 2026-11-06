@@ -1181,7 +1181,7 @@
         return true;
       }
 
-      const parentThumb = btn.closest('[class*="thumbnail" i]');
+      const parentThumb = btn.closest('[class*="thumbnail" i], [class*="file-tile" i], [data-testid*="attachment" i], div[class*="relative"][class*="rounded"]');
       if (parentThumb && btn.querySelector('svg')) {
         return true;
       }
@@ -1939,8 +1939,13 @@
     }
   }
 
-  // Navigate to New Chat smoothly without hard tab reloads
-  function startNewChatSmoothly() {
+  // Navigate to New Chat cleanly (guarantees empty composer with 0 attachments)
+  function startNewChatSmoothly(forceReload = false) {
+    if (forceReload) {
+      window.location.href = 'https://chatgpt.com/';
+      window.location.reload();
+      return true;
+    }
     const newChatBtn = (
       document.querySelector('a[href="/"]') ||
       document.querySelector('button[data-testid="create-new-chat-button"]') ||
@@ -1949,13 +1954,162 @@
       document.querySelector('a[aria-label*="New chat" i]') ||
       document.querySelector('button[data-testid="fruitjuice-new-chat-button"]')
     );
-    if (newChatBtn) {
+    if (newChatBtn && window.location.pathname.startsWith('/c/')) {
       try { newChatBtn.click(); return true; } catch (e) {}
     }
     if (window.location.pathname !== '/' || window.location.search) {
       window.location.href = 'https://chatgpt.com/';
       return true;
     }
+    window.location.reload();
+    return true;
+  }
+
+  // Reliable prompt inserter that keeps ProseMirror document model in sync
+  async function insertPromptCleanly(promptEl, promptText) {
+    if (!promptEl || !promptText) return false;
+    const cleanText = promptText.trim();
+    promptEl.focus();
+
+    // Method 1: Native clipboard paste event (ProseMirror's native handler)
+    try {
+      const dt = new DataTransfer();
+      dt.setData('text/plain', cleanText);
+      const pasteEv = new ClipboardEvent('paste', {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        clipboardData: dt,
+      });
+      promptEl.dispatchEvent(pasteEv);
+      await new Promise((r) => setTimeout(r, 200));
+    } catch (e) {}
+
+    let current = getComposerText(promptEl);
+    if (current && current.length >= 10) return true;
+
+    // Method 2: Target <p> line by line via execCommand (handles multi-line text)
+    try {
+      let targetP = promptEl.querySelector('p');
+      if (!targetP) {
+        targetP = document.createElement('p');
+        promptEl.appendChild(targetP);
+      }
+      targetP.focus();
+      const sel = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(targetP);
+      sel.removeAllRanges();
+      sel.addRange(range);
+
+      const lines = cleanText.split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i]) {
+          document.execCommand('insertText', false, lines[i]);
+        }
+        if (i < lines.length - 1) {
+          document.execCommand('insertParagraph', false, null);
+        }
+      }
+      await new Promise((r) => setTimeout(r, 200));
+    } catch (e) {}
+
+    current = getComposerText(promptEl);
+    if (current && current.length >= 10) {
+      promptEl.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+      return true;
+    }
+
+    // Method 3: MAIN world insertion
+    try {
+      await new Promise((res) => {
+        safeSendMessage({ action: 'INSERT_PROMPT_MAIN_WORLD', text: cleanText }, (r) => res(r));
+      });
+      await new Promise((r) => setTimeout(r, 350));
+    } catch (e) {}
+
+    current = getComposerText(promptEl);
+    return Boolean(current && current.length >= 10);
+  }
+
+  // Robust ChatGPT Send dispatcher (clicks button, requests form submit, and fires Enter key)
+  async function triggerSendRobustly(promptEl) {
+    console.log('[BOLTHAVEN] Triggering ChatGPT Send...');
+
+    for (let attempt = 1; attempt <= 4; attempt++) {
+      if (activeJobAborted) return false;
+
+      // 1. Dispatch native Enter keydown on prompt textarea (ProseMirror's default submit trigger)
+      const input = promptEl || findPromptInput();
+      if (input) {
+        input.focus();
+        const enterOpts = {
+          key: 'Enter',
+          code: 'Enter',
+          keyCode: 13,
+          which: 13,
+          charCode: 13,
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          shiftKey: false,
+          altKey: false,
+          ctrlKey: false,
+          metaKey: false,
+        };
+        input.dispatchEvent(new KeyboardEvent('keydown', enterOpts));
+        input.dispatchEvent(new KeyboardEvent('keypress', enterOpts));
+        input.dispatchEvent(new KeyboardEvent('keyup', enterOpts));
+      }
+
+      // 2. Dispatch full pointer/mouse sequence on Send button
+      const sendBtn = findSendButton();
+      if (sendBtn && isSendButtonReady(sendBtn)) {
+        sendBtn.focus();
+        const rect = sendBtn.getBoundingClientRect();
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+
+        const downOpts = { bubbles: true, cancelable: true, composed: true, view: window, clientX: cx, clientY: cy, button: 0, buttons: 1 };
+        sendBtn.dispatchEvent(new PointerEvent('pointerdown', { ...downOpts, pointerId: 1, isPrimary: true, pointerType: 'mouse' }));
+        sendBtn.dispatchEvent(new MouseEvent('mousedown', downOpts));
+
+        const upOpts = { bubbles: true, cancelable: true, composed: true, view: window, clientX: cx, clientY: cy, button: 0, buttons: 0 };
+        sendBtn.dispatchEvent(new PointerEvent('pointerup', { ...upOpts, pointerId: 1, isPrimary: true, pointerType: 'mouse' }));
+        sendBtn.dispatchEvent(new MouseEvent('mouseup', upOpts));
+        sendBtn.dispatchEvent(new MouseEvent('click', upOpts));
+        sendBtn.click();
+
+        const form = sendBtn.closest('form') || document.querySelector('form');
+        if (form && typeof form.requestSubmit === 'function') {
+          try { form.requestSubmit(sendBtn); } catch (e) {
+            try { form.requestSubmit(); } catch (e2) {}
+          }
+        }
+      }
+
+      // 3. Dispatch in MAIN world context (bypasses isolated world for React Fiber onClick)
+      await new Promise((res) => {
+        safeSendMessage({ action: 'CLICK_SEND_MAIN_WORLD' }, (r) => res(r));
+      });
+
+      // 4. Verify message dispatched
+      await new Promise((r) => setTimeout(r, 900));
+
+      const generating = isThinkingOrGenerating();
+      const hasStop = Boolean(findStopButton());
+      const composerTextNow = getComposerText(input);
+      const attachmentsNow = getAttachedImagesCount(input);
+      const sendBtnNow = findSendButton();
+      const sendGone = !sendBtnNow || !isSendButtonReady(sendBtnNow);
+
+      if (generating || hasStop || (composerTextNow.length === 0 && attachmentsNow === 0) || sendGone) {
+        console.log(`[BOLTHAVEN] ✓ Send verified dispatched on attempt ${attempt}!`);
+        return true;
+      }
+      console.log(`[BOLTHAVEN] Send attempt ${attempt} did not dispatch yet, retrying...`);
+    }
+
     return false;
   }
 
@@ -1965,10 +2119,10 @@
 
     // Detect Temporary Chat mode — image generation is blocked by ChatGPT in temporary chat!
     if (window.location.search.includes('temporary-chat') || window.location.href.includes('temporary-chat')) {
-      console.warn('[BOLTHAVEN] ⚠️ Temporary Chat detected! Image generation is blocked by ChatGPT in temporary chat. Switching to standard chat...');
+      console.warn('[BOLTHAVEN] ⚠️ Temporary Chat detected! Redirecting to standard chat...');
       window.location.href = 'https://chatgpt.com/';
-      await new Promise((r) => setTimeout(r, 2500));
-      throw new Error('Tab was in Temporary Chat mode (image generation disabled by ChatGPT). Redirected to standard chat — retrying.');
+      await new Promise((r) => setTimeout(r, 2000));
+      throw new Error('Tab was in Temporary Chat mode. Redirected to standard chat — retrying.');
     }
 
     let input = await waitForElement('#prompt-textarea, div[contenteditable="true"], .ProseMirror, textarea', 25000);
@@ -1981,47 +2135,19 @@
       throw new Error('Job stopped by user');
     }
 
-    // Safety guard: If tab is currently busy generating an in-progress image, wait for it (only if conversation already has messages)
-    const hasExistingMessages = document.querySelectorAll(
-      'div[data-message-author-role="assistant"], article[data-testid*="conversation-turn"]'
-    ).length > 0;
-
-    if (hasExistingMessages) {
-      const preWaitStart = Date.now();
-      while (isThinkingOrGenerating() && Date.now() - preWaitStart < 15000) {
-        if (activeJobAborted) {
-          clearPromptText(input);
-          throw new Error('Job stopped by user');
-        }
-        console.log(`[BOLTHAVEN] Tab currently busy generating. Waiting before starting Image #${job.original_position || 1}...`);
-        await new Promise((r) => setTimeout(r, 1000));
-      }
-    }
-
-    // 0. Clean prompt text and prune any leftover attachments before starting
+    // 0. Ensure a 100% CLEAN SLATE before attaching:
+    // If there is ANY leftover attachment or text from previous run:
     clearPromptText(input);
-
-    // Auto-dismiss any "You don't have access to this conversation" popover/banner
-    try {
-      const banners = Array.from(document.querySelectorAll('div, section')).filter(
-        (d) => (d.textContent || '').includes("You don't have access to this conversation")
-      );
-      for (const b of banners) {
-        const closeBtn = b.querySelector('button');
-        if (closeBtn) closeBtn.click();
-      }
-    } catch (e) {}
-
     const existingAttached = getAttachedImagesCount(input);
     if (existingAttached > 0) {
-      console.log(`[BOLTHAVEN] Leftover attachment(s) detected (${existingAttached}), resetting composer to guarantee clean single-image slate...`);
+      console.log(`[BOLTHAVEN] Leftover attachment(s) detected (${existingAttached}), resetting composer...`);
       await pruneExcessAttachments(input, 0);
       await new Promise((r) => setTimeout(r, 400));
       if (getAttachedImagesCount(input) > 0) {
-        console.log('[BOLTHAVEN] Resetting composer via New Chat button to clear leftover image...');
-        startNewChatSmoothly();
-        await new Promise((r) => setTimeout(r, 1200));
-        input = await waitForElement('#prompt-textarea, div[contenteditable="true"], .ProseMirror, textarea', 15000);
+        console.log('[BOLTHAVEN] Hard reloading to https://chatgpt.com/ to clear leftover attachment...');
+        window.location.href = 'https://chatgpt.com/';
+        window.location.reload();
+        throw new Error('Tab had leftover attachments. Reloaded to clean slate — retrying.');
       }
     }
 
@@ -2050,17 +2176,14 @@
       }
     }
 
-    let attached = false;
-    if (primaryUrl || fallbackUrl) {
-      const filename = `property_image_${job.original_position || 1}.jpg`;
-      console.log(`[BOLTHAVEN] Fetching image for attachment: ${primaryUrl ? primaryUrl.slice(0, 40) : fallbackUrl}`);
-      const blob = await fetchImageBlob(primaryUrl, fallbackUrl);
-      const mimeType = blob.type || 'image/jpeg';
-      const file = new File([blob], filename, { type: mimeType });
+    const filename = `property_image_${job.original_position || 1}.jpg`;
+    console.log(`[BOLTHAVEN] Fetching image for attachment: ${primaryUrl ? primaryUrl.slice(0, 40) : fallbackUrl}`);
+    const blob = await fetchImageBlob(primaryUrl, fallbackUrl);
+    const mimeType = blob.type || 'image/jpeg';
+    const file = new File([blob], filename, { type: mimeType });
 
-      console.log(`[BOLTHAVEN] Attaching single image #${job.original_position || 1}...`);
-      attached = await attachImageFileToComposer(input, file, 1, 1, job.image_data_url || (primaryUrl.startsWith('data:') ? primaryUrl : null));
-    }
+    console.log(`[BOLTHAVEN] Attaching single image #${job.original_position || 1}...`);
+    await attachImageFileToComposer(input, file, 1, 1, job.image_data_url || (primaryUrl.startsWith('data:') ? primaryUrl : null));
 
     // Verify that image is genuinely attached before touching prompt
     let verifiedAttachmentCount = getAttachedImagesCount(input);
@@ -2069,75 +2192,54 @@
       throw new Error(`CRITICAL: Image #${job.original_position || 1} could not be verified as attached in ChatGPT composer. Refusing to send prompt without image.`);
     }
 
-    console.log(`[BOLTHAVEN] ✓ Step 1 Done: Single image #${job.original_position || 1} confirmed attached! Waiting for upload to finish...`);
+    // STRICT RULE: If more than 1 image got attached, prune immediately down to strictly 1!
+    if (verifiedAttachmentCount > 1) {
+      console.warn(`[BOLTHAVEN] Detected ${verifiedAttachmentCount} attachments (expected strictly 1). Pruning down to 1...`);
+      await pruneExcessAttachments(input, 1);
+      await new Promise((r) => setTimeout(r, 400));
+      verifiedAttachmentCount = getAttachedImagesCount(input);
+      if (verifiedAttachmentCount > 1) {
+        clearPromptText(input);
+        window.location.href = 'https://chatgpt.com/';
+        window.location.reload();
+        throw new Error(`CRITICAL: Could not prune excess attachments down to 1 (found ${verifiedAttachmentCount}). Reloading tab.`);
+      }
+    }
 
-    // 2. Wait for the image upload to fully complete BEFORE typing the prompt (up to 12s)
+    console.log(`[BOLTHAVEN] ✓ Step 1 Done: Strictly 1 image #${job.original_position || 1} confirmed attached! Waiting for upload to finish...`);
+
+    // 2. Wait for the image upload to fully complete BEFORE typing the prompt (up to 15s)
     const composerEl = getComposerContainer(input) || document;
-    await waitForAttachmentUploadComplete(composerEl, 12000);
+    await waitForAttachmentUploadComplete(composerEl, 15000);
 
     if (activeJobAborted) {
       clearPromptText(input);
       throw new Error('Job stopped by user');
     }
 
-    // 3. Set prompt text below the attached image (re-query DOM for live input in case of React remount)
+    // 3. Set prompt text cleanly
     const promptText = (job.resolved_prompt || 'Enhance the attached architectural photo').trim();
     console.log(`[BOLTHAVEN] Setting prompt text (${promptText.length} chars)...`);
 
     const liveInput = findPromptInput() || input;
-    await setPromptTextAsync(liveInput, promptText, 4000);
-
-    // If still empty, apply direct ProseMirror paragraph insertion (WITHOUT touching attachments!)
-    let composerText = getComposerText(findPromptInput() || liveInput);
-    if (!composerText || composerText.length < 5) {
-      try {
-        const pm = findPromptInput() || liveInput;
-        if (pm) {
-          pm.focus();
-          let p = pm.querySelector('p');
-          if (!p) {
-            p = document.createElement('p');
-            pm.appendChild(p);
-          }
-          p.classList.remove('placeholder');
-          p.removeAttribute('data-placeholder');
-          p.textContent = promptText;
-          pm.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, inputType: 'insertText', data: promptText }));
-          pm.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
-          pm.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
-        }
-      } catch (e) {}
-    }
-
-    composerText = getComposerText(findPromptInput() || liveInput);
+    await insertPromptCleanly(liveInput, promptText);
     await new Promise((r) => setTimeout(r, 300));
 
-    if (activeJobAborted) {
-      clearPromptText(input);
-      throw new Error('Job stopped by user');
-    }
-
-    // ── STRICT ATTACHMENT COUNT CHECK (STRICTLY 1 IMAGE ONLY!) ──────────
-    let finalAttachmentCheck = getAttachedImagesCount(findPromptInput() || liveInput);
-    if (finalAttachmentCheck < 1) {
+    // Final Attachment Check: Ensure strictly 1 image is still attached
+    let finalCheck = getAttachedImagesCount(liveInput);
+    if (finalCheck < 1) {
       clearPromptText(liveInput);
       throw new Error(`CRITICAL: Attached image was lost before sending! Refusing to send prompt without image.`);
     }
-
-    // If more than 1 image got attached, prune immediately down to strictly 1!
-    if (finalAttachmentCheck > 1) {
-      console.warn(`[BOLTHAVEN] Detected ${finalAttachmentCheck} attachments (expected strictly 1). Pruning down to 1...`);
+    if (finalCheck > 1) {
       await pruneExcessAttachments(liveInput, 1);
-      await new Promise((r) => setTimeout(r, 400));
-      finalAttachmentCheck = getAttachedImagesCount(findPromptInput() || liveInput);
-      if (finalAttachmentCheck > 1) {
-        clearPromptText(liveInput);
-        startNewChatSmoothly();
-        throw new Error(`CRITICAL: Could not prune excess attachments down to 1 (found ${finalAttachmentCheck}). Resetting tab.`);
+      finalCheck = getAttachedImagesCount(liveInput);
+      if (finalCheck > 1) {
+        window.location.href = 'https://chatgpt.com/';
+        window.location.reload();
+        throw new Error('Multiple attachments detected before send. Reloading tab.');
       }
     }
-
-    console.log(`[BOLTHAVEN] ✓ Step 2 Done: Strictly 1 image verified + prompt ready (${composerText.length} chars). Sending Image #${job.original_position || 1}...`);
 
     // Record pre-existing assistant turn count before sending
     const preAssistantCount = document.querySelectorAll(
@@ -2146,49 +2248,17 @@
 
     // 4. Click Send button and VERIFY message was dispatched
     console.log(`[BOLTHAVEN] Sending prompt + image #${job.original_position || 1} to ChatGPT...`);
-    let messageSent = false;
-    const sendDeadline = Date.now() + 15000;
+    const sendSuccess = await triggerSendRobustly(liveInput);
 
-    while (Date.now() < sendDeadline) {
-      if (activeJobAborted) throw new Error('Job stopped by user');
-
-      const sendBtn = findSendButton();
-      if (sendBtn && isSendButtonReady(sendBtn)) {
-        await clickSendButton(sendBtn);
-      }
-
-      await new Promise((r) => setTimeout(r, 800));
-
-      const isGeneratingNow = isThinkingOrGenerating();
-      const stopBtnActive = Boolean(findStopButton());
-      const currentTurns = document.querySelectorAll(
-        'div[data-message-author-role="assistant"], article[data-testid*="conversation-turn"]'
-      );
-      const composerTextNow = getComposerText(input);
-      const attachmentsNow = getAttachedImagesCount(input);
-
-      // Confirmed dispatched IF:
-      // 1. Generation started (stop button or isThinking)
-      // OR 2. Assistant turns increased
-      // OR 3. Both composer prompt text AND attachment have cleared!
-      // OR 4. Send button is gone or replaced by stop button!
-      const composerCleared = (composerTextNow.length === 0 && attachmentsNow === 0);
-      const sendBtnNow = findSendButton();
-      const sendBtnGone = !sendBtnNow || !isSendButtonReady(sendBtnNow);
-
-      if (isGeneratingNow || stopBtnActive || currentTurns.length > preAssistantCount || (composerCleared && sendBtnGone)) {
-        messageSent = true;
-        console.log(`[BOLTHAVEN] ✓ Image #${job.original_position || 1} confirmed dispatched to ChatGPT!`);
-        break;
-      }
-    }
-
-    if (!messageSent) {
+    if (!sendSuccess) {
       console.error(`[BOLTHAVEN] CRITICAL: Message dispatch failed to trigger ChatGPT send on Image #${job.original_position || 1}`);
-      clearPromptText(input);
-      startNewChatSmoothly();
-      throw new Error(`CRITICAL: Message dispatch failed to trigger ChatGPT send on Image #${job.original_position || 1}. Resetting tab to avoid accumulating unsent images.`);
+      clearPromptText(liveInput);
+      window.location.href = 'https://chatgpt.com/';
+      window.location.reload();
+      throw new Error(`CRITICAL: Message dispatch failed to trigger ChatGPT send on Image #${job.original_position || 1}. Resetting tab.`);
     }
+
+    console.log(`[BOLTHAVEN] ✓ Image #${job.original_position || 1} confirmed dispatched to ChatGPT!`);
 
     // Launch background generation watcher asynchronously
     watchGenerationAndDownload(job, preExistingImageUrls, preAssistantCount);
