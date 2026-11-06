@@ -269,7 +269,11 @@ export const PhotoLightboxModal: React.FC<PhotoLightboxModalProps> = ({
 
           <button
             type="button"
-            onClick={onClose}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onClose();
+            }}
             title="Close Lightbox (Esc)"
             style={{
               width: '34px',
@@ -282,9 +286,11 @@ export const PhotoLightboxModal: React.FC<PhotoLightboxModalProps> = ({
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
+              pointerEvents: 'auto',
+              userSelect: 'none',
             }}
           >
-            <FiX size={18} />
+            <FiX size={18} style={{ pointerEvents: 'none' }} />
           </button>
         </div>
       </div>

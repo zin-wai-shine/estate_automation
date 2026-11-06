@@ -672,7 +672,11 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
 
         <button
           type="button"
-          onClick={onClose}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onClose();
+          }}
           title="Close Settings Sidebox"
           style={{
             width: '28px',
@@ -685,9 +689,11 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
             alignItems: 'center',
             justifyContent: 'center',
             cursor: 'pointer',
+            pointerEvents: 'auto',
+            userSelect: 'none',
           }}
         >
-          <FiX size={15} />
+          <FiX size={15} style={{ pointerEvents: 'none' }} />
         </button>
       </div>
 

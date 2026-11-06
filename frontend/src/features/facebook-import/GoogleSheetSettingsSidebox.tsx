@@ -180,7 +180,11 @@ export const GoogleSheetSettingsSidebox: React.FC<GoogleSheetSettingsSideboxProp
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <button
             type="button"
-            onClick={onClose}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onClose();
+            }}
             title="Close Settings (Esc)"
             aria-label="Close"
             style={{
@@ -195,10 +199,12 @@ export const GoogleSheetSettingsSidebox: React.FC<GoogleSheetSettingsSideboxProp
               justifyContent: 'center',
               cursor: 'pointer',
               flexShrink: 0,
+              pointerEvents: 'auto',
+              userSelect: 'none',
               transition: 'all 0.15s ease',
             }}
           >
-            <FiX size={15} />
+            <FiX size={15} style={{ pointerEvents: 'none' }} />
           </button>
         </div>
       </div>

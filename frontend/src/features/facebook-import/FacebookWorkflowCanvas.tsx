@@ -7948,6 +7948,9 @@ export const FacebookWorkflowCanvas = forwardRef<
       setConnectDrawerNode(null);
       setQuickAddPopover(null);
       setViewingPromptTemplate(null);
+      setShowPhotoCropSettingsSidebox(false);
+      setShowFBHeroSettingsSidebox(false);
+      setShowGoogleSheetSettingsSidebox(false);
       setActiveModalNode(node);
 
       if (node) {
@@ -10927,11 +10930,12 @@ export const FacebookWorkflowCanvas = forwardRef<
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0, position: 'relative', zIndex: 50, pointerEvents: 'auto' }}>
                   {isAIBox && currentModalAIBox && isGoogleSheetBox(currentModalAIBox) && (
                     <button
                       type="button"
                       onClick={(e) => {
+                        e.preventDefault();
                         e.stopPropagation();
                         if (viewingPromptTemplate) {
                           setViewingPromptTemplate(null);
@@ -10942,7 +10946,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                           setShowGoogleSheetSettingsSidebox((prev) => !prev);
                         }
                       }}
-                      onMouseDown={(e) => e.stopPropagation()}
                       title="Google Sheet & AI Agent Settings (Spreadsheet, Credentials, Model, Prompt)"
                       aria-label="Google Sheet Settings"
                       style={{
@@ -10961,10 +10964,12 @@ export const FacebookWorkflowCanvas = forwardRef<
                         color: showGoogleSheetSettingsSidebox && !viewingPromptTemplate ? '#0F9D58' : 'var(--text-secondary)',
                         cursor: 'pointer',
                         flexShrink: 0,
+                        pointerEvents: 'auto',
+                        userSelect: 'none',
                         transition: 'all 0.15s ease',
                       }}
                     >
-                      <FiSettings size={15} />
+                      <FiSettings size={15} style={{ pointerEvents: 'none' }} />
                     </button>
                   )}
 
@@ -10977,6 +10982,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                       <button
                         type="button"
                         onClick={(e) => {
+                          e.preventDefault();
                           e.stopPropagation();
                           if (viewingPromptTemplate) {
                             setViewingPromptTemplate(null);
@@ -10987,7 +10993,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                             setShowFBHeroSettingsSidebox((prev) => !prev);
                           }
                         }}
-                        onMouseDown={(e) => e.stopPropagation()}
                         title="FB Hero Settings (Reference Image, Prompt & Condo 1,2,3)"
                         aria-label="FB Hero Settings"
                         style={{
@@ -11006,20 +11011,22 @@ export const FacebookWorkflowCanvas = forwardRef<
                           color: showFBHeroSettingsSidebox ? '#F59E0B' : 'var(--text-secondary)',
                           cursor: 'pointer',
                           flexShrink: 0,
+                          pointerEvents: 'auto',
+                          userSelect: 'none',
                           transition: 'all 0.15s ease',
                         }}
                       >
-                        <FiSettings size={15} />
+                        <FiSettings size={15} style={{ pointerEvents: 'none' }} />
                       </button>
                     )}
 
                   <button
                     type="button"
                     onClick={(e) => {
+                      e.preventDefault();
                       e.stopPropagation();
                       handleCloseModal();
                     }}
-                    onMouseDown={(e) => e.stopPropagation()}
                     title="Close Inspector (Esc)"
                     aria-label="Close"
                     style={{
@@ -11034,9 +11041,12 @@ export const FacebookWorkflowCanvas = forwardRef<
                       color: 'var(--text-secondary)',
                       cursor: 'pointer',
                       flexShrink: 0,
+                      pointerEvents: 'auto',
+                      userSelect: 'none',
+                      transition: 'all 0.15s ease',
                     }}
                   >
-                    <FiX size={15} />
+                    <FiX size={15} style={{ pointerEvents: 'none' }} />
                   </button>
                 </div>
               </div>
@@ -15657,10 +15667,10 @@ export const FacebookWorkflowCanvas = forwardRef<
               <button
                 type="button"
                 onClick={(e) => {
+                  e.preventDefault();
                   e.stopPropagation();
                   handleCloseModal();
                 }}
-                onMouseDown={(e) => e.stopPropagation()}
                 title="Close Inspector (Esc)"
                 aria-label="Close"
                 style={{
@@ -15674,9 +15684,12 @@ export const FacebookWorkflowCanvas = forwardRef<
                   backgroundColor: isDark ? 'var(--bg-surface)' : 'rgba(0, 0, 0, 0.04)',
                   color: 'var(--text-secondary)',
                   cursor: 'pointer',
+                  pointerEvents: 'auto',
+                  userSelect: 'none',
+                  transition: 'all 0.15s ease',
                 }}
               >
-                <FiX size={15} />
+                <FiX size={15} style={{ pointerEvents: 'none' }} />
               </button>
             </div>
 
@@ -16165,16 +16178,16 @@ export const FacebookWorkflowCanvas = forwardRef<
                 <button
                   type="button"
                   onClick={(e) => {
+                    e.preventDefault();
                     e.stopPropagation();
                     setConnectDrawerNode(null);
                     setActiveModalNode(null);
                   }}
-                  onMouseDown={(e) => e.stopPropagation()}
                   title="Close (Esc)"
                   aria-label="Close"
                   style={{
-                    width: '24px',
-                    height: '24px',
+                    width: '26px',
+                    height: '26px',
                     borderRadius: '6px',
                     border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
                     backgroundColor: 'transparent',
@@ -16184,9 +16197,12 @@ export const FacebookWorkflowCanvas = forwardRef<
                     justifyContent: 'center',
                     cursor: 'pointer',
                     flexShrink: 0,
+                    pointerEvents: 'auto',
+                    userSelect: 'none',
+                    transition: 'all 0.15s ease',
                   }}
                 >
-                  <FiX size={14} />
+                  <FiX size={14} style={{ pointerEvents: 'none' }} />
                 </button>
               </div>
 
@@ -16681,16 +16697,16 @@ export const FacebookWorkflowCanvas = forwardRef<
                 <button
                   type="button"
                   onClick={(e) => {
+                    e.preventDefault();
                     e.stopPropagation();
                     setConnectDrawerNode(null);
                     setActiveModalNode(null);
                   }}
-                  onMouseDown={(e) => e.stopPropagation()}
                   title="Close (Esc)"
                   aria-label="Close"
                   style={{
-                    width: '24px',
-                    height: '24px',
+                    width: '26px',
+                    height: '26px',
                     borderRadius: '6px',
                     border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
                     backgroundColor: 'transparent',
@@ -16700,9 +16716,12 @@ export const FacebookWorkflowCanvas = forwardRef<
                     justifyContent: 'center',
                     cursor: 'pointer',
                     flexShrink: 0,
+                    pointerEvents: 'auto',
+                    userSelect: 'none',
+                    transition: 'all 0.15s ease',
                   }}
                 >
-                  <FiX size={14} />
+                  <FiX size={14} style={{ pointerEvents: 'none' }} />
                 </button>
               </div>
 
@@ -17082,16 +17101,16 @@ export const FacebookWorkflowCanvas = forwardRef<
                 <button
                   type="button"
                   onClick={(e) => {
+                    e.preventDefault();
                     e.stopPropagation();
                     setConnectDrawerNode(null);
                     setActiveModalNode(null);
                   }}
-                  onMouseDown={(e) => e.stopPropagation()}
                   title="Close (Esc)"
                   aria-label="Close"
                   style={{
-                    width: '24px',
-                    height: '24px',
+                    width: '26px',
+                    height: '26px',
                     borderRadius: '6px',
                     border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
                     backgroundColor: 'transparent',
@@ -17101,9 +17120,12 @@ export const FacebookWorkflowCanvas = forwardRef<
                     justifyContent: 'center',
                     cursor: 'pointer',
                     flexShrink: 0,
+                    pointerEvents: 'auto',
+                    userSelect: 'none',
+                    transition: 'all 0.15s ease',
                   }}
                 >
-                  <FiX size={14} />
+                  <FiX size={14} style={{ pointerEvents: 'none' }} />
                 </button>
               </div>
 
@@ -17603,16 +17625,16 @@ export const FacebookWorkflowCanvas = forwardRef<
               <button
                 type="button"
                 onClick={(e) => {
+                  e.preventDefault();
                   e.stopPropagation();
                   setConnectDrawerNode(null);
                   setActiveModalNode(null);
                 }}
-                onMouseDown={(e) => e.stopPropagation()}
                 title="Close (Esc)"
                 aria-label="Close"
                 style={{
-                  width: '24px',
-                  height: '24px',
+                  width: '26px',
+                  height: '26px',
                   borderRadius: '6px',
                   border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
                   backgroundColor: 'transparent',
@@ -17622,9 +17644,12 @@ export const FacebookWorkflowCanvas = forwardRef<
                   justifyContent: 'center',
                   cursor: 'pointer',
                   flexShrink: 0,
+                  pointerEvents: 'auto',
+                  userSelect: 'none',
+                  transition: 'all 0.15s ease',
                 }}
               >
-                <FiX size={14} />
+                <FiX size={14} style={{ pointerEvents: 'none' }} />
               </button>
             </div>
 
@@ -20060,10 +20085,10 @@ export const FacebookWorkflowCanvas = forwardRef<
           <button
             type="button"
             onClick={(e) => {
+              e.preventDefault();
               e.stopPropagation();
               handleToggleGeneralSettings(false);
             }}
-            onMouseDown={(e) => e.stopPropagation()}
             title="Close (Esc)"
             aria-label="Close"
             style={{
@@ -20078,6 +20103,8 @@ export const FacebookWorkflowCanvas = forwardRef<
               justifyContent: 'center',
               cursor: 'pointer',
               flexShrink: 0,
+              pointerEvents: 'auto',
+              userSelect: 'none',
               transition: 'all 0.15s ease',
             }}
             onMouseEnter={(e) => {
@@ -20089,7 +20116,7 @@ export const FacebookWorkflowCanvas = forwardRef<
               e.currentTarget.style.color = isDark ? '#8B949E' : '#64748B';
             }}
           >
-            <FiX size={14} />
+            <FiX size={14} style={{ pointerEvents: 'none' }} />
           </button>
         </div>
 
