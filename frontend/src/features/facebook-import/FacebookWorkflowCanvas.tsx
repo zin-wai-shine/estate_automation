@@ -13534,57 +13534,48 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   style={{
                                     display: 'flex',
                                     flexDirection: 'column',
-                                    gap: '0.45rem',
-                                    padding: '0.65rem 0.75rem',
-                                    borderRadius: '6px',
-                                    backgroundColor: isDark ? 'rgba(16, 185, 129, 0.1)' : '#F0FDF4',
-                                    border: isDark ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid #BBF7D0',
+                                    gap: '0.5rem',
+                                    padding: '0.75rem',
+                                    borderRadius: '8px',
+                                    backgroundColor: isDark ? 'rgba(16, 185, 129, 0.08)' : '#F0FDF4',
+                                    border: isDark ? '1px solid rgba(16, 185, 129, 0.25)' : '1px solid #BBF7D0',
                                   }}
                                 >
-                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                      <FiCheckCircle size={14} color="#10B981" />
-                                      <span style={{ fontSize: '0.75rem', fontWeight: 700, color: isDark ? '#6EE7B7' : '#15803D' }}>
+                                  {/* Clean Single-Line Header */}
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, flex: 1 }}>
+                                      <FiCheckCircle size={14} color="#10B981" style={{ flexShrink: 0 }} />
+                                      <span
+                                        style={{
+                                          fontSize: '0.78125rem',
+                                          fontWeight: 600,
+                                          color: isDark ? '#6EE7B7' : '#15803D',
+                                          whiteSpace: 'nowrap',
+                                          overflow: 'hidden',
+                                          textOverflow: 'ellipsis',
+                                        }}
+                                      >
                                         Row Added to "{currentModalAIBox.googleSheetName || 'Sheet6'}"
                                       </span>
                                     </div>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleOpenGoogleSheetDataViewer(currentModalAIBox)}
-                                        style={{
-                                          display: 'inline-flex',
-                                          alignItems: 'center',
-                                          gap: '4px',
-                                          fontSize: '0.6875rem',
-                                          fontWeight: 600,
-                                          color: '#0F9D58',
-                                          background: 'none',
-                                          border: 'none',
-                                          cursor: 'pointer',
-                                          padding: 0,
-                                        }}
-                                      >
-                                        <SiGooglesheets size={12} /> View Sheet Data
-                                      </button>
-                                      <span style={{ opacity: 0.3 }}>|</span>
-                                      <a
-                                        href={cleanOpenUrl}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        style={{
-                                          display: 'inline-flex',
-                                          alignItems: 'center',
-                                          gap: '4px',
-                                          fontSize: '0.6875rem',
-                                          fontWeight: 600,
-                                          color: isDark ? '#38BDF8' : '#0284C7',
-                                          textDecoration: 'none',
-                                        }}
-                                      >
-                                        Open Sheet <FiExternalLink size={11} />
-                                      </a>
-                                    </div>
+                                    <a
+                                      href={cleanOpenUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                        fontSize: '0.6875rem',
+                                        fontWeight: 500,
+                                        color: isDark ? '#38BDF8' : '#0284C7',
+                                        textDecoration: 'none',
+                                        whiteSpace: 'nowrap',
+                                        flexShrink: 0,
+                                      }}
+                                    >
+                                      Open Sheet <FiExternalLink size={11} />
+                                    </a>
                                   </div>
 
                                   {/* Mapped Row Preview */}
@@ -13593,10 +13584,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                                       style={{
                                         display: 'grid',
                                         gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-                                        gap: '4px',
-                                        padding: '0.45rem',
-                                        borderRadius: '4px',
-                                        backgroundColor: isDark ? 'rgba(0, 0, 0, 0.25)' : 'rgba(255, 255, 255, 0.7)',
+                                        gap: '4px 8px',
+                                        padding: '0.45rem 0.55rem',
+                                        borderRadius: '5px',
+                                        backgroundColor: isDark ? 'rgba(0, 0, 0, 0.28)' : 'rgba(255, 255, 255, 0.7)',
                                         border: isDark ? '1px solid rgba(255, 255, 255, 0.05)' : '1px solid #E2E8F0',
                                         fontSize: '0.65rem',
                                         maxHeight: '120px',
@@ -13612,78 +13603,93 @@ export const FacebookWorkflowCanvas = forwardRef<
                                     </div>
                                   )}
 
-                                  {/* Action links */}
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setViewingPromptTemplate({
-                                          id: currentModalAIBox.id,
-                                          name: `${currentModalAIBox.title || 'Google Sheet'} Appended Row`,
-                                          templateText: sheetBoxOutput,
-                                          headerTitle: 'Google Sheet Appended Row',
-                                          copyButtonLabel: 'Copy Row JSON',
-                                        });
-                                      }}
-                                      style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '4px',
-                                        background: 'none',
-                                        border: 'none',
-                                        color: 'var(--accent-primary, #3B82F6)',
-                                        fontSize: '0.6875rem',
-                                        fontWeight: 600,
-                                        cursor: 'pointer',
-                                        padding: 0,
-                                      }}
-                                    >
-                                      <FiEye size={12} /> View Full JSON
-                                    </button>
-                                    <span style={{ opacity: 0.4 }}>•</span>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        navigator.clipboard.writeText(sheetBoxOutput);
-                                        setCopiedPromptId(currentModalAIBox.id);
-                                        setTimeout(() => setCopiedPromptId(null), 2000);
-                                      }}
-                                      style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '4px',
-                                        background: 'none',
-                                        border: 'none',
-                                        color: copiedPromptId === currentModalAIBox.id ? '#10B981' : 'var(--text-secondary)',
-                                        fontSize: '0.6875rem',
-                                        fontWeight: 600,
-                                        cursor: 'pointer',
-                                        padding: 0,
-                                      }}
-                                    >
-                                      {copiedPromptId === currentModalAIBox.id ? <FiCheck size={12} /> : <FiCopy size={12} />}
-                                      {copiedPromptId === currentModalAIBox.id ? 'Copied' : 'Copy JSON'}
-                                    </button>
-                                    <span style={{ opacity: 0.4 }}>•</span>
+                                  {/* Action Links Row (Single clean line, no text wrapping) */}
+                                  <div
+                                    style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'space-between',
+                                      gap: '8px',
+                                      marginTop: '2px',
+                                      paddingTop: '6px',
+                                      borderTop: isDark ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid #E2E8F0',
+                                    }}
+                                  >
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setViewingPromptTemplate({
+                                            id: currentModalAIBox.id,
+                                            name: `${currentModalAIBox.title || 'Google Sheet'} Appended Row`,
+                                            templateText: sheetBoxOutput,
+                                            headerTitle: 'Google Sheet Appended Row',
+                                            copyButtonLabel: 'Copy Row JSON',
+                                          });
+                                        }}
+                                        style={{
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: '4px',
+                                          background: 'none',
+                                          border: 'none',
+                                          color: 'var(--accent-primary, #3B82F6)',
+                                          fontSize: '0.6875rem',
+                                          fontWeight: 600,
+                                          cursor: 'pointer',
+                                          padding: 0,
+                                          whiteSpace: 'nowrap',
+                                        }}
+                                      >
+                                        <FiEye size={12} /> View Full JSON
+                                      </button>
+                                      <span style={{ opacity: 0.3 }}>•</span>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          navigator.clipboard.writeText(sheetBoxOutput);
+                                          setCopiedPromptId(currentModalAIBox.id);
+                                          setTimeout(() => setCopiedPromptId(null), 2000);
+                                        }}
+                                        style={{
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: '4px',
+                                          background: 'none',
+                                          border: 'none',
+                                          color: copiedPromptId === currentModalAIBox.id ? '#10B981' : 'var(--text-secondary)',
+                                          fontSize: '0.6875rem',
+                                          fontWeight: 600,
+                                          cursor: 'pointer',
+                                          padding: 0,
+                                          whiteSpace: 'nowrap',
+                                        }}
+                                      >
+                                        {copiedPromptId === currentModalAIBox.id ? <FiCheck size={12} /> : <FiCopy size={12} />}
+                                        <span>{copiedPromptId === currentModalAIBox.id ? 'Copied' : 'Copy JSON'}</span>
+                                      </button>
+                                    </div>
+
                                     <button
                                       type="button"
                                       disabled={isDeletingSheetRow || isRunningThisNode}
                                       onClick={() => handlePromptRevertRow(currentModalAIBox)}
                                       style={{
-                                        display: 'flex',
+                                        display: 'inline-flex',
                                         alignItems: 'center',
                                         gap: '4px',
                                         background: 'none',
                                         border: 'none',
-                                        color: isDark ? '#FCA5A5' : '#DC2626',
+                                        color: isDark ? '#F87171' : '#DC2626',
                                         fontSize: '0.6875rem',
                                         fontWeight: 600,
                                         cursor: isDeletingSheetRow || isRunningThisNode ? 'not-allowed' : 'pointer',
                                         padding: 0,
+                                        whiteSpace: 'nowrap',
                                       }}
                                     >
-                                      <FiRotateCcw size={12} style={{ animation: isDeletingSheetRow ? 'spin 1s linear infinite' : 'none' }} />
-                                      <span>{isDeletingSheetRow ? 'Deleting...' : 'Revert / Delete Row'}</span>
+                                      <FiRotateCcw size={11} style={{ animation: isDeletingSheetRow ? 'spin 1s linear infinite' : 'none' }} />
+                                      <span>{isDeletingSheetRow ? 'Deleting...' : 'Revert Row'}</span>
                                     </button>
                                   </div>
                                 </div>
@@ -13696,13 +13702,13 @@ export const FacebookWorkflowCanvas = forwardRef<
                                 onClick={handleTriggerAddRow}
                                 style={{
                                   width: '100%',
-                                  height: '38px',
+                                  height: '36px',
                                   padding: '0 1rem',
                                   borderRadius: '6px',
                                   border: 'none',
                                   backgroundColor: isRunningThisNode ? (isDark ? '#21262D' : '#E2E8F0') : '#0F9D58',
-                                  color: isRunningThisNode ? 'var(--text-muted)' : '#FFFFFF',
-                                  fontSize: '0.75rem',
+                                  color: '#FFFFFF',
+                                  fontSize: '0.78125rem',
                                   fontWeight: 600,
                                   cursor: isRunningThisNode || executionState?.isRunning ? 'not-allowed' : 'pointer',
                                   display: 'flex',
@@ -13710,7 +13716,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   justifyContent: 'center',
                                   gap: '8px',
                                   transition: 'all 0.15s ease',
-                                  boxShadow: isRunningThisNode ? 'none' : '0 1px 3px rgba(15, 157, 88, 0.3)',
+                                  boxShadow: 'none',
+                                  outline: 'none',
                                 }}
                                 onMouseEnter={(e) => {
                                   if (!isRunningThisNode && !executionState?.isRunning) {
@@ -13730,36 +13737,38 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   </>
                                 ) : (
                                   <>
-                                    <SiGooglesheets size={15} />
+                                    <SiGooglesheets size={14} />
                                     <span>{hasOutput ? 'Add Another Row to Sheet' : 'Add Row to Google Sheet'}</span>
                                   </>
                                 )}
                               </button>
 
-                              {/* View All Data from Sheet */}
+                              {/* Secondary Action Button: View All Data from Sheet (Clean Neutral Style) */}
                               <button
                                 type="button"
                                 onClick={() => handleOpenGoogleSheetDataViewer(currentModalAIBox)}
                                 style={{
                                   width: '100%',
-                                  height: '34px',
+                                  height: '36px',
                                   padding: '0 1rem',
                                   borderRadius: '6px',
                                   border: isDark ? '1px solid #30363D' : '1px solid #D0D7DE',
                                   backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF',
                                   color: 'var(--text-primary)',
-                                  fontSize: '0.75rem',
+                                  fontSize: '0.78125rem',
                                   fontWeight: 600,
                                   cursor: 'pointer',
                                   display: 'flex',
                                   alignItems: 'center',
                                   justifyContent: 'center',
-                                  gap: '7px',
+                                  gap: '8px',
                                   transition: 'all 0.15s ease',
+                                  boxShadow: 'none',
+                                  outline: 'none',
                                 }}
                                 onMouseEnter={(e) => {
-                                  e.currentTarget.style.borderColor = '#0F9D58';
-                                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(15, 157, 88, 0.1)' : 'rgba(15, 157, 88, 0.05)';
+                                  e.currentTarget.style.borderColor = isDark ? '#484F58' : '#CBD5E1';
+                                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.03)';
                                 }}
                                 onMouseLeave={(e) => {
                                   e.currentTarget.style.borderColor = isDark ? '#30363D' : '#D0D7DE';
@@ -13770,46 +13779,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                 <span>View All Data from Sheet</span>
                               </button>
 
-                              {/* Secondary Action Button: Revert / Delete Added Row from Google Sheet */}
-                              {Boolean(hasOutput || sheetSyncSuccessMessage) && (
-                                <button
-                                  type="button"
-                                  disabled={isDeletingSheetRow || isRunningThisNode}
-                                  onClick={() => handlePromptRevertRow(currentModalAIBox)}
-                                  style={{
-                                    width: '100%',
-                                    height: '34px',
-                                    padding: '0 1rem',
-                                    borderRadius: '6px',
-                                    border: isDark ? '1px solid rgba(239, 68, 68, 0.4)' : '1px solid #FECACA',
-                                    backgroundColor: isDark ? 'rgba(239, 68, 68, 0.08)' : '#FEF2F2',
-                                    color: isDark ? '#FCA5A5' : '#DC2626',
-                                    fontSize: '0.75rem',
-                                    fontWeight: 600,
-                                    cursor: isDeletingSheetRow || isRunningThisNode ? 'not-allowed' : 'pointer',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    gap: '6px',
-                                    transition: 'all 0.15s ease',
-                                  }}
-                                  onMouseEnter={(e) => {
-                                    if (!isDeletingSheetRow && !isRunningThisNode) {
-                                      e.currentTarget.style.backgroundColor = isDark ? 'rgba(239, 68, 68, 0.18)' : '#FEE2E2';
-                                    }
-                                  }}
-                                  onMouseLeave={(e) => {
-                                    if (!isDeletingSheetRow && !isRunningThisNode) {
-                                      e.currentTarget.style.backgroundColor = isDark ? 'rgba(239, 68, 68, 0.08)' : '#FEF2F2';
-                                    }
-                                  }}
-                                >
-                                  <FiRotateCcw size={13} style={{ animation: isDeletingSheetRow ? 'spin 1s linear infinite' : 'none' }} />
-                                  <span>{isDeletingSheetRow ? 'Reverting Row from Sheet...' : 'Revert / Delete Row from Sheet'}</span>
-                                </button>
-                              )}
-
-                              <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', textAlign: 'center', lineHeight: 1.3 }}>
+                              <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', textAlign: 'center', lineHeight: 1.3, marginTop: '2px' }}>
                                 Reads post specs from Get Content, maps strictly to Row 1 column headers, and appends a new row to your sheet.
                               </div>
                             </div>
