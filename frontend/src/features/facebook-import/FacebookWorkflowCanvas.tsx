@@ -31,6 +31,9 @@ import {
   FiX,
   FiAlertTriangle,
   FiEdit2,
+  FiEdit3,
+  FiUploadCloud,
+  FiClipboard,
   FiChevronLeft,
   FiChevronRight,
   FiTerminal,
@@ -4294,12 +4297,67 @@ export const FacebookWorkflowCanvas = forwardRef<
     };
   }, [config.aiBoxes, config.connections, images, allEnhancedPhotos]);
 
+  const [isDraggingTriggerFiles, setIsDraggingTriggerFiles] = useState(false);
+  const triggerFileInputRef = useRef<HTMLInputElement>(null);
+
+  const isManualTrigger = config.trigger?.sourceMode === 'manual';
+  const effectiveRawContent = useMemo(() => {
+    if (isManualTrigger && config.trigger?.manualContent !== undefined) {
+      return config.trigger.manualContent || '';
+    }
+    return rawContent || (config.trigger?.manualContent || '');
+  }, [isManualTrigger, config.trigger?.manualContent, rawContent]);
+
+  const effectiveImages: any[] = useMemo(() => {
+    if (isManualTrigger && config.trigger?.manualImages && config.trigger.manualImages.length > 0) {
+      return config.trigger.manualImages.map((img: any, idx: number) => ({
+        index: idx,
+        facebook_photo_id: `manual-photo-${idx + 1}`,
+        source_url: img.url,
+        stored_url: img.url,
+        filename: img.filename || `Photo #${idx + 1}`,
+        status: 'verified',
+      }));
+    }
+    return images || [];
+  }, [isManualTrigger, config.trigger?.manualImages, images]);
+
+  const handleManualTriggerFiles = (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const fileList = Array.from(files);
+    const readPromises = fileList.map((file) => {
+      return new Promise<{ url: string; filename: string; mime_type: string; size_bytes: number }>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          resolve({
+            url: ev.target?.result as string,
+            filename: file.name,
+            mime_type: file.type || 'image/jpeg',
+            size_bytes: file.size,
+          });
+        };
+        reader.readAsDataURL(file);
+      });
+    });
+    Promise.all(readPromises).then((newImgs) => {
+      const existing = config.trigger?.manualImages || [];
+      const updatedConfig = {
+        ...config,
+        trigger: {
+          ...config.trigger,
+          manualImages: [...existing, ...newImgs],
+        },
+      };
+      updateConfig(updatedConfig);
+    });
+  };
+
   const activeCopy: string = useMemo(() => {
-    if (outputSelectedCopyKey === 'original') return rawContent || '';
-    if (outputSelectedCopyKey === 'primary') return aiGeneratedCopy || rawContent || '';
+    if (outputSelectedCopyKey === 'original') return effectiveRawContent || '';
+    if (outputSelectedCopyKey === 'primary') return aiGeneratedCopy || effectiveRawContent || '';
     if (aiGeneratedOutputs[outputSelectedCopyKey]) return aiGeneratedOutputs[outputSelectedCopyKey];
-    return aiGeneratedCopy || rawContent || '';
-  }, [outputSelectedCopyKey, aiGeneratedCopy, rawContent, aiGeneratedOutputs]);
+    return aiGeneratedCopy || effectiveRawContent || '';
+  }, [outputSelectedCopyKey, aiGeneratedCopy, effectiveRawContent, aiGeneratedOutputs]);
 
   interface CompiledImageItem {
     index: number;
@@ -4316,7 +4374,7 @@ export const FacebookWorkflowCanvas = forwardRef<
 
   // Raw original photos extracted strictly at the "Get Images" step (without downstream crop slices or watermarks)
   const rawExtractedImages: CompiledImageItem[] = useMemo(() => {
-    return (images || []).map((img) => {
+    return (effectiveImages || []).map((img) => {
       let finalUrl =
         img.stored_url
           ? img.stored_url.startsWith('http')
@@ -4337,7 +4395,7 @@ export const FacebookWorkflowCanvas = forwardRef<
         isEnhanced: false,
       };
     });
-  }, [images]);
+  }, [effectiveImages]);
 
   const compiledImages: CompiledImageItem[] = useMemo(() => {
     const list: CompiledImageItem[] = [];
@@ -4356,7 +4414,7 @@ export const FacebookWorkflowCanvas = forwardRef<
       });
     }
 
-    (images || []).forEach((img) => {
+    (effectiveImages || []).forEach((img) => {
       const isWatermarked = Boolean(watermarkedPhotos[img.index]);
       const isEnhanced = Boolean(allEnhancedPhotos[img.index]);
       let finalUrl =
@@ -4383,7 +4441,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     });
 
     return list;
-  }, [images, watermarkedPhotos, allEnhancedPhotos, combineCropSlices]);
+  }, [effectiveImages, watermarkedPhotos, allEnhancedPhotos, combineCropSlices]);
 
   const handleOpenLightbox = (
     indexOrUrl: number | string,
@@ -9119,7 +9177,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                         trigger: { ...config.trigger, enabled: true },
                       };
                       updateConfig(updated);
-                      handleOpenConnectDrawer('trigger', 'trigger', 'Facebook URL Importer');
+                      setConnectDrawerNode(null);
+                      setActiveModalNode({ type: 'trigger' });
                     }
                   }}
                 >
@@ -9179,6 +9238,7 @@ export const FacebookWorkflowCanvas = forwardRef<
               );
             }
 
+            const isManualTrigger = config.trigger?.sourceMode === 'manual';
             const triggerStatus = getNodeExecutionStatus('trigger');
             return (
               <div
@@ -9220,15 +9280,19 @@ export const FacebookWorkflowCanvas = forwardRef<
                   onAddClick={(e) => {
                     e.stopPropagation();
                     setDragWire(null);
-                    handleOpenConnectDrawer('trigger', 'trigger', config.trigger.monitoredPageName || 'Extract Link');
+                    handleOpenConnectDrawer('trigger', 'trigger', isManualTrigger ? 'Manual Input' : (config.trigger.monitoredPageName || 'Extract Link'));
                   }}
                   onSocketMouseDown={(type, e) => handleSocketMouseDown('trigger', type, e)}
                   onSocketMouseUp={(type, e) => handleSocketMouseUp('trigger', type, e)}
                 />
-                <FiLink style={{ fontSize: '28px', color: '#1877F2', position: 'relative', zIndex: 2, pointerEvents: 'none' }} />
+                {isManualTrigger ? (
+                  <FiEdit3 style={{ fontSize: '26px', color: '#3B82F6', position: 'relative', zIndex: 2, pointerEvents: 'none' }} />
+                ) : (
+                  <FiLink style={{ fontSize: '28px', color: '#1877F2', position: 'relative', zIndex: 2, pointerEvents: 'none' }} />
+                )}
                 <NodeExecutionBadge status={triggerStatus} />
                 {config.trigger.enabled !== false && (hoveredNodeId === 'trigger' || activeModalNode?.type === 'trigger' || selectedNodeIds.has('trigger')) &&
-                  renderNodePlayButton('trigger', '#3B82F6', undefined, 'Link Importer')}
+                  renderNodePlayButton('trigger', isManualTrigger ? '#10B981' : '#3B82F6', undefined, isManualTrigger ? 'Manual Input' : 'Link Importer')}
 
                 {/* Label below circle */}
                 <div
@@ -9253,7 +9317,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   onClick={(e) => handleNodeClick({ type: 'trigger' }, e)}
                 >
                   <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)', wordBreak: 'break-word', textAlign: 'center' }}>
-                    {config.trigger.monitoredPageName || 'Extract Link'}
+                    {config.trigger.monitoredPageName || (isManualTrigger ? 'Manual Input' : 'Extract Link')}
                   </span>
                   {triggerStatus === 'running' && (
                     <span
@@ -9274,7 +9338,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                           backgroundColor: isDark ? '#38BDF8' : '#0284C7',
                         }}
                       />
-                      <span>Extracting Link...</span>
+                      <span>{isManualTrigger ? 'Loading Input...' : 'Extracting Link...'}</span>
                     </span>
                   )}
                   {triggerStatus === 'success' && (
@@ -9285,7 +9349,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                         fontWeight: 500,
                       }}
                     >
-                      ✓ Link Extracted
+                      {isManualTrigger
+                        ? (config.trigger.manualImages?.length ? `✓ ${config.trigger.manualImages.length} Photos Ready` : '✓ Manual Input Ready')
+                        : '✓ Link Extracted'}
                     </span>
                   )}
                 </div>
@@ -9444,7 +9510,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                       }}
                     >
                       {contentStatus === 'success'
-                        ? (rawContent ? `✓ ${rawContent.length} chars` : '✓ Content Ready')
+                        ? (effectiveRawContent ? `✓ ${effectiveRawContent.length} chars` : '✓ Content Ready')
                         : isContentReceptive
                           ? 'Connect Back Here'
                           : config.getContent.enabled
@@ -9608,7 +9674,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                       }}
                     >
                       {imagesStatus === 'success'
-                        ? (images && images.length > 0 ? `✓ ${images.length} Photos` : '✓ Photos Ready')
+                        ? (effectiveImages && effectiveImages.length > 0 ? `✓ ${effectiveImages.length} Photos` : '✓ Photos Ready')
                         : isImagesReceptive
                           ? 'Connect Back Here'
                           : config.getImages.enabled
@@ -11269,7 +11335,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                       height: '32px',
                       borderRadius: '8px',
                       backgroundColor: isTrigger
-                        ? 'rgba(24, 119, 242, 0.12)'
+                        ? (config.trigger?.sourceMode === 'manual' ? 'rgba(59, 130, 246, 0.12)' : 'rgba(24, 119, 242, 0.12)')
                         : isContent
                           ? 'rgba(59, 130, 246, 0.12)'
                           : isImages
@@ -11289,7 +11355,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                       flexShrink: 0,
                     }}
                   >
-                    {isTrigger && <FaFacebook size={18} color="#1877F2" />}
+                    {isTrigger && (config.trigger?.sourceMode === 'manual' ? <FiEdit3 size={18} color="#3B82F6" /> : <FaFacebook size={18} color="#1877F2" />)}
                     {isContent && <FiFileText size={18} color="#3B82F6" />}
                     {isImages && <FiImage size={18} color="#10B981" />}
                     {isCombine && <FiGitMerge size={18} color="#F59E0B" />}
@@ -11352,7 +11418,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                       />
                     ) : (
                       <div style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.2 }}>
-                        {isTrigger && 'Facebook URL Importer'}
+                        {isTrigger && (config.trigger?.sourceMode === 'manual' ? 'Manual Input' : (config.trigger?.monitoredPageName || 'Facebook URL Importer'))}
                         {isContent && 'Get Content Branch'}
                         {isImages && 'Get Images Branch'}
                         {isOutput && (config.outputNode?.title || 'Final Content & Images')}
@@ -11360,7 +11426,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                     )}
                     {!isAIBox && (
                       <div style={{ fontSize: '0.6875rem', color: isDark ? '#8B949E' : '#64748B', marginTop: '2px' }}>
-                        {isTrigger && 'Trigger Node · OpenClaw'}
+                        {isTrigger && (config.trigger?.sourceMode === 'manual' ? 'Trigger Node · Manual Paste & Photos' : 'Trigger Node · OpenClaw Link Extraction')}
                         {isContent && '100% Full Content Extraction'}
                         {isImages && 'High-Res Media Downloader'}
                         {isCombine && `${combineInputs.length} inputs merged`}
@@ -11504,45 +11570,549 @@ export const FacebookWorkflowCanvas = forwardRef<
                 }}
               >
                 {/* TRIGGER SIDEBAR CONTENT */}
-                {isTrigger && (
-                  <>
-                    {/* Connect Next Step Quick Button (top) */}
-                    {renderCenteredConnectButton('trigger', 'trigger', 'Facebook URL Importer')}
+                {isTrigger && (() => {
+                  const isManual = config.trigger?.sourceMode === 'manual';
+                  return (
+                    <>
+                      {/* Connect Next Step Quick Button (top) */}
+                      {renderCenteredConnectButton('trigger', 'trigger', isManual ? 'Manual Input' : (config.trigger?.monitoredPageName || 'Facebook URL Importer'))}
 
-                    <div
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '0.5rem',
-                        padding: '0.875rem',
-                        borderRadius: '8px',
-                        backgroundColor: isDark ? 'var(--bg-surface)' : 'var(--bg-main)',
-                        border: '1px solid var(--border-color)',
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                          Facebook URL Importer
-                        </span>
-                        <span
+                      {/* Mode Selector Tabs (Segmented Control) */}
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          padding: '3px',
+                          borderRadius: '8px',
+                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#F1F5F9',
+                          border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                          gap: '4px',
+                        }}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => {
+                            updateConfig({
+                              ...config,
+                              trigger: {
+                                ...config.trigger,
+                                sourceMode: 'paste',
+                              },
+                            });
+                          }}
                           style={{
-                            fontSize: '0.625rem',
-                            fontWeight: 600,
-                            padding: '2px 8px',
-                            borderRadius: '10px',
-                            backgroundColor: isDark ? 'rgba(24, 119, 242, 0.15)' : 'rgba(24, 119, 242, 0.1)',
-                            color: '#1877F2',
+                            flex: 1,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px',
+                            padding: '7px 10px',
+                            borderRadius: '6px',
+                            fontSize: '0.75rem',
+                            fontWeight: !isManual ? 600 : 500,
+                            border: !isManual ? '1px solid #1877F2' : '1px solid transparent',
+                            backgroundColor: !isManual
+                              ? (isDark ? 'rgba(24, 119, 242, 0.2)' : '#FFFFFF')
+                              : 'transparent',
+                            color: !isManual ? '#1877F2' : 'var(--text-secondary)',
+                            boxShadow: !isManual && !isDark ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease',
                           }}
                         >
-                          Active Trigger
-                        </span>
+                          <FiLink size={14} />
+                          <span>Link Extraction</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            updateConfig({
+                              ...config,
+                              trigger: {
+                                ...config.trigger,
+                                sourceMode: 'manual',
+                              },
+                            });
+                          }}
+                          style={{
+                            flex: 1,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px',
+                            padding: '7px 10px',
+                            borderRadius: '6px',
+                            fontSize: '0.75rem',
+                            fontWeight: isManual ? 600 : 500,
+                            border: isManual ? '1px solid #3B82F6' : '1px solid transparent',
+                            backgroundColor: isManual
+                              ? (isDark ? 'rgba(59, 130, 246, 0.2)' : '#FFFFFF')
+                              : 'transparent',
+                            color: isManual ? '#3B82F6' : 'var(--text-secondary)',
+                            boxShadow: isManual && !isDark ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease',
+                          }}
+                        >
+                          <FiEdit3 size={14} />
+                          <span>Manual Input</span>
+                        </button>
                       </div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-                        Extracts post content, high-resolution media gallery, and property attributes from Facebook URLs to feed downstream workflow branches.
-                      </div>
-                    </div>
-                  </>
-                )}
+
+                      {/* --- TAB 1: LINK EXTRACTION MODE --- */}
+                      {!isManual && (
+                        <div
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.75rem',
+                          }}
+                        >
+                          {/* Info Card */}
+                          <div
+                            style={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '0.5rem',
+                              padding: '0.875rem',
+                              borderRadius: '8px',
+                              backgroundColor: isDark ? 'var(--bg-surface)' : 'var(--bg-main)',
+                              border: isDark ? '1px solid #30363D' : '1px solid var(--border-color)',
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                Facebook URL Importer
+                              </span>
+                              <span
+                                style={{
+                                  fontSize: '0.625rem',
+                                  fontWeight: 600,
+                                  padding: '2px 8px',
+                                  borderRadius: '10px',
+                                  backgroundColor: isDark ? 'rgba(24, 119, 242, 0.15)' : 'rgba(24, 119, 242, 0.1)',
+                                  color: '#1877F2',
+                                }}
+                              >
+                                OpenClaw Active
+                              </span>
+                            </div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                              Extracts post content, high-resolution media gallery, and property attributes from Facebook URLs to feed downstream workflow branches.
+                            </div>
+                          </div>
+
+                          {/* Source / Label input */}
+                          <div
+                            style={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '0.35rem',
+                            }}
+                          >
+                            <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                              Page / Trigger Label
+                            </label>
+                            <input
+                              type="text"
+                              value={config.trigger?.monitoredPageName || ''}
+                              onChange={(e) => {
+                                updateConfig({
+                                  ...config,
+                                  trigger: {
+                                    ...config.trigger,
+                                    monitoredPageName: e.target.value,
+                                  },
+                                });
+                              }}
+                              placeholder="e.g. Bangkok Real Estate & Condo Exchange"
+                              style={{
+                                width: '100%',
+                                boxSizing: 'border-box',
+                                padding: '0.5rem 0.75rem',
+                                borderRadius: '6px',
+                                border: isDark ? '1px solid #30363D' : '1px solid #D0D7DE',
+                                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#F8FAFC',
+                                color: 'var(--text-primary)',
+                                fontSize: '0.8125rem',
+                                outline: 'none',
+                              }}
+                            />
+                            <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                              Custom name displayed beneath the trigger node on the canvas.
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* --- TAB 2: MANUAL INPUT MODE --- */}
+                      {isManual && (
+                        <div
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '1rem',
+                          }}
+                        >
+                          {/* Manual Mode Info Banner */}
+                          <div
+                            style={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '0.4rem',
+                              padding: '0.75rem 0.875rem',
+                              borderRadius: '8px',
+                              backgroundColor: isDark ? 'rgba(59, 130, 246, 0.08)' : 'rgba(59, 130, 246, 0.05)',
+                              border: isDark ? '1px solid rgba(59, 130, 246, 0.25)' : '1px solid rgba(59, 130, 246, 0.2)',
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#3B82F6' }}>
+                                Direct Content & Photos
+                              </span>
+                              <span
+                                style={{
+                                  fontSize: '0.625rem',
+                                  fontWeight: 600,
+                                  padding: '2px 8px',
+                                  borderRadius: '10px',
+                                  backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                                  color: '#3B82F6',
+                                }}
+                              >
+                                Manual Mode
+                              </span>
+                            </div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: 1.45 }}>
+                              Paste listing description and upload photos directly. Connected steps like Get Content, Get Images, AI Models, and Combine Box will use this data.
+                            </div>
+                          </div>
+
+                          {/* 1. Property Description / Content Box */}
+                          <div
+                            style={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '0.4rem',
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <FiFileText size={14} color="#3B82F6" />
+                                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                                  Listing Content / Description
+                                </span>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                {(config.trigger?.manualContent || '').length > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      updateConfig({
+                                        ...config,
+                                        trigger: {
+                                          ...config.trigger,
+                                          manualContent: '',
+                                        },
+                                      });
+                                    }}
+                                    style={{
+                                      background: 'none',
+                                      border: 'none',
+                                      color: '#EF4444',
+                                      fontSize: '0.6875rem',
+                                      cursor: 'pointer',
+                                      padding: 0,
+                                      fontWeight: 500,
+                                    }}
+                                  >
+                                    Clear
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    try {
+                                      const text = await navigator.clipboard.readText();
+                                      if (text) {
+                                        const current = config.trigger?.manualContent || '';
+                                        updateConfig({
+                                          ...config,
+                                          trigger: {
+                                            ...config.trigger,
+                                            manualContent: current ? `${current}\n${text}` : text,
+                                          },
+                                        });
+                                      }
+                                    } catch (err) {
+                                      console.warn('Clipboard read failed', err);
+                                    }
+                                  }}
+                                  title="Paste from clipboard"
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                    padding: '2px 7px',
+                                    borderRadius: '5px',
+                                    border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#F1F5F9',
+                                    color: 'var(--text-secondary)',
+                                    fontSize: '0.6875rem',
+                                    fontWeight: 500,
+                                    cursor: 'pointer',
+                                  }}
+                                >
+                                  <FiClipboard size={11} />
+                                  <span>Paste</span>
+                                </button>
+                              </div>
+                            </div>
+
+                            <textarea
+                              value={config.trigger?.manualContent || ''}
+                              onChange={(e) => {
+                                updateConfig({
+                                  ...config,
+                                  trigger: {
+                                    ...config.trigger,
+                                    manualContent: e.target.value,
+                                  },
+                                });
+                              }}
+                              placeholder="Paste property description, room specs, rent price, location, contact details..."
+                              rows={6}
+                              style={{
+                                width: '100%',
+                                boxSizing: 'border-box',
+                                padding: '0.625rem 0.75rem',
+                                borderRadius: '8px',
+                                border: isDark ? '1px solid #30363D' : '1px solid #D0D7DE',
+                                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#F8FAFC',
+                                color: 'var(--text-primary)',
+                                fontSize: '0.8125rem',
+                                lineHeight: 1.5,
+                                resize: 'vertical',
+                                outline: 'none',
+                                fontFamily: 'inherit',
+                                minHeight: '130px',
+                              }}
+                            />
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                              {(config.trigger?.manualContent || '').length} characters · {((config.trigger?.manualContent || '').trim().split(/\s+/).filter(Boolean).length)} words
+                            </div>
+                          </div>
+
+                          {/* 2. Listing Photos Upload & Grid */}
+                          <div
+                            style={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '0.4rem',
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <FiImage size={14} color="#10B981" />
+                                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                                  Listing Photos
+                                </span>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span
+                                  style={{
+                                    fontSize: '0.6875rem',
+                                    fontWeight: 700,
+                                    padding: '1px 7px',
+                                    borderRadius: '10px',
+                                    backgroundColor: (config.trigger?.manualImages?.length || 0) > 0
+                                      ? 'rgba(16, 185, 129, 0.15)'
+                                      : 'rgba(255, 255, 255, 0.06)',
+                                    color: (config.trigger?.manualImages?.length || 0) > 0
+                                      ? '#10B981'
+                                      : 'var(--text-muted)',
+                                  }}
+                                >
+                                  {config.trigger?.manualImages?.length || 0} Photos
+                                </span>
+                                {(config.trigger?.manualImages?.length || 0) > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      updateConfig({
+                                        ...config,
+                                        trigger: {
+                                          ...config.trigger,
+                                          manualImages: [],
+                                        },
+                                      });
+                                    }}
+                                    style={{
+                                      background: 'none',
+                                      border: 'none',
+                                      color: '#EF4444',
+                                      fontSize: '0.6875rem',
+                                      cursor: 'pointer',
+                                      padding: 0,
+                                      fontWeight: 500,
+                                    }}
+                                  >
+                                    Clear All
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Hidden file input */}
+                            <input
+                              ref={triggerFileInputRef}
+                              type="file"
+                              multiple
+                              accept="image/*"
+                              style={{ display: 'none' }}
+                              onChange={(e) => {
+                                handleManualTriggerFiles(e.target.files);
+                                e.target.value = '';
+                              }}
+                            />
+
+                            {/* Drag and Drop Zone */}
+                            <div
+                              onDragOver={(e) => {
+                                e.preventDefault();
+                                setIsDraggingTriggerFiles(true);
+                              }}
+                              onDragLeave={(e) => {
+                                e.preventDefault();
+                                setIsDraggingTriggerFiles(false);
+                              }}
+                              onDrop={(e) => {
+                                e.preventDefault();
+                                setIsDraggingTriggerFiles(false);
+                                if (e.dataTransfer?.files?.length) {
+                                  handleManualTriggerFiles(e.dataTransfer.files);
+                                }
+                              }}
+                              onClick={() => triggerFileInputRef.current?.click()}
+                              style={{
+                                border: isDraggingTriggerFiles
+                                  ? '2px dashed #10B981'
+                                  : (isDark ? '2px dashed #30363D' : '2px dashed #CBD5E1'),
+                                backgroundColor: isDraggingTriggerFiles
+                                  ? 'rgba(16, 185, 129, 0.1)'
+                                  : (isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)'),
+                                borderRadius: '8px',
+                                padding: '0.875rem',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '6px',
+                                cursor: 'pointer',
+                                transition: 'all 0.15s ease',
+                              }}
+                            >
+                              <FiUploadCloud size={24} color="#10B981" />
+                              <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                Click or drag photos here
+                              </div>
+                              <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                                PNG, JPG, WEBP (Multiple photos supported)
+                              </div>
+                            </div>
+
+                            {/* Thumbnails Grid */}
+                            {(config.trigger?.manualImages?.length || 0) > 0 && (
+                              <div
+                                style={{
+                                  display: 'grid',
+                                  gridTemplateColumns: 'repeat(3, 1fr)',
+                                  gap: '8px',
+                                  maxHeight: '260px',
+                                  overflowY: 'auto',
+                                  padding: '2px',
+                                  marginTop: '4px',
+                                }}
+                              >
+                                {(config.trigger?.manualImages || []).map((img: any, idx: number) => (
+                                  <div
+                                    key={idx}
+                                    style={{
+                                      position: 'relative',
+                                      borderRadius: '6px',
+                                      overflow: 'hidden',
+                                      border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                      aspectRatio: '1',
+                                      backgroundColor: isDark ? '#1C2128' : '#F1F5F9',
+                                    }}
+                                  >
+                                    <img
+                                      src={img.url}
+                                      alt={img.filename || `Photo #${idx + 1}`}
+                                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                    />
+                                    {/* Order badge */}
+                                    <div
+                                      style={{
+                                        position: 'absolute',
+                                        top: '4px',
+                                        left: '4px',
+                                        backgroundColor: 'rgba(0, 0, 0, 0.65)',
+                                        color: '#FFFFFF',
+                                        fontSize: '0.625rem',
+                                        fontWeight: 700,
+                                        padding: '1px 5px',
+                                        borderRadius: '4px',
+                                        backdropFilter: 'blur(2px)',
+                                      }}
+                                    >
+                                      #{idx + 1}
+                                    </div>
+                                    {/* Remove button */}
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        const updated = (config.trigger?.manualImages || []).filter((_: any, i: number) => i !== idx);
+                                        updateConfig({
+                                          ...config,
+                                          trigger: {
+                                            ...config.trigger,
+                                            manualImages: updated,
+                                          },
+                                        });
+                                      }}
+                                      title="Remove photo"
+                                      style={{
+                                        position: 'absolute',
+                                        top: '4px',
+                                        right: '4px',
+                                        width: '20px',
+                                        height: '20px',
+                                        borderRadius: '50%',
+                                        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                                        color: '#EF4444',
+                                        border: 'none',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        cursor: 'pointer',
+                                        padding: 0,
+                                      }}
+                                    >
+                                      <FiX size={12} />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
 
                 {/* GET CONTENT SIDEBAR CONTENT */}
                 {isContent && (() => {
