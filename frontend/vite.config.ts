@@ -14,11 +14,11 @@ export default defineConfig({
     },
     proxy: {
       '/api': {
-        target: process.env.VITE_BACKEND_TARGET || 'http://localhost:8085',
+        target: process.env.VITE_BACKEND_TARGET || 'http://api:8085',
         changeOrigin: true,
       },
       '/storage': {
-        target: process.env.VITE_BACKEND_TARGET || 'http://localhost:8085',
+        target: process.env.VITE_BACKEND_TARGET || 'http://api:8085',
         changeOrigin: true,
       },
     },

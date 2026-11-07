@@ -499,14 +499,30 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     let isCancelled = false;
     const loadDownloaded = async () => {
       try {
-        const downloaded = await fetchEnhancedDownloadedImages(undefined, listingCode);
+        const activeListingCode = listingCode || (box as any).listingCode || '';
+        const downloaded = await fetchEnhancedDownloadedImages(undefined, activeListingCode);
         if (downloaded && downloaded.length > 0 && !isCancelled) {
-          const valid = downloaded.filter((img) => (img.position || 1) <= effectiveImageList.length);
+          // If filenames have a listing prefix (e.g. UMC-737413-ZW), ensure only files matching that prefix are accepted
+          const firstWithPrefix = downloaded.find((img) => img.filename?.match(/^([A-Za-z0-9]+(?:-[A-Za-z0-9]+)+)-/i));
+          const detectedPrefix = firstWithPrefix
+            ? firstWithPrefix.filename.match(/^([A-Za-z0-9]+(?:-[A-Za-z0-9]+)+)-/i)?.[1]?.toLowerCase()
+            : '';
+
+          const valid = downloaded.filter((img) => {
+            if ((img.position || 1) > effectiveImageList.length) return false;
+            if (detectedPrefix && img.filename) {
+              return img.filename.toLowerCase().startsWith(detectedPrefix);
+            }
+            return true;
+          });
+
           const map: Record<number, string> = {};
           valid.forEach((img) => {
             const pos = img.position || 1;
             const pos0 = pos - 1; // 0-based index key
-            map[pos0] = img.backend_url || img.url;
+            // Prefer companion URL (with CORS headers) or clean relative /storage URL to prevent CORS taint
+            const cleanBackend = img.backend_url ? img.backend_url.replace(/^https?:\/\/localhost:8085/, '') : '';
+            map[pos0] = img.url || cleanBackend;
           });
           setCompanionEnhanced((prev) => {
             let hasChange = false;
@@ -534,7 +550,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     return () => {
       isCancelled = true;
     };
-  }, [box.id, listingCode]);
+  }, [box.id, listingCode, effectiveImageList?.length]);
 
   const mergedEnhancedPhotos = useMemo(() => {
     return { ...companionEnhanced, ...(enhancedPhotos || {}) };
@@ -553,7 +569,8 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     }> = [];
 
     // 1. Get Images (Raw extracted or fallback studio images)
-    if (imageSource === 'get_images' || imageSource === 'all') {
+    // When upstream is an Enhance node, ONLY show the last connected node's enhanced photos!
+    if (!isUpstreamEnhance && (imageSource === 'get_images' || imageSource === 'all')) {
       if (effectiveImageList && effectiveImageList.length > 0) {
         effectiveImageList.forEach((img, idx) => {
           const photoNum = idx + 1;
@@ -576,7 +593,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     }
 
     // 2. Enhanced Images
-    if (imageSource === 'enhance' || (imageSource === 'all' && isUpstreamEnhance)) {
+    if (imageSource === 'enhance' || isUpstreamEnhance || imageSource === 'all') {
       const hasEnhanced = Object.keys(mergedEnhancedPhotos).length > 0;
       if (imageSource === 'enhance' || isUpstreamEnhance) {
         if (effectiveImageList && effectiveImageList.length > 0) {
@@ -585,7 +602,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
             // Use strictly 0-based index key (idx) to match companion mapping
             const enhUrl = mergedEnhancedPhotos[idx] ?? mergedEnhancedPhotos[photoNum] ?? (typeof img.index === 'number' ? mergedEnhancedPhotos[img.index] : undefined);
 
-            // When sourcing from Enhance, strictly ONLY include photos that were actually enhanced!
+            // When sourcing from Enhance, strictly ONLY include photos that were actually enhanced by the last connected node!
             // Do NOT fall back to raw photos from Get Images!
             if (!enhUrl) return;
 
@@ -1180,6 +1197,25 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
                     <img
                       src={item.url}
                       alt={item.label}
+                      onError={(e) => {
+                        const target = e.currentTarget as HTMLImageElement;
+                        const currentSrc = target.src;
+                        if (currentSrc.includes('localhost:8085/storage/')) {
+                          target.src = currentSrc.replace(/^https?:\/\/localhost:8085/, '');
+                        } else if (currentSrc.includes('/downloaded-image?file=')) {
+                          try {
+                            const filename = new URL(currentSrc).searchParams.get('file');
+                            if (filename) {
+                              target.src = `/storage/uploads/facebook-import/enhanced/${filename}`;
+                            }
+                          } catch (_) {}
+                        } else if (currentSrc.includes('/storage/uploads/facebook-import/enhanced/')) {
+                          const filename = currentSrc.split('/').pop();
+                          if (filename) {
+                            target.src = `http://127.0.0.1:9224/downloaded-image?file=${filename}`;
+                          }
+                        }
+                      }}
                       style={{
                         width: '100%',
                         height: '100%',

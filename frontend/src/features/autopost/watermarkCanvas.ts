@@ -1,20 +1,91 @@
 import type { WatermarkConfig, WatermarkPosition } from './watermarkStorage';
 
-export const loadImageElement = (src: string): Promise<HTMLImageElement> => {
+export const loadImageElement = async (src: string): Promise<HTMLImageElement> => {
+  if (!src) throw new Error('Empty image source');
+
+  // Direct load for data / blob URLs
+  if (src.startsWith('data:') || src.startsWith('blob:')) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('Failed to load inline image'));
+      img.src = src;
+    });
+  }
+
+  // Normalize localhost:8085 backend URLs to relative /storage to leverage same-origin Vite proxy
+  let cleanSrc = src;
+  if (typeof window !== 'undefined' && cleanSrc.includes('localhost:8085/storage')) {
+    cleanSrc = cleanSrc.replace(/^https?:\/\/localhost:8085/, '');
+  }
+
+  // Attempt 1: Fetch as Blob and create a local blob: URL.
+  // This guarantees the image is same-origin so drawing onto a canvas NEVER taints it!
+  try {
+    const res = await fetch(cleanSrc);
+    if (res.ok) {
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      return await new Promise<HTMLImageElement>((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+          setTimeout(() => {
+            try { URL.revokeObjectURL(objectUrl); } catch (_) {}
+          }, 60000);
+          resolve(img);
+        };
+        img.onerror = () => {
+          try { URL.revokeObjectURL(objectUrl); } catch (_) {}
+          reject(new Error(`Failed to load blob image for ${cleanSrc}`));
+        };
+        img.src = objectUrl;
+      });
+    }
+  } catch (_) {
+    // If relative /storage failed, try companion if it's an enhanced image filename
+    if (cleanSrc.includes('/enhanced/')) {
+      const parts = cleanSrc.split('/');
+      const filename = parts[parts.length - 1];
+      if (filename) {
+        try {
+          const compUrl = `http://127.0.0.1:9224/downloaded-image?file=${encodeURIComponent(filename)}`;
+          const compRes = await fetch(compUrl);
+          if (compRes.ok) {
+            const blob = await compRes.blob();
+            const objectUrl = URL.createObjectURL(blob);
+            return await new Promise<HTMLImageElement>((resolve, reject) => {
+              const img = new Image();
+              img.onload = () => {
+                setTimeout(() => {
+                  try { URL.revokeObjectURL(objectUrl); } catch (_) {}
+                }, 60000);
+                resolve(img);
+              };
+              img.onerror = () => {
+                try { URL.revokeObjectURL(objectUrl); } catch (_) {}
+                reject(new Error(`Failed to load companion blob image`));
+              };
+              img.src = objectUrl;
+            });
+          }
+        } catch (_) {}
+      }
+    }
+  }
+
+  // Attempt 2: HTML Image element with crossOrigin
   return new Promise((resolve, reject) => {
     const img = new Image();
-    if (!src.startsWith('data:') && !src.startsWith('blob:')) {
-      img.crossOrigin = 'anonymous';
-    }
+    img.crossOrigin = 'anonymous';
     img.onload = () => resolve(img);
     img.onerror = () => {
       // If anonymous crossOrigin fails (e.g. strict CDN), retry without crossOrigin
       const fallbackImg = new Image();
       fallbackImg.onload = () => resolve(fallbackImg);
       fallbackImg.onerror = () => reject(new Error(`Failed to load image from ${src.slice(0, 50)}...`));
-      fallbackImg.src = src;
+      fallbackImg.src = cleanSrc;
     };
-    img.src = src;
+    img.src = cleanSrc;
   });
 };
 

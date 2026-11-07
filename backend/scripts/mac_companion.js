@@ -2923,7 +2923,7 @@ function mergeTabGroups(scannedGroups, liveGroups) {
   if (url.pathname === '/enhanced-images' && req.method === 'GET') {
     try {
       const reqPropertyId = url.searchParams.get('property_id');
-      const reqListingCode = url.searchParams.get('listing_code');
+      const reqListingCode = (url.searchParams.get('listing_code') || '').trim();
       const downloadsDir = path.join(os.homedir(), 'Downloads');
 
       // Auto-persist: if any enhanced images are in ~/Downloads, immediately copy to canvasCacheDir and backend storage
@@ -2942,7 +2942,9 @@ function mergeTabGroups(scannedGroups, liveGroups) {
 
       // Scan all persistent locations: canvasCacheDir, backendStorageEnhancedDir, defaultProcessingDir, downloadsDir
       const dirsToScan = [canvasCacheDir, backendStorageEnhancedDir, defaultProcessingDir, downloadsDir].filter((d) => fs.existsSync(d));
-      const seenPositions = new Map(); // pos -> imgObj
+      
+      // Step 1: Collect all candidate enhanced files with metadata
+      const allCandidates = [];
 
       for (const dir of dirsToScan) {
         try {
@@ -2952,43 +2954,81 @@ function mergeTabGroups(scannedGroups, liveGroups) {
             if (!lower.endsWith('.png') && !lower.endsWith('.jpg') && !lower.endsWith('.jpeg') && !lower.endsWith('.webp')) continue;
 
             let pos = 0;
+            let listingPrefix = '';
             const mEnhanced = f.match(/^enhanced_(\d+)_/i);
-            const mCode = f.match(/[-_](\d+)\.(?:png|jpg|jpeg|webp)$/i);
+            const mPrefixCode = f.match(/^([A-Za-z0-9]+(?:-[A-Za-z0-9]+)+)[-_](\d+)\.(?:png|jpg|jpeg|webp)$/i);
+            const mSimpleCode = f.match(/[-_](\d+)\.(?:png|jpg|jpeg|webp)$/i);
 
             if (mEnhanced) {
               pos = parseInt(mEnhanced[1], 10);
-            } else if (mCode) {
-              pos = parseInt(mCode[1], 10);
+            } else if (mPrefixCode) {
+              listingPrefix = mPrefixCode[1];
+              pos = parseInt(mPrefixCode[2], 10);
+            } else if (mSimpleCode) {
+              pos = parseInt(mSimpleCode[1], 10);
             } else {
-              continue;
-            }
-
-            if (reqListingCode && !lower.includes(reqListingCode.toLowerCase())) {
-              if (!reqPropertyId || !f.includes(reqPropertyId)) continue;
-            } else if (reqPropertyId && !reqListingCode && !f.includes(reqPropertyId)) {
               continue;
             }
 
             const fullPath = path.join(dir, f);
             const stat = fs.statSync(fullPath);
-
-            const imgObj = {
+            allCandidates.push({
               filename: f,
-              full_path: fullPath,
-              size: stat.size,
-              size_bytes: stat.size,
-              mtime: stat.mtimeMs,
-              position: pos > 0 ? pos : 1,
-              url: `http://127.0.0.1:${PORT}/downloaded-image?file=${encodeURIComponent(f)}`,
-              backend_url: `http://localhost:8085/storage/uploads/facebook-import/enhanced/${encodeURIComponent(f)}`,
-            };
-
-            const key = imgObj.position;
-            if (!seenPositions.has(key) || stat.mtimeMs > seenPositions.get(key).mtime) {
-              seenPositions.set(key, imgObj);
-            }
+              fullPath,
+              stat,
+              pos: pos > 0 ? pos : 1,
+              listingPrefix,
+            });
           }
         } catch (e) {}
+      }
+
+      // Step 2: Determine active listing filter:
+      // If reqListingCode is provided, use it.
+      // Otherwise, find the newest file that has a listingPrefix to strictly isolate that session's files.
+      let activeListingFilter = reqListingCode;
+      if (!activeListingFilter && allCandidates.length > 0) {
+        // Sort newest first
+        const sortedByMtime = [...allCandidates].sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs);
+        const newestWithPrefix = sortedByMtime.find((c) => c.listingPrefix);
+        if (newestWithPrefix) {
+          activeListingFilter = newestWithPrefix.listingPrefix;
+        }
+      }
+
+      const seenPositions = new Map(); // pos -> imgObj
+
+      for (const item of allCandidates) {
+        const { filename: f, fullPath, stat, pos, listingPrefix } = item;
+        const lower = f.toLowerCase();
+
+        if (activeListingFilter) {
+          const filterLower = activeListingFilter.toLowerCase();
+          // Must match the active listing code (either by prefix or containing string)
+          if (listingPrefix) {
+            if (listingPrefix.toLowerCase() !== filterLower) continue;
+          } else if (!lower.includes(filterLower)) {
+            if (!reqPropertyId || !f.includes(reqPropertyId)) continue;
+          }
+        } else if (reqPropertyId && !f.includes(reqPropertyId)) {
+          continue;
+        }
+
+        const imgObj = {
+          filename: f,
+          full_path: fullPath,
+          size: stat.size,
+          size_bytes: stat.size,
+          mtime: stat.mtimeMs,
+          position: pos,
+          url: `http://127.0.0.1:${PORT}/downloaded-image?file=${encodeURIComponent(f)}`,
+          backend_url: `http://localhost:8085/storage/uploads/facebook-import/enhanced/${encodeURIComponent(f)}`,
+        };
+
+        const key = imgObj.position;
+        if (!seenPositions.has(key) || stat.mtimeMs > seenPositions.get(key).mtime) {
+          seenPositions.set(key, imgObj);
+        }
       }
 
       const sortedImages = Array.from(seenPositions.values()).sort((a, b) => a.position - b.position);

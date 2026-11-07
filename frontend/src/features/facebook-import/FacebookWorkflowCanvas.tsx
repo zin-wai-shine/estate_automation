@@ -3345,8 +3345,8 @@ export const FacebookWorkflowCanvas = forwardRef<
           valid.forEach((img) => {
             const pos = img.position || 1;
             const pos0 = pos - 1; // 0-based index key
-            // Prefer permanent backend static upload URL if available, fallback to companion URL
-            map[pos0] = img.backend_url || img.url;
+            const cleanBackend = img.backend_url ? img.backend_url.replace(/^https?:\/\/localhost:8085/, '') : '';
+            map[pos0] = img.url || cleanBackend;
           });
           setCompanionEnhancedMap((prev) => {
             let hasChange = false;
