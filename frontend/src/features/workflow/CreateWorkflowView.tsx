@@ -978,6 +978,20 @@ export const CreateWorkflowView: React.FC = () => {
     setAiGeneratedCopy('');
     setProjectName('');
     setPropertyData(null);
+    if (workflowContextRef.current) {
+      workflowContextRef.current.rawCaption = '';
+      workflowContextRef.current.imageList = [];
+    }
+    if (editingFormat?.config?.trigger) {
+      handleCanvasConfigChange({
+        ...editingFormat.config,
+        trigger: {
+          ...editingFormat.config.trigger,
+          manualContent: '',
+          manualImages: [],
+        },
+      });
+    }
     if (editingFormat?.id) {
       try {
         localStorage.removeItem(getWorkflowRunStorageKey(editingFormat.id));
@@ -999,6 +1013,56 @@ export const CreateWorkflowView: React.FC = () => {
       }
     }
     window.dispatchEvent(new CustomEvent('ea_workflow_cleared'));
+  };
+
+  const handleClearManualData = (type: 'all' | 'content' | 'images' = 'all') => {
+    if (type === 'all') {
+      handleClearRunData();
+      return;
+    }
+    if (type === 'content') {
+      setExtractedContent('');
+      if (workflowContextRef.current) workflowContextRef.current.rawCaption = '';
+      setExecutionState((prev) => {
+        if (!prev) return undefined;
+        const nextCompleted = (prev.completedNodeIds || []).filter((id) => id !== 'get-content');
+        return {
+          ...prev,
+          completedNodeIds: nextCompleted,
+        };
+      });
+      if (editingFormat?.config?.trigger) {
+        handleCanvasConfigChange({
+          ...editingFormat.config,
+          trigger: {
+            ...editingFormat.config.trigger,
+            manualContent: '',
+          },
+        });
+      }
+    } else if (type === 'images') {
+      setExtractedImages([]);
+      setWatermarkedPhotos({});
+      setEnhancedPhotos({});
+      if (workflowContextRef.current) workflowContextRef.current.imageList = [];
+      setExecutionState((prev) => {
+        if (!prev) return undefined;
+        const nextCompleted = (prev.completedNodeIds || []).filter((id) => id !== 'get-images' && id !== 'trigger');
+        return {
+          ...prev,
+          completedNodeIds: nextCompleted,
+        };
+      });
+      if (editingFormat?.config?.trigger) {
+        handleCanvasConfigChange({
+          ...editingFormat.config,
+          trigger: {
+            ...editingFormat.config.trigger,
+            manualImages: [],
+          },
+        });
+      }
+    }
   };
 
   // Sync canvas mode with AppLayout on mount and whenever isCanvasOpen changes
@@ -4717,6 +4781,7 @@ export const CreateWorkflowView: React.FC = () => {
             onRevertGoogleSheetRow={handleRevertGoogleSheetRow}
             onContinueWorkflow={handleContinueWorkflow}
             onRunFromStep={handleRunFromStep}
+            onClearManualData={handleClearManualData}
           />
         </div>
       ) : (

@@ -3046,6 +3046,7 @@ export interface FacebookWorkflowCanvasProps {
   onRevertGoogleSheetRow?: (boxId: string) => Promise<boolean>;
   onContinueWorkflow?: (fromBoxId?: string) => void;
   onRunFromStep?: (nodeId: string) => void;
+  onClearManualData?: (type?: 'all' | 'content' | 'images') => void;
 }
 
 /**
@@ -3225,6 +3226,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     onRevertGoogleSheetRow,
     onContinueWorkflow,
     onRunFromStep,
+    onClearManualData,
   },
   ref
 ) {
@@ -4153,7 +4155,10 @@ export const FacebookWorkflowCanvas = forwardRef<
     const cbId = activeModalNode.combineId || (activeModalNode as any).id;
     const currentCb = (config.combineBoxes || []).find((b) => b.id === cbId) || config.combineBoxes?.[0];
     if (!currentCb) return [];
-    const conns = (config.connections || []).filter((c) => c.toNodeId === currentCb.id);
+    const conns = (config.connections || []).filter((c) => {
+      if (c.toNodeId !== currentCb.id) return false;
+      return isNodeEffectivelyEnabled(c.fromNodeId);
+    });
     return conns
       .map((c) => {
         const fromBox = config.aiBoxes.find((b) => b.id === c.fromNodeId);
@@ -4177,7 +4182,7 @@ export const FacebookWorkflowCanvas = forwardRef<
         return null;
       })
       .filter(Boolean) as { id: string; title: string; count: number }[];
-  }, [activeModalNode, config.combineBoxes, config.connections, config.aiBoxes, combineMediaAssets, effectiveImages, allEnhancedPhotos]);
+  }, [activeModalNode, config.combineBoxes, config.connections, config.aiBoxes, config.getImages, combineMediaAssets, effectiveImages, allEnhancedPhotos]);
 
   useEffect(() => {
     const watermarkBoxes = (config.aiBoxes || []).filter((b) => isWatermarkAIBox(b) && b.enabled !== false);
@@ -11202,7 +11207,7 @@ export const FacebookWorkflowCanvas = forwardRef<
             ? (config.combineBoxes || []).find((b) => b.id === combineId) || config.combineBoxes?.[0]
             : null;
           const combineInputs = isCombine && currentCombineBox
-            ? (config.connections || []).filter((c) => c.toNodeId === currentCombineBox.id)
+            ? (config.connections || []).filter((c) => c.toNodeId === currentCombineBox.id && isNodeEffectivelyEnabled(c.fromNodeId))
             : [];
 
           // Compute ordered combine inputs:
@@ -11817,18 +11822,51 @@ export const FacebookWorkflowCanvas = forwardRef<
                               <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#3B82F6' }}>
                                 Direct Content & Photos
                               </span>
-                              <span
-                                style={{
-                                  fontSize: '0.625rem',
-                                  fontWeight: 600,
-                                  padding: '2px 8px',
-                                  borderRadius: '10px',
-                                  backgroundColor: 'rgba(59, 130, 246, 0.15)',
-                                  color: '#3B82F6',
-                                }}
-                              >
-                                Manual Mode
-                              </span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                {Boolean((config.trigger?.manualContent || '').length > 0 || (config.trigger?.manualImages?.length || 0) > 0) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      updateConfig({
+                                        ...config,
+                                        trigger: {
+                                          ...config.trigger,
+                                          manualContent: '',
+                                          manualImages: [],
+                                        },
+                                      });
+                                      setLocallyCompletedNodeIds((prev) => prev.filter((id) => id !== 'trigger' && id !== 'get-content' && id !== 'get-images'));
+                                      onClearManualData?.('all');
+                                    }}
+                                    style={{
+                                      background: isDark ? 'rgba(239, 68, 68, 0.15)' : 'rgba(239, 68, 68, 0.1)',
+                                      border: '1px solid rgba(239, 68, 68, 0.3)',
+                                      color: '#EF4444',
+                                      fontSize: '0.6875rem',
+                                      cursor: 'pointer',
+                                      padding: '2px 8px',
+                                      fontWeight: 600,
+                                      borderRadius: '6px',
+                                      transition: 'all 0.15s ease',
+                                    }}
+                                    title="Clear all manual content and photos"
+                                  >
+                                    Clear All
+                                  </button>
+                                )}
+                                <span
+                                  style={{
+                                    fontSize: '0.625rem',
+                                    fontWeight: 600,
+                                    padding: '2px 8px',
+                                    borderRadius: '10px',
+                                    backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                                    color: '#3B82F6',
+                                  }}
+                                >
+                                  Manual Mode
+                                </span>
+                              </div>
                             </div>
                             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: 1.45 }}>
                               Paste listing description and upload photos directly. Connected steps like Get Content, Get Images, AI Models, and Combine Box will use this data.
@@ -11862,6 +11900,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                                           manualContent: '',
                                         },
                                       });
+                                      setLocallyCompletedNodeIds((prev) => prev.filter((id) => id !== 'get-content'));
+                                      onClearManualData?.('content');
                                     }}
                                     style={{
                                       background: 'none',
@@ -11993,6 +12033,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                                           manualImages: [],
                                         },
                                       });
+                                      setLocallyCompletedNodeIds((prev) => prev.filter((id) => id !== 'get-images' && id !== 'trigger'));
+                                      onClearManualData?.('images');
                                     }}
                                     style={{
                                       background: 'none',
@@ -12131,6 +12173,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                                             manualImages: updated,
                                           },
                                         });
+                                        if (updated.length === 0) {
+                                          setLocallyCompletedNodeIds((prev) => prev.filter((id) => id !== 'get-images' && id !== 'trigger'));
+                                          onClearManualData?.('images');
+                                        }
                                       }}
                                       aria-label={`Remove photo #${idx + 1}`}
                                       style={{
@@ -12531,6 +12577,7 @@ export const FacebookWorkflowCanvas = forwardRef<
 
                         if (isTextAI) {
                           let childFormatBoxes = config.aiBoxes.filter((b) => {
+                            if (!isNodeEffectivelyEnabled(b.id)) return false;
                             if (!isTextFormatAIBox(b)) return false;
                             if (b.processType === 'image_crop' || b.processType === 'watermark' || b.cropFormatId || b.watermarkPresetId) return false;
                             return (config.connections || []).some(
@@ -12547,6 +12594,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                 .map((b) => b.id)
                             );
                             childFormatBoxes = config.aiBoxes.filter((b) => {
+                              if (!isNodeEffectivelyEnabled(b.id)) return false;
                               if (!isTextFormatAIBox(b)) return false;
                               if (b.processType === 'image_crop' || b.processType === 'watermark' || b.cropFormatId || b.watermarkPresetId) return false;
                               const connectedToOther = (config.connections || []).some(
@@ -13104,6 +13152,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                             // ── B) TEXT AI / COPYWRITING NODE (General AI Processor) ──
                             if (isTextAI && fromBox) {
                               let childFormatBoxes = config.aiBoxes.filter((b) => {
+                                if (!isNodeEffectivelyEnabled(b.id)) return false;
                                 if (!isTextFormatAIBox(b)) return false;
                                 if (b.processType === 'image_crop' || b.processType === 'watermark' || b.cropFormatId || b.watermarkPresetId) return false;
                                 return (config.connections || []).some(
@@ -13120,6 +13169,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                     .map((b) => b.id)
                                 );
                                 childFormatBoxes = config.aiBoxes.filter((b) => {
+                                  if (!isNodeEffectivelyEnabled(b.id)) return false;
                                   if (!isTextFormatAIBox(b)) return false;
                                   if (b.processType === 'image_crop' || b.processType === 'watermark' || b.cropFormatId || b.watermarkPresetId) return false;
                                   const connectedToOther = (config.connections || []).some(
