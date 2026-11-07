@@ -407,7 +407,7 @@ export const getSavedWorkflowFormats = (): WorkflowFormat[] => {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
         const formatted = parsed.map((format: WorkflowFormat) => {
-          const isPinned = pinnedId ? format.id === pinnedId : Boolean(format.isPinned);
+          const isPinned = format.isPinned !== undefined ? Boolean(format.isPinned) : (pinnedId ? format.id === pinnedId : false);
           if (!format.config) return { ...format, isPinned };
           return {
             ...format,
@@ -424,7 +424,7 @@ export const getSavedWorkflowFormats = (): WorkflowFormat[] => {
   return ensureFormatsAreIsolated(
     INITIAL_DEFAULT_FORMATS.map((f) => ({
       ...f,
-      isPinned: pinnedId ? f.id === pinnedId : Boolean(f.isPinned),
+      isPinned: f.isPinned !== undefined ? Boolean(f.isPinned) : (pinnedId ? f.id === pinnedId : false),
       config: sanitizeAndResolveCollisions(f.config, f.id),
     }))
   );
@@ -435,7 +435,7 @@ export const restoreDefaultWorkflowFormats = (): WorkflowFormat[] => {
     ...f,
     config: sanitizeAndResolveCollisions(f.config, f.id),
   }));
-  saveWorkflowFormatsList(defaults);
+  saveWorkflowFormatsList(defaults, true);
   if (defaults[0]) {
     setActiveWorkflowFormatId(defaults[0].id);
   }
@@ -444,7 +444,7 @@ export const restoreDefaultWorkflowFormats = (): WorkflowFormat[] => {
 
 let saveBackendDebounceTimer: any = null;
 
-export const saveWorkflowFormatsList = (formats: WorkflowFormat[]) => {
+export const saveWorkflowFormatsList = (formats: WorkflowFormat[], immediate = false) => {
   const isolatedFormats = ensureFormatsAreIsolated(formats);
 
   // Synchronously save to localStorage immediately so navigating back/away preserves all node positions
@@ -461,9 +461,7 @@ export const saveWorkflowFormatsList = (formats: WorkflowFormat[]) => {
     }
   }
 
-  // Always sync with backend API debounced using relative API path (works seamlessly on both public and local)
-  if (saveBackendDebounceTimer) clearTimeout(saveBackendDebounceTimer);
-  saveBackendDebounceTimer = setTimeout(() => {
+  const syncToBackend = () => {
     fetch('/api/workflow/config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -471,8 +469,21 @@ export const saveWorkflowFormatsList = (formats: WorkflowFormat[]) => {
         workflow_formats: isolatedFormats,
         timestamp: Date.now(),
       }),
-    }).catch(() => {});
-  }, 400);
+    }).catch((err) => {
+      console.warn('Failed to sync workflow formats to backend', err);
+    });
+  };
+
+  if (saveBackendDebounceTimer) {
+    clearTimeout(saveBackendDebounceTimer);
+    saveBackendDebounceTimer = null;
+  }
+
+  if (immediate) {
+    syncToBackend();
+  } else {
+    saveBackendDebounceTimer = setTimeout(syncToBackend, 400);
+  }
 };
 
 export const getActiveWorkflowFormatId = (): string => {

@@ -62,14 +62,26 @@ func SaveWorkflowConfig(c *fiber.Ctx) error {
 		})
 	}
 
-	data, err := json.MarshalIndent(payload, "", "  ")
+	filePath := getWorkflowConfigFilePath()
+	mergedConfig := make(map[string]interface{})
+
+	// Read existing configuration if present to merge keys cleanly
+	if existingData, err := os.ReadFile(filePath); err == nil {
+		_ = json.Unmarshal(existingData, &mergedConfig)
+	}
+
+	// Merge incoming payload into existing configuration so keys like workflow_formats and facebook_import_workflow never wipe each other
+	for k, v := range payload {
+		mergedConfig[k] = v
+	}
+
+	data, err := json.MarshalIndent(mergedConfig, "", "  ")
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to serialize workflow config",
 		})
 	}
 
-	filePath := getWorkflowConfigFilePath()
 	if err := os.WriteFile(filePath, data, 0644); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to save workflow config file",

@@ -262,17 +262,22 @@ export const CreateWorkflowView: React.FC = () => {
         .then((res) => res.json())
         .then((data) => {
           if (data && Array.isArray(data.workflow_formats) && data.workflow_formats.length > 0) {
-            // Check if local storage has newer updates that haven't synced yet
+            // Check if local storage has newer updates or more formats (e.g. newly created/copied format)
             try {
               const localRaw = localStorage.getItem('estate_saved_workflow_formats_v2');
-              if (localRaw && data.timestamp) {
+              if (localRaw) {
                 const localParsed = JSON.parse(localRaw);
-                const maxLocalUpdated = Array.isArray(localParsed)
-                  ? Math.max(...localParsed.map((f: any) => f.updatedAt || 0), 0)
-                  : 0;
-                if (maxLocalUpdated > data.timestamp) {
-                  // Local formats are newer, skip overwriting
-                  return;
+                if (Array.isArray(localParsed)) {
+                  // If local storage has more formats (e.g. newly copied/created format), immediately persist local to backend
+                  if (localParsed.length > data.workflow_formats.length) {
+                    saveWorkflowFormatsList(localParsed, true);
+                    return;
+                  }
+                  const maxLocalUpdated = Math.max(...localParsed.map((f: any) => f.updatedAt || 0), 0);
+                  if (data.timestamp && maxLocalUpdated > data.timestamp) {
+                    saveWorkflowFormatsList(localParsed, true);
+                    return;
+                  }
                 }
               }
             } catch {}
@@ -296,6 +301,11 @@ export const CreateWorkflowView: React.FC = () => {
               const found = syncedFormats.find((f: WorkflowFormat) => f.id === targetId);
               return found || prev || syncedFormats[0];
             });
+          } else if (data && (!data.workflow_formats || data.workflow_formats.length === 0)) {
+            const local = getSavedWorkflowFormats();
+            if (local.length > 0) {
+              saveWorkflowFormatsList(local, true);
+            }
           }
         })
         .catch(() => {});
@@ -1044,6 +1054,8 @@ export const CreateWorkflowView: React.FC = () => {
       ...format,
       id: newId,
       name: `${format.name} (Copy)`,
+      isPinned: false, // Never pin the copy: place it at the end of the unpinned cards row
+      isDefault: false,
       createdAt: Date.now(),
       updatedAt: Date.now(),
       config: isolatedConfig,
@@ -1051,10 +1063,10 @@ export const CreateWorkflowView: React.FC = () => {
 
     const updatedList = [...formats, duplicated];
     setFormats(updatedList);
-    saveWorkflowFormatsList(updatedList);
+    saveWorkflowFormatsList(updatedList, true);
   };
 
-  // Toggle Pin Workflow Format (Pinned workflow displays in the first row)
+  // Toggle Pin Workflow Format (Supports pinning multiple workflows in the first row)
   const handleTogglePinFormat = (formatId: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     setFormats((prev) => {
@@ -1064,10 +1076,9 @@ export const CreateWorkflowView: React.FC = () => {
         if (f.id === formatId) {
           return { ...f, isPinned: nextPinned };
         }
-        return { ...f, isPinned: false };
+        return f; // Preserve other formats' pinned status so multiple workflows can be pinned!
       });
-      setPinnedWorkflowFormatId(nextPinned ? formatId : '');
-      saveWorkflowFormatsList(updated);
+      saveWorkflowFormatsList(updated, true);
       return updated;
     });
   };
@@ -1081,7 +1092,7 @@ export const CreateWorkflowView: React.FC = () => {
 
     const updatedList = formats.filter((f) => f.id !== formatId);
     setFormats(updatedList);
-    saveWorkflowFormatsList(updatedList);
+    saveWorkflowFormatsList(updatedList, true);
 
     if (activeFormatId === formatId) {
       const nextId = updatedList[0]?.id || '';
@@ -1103,7 +1114,7 @@ export const CreateWorkflowView: React.FC = () => {
     }
 
     setFormats([]);
-    saveWorkflowFormatsList([]);
+    saveWorkflowFormatsList([], true);
     setActiveId('');
     setActiveWorkflowFormatId('');
     setEditingFormat(null);
@@ -4257,7 +4268,7 @@ export const CreateWorkflowView: React.FC = () => {
     const updatedList = formats.map((f) => (f.id === editingFormat.id ? updated : f));
     setFormats(updatedList);
     setEditingFormat(updated);
-    saveWorkflowFormatsList(updatedList);
+    saveWorkflowFormatsList(updatedList, true);
 
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 2000);
