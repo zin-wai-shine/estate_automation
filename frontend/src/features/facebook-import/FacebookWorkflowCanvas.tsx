@@ -3416,6 +3416,60 @@ export const FacebookWorkflowCanvas = forwardRef<
     return images || [];
   }, [isManualTrigger, config.trigger?.manualImages, images]);
 
+  // Check if a node is effectively enabled (cascading disabled state down from upstream relatives,
+  // excluding the endpoint destination):
+  // "if that connect disabled that receiver taht relative I means just necessary relative not end point just relative must be disabled too"
+  const isNodeEffectivelyEnabled = (nodeId: string, visited: Set<string> = new Set()): boolean => {
+    if (visited.has(nodeId)) return false;
+    visited.add(nodeId);
+
+    if (nodeId === 'trigger') return true;
+    if (nodeId === 'output') {
+      if (config.outputNode?.enabled === false) return false;
+      const conns = config.connections || [];
+      const incoming = conns.filter((c) => c.toNodeId === 'output');
+      if (incoming.length > 0) {
+        return incoming.some((c) => isNodeEffectivelyEnabled(c.fromNodeId, new Set(visited)));
+      }
+      return true;
+    }
+    if (nodeId === 'destination' || nodeId.startsWith('dest-')) {
+      const allDests = getNormalizedDestinations(config);
+      const dest = allDests.find((d) => d.id === nodeId);
+      return Boolean(dest ? dest.enabled !== false : config.destination?.enabled !== false);
+    }
+    if (nodeId === 'get-content') return Boolean(config.getContent.enabled);
+    if (nodeId === 'get-images') return Boolean(config.getImages.enabled);
+
+    const cb = (config.combineBoxes || []).find((b) => b.id === nodeId);
+    if (cb) {
+      if (cb.enabled === false) return false;
+      const conns = config.connections || [];
+      const incoming = conns.filter((c) => c.toNodeId === nodeId);
+      if (incoming.length > 0) {
+        return incoming.some((c) => isNodeEffectivelyEnabled(c.fromNodeId, new Set(visited)));
+      }
+      return true;
+    }
+
+    const box = config.aiBoxes.find((b) => b.id === nodeId);
+    if (!box) return false;
+    if (box.enabled === false) return false;
+
+    // Relative node must have active upstream inputs:
+    // If incoming connections exist, all upstream branches must not be disabled.
+    const conns = config.connections || [];
+    const incoming = conns.filter((c) => c.toNodeId === nodeId);
+    if (incoming.length > 0) {
+      const hasActiveUpstream = incoming.some((c) =>
+        isNodeEffectivelyEnabled(c.fromNodeId, new Set(visited))
+      );
+      if (!hasActiveUpstream) return false;
+    }
+
+    return true;
+  };
+
   const getNodeExecutionStatus = (nodeId: string): 'idle' | 'running' | 'success' | 'error' => {
     if (!isNodeEffectivelyEnabled(nodeId)) {
       return 'idle';
@@ -5361,60 +5415,6 @@ export const FacebookWorkflowCanvas = forwardRef<
       }
     }
     return false;
-  };
-
-  // Check if a node is effectively enabled (cascading disabled state down from upstream relatives,
-  // excluding the endpoint destination):
-  // "if that connect disabled that receiver taht relative I means just necessary relative not end point just relative must be disabled too"
-  const isNodeEffectivelyEnabled = (nodeId: string, visited: Set<string> = new Set()): boolean => {
-    if (visited.has(nodeId)) return false;
-    visited.add(nodeId);
-
-    if (nodeId === 'trigger') return true;
-    if (nodeId === 'output') {
-      if (config.outputNode?.enabled === false) return false;
-      const conns = config.connections || [];
-      const incoming = conns.filter((c) => c.toNodeId === 'output');
-      if (incoming.length > 0) {
-        return incoming.some((c) => isNodeEffectivelyEnabled(c.fromNodeId, new Set(visited)));
-      }
-      return true;
-    }
-    if (nodeId === 'destination' || nodeId.startsWith('dest-')) {
-      const allDests = getNormalizedDestinations(config);
-      const dest = allDests.find((d) => d.id === nodeId);
-      return Boolean(dest ? dest.enabled !== false : config.destination?.enabled !== false);
-    }
-    if (nodeId === 'get-content') return Boolean(config.getContent.enabled);
-    if (nodeId === 'get-images') return Boolean(config.getImages.enabled);
-
-    const cb = (config.combineBoxes || []).find((b) => b.id === nodeId);
-    if (cb) {
-      if (cb.enabled === false) return false;
-      const conns = config.connections || [];
-      const incoming = conns.filter((c) => c.toNodeId === nodeId);
-      if (incoming.length > 0) {
-        return incoming.some((c) => isNodeEffectivelyEnabled(c.fromNodeId, new Set(visited)));
-      }
-      return true;
-    }
-
-    const box = config.aiBoxes.find((b) => b.id === nodeId);
-    if (!box) return false;
-    if (box.enabled === false) return false;
-
-    // Relative node must have active upstream inputs:
-    // If incoming connections exist, all upstream branches must not be disabled.
-    const conns = config.connections || [];
-    const incoming = conns.filter((c) => c.toNodeId === nodeId);
-    if (incoming.length > 0) {
-      const hasActiveUpstream = incoming.some((c) =>
-        isNodeEffectivelyEnabled(c.fromNodeId, new Set(visited))
-      );
-      if (!hasActiveUpstream) return false;
-    }
-
-    return true;
   };
 
   // Directional forward-only connection validation with strict duplicate rejection:
