@@ -1,4 +1,10 @@
-import type { FacebookWorkflowConfig, DynamicAIBoxConfig } from '../facebook-import/FacebookWorkflowCanvas';
+import type {
+  FacebookWorkflowConfig,
+  DynamicAIBoxConfig,
+  WorkflowWireConnection,
+  CombineBoxConfig,
+  DestinationNodeConfig,
+} from '../facebook-import/FacebookWorkflowCanvas';
 import {
   DEFAULT_FB_WORKFLOW_CONFIG,
   sanitizeAndResolveCollisions,
@@ -253,6 +259,146 @@ export const INITIAL_DEFAULT_FORMATS: WorkflowFormat[] = [
   },
 ];
 
+/**
+ * Deep-clones a workflow configuration and gives all AI boxes, combine boxes,
+ * destinations, and wire connections fresh unique IDs, re-mapping all internal
+ * connections and input references so the cloned configuration is completely
+ * isolated from its source.
+ */
+export const ensureIsolatedWorkflowConfig = (
+  config: FacebookWorkflowConfig,
+  suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+): FacebookWorkflowConfig => {
+  if (!config) return config;
+  const cloned: FacebookWorkflowConfig = JSON.parse(JSON.stringify(config));
+  const idMap = new Map<string, string>();
+
+  // 1. Map AI Boxes
+  if (Array.isArray(cloned.aiBoxes)) {
+    cloned.aiBoxes.forEach((b) => {
+      if (b && b.id) {
+        const newId = `${b.id}-cp-${suffix}`;
+        idMap.set(b.id, newId);
+        b.id = newId;
+      }
+    });
+  }
+
+  // 2. Map Combine Boxes
+  if (Array.isArray(cloned.combineBoxes)) {
+    cloned.combineBoxes.forEach((cb) => {
+      if (cb && cb.id) {
+        const newId = `${cb.id}-cp-${suffix}`;
+        idMap.set(cb.id, newId);
+        cb.id = newId;
+      }
+    });
+  }
+
+  // 3. Map Destinations
+  if (Array.isArray(cloned.destinations)) {
+    cloned.destinations.forEach((d) => {
+      if (d && d.id) {
+        const newId = `${d.id}-cp-${suffix}`;
+        idMap.set(d.id, newId);
+        d.id = newId;
+      }
+    });
+  }
+
+  // 4. Remap AI Box internal references
+  if (Array.isArray(cloned.aiBoxes)) {
+    cloned.aiBoxes.forEach((b) => {
+      if (b) {
+        if (b.selectedUpstreamAiId && idMap.has(b.selectedUpstreamAiId)) {
+          b.selectedUpstreamAiId = idMap.get(b.selectedUpstreamAiId);
+        }
+        if (b.condoNameAiBoxId && idMap.has(b.condoNameAiBoxId)) {
+          b.condoNameAiBoxId = idMap.get(b.condoNameAiBoxId);
+        }
+        if (b.selectedUpstreamGroupId && idMap.has(b.selectedUpstreamGroupId)) {
+          b.selectedUpstreamGroupId = idMap.get(b.selectedUpstreamGroupId);
+        }
+        if (Array.isArray(b.presetOrder)) {
+          b.presetOrder = b.presetOrder.map((id) => idMap.get(id) || id);
+        }
+      }
+    });
+  }
+
+  // 5. Remap Combine Boxes inputOrder & presetOrder
+  if (Array.isArray(cloned.combineBoxes)) {
+    cloned.combineBoxes.forEach((cb) => {
+      if (cb) {
+        if (Array.isArray(cb.inputOrder)) {
+          cb.inputOrder = cb.inputOrder.map((id) => idMap.get(id) || id);
+        }
+        if (Array.isArray(cb.presetOrder)) {
+          cb.presetOrder = cb.presetOrder.map((id) => idMap.get(id) || id);
+        }
+      }
+    });
+  }
+
+  // 6. Remap Connections
+  if (Array.isArray(cloned.connections)) {
+    cloned.connections = cloned.connections.map((conn) => ({
+      ...conn,
+      id: `wire-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      fromNodeId: idMap.get(conn.fromNodeId) || conn.fromNodeId,
+      toNodeId: idMap.get(conn.toNodeId) || conn.toNodeId,
+    }));
+  }
+
+  return cloned;
+};
+
+/**
+ * Checks all formats in a list to guarantee that no two formats share identical node IDs.
+ * If a duplicate or copied format is detected with overlapping node IDs, it is automatically
+ * remapped to isolated unique IDs.
+ */
+export const ensureFormatsAreIsolated = (formats: WorkflowFormat[]): WorkflowFormat[] => {
+  if (!Array.isArray(formats) || formats.length <= 1) return formats;
+
+  const seenBoxIds = new Set<string>();
+  let hasModified = false;
+
+  const isolated = formats.map((format, index) => {
+    if (!format || !format.config) return format;
+    const cfg = format.config;
+    const aiBoxes = Array.isArray(cfg.aiBoxes) ? cfg.aiBoxes : [];
+
+    // Check if this format contains any box ID already owned by an earlier format
+    const hasCollision = index > 0 && aiBoxes.some((b) => b && b.id && seenBoxIds.has(b.id));
+
+    if (hasCollision) {
+      hasModified = true;
+      const isolatedCfg = ensureIsolatedWorkflowConfig(cfg, format.id || `cp-${index}`);
+      (isolatedCfg.aiBoxes || []).forEach((b) => {
+        if (b && b.id) seenBoxIds.add(b.id);
+      });
+      return {
+        ...format,
+        config: isolatedCfg,
+      };
+    } else {
+      aiBoxes.forEach((b) => {
+        if (b && b.id) seenBoxIds.add(b.id);
+      });
+      return format;
+    }
+  });
+
+  if (hasModified) {
+    try {
+      localStorage.setItem(STORAGE_FORMATS_KEY, JSON.stringify(isolated));
+    } catch {}
+  }
+
+  return isolated;
+};
+
 export const getSavedWorkflowFormats = (): WorkflowFormat[] => {
   const pinnedId = getPinnedWorkflowFormatId();
   try {
@@ -260,31 +406,34 @@ export const getSavedWorkflowFormats = (): WorkflowFormat[] => {
     if (raw !== null) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
-        return parsed.map((format: WorkflowFormat) => {
+        const formatted = parsed.map((format: WorkflowFormat) => {
           const isPinned = pinnedId ? format.id === pinnedId : Boolean(format.isPinned);
           if (!format.config) return { ...format, isPinned };
           return {
             ...format,
             isPinned,
-            config: sanitizeAndResolveCollisions(format.config),
+            config: sanitizeAndResolveCollisions(format.config, format.id),
           };
         });
+        return ensureFormatsAreIsolated(formatted);
       }
     }
   } catch (e) {
     console.error('Failed to load saved workflow formats', e);
   }
-  return INITIAL_DEFAULT_FORMATS.map((f) => ({
-    ...f,
-    isPinned: pinnedId ? f.id === pinnedId : Boolean(f.isPinned),
-    config: sanitizeAndResolveCollisions(f.config),
-  }));
+  return ensureFormatsAreIsolated(
+    INITIAL_DEFAULT_FORMATS.map((f) => ({
+      ...f,
+      isPinned: pinnedId ? f.id === pinnedId : Boolean(f.isPinned),
+      config: sanitizeAndResolveCollisions(f.config, f.id),
+    }))
+  );
 };
 
 export const restoreDefaultWorkflowFormats = (): WorkflowFormat[] => {
   const defaults = INITIAL_DEFAULT_FORMATS.map((f) => ({
     ...f,
-    config: sanitizeAndResolveCollisions(f.config),
+    config: sanitizeAndResolveCollisions(f.config, f.id),
   }));
   saveWorkflowFormatsList(defaults);
   if (defaults[0]) {
@@ -296,12 +445,14 @@ export const restoreDefaultWorkflowFormats = (): WorkflowFormat[] => {
 let saveBackendDebounceTimer: any = null;
 
 export const saveWorkflowFormatsList = (formats: WorkflowFormat[]) => {
+  const isolatedFormats = ensureFormatsAreIsolated(formats);
+
   // Synchronously save to localStorage immediately so navigating back/away preserves all node positions
   try {
-    localStorage.setItem(STORAGE_FORMATS_KEY, JSON.stringify(formats));
+    localStorage.setItem(STORAGE_FORMATS_KEY, JSON.stringify(isolatedFormats));
   } catch (e) {
     try {
-      const compactFormats = formats.map((f) =>
+      const compactFormats = isolatedFormats.map((f) =>
         f.config ? { ...f, config: stripLargeBase64FromWorkflowConfig(f.config) } : f
       );
       localStorage.setItem(STORAGE_FORMATS_KEY, JSON.stringify(compactFormats));
@@ -317,7 +468,7 @@ export const saveWorkflowFormatsList = (formats: WorkflowFormat[]) => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        workflow_formats: formats,
+        workflow_formats: isolatedFormats,
         timestamp: Date.now(),
       }),
     }).catch(() => {});

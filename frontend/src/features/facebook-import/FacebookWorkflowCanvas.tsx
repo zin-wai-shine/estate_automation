@@ -1647,43 +1647,52 @@ export const buildAlignedLayout = (
 };
 
 export const NODE_ENABLED_STORAGE_KEY = 'bolthaven_node_enabled_map_v1';
-let inMemoryNodeEnabledMap: Record<string, boolean> = {};
+let inMemoryNodeEnabledMap: Record<string, Record<string, boolean>> = {};
 
-export const getPersistedNodeEnabledMap = (): Record<string, boolean> => {
+export const getNodeEnabledStorageKey = (formatId?: string): string =>
+  formatId ? `${NODE_ENABLED_STORAGE_KEY}_${formatId}` : NODE_ENABLED_STORAGE_KEY;
+
+export const getPersistedNodeEnabledMap = (formatId?: string): Record<string, boolean> => {
+  const cacheKey = formatId || '__global__';
   try {
-    const raw = localStorage.getItem(NODE_ENABLED_STORAGE_KEY);
+    const key = getNodeEnabledStorageKey(formatId);
+    const raw = localStorage.getItem(key);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === 'object') {
-        inMemoryNodeEnabledMap = { ...parsed, ...inMemoryNodeEnabledMap };
-        return inMemoryNodeEnabledMap;
+        inMemoryNodeEnabledMap[cacheKey] = { ...parsed, ...(inMemoryNodeEnabledMap[cacheKey] || {}) };
+        return inMemoryNodeEnabledMap[cacheKey];
       }
     }
   } catch (e) { }
-  return inMemoryNodeEnabledMap;
+  return inMemoryNodeEnabledMap[cacheKey] || {};
 };
 
-export const setPersistedNodeEnabled = (nodeId: string, enabled: boolean): void => {
+export const setPersistedNodeEnabled = (nodeId: string, enabled: boolean, formatId?: string): void => {
   if (!nodeId) return;
-  const current = getPersistedNodeEnabledMap();
+  const cacheKey = formatId || '__global__';
+  const current = getPersistedNodeEnabledMap(formatId);
   const next = { ...current, [nodeId]: Boolean(enabled) };
-  inMemoryNodeEnabledMap = next;
+  inMemoryNodeEnabledMap[cacheKey] = next;
   try {
-    localStorage.setItem(NODE_ENABLED_STORAGE_KEY, JSON.stringify(next));
+    const key = getNodeEnabledStorageKey(formatId);
+    localStorage.setItem(key, JSON.stringify(next));
   } catch (e) {
     // If localStorage is near quota, evict large non-essential cached keys and retry
     try {
       localStorage.removeItem('estate_facebook_workflow_deleted_boxes_v1');
-      localStorage.setItem(NODE_ENABLED_STORAGE_KEY, JSON.stringify(next));
+      const key = getNodeEnabledStorageKey(formatId);
+      localStorage.setItem(key, JSON.stringify(next));
     } catch { }
   }
 };
 
 export const applyPersistedNodeEnabledToConfig = (
-  conf: FacebookWorkflowConfig
+  conf: FacebookWorkflowConfig,
+  formatId?: string
 ): FacebookWorkflowConfig => {
   if (!conf) return conf;
-  const enabledMap = getPersistedNodeEnabledMap();
+  const enabledMap = getPersistedNodeEnabledMap(formatId);
   if (!enabledMap || Object.keys(enabledMap).length === 0) return conf;
 
   const nextAiBoxes = Array.isArray(conf.aiBoxes)
@@ -1764,10 +1773,11 @@ export const stripLargeBase64FromWorkflowConfig = (
  * Resolves node collisions and ensures clean non-overlapping coordinates for all workflow nodes.
  */
 export const sanitizeAndResolveCollisions = (
-  rawConf: FacebookWorkflowConfig
+  rawConf: FacebookWorkflowConfig,
+  formatId?: string
 ): FacebookWorkflowConfig => {
   if (!rawConf) return DEFAULT_FB_WORKFLOW_CONFIG;
-  const conf = applyPersistedNodeEnabledToConfig(rawConf);
+  const conf = applyPersistedNodeEnabledToConfig(rawConf, formatId);
 
   const rawAiBoxes = Array.isArray(conf.aiBoxes) ? conf.aiBoxes : [];
   const updatedAiBoxes = rawAiBoxes.map((b) => {
@@ -2056,9 +2066,10 @@ export const sanitizeAndResolveCollisions = (
   return buildAlignedLayout(finalAiBoxes, nextConnections, baseConfig);
 };
 
-export const loadSavedFacebookWorkflowConfig = (): FacebookWorkflowConfig => {
+export const loadSavedFacebookWorkflowConfig = (formatId?: string): FacebookWorkflowConfig => {
   try {
-    const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
+    const key = formatId ? `${LOCAL_STORAGE_KEY}_${formatId}` : LOCAL_STORAGE_KEY;
+    const raw = localStorage.getItem(key) || (formatId ? localStorage.getItem(LOCAL_STORAGE_KEY) : null);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && parsed.getContent && parsed.getImages && Array.isArray(parsed.aiBoxes)) {
@@ -2067,7 +2078,7 @@ export const loadSavedFacebookWorkflowConfig = (): FacebookWorkflowConfig => {
           ...DEFAULT_FB_WORKFLOW_CONFIG,
           ...parsed,
           connections,
-        });
+        }, formatId);
       }
     }
   } catch (e) {
@@ -2990,9 +3001,11 @@ export interface WorkflowExecutionState {
 }
 
 export interface FacebookWorkflowCanvasProps {
+  formatId?: string;
+  isFormatActive?: boolean;
   initialConfig?: FacebookWorkflowConfig;
   onSwitchToLiveImport?: () => void;
-  onConfigChange?: (config: FacebookWorkflowConfig) => void;
+  onConfigChange?: (config: FacebookWorkflowConfig, formatId?: string) => void;
   allowEditPrompt?: boolean;
   onDeletedCountChange?: (count: number) => void;
   rawContent?: string;
@@ -3177,6 +3190,8 @@ export const FacebookWorkflowCanvas = forwardRef<
   FacebookWorkflowCanvasProps
 >(function FacebookWorkflowCanvas(
   {
+    formatId,
+    isFormatActive,
     initialConfig,
     onConfigChange,
     allowEditPrompt: _allowEditPrompt = false,
@@ -3217,8 +3232,9 @@ export const FacebookWorkflowCanvas = forwardRef<
   const isDark = actualTheme === 'dark';
   const RECEPTIVE_COLOR = isDark ? '#EAB308' : '#D97706';
   const canvasRef = useRef<HTMLDivElement>(null);
+  const canvasStorageKey = formatId ? `${LOCAL_STORAGE_KEY}_${formatId}` : LOCAL_STORAGE_KEY;
   const [config, setConfig] = useState<FacebookWorkflowConfig>(() => {
-    const base = sanitizeAndResolveCollisions(initialConfig || loadSavedFacebookWorkflowConfig());
+    const base = sanitizeAndResolveCollisions(initialConfig || loadSavedFacebookWorkflowConfig(formatId), formatId);
     const vWidth = typeof window !== 'undefined' ? window.innerWidth - 56 : 1200;
     const vHeight = typeof window !== 'undefined' ? window.innerHeight - 60 : 800;
     const bounds = getWorkflowBounds(base);
@@ -3443,7 +3459,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     if (lastEmittedConfigStrRef.current && initialConfigStr === lastEmittedConfigStrRef.current) {
       return;
     }
-    const sanitized = sanitizeAndResolveCollisions(initialConfig);
+    const sanitized = sanitizeAndResolveCollisions(initialConfig, formatId);
     const el = canvasRef.current;
     const vWidth = el && el.clientWidth > 50 ? el.clientWidth : (typeof window !== 'undefined' ? window.innerWidth - 56 : 1200);
     const vHeight = el && el.clientHeight > 50 ? el.clientHeight : (typeof window !== 'undefined' ? window.innerHeight - 60 : 800);
@@ -3462,7 +3478,7 @@ export const FacebookWorkflowCanvas = forwardRef<
       const zoom = prev && typeof prev.zoom === 'number' && prev.zoom > 0 ? prev.zoom : optimalZoom;
 
       // Preserve any uploaded referenceImage and user-toggled enabled state on aiBoxes when syncing initialConfig from backend/formats
-      const enabledMap = getPersistedNodeEnabledMap();
+      const enabledMap = getPersistedNodeEnabledMap(formatId);
       const prevBoxesById = new Map((prev?.aiBoxes || []).map((b) => [b.id, b]));
       const mergedAiBoxes = (sanitized.aiBoxes || []).map((b) => {
         const prevBox = prevBoxesById.get(b.id);
@@ -3494,7 +3510,7 @@ export const FacebookWorkflowCanvas = forwardRef<
         aiBoxes: mergedAiBoxes,
         zoom,
         panOffset,
-      });
+      }, formatId);
       latestConfigRef.current = nextCfg;
       return nextCfg;
     });
@@ -3536,9 +3552,12 @@ export const FacebookWorkflowCanvas = forwardRef<
   // Ensure sanitized, deduplicated config is persisted on mount to immediately repair any legacy corrupted/duplicate connections
   useEffect(() => {
     try {
-      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(config));
+      localStorage.setItem(canvasStorageKey, JSON.stringify(config));
+      if (!formatId || isFormatActive) {
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(config));
+      }
     } catch (e) { }
-  }, []);
+  }, [canvasStorageKey, formatId, isFormatActive]);
 
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
@@ -3570,13 +3589,17 @@ export const FacebookWorkflowCanvas = forwardRef<
       const runPersist = () => {
         if (draggedNodeIdRef.current) return;
         try {
-          localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(cfg));
+          localStorage.setItem(canvasStorageKey, JSON.stringify(cfg));
+          if (!formatId || isFormatActive) {
+            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(cfg));
+          }
         } catch (e) {
           try {
-            localStorage.setItem(
-              LOCAL_STORAGE_KEY,
-              JSON.stringify(stripLargeBase64FromWorkflowConfig(cfg))
-            );
+            const stripped = JSON.stringify(stripLargeBase64FromWorkflowConfig(cfg));
+            localStorage.setItem(canvasStorageKey, stripped);
+            if (!formatId || isFormatActive) {
+              localStorage.setItem(LOCAL_STORAGE_KEY, stripped);
+            }
           } catch { }
         }
 
@@ -3584,7 +3607,7 @@ export const FacebookWorkflowCanvas = forwardRef<
         lastEmittedConfigStrRef.current = JSON.stringify(cfg);
 
         if (onConfigChange) {
-          onConfigChange(cfg);
+          onConfigChange(cfg, formatId);
         }
       };
 
@@ -3603,14 +3626,17 @@ export const FacebookWorkflowCanvas = forwardRef<
         clearTimeout(persistTimerRef.current);
         persistTimerRef.current = null;
         try {
-          localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(latestConfigRef.current));
+          localStorage.setItem(canvasStorageKey, JSON.stringify(latestConfigRef.current));
+          if (!formatId || isFormatActive) {
+            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(latestConfigRef.current));
+          }
         } catch { }
         if (onConfigChange) {
-          onConfigChange(latestConfigRef.current);
+          onConfigChange(latestConfigRef.current, formatId);
         }
       }
     };
-  }, [onConfigChange]);
+  }, [canvasStorageKey, formatId, isFormatActive, onConfigChange]);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [selectedBoxId, setSelectedBoxId] = useState<string | null>(null);
   const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
@@ -5185,41 +5211,51 @@ export const FacebookWorkflowCanvas = forwardRef<
     latestConfigRef.current = sanitizedConfig;
     setConfig(sanitizedConfig);
     try {
-      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(sanitizedConfig));
+      localStorage.setItem(canvasStorageKey, JSON.stringify(sanitizedConfig));
+      if (!formatId || isFormatActive) {
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(sanitizedConfig));
+      }
     } catch (e) {
       try {
-        localStorage.setItem(
-          LOCAL_STORAGE_KEY,
-          JSON.stringify(stripLargeBase64FromWorkflowConfig(sanitizedConfig))
-        );
+        const stripped = JSON.stringify(stripLargeBase64FromWorkflowConfig(sanitizedConfig));
+        localStorage.setItem(canvasStorageKey, stripped);
+        if (!formatId || isFormatActive) {
+          localStorage.setItem(LOCAL_STORAGE_KEY, stripped);
+        }
       } catch { }
     }
-    if (onConfigChange) onConfigChange(sanitizedConfig);
+    if (onConfigChange) onConfigChange(sanitizedConfig, formatId);
   };
 
   const handleSaveConfig = async () => {
     try {
       const currentCfg = latestConfigRef.current || config;
       try {
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(currentCfg));
+        localStorage.setItem(canvasStorageKey, JSON.stringify(currentCfg));
+        if (!formatId || isFormatActive) {
+          localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(currentCfg));
+        }
       } catch {
         try {
-          localStorage.setItem(
-            LOCAL_STORAGE_KEY,
-            JSON.stringify(stripLargeBase64FromWorkflowConfig(currentCfg))
-          );
+          const stripped = JSON.stringify(stripLargeBase64FromWorkflowConfig(currentCfg));
+          localStorage.setItem(canvasStorageKey, stripped);
+          if (!formatId || isFormatActive) {
+            localStorage.setItem(LOCAL_STORAGE_KEY, stripped);
+          }
         } catch { }
       }
-      try {
-        await fetch('http://localhost:8085/api/workflow/config', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            facebook_import_workflow: currentCfg,
-            timestamp: Date.now(),
-          }),
-        });
-      } catch (err) { }
+      if (!formatId || isFormatActive) {
+        try {
+          await fetch('http://localhost:8085/api/workflow/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              facebook_import_workflow: currentCfg,
+              timestamp: Date.now(),
+            }),
+          });
+        } catch (err) { }
+      }
 
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 2500);
@@ -6058,7 +6094,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     const updatedDests = currentDests.map((d) => {
       if (d.id === destId) {
         const nextEnabled = d.enabled === false ? true : false;
-        setPersistedNodeEnabled(destId, nextEnabled);
+        setPersistedNodeEnabled(destId, nextEnabled, formatId);
         return {
           ...d,
           enabled: nextEnabled,
@@ -7797,7 +7833,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     const newBoxes = currentCfg.aiBoxes.map((b) => {
       if (b.id === id) {
         const nextEnabled = b.enabled === false ? true : false;
-        setPersistedNodeEnabled(id, nextEnabled);
+        setPersistedNodeEnabled(id, nextEnabled, formatId);
         return { ...b, enabled: nextEnabled };
       }
       return b;
@@ -7808,9 +7844,9 @@ export const FacebookWorkflowCanvas = forwardRef<
   // Update AI Box Details
   const handleUpdateAIBox = (id: string, partial: Partial<DynamicAIBoxConfig>) => {
     const currentCfg = latestConfigRef.current || config;
-    const enabledMap = getPersistedNodeEnabledMap();
+    const enabledMap = getPersistedNodeEnabledMap(formatId);
     if ('enabled' in partial && typeof partial.enabled === 'boolean') {
-      setPersistedNodeEnabled(id, partial.enabled);
+      setPersistedNodeEnabled(id, partial.enabled, formatId);
     }
     const newBoxes = currentCfg.aiBoxes.map((b) => {
       if (b.id === id) {
@@ -8208,19 +8244,23 @@ export const FacebookWorkflowCanvas = forwardRef<
         }
         const cfgToSave = latestConfigRef.current;
         try {
-          localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(cfgToSave));
+          localStorage.setItem(canvasStorageKey, JSON.stringify(cfgToSave));
+          if (!formatId || isFormatActive) {
+            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(cfgToSave));
+          }
         } catch {
           try {
-            localStorage.setItem(
-              LOCAL_STORAGE_KEY,
-              JSON.stringify(stripLargeBase64FromWorkflowConfig(cfgToSave))
-            );
+            const stripped = JSON.stringify(stripLargeBase64FromWorkflowConfig(cfgToSave));
+            localStorage.setItem(canvasStorageKey, stripped);
+            if (!formatId || isFormatActive) {
+              localStorage.setItem(LOCAL_STORAGE_KEY, stripped);
+            }
           } catch { }
         }
         lastEmittedConfigRef.current = cfgToSave;
         lastEmittedConfigStrRef.current = JSON.stringify(cfgToSave);
         if (onConfigChange) {
-          onConfigChange(cfgToSave);
+          onConfigChange(cfgToSave, formatId);
         }
       }
     }

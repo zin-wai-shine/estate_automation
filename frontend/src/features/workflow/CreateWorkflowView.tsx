@@ -27,6 +27,8 @@ import {
   getPinnedWorkflowFormatId,
   setPinnedWorkflowFormatId,
   restoreDefaultWorkflowFormats,
+  ensureIsolatedWorkflowConfig,
+  ensureFormatsAreIsolated,
   type WorkflowFormat,
 } from './workflowFormats';
 import { isWatermarkAIBox, isTextFormatAIBox, isTextAIBox, isN8NAIBox, isExternalBrowserAIBox, isChromeProfileAIBox, isChromeTabGroupAIBox, isGoogleSheetBox } from '../facebook-import/aiModelUtils';
@@ -239,10 +241,7 @@ export const CreateWorkflowView: React.FC = () => {
   const [formats, setFormats] = useState<WorkflowFormat[]>(() => getSavedWorkflowFormats());
   const formatsRef = useRef<WorkflowFormat[]>(formats);
   formatsRef.current = formats;
-  const [activeFormatId, setActiveId] = useState<string>(() => {
-    const sp = new URLSearchParams(window.location.search);
-    return sp.get('id') || sp.get('format') || getActiveWorkflowFormatId();
-  });
+  const [activeFormatId, setActiveId] = useState<string>(() => getActiveWorkflowFormatId());
   const [headerTitleEl, setHeaderTitleEl] = useState<HTMLElement | null>(null);
   const [headerCenterEl, setHeaderCenterEl] = useState<HTMLElement | null>(null);
   const [headerActionEl, setHeaderActionEl] = useState<HTMLElement | null>(null);
@@ -253,8 +252,8 @@ export const CreateWorkflowView: React.FC = () => {
     setHeaderActionEl(document.getElementById('header-action-portal'));
 
     const applyPersistedEnabledToFormats = (list: WorkflowFormat[]): WorkflowFormat[] =>
-      list.map((f) =>
-        f && f.config ? { ...f, config: applyPersistedNodeEnabledToConfig(f.config) } : f
+      ensureFormatsAreIsolated(list).map((f) =>
+        f && f.config ? { ...f, config: applyPersistedNodeEnabledToConfig(f.config, f.id) } : f
       );
 
     // Sync latest workflow formats from backend API
@@ -333,6 +332,8 @@ export const CreateWorkflowView: React.FC = () => {
     const id = urlId || getActiveWorkflowFormatId();
     return list.find((f) => f.id === id) || list[0] || null;
   });
+  const editingFormatRef = useRef<WorkflowFormat | null>(editingFormat);
+  editingFormatRef.current = editingFormat;
   const [modalFormatName, setModalFormatName] = useState<string>(() => {
     const list = getSavedWorkflowFormats();
     const sp = new URLSearchParams(window.location.search);
@@ -754,7 +755,6 @@ export const CreateWorkflowView: React.FC = () => {
     setModalFormatDesc(format.description || '');
     setUndoStack([]);
     setIsCanvasOpen(true);
-    setActiveWorkflowFormatId(format.id);
     navigate(`/create-workflow?id=${encodeURIComponent(format.id)}`, { replace: false });
     try {
       localStorage.setItem('ea_workflow_canvas_open', 'true');
@@ -1039,13 +1039,14 @@ export const CreateWorkflowView: React.FC = () => {
   const handleDuplicateFormat = (format: WorkflowFormat, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     const newId = `format-${Date.now()}`;
+    const isolatedConfig = ensureIsolatedWorkflowConfig(format.config, newId);
     const duplicated: WorkflowFormat = {
       ...format,
       id: newId,
       name: `${format.name} (Copy)`,
       createdAt: Date.now(),
       updatedAt: Date.now(),
-      config: JSON.parse(JSON.stringify(format.config)),
+      config: isolatedConfig,
     };
 
     const updatedList = [...formats, duplicated];
@@ -1144,22 +1145,39 @@ export const CreateWorkflowView: React.FC = () => {
   };
 
   // Update canvas config
-  const handleCanvasConfigChange = (newConfig: FacebookWorkflowConfig) => {
-    if (!editingFormat) return;
-    // Push previous config onto undo stack if config changed
-    if (JSON.stringify(editingFormat.config) !== JSON.stringify(newConfig)) {
-      setUndoStack((prev) => [...prev.slice(-30), editingFormat.config]);
-    }
-    const currentName = modalFormatName.trim() || editingFormat.name;
-    const updated: WorkflowFormat = {
-      ...editingFormat,
-      name: currentName,
-      config: newConfig,
-      updatedAt: Date.now(),
-    };
-    setEditingFormat(updated);
+  const handleCanvasConfigChange = (newConfig: FacebookWorkflowConfig, targetFormatId?: string) => {
+    const activeTargetId = targetFormatId || editingFormatRef.current?.id;
+    if (!activeTargetId) return;
+
     setFormats((prevFormats) => {
-      const updatedList = prevFormats.map((f) => (f.id === editingFormat.id ? updated : f));
+      const target = prevFormats.find((f) => f.id === activeTargetId);
+      if (!target) return prevFormats;
+
+      // Push previous config onto undo stack if editing the currently focused format and config changed
+      if (
+        editingFormatRef.current?.id === activeTargetId &&
+        JSON.stringify(target.config) !== JSON.stringify(newConfig)
+      ) {
+        setUndoStack((prev) => [...prev.slice(-30), target.config]);
+      }
+
+      const currentName =
+        editingFormatRef.current?.id === activeTargetId && modalFormatName.trim()
+          ? modalFormatName.trim()
+          : target.name;
+
+      const updated: WorkflowFormat = {
+        ...target,
+        name: currentName,
+        config: newConfig,
+        updatedAt: Date.now(),
+      };
+
+      if (editingFormatRef.current?.id === activeTargetId) {
+        setEditingFormat(updated);
+      }
+
+      const updatedList = prevFormats.map((f) => (f.id === activeTargetId ? updated : f));
       saveWorkflowFormatsList(updatedList);
       return updatedList;
     });
@@ -4646,9 +4664,11 @@ export const CreateWorkflowView: React.FC = () => {
         >
           <FacebookWorkflowCanvas
             key={editingFormat.id}
+            formatId={editingFormat.id}
+            isFormatActive={activeFormatId === editingFormat.id}
             ref={canvasRef}
             initialConfig={editingFormat.config}
-            onConfigChange={handleCanvasConfigChange}
+            onConfigChange={(newCfg) => handleCanvasConfigChange(newCfg, editingFormat.id)}
             allowEditPrompt={true}
             onSaveFormat={handleSaveModalFormat}
             isSaveSuccess={saveSuccess}
