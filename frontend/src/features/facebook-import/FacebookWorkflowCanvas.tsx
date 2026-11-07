@@ -3361,6 +3361,43 @@ export const FacebookWorkflowCanvas = forwardRef<
     }
   }, [executionState?.isRunning]);
 
+  // Helper to normalize stored/source URLs (preserves data:, blob:, http://, https://)
+  const normalizeMediaUrl = (url?: string): string => {
+    if (!url) return '';
+    const trimmed = url.trim();
+    if (
+      trimmed.startsWith('data:') ||
+      trimmed.startsWith('blob:') ||
+      trimmed.startsWith('http://') ||
+      trimmed.startsWith('https://')
+    ) {
+      return trimmed;
+    }
+    return `http://localhost:8085${trimmed.startsWith('/') ? '' : '/'}${trimmed}`;
+  };
+
+  const isManualTrigger = config.trigger?.sourceMode === 'manual';
+  const effectiveRawContent = useMemo(() => {
+    if (isManualTrigger && config.trigger?.manualContent !== undefined) {
+      return config.trigger.manualContent || '';
+    }
+    return rawContent || (config.trigger?.manualContent || '');
+  }, [isManualTrigger, config.trigger?.manualContent, rawContent]);
+
+  const effectiveImages: any[] = useMemo(() => {
+    if (isManualTrigger && config.trigger?.manualImages && config.trigger.manualImages.length > 0) {
+      return config.trigger.manualImages.map((img: any, idx: number) => ({
+        index: idx,
+        facebook_photo_id: `manual-photo-${idx + 1}`,
+        source_url: img.url,
+        stored_url: img.url,
+        filename: img.filename || `Photo #${idx + 1}`,
+        status: 'verified',
+      }));
+    }
+    return images || [];
+  }, [isManualTrigger, config.trigger?.manualImages, images]);
+
   const getNodeExecutionStatus = (nodeId: string): 'idle' | 'running' | 'success' | 'error' => {
     if (!isNodeEffectivelyEnabled(nodeId)) {
       return 'idle';
@@ -4114,7 +4151,7 @@ export const FacebookWorkflowCanvas = forwardRef<
         return null;
       })
       .filter(Boolean) as { id: string; title: string; count: number }[];
-  }, [activeModalNode, config.combineBoxes, config.connections, config.aiBoxes, combineMediaAssets, images, allEnhancedPhotos]);
+  }, [activeModalNode, config.combineBoxes, config.connections, config.aiBoxes, combineMediaAssets, effectiveImages, allEnhancedPhotos]);
 
   useEffect(() => {
     const watermarkBoxes = (config.aiBoxes || []).filter((b) => isWatermarkAIBox(b) && b.enabled !== false);
@@ -4126,7 +4163,7 @@ export const FacebookWorkflowCanvas = forwardRef<
 
     const formats = getSavedCropFormats();
     const enhancedCount = Object.keys(allEnhancedPhotos || {}).length;
-    const photoList = images || [];
+    const photoList = effectiveImages || [];
     if (photoList.length === 0 && enhancedCount === 0) {
       // Try hero image fallback for generate-source boxes
       const hasGenerate = watermarkBoxes.some((b) => b.imageSource === 'generate');
@@ -4214,7 +4251,7 @@ export const FacebookWorkflowCanvas = forwardRef<
           });
         } else if (cropBox.imageSource === 'get_images' || (cropBox.imageSource as string) === 'get-images') {
           photoList.forEach((img, idx) => {
-            const rawUrl = img.stored_url ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`) : img.source_url;
+            const rawUrl = normalizeMediaUrl(img.stored_url || img.source_url || (img as any).url);
             sourcePhotos.push({ url: rawUrl || '', photoIndex: idx, isEnhanced: false });
           });
         } else {
@@ -4222,7 +4259,7 @@ export const FacebookWorkflowCanvas = forwardRef<
           if (photoList.length > 0) {
             photoList.forEach((img, idx) => {
               const enhUrl = allEnhancedPhotos?.[idx] || allEnhancedPhotos?.[idx + 1];
-              const rawUrl = img.stored_url ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`) : img.source_url;
+              const rawUrl = normalizeMediaUrl(img.stored_url || img.source_url || (img as any).url);
               sourcePhotos.push({ url: enhUrl || rawUrl || '', photoIndex: idx, isEnhanced: Boolean(enhUrl) });
             });
           } else {
@@ -4295,32 +4332,10 @@ export const FacebookWorkflowCanvas = forwardRef<
     return () => {
       isCancelled = true;
     };
-  }, [config.aiBoxes, config.connections, images, allEnhancedPhotos]);
+  }, [config.aiBoxes, config.connections, effectiveImages, allEnhancedPhotos]);
 
   const [isDraggingTriggerFiles, setIsDraggingTriggerFiles] = useState(false);
   const triggerFileInputRef = useRef<HTMLInputElement>(null);
-
-  const isManualTrigger = config.trigger?.sourceMode === 'manual';
-  const effectiveRawContent = useMemo(() => {
-    if (isManualTrigger && config.trigger?.manualContent !== undefined) {
-      return config.trigger.manualContent || '';
-    }
-    return rawContent || (config.trigger?.manualContent || '');
-  }, [isManualTrigger, config.trigger?.manualContent, rawContent]);
-
-  const effectiveImages: any[] = useMemo(() => {
-    if (isManualTrigger && config.trigger?.manualImages && config.trigger.manualImages.length > 0) {
-      return config.trigger.manualImages.map((img: any, idx: number) => ({
-        index: idx,
-        facebook_photo_id: `manual-photo-${idx + 1}`,
-        source_url: img.url,
-        stored_url: img.url,
-        filename: img.filename || `Photo #${idx + 1}`,
-        status: 'verified',
-      }));
-    }
-    return images || [];
-  }, [isManualTrigger, config.trigger?.manualImages, images]);
 
   const handleManualTriggerFiles = (files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -4375,12 +4390,7 @@ export const FacebookWorkflowCanvas = forwardRef<
   // Raw original photos extracted strictly at the "Get Images" step (without downstream crop slices or watermarks)
   const rawExtractedImages: CompiledImageItem[] = useMemo(() => {
     return (effectiveImages || []).map((img) => {
-      let finalUrl =
-        img.stored_url
-          ? img.stored_url.startsWith('http')
-            ? img.stored_url
-            : `http://localhost:8085${img.stored_url}`
-          : '';
+      let finalUrl = normalizeMediaUrl(img.stored_url || img.source_url || (img as any).url);
       if (!finalUrl && img.source_url) {
         if (img.source_url.includes('fbcdn.net') || img.source_url.includes('scontent')) {
           finalUrl = `http://127.0.0.1:9224/proxy-image?url=${encodeURIComponent(img.source_url)}`;
@@ -4390,7 +4400,7 @@ export const FacebookWorkflowCanvas = forwardRef<
       }
       return {
         ...img,
-        finalUrl: finalUrl || img.source_url || '',
+        finalUrl: finalUrl || img.source_url || (img as any).url || '',
         isWatermarked: false,
         isEnhanced: false,
       };
@@ -4420,11 +4430,7 @@ export const FacebookWorkflowCanvas = forwardRef<
       let finalUrl =
         watermarkedPhotos[img.index] ||
         allEnhancedPhotos[img.index] ||
-        (img.stored_url
-          ? img.stored_url.startsWith('http')
-            ? img.stored_url
-            : `http://localhost:8085${img.stored_url}`
-          : '');
+        normalizeMediaUrl(img.stored_url || img.source_url || (img as any).url);
       if (!finalUrl && img.source_url) {
         if (img.source_url.includes('fbcdn.net') || img.source_url.includes('scontent')) {
           finalUrl = `http://127.0.0.1:9224/proxy-image?url=${encodeURIComponent(img.source_url)}`;
@@ -12029,15 +12035,14 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   display: 'grid',
                                   gridTemplateColumns: 'repeat(3, 1fr)',
                                   gap: '8px',
-                                  maxHeight: '260px',
-                                  overflowY: 'auto',
                                   padding: '2px',
-                                  marginTop: '4px',
+                                  marginTop: '6px',
                                 }}
                               >
                                 {(config.trigger?.manualImages || []).map((img: any, idx: number) => (
                                   <div
                                     key={idx}
+                                    onClick={() => handleOpenLightbox(idx, 'raw')}
                                     style={{
                                       position: 'relative',
                                       borderRadius: '6px',
@@ -12045,12 +12050,15 @@ export const FacebookWorkflowCanvas = forwardRef<
                                       border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
                                       aspectRatio: '1',
                                       backgroundColor: isDark ? '#1C2128' : '#F1F5F9',
+                                      cursor: 'pointer',
+                                      transition: 'transform 0.15s ease, border-color 0.15s ease',
                                     }}
+                                    title={`Photo #${idx + 1} (${img.filename || 'Direct Upload'}) · Click to preview full size`}
                                   >
                                     <img
                                       src={img.url}
                                       alt={img.filename || `Photo #${idx + 1}`}
-                                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                      style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                                     />
                                     {/* Order badge */}
                                     <div
@@ -12065,6 +12073,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                         padding: '1px 5px',
                                         borderRadius: '4px',
                                         backdropFilter: 'blur(2px)',
+                                        zIndex: 3,
                                       }}
                                     >
                                       #{idx + 1}
@@ -12083,15 +12092,15 @@ export const FacebookWorkflowCanvas = forwardRef<
                                           },
                                         });
                                       }}
-                                      title="Remove photo"
+                                      aria-label={`Remove photo #${idx + 1}`}
                                       style={{
                                         position: 'absolute',
                                         top: '4px',
                                         right: '4px',
-                                        width: '20px',
-                                        height: '20px',
+                                        width: '22px',
+                                        height: '22px',
                                         borderRadius: '50%',
-                                        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                                        backgroundColor: 'rgba(0, 0, 0, 0.75)',
                                         color: '#EF4444',
                                         border: 'none',
                                         display: 'flex',
@@ -12099,9 +12108,11 @@ export const FacebookWorkflowCanvas = forwardRef<
                                         justifyContent: 'center',
                                         cursor: 'pointer',
                                         padding: 0,
+                                        zIndex: 4,
+                                        transition: 'transform 0.15s ease',
                                       }}
                                     >
-                                      <FiX size={12} />
+                                      <FiX size={13} />
                                     </button>
                                   </div>
                                 ))}
@@ -12401,9 +12412,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                                     src={img.finalUrl}
                                     alt={`Photo ${i + 1}`}
                                     referrerPolicy="no-referrer"
-                                    crossOrigin="anonymous"
+                                    crossOrigin={img.finalUrl?.startsWith('data:') || img.finalUrl?.startsWith('blob:') ? undefined : 'anonymous'}
                                     onError={(e) => {
-                                      if (img.source_url && !e.currentTarget.src.includes('/proxy-image')) {
+                                      if (img.source_url && !img.source_url.startsWith('data:') && !img.source_url.startsWith('blob:') && !e.currentTarget.src.includes('/proxy-image')) {
                                         e.currentTarget.src = `http://127.0.0.1:9224/proxy-image?url=${encodeURIComponent(img.source_url)}`;
                                       }
                                     }}
@@ -12560,8 +12571,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                               const boxCount = boxAssets.length > 0
                                 ? boxAssets.length
                                 : isImages
-                                  ? (images?.length || 0)
-                                  : (allEnhancedPhotos ? Object.keys(allEnhancedPhotos).length : images?.length || 0);
+                                  ? (effectiveImages?.length || 0)
+                                  : (allEnhancedPhotos ? Object.keys(allEnhancedPhotos).length : effectiveImages?.length || 0);
 
                               const boxThumbnails: string[] = [];
                               for (const a of boxAssets) {
@@ -12570,9 +12581,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   if (boxThumbnails.length >= 3) break;
                                 }
                               }
-                              if (boxThumbnails.length === 0 && images && images.length > 0) {
-                                for (const img of images) {
-                                  const u = img.stored_url ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`) : img.source_url;
+                              if (boxThumbnails.length === 0 && effectiveImages && effectiveImages.length > 0) {
+                                for (const img of effectiveImages) {
+                                  const u = normalizeMediaUrl(img.stored_url || img.source_url || (img as any).url);
                                   if (u && !boxThumbnails.includes(u)) {
                                     boxThumbnails.push(u);
                                     if (boxThumbnails.length >= 3) break;
@@ -15123,7 +15134,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                             filename: `Crop Tile #${slice.tileIndex || idx + 1} (${slice.label || '1:1'})`,
                           }));
                         } else if (hasIncomingCombine) {
-                          effectiveBrowserImages = (images || []).map((img, i) => {
+                          effectiveBrowserImages = (effectiveImages || []).map((img, i) => {
                             const url =
                               watermarkedPhotos?.[img.index] ||
                               enhancedPhotos?.[img.index] ||
@@ -15139,7 +15150,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                             };
                           });
                         } else {
-                          effectiveBrowserImages = (images || []).map((img, i) => ({
+                          effectiveBrowserImages = (effectiveImages || []).map((img, i) => ({
                             url: typeof img === 'string' ? img : img.stored_url || img.source_url || (img as any).preview || (img as any).url || '',
                             index: typeof img === 'object' && img.index ? img.index : i + 1,
                             filename: typeof img === 'object' && (img as any).filename ? (img as any).filename : `Photo #${i + 1}`,
