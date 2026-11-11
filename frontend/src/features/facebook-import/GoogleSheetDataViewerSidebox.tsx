@@ -17,9 +17,19 @@ import {
   FiChevronsLeft,
   FiChevronsRight,
   FiFileText,
+  FiEdit2,
+  FiTrash2,
+  FiAlertTriangle,
+  FiSave,
 } from 'react-icons/fi';
 import { SiGooglesheets } from 'react-icons/si';
 import { type DynamicAIBoxConfig } from './FacebookWorkflowCanvas';
+
+export interface SheetRowItem {
+  originalIndex: number;
+  sheetRowNum: number;
+  values: string[];
+}
 
 interface GoogleSheetDataViewerSideboxProps {
   isOpen: boolean;
@@ -43,6 +53,17 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
   const [spreadsheetTitle, setSpreadsheetTitle] = useState<string>('');
   const [sheetName, setSheetName] = useState<string>('');
   const [spreadsheetId, setSpreadsheetId] = useState<string>('');
+
+  // Manage actions state (Edit / Delete)
+  const [rowToDelete, setRowToDelete] = useState<{ item: SheetRowItem; displayNum: number } | null>(null);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const [rowToEdit, setRowToEdit] = useState<{ item: SheetRowItem; displayNum: number; draftValues: string[] } | null>(null);
+  const [isSavingEdit, setIsSavingEdit] = useState<boolean>(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  const [actionSuccessMessage, setActionSuccessMessage] = useState<string | null>(null);
 
   // Global search & per-column search filters
   const [globalSearch, setGlobalSearch] = useState<string>('');
@@ -104,15 +125,90 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
     }
   }, [isOpen, boxConfig.googleSpreadsheetUrl, boxConfig.googleSheetName, boxConfig.googleServiceAccountJson]);
 
-  // Filtering & Sorting
-  const filteredRows = useMemo(() => {
-    let result = [...rows];
+  // Delete a row from Google Sheet
+  const handleDeleteRow = async (item: SheetRowItem) => {
+    setIsDeleting(true);
+    setDeleteError(null);
+    try {
+      const res = await fetch('http://localhost:8085/api/google-sheets/delete-row', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          spreadsheet_url: boxConfig.googleSpreadsheetUrl || '',
+          sheet_name: sheetName || boxConfig.googleSheetName || '',
+          row_index: item.originalIndex + 1,
+          listing_code: item.values[0] || '',
+          credentials_json: boxConfig.googleServiceAccountJson || '',
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to delete row from Google Sheet');
+      }
+      setRows((prev) => prev.filter((_, idx) => idx !== item.originalIndex));
+      setRowToDelete(null);
+      setActionSuccessMessage(`✓ Row #${item.sheetRowNum - 1} (${item.values[0] || 'Property'}) successfully removed from Google Sheet!`);
+      setTimeout(() => setActionSuccessMessage(null), 4000);
+      fetchSheetData();
+    } catch (err: any) {
+      setDeleteError(err.message || 'Failed to delete row');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  // Save changes to an edited row in Google Sheet
+  const handleSaveEditRow = async () => {
+    if (!rowToEdit) return;
+    setIsSavingEdit(true);
+    setEditError(null);
+    try {
+      const res = await fetch('http://localhost:8085/api/google-sheets/update-row', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          spreadsheet_url: boxConfig.googleSpreadsheetUrl || '',
+          sheet_name: sheetName || boxConfig.googleSheetName || '',
+          row_index: rowToEdit.item.originalIndex + 1,
+          values: rowToEdit.draftValues,
+          credentials_json: boxConfig.googleServiceAccountJson || '',
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to update row in Google Sheet');
+      }
+      setRows((prev) => {
+        const next = [...prev];
+        if (next[rowToEdit.item.originalIndex]) {
+          next[rowToEdit.item.originalIndex] = [...rowToEdit.draftValues];
+        }
+        return next;
+      });
+      setActionSuccessMessage(`✓ Row #${rowToEdit.item.sheetRowNum - 1} successfully updated in Google Sheet!`);
+      setTimeout(() => setActionSuccessMessage(null), 4000);
+      setRowToEdit(null);
+      fetchSheetData();
+    } catch (err: any) {
+      setEditError(err.message || 'Failed to save changes');
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
+  // Filtering & Sorting with true original sheet row indices
+  const filteredRowItems = useMemo<SheetRowItem[]>(() => {
+    let result: SheetRowItem[] = rows.map((r, idx) => ({
+      originalIndex: idx,
+      sheetRowNum: idx + 2,
+      values: r,
+    }));
 
     // 1. Global Search
     if (globalSearch.trim()) {
       const q = globalSearch.trim().toLowerCase();
-      result = result.filter((row) =>
-        row.some((cell) => cell.toLowerCase().includes(q))
+      result = result.filter((item) =>
+        item.values.some((cell) => cell.toLowerCase().includes(q))
       );
     }
 
@@ -121,8 +217,8 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
       const colIdx = Number(colIdxStr);
       const val = filterVal.trim().toLowerCase();
       if (val) {
-        result = result.filter((row) => {
-          const cell = (row[colIdx] || '').toLowerCase();
+        result = result.filter((item) => {
+          const cell = (item.values[colIdx] || '').toLowerCase();
           return cell.includes(val);
         });
       }
@@ -130,9 +226,9 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
 
     // 3. Sorting
     if (sortColIdx !== null) {
-      result.sort((a, b) => {
-        const valA = a[sortColIdx] || '';
-        const valB = b[sortColIdx] || '';
+      result.sort((itemA, itemB) => {
+        const valA = itemA.values[sortColIdx] || '';
+        const valB = itemB.values[sortColIdx] || '';
 
         // Check if numeric
         const numA = Number(valA.replace(/[^\d.-]/g, ''));
@@ -151,12 +247,12 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
   }, [rows, globalSearch, columnFilters, sortColIdx, sortDirection]);
 
   // Pagination calculation
-  const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
-  const paginatedRows = useMemo(() => {
-    if (pageSize === 0) return filteredRows;
+  const totalPages = Math.max(1, Math.ceil(filteredRowItems.length / pageSize));
+  const paginatedRowItems = useMemo(() => {
+    if (pageSize === 0) return filteredRowItems;
     const start = (currentPage - 1) * pageSize;
-    return filteredRows.slice(start, start + pageSize);
-  }, [filteredRows, currentPage, pageSize]);
+    return filteredRowItems.slice(start, start + pageSize);
+  }, [filteredRowItems, currentPage, pageSize]);
 
   const handleSort = (colIdx: number) => {
     if (sortColIdx === colIdx) {
@@ -204,7 +300,7 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
     if (headers.length === 0 && rows.length === 0) return;
     const escapeCsv = (str: string) => `"${(str || '').replace(/"/g, '""')}"`;
     const headerLine = headers.map(escapeCsv).join(',');
-    const rowLines = filteredRows.map((r) => r.map(escapeCsv).join(','));
+    const rowLines = filteredRowItems.map((r) => r.values.map(escapeCsv).join(','));
     const csvContent = [headerLine, ...rowLines].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -454,6 +550,36 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
         </div>
       </div>
 
+      {/* ── Action Success Message Banner ────────────────────────────────────── */}
+      {actionSuccessMessage && (
+        <div
+          style={{
+            padding: '0.5rem 1.25rem',
+            backgroundColor: 'rgba(15, 157, 88, 0.15)',
+            borderBottom: '1px solid rgba(15, 157, 88, 0.35)',
+            color: '#10B981',
+            fontSize: '0.75rem',
+            fontWeight: 600,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            zIndex: 15,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <FiCheck size={14} />
+            <span>{actionSuccessMessage}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setActionSuccessMessage(null)}
+            style={{ background: 'none', border: 'none', color: '#10B981', cursor: 'pointer', padding: 0 }}
+          >
+            <FiX size={13} />
+          </button>
+        </div>
+      )}
+
       {/* ── Search & Filter Controls Toolbar ─────────────────────────────────── */}
       <div
         style={{
@@ -583,7 +709,7 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
               border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
             }}
           >
-            Showing <strong style={{ color: 'var(--text-primary)' }}>{filteredRows.length.toLocaleString()}</strong> of {rows.length.toLocaleString()} rows
+            Showing <strong style={{ color: 'var(--text-primary)' }}>{filteredRowItems.length.toLocaleString()}</strong> of {rows.length.toLocaleString()} rows
           </span>
         </div>
       </div>
@@ -710,6 +836,27 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
                   #
                 </th>
 
+                {/* Manage Header */}
+                <th
+                  style={{
+                    padding: '8px 10px',
+                    width: '76px',
+                    minWidth: '76px',
+                    fontWeight: 600,
+                    fontSize: '0.6875rem',
+                    color: 'var(--text-muted)',
+                    borderRight: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
+                    textAlign: 'center',
+                    position: 'sticky',
+                    left: '52px',
+                    backgroundColor: isDark ? '#161B22' : '#F6F8FA',
+                    zIndex: 25,
+                    userSelect: 'none',
+                  }}
+                >
+                  Manage
+                </th>
+
                 {headers.map((h, colIdx) => {
                   const isSorted = sortColIdx === colIdx;
                   return (
@@ -794,6 +941,23 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
                     <FiFilter size={10} color="var(--text-muted)" />
                   </th>
 
+                  {/* Actions Column Filter Header Placeholder */}
+                  <th
+                    style={{
+                      padding: '4px 6px',
+                      borderRight: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
+                      textAlign: 'center',
+                      position: 'sticky',
+                      left: '52px',
+                      backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
+                      zIndex: 24,
+                      width: '76px',
+                      minWidth: '76px',
+                    }}
+                  >
+                    <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>Action</span>
+                  </th>
+
                   {headers.map((h, colIdx) => (
                     <th
                       key={`filter-${colIdx}`}
@@ -830,10 +994,10 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
 
             {/* Table Body */}
             <tbody>
-              {paginatedRows.length === 0 ? (
+              {paginatedRowItems.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={headers.length + 1}
+                    colSpan={headers.length + 2}
                     style={{
                       padding: '3rem 1rem',
                       textAlign: 'center',
@@ -863,9 +1027,10 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
                   </td>
                 </tr>
               ) : (
-                paginatedRows.map((row, rowIdx) => {
+                paginatedRowItems.map((item, rowIdx) => {
                   const actualRowNumber = pageSize === 0 ? rowIdx + 1 : (currentPage - 1) * pageSize + rowIdx + 1;
                   const isEven = rowIdx % 2 === 0;
+                  const row = item.values;
 
                   return (
                     <tr
@@ -903,6 +1068,88 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
                         }}
                       >
                         {actualRowNumber}
+                      </td>
+
+                      {/* Manage Actions Column */}
+                      <td
+                        style={{
+                          padding: '6px 8px',
+                          textAlign: 'center',
+                          borderRight: isDark ? '1px solid #21262D' : '1px solid #E5E7EB',
+                          position: 'sticky',
+                          left: '52px',
+                          backgroundColor: isDark ? '#161B22' : '#F6F8FA',
+                          zIndex: 10,
+                          userSelect: 'none',
+                          width: '76px',
+                          minWidth: '76px',
+                        }}
+                      >
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setRowToEdit({
+                                item,
+                                displayNum: actualRowNumber,
+                                draftValues: headers.map((_, cIdx) => item.values[cIdx] || ''),
+                              });
+                            }}
+                            title={`Edit Row #${actualRowNumber} in Google Sheet`}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              width: '24px',
+                              height: '24px',
+                              borderRadius: '4px',
+                              border: isDark ? '1px solid #30363D' : '1px solid #D0D7DE',
+                              backgroundColor: isDark ? 'rgba(59, 130, 246, 0.12)' : 'rgba(59, 130, 246, 0.08)',
+                              color: '#3B82F6',
+                              cursor: 'pointer',
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.25)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = isDark ? 'rgba(59, 130, 246, 0.12)' : 'rgba(59, 130, 246, 0.08)';
+                            }}
+                          >
+                            <FiEdit2 size={12} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setRowToDelete({
+                                item,
+                                displayNum: actualRowNumber,
+                              });
+                            }}
+                            title={`Delete Row #${actualRowNumber} from Google Sheet`}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              width: '24px',
+                              height: '24px',
+                              borderRadius: '4px',
+                              border: isDark ? '1px solid #30363D' : '1px solid #D0D7DE',
+                              backgroundColor: isDark ? 'rgba(239, 68, 68, 0.12)' : 'rgba(239, 68, 68, 0.08)',
+                              color: '#EF4444',
+                              cursor: 'pointer',
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.25)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = isDark ? 'rgba(239, 68, 68, 0.12)' : 'rgba(239, 68, 68, 0.08)';
+                            }}
+                          >
+                            <FiTrash2 size={12} />
+                          </button>
+                        </div>
                       </td>
 
                       {/* Cell Data */}
@@ -1127,6 +1374,388 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
           </div>
         )}
       </div>
+
+      {/* ── DELETE ROW CONFIRMATION MODAL ── */}
+      {rowToDelete && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.72)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 350,
+            padding: '1rem',
+          }}
+          onClick={() => !isDeleting && setRowToDelete(null)}
+        >
+          <div
+            style={{
+              width: '460px',
+              maxWidth: '100%',
+              backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+              border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+              borderRadius: '10px',
+              boxShadow: '0 20px 40px rgba(0, 0, 0, 0.5)',
+              padding: '1.25rem',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '1rem',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '8px',
+                  backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                  border: '1px solid rgba(239, 68, 68, 0.35)',
+                  color: '#EF4444',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <FiTrash2 size={18} />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '0.9375rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  Delete Row from Google Sheet
+                </h3>
+                <p style={{ margin: '2px 0 0 0', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  Row #{rowToDelete.displayNum} (Sheet Row #{rowToDelete.item.sheetRowNum})
+                </p>
+              </div>
+            </div>
+
+            <div
+              style={{
+                padding: '0.75rem',
+                borderRadius: '6px',
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#F6F8FA',
+                border: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
+                fontSize: '0.75rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '4px',
+              }}
+            >
+              <div><strong>Code:</strong> {rowToDelete.item.values[0] || 'N/A'}</div>
+              <div><strong>Project:</strong> {rowToDelete.item.values[1] || 'N/A'}</div>
+              {rowToDelete.item.values[5] && <div><strong>Price:</strong> {rowToDelete.item.values[5]}</div>}
+            </div>
+
+            <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+              Are you sure you want to delete this row? This action will permanently remove it from the live spreadsheet <strong>{spreadsheetTitle || sheetName}</strong>.
+            </p>
+
+            {deleteError && (
+              <div style={{ fontSize: '0.75rem', color: '#EF4444', backgroundColor: 'rgba(239, 68, 68, 0.1)', padding: '8px', borderRadius: '4px' }}>
+                {deleteError}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setRowToDelete(null)}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: '6px',
+                  fontSize: '0.75rem',
+                  fontWeight: 500,
+                  border: isDark ? '1px solid #30363D' : '1px solid #D0D7DE',
+                  backgroundColor: 'transparent',
+                  color: 'var(--text-primary)',
+                  cursor: isDeleting ? 'not-allowed' : 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => handleDeleteRow(rowToDelete.item)}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: '6px',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  border: '1px solid #EF4444',
+                  backgroundColor: '#EF4444',
+                  color: '#FFFFFF',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  cursor: isDeleting ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {isDeleting ? <FiRefreshCw size={12} className="animate-spin" /> : <FiTrash2 size={12} />}
+                <span>{isDeleting ? 'Deleting...' : 'Delete Row'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── EDIT ROW MODAL ── */}
+      {rowToEdit && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.72)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 350,
+            padding: '1rem',
+          }}
+          onClick={() => !isSavingEdit && setRowToEdit(null)}
+        >
+          <div
+            style={{
+              width: '640px',
+              maxWidth: '100%',
+              maxHeight: '85vh',
+              backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+              border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+              borderRadius: '10px',
+              boxShadow: '0 20px 40px rgba(0, 0, 0, 0.5)',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '1rem 1.25rem',
+                borderBottom: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
+                backgroundColor: isDark ? '#0D1117' : '#F6F8FA',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div
+                  style={{
+                    width: '28px',
+                    height: '28px',
+                    borderRadius: '6px',
+                    backgroundColor: 'rgba(15, 157, 88, 0.12)',
+                    border: '1px solid rgba(15, 157, 88, 0.3)',
+                    color: '#0F9D58',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <FiEdit2 size={14} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                    Edit Row #{rowToEdit.displayNum}
+                  </h3>
+                  <p style={{ margin: '1px 0 0 0', fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                    Google Sheet line #{rowToEdit.item.sheetRowNum} · {sheetName || boxConfig.googleSheetName || 'Sheet'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => !isSavingEdit && setRowToEdit(null)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  padding: '4px',
+                }}
+              >
+                <FiX size={16} />
+              </button>
+            </div>
+
+            {/* Modal Body - Scrollable Form */}
+            <div
+              style={{
+                padding: '1.25rem',
+                overflowY: 'auto',
+                display: 'grid',
+                gridTemplateColumns: 'repeat(2, 1fr)',
+                gap: '12px',
+              }}
+            >
+              {headers.map((h, colIdx) => {
+                const isLongField = (
+                  h.toLowerCase().includes('link') ||
+                  h.toLowerCase().includes('contact') ||
+                  h.toLowerCase().includes('description') ||
+                  (rowToEdit.draftValues[colIdx] || '').length > 60
+                );
+                return (
+                  <div
+                    key={`edit-col-${colIdx}`}
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '4px',
+                      gridColumn: isLongField ? 'span 2' : 'span 1',
+                    }}
+                  >
+                    <label
+                      style={{
+                        fontSize: '0.6875rem',
+                        fontWeight: 600,
+                        color: 'var(--text-secondary)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: '0.5625rem',
+                          padding: '1px 3px',
+                          borderRadius: '2px',
+                          backgroundColor: isDark ? '#21262D' : '#E2E8F0',
+                          color: 'var(--text-muted)',
+                        }}
+                      >
+                        {getColumnLetter(colIdx)}
+                      </span>
+                      <span>{h || `Column ${colIdx + 1}`}</span>
+                    </label>
+                    {isLongField ? (
+                      <textarea
+                        rows={2}
+                        value={rowToEdit.draftValues[colIdx] || ''}
+                        onChange={(e) => {
+                          const next = [...rowToEdit.draftValues];
+                          next[colIdx] = e.target.value;
+                          setRowToEdit({ ...rowToEdit, draftValues: next });
+                        }}
+                        style={{
+                          width: '100%',
+                          padding: '6px 8px',
+                          borderRadius: '6px',
+                          fontSize: '0.75rem',
+                          backgroundColor: isDark ? '#0D1117' : '#F6F8FA',
+                          border: isDark ? '1px solid #30363D' : '1px solid #D0D7DE',
+                          color: 'var(--text-primary)',
+                          outline: 'none',
+                          boxSizing: 'border-box',
+                          fontFamily: 'inherit',
+                          resize: 'vertical',
+                        }}
+                      />
+                    ) : (
+                      <input
+                        type="text"
+                        value={rowToEdit.draftValues[colIdx] || ''}
+                        onChange={(e) => {
+                          const next = [...rowToEdit.draftValues];
+                          next[colIdx] = e.target.value;
+                          setRowToEdit({ ...rowToEdit, draftValues: next });
+                        }}
+                        style={{
+                          width: '100%',
+                          height: '30px',
+                          padding: '0 8px',
+                          borderRadius: '6px',
+                          fontSize: '0.75rem',
+                          backgroundColor: isDark ? '#0D1117' : '#F6F8FA',
+                          border: isDark ? '1px solid #30363D' : '1px solid #D0D7DE',
+                          color: 'var(--text-primary)',
+                          outline: 'none',
+                          boxSizing: 'border-box',
+                        }}
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {editError && (
+              <div
+                style={{
+                  margin: '0 1.25rem 0.5rem 1.25rem',
+                  fontSize: '0.75rem',
+                  color: '#EF4444',
+                  backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                  padding: '8px',
+                  borderRadius: '4px',
+                }}
+              >
+                {editError}
+              </div>
+            )}
+
+            {/* Modal Footer */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'flex-end',
+                gap: '8px',
+                padding: '0.875rem 1.25rem',
+                borderTop: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
+                backgroundColor: isDark ? '#0D1117' : '#F6F8FA',
+              }}
+            >
+              <button
+                type="button"
+                disabled={isSavingEdit}
+                onClick={() => setRowToEdit(null)}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: '6px',
+                  fontSize: '0.75rem',
+                  fontWeight: 500,
+                  border: isDark ? '1px solid #30363D' : '1px solid #D0D7DE',
+                  backgroundColor: 'transparent',
+                  color: 'var(--text-primary)',
+                  cursor: isSavingEdit ? 'not-allowed' : 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isSavingEdit}
+                onClick={handleSaveEditRow}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: '6px',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  border: '1px solid #0F9D58',
+                  backgroundColor: '#0F9D58',
+                  color: '#FFFFFF',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  cursor: isSavingEdit ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {isSavingEdit ? <FiRefreshCw size={12} className="animate-spin" /> : <FiCheck size={12} />}
+                <span>{isSavingEdit ? 'Saving Changes...' : 'Save Changes'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

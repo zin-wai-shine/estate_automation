@@ -776,6 +776,113 @@ func (s *GoogleSheetsService) DeleteRow(ctx context.Context, spreadsheetInput st
 	}, nil
 }
 
+// ColumnIndexToLetter converts a 0-based column index to an Excel/Sheets column letter (0 -> A, 1 -> B, etc.).
+func ColumnIndexToLetter(colIdx int) string {
+	res := ""
+	temp := colIdx
+	for temp >= 0 {
+		res = string(rune('A'+(temp%26))) + res
+		temp = temp/26 - 1
+	}
+	return res
+}
+
+// UpdateRow updates the values of an existing row by 0-indexed targetRowIndex (row 1 is first data row, corresponding to row 2 in Google Sheets).
+func (s *GoogleSheetsService) UpdateRow(ctx context.Context, spreadsheetInput string, sheetNameOpt string, targetRowIndex int, values []interface{}, customCredsJSON string) (map[string]interface{}, error) {
+	spreadsheetID := ExtractSpreadsheetID(spreadsheetInput)
+	if spreadsheetID == "" {
+		return nil, fmt.Errorf("invalid spreadsheet URL or ID provided")
+	}
+
+	token, _, err := s.GetTokenAndCreds(ctx, customCredsJSON)
+	if err != nil {
+		return nil, fmt.Errorf("authentication error: %w", err)
+	}
+
+	meta, err := s.LoadHeaders(ctx, spreadsheetInput, sheetNameOpt, customCredsJSON)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load sheet metadata: %w", err)
+	}
+
+	sheetName := meta.SheetName
+	if sheetName == "" {
+		sheetName = sheetNameOpt
+	}
+	if sheetName == "" {
+		sheetName = "Sheet1"
+	}
+
+	if targetRowIndex < 1 {
+		return nil, fmt.Errorf("targetRowIndex must be >= 1 (row 0 is header)")
+	}
+
+	sheetRowNumber := targetRowIndex + 1
+	endColLetter := ColumnIndexToLetter(len(values) - 1)
+	if endColLetter == "" {
+		endColLetter = "Z"
+	}
+
+	var escapedSheet string
+	if strings.Contains(sheetName, " ") || strings.Contains(sheetName, "-") || strings.Contains(sheetName, "'") {
+		cleanName := strings.ReplaceAll(sheetName, "'", "''")
+		escapedSheet = fmt.Sprintf("'%s'", cleanName)
+	} else {
+		escapedSheet = sheetName
+	}
+
+	rangeA1 := fmt.Sprintf("%s!A%d:%s%d", escapedSheet, sheetRowNumber, endColLetter, sheetRowNumber)
+	escapedRangeA1 := url.PathEscape(rangeA1)
+
+	apiURL := fmt.Sprintf("https://sheets.googleapis.com/v4/spreadsheets/%s/values/%s?valueInputOption=USER_ENTERED", spreadsheetID, escapedRangeA1)
+
+	payload := map[string]interface{}{
+		"range":          rangeA1,
+		"majorDimension": "ROWS",
+		"values": [][]interface{}{
+			values,
+		},
+	}
+
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "PUT", apiURL, bytes.NewReader(payloadBytes))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update row in Google Sheets: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBytes, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Google Sheets API error (%d): %s", resp.StatusCode, string(respBytes))
+	}
+
+	var updateResp map[string]interface{}
+	_ = json.Unmarshal(respBytes, &updateResp)
+
+	// Format row styling cleanly
+	_ = s.FormatRowsSimple(ctx, spreadsheetID, int64(meta.SheetID), targetRowIndex, targetRowIndex+1, len(values), token)
+
+	return map[string]interface{}{
+		"success":         true,
+		"spreadsheet_id":  spreadsheetID,
+		"sheet_name":      sheetName,
+		"updated_row_num": sheetRowNumber,
+		"updated_range":   rangeA1,
+		"api_response":    updateResp,
+	}, nil
+}
+
 // parseRowIndicesFromRange parses 0-indexed start and end row indices from a range string like "Sheet6!A2:J2" or "'Sheet 1'!A10:H12"
 func parseRowIndicesFromRange(rangeStr string) (int, int) {
 	exclamationIdx := strings.LastIndex(rangeStr, "!")

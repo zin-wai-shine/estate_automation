@@ -240,6 +240,11 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   const [queueJobs, setQueueJobs] = useState<ImageProcessingJob[]>([]);
   const [isLoadingQueue, setIsLoadingQueue] = useState(false);
   const [enhancedImages, setEnhancedImages] = useState<EnhancedDownloadedImage[]>([]);
+  const [isRecovering, setIsRecovering] = useState(false);
+  const [isRegettingImages, setIsRegettingImages] = useState(false);
+  const [regetFeedback, setRegetFeedback] = useState<string | null>(null);
+  const [regettingSinglePos, setRegettingSinglePos] = useState<number | null>(null);
+  const [cacheBustTimestamp, setCacheBustTimestamp] = useState<number>(() => Date.now());
 
   // 4. Prompt Template State (Persisted uniquely per node)
   const [selectedPromptKey, setSelectedPromptKey] = useState<string>(() => {
@@ -823,13 +828,106 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       );
       const data = await resp.json();
       if (data?.status === 'ok') {
-        setFinderFeedback('Opened in Finder');
+        setFinderFeedback('Opened');
         setTimeout(() => setFinderFeedback(null), 2500);
       }
     } catch (err) {
       console.warn('Failed to open folder in Finder:', err);
     } finally {
       setIsOpeningFinder(false);
+    }
+  };
+
+  // Re-get and sync all enhanced images from local drive / downloads
+  const handleRegetEnhancedImages = async () => {
+    setIsRegettingImages(true);
+    try {
+      // 1. Trigger companion to re-scan persistent folders & downloads
+      try {
+        await fetch('http://127.0.0.1:9224/recover-missing-images', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            property_id: propertyContext?.id || '',
+            listing_code: (propertyContext?.listingCode || '').trim(),
+          }),
+        });
+      } catch (e) {}
+
+      await new Promise((r) => setTimeout(r, 600));
+
+      // 2. Query fresh enhanced images from disk/companion
+      const freshList = await fetchEnhancedDownloadedImages(propertyContext?.id, propertyContext?.listingCode);
+      const newTs = Date.now();
+      setCacheBustTimestamp(newTs);
+      if (freshList && freshList.length > 0) {
+        const valid = freshList.filter((img) => (img.position || 1) <= (receivedImages.length || 99));
+        if (valid.length > 0) {
+          // Guarantee fresh URLs with timestamp for immediate browser re-rendering
+          const cacheBusted = valid.map((img) => ({
+            ...img,
+            url: img.url.includes('?') ? `${img.url}&_cb=${newTs}` : `${img.url}?_cb=${newTs}`,
+          }));
+          setEnhancedImages(cacheBusted);
+          if (onEnhancedPhotosUpdate) {
+            const map: Record<number, string> = {};
+            cacheBusted.forEach((img) => {
+              const pos0 = (img.position || 1) - 1;
+              map[pos0] = img.backend_url || img.url;
+            });
+            onEnhancedPhotosUpdate(map);
+          }
+        }
+      }
+      loadQueue();
+      setRegetFeedback('Re-synced');
+      setTimeout(() => setRegetFeedback(null), 2500);
+    } catch (err) {
+      console.warn('Failed to re-get enhanced images:', err);
+    } finally {
+      setIsRegettingImages(false);
+    }
+  };
+
+  // Re-get / re-sync a single enhanced image position
+  const handleRegetSingleImage = async (position: number) => {
+    setRegettingSinglePos(position);
+    try {
+      await fetch('http://127.0.0.1:9224/recover-missing-images', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          property_id: propertyContext?.id || '',
+          listing_code: (propertyContext?.listingCode || '').trim(),
+          targetPositions: [position],
+        }),
+      });
+      await new Promise((r) => setTimeout(r, 1000));
+      const freshList = await fetchEnhancedDownloadedImages(propertyContext?.id, propertyContext?.listingCode);
+      const newTs = Date.now();
+      setCacheBustTimestamp(newTs);
+      if (freshList && freshList.length > 0) {
+        const valid = freshList.filter((img) => (img.position || 1) <= (receivedImages.length || 99));
+        if (valid.length > 0) {
+          const cacheBusted = valid.map((img) => ({
+            ...img,
+            url: img.url.includes('?') ? `${img.url}&_cb=${newTs}` : `${img.url}?_cb=${newTs}`,
+          }));
+          setEnhancedImages(cacheBusted);
+          if (onEnhancedPhotosUpdate) {
+            const map: Record<number, string> = {};
+            cacheBusted.forEach((img) => {
+              const pos0 = (img.position || 1) - 1;
+              map[pos0] = img.backend_url || img.url;
+            });
+            onEnhancedPhotosUpdate(map);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn(`Failed to re-get image #${position}:`, e);
+    } finally {
+      setRegettingSinglePos(null);
     }
   };
 
@@ -1377,8 +1475,8 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     onRunningChange?.(boxConfig.enabled !== false && (isAutomating || isRunningTwoStage));
   }, [boxConfig.enabled, isAutomating, isRunningTwoStage, onRunningChange]);
 
-  // Handler: Start Multi-Tab Automated Queue across all tabs in selected group
-  const handleStartGroupAutomation = async () => {
+  // Handler: Start Multi-Tab Automated Queue across all tabs in selected group (supports optional targetPositions for missing photos)
+  const handleStartGroupAutomation = async (targetPositions?: number[]) => {
     if (boxConfig.enabled === false) {
       setAutomationMessage('⚠️ This step is disabled. Enable Node Status above to run it.');
       return;
@@ -1394,9 +1492,19 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     const profKey = activeProfile?.profile_key || boxConfig.browserProfileKey || (profiles[0]?.profile_key || 'Pro');
     const propId = propertyContext?.id || `PROP-${Date.now()}`;
     const effectiveGroupName = currentGroup?.name || targetGroupName || selectedGroupName || (isHeroNode ? 'FB Hero' : 'Enhance IMG');
+
+    // Filter images if targetPositions (missing photos) is specified
+    const targetSet = targetPositions && targetPositions.length > 0 ? new Set(targetPositions) : null;
+    const imagesToProcess = targetSet
+      ? activeImages.filter((img, i) => {
+          const pos = typeof img.index === 'number' && img.index > 0 ? img.index : i + 1;
+          return targetSet.has(pos);
+        })
+      : activeImages;
+
     const effectiveWorkerCount = isHeroNode
       ? (boxConfig.skipTab1 || boxConfig.stagingMode === 'direct_tab2' || boxConfig.workerTabCount === 1 ? 1 : 2)
-      : (boxConfig.workerTabCount || (groupTabs.length || 4));
+      : Math.min(Math.max(1, imagesToProcess.length), boxConfig.workerTabCount || (groupTabs.length || 4));
     const isNewTabsMode = (boxConfig as any).workerTabMode === 'new_tabs';
     let targetUrls = isNewTabsMode
       ? Array(effectiveWorkerCount).fill('https://chatgpt.com/')
@@ -1407,7 +1515,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       targetUrls = targetUrls.slice(0, effectiveWorkerCount);
     }
 
-    const hasImages = activeImages.length > 0 || queueJobs.length > 0;
+    const hasImages = imagesToProcess.length > 0 || queueJobs.length > 0;
     if (!hasImages && enablePromptEnhance) {
       setAutomationMessage('⚠️ No images selected for this run. Please select photos or check image source.');
       return;
@@ -1446,18 +1554,21 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
         ))
       : '';
 
-    const imgs = activeImages.map((img, i) => ({
-      index: i + 1,
-      source_url: img.url,
-      stored_url: img.url,
-      width: outputWidth,
-      height: outputHeight,
-      resolved_prompt: promptToUse,
-    }));
+    const imgs = imagesToProcess.map((img, i) => {
+      const originalPos = typeof img.index === 'number' && img.index > 0 ? img.index : (targetPositions && targetPositions[i] ? targetPositions[i] : i + 1);
+      return {
+        index: originalPos,
+        source_url: img.url,
+        stored_url: img.url,
+        width: outputWidth,
+        height: outputHeight,
+        resolved_prompt: promptToUse,
+      };
+    });
 
     // Create or refresh batch queue with the active images if prompt enhancement is active
     let createdBatchJobs: ImageProcessingJob[] = [];
-    if (activeImages.length > 0 && enablePromptEnhance) {
+    if (imagesToProcess.length > 0 && enablePromptEnhance) {
       try {
         createdBatchJobs = await createBatchImageQueue({
           property_id: propId,
@@ -1516,7 +1627,11 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     const finalTabIds = tabIds.length > 0 ? tabIds : Array.from({ length: effectiveWorkerCount }, (_, i) => i + 1);
 
     setIsAutomating(true);
-    setAutomationMessage(`Auto-opened Chrome [${profKey}] & Tab Group [${effectiveGroupName}]. Processing across ${effectiveWorkerCount} tabs...`);
+    setAutomationMessage(
+      targetPositions
+        ? `⚡ Re-queued and working ${imagesToProcess.length} missing photos: [${targetPositions.map((p) => '#' + p).join(', ')}] across ${finalTabIds.length} tabs...`
+        : `Auto-opened Chrome [${profKey}] & Tab Group [${effectiveGroupName}]. Processing across ${effectiveWorkerCount} tabs...`
+    );
 
     const res = await startAutomation({
       property_id: propId,
@@ -1540,7 +1655,11 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       setAutomationMessage(`Error: ${res.message}`);
       setTimeout(() => setAutomationMessage(null), 4500);
     } else {
-      setAutomationMessage(`⚡ Processing images across ${finalTabIds.length} tabs...`);
+      setAutomationMessage(
+        targetPositions
+          ? `⚡ Re-queued & working ${imagesToProcess.length} missing photos across ${finalTabIds.length} tabs...`
+          : `⚡ Processing images across ${finalTabIds.length} tabs...`
+      );
       loadQueue();
     }
   };
@@ -1677,6 +1796,15 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       },
     ];
   }, [propertyContext?.upstreamPrompts]);
+
+  // Missing positions for Enhance automation
+  const missingPositions = useMemo(() => {
+    const allPositions = queueJobs.length > 0
+      ? queueJobs.map((j) => j.original_position || 1)
+      : activeImages.map((img, i) => (typeof img.index === 'number' && img.index > 0 ? img.index : i + 1));
+    const downloadedPositions = new Set(enhancedImages.map((img) => img.position));
+    return allPositions.filter((pos) => !downloadedPositions.has(pos)).sort((a, b) => a - b);
+  }, [queueJobs, activeImages, enhancedImages]);
 
   // Upstream AI Node Prompt Object
   const selectedUpstreamPromptObj = useMemo(() => {
@@ -2198,8 +2326,8 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
         boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.05)',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
           <div
             style={{
               width: '28px',
@@ -2215,63 +2343,65 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
           >
             <FiFolder size={14} />
           </div>
-          <div>
-            <div style={{ fontSize: '0.78125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontSize: '0.78125rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
               Condo Photos (1, 2, 3)
             </div>
-            <div
-              style={{
-                fontSize: '0.625rem',
-                color: matchedCondoInfo?.matched_folder ? '#10B981' : 'var(--text-muted)',
-                fontWeight: matchedCondoInfo?.matched_folder ? 600 : 400,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                maxWidth: '175px',
-              }}
-              title={
-                matchedCondoInfo?.matched_folder ||
-                boxConfig.targetFolder ||
-                localStorage.getItem('bolthaven_condo_target_folder') ||
-                '~/Desktop/Condo Building'
-              }
-            >
-              {matchedCondoInfo?.matched_folder ? `✓ ${matchedCondoInfo.matched_folder}` : 'Target: Condo Building'}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '1px' }}>
+              <div
+                style={{
+                  fontSize: '0.625rem',
+                  color: matchedCondoInfo?.matched_folder ? '#10B981' : 'var(--text-muted)',
+                  fontWeight: matchedCondoInfo?.matched_folder ? 600 : 400,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  maxWidth: '120px',
+                }}
+                title={
+                  matchedCondoInfo?.matched_folder ||
+                  boxConfig.targetFolder ||
+                  localStorage.getItem('bolthaven_condo_target_folder') ||
+                  '~/Desktop/Condo Building'
+                }
+              >
+                {matchedCondoInfo?.matched_folder ? `✓ ${matchedCondoInfo.matched_folder}` : 'Target: Condo Building'}
+              </div>
+              <span
+                style={{
+                  fontSize: '0.53125rem',
+                  fontWeight: 700,
+                  padding: '1px 5px',
+                  borderRadius: '8px',
+                  backgroundColor:
+                    selectedCondoCount === 3
+                      ? 'rgba(16, 185, 129, 0.15)'
+                      : selectedCondoCount > 0
+                      ? 'rgba(245, 158, 11, 0.15)'
+                      : 'rgba(239, 68, 68, 0.12)',
+                  color:
+                    selectedCondoCount === 3
+                      ? '#10B981'
+                      : selectedCondoCount > 0
+                      ? '#F59E0B'
+                      : '#EF4444',
+                  border:
+                    selectedCondoCount === 3
+                      ? '1px solid rgba(16, 185, 129, 0.3)'
+                      : selectedCondoCount > 0
+                      ? '1px solid rgba(245, 158, 11, 0.3)'
+                      : '1px solid rgba(239, 68, 68, 0.25)',
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0,
+                }}
+              >
+                {selectedCondoCount === 3 ? '3/3 Ready' : `${selectedCondoCount}/3 Selected`}
+              </span>
             </div>
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-          <span
-            style={{
-              fontSize: '0.5625rem',
-              fontWeight: 700,
-              padding: '2px 6px',
-              borderRadius: '10px',
-              backgroundColor:
-                selectedCondoCount === 3
-                  ? 'rgba(16, 185, 129, 0.15)'
-                  : selectedCondoCount > 0
-                  ? 'rgba(245, 158, 11, 0.15)'
-                  : 'rgba(239, 68, 68, 0.12)',
-              color:
-                selectedCondoCount === 3
-                  ? '#10B981'
-                  : selectedCondoCount > 0
-                  ? '#F59E0B'
-                  : '#EF4444',
-              border:
-                selectedCondoCount === 3
-                  ? '1px solid rgba(16, 185, 129, 0.3)'
-                  : selectedCondoCount > 0
-                  ? '1px solid rgba(245, 158, 11, 0.3)'
-                  : '1px solid rgba(239, 68, 68, 0.25)',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {selectedCondoCount === 3 ? '3/3 Ready' : `${selectedCondoCount}/3 Selected`}
-          </span>
-
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}>
           {/* Change / Select Photos Button */}
           <button
             type="button"
@@ -2281,7 +2411,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
             }}
             title="Select & change condo photos"
             style={{
-              padding: '3px 8px',
+              padding: '3px 7px',
               borderRadius: '6px',
               border: '1px solid var(--border-color)',
               backgroundColor: showFolderPicker
@@ -2299,10 +2429,51 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
               alignItems: 'center',
               gap: '4px',
               transition: 'all 0.15s ease',
+              whiteSpace: 'nowrap',
             }}
           >
             <FiFolder size={11} style={{ opacity: 0.7 }} />
             <span>Change</span>
+          </button>
+
+          {/* Open Folder directly in macOS Finder */}
+          <button
+            type="button"
+            onClick={handleOpenFolderInFinder}
+            disabled={isOpeningFinder}
+            title={
+              matchedCondoInfo?.folder_path
+                ? `Open folder in macOS Finder: ${matchedCondoInfo.folder_path}`
+                : 'Open condo folder in macOS Finder'
+            }
+            style={{
+              padding: '3px 7px',
+              borderRadius: '6px',
+              border: '1px solid var(--border-color)',
+              backgroundColor: finderFeedback
+                ? isDark
+                  ? 'rgba(16, 185, 129, 0.15)'
+                  : '#DEF7EC'
+                : isDark
+                ? 'rgba(255,255,255,0.06)'
+                : '#F1F5F9',
+              color: finderFeedback ? '#10B981' : 'var(--text-primary)',
+              fontSize: '0.625rem',
+              fontWeight: 500,
+              cursor: isOpeningFinder ? 'wait' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              transition: 'all 0.15s ease',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {finderFeedback ? (
+              <FiCheck size={11} style={{ color: '#10B981' }} />
+            ) : (
+              <FiExternalLink size={11} style={{ opacity: 0.7 }} />
+            )}
+            <span>{finderFeedback ? 'Opened' : 'Open'}</span>
           </button>
         </div>
       </div>
@@ -2575,22 +2746,49 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
             >
               {matchedCondoInfo?.matched_folder ? `Folder: ${matchedCondoInfo.matched_folder}` : 'Condo Directory'}
             </span>
-            <button
-              type="button"
-              onClick={handleChooseFolder}
-              title="Choose another condo folder on Mac"
-              style={{
-                background: 'none',
-                border: 'none',
-                color: 'var(--text-secondary)',
-                fontSize: '0.5625rem',
-                cursor: 'pointer',
-                textDecoration: 'underline',
-                padding: 0,
-              }}
-            >
-              Switch Folder...
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <button
+                type="button"
+                onClick={handleOpenFolderInFinder}
+                disabled={isOpeningFinder}
+                title={
+                  matchedCondoInfo?.folder_path
+                    ? `Open folder in Finder: ${matchedCondoInfo.folder_path}`
+                    : 'Open condo folder in macOS Finder'
+                }
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: finderFeedback ? '#10B981' : 'var(--text-secondary)',
+                  fontSize: '0.5625rem',
+                  cursor: isOpeningFinder ? 'wait' : 'pointer',
+                  textDecoration: 'underline',
+                  padding: 0,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '3px',
+                }}
+              >
+                <FiExternalLink size={10} style={{ opacity: 0.7 }} />
+                <span>{finderFeedback ? 'Opened' : 'Open in Finder'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleChooseFolder}
+                title="Choose another condo folder on Mac"
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-secondary)',
+                  fontSize: '0.5625rem',
+                  cursor: 'pointer',
+                  textDecoration: 'underline',
+                  padding: 0,
+                }}
+              >
+                Switch Folder...
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -2946,44 +3144,55 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
               ? `Chrome Profile — ${activeProfile?.display_name || boxConfig.browserProfileName || 'Hsu'}`
               : 'External Browser Node'}
           </div>
-          <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
+          <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px', rowGap: '4px', marginTop: '3px' }}>
             {isTabGroupNode ? (
               <>
-                <span>Connected to {boxConfig.browserProfileName || connectedProfileName || activeProfile?.display_name || 'Note Zin Wai'} ({boxConfig.browserProfileKey || activeProfile?.profile_key || 'Pro'})</span>
+                <span style={{ whiteSpace: 'nowrap' }}>
+                  Connected: <strong style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>{boxConfig.browserProfileName || connectedProfileName || activeProfile?.display_name || 'Note Zin Wai'}</strong> ({boxConfig.browserProfileKey || activeProfile?.profile_key || 'Pro'})
+                </span>
                 {connectedProfileNodeId && onOpenProfileNode && (
                   <button
                     type="button"
                     onClick={() => onOpenProfileNode(connectedProfileNodeId)}
+                    title="View Chrome Profile configuration"
                     style={{
-                      background: 'none',
-                      border: 'none',
-                      padding: 0,
+                      background: isDark ? 'rgba(59, 130, 246, 0.12)' : 'rgba(59, 130, 246, 0.08)',
+                      border: isDark ? '1px solid rgba(59, 130, 246, 0.25)' : '1px solid rgba(59, 130, 246, 0.2)',
+                      padding: '1px 6px',
+                      borderRadius: '4px',
                       color: isDark ? '#93C5FD' : '#2563EB',
-                      fontSize: '0.6875rem',
+                      fontSize: '0.625rem',
                       fontWeight: 500,
                       cursor: 'pointer',
-                      display: 'flex',
+                      display: 'inline-flex',
                       alignItems: 'center',
-                      gap: '2px',
-                      textDecoration: 'underline',
+                      gap: '3px',
+                      whiteSpace: 'nowrap',
+                      lineHeight: 1.4,
                     }}
                   >
-                    <FiArrowLeft size={10} /> View Profile
+                    <FiArrowLeft size={9} /> View
                   </button>
                 )}
                 {boxConfig.reuseSessionTabs !== false && (
                   <span
+                    title="Memorized worker tabs bound to this group"
                     style={{
                       fontSize: '0.625rem',
                       fontWeight: 600,
                       color: '#10B981',
+                      backgroundColor: isDark ? 'rgba(16, 185, 129, 0.12)' : '#DCFCE7',
+                      border: isDark ? '1px solid rgba(16, 185, 129, 0.25)' : '1px solid rgba(16, 185, 129, 0.3)',
+                      padding: '1px 6px',
+                      borderRadius: '4px',
                       display: 'inline-flex',
                       alignItems: 'center',
-                      gap: '4px',
+                      gap: '3px',
+                      whiteSpace: 'nowrap',
+                      lineHeight: 1.4,
                     }}
                   >
-                    <span>•</span>
-                    <span>💾 Memorized Tabs Bound</span>
+                    💾 Memorized
                   </span>
                 )}
               </>
@@ -4902,6 +5111,44 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
           </div>
         )}
 
+        {/* If missing photos exist from previous run, provide 1-click "Work Missing Photos" button! */}
+        {missingPositions.length > 0 && enhancedImages.length > 0 && !isAutomating && !isRunningTwoStage && !isHeroNode && (
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedGroupName(currentGroup.name || boxConfig.browserGroupName || 'Enhance IMG');
+              handleStartGroupAutomation(missingPositions);
+            }}
+            style={{
+              width: '100%',
+              height: '36px',
+              borderRadius: '8px',
+              border: '1px solid #F59E0B',
+              backgroundColor: 'rgba(245, 158, 11, 0.15)',
+              color: '#F59E0B',
+              fontSize: '0.8125rem',
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              cursor: 'pointer',
+              marginBottom: '6px',
+              transition: 'all 0.15s ease',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.25)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.15)';
+            }}
+            title={`Queue and enhance missing photos: ${missingPositions.map((p) => '#' + p).join(', ')}`}
+          >
+            <FiRefreshCw size={13} />
+            <span>Work Missing ({missingPositions.length} Photos · [ {missingPositions.map((p) => '#' + p).join(', ')} ] )</span>
+          </button>
+        )}
+
         {/* Run Action Button (Theme Primary Clean Apple Style) */}
         <button
           type="button"
@@ -5238,6 +5485,77 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
               </span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              {missingPositions.length > 0 && enhancedImages.length > 0 && !isAutomating && !isRunningTwoStage && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={isRecovering}
+                  onClick={async () => {
+                    setIsRecovering(true);
+                    try {
+                      // 1. First trigger fast serial download recovery from memorized tabs
+                      await fetch('http://127.0.0.1:9224/recover-missing-images', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          property_id: propertyContext?.id || '',
+                          listing_code: (propertyContext?.listingCode || '').trim(),
+                          targetPositions: missingPositions,
+                        }),
+                      });
+                      // Wait for serial downloads to process
+                      await new Promise((r) => setTimeout(r, 2200));
+                      const refreshedList = await fetchEnhancedDownloadedImages(propertyContext?.id, propertyContext?.listingCode);
+                      const refreshedPositions = new Set((refreshedList || []).map((img) => img.position));
+                      const remainingMissing = missingPositions.filter((p) => !refreshedPositions.has(p));
+                      if (remainingMissing.length > 0) {
+                        // 2. Automatically queue and work remaining missing images across tabs!
+                        setSelectedGroupName(currentGroup.name || boxConfig.browserGroupName || 'Enhance IMG');
+                        await handleStartGroupAutomation(remainingMissing);
+                      }
+                    } catch (e) {
+                    } finally {
+                      setIsRecovering(false);
+                    }
+                  }}
+                  style={{
+                    padding: '2px 8px',
+                    fontSize: '0.625rem',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    borderColor: 'rgba(239, 68, 68, 0.45)',
+                    color: '#EF4444',
+                    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                  }}
+                  title={`Missing ${missingPositions.length} photo(s): ${missingPositions.map((p) => `#${p}`).join(', ')}. Click to recover and re-queue missing photos!`}
+                >
+                  <FiRefreshCw size={11} className={isRecovering ? 'animate-spin' : ''} />
+                  <span>Recover Missing ({missingPositions.length})</span>
+                </Button>
+              )}
+              {/* Re-get Enhanced Images Button */}
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={isRegettingImages}
+                onClick={handleRegetEnhancedImages}
+                style={{
+                  padding: '2px 8px',
+                  fontSize: '0.625rem',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  borderColor: regetFeedback ? 'rgba(16, 185, 129, 0.45)' : undefined,
+                  color: regetFeedback ? '#10B981' : 'var(--text-primary)',
+                  backgroundColor: regetFeedback ? (isDark ? 'rgba(16, 185, 129, 0.12)' : '#DEF7EC') : undefined,
+                }}
+                title="Re-get and sync all enhanced photos from your drive / downloads"
+              >
+                <FiRefreshCw size={11} className={isRegettingImages ? 'animate-spin' : ''} />
+                <span>{regetFeedback || 'Re-get'}</span>
+              </Button>
+
               <Button
                 size="sm"
                 variant="secondary"
@@ -5271,41 +5589,48 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
               paddingRight: '2px',
             }}
           >
-            {enhancedImages.map((img, idx) => (
-              <div
-                key={img.filename || idx}
-                style={{
-                  position: 'relative',
-                  borderRadius: '8px',
-                  overflow: 'hidden',
-                  border: isDark ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid var(--border-color)',
-                  backgroundColor: isDark ? '#0F172A' : '#F8FAFC',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  transition: 'transform 0.15s ease, box-shadow 0.15s ease',
-                }}
-              >
-                {/* Image Thumbnail with 4:5 aspect ratio */}
+            {enhancedImages.map((img, idx) => {
+              const displayUrl = img.url
+                ? img.url.includes('?')
+                  ? `${img.url}&_cb=${cacheBustTimestamp}`
+                  : `${img.url}?_cb=${cacheBustTimestamp}`
+                : '';
+              return (
                 <div
+                  key={`${img.filename || idx}-${img.size || 0}-${cacheBustTimestamp}`}
                   style={{
                     position: 'relative',
-                    width: '100%',
-                    aspectRatio: '4/5',
-                    backgroundColor: isDark ? '#1E293B' : '#E2E8F0',
+                    borderRadius: '8px',
                     overflow: 'hidden',
+                    border: isDark ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid var(--border-color)',
+                    backgroundColor: isDark ? '#0F172A' : '#F8FAFC',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    transition: 'transform 0.15s ease, box-shadow 0.15s ease',
                   }}
                 >
-                  <img
-                    src={img.url}
-                    alt={img.filename}
-                    loading="lazy"
+                  {/* Image Thumbnail with 4:5 aspect ratio */}
+                  <div
                     style={{
+                      position: 'relative',
                       width: '100%',
-                      height: '100%',
-                      objectFit: 'cover',
-                      display: 'block',
+                      aspectRatio: '4/5',
+                      backgroundColor: isDark ? '#1E293B' : '#E2E8F0',
+                      overflow: 'hidden',
                     }}
-                  />
+                  >
+                    <img
+                      src={displayUrl}
+                      key={displayUrl}
+                      alt={img.filename}
+                      loading="eager"
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        objectFit: 'cover',
+                        display: 'block',
+                      }}
+                    />
                   {/* Position Badge */}
                   <div
                     style={{
@@ -5363,6 +5688,26 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                     <button
                       type="button"
+                      onClick={() => handleRegetSingleImage(img.position || idx + 1)}
+                      disabled={regettingSinglePos === (img.position || idx + 1)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'inherit',
+                        cursor: 'pointer',
+                        padding: '2px',
+                        display: 'flex',
+                        alignItems: 'center',
+                      }}
+                      title={`Re-get photo #${img.position || idx + 1} from drive`}
+                    >
+                      <FiRefreshCw
+                        size={10}
+                        className={regettingSinglePos === (img.position || idx + 1) ? 'animate-spin' : ''}
+                      />
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => {
                         fetch(`http://127.0.0.1:9224/reveal-file?file=${encodeURIComponent(img.filename)}`).catch(() => {});
                       }}
@@ -5380,7 +5725,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                       <FiFolder size={11} />
                     </button>
                     <a
-                      href={img.url}
+                      href={displayUrl || img.url}
                       target="_blank"
                       rel="noreferrer"
                       style={{
@@ -5397,7 +5742,8 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                   </div>
                 </div>
               </div>
-            ))}
+            );
+          })}
           </div>
         </div>
       )}
@@ -5430,14 +5776,37 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
               <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
                 Smart Image Queue ({displayQueueItems.length} Images)
               </label>
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={loadQueue}
-                style={{ padding: '2px 6px', fontSize: '0.625rem' }}
-              >
-                <FiRefreshCw size={10} />
-              </Button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                {missingPositions.length > 0 && enhancedImages.length > 0 && !isAutomating && !isRunningTwoStage && !isHeroNode && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      setSelectedGroupName(currentGroup.name || boxConfig.browserGroupName || 'Enhance IMG');
+                      handleStartGroupAutomation(missingPositions);
+                    }}
+                    style={{
+                      padding: '2px 6px',
+                      fontSize: '0.625rem',
+                      color: '#F59E0B',
+                      borderColor: 'rgba(245, 158, 11, 0.4)',
+                      backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                    }}
+                    title={`Queue & work ${missingPositions.length} missing photos: ${missingPositions.map((p) => '#' + p).join(', ')}`}
+                  >
+                    <FiPlay size={9} />
+                    <span>Work Missing ({missingPositions.length})</span>
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={loadQueue}
+                  style={{ padding: '2px 6px', fontSize: '0.625rem' }}
+                >
+                  <FiRefreshCw size={10} />
+                </Button>
+              </div>
             </div>
 
             <div
@@ -5448,13 +5817,17 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
               }}
             >
               {displayQueueItems.map((job) => {
-                const isCompleted = job.status === 'COMPLETED';
-                const isReady = job.status === 'READY_FOR_USER';
+                const isEnhanced = enhancedImages.some((img) => img.position === job.original_position);
+                const isCompleted = job.status === 'COMPLETED' || isEnhanced;
+                const isMissing = !isCompleted && enhancedImages.length > 0;
+                const isReady = job.status === 'READY_FOR_USER' && !isCompleted && !isMissing;
                 const isLocal = job.status === 'PROCESSING_LOCAL';
                 const isFailed = job.status === 'FAILED';
 
                 const badgeColor = isCompleted
                   ? '#10B981'
+                  : isMissing
+                  ? '#F59E0B'
                   : isReady
                   ? '#06B6D4'
                   : isLocal
@@ -5466,7 +5839,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                 return (
                   <div
                     key={job.id}
-                    title={`Image #${job.original_position} · Status: ${job.status}`}
+                    title={`Image #${job.original_position} · Status: ${isCompleted ? 'COMPLETED' : isMissing ? 'MISSING' : job.status}`}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -5474,7 +5847,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                       padding: '5px 8px',
                       borderRadius: '6px',
                       backgroundColor: isDark ? 'rgba(0, 0, 0, 0.25)' : '#FFFFFF',
-                      border: '1px solid var(--border-color)',
+                      border: isMissing ? '1px solid rgba(245, 158, 11, 0.35)' : '1px solid var(--border-color)',
                       minWidth: 0,
                     }}
                   >
@@ -5484,13 +5857,14 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                           width: '18px',
                           height: '18px',
                           borderRadius: '4px',
-                          backgroundColor: isDark ? '#0F172A' : '#E2E8F0',
+                          backgroundColor: isCompleted ? 'rgba(16, 185, 129, 0.15)' : isMissing ? 'rgba(245, 158, 11, 0.15)' : isDark ? '#0F172A' : '#E2E8F0',
+                          border: isCompleted ? '1px solid rgba(16, 185, 129, 0.4)' : isMissing ? '1px solid rgba(245, 158, 11, 0.4)' : 'none',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
                           fontSize: '0.625rem',
                           fontWeight: 700,
-                          color: 'var(--text-primary)',
+                          color: isCompleted ? '#10B981' : isMissing ? '#F59E0B' : 'var(--text-primary)',
                           flexShrink: 0,
                         }}
                       >
@@ -5511,6 +5885,32 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+                      {isMissing && !isAutomating && !isRunningTwoStage && !isHeroNode && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedGroupName(currentGroup.name || boxConfig.browserGroupName || 'Enhance IMG');
+                            handleStartGroupAutomation([job.original_position]);
+                          }}
+                          title={`Queue and enhance Image #${job.original_position} again`}
+                          style={{
+                            padding: '1px 5px',
+                            fontSize: '0.5625rem',
+                            fontWeight: 600,
+                            backgroundColor: 'rgba(245, 158, 11, 0.15)',
+                            color: '#F59E0B',
+                            border: '1px solid rgba(245, 158, 11, 0.4)',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '2px',
+                          }}
+                        >
+                          <FiPlay size={8} />
+                          <span>Work</span>
+                        </button>
+                      )}
                       <span
                         style={{
                           padding: '1px 5px',
@@ -5523,7 +5923,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                           whiteSpace: 'nowrap',
                         }}
                       >
-                        {isReady ? 'Ready' : isCompleted ? 'Done' : isLocal ? 'Local' : job.status}
+                        {isCompleted ? 'Done' : isMissing ? 'Missing' : isReady ? 'Ready' : isLocal ? 'Local' : job.status}
                       </span>
 
                       {job.output_file_url && (

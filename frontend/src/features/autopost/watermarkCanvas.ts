@@ -13,10 +13,20 @@ export const loadImageElement = async (src: string): Promise<HTMLImageElement> =
     });
   }
 
-  // Normalize localhost:8085 backend URLs to relative /storage to leverage same-origin Vite proxy
+  // Normalize localhost:8085 backend URLs and companion download URLs to relative /storage to leverage same-origin Vite proxy
   let cleanSrc = src;
-  if (typeof window !== 'undefined' && cleanSrc.includes('localhost:8085/storage')) {
-    cleanSrc = cleanSrc.replace(/^https?:\/\/localhost:8085/, '');
+  if (typeof window !== 'undefined') {
+    if (cleanSrc.includes('localhost:8085/storage')) {
+      cleanSrc = cleanSrc.replace(/^https?:\/\/localhost:8085/, '');
+    } else if (cleanSrc.includes('/downloaded-image?file=')) {
+      try {
+        const u = new URL(cleanSrc, window.location.origin);
+        const fname = u.searchParams.get('file');
+        if (fname) {
+          cleanSrc = `/storage/uploads/facebook-import/enhanced/${encodeURIComponent(fname)}`;
+        }
+      } catch (_) {}
+    }
   }
 
   // Attempt 1: Fetch as Blob and create a local blob: URL.
@@ -25,6 +35,9 @@ export const loadImageElement = async (src: string): Promise<HTMLImageElement> =
     const res = await fetch(cleanSrc);
     if (res.ok) {
       const blob = await res.blob();
+      if (blob.type && !blob.type.startsWith('image/')) {
+        throw new Error(`Fetched resource is not an image (got ${blob.type})`);
+      }
       const objectUrl = URL.createObjectURL(blob);
       return await new Promise<HTMLImageElement>((resolve, reject) => {
         const img = new Image();
@@ -43,33 +56,41 @@ export const loadImageElement = async (src: string): Promise<HTMLImageElement> =
     }
   } catch (_) {
     // If relative /storage failed, try companion if it's an enhanced image filename
+    let filename = '';
     if (cleanSrc.includes('/enhanced/')) {
       const parts = cleanSrc.split('/');
-      const filename = parts[parts.length - 1];
-      if (filename) {
-        try {
-          const compUrl = `http://127.0.0.1:9224/downloaded-image?file=${encodeURIComponent(filename)}`;
-          const compRes = await fetch(compUrl);
-          if (compRes.ok) {
-            const blob = await compRes.blob();
-            const objectUrl = URL.createObjectURL(blob);
-            return await new Promise<HTMLImageElement>((resolve, reject) => {
-              const img = new Image();
-              img.onload = () => {
-                setTimeout(() => {
-                  try { URL.revokeObjectURL(objectUrl); } catch (_) {}
-                }, 60000);
-                resolve(img);
-              };
-              img.onerror = () => {
-                try { URL.revokeObjectURL(objectUrl); } catch (_) {}
-                reject(new Error(`Failed to load companion blob image`));
-              };
-              img.src = objectUrl;
-            });
+      filename = parts[parts.length - 1];
+    } else if (src.includes('/downloaded-image?file=')) {
+      try {
+        filename = new URL(src, window.location.origin).searchParams.get('file') || '';
+      } catch (_) {}
+    }
+    if (filename) {
+      try {
+        const compUrl = `http://127.0.0.1:9224/downloaded-image?file=${encodeURIComponent(filename)}`;
+        const compRes = await fetch(compUrl);
+        if (compRes.ok) {
+          const blob = await compRes.blob();
+          if (blob.type && !blob.type.startsWith('image/')) {
+            throw new Error(`Companion resource is not an image (got ${blob.type})`);
           }
-        } catch (_) {}
-      }
+          const objectUrl = URL.createObjectURL(blob);
+          return await new Promise<HTMLImageElement>((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => {
+              setTimeout(() => {
+                try { URL.revokeObjectURL(objectUrl); } catch (_) {}
+              }, 60000);
+              resolve(img);
+            };
+            img.onerror = () => {
+              try { URL.revokeObjectURL(objectUrl); } catch (_) {}
+              reject(new Error(`Failed to load companion blob image`));
+            };
+            img.src = objectUrl;
+          });
+        }
+      } catch (_) {}
     }
   }
 

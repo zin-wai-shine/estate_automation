@@ -127,7 +127,7 @@
 
   // Safely click send button using native pointer, mouse, submit, and keyboard Enter events
   async function clickSendButton(btn) {
-    if (!btn) return false;
+    if (!btn || isAudioOrSpeechButton(btn) || isStopButton(btn)) return false;
     try {
       btn.focus();
 
@@ -165,9 +165,9 @@
         }
       }
 
-      // Also dispatch Enter key on prompt input
+      // Also dispatch Enter key on prompt input if it has text
       const promptTarget = findPromptInput();
-      if (promptTarget) {
+      if (promptTarget && getComposerText(promptTarget).trim().length > 0) {
         promptTarget.focus();
         const kOpts = {
           key: 'Enter', code: 'Enter', keyCode: 13, which: 13, charCode: 13,
@@ -185,12 +185,77 @@
 
       return true;
     } catch (e) {
-      try { btn.click(); } catch (e2) {}
+      try {
+        if (!isAudioOrSpeechButton(btn) && !isStopButton(btn)) btn.click();
+      } catch (e2) {}
       return false;
     }
   }
 
-  // Find ChatGPT send button (strictly excluding desktop app, model pickers, files, mic, etc.)
+  // Strictly identify any audio / microphone / speech / dictation button in ChatGPT
+  function isAudioOrSpeechButton(el) {
+    if (!el) return false;
+    const aria = (el.getAttribute('aria-label') || '').toLowerCase();
+    const tid = (el.getAttribute('data-testid') || '').toLowerCase();
+    const title = (el.getAttribute('title') || '').toLowerCase();
+    const cls = (typeof el.className === 'string' ? el.className : '').toLowerCase();
+    const audioKeywords = [
+      'speech',
+      'voice',
+      'mic',
+      'dictat',
+      'audio',
+      'record',
+      'sound',
+      'listen',
+      'waveform',
+    ];
+    for (const kw of audioKeywords) {
+      if (aria.includes(kw) || tid.includes(kw) || title.includes(kw) || cls.includes(kw)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // Dismiss or cancel ChatGPT audio / speech recording mode if it was accidentally triggered
+  function dismissVoiceOrAudioModeIfActive() {
+    try {
+      const cancelBtn = (
+        document.querySelector('button[aria-label*="Cancel speech" i]') ||
+        document.querySelector('button[aria-label*="Cancel voice" i]') ||
+        document.querySelector('button[aria-label*="Cancel" i]') ||
+        document.querySelector('button[aria-label*="cancel" i]') ||
+        document.querySelector('button[aria-label*="Exit voice" i]') ||
+        document.querySelector('button[aria-label*="Close voice" i]') ||
+        document.querySelector('button[data-testid*="cancel-speech" i]') ||
+        document.querySelector('button[data-testid*="close-speech" i]')
+      );
+      if (cancelBtn) {
+        console.log('[BOLTHAVEN] Detected active audio/voice recording mode. Dismissing...');
+        cancelBtn.click();
+        return true;
+      }
+
+      // If voice waveform or voice mode stop button is present, dispatch Escape
+      const isVoiceActive = Boolean(
+        document.querySelector('button[aria-label*="stop voice" i], button[data-testid*="stop-speech" i], button[aria-label*="Stop recording" i]') ||
+        document.querySelector('[data-testid*="speech-mode" i], [data-testid*="voice-mode" i]')
+      );
+      if (isVoiceActive) {
+        console.log('[BOLTHAVEN] Voice recording active. Dispatching Escape to exit...');
+        const escOpts = { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true, cancelable: true };
+        window.dispatchEvent(new KeyboardEvent('keydown', escOpts));
+        window.dispatchEvent(new KeyboardEvent('keyup', escOpts));
+        document.dispatchEvent(new KeyboardEvent('keydown', escOpts));
+        document.dispatchEvent(new KeyboardEvent('keyup', escOpts));
+        return true;
+      }
+    } catch (e) {}
+    return false;
+  }
+
+  // Find ChatGPT send button (strictly excluding desktop app, model pickers, files, mic, audio, speech, etc.)
   function findSendButton() {
     // 1. Explicit modern attributes & submit buttons
     const explicit = (
@@ -204,7 +269,7 @@
       document.querySelector('form button[type="submit"]') ||
       document.querySelector('button[type="submit"]')
     );
-    if (explicit && isSendButtonReady(explicit) && !isStopButton(explicit)) return explicit;
+    if (explicit && isSendButtonReady(explicit) && !isStopButton(explicit) && !isAudioOrSpeechButton(explicit)) return explicit;
 
     // 2. Search composer toolbar for the send button (circular button with SVG up-arrow)
     const composer = getComposerContainer() || document.querySelector('form') || document;
@@ -216,10 +281,10 @@
       // STRICT RULE: The send button NEVER has text!
       if (text.length > 0) return false;
 
-      // STRICT RULE: Never match the stop button!
-      if (isStopButton(b)) return false;
+      // STRICT RULE: Never match the stop button or any audio/speech/voice button!
+      if (isStopButton(b) || isAudioOrSpeechButton(b)) return false;
 
-      // Exclude model picker, desktop app, attachments, mic, voice, reason, files, projects, plugins, editor, copy, share
+      // Exclude model picker, desktop app, attachments, mic, voice, speech, audio, reason, files, projects, plugins, editor, copy, share
       if (
         aria.includes('stop') ||
         aria.includes('cancel') ||
@@ -232,8 +297,13 @@
         aria.includes('gpt') ||
         aria.includes('voice') ||
         aria.includes('mic') ||
-        aria.includes('dictate') ||
+        aria.includes('dictat') ||
+        aria.includes('speech') ||
+        aria.includes('audio') ||
         aria.includes('record') ||
+        aria.includes('sound') ||
+        aria.includes('listen') ||
+        aria.includes('waveform') ||
         aria.includes('attach') ||
         aria.includes('add files') ||
         aria.includes('plus') ||
@@ -248,7 +318,11 @@
         testid.includes('app') ||
         testid.includes('attach') ||
         testid.includes('voice') ||
-        testid.includes('mic')
+        testid.includes('mic') ||
+        testid.includes('speech') ||
+        testid.includes('dictat') ||
+        testid.includes('audio') ||
+        testid.includes('record')
       ) {
         return false;
       }
@@ -267,7 +341,7 @@
       return buttons[0];
     }
 
-    return (explicit && !isStopButton(explicit)) ? explicit : null;
+    return (explicit && !isStopButton(explicit) && !isAudioOrSpeechButton(explicit)) ? explicit : null;
   }
 
   function isStopButton(el) {
@@ -285,6 +359,8 @@
     if (btn.disabled) return false;
     if (btn.getAttribute('aria-disabled') === 'true') return false;
     if (btn.classList.contains('disabled')) return false;
+    if (isStopButton(btn)) return false;
+    if (isAudioOrSpeechButton(btn)) return false;
     return true;
   }
 
@@ -576,18 +652,114 @@
     return false;
   }
 
+  // ── Locate the latest generated/enhanced image rendered in this ChatGPT tab ──
+  function findLatestGeneratedImageInTab() {
+    // 1. Look for image card with an "Edit" button (standard ChatGPT image card)
+    const editButtons = Array.from(document.querySelectorAll('button')).filter(
+      (b) => (b.textContent || '').trim().toLowerCase() === 'edit'
+    );
+    for (let i = editButtons.length - 1; i >= 0; i--) {
+      const editBtn = editButtons[i];
+      const card = editBtn.closest('div[class*="group"], div[class*="relative"], article, section') || editBtn.parentElement;
+      if (card) {
+        const cardImg = card.querySelector('img');
+        if (cardImg) {
+          const src = cardImg.src || cardImg.getAttribute('src') || '';
+          if (src && !src.toLowerCase().includes('avatar') && !src.toLowerCase().includes('icon')) {
+            if (cardImg.complete && (cardImg.naturalWidth >= 100 || cardImg.width >= 100)) {
+              return cardImg;
+            }
+          }
+        }
+      }
+    }
+
+    // 2. Look for image card with a share button [ ↑ ] (modern ChatGPT image card)
+    const allButtons = Array.from(document.querySelectorAll('button'));
+    const shareBtns = allButtons.filter((b) => {
+      const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+      const title = (b.getAttribute('title') || '').toLowerCase();
+      if (aria.includes('share') || title.includes('share') || aria.includes('export')) return true;
+      const svg = b.querySelector('svg');
+      if (svg) {
+        const html = svg.innerHTML.toLowerCase();
+        if (html.includes('arrow') || html.includes('upload') || html.includes('share') || html.includes('m12')) return true;
+      }
+      return false;
+    });
+
+    for (let i = shareBtns.length - 1; i >= 0; i--) {
+      const shareBtn = shareBtns[i];
+      const card = shareBtn.closest('div[class*="group"], div[class*="relative"], article, section') || shareBtn.parentElement;
+      if (card) {
+        const cardImg = card.querySelector('img');
+        if (cardImg) {
+          const src = cardImg.src || cardImg.getAttribute('src') || '';
+          if (src && !src.toLowerCase().includes('avatar') && !src.toLowerCase().includes('icon')) {
+            if (cardImg.complete && (cardImg.naturalWidth >= 100 || cardImg.width >= 100)) {
+              return cardImg;
+            }
+          }
+        }
+      }
+    }
+
+    // 3. Inspect newest assistant turn
+    const assistantTurns = Array.from(document.querySelectorAll(
+      'div[data-message-author-role="assistant"], article[data-testid*="conversation-turn"], article'
+    )).filter((turn) => {
+      if (turn.getAttribute('data-message-author-role') === 'user') return false;
+      return !turn.querySelector('[data-message-author-role="user"]');
+    });
+
+    for (let i = assistantTurns.length - 1; i >= 0; i--) {
+      const turn = assistantTurns[i];
+      const imgs = Array.from(turn.querySelectorAll('img')).filter((img) => {
+        const s = (img.src || img.getAttribute('src') || '').toLowerCase();
+        if (!s || s.includes('avatar') || s.includes('icon') || s.includes('profile')) return false;
+        if (img.closest('form, div[class*="composer"], header, nav')) return false;
+        const rect = img.getBoundingClientRect();
+        const hasSize = (rect.width >= 100 && rect.height >= 100) || (img.naturalWidth >= 100 && img.naturalHeight >= 100);
+        return (hasSize || s.includes('oaiusercontent.com') || s.includes('file-service') || s.startsWith('blob:')) && img.complete;
+      });
+      if (imgs.length > 0) return imgs[imgs.length - 1];
+    }
+
+    // 4. Global fallback: Any large image on the page
+    const allImgs = Array.from(document.querySelectorAll('img')).filter((img) => {
+      if (img.closest('form, div[class*="composer"], nav, header, [data-message-author-role="user"]')) return false;
+      const s = (img.src || img.getAttribute('src') || '').toLowerCase();
+      if (!s || s.includes('avatar') || s.includes('icon') || s.includes('logo')) return false;
+      const rect = img.getBoundingClientRect();
+      const hasSize = (rect.width >= 100 && rect.height >= 100) || (img.naturalWidth >= 100 && img.naturalHeight >= 100);
+      return (hasSize || s.includes('oaiusercontent.com') || s.includes('file-service') || s.startsWith('blob:')) && img.complete;
+    });
+
+    if (allImgs.length > 0) return allImgs[allImgs.length - 1];
+
+    return null;
+  }
+
   // Trigger reliable multi-tier image download to disk and browser downloads directory
   async function downloadEnhancedImage(imgEl, finalUrl, fileName) {
     if (!finalUrl || !fileName) return false;
 
-    // Deduplication guard: ensure this exact file is never downloaded twice
-    if (downloadedFileNames.has(fileName)) {
-      console.log('[BOLTHAVEN] Skipping duplicate download for:', fileName);
-      return true;
-    }
-    downloadedFileNames.add(fileName);
-
     console.log('[BOLTHAVEN] ⬇️ Triggering reliable multi-tier download:', fileName, finalUrl);
+
+    // Extract position from filename e.g. "code-2.png" or "enhanced_2_..."
+    const posMatch = fileName.match(/[-_](\d+)\./);
+    const position = posMatch ? parseInt(posMatch[1], 10) : undefined;
+    const threadUrl = window.location.href;
+
+    // Memorize image thread immediately
+    if (position && threadUrl && threadUrl.includes('/c/')) {
+      chrome.runtime.sendMessage({
+        action: 'MEMORIZE_IMAGE_THREAD',
+        position,
+        threadUrl,
+        filename: fileName,
+      }, () => { if (chrome.runtime.lastError) {} });
+    }
 
     // Render image element to canvas to get high-fidelity base64 data URL
     let companionUrl = finalUrl;
@@ -622,12 +794,12 @@
       }
     }
 
-    // Tier 1: Primary Background chrome.downloads API (natively writes exact filename to ~/Downloads with 0 duplicates!)
+    // Tier 1: Primary Serialized Background Download (fetches via extension host permissions + saves via Node Companion + chrome.downloads)
     try {
       const dlUrl = companionUrl.startsWith('data:') ? companionUrl : finalUrl;
       const response = await new Promise((resolve) => {
         chrome.runtime.sendMessage(
-          { action: 'DOWNLOAD_IMAGE', url: dlUrl, filename: fileName },
+          { action: 'DOWNLOAD_IMAGE_SERIAL', url: dlUrl, filename: fileName, position, threadUrl },
           (res) => {
             if (chrome.runtime.lastError) {
               resolve({ success: false, error: chrome.runtime.lastError.message });
@@ -639,12 +811,12 @@
       });
 
       if (response && response.success) {
-        console.log('[BOLTHAVEN] ✓ Downloaded cleanly via chrome.downloads:', fileName);
+        console.log('[BOLTHAVEN] ✓ Downloaded cleanly via serialized background download:', fileName);
         return true;
       }
-      console.log('[BOLTHAVEN] chrome.downloads note, trying fallback...', response?.error);
+      console.log('[BOLTHAVEN] Serial background download note, trying next tier...', response?.error);
     } catch (e) {
-      console.log('[BOLTHAVEN] chrome.downloads sendMessage failed:', e.message);
+      console.log('[BOLTHAVEN] Serial background download failed:', e.message);
     }
 
     // Tier 2: Direct Node.js Companion download and disk write (fallback)
@@ -1898,9 +2070,21 @@
             ? `${cleanCode}-${pos}.png`
             : `enhanced_${pos}_${job.job_id || Date.now()}.png`;
 
-          // Download using reliable downloader
+          // Memorize the ChatGPT chat thread URL for this exact image position
+          const currentChatUrl = window.location.href;
+          if (currentChatUrl && currentChatUrl.includes('/c/')) {
+            chrome.runtime.sendMessage({
+              action: 'MEMORIZE_IMAGE_THREAD',
+              position: pos,
+              threadUrl: currentChatUrl,
+              filename: fileName,
+              listingCode: cleanCode,
+            }, () => { if (chrome.runtime.lastError) {} });
+          }
+
+          // Download using serialized multi-tier downloader
           await downloadEnhancedImage(enhancedImg, finalUrl, fileName);
-          await new Promise((r) => setTimeout(r, 2500));
+          await new Promise((r) => setTimeout(r, 2000));
 
           // Notify background that generation & download succeeded
           chrome.runtime.sendMessage({
@@ -2093,19 +2277,20 @@
     const composer = getComposerContainer() || document.querySelector('form') || document;
 
     const byTestId = composer.querySelector('button[data-testid="send-button"], button[data-testid="composer-send-button"]');
-    if (byTestId && !byTestId.disabled) return byTestId;
+    if (byTestId && !byTestId.disabled && isSendButtonReady(byTestId) && !isAudioOrSpeechButton(byTestId)) return byTestId;
 
     const byAria = composer.querySelector('button[aria-label="Send prompt"], button[aria-label="Send message"], button[aria-label="Send"]');
-    if (byAria && !byAria.disabled) return byAria;
+    if (byAria && !byAria.disabled && isSendButtonReady(byAria) && !isAudioOrSpeechButton(byAria)) return byAria;
 
-    const bySubmit = composer.querySelector('button[type="submit"]');
-    if (bySubmit && !bySubmit.disabled) return bySubmit;
+    const bySubmit = composer.querySelector('form button[type="submit"], button[type="submit"]');
+    if (bySubmit && !bySubmit.disabled && isSendButtonReady(bySubmit) && !isAudioOrSpeechButton(bySubmit)) return bySubmit;
 
     const btns = Array.from(composer.querySelectorAll('button:not(:disabled)')).filter((b) => {
+      if (!isSendButtonReady(b) || isAudioOrSpeechButton(b) || isStopButton(b)) return false;
       const aria = (b.getAttribute('aria-label') || '').toLowerCase();
       const tid = (b.getAttribute('data-testid') || '').toLowerCase();
-      if (aria.includes('attach') || aria.includes('plus') || aria.includes('mic') || aria.includes('voice')) return false;
-      if (tid.includes('attach') || tid.includes('mic') || tid.includes('voice')) return false;
+      if (aria.includes('attach') || aria.includes('plus')) return false;
+      if (tid.includes('attach') || tid.includes('plus')) return false;
       return Boolean(b.querySelector('svg'));
     });
 
@@ -2128,15 +2313,34 @@
       if (activeJobAborted) return false;
       attempt++;
 
+      // Make sure any accidental audio/speech recording mode is dismissed immediately
+      dismissVoiceOrAudioModeIfActive();
+
       // 1. If generation has already started or stop button is visible, success!
       if (isThinkingOrGenerating() || Boolean(findStopButton())) {
         console.log('[BOLTHAVEN] ✓ Generation is active!');
         return true;
       }
 
-      // 2. Dispatch native Enter keydown on prompt textarea (ProseMirror's default submit trigger)
       const input = promptEl || findPromptInput();
-      if (input) {
+      const currentComposerText = getComposerText(input);
+      const currentAttachments = getAttachedImagesCount(input);
+
+      // CRITICAL: If the composer is already empty and has no attachments,
+      // the prompt has ALREADY been submitted! Do NOT click any button!
+      // When composer is empty, ChatGPT displays the audio/microphone button in place of Send!
+      if (attempt > 1 && currentComposerText.length === 0 && currentAttachments === 0) {
+        console.log('[BOLTHAVEN] Composer is already empty (prompt was submitted). Waiting for ChatGPT generation...');
+        await new Promise((r) => setTimeout(r, 1000));
+        dismissVoiceOrAudioModeIfActive();
+        if (isThinkingOrGenerating() || Boolean(findStopButton())) {
+          return true;
+        }
+        continue;
+      }
+
+      // 2. Dispatch native Enter keydown on prompt textarea (ProseMirror's default submit trigger)
+      if (input && currentComposerText.length > 0) {
         input.focus();
         const enterOpts = {
           key: 'Enter',
@@ -2155,11 +2359,24 @@
         input.dispatchEvent(new KeyboardEvent('keydown', enterOpts));
         input.dispatchEvent(new KeyboardEvent('keypress', enterOpts));
         input.dispatchEvent(new KeyboardEvent('keyup', enterOpts));
+
+        // Check if Enter immediately submitted the text
+        await new Promise((r) => setTimeout(r, 300));
+        const afterEnterText = getComposerText(input);
+        if (afterEnterText.length === 0 && getAttachedImagesCount(input) === 0) {
+          console.log('[BOLTHAVEN] Enter key submitted prompt successfully! Waiting for generation...');
+          await new Promise((r) => setTimeout(r, 1000));
+          dismissVoiceOrAudioModeIfActive();
+          if (isThinkingOrGenerating() || Boolean(findStopButton())) {
+            return true;
+          }
+          continue;
+        }
       }
 
-      // 3. Dispatch full pointer/mouse sequence on Send button
+      // 3. Dispatch full pointer/mouse sequence on Send button ONLY if it is a valid Send button (strictly never audio/mic/speech!)
       const sendBtn = findComposerSendButton() || findSendButton();
-      if (sendBtn && isSendButtonReady(sendBtn)) {
+      if (sendBtn && isSendButtonReady(sendBtn) && !isAudioOrSpeechButton(sendBtn)) {
         sendBtn.focus();
         const rect = sendBtn.getBoundingClientRect();
         const cx = rect.left + rect.width / 2;
@@ -2186,12 +2403,13 @@
             try { form.requestSubmit(); } catch (e2) {}
           }
         }
+
+        // 4. Dispatch in MAIN world context (bypasses isolated world for React Fiber onClick)
+        safeSendMessage({ action: 'CLICK_SEND_MAIN_WORLD' });
       }
 
-      // 4. Dispatch in MAIN world context (bypasses isolated world for React Fiber onClick)
-      safeSendMessage({ action: 'CLICK_SEND_MAIN_WORLD' });
-
       await new Promise((r) => setTimeout(r, 1200));
+      dismissVoiceOrAudioModeIfActive();
 
       const generating = isThinkingOrGenerating();
       const hasStop = Boolean(findStopButton());
@@ -2212,6 +2430,7 @@
 
   async function _setupAndSendJobInternal(job) {
     activeJobAborted = false;
+    dismissVoiceOrAudioModeIfActive();
     console.log(`[BOLTHAVEN] [Setup Phase] Setting up Image #${job.original_position || 1} (Job ${job.job_id})...`);
 
     // Detect Temporary Chat mode — image generation is blocked by ChatGPT in temporary chat!
@@ -2365,15 +2584,15 @@
     // Wait for send button and click send
     let sendBtn = findSendButton();
     let attempts = 0;
-    while ((!sendBtn || sendBtn.disabled) && attempts < 25) {
+    while ((!sendBtn || sendBtn.disabled || isAudioOrSpeechButton(sendBtn)) && attempts < 25) {
       if (activeJobAborted) throw new Error('Stage 1 aborted by user');
       await new Promise((r) => setTimeout(r, 300));
       sendBtn = findSendButton();
       attempts++;
     }
 
-    if (!sendBtn) throw new Error('Send button could not be activated in Tab 1');
-    sendBtn.click();
+    if (!sendBtn || isAudioOrSpeechButton(sendBtn)) throw new Error('Send button could not be activated in Tab 1');
+    await clickSendButton(sendBtn);
     console.log('[BOLTHAVEN] Stage 1: Prompt sent in Tab 1. Waiting for completion...');
 
     await new Promise((r) => setTimeout(r, 2000));
@@ -2987,6 +3206,53 @@
           allButtons: docButtons,
           hasStopBtn: Boolean(findStopButton()),
         });
+      })();
+      return true;
+    }
+
+    // On-demand recovery: download enhanced image currently displayed in this tab
+    if (request.action === 'DOWNLOAD_CURRENT_ENHANCED_IMAGE') {
+      (async () => {
+        try {
+          const pos = request.position || 1;
+          const cleanCode = (request.listingCode || '').trim();
+          const fileName = request.filename || (cleanCode ? `${cleanCode}-${pos}.png` : `enhanced_${pos}_${Date.now()}.png`);
+          console.log(`[BOLTHAVEN] 📥 Received on-demand recovery download request for Image #${pos} (${fileName})...`);
+
+          let img = findLatestGeneratedImageInTab();
+          if (!img) {
+            for (let retry = 0; retry < 12; retry++) {
+              await new Promise((r) => setTimeout(r, 500));
+              img = findLatestGeneratedImageInTab();
+              if (img) break;
+            }
+          }
+          if (!img) {
+            console.warn(`[BOLTHAVEN] No enhanced image element found in this tab for Image #${pos}`);
+            return sendResponse({ success: false, error: 'No enhanced image element found on this tab' });
+          }
+
+          const finalUrl = img.src || img.getAttribute('src') || '';
+          console.log(`[BOLTHAVEN] ✓ Located enhanced image element for #${pos}:`, finalUrl.slice(0, 80));
+
+          // Memorize this thread URL immediately
+          const threadUrl = window.location.href;
+          if (threadUrl && threadUrl.includes('/c/')) {
+            chrome.runtime.sendMessage({
+              action: 'MEMORIZE_IMAGE_THREAD',
+              position: pos,
+              threadUrl,
+              filename: fileName,
+              listingCode: cleanCode,
+            }, () => { if (chrome.runtime.lastError) {} });
+          }
+
+          // Trigger serialized multi-tier download
+          const downloaded = await downloadEnhancedImage(img, finalUrl, fileName);
+          sendResponse({ success: Boolean(downloaded), url: finalUrl, filename: fileName });
+        } catch (err) {
+          sendResponse({ success: false, error: err.message });
+        }
       })();
       return true;
     }

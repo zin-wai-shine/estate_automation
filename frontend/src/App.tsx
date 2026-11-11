@@ -12,6 +12,7 @@ import { TestingView } from './features/testing/TestingView';
 import { SettingsView } from './features/settings/SettingsView';
 import { FacebookLoginView } from './features/auth/FacebookLoginView';
 import { FacebookImportView } from './features/facebook-import/FacebookImportView';
+import { FacebookPropertyFinderView } from './features/facebook-property-finder/FacebookPropertyFinderView';
 import { RemainingPostsView } from './features/remaining-posts/RemainingPostsView';
 import { CreateWorkflowView } from './features/workflow/CreateWorkflowView';
 import { AutoPostView } from './features/autopost/AutoPostView';
@@ -188,6 +189,11 @@ const MainApp: React.FC = () => {
           <Route path="/dashboard" element={<DashboardView properties={properties} onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
           <Route path="/add-url" element={<AddUrlView properties={properties} onAddProperty={handleAddProperty} onProcessBatch={handleProcessBatch} />} />
           <Route path="/facebook-import" element={<FacebookImportView onSaveToInbox={(prop) => handleAddProperty(prop.sourceUrl || '', prop)} onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
+          <Route path="/facebook-property-finder" element={<FacebookPropertyFinderView />} />
+          <Route path="/property-leads" element={<FacebookPropertyFinderView initialTab="leads" />} />
+          <Route path="/monitored-condos" element={<FacebookPropertyFinderView initialTab="projects" />} />
+          <Route path="/collection-sources" element={<FacebookPropertyFinderView initialTab="sources" />} />
+          <Route path="/scan-settings" element={<FacebookPropertyFinderView initialTab="settings" />} />
           <Route path="/remaining-posts" element={<RemainingPostsView onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
           <Route path="/auto-post" element={<AutoPostView onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
           <Route path="/watermark" element={<WatermarkView />} />

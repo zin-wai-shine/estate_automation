@@ -394,3 +394,50 @@ func DeleteGoogleSheetRow(c *fiber.Ctx) error {
 		"result":  res,
 	})
 }
+
+// UpdateGoogleSheetRowRequest payload for updating an existing row
+type UpdateGoogleSheetRowRequest struct {
+	SpreadsheetURL  string        `json:"spreadsheet_url"`
+	SheetName       string        `json:"sheet_name"`
+	RowIndex        int           `json:"row_index"` // 0-indexed row index (1 = first data row / row 2)
+	Values          []interface{} `json:"values"`
+	CredentialsJSON string        `json:"credentials_json"`
+}
+
+// UpdateGoogleSheetRow - POST /api/google-sheets/update-row
+func UpdateGoogleSheetRow(c *fiber.Ctx) error {
+	var req UpdateGoogleSheetRowRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"success": false,
+			"error":   "Invalid request payload: " + err.Error(),
+		})
+	}
+
+	urlOrID := strings.TrimSpace(req.SpreadsheetURL)
+	if urlOrID == "" {
+		urlOrID = "1lzY57D5ers2Xs6cvbV-skeqGSAK_jijbQJZt8Hn8udY"
+	}
+
+	if req.RowIndex < 1 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"success": false,
+			"error":   "row_index must be >= 1 (row 0 is header)",
+		})
+	}
+
+	res, err := sheetsService.UpdateRow(c.Context(), urlOrID, req.SheetName, req.RowIndex, req.Values, req.CredentialsJSON)
+	if err != nil {
+		log.Printf("[UpdateGoogleSheetRow] UpdateRow error: %v (urlOrID: %s, sheet: %s, rowIdx: %d)", err, urlOrID, req.SheetName, req.RowIndex)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"success": false,
+			"error":   "Failed to update row in Google Sheet: " + err.Error(),
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"success": true,
+		"message": fmt.Sprintf("Row #%v successfully updated in '%v'!", res["updated_row_num"], res["sheet_name"]),
+		"result":  res,
+	})
+}

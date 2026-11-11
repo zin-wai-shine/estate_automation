@@ -360,6 +360,8 @@ export interface FacebookWorkflowConfig {
     extractContacts: boolean;
     x: number;
     y: number;
+    mode?: 'extracted' | 'manual';
+    manualContent?: string;
   };
   getImages: {
     enabled: boolean;
@@ -527,8 +529,8 @@ export const RUNWARE_IMAGE_MODEL_OPTIONS = [
 export const DEFAULT_FB_WORKFLOW_CONFIG: FacebookWorkflowConfig = {
   trigger: {
     enabled: false,
-    x: 100,
-    y: 232,
+    x: 80,
+    y: 240,
     autoImport: true,
     sourceMode: 'paste',
     monitoredPageName: 'Bangkok Real Estate & Condo Exchange',
@@ -547,6 +549,8 @@ export const DEFAULT_FB_WORKFLOW_CONFIG: FacebookWorkflowConfig = {
     extractContacts: true,
     x: 300,
     y: 140,
+    mode: 'extracted',
+    manualContent: '',
   },
   getImages: {
     enabled: false,
@@ -554,21 +558,21 @@ export const DEFAULT_FB_WORKFLOW_CONFIG: FacebookWorkflowConfig = {
     preserveOrder: true,
     watermark: false,
     x: 300,
-    y: 323,
+    y: 350,
   },
   aiBoxes: [],
   combineBoxes: [],
   connections: [],
   outputNode: {
     id: 'output',
-    enabled: true,
+    enabled: false,
     x: 740,
     y: 248,
     title: 'Final Content & Images',
   },
   destination: {
     id: 'destination',
-    enabled: true,
+    enabled: false,
     x: 960,
     y: 248,
     targetMode: 'hybrid',
@@ -583,52 +587,63 @@ export const DEFAULT_FB_WORKFLOW_CONFIG: FacebookWorkflowConfig = {
     includeFirstComment: false,
     title: 'Social & Database Storage',
   },
-  destinations: [
-    {
-      id: 'destination',
-      enabled: true,
-      x: 960,
-      y: 248,
-      targetMode: 'hybrid',
-      storeInDatabase: true,
-      postToSocialMedia: true,
-      selectedPageId: '1287202894475973',
-      selectedPageIds: ['1287202894475973'],
-      selectedIgAccountIds: ['ig-1'],
-      selectedTiktokAccountIds: ['tt-1'],
-      publishDirectly: true,
-      includeHashtags: true,
-      includeFirstComment: false,
-      title: 'Social & Database Storage',
-    },
-  ],
+  destinations: [],
   zoom: 0.9,
-  panOffset: { x: 500, y: 180 },
+  panOffset: { x: 0, y: 0 },
+};
+
+export const isWorkflowInitialEmpty = (conf?: FacebookWorkflowConfig | null): boolean => {
+  if (!conf) return true;
+  const isTriggerEnabled = conf.trigger?.enabled === true;
+  const isContentEnabled = conf.getContent?.enabled === true;
+  const isImagesEnabled = conf.getImages?.enabled === true;
+  const activeAiBoxes = (conf.aiBoxes || []).filter((b) => b && b.enabled !== false);
+  const activeCombineBoxes = (conf.combineBoxes || []).filter((cb) => cb && cb.enabled !== false);
+  return (
+    !isTriggerEnabled &&
+    !isContentEnabled &&
+    !isImagesEnabled &&
+    activeAiBoxes.length === 0 &&
+    activeCombineBoxes.length === 0
+  );
 };
 
 export const getNormalizedDestinations = (conf: FacebookWorkflowConfig): DestinationNodeConfig[] => {
-  if (!conf) return [DEFAULT_FB_WORKFLOW_CONFIG.destination];
-  if (Array.isArray(conf.destinations) && conf.destinations.length > 0) {
-    return conf.destinations.map((d, i) => ({
-      ...d,
-      id: d.id || (i === 0 ? 'destination' : `dest-${i}`),
-      storeInDatabase: d.storeInDatabase ?? (d.targetMode !== 'social_media'),
-      postToSocialMedia: d.postToSocialMedia ?? (d.targetMode !== 'remaining_posts'),
-      selectedPageIds: d.selectedPageIds || (d.selectedPageId ? [d.selectedPageId] : ['1287202894475973']),
-      enabled: d.enabled !== false,
-      title: d.title || (d.targetMode === 'remaining_posts' ? 'Remaining Posts' : 'Social Media'),
-    }));
+  if (!conf) return [];
+  if (Array.isArray(conf.destinations)) {
+    if (conf.destinations.length > 0) {
+      return conf.destinations
+        .filter((d) => d && d.enabled !== false)
+        .map((d, i) => ({
+          ...d,
+          id: d.id || (i === 0 ? 'destination' : `dest-${i}`),
+          storeInDatabase: d.storeInDatabase ?? (d.targetMode !== 'social_media'),
+          postToSocialMedia: d.postToSocialMedia ?? (d.targetMode !== 'remaining_posts'),
+          selectedPageIds: d.selectedPageIds || (d.selectedPageId ? [d.selectedPageId] : ['1287202894475973']),
+          enabled: true,
+          title: d.title || (d.targetMode === 'remaining_posts' ? 'Remaining Posts' : 'Social Media'),
+        }));
+    }
+    if (conf.destination && conf.destination.enabled === true) {
+      return [{
+        ...conf.destination,
+        enabled: true,
+      }];
+    }
+    return [];
   }
-  const dest = conf.destination || DEFAULT_FB_WORKFLOW_CONFIG.destination;
-  return [{
-    ...dest,
-    id: dest.id || 'destination',
-    storeInDatabase: dest.storeInDatabase ?? (dest.targetMode !== 'social_media'),
-    postToSocialMedia: dest.postToSocialMedia ?? (dest.targetMode !== 'remaining_posts'),
-    selectedPageIds: dest.selectedPageIds || (dest.selectedPageId ? [dest.selectedPageId] : ['1287202894475973']),
-    enabled: dest.enabled !== false,
-    title: dest.title || (dest.targetMode === 'remaining_posts' ? 'Remaining Posts' : 'Social Media'),
-  }];
+  if (conf.destination && conf.destination.enabled === true) {
+    return [{
+      ...conf.destination,
+      id: conf.destination.id || 'destination',
+      storeInDatabase: conf.destination.storeInDatabase ?? (conf.destination.targetMode !== 'social_media'),
+      postToSocialMedia: conf.destination.postToSocialMedia ?? (conf.destination.targetMode !== 'remaining_posts'),
+      selectedPageIds: conf.destination.selectedPageIds || (conf.destination.selectedPageId ? [conf.destination.selectedPageId] : ['1287202894475973']),
+      enabled: true,
+      title: conf.destination.title || (conf.destination.targetMode === 'remaining_posts' ? 'Remaining Posts' : 'Social Media'),
+    }];
+  }
+  return [];
 };
 
 export const checkNodeEffectivelyEnabled = (
@@ -1193,6 +1208,13 @@ export const buildAlignedLayout = (
   connections: WorkflowWireConnection[] | undefined,
   base: FacebookWorkflowConfig
 ): FacebookWorkflowConfig => {
+  if (isWorkflowInitialEmpty(base)) {
+    return {
+      ...base,
+      trigger: { ...base.trigger, x: base.trigger?.x ?? 80, y: base.trigger?.y ?? 240 },
+    };
+  }
+
   const conns = connections || [];
   const fromContent = (id: string) => conns.some((c) => c.fromNodeId === 'get-content' && c.toNodeId === id);
   const fromImages = (id: string) => conns.some((c) => c.fromNodeId === 'get-images' && c.toNodeId === id);
@@ -1281,7 +1303,7 @@ export const buildAlignedLayout = (
   if (hasTextAI && numTextFormat > 0) {
     const primaryAiBox = textAIBoxes[0];
     const aiBoxCenterX = (xById[primaryAiBox.id] ?? COL_AI_X) + 108; // Center of 216px wide AI Box = 628
-    const FORMAT_COL_WIDTH = 145; // Balanced 73px gap between 72px format boxes for clean non-overlapping header
+    const FORMAT_COL_WIDTH = 155; // Balanced 83px gap between 72px format boxes for clean non-overlapping header
     const totalFormatWidth = (numTextFormat - 1) * FORMAT_COL_WIDTH;
     const formatStartLeft = aiBoxCenterX - totalFormatWidth / 2;
     const centerIdx = (numTextFormat - 1) / 2;
@@ -2062,40 +2084,198 @@ export const sanitizeAndResolveCollisions = (
     finalAiBoxes.some((b) => typeof b.x === 'number' && typeof b.y === 'number');
 
   if (hasAnyExistingCoords) {
-    // PRESERVE ALL USER POSITIONS 100%! Only assign fallback defaults to any node missing coordinates.
+    // PRESERVE ALL USER POSITIONS! Auto-heal any invalid/backwards coordinates.
+    let triggerX = typeof conf.trigger?.x === 'number' ? conf.trigger.x : 80;
+    let triggerY = typeof conf.trigger?.y === 'number' ? conf.trigger.y : 240;
+
+    let contentX = typeof conf.getContent?.x === 'number' ? conf.getContent.x : 300;
+    let contentY = typeof conf.getContent?.y === 'number' ? conf.getContent.y : 240;
+
+    let imagesX = typeof conf.getImages?.x === 'number' ? conf.getImages.x : 300;
+    let imagesY = typeof conf.getImages?.y === 'number' ? conf.getImages.y : 350;
+
+    // Trigger must ALWAYS be in Column 0 (x: 80) and to the left of its children.
+    // If trigger.x was saved as 500 (legacy visual offset) or is >= content/images, reset to 80.
+    if (triggerX >= contentX || triggerX >= imagesX || triggerX > 120) {
+      triggerX = 80;
+    }
+    if (contentX <= triggerX) {
+      contentX = triggerX + 220;
+    }
+    if (imagesX <= triggerX) {
+      imagesX = triggerX + 220;
+    }
+
     const resolvedTrigger = {
       ...DEFAULT_FB_WORKFLOW_CONFIG.trigger,
       ...conf.trigger,
-      x: typeof conf.trigger?.x === 'number' ? conf.trigger.x : 80,
-      y: typeof conf.trigger?.y === 'number' ? conf.trigger.y : 365,
+      x: triggerX,
+      y: triggerY,
     };
     const resolvedGetContent = {
       ...DEFAULT_FB_WORKFLOW_CONFIG.getContent,
       ...conf.getContent,
-      x: typeof conf.getContent?.x === 'number' ? conf.getContent.x : 300,
-      y: typeof conf.getContent?.y === 'number' ? conf.getContent.y : 245,
+      x: contentX,
+      y: contentY,
     };
     const resolvedGetImages = {
       ...DEFAULT_FB_WORKFLOW_CONFIG.getImages,
       ...conf.getImages,
-      x: typeof conf.getImages?.x === 'number' ? conf.getImages.x : 300,
-      y: typeof conf.getImages?.y === 'number' ? conf.getImages.y : 485,
+      x: imagesX,
+      y: imagesY,
     };
-    const resolvedAiBoxes = finalAiBoxes.map((b, idx) => ({
-      ...b,
-      x: typeof b.x === 'number' ? b.x : (520 + (idx % 3) * 180),
-      y: typeof b.y === 'number' ? b.y : (200 + Math.floor(idx / 3) * 120),
-    }));
-    const resolvedCombineBoxes = (conf.combineBoxes || []).map((cb, idx) => ({
-      ...cb,
-      x: typeof cb.x === 'number' ? cb.x : (1120 + idx * 240),
-      y: typeof cb.y === 'number' ? cb.y : 405,
-    }));
-    const resolvedDestinations = rawDests.map((d, idx) => ({
-      ...d,
-      x: typeof d.x === 'number' ? d.x : (1340 + idx * 240),
-      y: typeof d.y === 'number' ? d.y : 365,
-    }));
+
+    // Ensure downstream connected nodes follow strictly left-to-right flow (child.x >= parent.x + 220)
+    const nodeXMap = new Map<string, number>([
+      ['trigger', triggerX],
+      ['get-content', contentX],
+      ['get-images', imagesX],
+    ]);
+
+    // 1. Auto-heal Format Presets attached to central Text AI Model into a clean, non-overlapping crown arch
+    const primaryAi = finalAiBoxes.find((b) => isTextAIBox(b, nextConnections));
+    const formatBoxes = finalAiBoxes.filter((b) => isTextFormatAIBox(b));
+    const alignedCoordsById = new Map<string, { x: number; y: number }>();
+
+    if (primaryAi && formatBoxes.length > 0) {
+      const sortedFormats = [...formatBoxes].sort((a, b) => (a.x ?? 0) - (b.x ?? 0));
+      const aiCenterX = (primaryAi.x ?? 520) + 108;
+      const FORMAT_COL_WIDTH = 155;
+      const totalWidth = (sortedFormats.length - 1) * FORMAT_COL_WIDTH;
+      const startLeft = aiCenterX - totalWidth / 2;
+      const centerIdx = (sortedFormats.length - 1) / 2;
+      const apexY = (primaryAi.y ?? 245) - 148;
+
+      sortedFormats.forEach((b, idx) => {
+        const distFromCenter = Math.abs(idx - centerIdx);
+        const normalizedDist = centerIdx > 0 ? distFromCenter / centerIdx : 0;
+        const archDrop = Math.round(Math.pow(normalizedDist, 1.8) * 34);
+        alignedCoordsById.set(b.id, {
+          x: Math.round(startLeft + idx * FORMAT_COL_WIDTH - 36),
+          y: apexY + archDrop,
+        });
+      });
+    }
+
+    // 2. Auto-heal Chrome Profile and Tab Group clusters under External Browser
+    const ebBoxes = finalAiBoxes.filter((b) => isExternalBrowserAIBox(b));
+    const profileBoxes = finalAiBoxes.filter((b) => isChromeProfileAIBox(b));
+    const tabGroupBoxes = finalAiBoxes.filter((b) => isChromeTabGroupAIBox(b));
+
+    if (ebBoxes.length > 0 && profileBoxes.length > 0) {
+      ebBoxes.forEach((eb) => {
+        const ebProfiles = profileBoxes.filter((p) =>
+          nextConnections.some((c) => c.fromNodeId === eb.id && c.toNodeId === p.id)
+        );
+        const unassigned = profileBoxes.filter(
+          (p) => !nextConnections.some((c) => ebBoxes.some((b) => b.id === c.fromNodeId) && c.toNodeId === p.id)
+        );
+        const profilesToPlace = eb === ebBoxes[0]
+          ? [...ebProfiles, ...unassigned.filter((p) => !ebProfiles.includes(p))]
+          : ebProfiles;
+
+        if (profilesToPlace.length === 0) return;
+
+        const parentX = eb.x ?? 520;
+        const parentY = eb.y ?? 485;
+        const parentCenterX = parentX + 108;
+
+        const TAB_GROUP_COL_WIDTH = 165;
+        const PROFILE_CLUSTER_GAP = 50;
+        const PROFILE_V_GAP = 200;
+        const TG_V_GAP = 175;
+
+        const profileClusterData = profilesToPlace.map((p) => {
+          const pTabGroups = tabGroupBoxes.filter(
+            (tg) =>
+              nextConnections.some((c) => c.fromNodeId === p.id && c.toNodeId === tg.id) ||
+              (tg.browserProfileId && tg.browserProfileId === p.browserProfileId)
+          );
+          const numTG = pTabGroups.length;
+          const clusterWidth = Math.max(numTG, 1) * TAB_GROUP_COL_WIDTH;
+          return { profile: p, tabGroups: pTabGroups, clusterWidth };
+        });
+
+        const totalClusterWidth = profileClusterData.reduce((acc, curr, idx) => {
+          return acc + curr.clusterWidth + (idx > 0 ? PROFILE_CLUSTER_GAP : 0);
+        }, 0);
+
+        let currentLeft = parentCenterX - totalClusterWidth / 2;
+
+        profileClusterData.forEach(({ profile, tabGroups, clusterWidth }) => {
+          const clusterCenterX = currentLeft + clusterWidth / 2;
+
+          alignedCoordsById.set(profile.id, {
+            x: Math.round(clusterCenterX - 36),
+            y: parentY + PROFILE_V_GAP,
+          });
+
+          const numTG = tabGroups.length;
+          if (numTG === 1) {
+            alignedCoordsById.set(tabGroups[0].id, {
+              x: Math.round(clusterCenterX - 36),
+              y: parentY + PROFILE_V_GAP + TG_V_GAP,
+            });
+          } else if (numTG > 1) {
+            tabGroups.forEach((tg, tgIdx) => {
+              const tgCenterX = currentLeft + (tgIdx + 0.5) * TAB_GROUP_COL_WIDTH;
+              alignedCoordsById.set(tg.id, {
+                x: Math.round(tgCenterX - 36),
+                y: parentY + PROFILE_V_GAP + TG_V_GAP,
+              });
+            });
+          }
+
+          currentLeft += clusterWidth + PROFILE_CLUSTER_GAP;
+        });
+      });
+    }
+
+    const resolvedAiBoxes = finalAiBoxes.map((b, idx) => {
+      const aligned = alignedCoordsById.get(b.id);
+      let bx = aligned?.x ?? (typeof b.x === 'number' ? b.x : (520 + (idx % 3) * 180));
+      let by = aligned?.y ?? (typeof b.y === 'number' ? b.y : (200 + Math.floor(idx / 3) * 120));
+
+      const incoming = nextConnections.filter((c) => c.toNodeId === b.id);
+      for (const conn of incoming) {
+        const fromX = nodeXMap.get(conn.fromNodeId);
+        if (typeof fromX === 'number' && bx <= fromX && !aligned) {
+          bx = fromX + 220;
+        }
+      }
+      nodeXMap.set(b.id, bx);
+      return { ...b, x: bx, y: by };
+    });
+
+    const resolvedCombineBoxes = (conf.combineBoxes || []).map((cb, idx) => {
+      let cbx = typeof cb.x === 'number' ? cb.x : (1120 + idx * 240);
+      let cby = typeof cb.y === 'number' ? cb.y : 405;
+
+      const incoming = nextConnections.filter((c) => c.toNodeId === cb.id);
+      for (const conn of incoming) {
+        const fromX = nodeXMap.get(conn.fromNodeId);
+        if (typeof fromX === 'number' && cbx <= fromX) {
+          cbx = fromX + 220;
+        }
+      }
+      nodeXMap.set(cb.id, cbx);
+      return { ...cb, x: cbx, y: cby };
+    });
+
+    const resolvedDestinations = rawDests.map((d, idx) => {
+      let dx = typeof d.x === 'number' ? d.x : (1340 + idx * 240);
+      let dy = typeof d.y === 'number' ? d.y : 365;
+
+      const incoming = nextConnections.filter((c) => c.toNodeId === d.id);
+      for (const conn of incoming) {
+        const fromX = nodeXMap.get(conn.fromNodeId);
+        if (typeof fromX === 'number' && dx <= fromX) {
+          dx = fromX + 220;
+        }
+      }
+      nodeXMap.set(d.id, dx);
+      return { ...d, x: dx, y: dy };
+    });
 
     return {
       ...DEFAULT_FB_WORKFLOW_CONFIG,
@@ -3110,7 +3290,22 @@ export interface FacebookWorkflowCanvasProps {
  */
 export const getWorkflowBounds = (cfg: FacebookWorkflowConfig) => {
   const CIRCLE_SIZE = 72;
-  const LABEL_EXTRA = 48;
+  const LABEL_EXTRA = 32;
+
+  if (isWorkflowInitialEmpty(cfg)) {
+    const tx = cfg.trigger?.x ?? 80;
+    const ty = cfg.trigger?.y ?? 240;
+    return {
+      minX: tx,
+      maxX: tx + CIRCLE_SIZE,
+      minY: ty,
+      maxY: ty + CIRCLE_SIZE + LABEL_EXTRA,
+      width: CIRCLE_SIZE,
+      height: CIRCLE_SIZE + LABEL_EXTRA,
+      midX: tx + CIRCLE_SIZE / 2,
+      midY: ty + (CIRCLE_SIZE + LABEL_EXTRA) / 2,
+    };
+  }
 
   const isTriggerEnabled = cfg.trigger?.enabled !== false;
   const isContentEnabled = cfg.getContent?.enabled !== false;
@@ -3279,7 +3474,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     onUpdateBoxOutput: _onUpdateBoxOutput,
     onRegenerateBoxOutput,
     onRevertGoogleSheetRow,
-    onContinueWorkflow,
+    onContinueWorkflow: _onContinueWorkflow,
     onRunFromStep,
     onClearManualData,
   },
@@ -3299,16 +3494,24 @@ export const FacebookWorkflowCanvas = forwardRef<
     const contentHeight = Math.max(bounds.height, 300);
     const fitZoomX = (vWidth - 160) / contentWidth;
     const fitZoomY = (vHeight - 120) / contentHeight;
-    const optimalZoom = Math.min(Math.max(Math.min(fitZoomX, fitZoomY), 0.55), 0.88);
+    const isEmpty = isWorkflowInitialEmpty(base);
+    const optimalZoom = isEmpty ? 0.9 : Math.min(Math.max(Math.min(fitZoomX, fitZoomY), 0.55), 0.88);
     const centeredPan = calculateCenteredPanOffset(base, vWidth, vHeight, optimalZoom);
     return {
       ...base,
       zoom: typeof base.zoom === 'number' && base.zoom > 0 ? base.zoom : optimalZoom,
-      panOffset: (base.panOffset && (base.panOffset.x !== 0 || base.panOffset.y !== 0)) ? base.panOffset : centeredPan,
+      panOffset: isEmpty || !base.panOffset || (base.panOffset.x === 0 && base.panOffset.y === 0)
+        ? centeredPan
+        : base.panOffset,
     };
   });
   const latestConfigRef = useRef<FacebookWorkflowConfig>(config);
   latestConfigRef.current = config;
+
+  // Check if a node is effectively enabled (cascading disabled state down from upstream relatives)
+  function isNodeEffectivelyEnabled(nodeId: string, visited: Set<string> = new Set()): boolean {
+    return checkNodeEffectivelyEnabled(config, nodeId, visited);
+  }
 
   // Listing Code Generator Preview State
   const [previewSampleCode, setPreviewSampleCode] = useState<string>(() =>
@@ -3345,8 +3548,10 @@ export const FacebookWorkflowCanvas = forwardRef<
           valid.forEach((img) => {
             const pos = img.position || 1;
             const pos0 = pos - 1; // 0-based index key
-            const cleanBackend = img.backend_url ? img.backend_url.replace(/^https?:\/\/localhost:8085/, '') : '';
-            map[pos0] = img.url || cleanBackend;
+            const cleanBackend = img.backend_url
+              ? img.backend_url.replace(/^https?:\/\/localhost:8085/, '')
+              : (img.filename ? `/storage/uploads/facebook-import/enhanced/${encodeURIComponent(img.filename)}` : '');
+            map[pos0] = cleanBackend || img.url;
           });
           setCompanionEnhancedMap((prev) => {
             let hasChange = false;
@@ -3359,7 +3564,12 @@ export const FacebookWorkflowCanvas = forwardRef<
             if (!hasChange && Object.keys(map).length === Object.keys(prev).length) {
               return prev;
             }
-            const next = { ...prev, ...map };
+            const maxPhotos = images?.length || 6;
+            const next: Record<number, string> = {};
+            for (let i = 0; i < maxPhotos; i++) {
+              if (map[i]) next[i] = map[i];
+              else if (prev[i]) next[i] = prev[i];
+            }
             try {
               const codeKey = executionState?.listingCode || previewSampleCode || 'current';
               localStorage.setItem(`bolthaven_canvas_enhanced_${codeKey}`, JSON.stringify(next));
@@ -3450,12 +3660,20 @@ export const FacebookWorkflowCanvas = forwardRef<
   };
 
   const isManualTrigger = config.trigger?.sourceMode === 'manual';
+  const isContentManual = config.getContent?.mode === 'manual' || (isManualTrigger && config.getContent?.mode !== 'extracted');
+
   const effectiveRawContent = useMemo(() => {
+    if (config.getContent?.mode === 'manual' && config.getContent?.manualContent !== undefined) {
+      return config.getContent.manualContent;
+    }
+    if (config.getContent?.mode === 'extracted') {
+      return rawContent || '';
+    }
     if (isManualTrigger && config.trigger?.manualContent !== undefined) {
       return config.trigger.manualContent || '';
     }
-    return rawContent || (config.trigger?.manualContent || '');
-  }, [isManualTrigger, config.trigger?.manualContent, rawContent]);
+    return config.getContent?.manualContent || rawContent || (config.trigger?.manualContent || '');
+  }, [config.getContent?.mode, config.getContent?.manualContent, isManualTrigger, config.trigger?.manualContent, rawContent]);
 
   const effectiveImages: any[] = useMemo(() => {
     if (isManualTrigger && config.trigger?.manualImages && config.trigger.manualImages.length > 0) {
@@ -3471,11 +3689,6 @@ export const FacebookWorkflowCanvas = forwardRef<
     return images || [];
   }, [isManualTrigger, config.trigger?.manualImages, images]);
 
-  // Check if a node is effectively enabled (cascading disabled state down from upstream relatives)
-  function isNodeEffectivelyEnabled(nodeId: string, visited: Set<string> = new Set()): boolean {
-    return checkNodeEffectivelyEnabled(config, nodeId, visited);
-  }
-
   const getNodeExecutionStatus = (nodeId: string): 'idle' | 'running' | 'success' | 'error' => {
     if (!isNodeEffectivelyEnabled(nodeId)) {
       return 'idle';
@@ -3485,6 +3698,13 @@ export const FacebookWorkflowCanvas = forwardRef<
     }
     if (locallyCompletedNodeIds.includes(nodeId)) {
       return 'success';
+    }
+
+    if (nodeId === 'get-content') {
+      if (executionState?.activeNodeIds?.includes(nodeId) || locallyRunningNodeId === nodeId) return 'running';
+      if (executionState?.failedNodeIds?.includes(nodeId)) return 'error';
+      if (locallyCompletedNodeIds.includes(nodeId) || executionState?.completedNodeIds?.includes(nodeId)) return 'success';
+      if (effectiveRawContent && effectiveRawContent.trim().length > 0) return 'success';
     }
 
     // Auto-complete Enhance node if enhanced images have been downloaded
@@ -3531,11 +3751,12 @@ export const FacebookWorkflowCanvas = forwardRef<
     const contentHeight = Math.max(bounds.height, 300);
     const fitZoomX = (vWidth - 160) / contentWidth;
     const fitZoomY = (vHeight - 120) / contentHeight;
-    const optimalZoom = Math.min(Math.max(Math.min(fitZoomX, fitZoomY), 0.55), 0.88);
+    const isEmpty = isWorkflowInitialEmpty(sanitized);
+    const optimalZoom = isEmpty ? 0.9 : Math.min(Math.max(Math.min(fitZoomX, fitZoomY), 0.55), 0.88);
     const centeredPan = calculateCenteredPanOffset(sanitized, vWidth, vHeight, optimalZoom);
 
     setConfig((prev) => {
-      const hasActivePan = prev && prev.panOffset && (prev.panOffset.x !== 0 || prev.panOffset.y !== 0);
+      const hasActivePan = !isEmpty && prev && prev.panOffset && (prev.panOffset.x !== 0 || prev.panOffset.y !== 0);
       const panOffset = hasActivePan ? prev.panOffset : centeredPan;
       const zoom = prev && typeof prev.zoom === 'number' && prev.zoom > 0 ? prev.zoom : optimalZoom;
 
@@ -3591,7 +3812,8 @@ export const FacebookWorkflowCanvas = forwardRef<
           clearTimeout(resizeTimer);
           resizeTimer = setTimeout(() => {
             setConfig((prev) => {
-              if (hasInitializedPan.current) return prev;
+              const isEmpty = isWorkflowInitialEmpty(prev);
+              if (hasInitializedPan.current && !isEmpty) return prev;
               hasInitializedPan.current = true;
               const nextPan = calculateCenteredPanOffset(prev, width, height, prev.zoom);
               if (Math.abs(prev.panOffset.x - nextPan.x) <= 2 && Math.abs(prev.panOffset.y - nextPan.y) <= 2) {
@@ -3958,7 +4180,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     setTestingSheetSync(true);
     setSheetHeaderError(null);
     try {
-      const sampleContent = rawContent || 'Rent Condo XT Ekkamai 1 Bedroom 35 sqm 25,000 THB/month Near BTS Ekkamai';
+      const sampleContent = effectiveRawContent || 'Rent Condo XT Ekkamai 1 Bedroom 35 sqm 25,000 THB/month Near BTS Ekkamai';
       const sampleCondo = 'XT Ekkamai';
       const sampleImages = images || [];
       const sampleLink =
@@ -4109,7 +4331,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 reader.onerror = () => resolve(item.url);
                 reader.readAsDataURL(blob);
               });
-            } catch (convErr) {}
+            } catch (convErr) { }
           }
           return { filename, data: base64Data };
         })
@@ -4132,7 +4354,7 @@ export const FacebookWorkflowCanvas = forwardRef<
             return;
           }
         }
-      } catch (_) {}
+      } catch (_) { }
 
       // 2. Try Go backend fallback
       try {
@@ -4151,8 +4373,8 @@ export const FacebookWorkflowCanvas = forwardRef<
             return;
           }
         }
-      } catch (_) {}
-    } catch (_) {}
+      } catch (_) { }
+    } catch (_) { }
 
     // Fallback to direct download
     await handleDownloadCombineFormatDirectly(assets, formatTitle);
@@ -4201,7 +4423,7 @@ export const FacebookWorkflowCanvas = forwardRef<
       a.click();
       document.body.removeChild(a);
       setTimeout(() => {
-        try { URL.revokeObjectURL(blobUrl); } catch (_) {}
+        try { URL.revokeObjectURL(blobUrl); } catch (_) { }
       }, 15000);
     } catch (err) {
       console.warn('ZIP download error:', err);
@@ -4319,26 +4541,15 @@ export const FacebookWorkflowCanvas = forwardRef<
             }
           } catch (e) { }
         } else if (isFromEnhance) {
-          // Strictly ONLY include photos that have been genuinely enhanced!
-          // NEVER fall back to raw unenhanced photos from Get Images when connected to Enhance!
-          const addedIndices = new Set<number>();
+          // Merge with the first step's photos: use enhanced photos where available, and raw for any not yet enhanced!
           photoList.forEach((img, idx) => {
-            const photoNum = idx + 1;
-            const enhUrl = allEnhancedPhotos?.[idx] || allEnhancedPhotos?.[photoNum] || (typeof img.index === 'number' ? allEnhancedPhotos?.[img.index] : undefined);
-            if (enhUrl) {
-              addedIndices.add(idx);
-              addedIndices.add(photoNum);
-              sourcePhotos.push({ url: enhUrl, photoIndex: idx, isEnhanced: true });
-            }
-          });
-          // Also include any extra enhanced photos in allEnhancedPhotos not mapped in photoList
-          Object.entries(allEnhancedPhotos || {}).forEach(([k, enhUrl]) => {
-            const num = Number(k);
-            const pIdx = num > 0 && num <= photoList.length ? num - 1 : num;
-            if (enhUrl && !addedIndices.has(num) && !sourcePhotos.some((p) => p.url === enhUrl)) {
-              addedIndices.add(num);
-              sourcePhotos.push({ url: enhUrl, photoIndex: pIdx, isEnhanced: true });
-            }
+            const enhUrl = allEnhancedPhotos?.[idx] || allEnhancedPhotos?.[idx + 1];
+            const rawUrl = normalizeMediaUrl(img.stored_url || img.source_url || (img as any).url);
+            sourcePhotos.push({
+              url: enhUrl || rawUrl || '',
+              photoIndex: idx,
+              isEnhanced: Boolean(enhUrl),
+            });
           });
         } else if (cropBox.imageSource === 'get_images' || (cropBox.imageSource as string) === 'get-images') {
           photoList.forEach((img, idx) => {
@@ -4659,6 +4870,8 @@ export const FacebookWorkflowCanvas = forwardRef<
     nodeType: string,
     nodeTitle?: string,
     platform?: 'facebook' | 'instagram' | 'tiktok' | 'database' | 'chrome-profile' | 'chrome-tab-group' | 'ai-format',
+    customStyle?: React.CSSProperties,
+    buttonText?: string,
   ) => (
     <button
       type="button"
@@ -4668,7 +4881,7 @@ export const FacebookWorkflowCanvas = forwardRef<
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: '0.45rem',
+        gap: '0.4rem',
         width: '100%',
         height: '38px',
         minHeight: '38px',
@@ -4676,16 +4889,18 @@ export const FacebookWorkflowCanvas = forwardRef<
         flexShrink: 0,
         boxSizing: 'border-box',
         marginBottom: '0.875rem',
-        padding: '0 1rem',
+        padding: '0 0.625rem',
         borderRadius: '8px',
         border: '1px solid var(--border-color)',
         backgroundColor: isDark ? 'var(--bg-surface)' : '#F1F5F9',
         color: 'var(--text-primary)',
-        fontSize: '0.8125rem',
+        fontSize: '0.75rem',
         fontWeight: 600,
+        whiteSpace: 'nowrap',
         cursor: 'pointer',
         transition: 'all 0.15s ease',
         boxShadow: isDark ? '0 1px 2px rgba(0, 0, 0, 0.25)' : '0 1px 2px rgba(0, 0, 0, 0.05)',
+        ...customStyle,
       }}
       onMouseEnter={(e) => {
         e.currentTarget.style.backgroundColor = isDark ? 'var(--bg-surface-hover)' : '#E2E8F0';
@@ -4700,17 +4915,20 @@ export const FacebookWorkflowCanvas = forwardRef<
         if (arrow) arrow.style.transform = 'translateX(0)';
       }}
     >
-      <span>Connect Next Step</span>
+      <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        {buttonText || 'Connect Next Step'}
+      </span>
       <span
         className="next-step-arrow"
         style={{
           display: 'inline-flex',
           alignItems: 'center',
+          flexShrink: 0,
           transition: 'transform 0.15s ease',
           color: 'var(--text-secondary)',
         }}
       >
-        <FiArrowRight size={14} />
+        <FiArrowRight size={13} />
       </span>
     </button>
   );
@@ -5943,26 +6161,35 @@ export const FacebookWorkflowCanvas = forwardRef<
   };
 
   const handleEnableGetContent = () => {
+    const triggerX = config.trigger?.x ?? 80;
+    const triggerY = config.trigger?.y ?? 240;
+    const hasImages = config.getImages?.enabled === true;
     updateConfig({
       ...config,
       getContent: {
         ...config.getContent,
         enabled: true,
-        x: config.getContent.x || 300,
-        y: config.getContent.y || 140,
+        x: triggerX + 220,
+        y: hasImages ? 140 : triggerY,
       },
     });
     setDeletedBoxes((prev) => prev.filter((d) => d.box.id !== 'get-content'));
   };
 
   const handleEnableGetImages = () => {
+    const triggerX = config.trigger?.x ?? 80;
+    const triggerY = config.trigger?.y ?? 240;
+    const hasContent = config.getContent?.enabled === true;
     updateConfig({
       ...config,
+      getContent: hasContent && config.getContent.y === triggerY
+        ? { ...config.getContent, y: 140 }
+        : config.getContent,
       getImages: {
         ...config.getImages,
         enabled: true,
-        x: config.getImages.x || 300,
-        y: config.getImages.y || 356,
+        x: triggerX + 220,
+        y: hasContent ? 350 : triggerY,
       },
     });
     setDeletedBoxes((prev) => prev.filter((d) => d.box.id !== 'get-images'));
@@ -6137,11 +6364,24 @@ export const FacebookWorkflowCanvas = forwardRef<
         ? (targetPage?.name || 'Facebook Post')
         : 'Social & Database Storage';
 
+    // Calculate non-overlapping destination position (placing in column after rightmost workflow stage)
+    const allX = [
+      ...(config.combineBoxes || []).map((cb) => cb.x ?? 740),
+      ...config.aiBoxes.map((b) => b.x),
+      config.getContent?.x ?? 300,
+      config.getImages?.x ?? 300,
+    ];
+    const maxX = Math.max(740, ...allX);
+    const destX = currentDests.length > 0 ? (currentDests[0].x ?? (maxX + 220)) : (maxX + 220);
+    const destY = currentDests.length > 0
+      ? (currentDests[currentDests.length - 1].y ?? 248) + 150
+      : 248;
+
     const newDest: DestinationNodeConfig = {
       id: newId,
       enabled: true,
-      x: (currentDests[0]?.x || 740),
-      y: (currentDests[currentDests.length - 1]?.y || 248) + 150,
+      x: destX,
+      y: destY,
       targetMode,
       storeInDatabase: isDb,
       postToSocialMedia: isSoc,
@@ -6281,15 +6521,19 @@ export const FacebookWorkflowCanvas = forwardRef<
         let newY = 248;
         if (sourceDest) {
           const siblingCount = (config.connections || []).filter((c) => c.fromNodeId === fromNodeId).length;
-          newX = sourceDest.x + 180;
+          newX = sourceDest.x + 220;
           newY = sourceDest.y + siblingCount * 150;
         } else if (sourceCb) {
           const siblingCount = (config.connections || []).filter((c) => c.fromNodeId === fromNodeId).length;
-          newX = sourceCb.x + 180;
-          newY = sourceCb.y + siblingCount * 150;
+          newX = (sourceCb.x ?? 740) + 220;
+          newY = (sourceCb.y ?? 240) + siblingCount * 150;
         } else if (lastDest) {
           newX = lastDest.x;
           newY = lastDest.y + 150;
+        } else {
+          const coords = getSmartNextNodeCoords(fromNodeId, config);
+          newX = coords.x;
+          newY = coords.y;
         }
 
         const newDest: DestinationNodeConfig = {
@@ -6447,11 +6691,12 @@ export const FacebookWorkflowCanvas = forwardRef<
             ? 'Social Media'
             : 'Social & Database Storage';
 
+      const coords = getSmartNextNodeCoords(fromNodeId, config);
       const newDest: DestinationNodeConfig = {
         id: destId,
         enabled: true,
-        x: updatedDests[0]?.x || 740,
-        y: (updatedDests[updatedDests.length - 1]?.y || 248) + 150,
+        x: coords.x,
+        y: coords.y,
         targetMode,
         platform: targetMode === 'remaining_posts' ? 'database' : undefined,
         storeInDatabase: isDb,
@@ -6644,20 +6889,23 @@ export const FacebookWorkflowCanvas = forwardRef<
 
   const handleConnectOrCreateGetContent = (fromNodeId: string) => {
     const conns = [...(config.connections || [])];
-    if (!conns.some((c) => c.fromNodeId === fromNodeId && c.toNodeId === 'get-content')) {
+    if (fromNodeId !== 'trigger' && !conns.some((c) => c.fromNodeId === fromNodeId && c.toNodeId === 'get-content')) {
       conns.push({
         id: `conn-${fromNodeId}-get-content-${Date.now()}`,
         fromNodeId,
         toNodeId: 'get-content',
       });
     }
+    const triggerX = config.trigger?.x ?? 80;
+    const triggerY = config.trigger?.y ?? 240;
+    const hasImages = config.getImages?.enabled === true;
     updateConfig({
       ...config,
       getContent: {
         ...config.getContent,
         enabled: true,
-        x: config.getContent.x ?? ((config.trigger.x ?? 80) + 220),
-        y: config.getContent.y ?? 140,
+        x: triggerX + 220,
+        y: hasImages ? 140 : triggerY,
       },
       connections: conns,
     });
@@ -6667,20 +6915,26 @@ export const FacebookWorkflowCanvas = forwardRef<
 
   const handleConnectOrCreateGetImages = (fromNodeId: string) => {
     const conns = [...(config.connections || [])];
-    if (!conns.some((c) => c.fromNodeId === fromNodeId && c.toNodeId === 'get-images')) {
+    if (fromNodeId !== 'trigger' && !conns.some((c) => c.fromNodeId === fromNodeId && c.toNodeId === 'get-images')) {
       conns.push({
         id: `conn-${fromNodeId}-get-images-${Date.now()}`,
         fromNodeId,
         toNodeId: 'get-images',
       });
     }
+    const triggerX = config.trigger?.x ?? 80;
+    const triggerY = config.trigger?.y ?? 240;
+    const hasContent = config.getContent?.enabled === true;
     updateConfig({
       ...config,
+      getContent: hasContent && config.getContent.y === triggerY
+        ? { ...config.getContent, y: 140 }
+        : config.getContent,
       getImages: {
         ...config.getImages,
         enabled: true,
-        x: config.getImages.x ?? ((config.trigger.x ?? 80) + 220),
-        y: config.getImages.y ?? 356,
+        x: triggerX + 220,
+        y: hasContent ? 350 : triggerY,
       },
       connections: conns,
     });
@@ -6688,26 +6942,100 @@ export const FacebookWorkflowCanvas = forwardRef<
     setActiveModalNode({ type: 'get-images' });
   };
 
+  // Helper to calculate smart, professional non-overlapping coordinates for any newly added node
+  const getSmartNextNodeCoords = (
+    fromNodeId?: string,
+    currentCfg: FacebookWorkflowConfig = config
+  ): { x: number; y: number } => {
+    let fromX = 80;
+    let fromY = 240;
+
+    if (fromNodeId === 'trigger' || !fromNodeId) {
+      fromX = currentCfg.trigger?.x ?? 80;
+      fromY = currentCfg.trigger?.y ?? 240;
+    } else if (fromNodeId === 'get-content') {
+      fromX = currentCfg.getContent?.x ?? 300;
+      fromY = currentCfg.getContent?.y ?? 140;
+    } else if (fromNodeId === 'get-images') {
+      fromX = currentCfg.getImages?.x ?? 300;
+      fromY = currentCfg.getImages?.y ?? 350;
+    } else if (fromNodeId === 'output') {
+      fromX = currentCfg.outputNode?.x ?? 740;
+      fromY = currentCfg.outputNode?.y ?? 248;
+    } else {
+      const box = (currentCfg.aiBoxes || []).find((b) => b.id === fromNodeId);
+      if (box) {
+        fromX = box.x;
+        fromY = box.y;
+      } else {
+        const cb = (currentCfg.combineBoxes || []).find((b) => b.id === fromNodeId);
+        if (cb) {
+          fromX = cb.x ?? 850;
+          fromY = cb.y ?? 240;
+        } else {
+          const dest = getNormalizedDestinations(currentCfg).find((d) => d.id === fromNodeId);
+          if (dest) {
+            fromX = dest.x ?? 960;
+            fromY = dest.y ?? 248;
+          }
+        }
+      }
+    }
+
+    // Always place next column to the right (+220px step)
+    const targetX = fromX + 220;
+
+    // Collect all existing node Y positions in that column
+    const occupiedYs: number[] = [];
+
+    if (currentCfg.getContent?.enabled && Math.abs((currentCfg.getContent.x ?? 300) - targetX) < 80) {
+      occupiedYs.push(currentCfg.getContent.y ?? 140);
+    }
+    if (currentCfg.getImages?.enabled && Math.abs((currentCfg.getImages.x ?? 300) - targetX) < 80) {
+      occupiedYs.push(currentCfg.getImages.y ?? 350);
+    }
+    (currentCfg.aiBoxes || []).forEach((b) => {
+      if (b.enabled !== false && Math.abs(b.x - targetX) < 80) {
+        occupiedYs.push(b.y);
+      }
+    });
+    (currentCfg.combineBoxes || []).forEach((cb) => {
+      if (cb.enabled !== false && Math.abs((cb.x ?? 850) - targetX) < 80) {
+        occupiedYs.push(cb.y ?? 240);
+      }
+    });
+    getNormalizedDestinations(currentCfg).forEach((d) => {
+      if (d.enabled !== false && Math.abs((d.x ?? 960) - targetX) < 80) {
+        occupiedYs.push(d.y ?? 248);
+      }
+    });
+
+    if (occupiedYs.length === 0) {
+      return { x: targetX, y: fromY };
+    }
+
+    // Check if fromY has collision (within 70px of any occupied Y)
+    const isFromYColliding = occupiedYs.some((y) => Math.abs(y - fromY) < 70);
+    if (!isFromYColliding) {
+      return { x: targetX, y: fromY };
+    }
+
+    // Otherwise place 140px below the bottom-most node in this column
+    const maxY = Math.max(...occupiedYs);
+    return { x: targetX, y: maxY + 140 };
+  };
+
   // ── Combine Box handlers ─────────────────────────────────────────────────
   const handleAddCombineBox = (fromNodeId: string): string => {
     const id = `combine-box-${Date.now()}`;
-    const fromNode = (function () {
-      if (fromNodeId === 'trigger') return { x: config.trigger.x ?? 80, y: config.trigger.y ?? 248 };
-      if (fromNodeId === 'get-content') return { x: config.getContent.x ?? 300, y: config.getContent.y ?? 140 };
-      if (fromNodeId === 'get-images') return { x: config.getImages.x ?? 300, y: config.getImages.y ?? 356 };
-      const box = config.aiBoxes.find((b) => b.id === fromNodeId);
-      if (box) return { x: box.x, y: box.y };
-      const existingCb = (config.combineBoxes || []).find((b) => b.id === fromNodeId);
-      if (existingCb) return { x: existingCb.x, y: existingCb.y };
-      return { x: 500, y: 248 };
-    })();
+    const coords = getSmartNextNodeCoords(fromNodeId, config);
 
     const newBox: CombineBoxConfig = {
       id,
       title: 'Combine Box',
       enabled: true,
-      x: fromNode.x + 220,
-      y: fromNode.y,
+      x: coords.x,
+      y: coords.y,
     };
 
     const newConn: WorkflowWireConnection = {
@@ -6926,6 +7254,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     const textAIBoxes = config.aiBoxes.filter((b) => isTextAIBox(b, config.connections));
     const newCount = textAIBoxes.length + 1;
     const newId = `ai-box-${Date.now()}`;
+    const coords = getSmartNextNodeCoords(fromNodeId, config);
     const newBox: DynamicAIBoxConfig = {
       id: newId,
       title: 'AI Model',
@@ -6937,8 +7266,8 @@ export const FacebookWorkflowCanvas = forwardRef<
       templateText: '',
       customPrompt: '',
       enabled: true,
-      x: 520,
-      y: 250,
+      x: coords.x,
+      y: coords.y,
     };
 
     const newConn: WorkflowWireConnection = {
@@ -6996,7 +7325,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     const sourceBox = sourceAIBoxId ? config.aiBoxes.find((b) => b.id === sourceAIBoxId) : undefined;
     const fromId = sourceAIBoxId || config.aiBoxes.find((b) => isTextAIBox(b, config.connections))?.id || 'get-content';
 
-    const maxFormatX = formatBoxes.reduce((max, b) => Math.max(max, b.x), 375);
+    const coords = getSmartNextNodeCoords(fromId, config);
     const newId = `ai-box-format-${Date.now()}`;
     const newBox: DynamicAIBoxConfig = {
       id: newId,
@@ -7011,8 +7340,8 @@ export const FacebookWorkflowCanvas = forwardRef<
         : 'Generate optimized marketing copy for this property listing.\nHighlight rent/sale price, transit access, and clear call-to-action.',
       customPrompt: '',
       enabled: true,
-      x: formatBoxes.length > 0 ? maxFormatX + 145 : 520,
-      y: 110,
+      x: coords.x,
+      y: coords.y,
     };
 
     const newConn: WorkflowWireConnection = {
@@ -7044,6 +7373,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     const enhanceBoxes = config.aiBoxes.filter((b) => isEnhanceAIBox(b));
     const newCount = enhanceBoxes.length + 1;
     const newId = `ai-box-${Date.now()}`;
+    const coords = getSmartNextNodeCoords(_sourceId || 'get-images', config);
     const newBox: DynamicAIBoxConfig = {
       id: newId,
       title: `Image Enhancer #${newCount}`,
@@ -7055,16 +7385,17 @@ export const FacebookWorkflowCanvas = forwardRef<
         'Enhance real estate property photo: clean natural lighting, architectural clarity, realistic interior staging, ultra sharp 8k detail.',
       customPrompt: 'Real estate interior luxury enhancement, warm lighting, high detail, remove noise',
       enabled: true,
-      x: 580,
-      y: 360 + (newCount - 1) * 140,
+      x: coords.x,
+      y: coords.y,
     };
 
     const nextBoxes = [...config.aiBoxes, newBox];
+    const triggerX = config.trigger?.x ?? 80;
     const updatedGetImages = {
       ...config.getImages,
       enabled: true,
-      x: config.getImages.x || 300,
-      y: config.getImages.y || 356,
+      x: config.getImages.x || (triggerX + 220),
+      y: config.getImages.y || 350,
     };
 
     let nextConns = [...(config.connections || [])].filter((c) => c.fromNodeId !== 'trigger');
@@ -7096,6 +7427,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     const watermarkBoxes = config.aiBoxes.filter((b) => isWatermarkAIBox(b));
     const newCount = watermarkBoxes.length + 1;
     const newId = `ai-box-watermark-${Date.now()}`;
+    const coords = getSmartNextNodeCoords(_sourceId || 'get-images', config);
 
     const newBox: DynamicAIBoxConfig = {
       id: newId,
@@ -7117,16 +7449,17 @@ export const FacebookWorkflowCanvas = forwardRef<
       watermarkConfig: defaultFormat?.watermarkConfig,
       customPrompt: '',
       enabled: true,
-      x: 820,
-      y: 390 + (newCount - 1) * 140,
+      x: coords.x,
+      y: coords.y,
     };
 
     const nextBoxes = [...config.aiBoxes, newBox];
+    const triggerX = config.trigger?.x ?? 80;
     const updatedGetImages = {
       ...config.getImages,
       enabled: true,
-      x: config.getImages.x || 300,
-      y: config.getImages.y || 356,
+      x: config.getImages.x || (triggerX + 220),
+      y: config.getImages.y || 350,
     };
 
     let nextConns = [...(config.connections || [])].filter((c) => c.fromNodeId !== 'trigger');
@@ -7147,8 +7480,7 @@ export const FacebookWorkflowCanvas = forwardRef<
   const handleAddAIBox = (templateOverride?: CanvasPromptOption) => {
     const prompts = loadAvailablePromptTemplates();
     const boxCount = config.aiBoxes.length;
-    const maxY = config.aiBoxes.reduce((max, b) => Math.max(max, b.y), 0);
-    const newY = boxCount === 0 ? 80 : maxY + 150;
+    const coords = getSmartNextNodeCoords('get-content', config);
 
     // Pick next prompt template from library
     const chosenTemplate =
@@ -7167,18 +7499,16 @@ export const FacebookWorkflowCanvas = forwardRef<
         : 'Generate optimized marketing copy for this property listing.\nHighlight rent/sale price, transit access, and clear call-to-action.',
       customPrompt: '',
       enabled: true,
-      x: 640,
-      y: newY,
+      x: coords.x,
+      y: coords.y,
     };
 
     const newConfig = {
       ...config,
       aiBoxes: [...config.aiBoxes, newBox],
-      // Starts completely unconnected on canvas
     };
     updateConfig(newConfig);
     setSelectedBoxId(newId);
-    // User requested: "show that cycle at canvas first don't need to connected in another until I create what that use for and after that I can connect it with drap that string"
   };
 
   // Add Dynamic n8n Automation Engine Node
@@ -7186,6 +7516,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     const n8nBoxes = config.aiBoxes.filter((b) => isN8NAIBox(b));
     const newCount = n8nBoxes.length + 1;
     const newId = `ai-box-n8n-${Date.now()}`;
+    const coords = getSmartNextNodeCoords(fromNodeId, config);
 
     const newBox: DynamicAIBoxConfig = {
       id: newId,
@@ -7204,8 +7535,8 @@ export const FacebookWorkflowCanvas = forwardRef<
       n8nTimeoutSeconds: 30,
       n8nRetryCount: 1,
       n8nContinueOnFailure: false,
-      x: 740,
-      y: 220 + (newCount - 1) * 140,
+      x: coords.x,
+      y: coords.y,
     };
 
     const nextBoxes = [...config.aiBoxes, newBox];
@@ -7233,6 +7564,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     const sheetBoxes = config.aiBoxes.filter((b) => isGoogleSheetBox(b));
     const newCount = sheetBoxes.length + 1;
     const newId = `ai-box-google-sheet-${Date.now()}`;
+    const coords = getSmartNextNodeCoords(fromNodeId || 'get-content', config);
 
     const newBox: DynamicAIBoxConfig = {
       id: newId,
@@ -7250,8 +7582,8 @@ export const FacebookWorkflowCanvas = forwardRef<
       googleSheetName: '',
       googleSheetHeaders: [],
       googleSheetAction: 'append_row',
-      x: 740,
-      y: 280 + (newCount - 1) * 140,
+      x: coords.x,
+      y: coords.y,
     };
 
     const nextBoxes = [...config.aiBoxes, newBox];
@@ -7279,6 +7611,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     const browserBoxes = config.aiBoxes.filter((b) => isExternalBrowserAIBox(b));
     const newCount = browserBoxes.length + 1;
     const newId = `ai-box-external-browser-${Date.now()}`;
+    const coords = getSmartNextNodeCoords(fromNodeId, config);
 
     const newBox: DynamicAIBoxConfig = {
       id: newId,
@@ -7291,8 +7624,8 @@ export const FacebookWorkflowCanvas = forwardRef<
       templateText: 'Enhance real estate photo via ChatGPT browser multi-worker pipeline',
       customPrompt: '',
       enabled: true,
-      x: 740,
-      y: 260 + (newCount - 1) * 140,
+      x: coords.x,
+      y: coords.y,
       browserProfileId: 11,
       browserProfileKey: 'Profile 14',
       browserProfileName: 'Hsu (Profile 14)',
@@ -8341,17 +8674,38 @@ export const FacebookWorkflowCanvas = forwardRef<
     };
   }, [draggedNodeId, isPanning, Boolean(dragWire)]);
 
+  // Single click: Select the node for viewing/dragging, but do NOT open the sidebar drawer
   const handleNodeClick = (node: ActiveModalNode, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (e.shiftKey) {
-      return;
-    }
     if (hasMoved.current) {
       hasMoved.current = false;
       return;
     }
+    if (node) {
+      let nodeId = '';
+      if (node.type === 'trigger') nodeId = 'trigger';
+      else if (node.type === 'get-content') nodeId = 'get-content';
+      else if (node.type === 'get-images') nodeId = 'get-images';
+      else if (node.type === 'ai-box') nodeId = node.boxId;
+      else if (node.type === 'combine') nodeId = node.combineId || (node as any).id;
+      else if (node.type === 'destination') nodeId = node.destinationId || 'destination';
+      if (nodeId) {
+        if (!e.shiftKey) {
+          setSelectedNodeIds(new Set([nodeId]));
+        }
+        setSelectedBoxId(nodeId);
+      }
+    }
+  };
 
-    // TOGGLE OFF: If clicking the node that is already active/open in sidebar, CLOSE IT!
+  // Double click: Open / toggle the sidebar drawer for this node
+  const handleNodeDoubleClick = (node: ActiveModalNode, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (e.shiftKey) {
+      return;
+    }
+
+    // TOGGLE OFF: If double-clicking the node that is already active/open in sidebar, CLOSE IT!
     const isSameNode =
       Boolean(activeModalNode && node) &&
       activeModalNode?.type === node?.type &&
@@ -9216,8 +9570,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                   onMouseDown={(e) => startDragNode('trigger', e)}
                   style={{
                     position: 'absolute',
-                    left: `${config.trigger?.x || 100}px`,
-                    top: `${config.trigger?.y || 200}px`,
+                    left: `${config.trigger?.x ?? 80}px`,
+                    top: `${config.trigger?.y ?? 240}px`,
                     width: `${CIRCLE_SIZE}px`,
                     height: `${CIRCLE_SIZE}px`,
                     zIndex: hoveredNodeId === 'trigger' || selectedNodeIds.has('trigger') ? 25 : 15,
@@ -9304,6 +9658,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 onMouseLeave={() => handleNodeMouseLeave('trigger')}
                 onMouseDown={(e) => startDragNode('trigger', e)}
                 onClick={(e) => handleNodeClick({ type: 'trigger' }, e)}
+                onDoubleClick={(e) => handleNodeDoubleClick({ type: 'trigger' }, e)}
                 style={{
                   position: 'absolute',
                   left: `${config.trigger.x}px`,
@@ -9372,6 +9727,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                     zIndex: 2,
                   }}
                   onClick={(e) => handleNodeClick({ type: 'trigger' }, e)}
+                onDoubleClick={(e) => handleNodeDoubleClick({ type: 'trigger' }, e)}
                 >
                   <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)', wordBreak: 'break-word', textAlign: 'center' }}>
                     {config.trigger.monitoredPageName || (isManualTrigger ? 'Manual Input' : 'Extract Link')}
@@ -9437,6 +9793,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   }
                 }}
                 onClick={(e) => handleNodeClick({ type: 'get-content' }, e)}
+                onDoubleClick={(e) => handleNodeDoubleClick({ type: 'get-content' }, e)}
                 style={{
                   position: 'absolute',
                   left: `${config.getContent.x}px`,
@@ -9529,6 +9886,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                     zIndex: 2,
                   }}
                   onClick={(e) => handleNodeClick({ type: 'get-content' }, e)}
+                onDoubleClick={(e) => handleNodeDoubleClick({ type: 'get-content' }, e)}
                 >
                   <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)', wordBreak: 'break-word', textAlign: 'center' }}>
                     Get Content
@@ -9601,6 +9959,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   }
                 }}
                 onClick={(e) => handleNodeClick({ type: 'get-images' }, e)}
+                onDoubleClick={(e) => handleNodeDoubleClick({ type: 'get-images' }, e)}
                 style={{
                   position: 'absolute',
                   left: `${config.getImages.x}px`,
@@ -9693,6 +10052,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                     zIndex: 2,
                   }}
                   onClick={(e) => handleNodeClick({ type: 'get-images' }, e)}
+                onDoubleClick={(e) => handleNodeDoubleClick({ type: 'get-images' }, e)}
                 >
                   <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)', wordBreak: 'break-word', textAlign: 'center' }}>
                     Get Images
@@ -9810,6 +10170,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   }
                 }}
                 onClick={(e) => handleNodeClick({ type: 'ai-box', boxId: box.id }, e)}
+                onDoubleClick={(e) => handleNodeDoubleClick({ type: 'ai-box', boxId: box.id }, e)}
                 style={{
                   position: 'absolute',
                   left: `${box.x}px`,
@@ -9974,14 +10335,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                               overflow: 'hidden',
                               textOverflow: 'ellipsis',
                               maxWidth: '125px',
-                              cursor: 'text',
+                              cursor: 'pointer',
                             }}
                             title={box.title || 'AI Model'}
-                            onDoubleClick={(e) => {
-                              e.stopPropagation();
-                              setEditingCanvasBoxId(box.id);
-                              setEditingCanvasBoxTitle(box.title || 'AI Model');
-                            }}
                           >
                             {box.title || 'AI Model'}
                           </span>
@@ -10049,6 +10405,13 @@ export const FacebookWorkflowCanvas = forwardRef<
                         e.stopPropagation();
                       } else {
                         handleNodeClick({ type: 'ai-box', boxId: box.id }, e);
+                      }
+                    }}
+                    onDoubleClick={(e) => {
+                      if (editingCanvasBoxId === box.id) {
+                        e.stopPropagation();
+                      } else {
+                        handleNodeDoubleClick({ type: 'ai-box', boxId: box.id }, e);
                       }
                     }}
                   >
@@ -10124,11 +10487,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                             textAlign: 'center',
                             lineHeight: '1.25',
                             wordBreak: 'break-word',
-                          }}
-                          onDoubleClick={(e) => {
-                            e.stopPropagation();
-                            setEditingCanvasBoxId(box.id);
-                            setEditingCanvasBoxTitle(displayNodeTitle);
+                            cursor: 'pointer',
                           }}
                           title={displayNodeTitle}
                         >
@@ -10438,6 +10797,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   }
                 }}
                 onClick={(e) => handleNodeClick({ type: 'combine', combineId: cb.id, id: cb.id }, e)}
+                onDoubleClick={(e) => handleNodeDoubleClick({ type: 'combine', combineId: cb.id, id: cb.id }, e)}
                 style={{
                   position: 'absolute',
                   left: `${cb.x}px`,
@@ -10509,6 +10869,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                     zIndex: 2,
                   }}
                   onClick={(e) => handleNodeClick({ type: 'combine', combineId: cb.id, id: cb.id }, e)}
+                onDoubleClick={(e) => handleNodeDoubleClick({ type: 'combine', combineId: cb.id, id: cb.id }, e)}
                 >
                   <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)', wordBreak: 'break-word', textAlign: 'center' }}>{cb.title || 'Combine Box'}</span>
                   <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
@@ -10519,7 +10880,7 @@ export const FacebookWorkflowCanvas = forwardRef<
             );
           })}
 
-          {getNormalizedDestinations(config).map((destNode, destIdx) => {
+          {!isWorkflowInitialEmpty(config) && getNormalizedDestinations(config).map((destNode, destIdx) => {
             if (destNode.enabled === false) return null;
             const destId = destNode.id || 'destination';
             const destX = destNode.x ?? 740;
@@ -10610,6 +10971,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   }
                 }}
                 onClick={(e) => handleNodeClick({ type: 'destination', destinationId: destId }, e)}
+                onDoubleClick={(e) => handleNodeDoubleClick({ type: 'destination', destinationId: destId }, e)}
                 style={{
                   position: 'absolute',
                   left: `${destX}px`,
@@ -10858,6 +11220,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                     zIndex: 2,
                   }}
                   onClick={(e) => handleNodeClick({ type: 'destination', destinationId: destId }, e)}
+                onDoubleClick={(e) => handleNodeDoubleClick({ type: 'destination', destinationId: destId }, e)}
                 >
                   <span style={{ fontSize: '0.8125rem', fontWeight: 600, lineHeight: 1.25, color: 'var(--text-primary)', wordBreak: 'break-word', textAlign: 'center' }}>
                     {targetTitle}
@@ -11311,7 +11674,7 @@ export const FacebookWorkflowCanvas = forwardRef<
               if (currentCombineBox) {
                 localStorage.setItem(`combine_preset_order_${currentCombineBox.id}`, JSON.stringify(nextIds));
               }
-            } catch {}
+            } catch { }
           };
 
           const handleReorderCombineCards = (
@@ -11341,7 +11704,7 @@ export const FacebookWorkflowCanvas = forwardRef<
             updateConfig({ ...config, combineBoxes: newCombineBoxes });
             try {
               localStorage.setItem(`combine_card_order_${currentCombineBox.id}`, JSON.stringify(nextIds));
-            } catch {}
+            } catch { }
           };
 
           return (
@@ -12220,77 +12583,403 @@ export const FacebookWorkflowCanvas = forwardRef<
                 {/* GET CONTENT SIDEBAR CONTENT */}
                 {isContent && (() => {
                   const contentStatus = getNodeExecutionStatus('get-content');
+                  const contentMode = config.getContent?.mode || (config.trigger?.sourceMode === 'manual' ? 'manual' : 'extracted');
+                  const isContentManualTab = contentMode === 'manual';
+                  const currentManualText = config.getContent?.manualContent !== undefined
+                    ? config.getContent.manualContent
+                    : (rawContent || config.trigger?.manualContent || '');
+
                   return (
                     <>
-                      {/* Connect Next Step Quick Button (top) */}
-                      {renderCenteredConnectButton('get-content', 'get-content', 'Get Content')}
+                      {/* Top Action Bar: Run from this step + Connect Next Step */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0.625rem' }}>
+                        <button
+                          type="button"
+                          onClick={() => onRunFromStep?.('get-content')}
+                          disabled={contentStatus === 'running'}
+                          title="Run workflow starting from Get Content and process all downstream AI models, formats, and sheets"
+                          style={{
+                            flex: 1,
+                            height: '38px',
+                            minHeight: '38px',
+                            maxHeight: '38px',
+                            boxSizing: 'border-box',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '5px',
+                            padding: '0 8px',
+                            borderRadius: '8px',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            whiteSpace: 'nowrap',
+                            backgroundColor: contentStatus === 'running'
+                              ? (isDark ? 'rgba(56, 189, 248, 0.2)' : '#E0F2FE')
+                              : (isDark ? '#15803D' : '#16A34A'),
+                            color: contentStatus === 'running' ? '#38BDF8' : '#FFFFFF',
+                            border: contentStatus === 'running'
+                              ? '1px solid rgba(56, 189, 248, 0.4)'
+                              : (isDark ? '1px solid #166534' : '1px solid #15803D'),
+                            boxShadow: contentStatus === 'running' ? 'none' : '0 1px 3px rgba(0,0,0,0.12)',
+                            cursor: contentStatus === 'running' ? 'not-allowed' : 'pointer',
+                            transition: 'all 0.15s ease',
+                          }}
+                        >
+                          <FiPlay size={12} style={{ fill: contentStatus === 'running' ? '#38BDF8' : '#FFFFFF', color: contentStatus === 'running' ? '#38BDF8' : '#FFFFFF', flexShrink: 0 }} />
+                          <span style={{ whiteSpace: 'nowrap' }}>{contentStatus === 'running' ? 'Running Step...' : 'Run From This Step'}</span>
+                        </button>
 
-                      {/* Clean Apple-Style Extracted Post Content View (No Nested Box, Site Border Radius) */}
+                        <div style={{ flex: 1 }}>
+                          {renderCenteredConnectButton('get-content', 'get-content', 'Get Content', undefined, { marginBottom: 0 })}
+                        </div>
+                      </div>
+
+                      {/* Sub-Tabs: Link Extraction vs Manual Input */}
                       <div
                         style={{
                           display: 'flex',
-                          flexDirection: 'column',
+                          alignItems: 'center',
+                          gap: '6px',
+                          padding: '3px',
                           borderRadius: '8px',
+                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F1F5F9',
                           border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF',
-                          overflow: 'hidden',
-                          marginTop: '0.25rem',
+                          marginTop: '0.5rem',
+                          marginBottom: '0.625rem',
                         }}
                       >
-                        {/* Header Bar */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            updateConfig({
+                              ...config,
+                              getContent: {
+                                ...config.getContent,
+                                mode: 'extracted',
+                              },
+                            });
+                          }}
+                          style={{
+                            flex: 1,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px',
+                            padding: '7px 10px',
+                            borderRadius: '6px',
+                            fontSize: '0.75rem',
+                            fontWeight: !isContentManualTab ? 600 : 500,
+                            border: !isContentManualTab ? '1px solid #1877F2' : '1px solid transparent',
+                            backgroundColor: !isContentManualTab
+                              ? (isDark ? 'rgba(24, 119, 242, 0.2)' : '#FFFFFF')
+                              : 'transparent',
+                            color: !isContentManualTab ? '#1877F2' : 'var(--text-secondary)',
+                            boxShadow: !isContentManualTab && !isDark ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease',
+                          }}
+                        >
+                          <FiLink size={14} />
+                          <span>Link Extraction</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const initText = config.getContent?.manualContent !== undefined
+                              ? config.getContent.manualContent
+                              : (rawContent || config.trigger?.manualContent || '');
+                            updateConfig({
+                              ...config,
+                              getContent: {
+                                ...config.getContent,
+                                mode: 'manual',
+                                manualContent: initText,
+                              },
+                            });
+                          }}
+                          style={{
+                            flex: 1,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px',
+                            padding: '7px 10px',
+                            borderRadius: '6px',
+                            fontSize: '0.75rem',
+                            fontWeight: isContentManualTab ? 600 : 500,
+                            border: isContentManualTab ? '1px solid #3B82F6' : '1px solid transparent',
+                            backgroundColor: isContentManualTab
+                              ? (isDark ? 'rgba(59, 130, 246, 0.2)' : '#FFFFFF')
+                              : 'transparent',
+                            color: isContentManualTab ? '#3B82F6' : 'var(--text-secondary)',
+                            boxShadow: isContentManualTab && !isDark ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease',
+                          }}
+                        >
+                          <FiEdit3 size={14} />
+                          <span>Manual Input</span>
+                        </button>
+                      </div>
+
+                      {/* --- TAB 1: LINK EXTRACTION VIEW --- */}
+                      {!isContentManualTab && (
                         <div
                           style={{
                             display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            padding: '10px 12px',
-                            borderBottom: isDark
-                              ? '1px solid rgba(255, 255, 255, 0.06)'
-                              : '1px solid rgba(15, 23, 42, 0.06)',
+                            flexDirection: 'column',
+                            borderRadius: '8px',
+                            border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF',
+                            overflow: 'hidden',
                           }}
                         >
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <span
-                                style={{
-                                  fontSize: '0.8125rem',
-                                  fontWeight: 600,
-                                  letterSpacing: '-0.01em',
-                                  color: 'var(--text-primary)',
-                                  fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif',
-                                }}
-                              >
-                                Post Content
-                              </span>
-                              {rawContent ? (
+                          {/* Header Bar */}
+                          <div
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              padding: '10px 12px',
+                              borderBottom: isDark
+                                ? '1px solid rgba(255, 255, 255, 0.06)'
+                                : '1px solid rgba(15, 23, 42, 0.06)',
+                            }}
+                          >
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                 <span
                                   style={{
-                                    fontSize: '0.625rem',
+                                    fontSize: '0.8125rem',
                                     fontWeight: 600,
-                                    color: '#10B981',
-                                    backgroundColor: isDark ? 'rgba(16, 185, 129, 0.14)' : '#DCFCE7',
-                                    padding: '1px 6px',
-                                    borderRadius: '6px',
+                                    letterSpacing: '-0.01em',
+                                    color: 'var(--text-primary)',
+                                    fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif',
                                   }}
                                 >
-                                  ✓ Ready
+                                  Post Content
                                 </span>
-                              ) : contentStatus === 'running' ? (
+                                {rawContent ? (
+                                  <span
+                                    style={{
+                                      fontSize: '0.625rem',
+                                      fontWeight: 600,
+                                      color: '#10B981',
+                                      backgroundColor: isDark ? 'rgba(16, 185, 129, 0.14)' : '#DCFCE7',
+                                      padding: '1px 6px',
+                                      borderRadius: '6px',
+                                    }}
+                                  >
+                                    ✓ Ready
+                                  </span>
+                                ) : contentStatus === 'running' ? (
+                                  <span
+                                    style={{
+                                      fontSize: '0.625rem',
+                                      fontWeight: 600,
+                                      color: '#38BDF8',
+                                      backgroundColor: isDark ? 'rgba(56, 189, 248, 0.14)' : '#E0F2FE',
+                                      padding: '1px 6px',
+                                      borderRadius: '6px',
+                                    }}
+                                  >
+                                    ● Extracting...
+                                  </span>
+                                ) : null}
+                              </div>
+                              {rawContent && (
                                 <span
                                   style={{
-                                    fontSize: '0.625rem',
-                                    fontWeight: 600,
-                                    color: '#38BDF8',
-                                    backgroundColor: isDark ? 'rgba(56, 189, 248, 0.14)' : '#E0F2FE',
-                                    padding: '1px 6px',
-                                    borderRadius: '6px',
+                                    fontSize: '0.6875rem',
+                                    color: 'var(--text-muted)',
+                                    fontWeight: 400,
                                   }}
                                 >
-                                  ● Extracting...
+                                  {rawContent.length} characters · {rawContent.trim().split(/\s+/).filter(Boolean).length} words
                                 </span>
-                              ) : null}
+                              )}
                             </div>
-                            {rawContent && (
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              {rawContent && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    updateConfig({
+                                      ...config,
+                                      getContent: {
+                                        ...config.getContent,
+                                        mode: 'manual',
+                                        manualContent: rawContent,
+                                      },
+                                    });
+                                  }}
+                                  title="Edit this text in manual mode"
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
+                                    border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                    borderRadius: '6px',
+                                    padding: '4px 8px',
+                                    fontSize: '0.71875rem',
+                                    fontWeight: 500,
+                                    color: 'var(--text-secondary)',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.15s ease',
+                                  }}
+                                >
+                                  <FiEdit3 size={12} />
+                                  <span>Edit</span>
+                                </button>
+                              )}
+
+                              {rawContent && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(rawContent);
+                                    setCopiedTextSuccess(true);
+                                    setTimeout(() => setCopiedTextSuccess(false), 2000);
+                                  }}
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '5px',
+                                    backgroundColor: copiedTextSuccess
+                                      ? (isDark ? 'rgba(16, 185, 129, 0.16)' : '#DCFCE7')
+                                      : (isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9'),
+                                    border: copiedTextSuccess
+                                      ? '1px solid rgba(16, 185, 129, 0.35)'
+                                      : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
+                                    borderRadius: '6px',
+                                    padding: '4px 10px',
+                                    fontSize: '0.71875rem',
+                                    fontWeight: 600,
+                                    fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif',
+                                    color: copiedTextSuccess ? '#10B981' : 'var(--text-primary)',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.15s ease',
+                                  }}
+                                >
+                                  {copiedTextSuccess ? <FiCheck size={12} /> : <FiCopy size={12} />}
+                                  <span>{copiedTextSuccess ? 'Copied' : 'Copy'}</span>
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Direct Clean Reading Area (No Inner Box) */}
+                          {rawContent ? (
+                            <div
+                              style={{
+                                maxHeight: '420px',
+                                overflowY: 'auto',
+                                padding: '12px 14px',
+                                fontSize: '0.8125rem',
+                                lineHeight: 1.65,
+                                letterSpacing: '-0.005em',
+                                fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif',
+                                color: isDark ? '#E6EDF3' : '#1E293B',
+                                whiteSpace: 'pre-wrap',
+                                wordBreak: 'break-word',
+                              }}
+                            >
+                              {rawContent}
+                            </div>
+                          ) : contentStatus === 'running' ? (
+                            <div
+                              style={{
+                                padding: '24px 14px',
+                                textAlign: 'center',
+                                fontSize: '0.75rem',
+                                color: 'var(--text-muted)',
+                              }}
+                            >
+                              Extracting post content...
+                            </div>
+                          ) : (
+                            <div
+                              style={{
+                                padding: '24px 14px',
+                                textAlign: 'center',
+                                fontSize: '0.75rem',
+                                color: 'var(--text-muted)',
+                              }}
+                            >
+                              Run the workflow with a post link to view extracted content here, or switch to Manual Input.
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* --- TAB 2: MANUAL INPUT VIEW --- */}
+                      {isContentManualTab && (
+                        <div
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            borderRadius: '8px',
+                            border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF',
+                            overflow: 'hidden',
+                          }}
+                        >
+                          {/* Header Bar */}
+                          <div
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              padding: '10px 12px',
+                              borderBottom: isDark
+                                ? '1px solid rgba(255, 255, 255, 0.06)'
+                                : '1px solid rgba(15, 23, 42, 0.06)',
+                            }}
+                          >
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span
+                                  style={{
+                                    fontSize: '0.8125rem',
+                                    fontWeight: 600,
+                                    letterSpacing: '-0.01em',
+                                    color: 'var(--text-primary)',
+                                    fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif',
+                                  }}
+                                >
+                                  Manual Content
+                                </span>
+                                {currentManualText.trim().length > 0 ? (
+                                  <span
+                                    style={{
+                                      fontSize: '0.625rem',
+                                      fontWeight: 600,
+                                      color: '#10B981',
+                                      backgroundColor: isDark ? 'rgba(16, 185, 129, 0.14)' : '#DCFCE7',
+                                      padding: '1px 6px',
+                                      borderRadius: '6px',
+                                    }}
+                                  >
+                                    ✓ Manual Ready
+                                  </span>
+                                ) : (
+                                  <span
+                                    style={{
+                                      fontSize: '0.625rem',
+                                      fontWeight: 500,
+                                      color: 'var(--text-muted)',
+                                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.05)',
+                                      padding: '1px 6px',
+                                      borderRadius: '6px',
+                                    }}
+                                  >
+                                    Empty
+                                  </span>
+                                )}
+                              </div>
                               <span
                                 style={{
                                   fontSize: '0.6875rem',
@@ -12298,87 +12987,200 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   fontWeight: 400,
                                 }}
                               >
-                                {rawContent.length} characters · {rawContent.trim().split(/\s+/).filter(Boolean).length} words
+                                {currentManualText.length} characters · {currentManualText.trim().split(/\s+/).filter(Boolean).length} words
                               </span>
-                            )}
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              {/* Reset to Extracted content if rawContent exists */}
+                              {Boolean(rawContent && rawContent.trim() && rawContent !== currentManualText) && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    updateConfig({
+                                      ...config,
+                                      getContent: {
+                                        ...config.getContent,
+                                        mode: 'manual',
+                                        manualContent: rawContent,
+                                      },
+                                    });
+                                  }}
+                                  title="Copy original extracted content into this manual box"
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                    padding: '4px 8px',
+                                    borderRadius: '6px',
+                                    border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#F1F5F9',
+                                    color: 'var(--text-secondary)',
+                                    fontSize: '0.71875rem',
+                                    fontWeight: 500,
+                                    cursor: 'pointer',
+                                  }}
+                                >
+                                  <FiRefreshCw size={11} />
+                                  <span>Use Extracted</span>
+                                </button>
+                              )}
+
+                              {/* Paste button */}
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  try {
+                                    const text = await navigator.clipboard.readText();
+                                    if (text) {
+                                      const nextText = currentManualText ? `${currentManualText}\n${text}` : text;
+                                      updateConfig({
+                                        ...config,
+                                        getContent: {
+                                          ...config.getContent,
+                                          mode: 'manual',
+                                          manualContent: nextText,
+                                        },
+                                      });
+                                    }
+                                  } catch (err) {
+                                    console.warn('Clipboard read failed', err);
+                                  }
+                                }}
+                                title="Paste from clipboard"
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  padding: '4px 8px',
+                                  borderRadius: '6px',
+                                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#F1F5F9',
+                                  color: 'var(--text-secondary)',
+                                  fontSize: '0.71875rem',
+                                  fontWeight: 500,
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                <FiClipboard size={11} />
+                                <span>Paste</span>
+                              </button>
+
+                              {/* Clear button */}
+                              {Boolean(currentManualText.length > 0) && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    updateConfig({
+                                      ...config,
+                                      getContent: {
+                                        ...config.getContent,
+                                        mode: 'manual',
+                                        manualContent: '',
+                                      },
+                                    });
+                                  }}
+                                  style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    color: '#EF4444',
+                                    fontSize: '0.71875rem',
+                                    cursor: 'pointer',
+                                    padding: '4px 6px',
+                                    fontWeight: 500,
+                                  }}
+                                >
+                                  Clear
+                                </button>
+                              )}
+
+                              {/* Copy button */}
+                              {Boolean(currentManualText.length > 0) && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(currentManualText);
+                                    setCopiedTextSuccess(true);
+                                    setTimeout(() => setCopiedTextSuccess(false), 2000);
+                                  }}
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '5px',
+                                    backgroundColor: copiedTextSuccess
+                                      ? (isDark ? 'rgba(16, 185, 129, 0.16)' : '#DCFCE7')
+                                      : (isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9'),
+                                    border: copiedTextSuccess
+                                      ? '1px solid rgba(16, 185, 129, 0.35)'
+                                      : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
+                                    borderRadius: '6px',
+                                    padding: '4px 10px',
+                                    fontSize: '0.71875rem',
+                                    fontWeight: 600,
+                                    color: copiedTextSuccess ? '#10B981' : 'var(--text-primary)',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.15s ease',
+                                  }}
+                                >
+                                  {copiedTextSuccess ? <FiCheck size={12} /> : <FiCopy size={12} />}
+                                  <span>{copiedTextSuccess ? 'Copied' : 'Copy'}</span>
+                                </button>
+                              )}
+                            </div>
                           </div>
 
-                          {rawContent && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                navigator.clipboard.writeText(rawContent);
-                                setCopiedTextSuccess(true);
-                                setTimeout(() => setCopiedTextSuccess(false), 2000);
-                              }}
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '5px',
-                                backgroundColor: copiedTextSuccess
-                                  ? (isDark ? 'rgba(16, 185, 129, 0.16)' : '#DCFCE7')
-                                  : (isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9'),
-                                border: copiedTextSuccess
-                                  ? '1px solid rgba(16, 185, 129, 0.35)'
-                                  : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
-                                borderRadius: '6px',
-                                padding: '4px 10px',
-                                fontSize: '0.71875rem',
-                                fontWeight: 600,
-                                fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif',
-                                color: copiedTextSuccess ? '#10B981' : 'var(--text-primary)',
-                                cursor: 'pointer',
-                                transition: 'all 0.15s ease',
-                              }}
-                            >
-                              {copiedTextSuccess ? <FiCheck size={12} /> : <FiCopy size={12} />}
-                              <span>{copiedTextSuccess ? 'Copied' : 'Copy'}</span>
-                            </button>
-                          )}
-                        </div>
-
-                        {/* Direct Clean Reading Area (No Inner Box) */}
-                        {rawContent ? (
-                          <div
+                          {/* Editable Textarea */}
+                          <textarea
+                            value={currentManualText}
+                            onChange={(e) => {
+                              updateConfig({
+                                ...config,
+                                getContent: {
+                                  ...config.getContent,
+                                  mode: 'manual',
+                                  manualContent: e.target.value,
+                                },
+                              });
+                            }}
+                            placeholder="Paste or type property description, specifications, rent price, location, contact details..."
+                            rows={12}
                             style={{
-                              maxHeight: '420px',
-                              overflowY: 'auto',
+                              width: '100%',
+                              boxSizing: 'border-box',
                               padding: '12px 14px',
+                              border: 'none',
+                              backgroundColor: 'transparent',
+                              color: isDark ? '#E6EDF3' : '#1E293B',
                               fontSize: '0.8125rem',
                               lineHeight: 1.65,
                               letterSpacing: '-0.005em',
+                              resize: 'vertical',
+                              outline: 'none',
                               fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif',
-                              color: isDark ? '#E6EDF3' : '#1E293B',
-                              whiteSpace: 'pre-wrap',
-                              wordBreak: 'break-word',
+                              minHeight: '260px',
                             }}
-                          >
-                            {rawContent}
-                          </div>
-                        ) : contentStatus === 'running' ? (
+                          />
+
+                          {/* Help Footer */}
                           <div
                             style={{
-                              padding: '24px 14px',
-                              textAlign: 'center',
-                              fontSize: '0.75rem',
+                              padding: '8px 12px',
+                              borderTop: isDark
+                                ? '1px solid rgba(255, 255, 255, 0.06)'
+                                : '1px solid rgba(15, 23, 42, 0.06)',
+                              backgroundColor: isDark ? 'rgba(59, 130, 246, 0.05)' : 'rgba(59, 130, 246, 0.03)',
+                              fontSize: '0.6875rem',
                               color: 'var(--text-muted)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
                             }}
                           >
-                            Extracting post content...
+                            <FiEdit3 size={12} color="#3B82F6" />
+                            <span>Connected AI models, Google Sheet, and Combine Box will use this manual content.</span>
                           </div>
-                        ) : (
-                          <div
-                            style={{
-                              padding: '24px 14px',
-                              textAlign: 'center',
-                              fontSize: '0.75rem',
-                              color: 'var(--text-muted)',
-                            }}
-                          >
-                            Run the workflow with a post link to view extracted content here.
-                          </div>
-                        )}
-                      </div>
+                        </div>
+                      )}
                     </>
                   );
                 })()}
@@ -12388,8 +13190,48 @@ export const FacebookWorkflowCanvas = forwardRef<
                   const imagesStatus = getNodeExecutionStatus('get-images');
                   return (
                     <>
-                      {/* Connect Next Step Quick Button (top) */}
-                      {renderCenteredConnectButton('get-images', 'get-images', 'Get Images')}
+                      {/* Top Action Bar: Run from this step + Connect Next Step */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0.625rem' }}>
+                        <button
+                          type="button"
+                          onClick={() => onRunFromStep?.('get-images')}
+                          disabled={imagesStatus === 'running'}
+                          title="Run workflow starting from Get Images and process all downstream image formatters, enhancement, and watermarks"
+                          style={{
+                            flex: 1,
+                            height: '38px',
+                            minHeight: '38px',
+                            maxHeight: '38px',
+                            boxSizing: 'border-box',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '5px',
+                            padding: '0 8px',
+                            borderRadius: '8px',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            whiteSpace: 'nowrap',
+                            backgroundColor: imagesStatus === 'running'
+                              ? (isDark ? 'rgba(56, 189, 248, 0.2)' : '#E0F2FE')
+                              : (isDark ? '#15803D' : '#16A34A'),
+                            color: imagesStatus === 'running' ? '#38BDF8' : '#FFFFFF',
+                            border: imagesStatus === 'running'
+                              ? '1px solid rgba(56, 189, 248, 0.4)'
+                              : (isDark ? '1px solid #166534' : '1px solid #15803D'),
+                            boxShadow: imagesStatus === 'running' ? 'none' : '0 1px 3px rgba(0,0,0,0.12)',
+                            cursor: imagesStatus === 'running' ? 'not-allowed' : 'pointer',
+                            transition: 'all 0.15s ease',
+                          }}
+                        >
+                          <FiPlay size={12} style={{ fill: imagesStatus === 'running' ? '#38BDF8' : '#FFFFFF', color: imagesStatus === 'running' ? '#38BDF8' : '#FFFFFF', flexShrink: 0 }} />
+                          <span style={{ whiteSpace: 'nowrap' }}>{imagesStatus === 'running' ? 'Running Step...' : 'Run From This Step'}</span>
+                        </button>
+
+                        <div style={{ flex: 1 }}>
+                          {renderCenteredConnectButton('get-images', 'get-images', 'Get Images', undefined, { marginBottom: 0 })}
+                        </div>
+                      </div>
 
                       {/* Media Gallery Execution Result Card */}
                       <div
@@ -12626,7 +13468,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                             if (parentText) addTextOutput(c.fromNodeId, fromTitle, parentText);
                           }
                         } else {
-                          const parentText = (aiGeneratedOutputs && aiGeneratedOutputs[c.fromNodeId]) || (c.fromNodeId === 'get-content' ? rawContent : '');
+                          const parentText = (aiGeneratedOutputs && aiGeneratedOutputs[c.fromNodeId]) || (c.fromNodeId === 'get-content' ? effectiveRawContent : '');
                           if (parentText) addTextOutput(c.fromNodeId, fromTitle, parentText);
                         }
                       }
@@ -12635,7 +13477,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                         ? (connectedTextOutputs.length === 1
                           ? connectedTextOutputs[0].text
                           : connectedTextOutputs.map((item) => `## ${item.title}\n\n${item.text}`).join('\n\n---\n\n'))
-                        : (aiGeneratedCopy || rawContent || '');
+                        : (aiGeneratedCopy || effectiveRawContent || '');
 
                       return (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
@@ -13670,7 +14512,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                             }
 
                             // ── C) DIRECT CONTENT NODE (Get Content or other input) ──
-                            const textOutput = (aiGeneratedOutputs && aiGeneratedOutputs[c.fromNodeId]) || (isContent ? (rawContent || '') : '');
+                            const textOutput = (aiGeneratedOutputs && aiGeneratedOutputs[c.fromNodeId]) || (isContent ? (effectiveRawContent || '') : '');
                             const hasTextResult = Boolean(textOutput && textOutput.trim().length > 0);
                             const isCardBeingDragged = draggedCardId === c.fromNodeId;
                             const isCardOverThis = dragOverCardId === c.fromNodeId;
@@ -14713,48 +15555,30 @@ export const FacebookWorkflowCanvas = forwardRef<
                                 >
                                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                      <FiCheckCircle size={14} color="#10B981" />
+                                      <FiCheckCircle size={13} color="#10B981" />
                                       <span style={{ fontSize: '0.75rem', fontWeight: 700, color: isDark ? '#6EE7B7' : '#15803D' }}>
                                         Row Added to "{currentModalAIBox.googleSheetName || 'Sheet6'}"
                                       </span>
                                     </div>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleOpenGoogleSheetDataViewer(currentModalAIBox)}
-                                        style={{
-                                          display: 'inline-flex',
-                                          alignItems: 'center',
-                                          gap: '4px',
-                                          fontSize: '0.6875rem',
-                                          fontWeight: 600,
-                                          color: '#0F9D58',
-                                          background: 'none',
-                                          border: 'none',
-                                          cursor: 'pointer',
-                                          padding: 0,
-                                        }}
-                                      >
-                                        <SiGooglesheets size={12} /> View Sheet Data
-                                      </button>
-                                      <span style={{ opacity: 0.3 }}>|</span>
-                                      <a
-                                        href={cleanOpenUrl}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        style={{
-                                          display: 'inline-flex',
-                                          alignItems: 'center',
-                                          gap: '4px',
-                                          fontSize: '0.6875rem',
-                                          fontWeight: 600,
-                                          color: isDark ? '#38BDF8' : '#0284C7',
-                                          textDecoration: 'none',
-                                        }}
-                                      >
-                                        Open Sheet <FiExternalLink size={11} />
-                                      </a>
-                                    </div>
+                                    <a
+                                      href={cleanOpenUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                        fontSize: '0.6875rem',
+                                        fontWeight: 600,
+                                        color: isDark ? '#38BDF8' : '#0284C7',
+                                        textDecoration: 'none',
+                                        padding: '2px 7px',
+                                        borderRadius: '4px',
+                                        backgroundColor: isDark ? 'rgba(56, 189, 248, 0.1)' : 'rgba(2, 132, 199, 0.08)',
+                                      }}
+                                    >
+                                      Open Sheet <FiExternalLink size={10} />
+                                    </a>
                                   </div>
 
                                   {/* Mapped Row Preview */}
@@ -14796,21 +15620,21 @@ export const FacebookWorkflowCanvas = forwardRef<
                                         });
                                       }}
                                       style={{
-                                        display: 'flex',
+                                        display: 'inline-flex',
                                         alignItems: 'center',
                                         gap: '4px',
                                         background: 'none',
                                         border: 'none',
                                         color: 'var(--accent-primary, #3B82F6)',
                                         fontSize: '0.6875rem',
-                                        fontWeight: 600,
+                                        fontWeight: 500,
                                         cursor: 'pointer',
                                         padding: 0,
                                       }}
                                     >
-                                      <FiEye size={12} /> View Full JSON
+                                      <FiEye size={11} /> View JSON
                                     </button>
-                                    <span style={{ opacity: 0.4 }}>•</span>
+                                    <span style={{ opacity: 0.3, fontSize: '0.65rem' }}>•</span>
                                     <button
                                       type="button"
                                       onClick={() => {
@@ -14819,167 +15643,170 @@ export const FacebookWorkflowCanvas = forwardRef<
                                         setTimeout(() => setCopiedPromptId(null), 2000);
                                       }}
                                       style={{
-                                        display: 'flex',
+                                        display: 'inline-flex',
                                         alignItems: 'center',
                                         gap: '4px',
                                         background: 'none',
                                         border: 'none',
                                         color: copiedPromptId === currentModalAIBox.id ? '#10B981' : 'var(--text-secondary)',
                                         fontSize: '0.6875rem',
-                                        fontWeight: 600,
+                                        fontWeight: 500,
                                         cursor: 'pointer',
                                         padding: 0,
                                       }}
                                     >
-                                      {copiedPromptId === currentModalAIBox.id ? <FiCheck size={12} /> : <FiCopy size={12} />}
-                                      {copiedPromptId === currentModalAIBox.id ? 'Copied' : 'Copy JSON'}
+                                      {copiedPromptId === currentModalAIBox.id ? <FiCheck size={11} /> : <FiCopy size={11} />}
+                                      {copiedPromptId === currentModalAIBox.id ? 'Copied' : 'Copy'}
                                     </button>
-                                    <span style={{ opacity: 0.4 }}>•</span>
+                                    <span style={{ opacity: 0.3, fontSize: '0.65rem' }}>•</span>
                                     <button
                                       type="button"
                                       disabled={isDeletingSheetRow || isRunningThisNode}
                                       onClick={() => handlePromptRevertRow(currentModalAIBox)}
                                       style={{
-                                        display: 'flex',
+                                        display: 'inline-flex',
                                         alignItems: 'center',
                                         gap: '4px',
                                         background: 'none',
                                         border: 'none',
                                         color: isDark ? '#FCA5A5' : '#DC2626',
                                         fontSize: '0.6875rem',
-                                        fontWeight: 600,
+                                        fontWeight: 500,
                                         cursor: isDeletingSheetRow || isRunningThisNode ? 'not-allowed' : 'pointer',
                                         padding: 0,
                                       }}
                                     >
-                                      <FiRotateCcw size={12} style={{ animation: isDeletingSheetRow ? 'spin 1s linear infinite' : 'none' }} />
-                                      <span>{isDeletingSheetRow ? 'Deleting...' : 'Revert / Delete Row'}</span>
+                                      <FiRotateCcw size={11} style={{ animation: isDeletingSheetRow ? 'spin 1s linear infinite' : 'none' }} />
+                                      <span>{isDeletingSheetRow ? 'Reverting...' : 'Revert'}</span>
                                     </button>
                                   </div>
                                 </div>
                               )}
 
-                              {/* Primary Action Button: Add Row to Google Sheet */}
-                              <button
-                                type="button"
-                                disabled={isRunningThisNode || executionState?.isRunning}
-                                onClick={handleTriggerAddRow}
-                                style={{
-                                  width: '100%',
-                                  height: '38px',
-                                  padding: '0 1rem',
-                                  borderRadius: '6px',
-                                  border: 'none',
-                                  backgroundColor: isRunningThisNode ? (isDark ? '#21262D' : '#E2E8F0') : '#0F9D58',
-                                  color: isRunningThisNode ? 'var(--text-muted)' : '#FFFFFF',
-                                  fontSize: '0.75rem',
-                                  fontWeight: 600,
-                                  cursor: isRunningThisNode || executionState?.isRunning ? 'not-allowed' : 'pointer',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  gap: '8px',
-                                  transition: 'all 0.15s ease',
-                                  boxShadow: isRunningThisNode ? 'none' : '0 1px 3px rgba(15, 157, 88, 0.3)',
-                                }}
-                                onMouseEnter={(e) => {
-                                  if (!isRunningThisNode && !executionState?.isRunning) {
-                                    e.currentTarget.style.backgroundColor = '#0B8043';
-                                  }
-                                }}
-                                onMouseLeave={(e) => {
-                                  if (!isRunningThisNode && !executionState?.isRunning) {
-                                    e.currentTarget.style.backgroundColor = '#0F9D58';
-                                  }
-                                }}
-                              >
-                                {isRunningThisNode ? (
-                                  <>
-                                    <FiRefreshCw size={13} style={{ animation: 'spin 1s linear infinite' }} />
-                                    <span>Adding Row to Google Sheet...</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <SiGooglesheets size={15} />
-                                    <span>{hasOutput ? 'Add Another Row to Sheet' : 'Add Row to Google Sheet'}</span>
-                                  </>
-                                )}
-                              </button>
-
-                              {/* View All Data from Sheet */}
-                              <button
-                                type="button"
-                                onClick={() => handleOpenGoogleSheetDataViewer(currentModalAIBox)}
-                                style={{
-                                  width: '100%',
-                                  height: '34px',
-                                  padding: '0 1rem',
-                                  borderRadius: '6px',
-                                  border: isDark ? '1px solid #30363D' : '1px solid #D0D7DE',
-                                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF',
-                                  color: 'var(--text-primary)',
-                                  fontSize: '0.75rem',
-                                  fontWeight: 600,
-                                  cursor: 'pointer',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  gap: '7px',
-                                  transition: 'all 0.15s ease',
-                                }}
-                                onMouseEnter={(e) => {
-                                  e.currentTarget.style.borderColor = '#0F9D58';
-                                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(15, 157, 88, 0.1)' : 'rgba(15, 157, 88, 0.05)';
-                                }}
-                                onMouseLeave={(e) => {
-                                  e.currentTarget.style.borderColor = isDark ? '#30363D' : '#D0D7DE';
-                                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF';
-                                }}
-                              >
-                                <SiGooglesheets size={14} color="#0F9D58" />
-                                <span>View All Data from Sheet</span>
-                              </button>
-
-                              {/* Secondary Action Button: Revert / Delete Added Row from Google Sheet */}
-                              {Boolean(hasOutput || sheetSyncSuccessMessage) && (
+                              {/* Action Buttons Toolbar (Fitted, Clean, Professional) */}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginTop: '2px' }}>
+                                {/* Add Row to Google Sheet */}
                                 <button
                                   type="button"
-                                  disabled={isDeletingSheetRow || isRunningThisNode}
-                                  onClick={() => handlePromptRevertRow(currentModalAIBox)}
+                                  disabled={isRunningThisNode || executionState?.isRunning}
+                                  onClick={handleTriggerAddRow}
                                   style={{
-                                    width: '100%',
-                                    height: '34px',
-                                    padding: '0 1rem',
+                                    height: '32px',
+                                    padding: '0 14px',
                                     borderRadius: '6px',
-                                    border: isDark ? '1px solid rgba(239, 68, 68, 0.4)' : '1px solid #FECACA',
-                                    backgroundColor: isDark ? 'rgba(239, 68, 68, 0.08)' : '#FEF2F2',
-                                    color: isDark ? '#FCA5A5' : '#DC2626',
+                                    border: 'none',
+                                    backgroundColor: isRunningThisNode ? (isDark ? '#21262D' : '#E2E8F0') : '#0F9D58',
+                                    color: isRunningThisNode ? 'var(--text-muted)' : '#FFFFFF',
                                     fontSize: '0.75rem',
                                     fontWeight: 600,
-                                    cursor: isDeletingSheetRow || isRunningThisNode ? 'not-allowed' : 'pointer',
-                                    display: 'flex',
+                                    cursor: isRunningThisNode || executionState?.isRunning ? 'not-allowed' : 'pointer',
+                                    display: 'inline-flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
                                     gap: '6px',
                                     transition: 'all 0.15s ease',
+                                    boxShadow: isRunningThisNode ? 'none' : '0 1px 2px rgba(15, 157, 88, 0.25)',
+                                    whiteSpace: 'nowrap',
                                   }}
                                   onMouseEnter={(e) => {
-                                    if (!isDeletingSheetRow && !isRunningThisNode) {
-                                      e.currentTarget.style.backgroundColor = isDark ? 'rgba(239, 68, 68, 0.18)' : '#FEE2E2';
+                                    if (!isRunningThisNode && !executionState?.isRunning) {
+                                      e.currentTarget.style.backgroundColor = '#0B8043';
                                     }
                                   }}
                                   onMouseLeave={(e) => {
-                                    if (!isDeletingSheetRow && !isRunningThisNode) {
-                                      e.currentTarget.style.backgroundColor = isDark ? 'rgba(239, 68, 68, 0.08)' : '#FEF2F2';
+                                    if (!isRunningThisNode && !executionState?.isRunning) {
+                                      e.currentTarget.style.backgroundColor = '#0F9D58';
                                     }
                                   }}
                                 >
-                                  <FiRotateCcw size={13} style={{ animation: isDeletingSheetRow ? 'spin 1s linear infinite' : 'none' }} />
-                                  <span>{isDeletingSheetRow ? 'Reverting Row from Sheet...' : 'Revert / Delete Row from Sheet'}</span>
+                                  {isRunningThisNode ? (
+                                    <>
+                                      <FiRefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} />
+                                      <span>Adding...</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <SiGooglesheets size={13} />
+                                      <span>{hasOutput ? 'Add Another Row' : 'Add Row'}</span>
+                                    </>
+                                  )}
                                 </button>
-                              )}
 
-                              <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', textAlign: 'center', lineHeight: 1.3 }}>
+                                {/* View Sheet */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenGoogleSheetDataViewer(currentModalAIBox)}
+                                  style={{
+                                    height: '32px',
+                                    padding: '0 12px',
+                                    borderRadius: '6px',
+                                    border: isDark ? '1px solid #30363D' : '1px solid #D0D7DE',
+                                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF',
+                                    color: 'var(--text-primary)',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '6px',
+                                    transition: 'all 0.15s ease',
+                                    whiteSpace: 'nowrap',
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    e.currentTarget.style.borderColor = '#0F9D58';
+                                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(15, 157, 88, 0.1)' : 'rgba(15, 157, 88, 0.05)';
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.currentTarget.style.borderColor = isDark ? '#30363D' : '#D0D7DE';
+                                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF';
+                                  }}
+                                >
+                                  <SiGooglesheets size={13} color="#0F9D58" />
+                                  <span>View Sheet</span>
+                                </button>
+
+                                {/* Revert Row */}
+                                {Boolean(hasOutput || sheetSyncSuccessMessage) && (
+                                  <button
+                                    type="button"
+                                    disabled={isDeletingSheetRow || isRunningThisNode}
+                                    onClick={() => handlePromptRevertRow(currentModalAIBox)}
+                                    style={{
+                                      height: '32px',
+                                      padding: '0 12px',
+                                      borderRadius: '6px',
+                                      border: isDark ? '1px solid rgba(239, 68, 68, 0.35)' : '1px solid #FECACA',
+                                      backgroundColor: isDark ? 'rgba(239, 68, 68, 0.06)' : '#FEF2F2',
+                                      color: isDark ? '#FCA5A5' : '#DC2626',
+                                      fontSize: '0.75rem',
+                                      fontWeight: 600,
+                                      cursor: isDeletingSheetRow || isRunningThisNode ? 'not-allowed' : 'pointer',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      gap: '6px',
+                                      transition: 'all 0.15s ease',
+                                      whiteSpace: 'nowrap',
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      if (!isDeletingSheetRow && !isRunningThisNode) {
+                                        e.currentTarget.style.backgroundColor = isDark ? 'rgba(239, 68, 68, 0.16)' : '#FEE2E2';
+                                      }
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      if (!isDeletingSheetRow && !isRunningThisNode) {
+                                        e.currentTarget.style.backgroundColor = isDark ? 'rgba(239, 68, 68, 0.06)' : '#FEF2F2';
+                                      }
+                                    }}
+                                  >
+                                    <FiRotateCcw size={12} style={{ animation: isDeletingSheetRow ? 'spin 1s linear infinite' : 'none' }} />
+                                    <span>{isDeletingSheetRow ? 'Reverting...' : 'Revert Row'}</span>
+                                  </button>
+                                )}
+                              </div>
+
+                              <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', lineHeight: 1.3, marginTop: '2px' }}>
                                 Reads post specs from Get Content, maps strictly to Row 1 column headers, and appends a new row to your sheet.
                               </div>
                             </div>
@@ -15078,9 +15905,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                           }
                           if (!cbMergedText) {
                             if (cbInputs.some((c) => c.fromNodeId === 'get-content')) {
-                              cbMergedText = rawContent || '';
+                              cbMergedText = effectiveRawContent || '';
                             } else {
-                              cbMergedText = aiGeneratedCopy || rawContent || '';
+                              cbMergedText = aiGeneratedCopy || effectiveRawContent || '';
                             }
                           }
                         }
@@ -15107,7 +15934,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                               if (cleaned) return cleaned;
                             }
                           }
-                          if (rawContent && rawContent.trim()) {
+                          if (effectiveRawContent && effectiveRawContent.trim()) {
                             try {
                               const resp = await fetch('/api/facebook-import/ai-process', {
                                 method: 'POST',
@@ -15118,7 +15945,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   template_id: condoAiBox?.templateId || '1793218683065',
                                   template_name: 'Get Condo Name',
                                   template_text: condoAiBox?.templateText || 'Extract the condominium or residential project name from the provided text and also translate that name to english.\n\nSTRICT RULES:\n- Return ONLY the condominium or project name.\n\nOUTPUT EXAMPLE:\nRegent Home Bangna\n\nTEXT TO ANALYZE:\n{{CONTENT}}',
-                                  raw_content: rawContent,
+                                  raw_content: effectiveRawContent,
                                 }),
                               });
                               const data = await resp.json();
@@ -15142,7 +15969,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                             ? extractCleanCondoNameFromAiText(aiGeneratedOutputs[condoAiBox.id])
                             : '';
                         const condoFromCombine = cbMergedText ? extractCleanCondoNameFromAiText(cbMergedText) : '';
-                        const hasActiveExtractedPost = Boolean(rawContent || (images && images.length > 0) || (_projectName && _projectName !== 'Facebook Property Post'));
+                        const hasActiveExtractedPost = Boolean(effectiveRawContent || (images && images.length > 0) || (_projectName && _projectName !== 'Facebook Property Post'));
                         const condoFromProject = (_projectName && _projectName !== 'Facebook Property Post' && _projectName !== 'Featured Property Listing') ? _projectName : '';
                         const condoName =
                           condoFromCombine ||
@@ -15184,9 +16011,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                           }
                           if (!text) {
                             if (inputs.some((c) => c.fromNodeId === 'get-content')) {
-                              text = rawContent || '';
+                              text = effectiveRawContent || '';
                             } else {
-                              text = aiGeneratedCopy || rawContent || '';
+                              text = aiGeneratedCopy || effectiveRawContent || '';
                             }
                           }
                           return {
@@ -15290,7 +16117,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                 upstreamTabGroups,
                                 images: effectiveBrowserImages,
                               }}
-                              rawPostContent={rawContent || ''}
+                              rawPostContent={effectiveRawContent || ''}
                               onRunCondoNameStep={handleRunCondoNameStep}
                               onRunningChange={(isRunning) => setLocallyRunningNodeId(isRunning ? currentModalAIBox.id : null)}
                               onOpenSettingsSidebox={() => setShowFBHeroSettingsSidebox(true)}
@@ -15988,339 +16815,6 @@ export const FacebookWorkflowCanvas = forwardRef<
 
 
 
-                    {/* Generated Output Preview & Editor Box (for format preset nodes with output) */}
-                    {(() => {
-                      if (isGoogleSheetBox(currentModalAIBox)) return null;
-                      const isMainTextAI =
-                        !isTextFormatAIBox(currentModalAIBox) &&
-                        (isTextAIBox(currentModalAIBox, config.connections) ||
-                          currentModalAIBox.subtitle === 'AI Processor' ||
-                          currentModalAIBox.processType === 'text_ai');
-                      if (isMainTextAI) return null;
-
-                      const isNodeFailed = Boolean(executionState?.failedNodeIds?.includes(currentModalAIBox.id));
-                      const boxOutput = aiGeneratedOutputs?.[currentModalAIBox.id] ?? (currentModalAIBox.id === config.aiBoxes[0]?.id ? (aiGeneratedCopy ?? '') : '');
-                      const hasExecutionOrOutput = Boolean(
-                        boxOutput ||
-                        isNodeFailed ||
-                        executionState?.isRunning ||
-                        executionState?.completedNodeIds?.includes(currentModalAIBox.id) ||
-                        executionState?.currentStepMessage
-                      );
-
-                      if (!hasExecutionOrOutput && !boxOutput && !isNodeFailed) return null;
-
-                      const hasValidContent = Boolean(boxOutput && boxOutput.trim().length > 0);
-
-                      return (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', marginTop: '1.25rem' }}>
-                          {/* Section Title */}
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <label
-                              style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '0.375rem',
-                                fontSize: '0.6875rem',
-                                fontWeight: 600,
-                                color: 'var(--text-muted)',
-                              }}
-                            >
-                              <HiSparkles style={{ fontSize: '13px', color: '#8B5CF6' }} />
-                              Generated Output
-                            </label>
-                            {hasValidContent ? (
-                              <span
-                                style={{
-                                  fontSize: '0.625rem',
-                                  fontWeight: 600,
-                                  color: '#10B981',
-                                  backgroundColor: isDark ? 'rgba(16, 185, 129, 0.14)' : '#DCFCE7',
-                                  padding: '1px 7px',
-                                  borderRadius: '6px',
-                                }}
-                              >
-                                ✓ Ready
-                              </span>
-                            ) : isNodeFailed ? (
-                              <span
-                                style={{
-                                  fontSize: '0.625rem',
-                                  fontWeight: 600,
-                                  color: '#EF4444',
-                                  backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : '#FEE2E2',
-                                  padding: '1px 7px',
-                                  borderRadius: '6px',
-                                }}
-                              >
-                                ⚠️ Failed
-                              </span>
-                            ) : null}
-                          </div>
-
-                          {/* Centered Output Card */}
-                          <div
-                            style={{
-                              display: 'flex',
-                              flexDirection: 'column',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              gap: '0.75rem',
-                              padding: '0.875rem 1rem',
-                              borderRadius: '8px',
-                              border: isNodeFailed && !hasValidContent
-                                ? '1px solid #EF4444'
-                                : isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#F8FAFC',
-                              textAlign: 'center',
-                            }}
-                          >
-                            {/* Failure Alert Banner */}
-                            {isNodeFailed && (
-                              <div
-                                style={{
-                                  display: 'flex',
-                                  alignItems: 'flex-start',
-                                  gap: '0.5rem',
-                                  padding: '0.5rem 0.625rem',
-                                  borderRadius: '6px',
-                                  backgroundColor: isDark ? 'rgba(239, 68, 68, 0.12)' : '#FEF2F2',
-                                  border: '1px solid rgba(239, 68, 68, 0.35)',
-                                  color: isDark ? '#FCA5A5' : '#DC2626',
-                                  fontSize: '0.71875rem',
-                                  lineHeight: 1.4,
-                                  width: '100%',
-                                  textAlign: 'left',
-                                }}
-                              >
-                                <FiAlertTriangle size={15} style={{ flexShrink: 0, marginTop: '2px', color: '#EF4444' }} />
-                                <div style={{ flex: 1 }}>
-                                  <div style={{ fontWeight: 700, color: isDark ? '#FCA5A5' : '#B91C1C' }}>
-                                    {isGoogleSheetBox(currentModalAIBox) ? 'Google Sheet Sync Failed at this Step' : 'Formatting Failed at this Step'}
-                                  </div>
-                                  <div style={{ fontSize: '0.6875rem', color: isDark ? '#F87171' : '#DC2626', marginTop: '2px' }}>
-                                    {isGoogleSheetBox(currentModalAIBox)
-                                      ? (executionState?.currentStepMessage?.replace(/^[❌⚠️]\s*/, '') || 'Google Sheet AI sync did not complete. Click "Re-generate" to retry.')
-                                      : 'AI generation did not complete. Click "Re-generate" to try again.'}
-                                  </div>
-                                </div>
-                              </div>
-                            )}
-
-                            {/* Centered Stats Info */}
-                            {hasValidContent && (
-                              <div
-                                style={{
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  gap: '8px',
-                                  fontSize: '0.6875rem',
-                                  color: 'var(--text-muted)',
-                                  fontWeight: 500,
-                                }}
-                              >
-                                <span>{boxOutput.length.toLocaleString()} characters</span>
-                                <span style={{ opacity: 0.5 }}>•</span>
-                                <span>{boxOutput.trim().split(/\s+/).filter(Boolean).length.toLocaleString()} words</span>
-                              </div>
-                            )}
-
-                            {/* Centered Action Buttons: View Result, Re-generate, Copy */}
-                            <div
-                              style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                gap: '8px',
-                                width: '100%',
-                              }}
-                            >
-                              {hasValidContent && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setViewingPromptTemplate({
-                                      id: currentModalAIBox.id,
-                                      nodeId: currentModalAIBox.id,
-                                      name: `${currentModalAIBox.title || 'Format Preset'} Output`,
-                                      templateText: boxOutput,
-                                      headerTitle: 'Generated Output Copy',
-                                      copyButtonLabel: 'Copy Output',
-                                      isOutputView: true,
-                                      boxId: currentModalAIBox.id,
-                                    });
-                                  }}
-                                  style={{
-                                    flex: 1,
-                                    height: '32px',
-                                    borderRadius: '6px',
-                                    border: '1px solid var(--border-color)',
-                                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF',
-                                    color: 'var(--text-primary)',
-                                    fontSize: '0.6875rem',
-                                    fontWeight: 600,
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    gap: '6px',
-                                    cursor: 'pointer',
-                                    transition: 'all 0.15s ease',
-                                  }}
-                                  onMouseEnter={(e) => {
-                                    e.currentTarget.style.borderColor = 'var(--accent-primary, #3B82F6)';
-                                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(59, 130, 246, 0.08)' : '#EFF6FF';
-                                  }}
-                                  onMouseLeave={(e) => {
-                                    e.currentTarget.style.borderColor = 'var(--border-color)';
-                                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF';
-                                  }}
-                                >
-                                  <FiEye size={13} style={{ color: '#8B5CF6' }} />
-                                  <span>View Result</span>
-                                </button>
-                              )}
-
-                              {onRegenerateBoxOutput && (
-                                <button
-                                  type="button"
-                                  onClick={async () => {
-                                    if (isRegeneratingAI) return;
-                                    setIsRegeneratingAI(true);
-                                    setRegeneratingBoxId(currentModalAIBox.id);
-                                    try {
-                                      const fresh = await onRegenerateBoxOutput(currentModalAIBox.id);
-                                      if (fresh && typeof fresh === 'string') {
-                                        setViewingPromptTemplate((prev) => {
-                                          if (prev && prev.id === currentModalAIBox.id) {
-                                            return { ...prev, templateText: fresh };
-                                          }
-                                          return prev;
-                                        });
-                                      }
-                                    } finally {
-                                      setIsRegeneratingAI(false);
-                                      setRegeneratingBoxId(null);
-                                    }
-                                  }}
-                                  disabled={isRegeneratingAI}
-                                  title="Re-generate content with AI"
-                                  style={{
-                                    height: '32px',
-                                    padding: '0 12px',
-                                    borderRadius: '6px',
-                                    border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
-                                    color: 'var(--text-primary)',
-                                    fontSize: '0.6875rem',
-                                    fontWeight: 600,
-                                    whiteSpace: 'nowrap',
-                                    flexShrink: 0,
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    gap: '5px',
-                                    cursor: isRegeneratingAI ? 'not-allowed' : 'pointer',
-                                    opacity: isRegeneratingAI ? 0.7 : 1,
-                                    transition: 'all 0.15s ease',
-                                  }}
-                                >
-                                  <FiRefreshCw size={12} style={{ animation: isRegeneratingAI ? 'spin 1s linear infinite' : 'none' }} />
-                                  <span style={{ whiteSpace: 'nowrap' }}>{isRegeneratingAI ? 'Generating...' : 'Regenerate'}</span>
-                                </button>
-                              )}
-
-                              {hasValidContent && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    navigator.clipboard.writeText(boxOutput);
-                                    setCopiedPromptId(currentModalAIBox.id);
-                                    setTimeout(() => setCopiedPromptId(null), 2000);
-                                  }}
-                                  title="Copy full output"
-                                  style={{
-                                    height: '32px',
-                                    padding: '0 12px',
-                                    borderRadius: '6px',
-                                    border: copiedPromptId === currentModalAIBox.id
-                                      ? '1px solid rgba(16, 185, 129, 0.35)'
-                                      : '1px solid var(--border-color)',
-                                    backgroundColor: copiedPromptId === currentModalAIBox.id
-                                      ? (isDark ? 'rgba(16, 185, 129, 0.16)' : '#DCFCE7')
-                                      : (isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF'),
-                                    color: copiedPromptId === currentModalAIBox.id ? '#10B981' : 'var(--text-secondary)',
-                                    fontSize: '0.6875rem',
-                                    fontWeight: 600,
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    gap: '5px',
-                                    cursor: 'pointer',
-                                    transition: 'all 0.15s ease',
-                                  }}
-                                  onMouseEnter={(e) => {
-                                    e.currentTarget.style.borderColor = 'var(--border-hover, #64748B)';
-                                    e.currentTarget.style.color = 'var(--text-primary)';
-                                  }}
-                                  onMouseLeave={(e) => {
-                                    e.currentTarget.style.borderColor = 'var(--border-color)';
-                                    e.currentTarget.style.color = 'var(--text-secondary)';
-                                  }}
-                                >
-                                  {copiedPromptId === currentModalAIBox.id ? (
-                                    <FiCheck size={12} style={{ color: '#10B981' }} />
-                                  ) : (
-                                    <FiCopy size={12} />
-                                  )}
-                                  <span>{copiedPromptId === currentModalAIBox.id ? 'Copied' : 'Copy'}</span>
-                                </button>
-                              )}
-                            </div>
-
-                            {/* Continue Workflow Button */}
-                            {onContinueWorkflow && isNodeFailed && (
-                              <div style={{ paddingTop: '4px', width: '100%' }}>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    if (!hasValidContent) {
-                                      alert('Please generate content before continuing.');
-                                      return;
-                                    }
-                                    onContinueWorkflow(currentModalAIBox.id);
-                                  }}
-                                  disabled={!hasValidContent || executionState?.isRunning}
-                                  style={{
-                                    width: '100%',
-                                    height: '34px',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    gap: '6px',
-                                    borderRadius: '6px',
-                                    border: 'none',
-                                    backgroundColor: !hasValidContent
-                                      ? (isDark ? '#21262D' : '#E2E8F0')
-                                      : '#10B981',
-                                    color: !hasValidContent
-                                      ? 'var(--text-muted)'
-                                      : '#FFFFFF',
-                                    fontSize: '0.75rem',
-                                    fontWeight: 600,
-                                    cursor: !hasValidContent || executionState?.isRunning ? 'not-allowed' : 'pointer',
-                                    transition: 'all 0.15s ease',
-                                  }}
-                                >
-                                  <FiPlay size={12} style={{ fill: hasValidContent ? '#FFFFFF' : 'none' }} />
-                                  <span>Continue Workflow from This Step</span>
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })()}
                   </>
                 )}
               </div>
@@ -17033,7 +17527,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                       handleCloseModal();
                     }}
                     onClose={handleCloseModal}
-                    images={images}
+                    images={effectiveImages}
                     watermarkedPhotos={watermarkedPhotos}
                     enhancedPhotos={allEnhancedPhotos}
                     workflowBoxes={config.aiBoxes}
@@ -17086,7 +17580,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 isDark={isDark}
                 box={currentModalAIBox}
                 onUpdateBox={(id, updates) => handleUpdateAIBox(id, updates)}
-                images={images}
+                images={effectiveImages}
                 workflowBoxes={config.aiBoxes}
                 connections={config.connections}
                 enhancedPhotos={allEnhancedPhotos}
@@ -17152,7 +17646,7 @@ export const FacebookWorkflowCanvas = forwardRef<
 
         const previewCopy =
           activeCopy ||
-          rawContent ||
+          effectiveRawContent ||
           Object.values(aiGeneratedOutputs)[0] ||
           `✨ ${currentDest.accountName || currentDest.title || 'Luxury Condo'} — 2BR/2BA Modern High-Rise • ฿8,500,000 • Freehold • Contact: 081-234-5678`;
 
@@ -20151,7 +20645,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                           border: isDark ? '1px solid rgba(255,255,255,0.04)' : '1px solid #E2E8F0',
                         }}
                       >
-                        {activeCopy || rawContent || 'No copy generated yet. Connect an AI content box.'}
+                        {activeCopy || effectiveRawContent || 'No copy generated yet. Connect an AI content box.'}
                       </div>
 
                       {/* Image Strip */}

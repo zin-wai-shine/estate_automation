@@ -245,6 +245,7 @@ export const CreateWorkflowView: React.FC = () => {
   const [headerTitleEl, setHeaderTitleEl] = useState<HTMLElement | null>(null);
   const [headerCenterEl, setHeaderCenterEl] = useState<HTMLElement | null>(null);
   const [headerActionEl, setHeaderActionEl] = useState<HTMLElement | null>(null);
+  const [isFormatNameFocused, setIsFormatNameFocused] = useState(false);
 
   useEffect(() => {
     setHeaderTitleEl(document.getElementById('header-title-portal'));
@@ -1038,6 +1039,10 @@ export const CreateWorkflowView: React.FC = () => {
             ...editingFormat.config.trigger,
             manualContent: '',
           },
+          getContent: {
+            ...editingFormat.config.getContent,
+            manualContent: '',
+          },
         });
       }
     } else if (type === 'images') {
@@ -1100,6 +1105,21 @@ export const CreateWorkflowView: React.FC = () => {
       updatedAt: Date.now(),
       config: {
         ...DEFAULT_FB_WORKFLOW_CONFIG,
+        trigger: {
+          ...DEFAULT_FB_WORKFLOW_CONFIG.trigger,
+          enabled: false,
+          x: 80,
+          y: 240,
+        },
+        getContent: { ...DEFAULT_FB_WORKFLOW_CONFIG.getContent, enabled: false },
+        getImages: { ...DEFAULT_FB_WORKFLOW_CONFIG.getImages, enabled: false },
+        destination: { ...DEFAULT_FB_WORKFLOW_CONFIG.destination, enabled: false },
+        destinations: [],
+        outputNode: { ...DEFAULT_FB_WORKFLOW_CONFIG.outputNode, enabled: false },
+        aiBoxes: [],
+        combineBoxes: [],
+        connections: [],
+        panOffset: { x: 0, y: 0 },
       },
     };
 
@@ -1800,7 +1820,7 @@ export const CreateWorkflowView: React.FC = () => {
   };
 
   // Run Workflow directly on this Canvas screen smoothly
-  const executeCanvasWorkflow = async (targetUrl: string) => {
+  const executeCanvasWorkflow = async (targetUrl: string, options?: { startFromNodeId?: string }) => {
     if (!editingFormat) return;
     const cfg = editingFormat.config;
 
@@ -1820,22 +1840,36 @@ export const CreateWorkflowView: React.FC = () => {
 
     const delay = (ms: number) => cancellableDelay(ms, myRunId);
 
+    const isFromGetContent = options?.startFromNodeId === 'get-content';
+    const isFromGetImages = options?.startFromNodeId === 'get-images';
+    const isFromStep = Boolean(options?.startFromNodeId);
+
     try {
-      // Reset previous run outputs
-      setExtractedContent('');
-      setExtractedImages([]);
-      setWatermarkedPhotos({});
-      setEnhancedPhotos({});
-      setAiGeneratedOutputs({});
-      setAiGeneratedCopy('');
-      setProjectName('');
+      if (!isFromStep) {
+        // Reset previous run outputs when starting fresh from beginning
+        setExtractedContent('');
+        setExtractedImages([]);
+        setWatermarkedPhotos({});
+        setEnhancedPhotos({});
+        setAiGeneratedOutputs({});
+        setAiGeneratedCopy('');
+        setProjectName('');
+      } else if (isFromGetContent) {
+        // When running from Get Content, keep photos and watermarked images, reset content AI outputs
+        setAiGeneratedOutputs({});
+        setAiGeneratedCopy('');
+      } else if (isFromGetImages) {
+        // When running from Get Images, keep extracted text, reset image outputs
+        setWatermarkedPhotos({});
+        setEnhancedPhotos({});
+      }
 
       const isManualTrigger = cfg.trigger?.sourceMode === 'manual';
       let platformLabel = 'Facebook';
 
       if (!isManualTrigger) {
         const platform = checkSocialPlatform(targetUrl);
-        if (platform === 'unknown') {
+        if (platform === 'unknown' && !isFromStep) {
           safeSetExecutionState(myRunId, {
             isRunning: false,
             isComplete: false,
@@ -1863,21 +1897,39 @@ export const CreateWorkflowView: React.FC = () => {
       const codeFormatPattern = (cfg as any)?.codeFormat || 'AAA-######-AA';
       const initialRunListingCode = generateUniqueListingCode(codeFormatPattern);
 
-      // Phase 1: Trigger (Extract Link or Manual Input)
-      safeSetExecutionState(myRunId, {
-        isRunning: true,
-        isComplete: false,
-        hasError: false,
-        activeNodeIds: ['trigger'],
-        completedNodeIds: [],
-        failedNodeIds: [],
-        currentStepMessage: isManualTrigger
-          ? 'Loading manual content & photos into workflow...'
-          : `Resolving ${platformLabel} post link and isolating listing...`,
-        stepIndex: 1,
-        totalSteps: 6,
-        listingCode: initialRunListingCode,
-      });
+      if (!isFromStep) {
+        // Phase 1: Trigger (Extract Link or Manual Input)
+        safeSetExecutionState(myRunId, {
+          isRunning: true,
+          isComplete: false,
+          hasError: false,
+          activeNodeIds: ['trigger'],
+          completedNodeIds: [],
+          failedNodeIds: [],
+          currentStepMessage: isManualTrigger
+            ? 'Loading manual content & photos into workflow...'
+            : `Resolving ${platformLabel} post link and isolating listing...`,
+          stepIndex: 1,
+          totalSteps: 6,
+          listingCode: initialRunListingCode,
+        });
+      } else {
+        // Running directly from a specific step
+        safeSetExecutionState(myRunId, {
+          isRunning: true,
+          isComplete: false,
+          hasError: false,
+          activeNodeIds: [isFromGetContent ? 'get-content' : 'get-images'],
+          completedNodeIds: ['trigger'],
+          failedNodeIds: [],
+          currentStepMessage: isFromGetContent
+            ? '⚡ Running workflow starting from Get Content...'
+            : '⚡ Running workflow starting from Get Images...',
+          stepIndex: 2,
+          totalSteps: 6,
+          listingCode: workflowContextRef.current?.listingCode || initialRunListingCode,
+        });
+      }
 
       let rawCaption = '';
       let imageList: any[] = [];
@@ -1887,7 +1939,55 @@ export const CreateWorkflowView: React.FC = () => {
       let extractFailed = false;
       const extractStartTime = Date.now();
 
-      if (isManualTrigger) {
+      if (isFromGetContent) {
+        if (cfg.getContent?.mode === 'manual' || cfg.trigger?.sourceMode === 'manual') {
+          rawCaption = (cfg.getContent?.mode === 'manual' && cfg.getContent?.manualContent !== undefined)
+            ? cfg.getContent.manualContent
+            : (cfg.trigger?.manualContent || '');
+        } else {
+          rawCaption = (cfg.getContent?.manualContent || extractedContent || workflowContextRef.current?.rawCaption || '').trim();
+        }
+        setExtractedContent(rawCaption);
+
+        imageList = extractedImages.length > 0
+          ? extractedImages
+          : (workflowContextRef.current?.imageList || (cfg.trigger?.manualImages || []).map((img, idx) => ({
+              index: idx,
+              facebook_photo_id: `manual-photo-${idx + 1}`,
+              source_url: img.url,
+              stored_url: img.url,
+              filename: img.filename || `Photo #${idx + 1}`,
+              status: 'verified',
+            })));
+
+        propData = workflowContextRef.current?.propData || propertyData;
+        projName = projectName || workflowContextRef.current?.projName || '';
+        if (!projName && rawCaption) {
+          const lines = rawCaption.split('\n').map((l) => l.trim()).filter(Boolean);
+          if (lines.length > 0) {
+            projName = lines[0].slice(0, 50);
+            setProjectName(projName);
+          }
+        }
+        extractFinished = true;
+      } else if (isFromGetImages) {
+        rawCaption = (cfg.getContent?.mode === 'manual' && cfg.getContent?.manualContent !== undefined)
+          ? cfg.getContent.manualContent
+          : (extractedContent || workflowContextRef.current?.rawCaption || cfg.trigger?.manualContent || '');
+        imageList = extractedImages.length > 0
+          ? extractedImages
+          : (workflowContextRef.current?.imageList || (cfg.trigger?.manualImages || []).map((img, idx) => ({
+              index: idx,
+              facebook_photo_id: `manual-photo-${idx + 1}`,
+              source_url: img.url,
+              stored_url: img.url,
+              filename: img.filename || `Photo #${idx + 1}`,
+              status: 'verified',
+            })));
+        propData = workflowContextRef.current?.propData || propertyData;
+        projName = projectName || workflowContextRef.current?.projName || '';
+        extractFinished = true;
+      } else if (isManualTrigger) {
         rawCaption = cfg.trigger?.manualContent || '';
         imageList = (cfg.trigger?.manualImages || []).map((img, idx) => ({
           index: idx,
@@ -1966,7 +2066,7 @@ export const CreateWorkflowView: React.FC = () => {
       let branchFatalError = false;
 
       // Start full extraction request in background (returns both caption + downloaded images)
-      const extractFetchPromise = isManualTrigger
+      const extractFetchPromise = (isManualTrigger || isFromStep)
         ? Promise.resolve(null)
         : (async () => {
         try {
@@ -2007,6 +2107,9 @@ export const CreateWorkflowView: React.FC = () => {
               workflowContextRef.current.propData = propData;
               workflowContextRef.current.projName = projName;
               workflowContextRef.current.imageList = imageList;
+              if (cfg.getContent?.mode === 'manual' && cfg.getContent?.manualContent !== undefined) {
+                rawCaption = cfg.getContent.manualContent;
+              }
               if (rawCaption) {
                 workflowContextRef.current.rawCaption = rawCaption;
               }
@@ -2026,29 +2129,37 @@ export const CreateWorkflowView: React.FC = () => {
         }
       })();
 
-      // Step 1: Brief Trigger link resolution before fanning out to Get Content & Get Images in parallel
-      await delay(1100);
-      if (isRunStopped(myRunId)) return;
+      if (!isFromStep) {
+        // Step 1: Brief Trigger link resolution before fanning out to Get Content & Get Images in parallel
+        await delay(1100);
+        if (isRunStopped(myRunId)) return;
 
-      const initialParallelBranches = [
-        ...(contentEnabled ? ['get-content'] : []),
-        ...(imagesEnabled ? ['get-images'] : []),
-      ];
-      updateBranchNodes(
-        ['trigger'],
-        initialParallelBranches,
-        ['trigger'],
-        contentEnabled && imagesEnabled
-          ? 'Extracting post content & downloading high-resolution photos in parallel...'
-          : contentEnabled
-          ? 'Extracting post content, description & property attributes...'
-          : 'Extracting & downloading high-resolution property photos...',
-        { stepIndex: 2 }
-      );
+        const initialParallelBranches = [
+          ...(contentEnabled ? ['get-content'] : []),
+          ...(imagesEnabled ? ['get-images'] : []),
+        ];
+        updateBranchNodes(
+          ['trigger'],
+          initialParallelBranches,
+          ['trigger'],
+          contentEnabled && imagesEnabled
+            ? 'Extracting post content & downloading high-resolution photos in parallel...'
+            : contentEnabled
+            ? 'Extracting post content, description & property attributes...'
+            : 'Extracting & downloading high-resolution property photos...',
+          { stepIndex: 2 }
+        );
+      } else {
+        // Mark trigger completed immediately when running from step
+        safeSetExecutionState(myRunId, (prev) => ({
+          ...prev!,
+          completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), 'trigger'])),
+        }));
+      }
 
       // Helper to resolve caption as soon as browser_server.js extracts postInfo.caption (before image gallery finishes)
       const waitForCaptionReady = async (): Promise<string> => {
-        if (isManualTrigger) {
+        if (isManualTrigger || isFromStep) {
           return rawCaption;
         }
         while (!extractFinished && !isRunStopped(myRunId)) {
@@ -2114,6 +2225,30 @@ export const CreateWorkflowView: React.FC = () => {
           depsMap.set(b.id, new Set(directUpstream));
         });
 
+        // Format presets attached vertically to AI processor are independent parallel templates.
+        // They format extracted raw listing content concurrently, and never block each other or the central AI processor.
+        boxes.forEach((b) => {
+          if (isTextFormatAIBox(b)) {
+            const bDeps = depsMap.get(b.id);
+            if (bDeps) {
+              boxes.forEach((other) => {
+                if (other.id !== b.id && (isTextAIBox(other, conns) || isTextFormatAIBox(other) || other.id.includes('ai-box-content-main'))) {
+                  bDeps.delete(other.id);
+                }
+              });
+            }
+          } else if (isTextAIBox(b, conns) || b.id.includes('ai-box-content-main')) {
+            const bDeps = depsMap.get(b.id);
+            if (bDeps) {
+              boxes.forEach((other) => {
+                if (other.id !== b.id && isTextFormatAIBox(other)) {
+                  bDeps.delete(other.id);
+                }
+              });
+            }
+          }
+        });
+
         // Break mutual 2-node cycles gracefully (e.g. if A -> B and B -> A)
         boxes.forEach((b1) => {
           const b1Deps = depsMap.get(b1.id);
@@ -2122,7 +2257,7 @@ export const CreateWorkflowView: React.FC = () => {
             if (b1.id === b2.id) return;
             const b2Deps = depsMap.get(b2.id);
             if (b1Deps.has(b2.id) && b2Deps?.has(b1.id)) {
-              if (b2.id === 'ai-box-content-main') {
+              if (b2.id.includes('ai-box-content-main') || isTextAIBox(b2, conns)) {
                 b1Deps.delete(b2.id);
               } else {
                 b2Deps.delete(b1.id);
@@ -2266,16 +2401,22 @@ export const CreateWorkflowView: React.FC = () => {
           for (let i = 0; i < imageList.length; i++) {
             if (isRunStopped(myRunId) || branchFatalError) return false;
             const img = imageList[i];
+            const enhancedUrl =
+              localWatermarkedMap[img.index] ||
+              localWatermarkedMap[i] ||
+              workflowContextRef.current.localWatermarkedMap?.[img.index] ||
+              workflowContextRef.current.localWatermarkedMap?.[i];
             const rawUrl = img.stored_url
               ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
               : img.source_url;
+            const sourceUrlToCrop = enhancedUrl || rawUrl;
             try {
-              const formattedDataUrl = await formatImageWithCropFormat(rawUrl, targetFormat);
+              const formattedDataUrl = await formatImageWithCropFormat(sourceUrlToCrop, targetFormat);
               if (isRunStopped(myRunId) || branchFatalError) return false;
               localWatermarkedMap[img.index] = formattedDataUrl;
             } catch (err) {
               console.warn('Failed to format image with crop format', err);
-              localWatermarkedMap[img.index] = rawUrl;
+              localWatermarkedMap[img.index] = sourceUrlToCrop;
             }
           }
           if (isRunStopped(myRunId) || branchFatalError) return false;
@@ -3340,14 +3481,8 @@ export const CreateWorkflowView: React.FC = () => {
               `⚡ Executing ${wave.length} AI format presets in parallel...`
             );
           }
-          // Batch execution in pairs (batchSize = 2) to maintain responsiveness without LLM timeouts
-          const batchSize = 2;
-          for (let i = 0; i < wave.length; i += batchSize) {
-            if (isRunStopped(myRunId) || branchFatalError) return;
-            const batch = wave.slice(i, i + batchSize);
-            const results = await Promise.all(batch.map((box) => executeSingleAIBox(box)));
-            if (results.some((ok) => !ok) || branchFatalError) return;
-          }
+          const results = await Promise.all(wave.map((box) => executeSingleAIBox(box)));
+          if (results.some((ok) => !ok) || branchFatalError) return;
         }
       };
 
@@ -3395,7 +3530,15 @@ export const CreateWorkflowView: React.FC = () => {
         }
       };
 
-      await Promise.all([runContentBranch(), runImagesBranch()]);
+      if (isFromGetContent) {
+        updateBranchNodes([], ['get-content'], ['get-content', 'trigger'], `⚡ Executing content format presets with updated text (${rawCaption.length} chars)...`, { stepIndex: 3 });
+        await runContentBranch();
+      } else if (isFromGetImages) {
+        updateBranchNodes([], ['get-images'], ['get-images', 'trigger'], `⚡ Executing image format steps...`, { stepIndex: 3 });
+        await runImagesBranch();
+      } else {
+        await Promise.all([runContentBranch(), runImagesBranch()]);
+      }
       if (isRunStopped(myRunId) || branchFatalError) return;
 
       // Ensure full extract response metadata (propData, projName) has settled
@@ -3867,15 +4010,19 @@ export const CreateWorkflowView: React.FC = () => {
           for (let i = 0; i < ctx.imageList.length; i++) {
             if (isRunStopped(myRunId)) return;
             const img = ctx.imageList[i];
+            const enhancedUrl =
+              ctx.localWatermarkedMap?.[img.index] ||
+              ctx.localWatermarkedMap?.[i];
             const rawUrl = img.stored_url
               ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
               : img.source_url;
+            const sourceUrlToCrop = enhancedUrl || rawUrl;
             try {
-              const formattedDataUrl = await formatImageWithCropFormat(rawUrl, targetFormat);
+              const formattedDataUrl = await formatImageWithCropFormat(sourceUrlToCrop, targetFormat);
               if (isRunStopped(myRunId)) return;
               ctx.localWatermarkedMap[img.index] = formattedDataUrl;
             } catch (err) {
-              ctx.localWatermarkedMap[img.index] = rawUrl;
+              ctx.localWatermarkedMap[img.index] = sourceUrlToCrop;
             }
           }
           if (isRunStopped(myRunId)) return;
@@ -4118,6 +4265,17 @@ export const CreateWorkflowView: React.FC = () => {
         if (!isWatermarkAIBox(targetBox) && !isExternalBrowserAIBox(targetBox)) {
           await handleRegenerateBoxOutput(nodeId);
         }
+        await executeDownstreamWorkflow({
+          cfg,
+          rawCaption: workflowContextRef.current?.rawCaption || extractedContent,
+          imageList: workflowContextRef.current?.imageList || extractedImages,
+          propData: workflowContextRef.current?.propData || propertyData,
+          projName: workflowContextRef.current?.projName || projectName,
+          localWatermarkedMap: { ...watermarkedPhotos, ...(workflowContextRef.current?.localWatermarkedMap || {}) },
+          generatedOutputsMap: { ...aiGeneratedOutputs, ...(workflowContextRef.current?.generatedOutputsMap || {}) },
+          primaryCopy: workflowContextRef.current?.primaryCopy || aiGeneratedCopy,
+          targetUrl: workflowContextRef.current?.targetUrl || runFacebookUrl,
+        });
         setExecutionState((prev) => ({
           ...(prev || { completedNodeIds: [], failedNodeIds: [], hasError: false }),
           isRunning: false,
@@ -4139,166 +4297,22 @@ export const CreateWorkflowView: React.FC = () => {
       return;
     }
 
-    // 3. If get-content:
+    // 3. If get-content: RUN WORKFLOW FROM THIS STEP AGAIN!
     if (nodeId === 'get-content') {
-      if (cfg.trigger?.sourceMode === 'manual') {
-        const manualCap = cfg.trigger.manualContent || '';
-        setExtractedContent(manualCap);
-        if (workflowContextRef.current) workflowContextRef.current.rawCaption = manualCap;
-        setExecutionState((prev) => ({
-          ...(prev || { completedNodeIds: [], failedNodeIds: [], hasError: false }),
-          isRunning: false,
-          activeNodeIds: [],
-          completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), 'get-content'])),
-          currentStepMessage: '✓ Content loaded from manual input!',
-        }));
-        return;
-      }
-      const url = (runFacebookUrl || workflowContextRef.current?.targetUrl || '').trim();
-      if (url) {
-        setExecutionState((prev) => ({
-          ...(prev || { completedNodeIds: [], failedNodeIds: [], hasError: false }),
-          isRunning: true,
-          activeNodeIds: ['get-content'],
-          currentStepMessage: 'Extracting content only...',
-        }));
-        try {
-          const resp = await fetch('/api/facebook-import/extract', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url, max_images: 25 }),
-          });
-          if (resp.ok) {
-            const data = await resp.json();
-            const cap = (data.result?.caption?.original || data.raw_content || data.caption || '').trim();
-            if (cap) {
-              setExtractedContent(cap);
-              if (workflowContextRef.current) workflowContextRef.current.rawCaption = cap;
-              setExecutionState((prev) => ({
-                ...(prev || { completedNodeIds: [], failedNodeIds: [], hasError: false }),
-                isRunning: false,
-                activeNodeIds: [],
-                completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), 'get-content'])),
-                currentStepMessage: '✓ Content extracted successfully!',
-              }));
-              return;
-            }
-          }
-          setExecutionState((prev) => ({
-            ...(prev || { completedNodeIds: [], failedNodeIds: [], hasError: false }),
-            isRunning: false,
-            activeNodeIds: [],
-            failedNodeIds: ['get-content'],
-            hasError: true,
-            currentStepMessage: '⚠️ No content found in post.',
-          }));
-        } catch (e) {
-          setExecutionState((prev) => ({
-            ...(prev || { completedNodeIds: [], failedNodeIds: [], hasError: false }),
-            isRunning: false,
-            activeNodeIds: [],
-            failedNodeIds: ['get-content'],
-            hasError: true,
-            currentStepMessage: '❌ Failed extracting content.',
-          }));
-        }
-      } else {
-        setRunFacebookUrl('');
-        setIsRunModalOpen(true);
-      }
+      await executeCanvasWorkflow('', { startFromNodeId: 'get-content' });
       return;
     }
 
-    // 4. If get-images:
+    // 4. If get-images: RUN WORKFLOW FROM THIS STEP AGAIN!
     if (nodeId === 'get-images') {
-      if (cfg.trigger?.sourceMode === 'manual') {
-        const manualImgs = (cfg.trigger.manualImages || []).map((img, idx) => ({
-          index: idx,
-          facebook_photo_id: `manual-photo-${idx + 1}`,
-          source_url: img.url,
-          stored_url: img.url,
-          filename: img.filename || `Photo #${idx + 1}`,
-          status: 'verified',
-        }));
-        setExtractedImages(manualImgs);
-        if (workflowContextRef.current) workflowContextRef.current.imageList = manualImgs;
-        setExecutionState((prev) => ({
-          ...(prev || { completedNodeIds: [], failedNodeIds: [], hasError: false }),
-          isRunning: false,
-          activeNodeIds: [],
-          completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), 'get-images'])),
-          currentStepMessage: `✓ ${manualImgs.length} manual photos ready!`,
-        }));
-        return;
-      }
-      const url = (runFacebookUrl || workflowContextRef.current?.targetUrl || '').trim();
-      if (url) {
-        setExecutionState((prev) => ({
-          ...(prev || { completedNodeIds: [], failedNodeIds: [], hasError: false }),
-          isRunning: true,
-          activeNodeIds: ['get-images'],
-          currentStepMessage: 'Extracting images only...',
-        }));
-        try {
-          const resp = await fetch('/api/facebook-import/extract', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url, max_images: 25 }),
-          });
-          if (resp.ok) {
-            const data = await resp.json();
-            const rawImgs = data.result?.images || data.images || [];
-            if (rawImgs.length > 0) {
-              const imgs = rawImgs.map((img: any, idx: number) => ({
-                index: idx,
-                facebook_photo_id: img.facebook_photo_id,
-                source_url: img.source_url,
-                stored_url: img.stored_url,
-                status: img.status || 'verified',
-                width: img.width,
-                height: img.height,
-              }));
-              setExtractedImages(imgs);
-              if (workflowContextRef.current) workflowContextRef.current.imageList = imgs;
-              setExecutionState((prev) => ({
-                ...(prev || { completedNodeIds: [], failedNodeIds: [], hasError: false }),
-                isRunning: false,
-                activeNodeIds: [],
-                completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), 'get-images'])),
-                currentStepMessage: `✓ ${imgs.length} photos extracted!`,
-              }));
-              return;
-            }
-          }
-          setExecutionState((prev) => ({
-            ...(prev || { completedNodeIds: [], failedNodeIds: [], hasError: false }),
-            isRunning: false,
-            activeNodeIds: [],
-            failedNodeIds: ['get-images'],
-            hasError: true,
-            currentStepMessage: '⚠️ No photos found in post.',
-          }));
-        } catch (e) {
-          setExecutionState((prev) => ({
-            ...(prev || { completedNodeIds: [], failedNodeIds: [], hasError: false }),
-            isRunning: false,
-            activeNodeIds: [],
-            failedNodeIds: ['get-images'],
-            hasError: true,
-            currentStepMessage: '❌ Failed extracting images.',
-          }));
-        }
-      } else {
-        setRunFacebookUrl('');
-        setIsRunModalOpen(true);
-      }
+      await executeCanvasWorkflow('', { startFromNodeId: 'get-images' });
       return;
     }
   };
 
   // Run Workflow with Facebook Link or Manual Input - Executes directly on Canvas!
   const handleConfirmRun = async () => {
-    const isManual = editingFormat?.config?.trigger?.sourceMode === 'manual';
+    const isManual = editingFormat?.config?.trigger?.sourceMode === 'manual' || editingFormat?.config?.getContent?.mode === 'manual';
     const url = runFacebookUrl.trim();
     if (!isManual && !url) return;
     if (editingFormat) {
@@ -4399,21 +4413,23 @@ export const CreateWorkflowView: React.FC = () => {
                 alignItems: 'center',
                 gap: '6px',
                 borderRadius: '6px',
-                backgroundColor: isDark ? '#21262D' : '#F1F5F9',
-                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                backgroundColor: 'transparent',
+                border: '1px solid transparent',
                 color: 'var(--text-secondary)',
                 fontSize: '0.75rem',
                 fontWeight: 600,
                 cursor: 'pointer',
-                transition: 'all 0.15s ease',
+                transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
                 flexShrink: 0,
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = isDark ? '#30363D' : '#E2E8F0';
+                e.currentTarget.style.backgroundColor = isDark ? '#21262D' : '#F1F5F9';
+                e.currentTarget.style.borderColor = isDark ? '#30363D' : '#CBD5E1';
                 e.currentTarget.style.color = 'var(--text-primary)';
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = isDark ? '#21262D' : '#F1F5F9';
+                e.currentTarget.style.backgroundColor = 'transparent';
+                e.currentTarget.style.borderColor = 'transparent';
                 e.currentTarget.style.color = 'var(--text-secondary)';
               }}
             >
@@ -4429,9 +4445,22 @@ export const CreateWorkflowView: React.FC = () => {
                 alignItems: 'center',
                 gap: '6px',
                 borderRadius: '6px',
-                backgroundColor: isDark ? '#21262D' : '#F1F5F9',
-                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                backgroundColor: isFormatNameFocused ? (isDark ? '#21262D' : '#F1F5F9') : 'transparent',
+                border: isFormatNameFocused
+                  ? (isDark ? '1px solid #30363D' : '1px solid #CBD5E1')
+                  : '1px solid transparent',
                 boxSizing: 'border-box',
+                transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = isDark ? '#21262D' : '#F1F5F9';
+                e.currentTarget.style.borderColor = isDark ? '#30363D' : '#CBD5E1';
+              }}
+              onMouseLeave={(e) => {
+                if (!isFormatNameFocused) {
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                  e.currentTarget.style.borderColor = 'transparent';
+                }
               }}
             >
               <div
@@ -4453,8 +4482,12 @@ export const CreateWorkflowView: React.FC = () => {
               <input
                 type="text"
                 value={modalFormatName}
+                onFocus={() => setIsFormatNameFocused(true)}
                 onChange={(e) => handleFormatNameChange(e.target.value)}
-                onBlur={handleFormatNameCommit}
+                onBlur={() => {
+                  setIsFormatNameFocused(false);
+                  handleFormatNameCommit();
+                }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     (e.target as HTMLInputElement).blur();
@@ -4472,7 +4505,7 @@ export const CreateWorkflowView: React.FC = () => {
                   outline: 'none',
                   minWidth: '180px',
                   maxWidth: '320px',
-                  transition: 'all 0.15s ease',
+                  transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
                 }}
               />
               <button
@@ -4564,25 +4597,39 @@ export const CreateWorkflowView: React.FC = () => {
                   fontSize: '0.75rem',
                   fontWeight: 600,
                   borderRadius: '6px',
-                  backgroundColor: isDark ? '#15803D' : '#16A34A',
-                  color: '#FFFFFF',
-                  border: isDark ? '1px solid #166534' : '1px solid #15803D',
+                  backgroundColor: 'transparent',
+                  color: isDark ? '#4ADE80' : '#16A34A',
+                  border: '1px solid transparent',
                   boxShadow: 'none',
                   cursor: 'pointer',
-                  transition: 'all 0.15s ease',
+                  transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
                   outline: 'none',
                   userSelect: 'none',
                   whiteSpace: 'nowrap',
                   boxSizing: 'border-box',
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = isDark ? '#166534' : '#15803D';
+                  e.currentTarget.style.backgroundColor = isDark ? '#15803D' : '#16A34A';
+                  e.currentTarget.style.borderColor = isDark ? '#166534' : '#15803D';
+                  e.currentTarget.style.color = '#FFFFFF';
+                  const icon = e.currentTarget.querySelector('svg');
+                  if (icon) {
+                    icon.style.fill = '#FFFFFF';
+                    icon.style.color = '#FFFFFF';
+                  }
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = isDark ? '#15803D' : '#16A34A';
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                  e.currentTarget.style.borderColor = 'transparent';
+                  e.currentTarget.style.color = isDark ? '#4ADE80' : '#16A34A';
+                  const icon = e.currentTarget.querySelector('svg');
+                  if (icon) {
+                    icon.style.fill = isDark ? '#4ADE80' : '#16A34A';
+                    icon.style.color = isDark ? '#4ADE80' : '#16A34A';
+                  }
                 }}
               >
-                <FiPlay size={12} style={{ fill: '#FFFFFF', color: '#FFFFFF' }} />
+                <FiPlay size={12} style={{ fill: isDark ? '#4ADE80' : '#16A34A', color: isDark ? '#4ADE80' : '#16A34A', transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)' }} />
                 <span>Run</span>
               </button>
             )}
@@ -4602,12 +4649,12 @@ export const CreateWorkflowView: React.FC = () => {
                   fontSize: '0.75rem',
                   fontWeight: 600,
                   borderRadius: '6px',
-                  backgroundColor: '#10B981',
-                  color: '#FFFFFF',
-                  border: '1px solid #059669',
-                  boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)',
+                  backgroundColor: 'transparent',
+                  color: '#10B981',
+                  border: '1px solid transparent',
+                  boxShadow: 'none',
                   cursor: 'pointer',
-                  transition: 'all 0.15s ease',
+                  transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
                   outline: 'none',
                   userSelect: 'none',
                   whiteSpace: 'nowrap',
@@ -4615,9 +4662,13 @@ export const CreateWorkflowView: React.FC = () => {
                 }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.backgroundColor = '#059669';
+                  e.currentTarget.style.borderColor = '#047857';
+                  e.currentTarget.style.color = '#FFFFFF';
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = '#10B981';
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                  e.currentTarget.style.borderColor = 'transparent';
+                  e.currentTarget.style.color = '#10B981';
                 }}
               >
                 <FiPlay size={12} style={{ fill: '#FFFFFF', color: '#FFFFFF' }} />
@@ -4640,22 +4691,26 @@ export const CreateWorkflowView: React.FC = () => {
                 fontSize: '0.75rem',
                 fontWeight: 600,
                 borderRadius: '6px',
-                backgroundColor: isDark ? '#21262D' : '#F1F5F9',
-                color: 'var(--text-primary)',
-                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                backgroundColor: 'transparent',
+                color: 'var(--text-secondary)',
+                border: '1px solid transparent',
                 boxShadow: 'none',
                 cursor: 'pointer',
-                transition: 'all 0.15s ease',
+                transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
                 outline: 'none',
                 userSelect: 'none',
                 whiteSpace: 'nowrap',
                 boxSizing: 'border-box',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = isDark ? '#30363D' : '#E2E8F0';
+                e.currentTarget.style.backgroundColor = isDark ? '#21262D' : '#F1F5F9';
+                e.currentTarget.style.borderColor = isDark ? '#30363D' : '#CBD5E1';
+                e.currentTarget.style.color = 'var(--text-primary)';
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = isDark ? '#21262D' : '#F1F5F9';
+                e.currentTarget.style.backgroundColor = 'transparent';
+                e.currentTarget.style.borderColor = 'transparent';
+                e.currentTarget.style.color = 'var(--text-secondary)';
               }}
               onMouseDown={(e) => {
                 e.currentTarget.style.transform = 'scale(0.98)';
@@ -4664,7 +4719,7 @@ export const CreateWorkflowView: React.FC = () => {
                 e.currentTarget.style.transform = 'scale(1)';
               }}
             >
-              <FiCrosshair size={13} style={{ color: 'var(--text-secondary)' }} />
+              <FiCrosshair size={13} style={{ color: 'inherit', transition: 'color 0.2s ease' }} />
               <span>Reset Layout</span>
             </button>
 
@@ -4689,22 +4744,26 @@ export const CreateWorkflowView: React.FC = () => {
                   fontSize: '0.75rem',
                   fontWeight: 600,
                   borderRadius: '6px',
-                  backgroundColor: isDark ? '#21262D' : '#F1F5F9',
+                  backgroundColor: 'transparent',
                   color: isDark ? '#F87171' : '#DC2626',
-                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                  border: '1px solid transparent',
                   boxShadow: 'none',
                   cursor: 'pointer',
-                  transition: 'all 0.15s ease',
+                  transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
                   outline: 'none',
                   userSelect: 'none',
                   whiteSpace: 'nowrap',
                   boxSizing: 'border-box',
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = isDark ? '#30363D' : '#FEE2E2';
+                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(239, 68, 68, 0.15)' : '#FEE2E2';
+                  e.currentTarget.style.borderColor = isDark ? 'rgba(239, 68, 68, 0.35)' : '#FECACA';
+                  e.currentTarget.style.color = isDark ? '#FCA5A5' : '#B91C1C';
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = isDark ? '#21262D' : '#F1F5F9';
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                  e.currentTarget.style.borderColor = 'transparent';
+                  e.currentTarget.style.color = isDark ? '#F87171' : '#DC2626';
                 }}
                 onMouseDown={(e) => {
                   e.currentTarget.style.transform = 'scale(0.98)';
@@ -4713,7 +4772,7 @@ export const CreateWorkflowView: React.FC = () => {
                   e.currentTarget.style.transform = 'scale(1)';
                 }}
               >
-                <FiTrash2 size={12} style={{ color: isDark ? '#F87171' : '#DC2626' }} />
+                <FiTrash2 size={12} style={{ color: 'inherit', transition: 'color 0.2s ease' }} />
                 <span>Clear</span>
               </button>
             )}
@@ -4756,7 +4815,11 @@ export const CreateWorkflowView: React.FC = () => {
             onToggleGeneralSettings={setIsGeneralSettingsOpen}
             formatName={modalFormatName}
             executionState={executionState}
-            rawContent={extractedContent || (editingFormat.config.trigger.sourceMode === 'manual' ? (editingFormat.config.trigger.manualContent || '') : '')}
+            rawContent={
+              (editingFormat.config.getContent?.mode === 'manual' && editingFormat.config.getContent?.manualContent !== undefined)
+                ? editingFormat.config.getContent.manualContent
+                : (extractedContent || (editingFormat.config.trigger.sourceMode === 'manual' ? (editingFormat.config.trigger.manualContent || '') : ''))
+            }
             images={
               extractedImages.length > 0
                 ? extractedImages

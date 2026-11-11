@@ -53,21 +53,23 @@ function persistCanvasImage(sourceFilePath, fileName) {
     if (!sourceFilePath || !fs.existsSync(sourceFilePath)) return null;
     const safeName = path.basename(fileName || sourceFilePath);
 
-    // 1. Copy to canvasCacheDir
+    const sourceStat = fs.statSync(sourceFilePath);
+
+    // 1. Copy to canvasCacheDir if missing, different size, or newer mtime
     const cachePath = path.join(canvasCacheDir, safeName);
-    if (!fs.existsSync(cachePath) || fs.statSync(cachePath).size !== fs.statSync(sourceFilePath).size) {
+    if (!fs.existsSync(cachePath) || fs.statSync(cachePath).size !== sourceStat.size || fs.statSync(cachePath).mtimeMs < sourceStat.mtimeMs) {
       try { fs.copyFileSync(sourceFilePath, cachePath); } catch (e) {}
     }
 
-    // 2. Copy to defaultProcessingDir
+    // 2. Copy to defaultProcessingDir if missing, different size, or newer mtime
     const procPath = path.join(defaultProcessingDir, safeName);
-    if (!fs.existsSync(procPath) || fs.statSync(procPath).size !== fs.statSync(sourceFilePath).size) {
+    if (!fs.existsSync(procPath) || fs.statSync(procPath).size !== sourceStat.size || fs.statSync(procPath).mtimeMs < sourceStat.mtimeMs) {
       try { fs.copyFileSync(sourceFilePath, procPath); } catch (e) {}
     }
 
-    // 3. Copy to backend storage/uploads/facebook-import/enhanced
+    // 3. Copy to backend storage/uploads/facebook-import/enhanced if missing, different size, or newer mtime
     const backendPath = path.join(backendStorageEnhancedDir, safeName);
-    if (!fs.existsSync(backendPath) || fs.statSync(backendPath).size !== fs.statSync(sourceFilePath).size) {
+    if (!fs.existsSync(backendPath) || fs.statSync(backendPath).size !== sourceStat.size || fs.statSync(backendPath).mtimeMs < sourceStat.mtimeMs) {
       try { fs.copyFileSync(sourceFilePath, backendPath); } catch (e) {}
     }
 
@@ -160,6 +162,32 @@ function saveMemorizedTabsToDisk() {
 }
 
 loadMemorizedTabsFromDisk();
+
+// ── Persistent Image Thread URLs Store (Maps Image Position -> ChatGPT Chat URL) ──
+const IMAGE_THREADS_FILE = path.join(defaultProcessingDir, '.image_threads_cache.json');
+let memorizedImageThreads = {};
+
+function loadImageThreadsFromDisk() {
+  try {
+    if (fs.existsSync(IMAGE_THREADS_FILE)) {
+      const data = JSON.parse(fs.readFileSync(IMAGE_THREADS_FILE, 'utf8'));
+      if (data && typeof data === 'object') {
+        memorizedImageThreads = data;
+        console.log('[COMPANION] 📌 Loaded memorized image thread URLs:', Object.keys(memorizedImageThreads).length);
+      }
+    }
+  } catch (e) {
+    memorizedImageThreads = {};
+  }
+}
+
+function saveImageThreadsToDisk() {
+  try {
+    fs.writeFileSync(IMAGE_THREADS_FILE, JSON.stringify(memorizedImageThreads, null, 2), 'utf8');
+  } catch (e) {}
+}
+
+loadImageThreadsFromDisk();
 
 let activeWatchDir = defaultProcessingDir;
 let processedFiles = new Set();
@@ -1160,6 +1188,7 @@ function handleDetectedDownload(filePath, fileName, size) {
 // 4. HTTP Service for BoltHaven Frontend & Chrome Extension Pairing
 const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Private-Network', 'true');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
@@ -1858,6 +1887,53 @@ function mergeTabGroups(scannedGroups, liveGroups) {
     return;
   }
 
+  // ── Memorize and Retrieve Image -> Chat Thread URL Mapping ──────────
+  if (url.pathname === '/image-threads' && req.method === 'GET') {
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      'Cache-Control': 'no-cache',
+    });
+    return res.end(JSON.stringify({ status: 'success', threads: memorizedImageThreads }));
+  }
+
+  if (url.pathname === '/image-threads' && req.method === 'POST') {
+    let body = '';
+    req.on('data', (c) => (body += c));
+    req.on('end', () => {
+      try {
+        const payload = JSON.parse(body || '{}');
+        const pos = payload.position || payload.index;
+        const threadUrl = payload.threadUrl || payload.url;
+        if (pos && threadUrl) {
+          memorizedImageThreads[String(pos)] = {
+            position: Number(pos),
+            threadUrl,
+            filename: payload.filename || '',
+            listingCode: payload.listingCode || '',
+            updatedAt: new Date().toISOString(),
+          };
+          saveImageThreadsToDisk();
+          console.log(`[COMPANION] 📌 Memorized Thread URL for Image #${pos}: ${threadUrl}`);
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify({ status: 'success', threads: memorizedImageThreads }));
+      } catch (err) {
+        res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    });
+    return;
+  }
+
+  if (url.pathname === '/clear-image-threads' && req.method === 'POST') {
+    memorizedImageThreads = {};
+    saveImageThreadsToDisk();
+    console.log('[COMPANION] ✕ Cleared memorized image thread mappings');
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+    return res.end(JSON.stringify({ status: 'success', cleared: true }));
+  }
+
   // Query live tab groups for a profile (profile-specific read from Chrome saved data + live extension groups)
   if (url.pathname === '/profile-groups' && req.method === 'GET') {
     const rawProfileName = url.searchParams.get('profile_name') || '';
@@ -2365,6 +2441,29 @@ function mergeTabGroups(scannedGroups, liveGroups) {
     console.log('[COMPANION] Stop automation command broadcasted to all profiles (twoStageState stopped)');
     res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
     return res.end(JSON.stringify({ status: 'ok' }));
+  }
+
+  // ── Recover Missing Downloads on Demand ───────────────────────────────────
+  if (url.pathname === '/recover-missing-images' && req.method === 'POST') {
+    let body = '';
+    req.on('data', (c) => (body += c));
+    req.on('end', () => {
+      try {
+        const payload = JSON.parse(body || '{}');
+        pushPendingCommand({
+          action: 'RECOVER_MISSING_IMAGES',
+          payload,
+          created_at: new Date().toISOString(),
+        });
+        console.log('[COMPANION] 🔄 Queued RECOVER_MISSING_IMAGES command for extension:', payload);
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify({ status: 'queued', payload }));
+      } catch (err) {
+        res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    });
+    return;
   }
 
   // ── Inspect ChatGPT DOM ──────────────────────────────────────────────────
@@ -2877,15 +2976,20 @@ function mergeTabGroups(scannedGroups, liveGroups) {
     const safeName = path.basename(rawFile);
     const downloadsDir = path.join(os.homedir(), 'Downloads');
 
-    // Check multiple persistent storage locations in order:
+    // Check multiple persistent storage locations; prioritize the NEWEST copy on disk
     const candidatePaths = [
+      safeName ? path.join(downloadsDir, safeName) : '',
+      safeName ? path.join(defaultProcessingDir, safeName) : '',
       safeName ? path.join(canvasCacheDir, safeName) : '',
       safeName ? path.join(backendStorageEnhancedDir, safeName) : '',
-      safeName ? path.join(defaultProcessingDir, safeName) : '',
-      safeName ? path.join(downloadsDir, safeName) : '',
     ].filter(Boolean);
 
-    let targetPath = candidatePaths.find((p) => fs.existsSync(p)) || '';
+    const existingCandidates = candidatePaths
+      .filter((p) => fs.existsSync(p))
+      .map((p) => ({ path: p, stat: fs.statSync(p) }))
+      .sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs);
+
+    let targetPath = existingCandidates.length > 0 ? existingCandidates[0].path : '';
 
     // If still not found, search inside all persistent directories for case-insensitive match
     if (!targetPath && safeName) {
@@ -2897,12 +3001,17 @@ function mergeTabGroups(scannedGroups, liveGroups) {
           return found ? path.join(dir, found) : null;
         } catch { return null; }
       };
-      targetPath = matchInDir(canvasCacheDir) || matchInDir(backendStorageEnhancedDir) || matchInDir(defaultProcessingDir) || matchInDir(downloadsDir) || '';
+      targetPath = matchInDir(downloadsDir) || matchInDir(defaultProcessingDir) || matchInDir(canvasCacheDir) || matchInDir(backendStorageEnhancedDir) || '';
     }
 
     if (!targetPath || !fs.existsSync(targetPath)) {
       res.writeHead(404, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
       return res.end(JSON.stringify({ error: 'Image not found on disk' }));
+    }
+
+    // If the newest file is in Downloads or Processing, make sure persistent cache and backend are synced
+    if (targetPath && (targetPath.includes('/Downloads/') || targetPath.includes('/Processing/'))) {
+      persistCanvasImage(targetPath, safeName);
     }
 
     const stat = fs.statSync(targetPath);
@@ -2912,7 +3021,11 @@ function mergeTabGroups(scannedGroups, liveGroups) {
       'Content-Type': mime,
       'Content-Length': stat.size,
       'Access-Control-Allow-Origin': '*',
-      'Cache-Control': 'public, max-age=86400',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+      'Last-Modified': stat.mtime.toUTCString(),
+      'ETag': `"${stat.size}-${Math.round(stat.mtimeMs)}"`,
     });
     if (req.method === 'HEAD') return res.end();
     fs.createReadStream(targetPath).pipe(res);
@@ -3021,8 +3134,8 @@ function mergeTabGroups(scannedGroups, liveGroups) {
           size_bytes: stat.size,
           mtime: stat.mtimeMs,
           position: pos,
-          url: `http://127.0.0.1:${PORT}/downloaded-image?file=${encodeURIComponent(f)}`,
-          backend_url: `http://localhost:8085/storage/uploads/facebook-import/enhanced/${encodeURIComponent(f)}`,
+          url: `http://127.0.0.1:${PORT}/downloaded-image?file=${encodeURIComponent(f)}&t=${Math.round(stat.mtimeMs)}`,
+          backend_url: `http://localhost:8085/storage/uploads/facebook-import/enhanced/${encodeURIComponent(f)}?t=${Math.round(stat.mtimeMs)}`,
         };
 
         const key = imgObj.position;

@@ -109,10 +109,38 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
     setNodeTitle((box.title || 'Crop & Cut').replace(/^Format:\s*/i, ''));
   }, [box.id, box.cropFormatId, box.title, box.templateId, box.templateText]);
 
+  // Detect if this box is connected from an upstream Enhance node
+  const isUpstreamEnhance = useMemo(() => {
+    return (connections || []).some((c: any) => {
+      if (c.toNodeId !== box.id) return false;
+      if (c.fromNodeId === 'get-images' || c.fromNodeId === 'get-content') return false;
+      const upBox = (workflowBoxes || []).find((b) => b.id === c.fromNodeId);
+      if (!upBox) return false;
+      const t = (upBox.title || '').toLowerCase();
+      const st = (upBox.subtitle || '').toLowerCase();
+      const g = (upBox.browserGroupName || '').toLowerCase();
+      const pk = (upBox.processKind || '').toLowerCase();
+      const tm = (upBox.tabGroupMode || '').toLowerCase();
+      const pt = (upBox.processType || '').toLowerCase();
+      return (
+        tm === 'enhance' ||
+        pk === 'enhance_images' ||
+        t.includes('enhance') ||
+        st.includes('enhance') ||
+        g.includes('enhance') ||
+        pt === 'image_enhance' ||
+        upBox.provider === 'runware_ai' ||
+        upBox.id?.includes('enhance')
+      );
+    });
+  }, [connections, workflowBoxes, box.id]);
+
   // Image source: 'get_images' | 'enhance' | 'generate' | 'all'
-  const [imageSource, setImageSource] = useState<'get_images' | 'enhance' | 'generate' | 'all'>(
-    (box.imageSource as any) || 'get_images'
-  );
+  const [imageSource, setImageSource] = useState<'get_images' | 'enhance' | 'generate' | 'all'>(() => {
+    if (box.imageSource) return box.imageSource as any;
+    if (isUpstreamEnhance) return 'enhance';
+    return 'get_images';
+  });
 
   useEffect(() => {
     if (box.imageSource && box.imageSource !== imageSource) {
@@ -158,20 +186,8 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
 
   const effectiveHeroImage = useMemo(() => {
     if (heroImage && heroImage.url) return heroImage;
-    try {
-      const saved = localStorage.getItem('bolthaven_last_hero_image');
-      if (saved) return JSON.parse(saved);
-    } catch (e) {}
-    if (box.referenceImage) {
-      return { url: box.referenceImage, fileName: 'hero_reference.png' };
-    }
-    if (images.length > 0) {
-      const first = images[0];
-      const url = first.stored_url || first.source_url;
-      if (url) return { url, fileName: 'hero_sample.png' };
-    }
     return null;
-  }, [heroImage, box.referenceImage, images]);
+  }, [heroImage]);
 
   // Source list calculation
   const currentSourceList = useMemo(() => {
@@ -185,7 +201,37 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
       isEnhanced?: boolean;
     }> = [];
 
-    if (imageSource === 'get_images' || imageSource === 'all') {
+    // When upstream is an Enhance node, merge with the first step's photos!
+    if (isUpstreamEnhance || imageSource === 'enhance') {
+      const totalPhotos = images && images.length > 0 ? images.length : 6;
+      for (let idx = 0; idx < totalPhotos; idx++) {
+        const photoNum = idx + 1;
+        const rawImg = images?.[idx];
+        const enhancedUrl = enhancedPhotos?.[idx] || enhancedPhotos?.[photoNum];
+        const rawUrl = rawImg
+          ? (rawImg.stored_url
+              ? (rawImg.stored_url.startsWith('http') ? rawImg.stored_url : `http://localhost:8085${rawImg.stored_url}`)
+              : rawImg.source_url)
+          : '';
+        const finalUrl = enhancedUrl || rawUrl;
+        if (!finalUrl) continue;
+
+        rawList.push({
+          id: `enh-${photoNum}`,
+          index: photoNum,
+          displayNumber: photoNum,
+          url: finalUrl,
+          source: 'enhance',
+          label: enhancedUrl ? `Enhanced #${photoNum}` : `Photo #${photoNum}`,
+          isEnhanced: Boolean(enhancedUrl),
+        });
+      }
+
+      return rawList;
+    }
+
+    // 1. Get Images
+    if (!isUpstreamEnhance && (imageSource === 'get_images' || imageSource === 'all')) {
       images.forEach((img, idx) => {
         const photoNum = idx + 1;
         const url =
@@ -205,29 +251,8 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
       });
     }
 
-    if (imageSource === 'enhance' || imageSource === 'all') {
-      const hasEnhanced = Object.keys(enhancedPhotos).length > 0;
-      if (imageSource === 'enhance') {
-        images.forEach((img, idx) => {
-          const photoNum = idx + 1;
-          const enhUrl = enhancedPhotos[idx];
-          const fallbackUrl = img.stored_url
-            ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
-            : img.source_url;
-          rawList.push({
-            id: `enh-${photoNum}`,
-            index: photoNum,
-            displayNumber: photoNum,
-            url: enhUrl || fallbackUrl,
-            source: 'enhance',
-            label: enhUrl ? `Enhanced #${photoNum}` : `Photo #${photoNum}`,
-            isEnhanced: Boolean(enhUrl),
-          });
-        });
-      }
-    }
-
-    if (imageSource === 'generate' || imageSource === 'all') {
+    // 3. Generate Image
+    if (!isUpstreamEnhance && (imageSource === 'generate' || imageSource === 'all')) {
       if (effectiveHeroImage && effectiveHeroImage.url) {
         rawList.push({
           id: 'hero-1',
@@ -241,7 +266,7 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
     }
 
     return rawList;
-  }, [imageSource, images, enhancedPhotos, effectiveHeroImage, heroLabel, watermarkedPhotos]);
+  }, [imageSource, isUpstreamEnhance, images, enhancedPhotos, effectiveHeroImage, heroLabel, watermarkedPhotos]);
 
   const [selectedIndices, setSelectedIndices] = useState<number[]>(() => {
     if (Array.isArray(box.selectedImageIndices) && box.selectedImageIndices.length > 0) {
@@ -824,6 +849,27 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
                       <img
                         src={photo.url}
                         alt={photo.label}
+                        onError={(e) => {
+                          const target = e.currentTarget as HTMLImageElement;
+                          if (target.dataset.triedFallback) return;
+                          target.dataset.triedFallback = 'true';
+                          const currentSrc = target.src;
+                          if (currentSrc.includes('/downloaded-image?file=')) {
+                            try {
+                              const filename = new URL(currentSrc, typeof window !== 'undefined' ? window.location.origin : undefined).searchParams.get('file');
+                              if (filename) {
+                                target.src = `/storage/uploads/facebook-import/enhanced/${encodeURIComponent(filename)}`;
+                                return;
+                              }
+                            } catch (_) {}
+                          } else if (currentSrc.includes('/storage/uploads/facebook-import/enhanced/')) {
+                            const filename = currentSrc.split('/').pop();
+                            if (filename) {
+                              target.src = `http://127.0.0.1:9224/downloaded-image?file=${encodeURIComponent(filename)}`;
+                              return;
+                            }
+                          }
+                        }}
                         style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                       />
                       <span

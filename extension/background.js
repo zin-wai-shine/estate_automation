@@ -15,6 +15,268 @@
 const COMPANION_URL = 'http://127.0.0.1:9224';
 const BOLTHAVEN_URL = 'http://localhost:8085';
 const sessionDownloadedFilenames = new Set();
+const imageThreadMapping = new Map(); // pos -> { threadUrl, position, filename, listingCode, updatedAt }
+let downloadSerialLock = Promise.resolve();
+
+async function memorizeImageThread(position, threadUrl, filename = '', listingCode = '') {
+  if (!position || !threadUrl) return;
+  const pos = Number(position);
+  imageThreadMapping.set(pos, {
+    position: pos,
+    threadUrl,
+    filename,
+    listingCode,
+    updatedAt: new Date().toISOString(),
+  });
+  console.log(`[BOLTHAVEN EXT] 📌 Memorized Thread URL for Image #${pos}: ${threadUrl}`);
+
+  // Also notify Node companion so it's persisted to disk
+  fetch(`${COMPANION_URL}/image-threads`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      position: pos,
+      threadUrl,
+      filename,
+      listingCode,
+    }),
+  }).catch(() => {});
+}
+
+async function handleSerializedDownload(request) {
+  // Acquire serial lock so downloads across all tabs happen in order
+  const prevLock = downloadSerialLock;
+  let release;
+  downloadSerialLock = new Promise((resolve) => { release = resolve; });
+  await prevLock;
+
+  try {
+    const rawFilename = request.filename || `enhanced_${Date.now()}.png`;
+    const cleanFilename = rawFilename.replace(/[\/\\]/g, '_').trim();
+    let targetUrl = request.url;
+
+    console.log(`[BOLTHAVEN EXT] ⬇️ Serialized download processing for: ${cleanFilename}`);
+
+    // If targetUrl is an HTTP(S) URL (like files.oaiusercontent.com), convert to base64 via extension background fetch!
+    if (targetUrl && (targetUrl.startsWith('http:') || targetUrl.startsWith('https:'))) {
+      try {
+        console.log(`[BOLTHAVEN EXT] 📥 Fetching image data with extension host permissions: ${targetUrl.slice(0, 80)}...`);
+        const resp = await fetch(targetUrl);
+        if (resp.ok) {
+          const ab = await resp.arrayBuffer();
+          const bytes = new Uint8Array(ab);
+          let binary = '';
+          const chunkSize = 8192;
+          for (let i = 0; i < bytes.length; i += chunkSize) {
+            binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+          }
+          const base64 = btoa(binary);
+          const mime = resp.headers.get('content-type') || 'image/png';
+          targetUrl = `data:${mime};base64,${base64}`;
+          console.log(`[BOLTHAVEN EXT] ✓ Converted to data URL (${Math.round(targetUrl.length / 1024)} KB)`);
+        }
+      } catch (fetchErr) {
+        console.warn('[BOLTHAVEN EXT] Direct background fetch note:', fetchErr.message);
+      }
+    }
+
+    // Tier A: Save to Node Companion directly! (Guarantees immediate disk write to ~/Downloads, Processing, .canvas_cache, backend storage)
+    let companionSaved = false;
+    try {
+      const compResp = await fetch(`${COMPANION_URL}/save-generated-image`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: targetUrl, filename: cleanFilename }),
+      });
+      if (compResp.ok) {
+        companionSaved = true;
+        console.log(`[BOLTHAVEN EXT] ✓ Node Companion wrote ${cleanFilename} to disk directly!`);
+      }
+    } catch (compErr) {
+      console.warn('[BOLTHAVEN EXT] Companion save warning:', compErr.message);
+    }
+
+    // Tier B: Also invoke chrome.downloads API so it appears in Chrome's download shelf
+    let downloadId = null;
+    try {
+      downloadId = await new Promise((resolve) => {
+        chrome.downloads.download(
+          {
+            url: targetUrl,
+            filename: cleanFilename,
+            saveAs: false,
+            conflictAction: 'overwrite',
+          },
+          (id) => {
+            if (chrome.runtime.lastError) {
+              console.log('[BOLTHAVEN EXT] chrome.downloads note:', chrome.runtime.lastError.message);
+              chrome.downloads.download({ url: targetUrl, saveAs: false, conflictAction: 'overwrite' }, (id2) => {
+                resolve(id2 || null);
+              });
+            } else {
+              resolve(id);
+            }
+          }
+        );
+      });
+    } catch (dlErr) {
+      console.warn('[BOLTHAVEN EXT] chrome.downloads error:', dlErr.message);
+    }
+
+    // Memorize the thread URL for this position if provided
+    if (request.position && request.threadUrl) {
+      memorizeImageThread(request.position, request.threadUrl, cleanFilename, request.listingCode);
+    }
+
+    // Settle delay between serial downloads
+    await delay(500);
+
+    return { success: Boolean(companionSaved || downloadId), filename: cleanFilename, downloadId, companionSaved };
+  } finally {
+    release();
+  }
+}
+
+async function recoverMissingDownloads(payload = {}) {
+  console.log('[BOLTHAVEN EXT] 🔄 Running Serial Recovery for Missing Downloads...');
+  const { propertyId, listingCode, targetPositions } = payload;
+
+  // 1. Fetch currently downloaded enhanced images from companion
+  let downloadedImages = [];
+  try {
+    const res = await fetch(`${COMPANION_URL}/enhanced-images?property_id=${encodeURIComponent(propertyId || '')}&listing_code=${encodeURIComponent(listingCode || '')}`);
+    if (res.ok) {
+      const data = await res.json();
+      downloadedImages = data.images || [];
+    }
+  } catch (e) {}
+
+  const downloadedPositions = new Set(downloadedImages.map((img) => img.position));
+
+  // Determine expected positions
+  let expectedPositions = targetPositions;
+  if (!expectedPositions || expectedPositions.length === 0) {
+    if (automation.originalJobs && automation.originalJobs.length > 0) {
+      expectedPositions = automation.originalJobs.map((j) => j.original_position || j.index || 1);
+    } else {
+      try {
+        const thRes = await fetch(`${COMPANION_URL}/image-threads`);
+        if (thRes.ok) {
+          const thData = await thRes.json();
+          expectedPositions = Object.keys(thData.threads || {}).map(Number);
+        }
+      } catch (e) {}
+    }
+  }
+
+  if (!expectedPositions || expectedPositions.length === 0) {
+    return { success: true, missing: [], recovered: 0 };
+  }
+
+  const missingPositions = expectedPositions.filter((pos) => !downloadedPositions.has(pos)).sort((a, b) => a - b);
+
+  if (missingPositions.length === 0) {
+    console.log('[BOLTHAVEN EXT] ✓ All images are downloaded! No missing images.');
+    return { success: true, missing: [], recovered: 0 };
+  }
+
+  console.log(`[BOLTHAVEN EXT] 🔍 Detected ${missingPositions.length} missing image(s): [${missingPositions.join(', ')}]`);
+
+  // 2. Fetch memorized threads from companion
+  let threads = {};
+  try {
+    const thRes = await fetch(`${COMPANION_URL}/image-threads`);
+    if (thRes.ok) {
+      const thData = await thRes.json();
+      threads = thData.threads || {};
+    }
+  } catch (e) {}
+
+  let recoveredCount = 0;
+  const stillMissing = [];
+
+  for (const pos of missingPositions) {
+    const threadInfo = threads[String(pos)] || imageThreadMapping.get(pos);
+    const threadUrl = threadInfo?.threadUrl;
+
+    console.log(`[BOLTHAVEN EXT] Checking missing Image #${pos}... (Thread: ${threadUrl || 'unknown'})`);
+
+    let tabId = null;
+    const allTabs = await chrome.tabs.query({});
+
+    // Check if an existing open tab has this URL
+    if (threadUrl) {
+      const matchingTab = allTabs.find((t) => t.url === threadUrl || (t.url && threadUrl.includes(t.url)));
+      if (matchingTab) {
+        tabId = matchingTab.id;
+      }
+    }
+
+    // If tab is not open, open it
+    if (!tabId && threadUrl) {
+      try {
+        const newTab = await chrome.tabs.create({ url: threadUrl, active: false });
+        tabId = newTab.id;
+        await delay(3500); // Wait for page to load
+      } catch (e) {}
+    }
+
+    let downloaded = false;
+    if (tabId) {
+      await ensureContentScriptInjected(tabId);
+      await delay(500);
+
+      // Ask the tab to find and download the enhanced image on screen!
+      const dlRes = await new Promise((resolve) => {
+        chrome.tabs.sendMessage(tabId, {
+          action: 'DOWNLOAD_CURRENT_ENHANCED_IMAGE',
+          position: pos,
+          listingCode: listingCode || threadInfo?.listingCode || '',
+          filename: threadInfo?.filename,
+        }, (res) => {
+          if (chrome.runtime.lastError) resolve({ success: false, error: chrome.runtime.lastError.message });
+          else resolve(res || { success: false });
+        });
+      });
+
+      if (dlRes && dlRes.success) {
+        downloaded = true;
+        recoveredCount++;
+        console.log(`[BOLTHAVEN EXT] ✓ Successfully recovered & downloaded Image #${pos}!`);
+      } else {
+        console.log(`[BOLTHAVEN EXT] Tab had no ready enhanced image for #${pos}:`, dlRes?.error);
+      }
+    }
+
+    if (!downloaded) {
+      stillMissing.push(pos);
+    }
+  }
+
+  notifyProgress();
+
+  // If some images could not be downloaded from open tabs and need to be generated again:
+  if (stillMissing.length > 0 && payload.autoWorkMissing !== false && automation.originalJobs && automation.originalJobs.length > 0) {
+    const missingJobs = automation.originalJobs.filter((j) => {
+      const p = j.original_position || j.index || 1;
+      return stillMissing.includes(p);
+    });
+    if (missingJobs.length > 0) {
+      console.log(`[BOLTHAVEN EXT] 🔁 Auto-queueing and running ${missingJobs.length} missing jobs: [${stillMissing.join(', ')}]...`);
+      setTimeout(async () => {
+        await startAutomation({
+          ...(automation.lastPayload || {}),
+          jobs: missingJobs,
+          propertyId: payload.propertyId || automation.propertyId,
+          listingCode: payload.listingCode || automation.listingCode,
+          autoWorkMissing: false, // Guard against infinite loop
+        });
+      }, 1200);
+    }
+  }
+
+  return { success: true, missing: stillMissing, recovered: recoveredCount };
+}
 
 // ─── Tab-group discovery ────────────────────────────────────────────────────
 
@@ -601,6 +863,19 @@ function finishAutomation() {
       is_running: false,
     }),
   }).catch(() => {});
+
+  // Auto-recovery pass: if any jobs were not downloaded, attempt serial download recovery from memorized thread tabs!
+  const expectedTotal = automation.originalJobs ? automation.originalJobs.length : 0;
+  if (expectedTotal > 0 && automation.completedCount < expectedTotal) {
+    console.log(`[BOLTHAVEN EXT] ⚠️ Expected ${expectedTotal} photos but completed ${automation.completedCount}. Triggering automatic missing download recovery...`);
+    setTimeout(() => {
+      recoverMissingDownloads({
+        propertyId: automation.propertyId,
+        listingCode: automation.listingCode,
+        targetPositions: automation.originalJobs.map((j) => j.original_position || j.index || 1),
+      }).catch((e) => console.warn('[BOLTHAVEN EXT] Auto-recovery note:', e.message));
+    }, 2000);
+  }
 }
 
 const ENHANCE_CHATGPT_DEFAULT_URLS = [
@@ -1123,6 +1398,10 @@ async function startAutomation(payload) {
   // Initialise automation state
   automation.isRunning = true;
   automation.propertyId = propertyId;
+  automation.listingCode = sessionListingCode;
+  automation.originalJobs = [...jobs];
+  automation.lastPayload = payload;
+  sessionDownloadedFilenames.clear(); // Clear deduplication cache for fresh run
   // Queue holds remaining jobs after assigning the initial jobs to the slots
   automation.queue = jobs.slice(activeTabIds.length);
   automation.completedCount = 0;
@@ -1163,6 +1442,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             const tid = (el.getAttribute('data-testid') || '').toLowerCase();
             return aria.includes('stop') || tid.includes('stop') || Boolean(el.querySelector('svg rect, svg square'));
           };
+          const isAudio = (el) => {
+            if (!el) return false;
+            const aria = (el.getAttribute('aria-label') || '').toLowerCase();
+            const tid = (el.getAttribute('data-testid') || '').toLowerCase();
+            const title = (el.getAttribute('title') || '').toLowerCase();
+            const cls = (typeof el.className === 'string' ? el.className : '').toLowerCase();
+            const kws = ['speech', 'voice', 'mic', 'dictat', 'audio', 'record', 'sound', 'listen', 'waveform'];
+            return kws.some((k) => aria.includes(k) || tid.includes(k) || title.includes(k) || cls.includes(k));
+          };
 
           // Priority 1: Query submit/send button strictly inside form
           let btn = (
@@ -1176,13 +1464,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             document.querySelector('form button[type="submit"]')
           );
 
-          if (!btn || btn.disabled || isStop(btn)) {
+          if (btn && (btn.disabled || btn.getAttribute('aria-disabled') === 'true' || isStop(btn) || isAudio(btn))) {
+            btn = null;
+          }
+
+          if (!btn) {
             const btns = Array.from((form || document).querySelectorAll('button:not(:disabled)')).filter((b) => {
-              if (b.disabled || b.getAttribute('aria-disabled') === 'true' || isStop(b)) return false;
+              if (b.disabled || b.getAttribute('aria-disabled') === 'true' || isStop(b) || isAudio(b)) return false;
               const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+              const tid = (b.getAttribute('data-testid') || '').toLowerCase();
               const text = (b.innerText || b.textContent || '').trim();
               if (text.length > 0) return false;
-              if (aria.includes('attach') || aria.includes('mic') || aria.includes('voice') || aria.includes('plus')) return false;
+              if (aria.includes('attach') || aria.includes('plus')) return false;
+              if (tid.includes('attach') || tid.includes('plus')) return false;
               return Boolean(b.querySelector('svg'));
             });
             if (btns.length > 0) {
@@ -1191,7 +1485,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             }
           }
 
-          if (btn && !btn.disabled) {
+          if (btn && !btn.disabled && !isAudio(btn) && !isStop(btn)) {
             btn.focus();
             btn.click();
             try {
@@ -1218,7 +1512,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           }
 
           const pm = document.querySelector('.ProseMirror, #prompt-textarea, textarea');
-          if (pm) {
+          const composerText = pm ? (pm.innerText || pm.textContent || pm.value || '').trim() : '';
+          // Only dispatch Enter key if there is actual text in the composer
+          if (pm && composerText.length > 0) {
             pm.focus();
             const kOpts = {
               key: 'Enter', code: 'Enter', keyCode: 13, which: 13, charCode: 13,
@@ -1459,54 +1755,26 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       return true;
     }
   }
-  // Image download handler via chrome.downloads API
-  if (request.action === 'DOWNLOAD_IMAGE') {
-    const rawFilename = request.filename || `enhanced_${Date.now()}.png`;
-    const cleanFilename = rawFilename.replace(/[\/\\]/g, '_').trim();
+  // Robust serialized image download handler
+  if (request.action === 'DOWNLOAD_IMAGE' || request.action === 'DOWNLOAD_IMAGE_SERIAL') {
+    handleSerializedDownload(request)
+      .then((res) => sendResponse(res))
+      .catch((err) => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
 
-    if (sessionDownloadedFilenames.has(cleanFilename)) {
-      console.log('[BOLTHAVEN EXT] Skipping duplicate chrome.downloads for:', cleanFilename);
-      sendResponse({ success: true, skipped: true });
-      return true;
-    }
-    sessionDownloadedFilenames.add(cleanFilename);
+  // Memorize thread URL mapped to image number
+  if (request.action === 'MEMORIZE_IMAGE_THREAD') {
+    memorizeImageThread(request.position, request.threadUrl, request.filename, request.listingCode);
+    sendResponse({ success: true });
+    return true;
+  }
 
-    try {
-      chrome.downloads.download(
-        {
-          url: request.url,
-          filename: cleanFilename,
-          saveAs: false,
-          conflictAction: 'overwrite',
-        },
-        (downloadId) => {
-          if (chrome.runtime.lastError) {
-            console.log('[BOLTHAVEN EXT] chrome.downloads note:', chrome.runtime.lastError.message);
-            // Fallback without explicit filename
-            try {
-              chrome.downloads.download(
-                { url: request.url, saveAs: false, conflictAction: 'overwrite' },
-                (id2) => {
-                  if (chrome.runtime.lastError) {
-                    sendResponse({ success: false, error: chrome.runtime.lastError.message });
-                  } else {
-                    console.log('[BOLTHAVEN EXT] ✓ chrome.downloads started with default filename, id:', id2);
-                    sendResponse({ success: true, downloadId: id2 });
-                  }
-                }
-              );
-            } catch (err2) {
-              sendResponse({ success: false, error: err2.message });
-            }
-          } else {
-            console.log('[BOLTHAVEN EXT] ✓ chrome.downloads started, id:', downloadId);
-            sendResponse({ success: Boolean(downloadId), downloadId });
-          }
-        }
-      );
-    } catch (downErr) {
-      sendResponse({ success: false, error: downErr.message });
-    }
+  // Recover missing downloads on demand
+  if (request.action === 'RECOVER_MISSING_IMAGES') {
+    recoverMissingDownloads(request.payload || {})
+      .then((res) => sendResponse(res))
+      .catch((err) => sendResponse({ success: false, error: err.message }));
     return true;
   }
 
@@ -2265,6 +2533,10 @@ async function pollCompanion() {
             console.warn('[BOLTHAVEN EXT] Error ensuring tab group open:', err);
           });
         }
+      } else if (action === 'RECOVER_MISSING_IMAGES') {
+        recoverMissingDownloads(payload || {})
+          .then((res) => console.log('[BOLTHAVEN EXT] Recover missing images result:', res))
+          .catch((err) => console.warn('[BOLTHAVEN EXT] Recover missing images error:', err));
       } else if (action === 'OPEN_URL') {
         const { url } = payload || {};
         if (url) {

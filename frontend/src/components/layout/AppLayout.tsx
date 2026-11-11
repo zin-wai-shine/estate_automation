@@ -22,6 +22,9 @@ import {
   FiScissors,
   FiCpu,
   FiServer,
+  FiSearch,
+  FiCompass,
+  FiSliders,
 } from 'react-icons/fi';
 import { FaFacebook } from 'react-icons/fa';
 import { getRemainingPostsCount, subscribeRemainingPosts } from '../../features/remaining-posts/remainingPostsStorage';
@@ -51,7 +54,15 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
   const navigate = useNavigate();
 
   const rawTab = location.pathname.split('/')[1] || 'add-url';
-  const activeTab = rawTab === 'facebook-tokens' ? 'auth-manager' : rawTab;
+  let activeTab = rawTab === 'facebook-tokens' ? 'auth-manager' : rawTab;
+  if (rawTab === 'facebook-property-finder') {
+    const sp = new URLSearchParams(location.search);
+    const t = sp.get('tab');
+    if (t === 'projects' || t === 'monitored-condos') activeTab = 'monitored-condos';
+    else if (t === 'sources' || t === 'collection-sources') activeTab = 'collection-sources';
+    else if (t === 'settings' || t === 'scan-settings') activeTab = 'scan-settings';
+    else activeTab = 'property-leads';
+  }
 
   const isWorkflowCanvasRoute = () => {
     if (typeof window === 'undefined') return false;
@@ -142,6 +153,15 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
       items: [
         { id: 'dashboard', label: 'Dashboard', icon: <FiHome /> },
         { id: 'inbox', label: 'Property Inbox', icon: <FiInbox /> },
+      ],
+    },
+    {
+      title: 'Facebook Property Scan',
+      items: [
+        { id: 'property-leads', label: 'Property Leads', icon: <FiSearch /> },
+        { id: 'monitored-condos', label: 'Monitored Condos', icon: <FiLayers /> },
+        { id: 'collection-sources', label: 'Collection & Sources', icon: <FiCompass /> },
+        { id: 'scan-settings', label: 'AI & Alerts Settings', icon: <FiSliders /> },
       ],
     },
     {
@@ -374,19 +394,21 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                     width: '32px',
                     height: '32px',
                     borderRadius: '8px',
-                    backgroundColor: isDark ? '#21262D' : '#F1F5F9',
-                    border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                    backgroundColor: 'transparent',
+                    border: '1px solid transparent',
                     color: 'var(--text-secondary)',
                     cursor: 'pointer',
-                    transition: 'all 0.15s ease',
+                    transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
                   }}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.color = 'var(--text-primary)';
-                    e.currentTarget.style.backgroundColor = isDark ? '#30363D' : '#E2E8F0';
+                    e.currentTarget.style.backgroundColor = isDark ? '#21262D' : '#F1F5F9';
+                    e.currentTarget.style.borderColor = isDark ? '#30363D' : '#CBD5E1';
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.color = 'var(--text-secondary)';
-                    e.currentTarget.style.backgroundColor = isDark ? '#21262D' : '#F1F5F9';
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                    e.currentTarget.style.borderColor = 'transparent';
                   }}
                 >
                   <FiSidebar size={15} />

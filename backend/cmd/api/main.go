@@ -203,6 +203,7 @@ func main() {
 	sheetsGroup.Post("/append-row", handlers.AppendGoogleSheetRow)
 	sheetsGroup.Post("/sync", handlers.ExecuteGoogleSheetSync)
 	sheetsGroup.Post("/delete-row", handlers.DeleteGoogleSheetRow)
+	sheetsGroup.Post("/update-row", handlers.UpdateGoogleSheetRow)
 
 	// n8n Automation Engine Integration Routes (Admin-protected)
 	n8nRoutes := app.Group("/api/integrations/n8n", middleware.Protected(), middleware.RequireRole(models.RoleAdmin))
@@ -279,6 +280,30 @@ func main() {
 	fbTest.Post("/transform-content", handlers.TransformContent)
 	fbTest.Get("/:testRunId", handlers.GetVisionTestRun)
 	fbTest.Get("/:testRunId/logs", handlers.GetVisionTestLogs)
+
+	// Facebook Property Finder API Routes
+	finderApi := app.Group("/api/property-finder")
+	finderApi.Get("/overview", handlers.GetFinderOverview)
+	finderApi.Get("/projects", handlers.ListFinderProjects)
+	finderApi.Post("/projects", handlers.CreateFinderProject)
+	finderApi.Put("/projects/:id", handlers.UpdateFinderProject)
+	finderApi.Delete("/projects/:id", handlers.DeleteFinderProject)
+	finderApi.Post("/projects/:id/toggle", handlers.ToggleFinderProject)
+	finderApi.Get("/sources", handlers.ListFinderSources)
+	finderApi.Post("/sources", handlers.CreateFinderSource)
+	finderApi.Put("/sources/:id", handlers.UpdateFinderSource)
+	finderApi.Delete("/sources/:id", handlers.DeleteFinderSource)
+	finderApi.Get("/posts", handlers.ListFinderPosts)
+	finderApi.Get("/posts/:id", handlers.GetFinderPost)
+	finderApi.Post("/posts", handlers.ImportFinderPost)
+	finderApi.Post("/analyze-raw", handlers.AnalyzeRawPostContent)
+	finderApi.Post("/batch-import", handlers.BatchImportFinderPosts)
+	finderApi.Post("/posts/:id/analyze", handlers.AnalyzeFinderPost)
+	finderApi.Delete("/posts/:id", handlers.DeleteFinderPost)
+	finderApi.Get("/settings", handlers.GetFinderSettings)
+	finderApi.Post("/settings", handlers.UpdateFinderSettings)
+	finderApi.Post("/test-sample", handlers.LoadSampleFinderPosts)
+	finderApi.Post("/telegram/test", handlers.TestTelegramNotification)
 
 	// Protected Auth Routes
 	authProtected := auth.Group("", middleware.Protected())

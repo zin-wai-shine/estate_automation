@@ -399,6 +399,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
       const upBox = (workflowBoxes || []).find((b) => b.id === c.fromNodeId);
       if (!upBox) return false;
       const t = (upBox.title || '').toLowerCase();
+      const st = (upBox.subtitle || '').toLowerCase();
       const g = (upBox.browserGroupName || '').toLowerCase();
       const pk = (upBox.processKind || '').toLowerCase();
       const tm = (upBox.tabGroupMode || '').toLowerCase();
@@ -407,6 +408,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
         tm === 'enhance' ||
         pk === 'enhance_images' ||
         t.includes('enhance') ||
+        st.includes('enhance') ||
         g.includes('enhance') ||
         pt === 'image_enhance' ||
         upBox.provider === 'runware_ai' ||
@@ -464,23 +466,11 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     return 'Enhance Image';
   }, [enhanceNode]);
 
-  // Fallback hero image from localStorage or referenceImage or primary image
+  // Fallback hero image from heroImage prop (strictly validated against current condo)
   const effectiveHeroImage = useMemo(() => {
     if (heroImage && heroImage.url) return heroImage;
-    try {
-      const saved = localStorage.getItem('bolthaven_last_hero_image');
-      if (saved) return JSON.parse(saved);
-    } catch (e) {}
-    if (box.referenceImage) {
-      return { url: box.referenceImage, fileName: 'hero_reference.png' };
-    }
-    if (effectiveImageList.length > 0) {
-      const first = effectiveImageList[0];
-      const url = first.stored_url || first.source_url;
-      if (url) return { url, fileName: 'hero_sample.png' };
-    }
     return null;
-  }, [heroImage, box.referenceImage, effectiveImageList]);
+  }, [heroImage]);
 
   // Live downloaded enhanced photos polled from companion / backend (persisted across drive deletions)
   const [companionEnhanced, setCompanionEnhanced] = useState<Record<number, string>>(() => {
@@ -502,14 +492,16 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
         const activeListingCode = listingCode || (box as any).listingCode || '';
         const downloaded = await fetchEnhancedDownloadedImages(undefined, activeListingCode);
         if (downloaded && downloaded.length > 0 && !isCancelled) {
-          // If filenames have a listing prefix (e.g. UMC-737413-ZW), ensure only files matching that prefix are accepted
+          const maxAllowed = effectiveImageList?.length || 6;
+          // If filenames have a listing prefix (e.g. GXV-738913-YG), ensure only files matching that prefix are accepted
           const firstWithPrefix = downloaded.find((img) => img.filename?.match(/^([A-Za-z0-9]+(?:-[A-Za-z0-9]+)+)-/i));
           const detectedPrefix = firstWithPrefix
             ? firstWithPrefix.filename.match(/^([A-Za-z0-9]+(?:-[A-Za-z0-9]+)+)-/i)?.[1]?.toLowerCase()
-            : '';
+            : (activeListingCode ? activeListingCode.trim().toLowerCase() : '');
 
           const valid = downloaded.filter((img) => {
-            if ((img.position || 1) > effectiveImageList.length) return false;
+            const pos = img.position || 1;
+            if (pos > maxAllowed) return false;
             if (detectedPrefix && img.filename) {
               return img.filename.toLowerCase().startsWith(detectedPrefix);
             }
@@ -520,9 +512,11 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
           valid.forEach((img) => {
             const pos = img.position || 1;
             const pos0 = pos - 1; // 0-based index key
-            // Prefer companion URL (with CORS headers) or clean relative /storage URL to prevent CORS taint
-            const cleanBackend = img.backend_url ? img.backend_url.replace(/^https?:\/\/localhost:8085/, '') : '';
-            map[pos0] = img.url || cleanBackend;
+            // Prefer clean relative /storage URL to leverage same-origin Vite proxy
+            const cleanBackend = img.backend_url
+              ? img.backend_url.replace(/^https?:\/\/localhost:8085/, '')
+              : (img.filename ? `/storage/uploads/facebook-import/enhanced/${encodeURIComponent(img.filename)}` : '');
+            map[pos0] = cleanBackend || img.url;
           });
           setCompanionEnhanced((prev) => {
             let hasChange = false;
@@ -535,12 +529,11 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
             if (!hasChange && Object.keys(map).length === Object.keys(prev).length) {
               return prev;
             }
-            const next = { ...prev, ...map };
             try {
               const codeKey = listingCode || 'current';
-              localStorage.setItem(`bolthaven_canvas_enhanced_${codeKey}`, JSON.stringify(next));
+              localStorage.setItem(`bolthaven_canvas_enhanced_${codeKey}`, JSON.stringify(map));
             } catch {}
-            return next;
+            return map;
           });
         }
       } catch (e) {}
@@ -550,11 +543,32 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     return () => {
       isCancelled = true;
     };
-  }, [box.id, listingCode, effectiveImageList?.length]);
+  }, [box.id, listingCode, effectiveImageList?.length, isUpstreamEnhance]);
 
   const mergedEnhancedPhotos = useMemo(() => {
-    return { ...companionEnhanced, ...(enhancedPhotos || {}) };
-  }, [companionEnhanced, enhancedPhotos]);
+    // Merge enhancedPhotos and companionEnhanced, normalizing all enhanced image URLs
+    const merged: Record<number, string> = {};
+    const maxPhotos = effectiveImageList?.length || 6;
+    const sourceObj = { ...(enhancedPhotos || {}), ...companionEnhanced };
+    Object.entries(sourceObj).forEach(([k, url]) => {
+      const num = Number(k);
+      // Strictly ignore any image index beyond the first step's photos
+      if (num >= maxPhotos) return;
+      if (!url) return;
+      let clean = url;
+      if (clean.includes('localhost:8085/storage/')) {
+        clean = clean.replace(/^https?:\/\/localhost:8085/, '');
+      } else if (clean.includes('/downloaded-image?file=')) {
+        try {
+          const u = new URL(clean, typeof window !== 'undefined' ? window.location.origin : undefined);
+          const f = u.searchParams.get('file');
+          if (f) clean = `/storage/uploads/facebook-import/enhanced/${encodeURIComponent(f)}`;
+        } catch (_) {}
+      }
+      merged[num] = clean;
+    });
+    return merged;
+  }, [companionEnhanced, enhancedPhotos, effectiveImageList?.length]);
 
   // Build the list of photos available for the currently selected source
   const currentSourceList = useMemo(() => {
@@ -568,9 +582,37 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
       isEnhanced?: boolean;
     }> = [];
 
+    // When upstream is an Enhance node, merge with the first step's photos!
+    if (isUpstreamEnhance || imageSource === 'enhance') {
+      const totalPhotos = effectiveImageList && effectiveImageList.length > 0 ? effectiveImageList.length : 6;
+      for (let idx = 0; idx < totalPhotos; idx++) {
+        const photoNum = idx + 1;
+        const rawImg = effectiveImageList?.[idx];
+        const enhancedUrl = mergedEnhancedPhotos[idx] || mergedEnhancedPhotos[photoNum];
+        const rawUrl = rawImg
+          ? (rawImg.stored_url
+              ? (rawImg.stored_url.startsWith('http') ? rawImg.stored_url : `http://localhost:8085${rawImg.stored_url}`)
+              : rawImg.source_url)
+          : '';
+        const finalUrl = enhancedUrl || rawUrl;
+        if (!finalUrl) continue;
+
+        rawList.push({
+          id: `enh-${photoNum}`,
+          index: photoNum,
+          displayNumber: photoNum,
+          url: finalUrl,
+          source: 'enhance',
+          label: enhancedUrl ? `Enhanced #${photoNum}` : `Photo #${photoNum}`,
+          isEnhanced: Boolean(enhancedUrl),
+        });
+      }
+
+      return rawList;
+    }
+
     // 1. Get Images (Raw extracted or fallback studio images)
-    // When upstream is an Enhance node, ONLY show the last connected node's enhanced photos!
-    if (!isUpstreamEnhance && (imageSource === 'get_images' || imageSource === 'all')) {
+    if (imageSource === 'get_images' || imageSource === 'all') {
       if (effectiveImageList && effectiveImageList.length > 0) {
         effectiveImageList.forEach((img, idx) => {
           const photoNum = idx + 1;
@@ -589,81 +631,6 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
             label: `Photo #${photoNum}`,
           });
         });
-      }
-    }
-
-    // 2. Enhanced Images
-    if (imageSource === 'enhance' || isUpstreamEnhance || imageSource === 'all') {
-      const hasEnhanced = Object.keys(mergedEnhancedPhotos).length > 0;
-      if (imageSource === 'enhance' || isUpstreamEnhance) {
-        if (effectiveImageList && effectiveImageList.length > 0) {
-          effectiveImageList.forEach((img, idx) => {
-            const photoNum = idx + 1;
-            // Use strictly 0-based index key (idx) to match companion mapping
-            const enhUrl = mergedEnhancedPhotos[idx] ?? mergedEnhancedPhotos[photoNum] ?? (typeof img.index === 'number' ? mergedEnhancedPhotos[img.index] : undefined);
-
-            // When sourcing from Enhance, strictly ONLY include photos that were actually enhanced by the last connected node!
-            // Do NOT fall back to raw photos from Get Images!
-            if (!enhUrl) return;
-
-            rawList.push({
-              id: `enh-${photoNum}`,
-              index: photoNum,
-              displayNumber: photoNum,
-              url: enhUrl,
-              source: 'enhance',
-              label: `Enhanced #${photoNum}`,
-              isEnhanced: true,
-            });
-          });
-
-          // Add any extra enhanced photos beyond effectiveImageList
-          Object.entries(mergedEnhancedPhotos).forEach(([k, enhUrl]) => {
-            const num = Number(k) + 1;
-            if (!rawList.some((r) => r.index === num || r.displayNumber === num) && enhUrl) {
-              rawList.push({
-                id: `enh-${num}`,
-                index: num,
-                displayNumber: num,
-                url: enhUrl,
-                source: 'enhance',
-                label: `Enhanced #${num}`,
-                isEnhanced: true,
-              });
-            }
-          });
-        } else if (hasEnhanced) {
-          Object.entries(mergedEnhancedPhotos).forEach(([k, enhUrl]) => {
-            const num = Number(k) + 1;
-            if (enhUrl) {
-              rawList.push({
-                id: `enh-${num}`,
-                index: num,
-                displayNumber: num,
-                url: enhUrl,
-                source: 'enhance',
-                label: `Enhanced #${num}`,
-                isEnhanced: true,
-              });
-            }
-          });
-        }
-      } else {
-        // imageSource === 'all'
-        if (hasEnhanced) {
-          Object.entries(mergedEnhancedPhotos).forEach(([k, url]) => {
-            const num = Number(k) + 1;
-            rawList.push({
-              id: `enh-${num}`,
-              index: 100 + num,
-              displayNumber: num,
-              url,
-              source: 'enhance',
-              label: `Enhanced #${num}`,
-              isEnhanced: true,
-            });
-          });
-        }
       }
     }
 
@@ -697,7 +664,15 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     }
 
     return rawList;
-  }, [imageSource, effectiveImageList, mergedEnhancedPhotos, effectiveHeroImage, heroLabel, watermarkedPhotos]);
+  }, [
+    isUpstreamEnhance,
+    imageSource,
+    mergedEnhancedPhotos,
+    effectiveImageList,
+    watermarkedPhotos,
+    effectiveHeroImage,
+    heroLabel,
+  ]);
 
   const [selectedIndices, setSelectedIndices] = useState<number[]>(() => {
     if (Array.isArray(box.selectedImageIndices) && box.selectedImageIndices.length > 0) {
@@ -1069,7 +1044,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
               {currentFormat?.name || 'Crop Format'}
             </div>
             <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-              {currentFormat?.targetWidth} × {currentFormat?.targetHeight} px • Source: {imageSource === 'generate' ? `${heroLabel} (1 Photo)` : imageSource === 'enhance' ? `${enhanceLabel} (${activePhotosToFormat.length} Photos)` : `Get Images (${activePhotosToFormat.length} Photos)`}
+              {currentFormat?.targetWidth} × {currentFormat?.targetHeight} px • Source: {imageSource === 'generate' ? `${heroLabel} (${effectiveHeroImage ? '1 Photo' : '0 Photos'})` : imageSource === 'enhance' ? `${enhanceLabel} (${activePhotosToFormat.length} Photos)` : `Get Images (${activePhotosToFormat.length} Photos)`}
             </div>
           </div>
         </div>
@@ -1108,7 +1083,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
       </div>
 
       {/* Processed Photos Live Preview */}
-      {displayPreviewItems.length > 0 && (
+      {displayPreviewItems.length > 0 ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem', marginTop: '0.25rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
@@ -1199,21 +1174,27 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
                       alt={item.label}
                       onError={(e) => {
                         const target = e.currentTarget as HTMLImageElement;
+                        if (target.dataset.triedFallback) return;
+                        target.dataset.triedFallback = 'true';
                         const currentSrc = target.src;
-                        if (currentSrc.includes('localhost:8085/storage/')) {
-                          target.src = currentSrc.replace(/^https?:\/\/localhost:8085/, '');
-                        } else if (currentSrc.includes('/downloaded-image?file=')) {
+                        if (currentSrc.includes('/downloaded-image?file=')) {
                           try {
                             const filename = new URL(currentSrc).searchParams.get('file');
                             if (filename) {
                               target.src = `/storage/uploads/facebook-import/enhanced/${filename}`;
+                              return;
                             }
                           } catch (_) {}
-                        } else if (currentSrc.includes('/storage/uploads/facebook-import/enhanced/')) {
+                        }
+                        if (currentSrc.includes('/storage/uploads/facebook-import/enhanced/')) {
                           const filename = currentSrc.split('/').pop();
                           if (filename) {
                             target.src = `http://127.0.0.1:9224/downloaded-image?file=${filename}`;
+                            return;
                           }
+                        }
+                        if (currentSrc.includes('localhost:8085/storage/')) {
+                          target.src = currentSrc.replace(/^https?:\/\/localhost:8085/, '');
                         }
                       }}
                       style={{
@@ -1523,6 +1504,33 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
               </div>
             )}
           </div>
+        </div>
+      ) : (
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '2rem 1rem',
+            borderRadius: '8px',
+            border: isDark ? '1px dashed #30363D' : '1px dashed #E2E8F0',
+            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)',
+            gap: '8px',
+            marginTop: '0.25rem',
+          }}
+        >
+          <FiImage size={26} style={{ color: 'var(--text-muted)', opacity: 0.4 }} />
+          <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+            No Photos Available
+          </span>
+          <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', textAlign: 'center', maxWidth: '260px', lineHeight: 1.4 }}>
+            {imageSource === 'generate'
+              ? `The upstream ${heroLabel} node has not generated a photo yet. Run the generator node first.`
+              : imageSource === 'enhance'
+              ? `The upstream ${enhanceLabel} node has not enhanced photos yet.`
+              : 'No images available from Get Images.'}
+          </span>
         </div>
       )}
 
