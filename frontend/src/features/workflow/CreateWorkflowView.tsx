@@ -983,13 +983,17 @@ export const CreateWorkflowView: React.FC = () => {
       workflowContextRef.current.rawCaption = '';
       workflowContextRef.current.imageList = [];
     }
-    if (editingFormat?.config?.trigger) {
+    if (editingFormat?.config) {
       handleCanvasConfigChange({
         ...editingFormat.config,
         trigger: {
           ...editingFormat.config.trigger,
           manualContent: '',
           manualImages: [],
+        },
+        getContent: {
+          ...editingFormat.config.getContent,
+          manualContent: '',
         },
       });
     }
@@ -1877,6 +1881,7 @@ export const CreateWorkflowView: React.FC = () => {
             activeNodeIds: [],
             completedNodeIds: [],
             failedNodeIds: ['trigger'],
+            errorMessage: '❌ Invalid URL. Please provide a valid Facebook or TikTok post link.',
             currentStepMessage: '❌ Invalid URL. Please provide a valid Facebook or TikTok post link.',
             stepIndex: 1,
             totalSteps: 6,
@@ -2398,25 +2403,65 @@ export const CreateWorkflowView: React.FC = () => {
               (activeWk?.config?.enabled ? activeWk.config : undefined),
           };
 
-          for (let i = 0; i < imageList.length; i++) {
+          const isUpstreamEnhance = (cfg.connections || []).some((c: any) => {
+            if (c.toNodeId === box.id) {
+              const upBox = (cfg.aiBoxes || []).find((b) => b.id === c.fromNodeId);
+              return upBox && (isExternalBrowserAIBox(upBox) || upBox.processType === 'image_enhance' || upBox.title?.toLowerCase().includes('enhance') || upBox.browserGroupName?.toLowerCase().includes('enhance'));
+            }
+            return false;
+          }) || box.imageSource === 'enhance';
+
+          const activeEnhanced = { ...(enhancedPhotos || {}), ...localWatermarkedMap };
+          const hasEnhanced = Object.keys(activeEnhanced).length > 0;
+          const imagesToFormat: Array<{ index: number; url: string }> = [];
+
+          if (isUpstreamEnhance || box.imageSource === 'enhance') {
+            if (hasEnhanced) {
+              // Strictly crop and format ONLY the actual enhanced result images
+              for (let i = 0; i < imageList.length; i++) {
+                const img = imageList[i];
+                const enhUrl = activeEnhanced[img.index] || activeEnhanced[i] || activeEnhanced[i + 1] || activeEnhanced[img.index + 1];
+                if (enhUrl) {
+                  imagesToFormat.push({ index: img.index ?? i, url: enhUrl });
+                }
+              }
+            } else {
+              for (let i = 0; i < imageList.length; i++) {
+                const img = imageList[i];
+                const rawUrl = img.stored_url
+                  ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
+                  : img.source_url;
+                if (rawUrl) imagesToFormat.push({ index: img.index ?? i, url: rawUrl });
+              }
+            }
+          } else {
+            for (let i = 0; i < imageList.length; i++) {
+              const img = imageList[i];
+              const rawUrl = img.stored_url
+                ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
+                : img.source_url;
+              if (rawUrl) imagesToFormat.push({ index: img.index ?? i, url: rawUrl });
+            }
+          }
+
+          let finalImagesToFormat = imagesToFormat;
+          if (Array.isArray(box.selectedImageIndices) && box.selectedImageIndices.length > 0) {
+            const selectedSet = new Set(box.selectedImageIndices);
+            const matched = imagesToFormat.filter((item, idx) => selectedSet.has(item.index + 1) || selectedSet.has(item.index) || selectedSet.has(idx + 1));
+            if (matched.length > 0) {
+              finalImagesToFormat = matched;
+            }
+          }
+
+          for (const item of finalImagesToFormat) {
             if (isRunStopped(myRunId) || branchFatalError) return false;
-            const img = imageList[i];
-            const enhancedUrl =
-              localWatermarkedMap[img.index] ||
-              localWatermarkedMap[i] ||
-              workflowContextRef.current.localWatermarkedMap?.[img.index] ||
-              workflowContextRef.current.localWatermarkedMap?.[i];
-            const rawUrl = img.stored_url
-              ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
-              : img.source_url;
-            const sourceUrlToCrop = enhancedUrl || rawUrl;
             try {
-              const formattedDataUrl = await formatImageWithCropFormat(sourceUrlToCrop, targetFormat);
+              const formattedDataUrl = await formatImageWithCropFormat(item.url, targetFormat);
               if (isRunStopped(myRunId) || branchFatalError) return false;
-              localWatermarkedMap[img.index] = formattedDataUrl;
+              localWatermarkedMap[item.index] = formattedDataUrl;
             } catch (err) {
               console.warn('Failed to format image with crop format', err);
-              localWatermarkedMap[img.index] = sourceUrlToCrop;
+              localWatermarkedMap[item.index] = item.url;
             }
           }
           if (isRunStopped(myRunId) || branchFatalError) return false;
@@ -4007,22 +4052,63 @@ export const CreateWorkflowView: React.FC = () => {
               (activeWk?.config?.enabled ? activeWk.config : undefined),
           };
 
-          for (let i = 0; i < ctx.imageList.length; i++) {
+          const isUpstreamEnhance = (cfg.connections || []).some((c: any) => {
+            if (c.toNodeId === nextBox.id) {
+              const upBox = (cfg.aiBoxes || []).find((b) => b.id === c.fromNodeId);
+              return upBox && (isExternalBrowserAIBox(upBox) || upBox.processType === 'image_enhance' || upBox.title?.toLowerCase().includes('enhance') || upBox.browserGroupName?.toLowerCase().includes('enhance'));
+            }
+            return false;
+          }) || nextBox.imageSource === 'enhance';
+
+          const activeEnhanced = { ...(enhancedPhotos || {}), ...ctx.localWatermarkedMap };
+          const hasEnhanced = Object.keys(activeEnhanced).length > 0;
+          const imagesToFormat: Array<{ index: number; url: string }> = [];
+
+          if (isUpstreamEnhance || nextBox.imageSource === 'enhance') {
+            if (hasEnhanced) {
+              for (let i = 0; i < ctx.imageList.length; i++) {
+                const img = ctx.imageList[i];
+                const enhUrl = activeEnhanced[img.index] || activeEnhanced[i] || activeEnhanced[i + 1] || activeEnhanced[img.index + 1];
+                if (enhUrl) {
+                  imagesToFormat.push({ index: img.index ?? i, url: enhUrl });
+                }
+              }
+            } else {
+              for (let i = 0; i < ctx.imageList.length; i++) {
+                const img = ctx.imageList[i];
+                const rawUrl = img.stored_url
+                  ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
+                  : img.source_url;
+                if (rawUrl) imagesToFormat.push({ index: img.index ?? i, url: rawUrl });
+              }
+            }
+          } else {
+            for (let i = 0; i < ctx.imageList.length; i++) {
+              const img = ctx.imageList[i];
+              const rawUrl = img.stored_url
+                ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
+                : img.source_url;
+              if (rawUrl) imagesToFormat.push({ index: img.index ?? i, url: rawUrl });
+            }
+          }
+
+          let finalImagesToFormat = imagesToFormat;
+          if (Array.isArray(nextBox.selectedImageIndices) && nextBox.selectedImageIndices.length > 0) {
+            const selectedSet = new Set(nextBox.selectedImageIndices);
+            const matched = imagesToFormat.filter((item, idx) => selectedSet.has(item.index + 1) || selectedSet.has(item.index) || selectedSet.has(idx + 1));
+            if (matched.length > 0) {
+              finalImagesToFormat = matched;
+            }
+          }
+
+          for (const item of finalImagesToFormat) {
             if (isRunStopped(myRunId)) return;
-            const img = ctx.imageList[i];
-            const enhancedUrl =
-              ctx.localWatermarkedMap?.[img.index] ||
-              ctx.localWatermarkedMap?.[i];
-            const rawUrl = img.stored_url
-              ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
-              : img.source_url;
-            const sourceUrlToCrop = enhancedUrl || rawUrl;
             try {
-              const formattedDataUrl = await formatImageWithCropFormat(sourceUrlToCrop, targetFormat);
+              const formattedDataUrl = await formatImageWithCropFormat(item.url, targetFormat);
               if (isRunStopped(myRunId)) return;
-              ctx.localWatermarkedMap[img.index] = formattedDataUrl;
+              ctx.localWatermarkedMap[item.index] = formattedDataUrl;
             } catch (err) {
-              ctx.localWatermarkedMap[img.index] = sourceUrlToCrop;
+              ctx.localWatermarkedMap[item.index] = item.url;
             }
           }
           if (isRunStopped(myRunId)) return;
@@ -4634,8 +4720,8 @@ export const CreateWorkflowView: React.FC = () => {
               </button>
             )}
 
-            {/* Continue Workflow Button: Shown when execution is paused on error */}
-            {!isRunningWorkflow && executionState?.hasError && (executionState.failedNodeIds?.length || 0) > 0 && (
+            {/* Continue Workflow Button: Shown when execution is paused on error (excluding trigger failure) */}
+            {!isRunningWorkflow && executionState?.hasError && (executionState.failedNodeIds?.length || 0) > 0 && !executionState.failedNodeIds?.includes('trigger') && (
               <button
                 type="button"
                 onClick={() => handleContinueWorkflow(executionState.failedNodeIds?.[0])}
@@ -4724,7 +4810,7 @@ export const CreateWorkflowView: React.FC = () => {
             </button>
 
             {/* Clear Data & Results Button */}
-            {(Boolean(executionState && (executionState.completedNodeIds?.length || 0) > 0) ||
+            {(Boolean(executionState && ((executionState.completedNodeIds?.length || 0) > 0 || executionState.hasError)) ||
               extractedImages.length > 0 ||
               Boolean(extractedContent && extractedContent.trim().length > 0) ||
               Object.keys(aiGeneratedOutputs).length > 0 ||

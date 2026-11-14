@@ -2576,7 +2576,8 @@ const NodeActionButton: React.FC<{
 export const NodeExecutionBadge: React.FC<{
   status?: 'idle' | 'running' | 'success' | 'error';
   isCircle?: boolean;
-}> = ({ status, isCircle = false }) => {
+  errorMessage?: string;
+}> = ({ status, isCircle = false, errorMessage }) => {
   const { actualTheme } = useTheme();
   const isDark = actualTheme === 'dark';
 
@@ -2677,9 +2678,10 @@ export const NodeExecutionBadge: React.FC<{
           boxShadow: '0 1px 3px rgba(0, 0, 0, 0.15)',
           border: '1.5px solid #FFFFFF',
           zIndex: 25,
-          pointerEvents: 'none',
+          cursor: 'pointer',
+          pointerEvents: 'auto',
         }}
-        title="Execution error"
+        title={errorMessage ? `Error: ${errorMessage} (Double-click node to inspect)` : 'Execution error (Double-click node to inspect)'}
       >
         <FiAlertTriangle style={{ fontSize: '11px' }} />
       </div>
@@ -3533,6 +3535,24 @@ export const FacebookWorkflowCanvas = forwardRef<
     return {};
   });
 
+  // Listen for workflow reset/cleared event or trigger error to keep canvas fresh
+  useEffect(() => {
+    const handleWorkflowCleared = () => {
+      setLocallyCompletedNodeIds([]);
+      setLocallyRunningNodeId(null);
+      setCompanionEnhancedMap({});
+    };
+    window.addEventListener('ea_workflow_cleared', handleWorkflowCleared);
+    return () => window.removeEventListener('ea_workflow_cleared', handleWorkflowCleared);
+  }, []);
+
+  useEffect(() => {
+    if (executionState?.hasError && executionState?.failedNodeIds?.includes('trigger')) {
+      setLocallyCompletedNodeIds([]);
+      setLocallyRunningNodeId(null);
+    }
+  }, [executionState?.hasError, executionState?.failedNodeIds]);
+
   useEffect(() => {
     if (!images || images.length === 0) {
       return;
@@ -3700,11 +3720,29 @@ export const FacebookWorkflowCanvas = forwardRef<
       return 'success';
     }
 
+    // CRITICAL: If trigger failed (e.g. invalid URL, network error), ALL downstream nodes MUST remain clean and idle
+    if (executionState?.failedNodeIds?.includes('trigger') && nodeId !== 'trigger') {
+      return 'idle';
+    }
+
+    // When workflow execution has an error, only explicitly completed nodes show success
+    if (executionState?.hasError && nodeId !== 'trigger') {
+      if (executionState.completedNodeIds?.includes(nodeId)) return 'success';
+      if (executionState.failedNodeIds?.includes(nodeId)) return 'error';
+      return 'idle';
+    }
+
     if (nodeId === 'get-content') {
       if (executionState?.activeNodeIds?.includes(nodeId) || locallyRunningNodeId === nodeId) return 'running';
       if (executionState?.failedNodeIds?.includes(nodeId)) return 'error';
       if (locallyCompletedNodeIds.includes(nodeId) || executionState?.completedNodeIds?.includes(nodeId)) return 'success';
-      if (effectiveRawContent && effectiveRawContent.trim().length > 0) return 'success';
+      // Only mark success from content if in manual trigger mode OR trigger completed successfully without errors
+      if (effectiveRawContent && effectiveRawContent.trim().length > 0 && !executionState?.hasError) {
+        if (isManualTrigger || executionState?.completedNodeIds?.includes('trigger')) {
+          return 'success';
+        }
+      }
+      return 'idle';
     }
 
     // Auto-complete Enhance node if enhanced images have been downloaded
@@ -3715,7 +3753,7 @@ export const FacebookWorkflowCanvas = forwardRef<
         targetBox.processKind === 'enhance_images' ||
         targetBox.title?.toLowerCase().includes('enhance') ||
         targetBox.browserGroupName?.toLowerCase().includes('enhance');
-      if (isEnhanceBox && Object.keys(allEnhancedPhotos).length > 0) {
+      if (isEnhanceBox && Object.keys(allEnhancedPhotos).length > 0 && !executionState?.hasError) {
         return 'success';
       }
     }
@@ -3725,6 +3763,33 @@ export const FacebookWorkflowCanvas = forwardRef<
     if (executionState.activeNodeIds?.includes(nodeId)) return 'running';
     if (executionState.completedNodeIds?.includes(nodeId)) return 'success';
     return 'idle';
+  };
+
+  const getNodeErrorMessage = (nodeId: string): string | null => {
+    if (executionState?.failedNodeIds?.includes(nodeId)) {
+      return executionState.errorMessage || executionState.currentStepMessage || 'Step execution failed';
+    }
+    return null;
+  };
+
+  const getDiagnosticTip = (err: string) => {
+    const lower = err.toLowerCase();
+    if (lower.includes('login') || lower.includes('session') || lower.includes('private group') || lower.includes('restricted private')) {
+      return '💡 Tip: This post is inside a closed/private Facebook group or requires an active login session. Switch to "Manual Input" to paste description & upload photos directly.';
+    }
+    if (lower.includes('restricted') || lower.includes('security') || lower.includes('checkpoint')) {
+      return '💡 Tip: Facebook temporarily restricted automated access or triggered a security checkpoint. Wait a few moments or switch to "Manual Input".';
+    }
+    if (lower.includes('not found') || lower.includes('removed') || lower.includes('deleted')) {
+      return '💡 Tip: The Facebook post was removed, deleted, or has expired.';
+    }
+    if (lower.includes('timeout') || lower.includes('time out')) {
+      return '💡 Tip: Headless browser timed out loading the Facebook page. Check your internet connection or retry.';
+    }
+    if (lower.includes('invalid') || lower.includes('not_facebook')) {
+      return '💡 Tip: The provided URL is not a recognized Facebook post format. Please verify the URL or switch to "Manual Input".';
+    }
+    return '💡 Tip: Verify the post URL or switch to "Manual Input" to continue the workflow without web extraction.';
   };
 
   const hasInitializedPan = useRef(false);
@@ -4541,16 +4606,29 @@ export const FacebookWorkflowCanvas = forwardRef<
             }
           } catch (e) { }
         } else if (isFromEnhance) {
-          // Merge with the first step's photos: use enhanced photos where available, and raw for any not yet enhanced!
-          photoList.forEach((img, idx) => {
-            const enhUrl = allEnhancedPhotos?.[idx] || allEnhancedPhotos?.[idx + 1];
-            const rawUrl = normalizeMediaUrl(img.stored_url || img.source_url || (img as any).url);
-            sourcePhotos.push({
-              url: enhUrl || rawUrl || '',
-              photoIndex: idx,
-              isEnhanced: Boolean(enhUrl),
+          const hasEnhanced = Object.keys(allEnhancedPhotos || {}).length > 0;
+          if (hasEnhanced) {
+            // Strictly use only the actual enhanced result images!
+            photoList.forEach((_img, idx) => {
+              const enhUrl = allEnhancedPhotos?.[idx] || allEnhancedPhotos?.[idx + 1];
+              if (enhUrl) {
+                sourcePhotos.push({
+                  url: enhUrl,
+                  photoIndex: idx,
+                  isEnhanced: true,
+                });
+              }
             });
-          });
+          } else {
+            photoList.forEach((img, idx) => {
+              const rawUrl = normalizeMediaUrl(img.stored_url || img.source_url || (img as any).url);
+              sourcePhotos.push({
+                url: rawUrl || '',
+                photoIndex: idx,
+                isEnhanced: false,
+              });
+            });
+          }
         } else if (cropBox.imageSource === 'get_images' || (cropBox.imageSource as string) === 'get-images') {
           photoList.forEach((img, idx) => {
             const rawUrl = normalizeMediaUrl(img.stored_url || img.source_url || (img as any).url);
@@ -4558,7 +4636,15 @@ export const FacebookWorkflowCanvas = forwardRef<
           });
         } else {
           // Default: if enhanced photos exist and box is connected from enhance, use enhanced only!
-          if (photoList.length > 0) {
+          const hasEnhanced = Object.keys(allEnhancedPhotos || {}).length > 0;
+          if (hasEnhanced && isConnectedFromEnhance) {
+            photoList.forEach((_img, idx) => {
+              const enhUrl = allEnhancedPhotos?.[idx] || allEnhancedPhotos?.[idx + 1];
+              if (enhUrl) {
+                sourcePhotos.push({ url: enhUrl, photoIndex: idx, isEnhanced: true });
+              }
+            });
+          } else if (photoList.length > 0) {
             photoList.forEach((img, idx) => {
               const enhUrl = allEnhancedPhotos?.[idx] || allEnhancedPhotos?.[idx + 1];
               const rawUrl = normalizeMediaUrl(img.stored_url || img.source_url || (img as any).url);
@@ -9702,7 +9788,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 ) : (
                   <FiLink style={{ fontSize: '28px', color: '#1877F2', position: 'relative', zIndex: 2, pointerEvents: 'none' }} />
                 )}
-                <NodeExecutionBadge status={triggerStatus} />
+                <NodeExecutionBadge status={triggerStatus} errorMessage={getNodeErrorMessage('trigger') || undefined} />
                 {config.trigger.enabled !== false && (hoveredNodeId === 'trigger' || activeModalNode?.type === 'trigger' || selectedNodeIds.has('trigger')) &&
                   renderNodePlayButton('trigger', isManualTrigger ? '#10B981' : '#3B82F6', undefined, isManualTrigger ? 'Manual Input' : 'Link Importer')}
 
@@ -9765,6 +9851,25 @@ export const FacebookWorkflowCanvas = forwardRef<
                       {isManualTrigger
                         ? (config.trigger.manualImages?.length ? `✓ ${config.trigger.manualImages.length} Photos Ready` : '✓ Manual Input Ready')
                         : '✓ Link Extracted'}
+                    </span>
+                  )}
+                  {triggerStatus === 'error' && (
+                    <span
+                      style={{
+                        fontSize: '0.6875rem',
+                        color: '#EF4444',
+                        fontWeight: 600,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '3px',
+                        maxWidth: '160px',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                      title={getNodeErrorMessage('trigger') ? `Error: ${getNodeErrorMessage('trigger')} (Double-click to inspect)` : 'Extraction error (Double-click to inspect)'}
+                    >
+                      ⚠️ {getNodeErrorMessage('trigger') ? (getNodeErrorMessage('trigger')!.length > 18 ? getNodeErrorMessage('trigger')!.slice(0, 16) + '...' : getNodeErrorMessage('trigger')) : 'Failed'}
                     </span>
                   )}
                 </div>
@@ -9861,7 +9966,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                     pointerEvents: 'none',
                   }}
                 />
-                <NodeExecutionBadge status={contentStatus} />
+                <NodeExecutionBadge status={contentStatus} errorMessage={getNodeErrorMessage('get-content') || undefined} />
                 {Boolean(config.getContent.enabled) && (hoveredNodeId === 'get-content' || activeModalNode?.type === 'get-content' || selectedNodeIds.has('get-content')) &&
                   renderNodePlayButton('get-content', '#06B6D4', undefined, 'Get Content')}
 
@@ -9911,6 +10016,24 @@ export const FacebookWorkflowCanvas = forwardRef<
                         }}
                       />
                       <span>Extracting Content...</span>
+                    </span>
+                  ) : contentStatus === 'error' ? (
+                    <span
+                      style={{
+                        fontSize: '0.6875rem',
+                        color: '#EF4444',
+                        fontWeight: 600,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '3px',
+                        maxWidth: '150px',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                      title={getNodeErrorMessage('get-content') || 'Content extraction failed'}
+                    >
+                      ⚠️ {getNodeErrorMessage('get-content') ? (getNodeErrorMessage('get-content')!.length > 18 ? getNodeErrorMessage('get-content')!.slice(0, 16) + '...' : getNodeErrorMessage('get-content')) : 'Failed'}
                     </span>
                   ) : (
                     <span
@@ -10027,7 +10150,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                     pointerEvents: 'none',
                   }}
                 />
-                <NodeExecutionBadge status={imagesStatus} />
+                <NodeExecutionBadge status={imagesStatus} errorMessage={getNodeErrorMessage('get-images') || undefined} />
                 {Boolean(config.getImages.enabled) && (hoveredNodeId === 'get-images' || activeModalNode?.type === 'get-images' || selectedNodeIds.has('get-images')) &&
                   renderNodePlayButton('get-images', '#10B981', undefined, 'Get Images')}
 
@@ -10077,6 +10200,24 @@ export const FacebookWorkflowCanvas = forwardRef<
                         }}
                       />
                       <span style={{ color: isDark ? '#34D399' : '#059669' }}>Extracting Images...</span>
+                    </span>
+                  ) : imagesStatus === 'error' ? (
+                    <span
+                      style={{
+                        fontSize: '0.6875rem',
+                        color: '#EF4444',
+                        fontWeight: 600,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '3px',
+                        maxWidth: '150px',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                      title={getNodeErrorMessage('get-images') || 'Images extraction failed'}
+                    >
+                      ⚠️ {getNodeErrorMessage('get-images') ? (getNodeErrorMessage('get-images')!.length > 18 ? getNodeErrorMessage('get-images')!.slice(0, 16) + '...' : getNodeErrorMessage('get-images')) : 'Failed'}
                     </span>
                   ) : (
                     <span
@@ -10373,7 +10514,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                     <FiMessageSquare style={{ fontSize: '28px', color: isEffectiveEnabled ? '#8B5CF6' : '#8B949E', transition: 'color 0.2s ease' }} />
                   )}
                 </div>
-                <NodeExecutionBadge status={boxStatus} />
+                <NodeExecutionBadge status={boxStatus} errorMessage={getNodeErrorMessage(box.id) || undefined} />
 
                 {/* Label positioning:
                     - Format nodes (in branch ABOVE AI Box) place label ABOVE (bottom: CIRCLE_SIZE + 8px)
@@ -10495,7 +10636,25 @@ export const FacebookWorkflowCanvas = forwardRef<
                         </span>
                       );
                     })()}
-                    {boxStatus === 'running' ? (
+                    {boxStatus === 'error' ? (
+                      <span
+                        style={{
+                          fontSize: '0.6875rem',
+                          fontWeight: 600,
+                          color: '#EF4444',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '3px',
+                          maxWidth: isExternalBrowser ? '200px' : isTextFormat ? '130px' : '140px',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                        title={getNodeErrorMessage(box.id) ? `Error: ${getNodeErrorMessage(box.id)} (Double-click to inspect)` : 'Step failed (Double-click to inspect)'}
+                      >
+                        ⚠️ {getNodeErrorMessage(box.id) ? (getNodeErrorMessage(box.id)!.length > 18 ? getNodeErrorMessage(box.id)!.slice(0, 16) + '...' : getNodeErrorMessage(box.id)) : 'Failed'}
+                      </span>
+                    ) : boxStatus === 'running' ? (
                       <span
                         style={{
                           fontSize: '0.6875rem',
@@ -10815,7 +10974,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                 }}
               >
                 <NodeExecutionBadge
-                  status={cbStatus === 'success' ? 'success' : cbStatus === 'running' ? 'running' : 'idle'}
+                  status={cbStatus}
+                  errorMessage={getNodeErrorMessage(cb.id) || undefined}
                 />
                 <MergedNodeShape
                   sockets="both"
@@ -10872,8 +11032,23 @@ export const FacebookWorkflowCanvas = forwardRef<
                 onDoubleClick={(e) => handleNodeDoubleClick({ type: 'combine', combineId: cb.id, id: cb.id }, e)}
                 >
                   <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)', wordBreak: 'break-word', textAlign: 'center' }}>{cb.title || 'Combine Box'}</span>
-                  <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
-                    {cbStatus === 'success' ? `✓ Merged Output · ${uniqueCbInputs.length} ready` : `Merged Output · ${uniqueCbInputs.length} input${uniqueCbInputs.length !== 1 ? 's' : ''}`}
+                  <span
+                    style={{
+                      fontSize: '0.625rem',
+                      color: cbStatus === 'error' ? '#EF4444' : 'var(--text-muted)',
+                      fontWeight: cbStatus === 'error' ? 600 : 400,
+                      maxWidth: '160px',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                    title={cbStatus === 'error' ? getNodeErrorMessage(cb.id) || 'Combine error' : undefined}
+                  >
+                    {cbStatus === 'error'
+                      ? `⚠️ ${getNodeErrorMessage(cb.id) ? (getNodeErrorMessage(cb.id)!.length > 18 ? getNodeErrorMessage(cb.id)!.slice(0, 16) + '...' : getNodeErrorMessage(cb.id)) : 'Failed'}`
+                      : cbStatus === 'success'
+                        ? `✓ Merged Output · ${uniqueCbInputs.length} ready`
+                        : `Merged Output · ${uniqueCbInputs.length} input${uniqueCbInputs.length !== 1 ? 's' : ''}`}
                   </span>
                 </div>
               </div>
@@ -10903,6 +11078,11 @@ export const FacebookWorkflowCanvas = forwardRef<
               isEffectiveEnabled &&
               (executionState?.completedNodeIds?.includes(destId) ||
                 executionState?.completedNodeIds?.includes('destination'))
+            );
+            const isDestError = Boolean(
+              isEffectiveEnabled &&
+              (executionState?.failedNodeIds?.includes(destId) ||
+                executionState?.failedNodeIds?.includes('destination'))
             );
             const isDbNode = destNode.targetMode === 'remaining_posts' || destNode.platform === 'database';
             const isHybrid = (destNode.storeInDatabase && destNode.postToSocialMedia) || destNode.targetMode === 'hybrid';
@@ -11195,7 +11375,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                 </div>
 
                 <NodeExecutionBadge
-                  status={isDestSuccess ? 'success' : isDestRunning ? 'running' : 'idle'}
+                  status={isDestError ? 'error' : isDestSuccess ? 'success' : isDestRunning ? 'running' : 'idle'}
+                  errorMessage={getNodeErrorMessage(destId) || getNodeErrorMessage('destination') || undefined}
                   isCircle={isAccountNode}
                 />
 
@@ -11569,6 +11750,22 @@ export const FacebookWorkflowCanvas = forwardRef<
           const isCombine = activeModalNode.type === 'combine';
           const isOutput = activeModalNode.type === 'output';
           const isAIBox = activeModalNode.type === 'ai-box' && Boolean(currentModalAIBox);
+
+          const currentDrawerNodeId = isTrigger
+            ? 'trigger'
+            : isContent
+              ? 'get-content'
+              : isImages
+                ? 'get-images'
+                : isOutput
+                  ? 'output'
+                  : isAIBox
+                    ? currentModalAIBox?.id
+                    : isCombine
+                      ? (activeModalNode.combineId || (activeModalNode as any).id)
+                      : null;
+
+          const activeDrawerError = currentDrawerNodeId ? getNodeErrorMessage(currentDrawerNodeId) : null;
 
           // Combine Box metadata
           const combineId = isCombine ? (activeModalNode.combineId || (activeModalNode as any).id) : null;
@@ -11989,6 +12186,47 @@ export const FacebookWorkflowCanvas = forwardRef<
                   gap: '1rem',
                 }}
               >
+                {/* Active Node Error Banner */}
+                {activeDrawerError && (
+                  <div
+                    style={{
+                      padding: '0.75rem 0.875rem',
+                      borderRadius: '8px',
+                      backgroundColor: isDark ? 'rgba(239, 68, 68, 0.12)' : '#FEF2F2',
+                      border: isDark ? '1px solid rgba(239, 68, 68, 0.35)' : '1px solid #FCA5A5',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '6px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <FiAlertTriangle size={15} color="#EF4444" />
+                        <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#EF4444' }}>
+                          Step Execution Error
+                        </span>
+                      </div>
+                      <span
+                        style={{
+                          fontSize: '0.625rem',
+                          fontWeight: 600,
+                          padding: '1px 6px',
+                          borderRadius: '4px',
+                          backgroundColor: isDark ? 'rgba(239, 68, 68, 0.2)' : '#FEE2E2',
+                          color: '#EF4444',
+                        }}
+                      >
+                        Action Required
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: isDark ? '#FCA5A5' : '#B91C1C', lineHeight: 1.45, wordBreak: 'break-word', fontWeight: 500 }}>
+                      {activeDrawerError}
+                    </div>
+                    <div style={{ fontSize: '0.6875rem', color: isDark ? '#CBD5E1' : '#475569', lineHeight: 1.4, borderTop: isDark ? '1px solid rgba(239, 68, 68, 0.2)' : '1px solid rgba(239, 68, 68, 0.15)', paddingTop: '6px' }}>
+                      {getDiagnosticTip(activeDrawerError)}
+                    </div>
+                  </div>
+                )}
                 {/* TRIGGER SIDEBAR CONTENT */}
                 {isTrigger && (() => {
                   const isManual = config.trigger?.sourceMode === 'manual';
@@ -12272,17 +12510,25 @@ export const FacebookWorkflowCanvas = forwardRef<
                                       setLocallyCompletedNodeIds((prev) => prev.filter((id) => id !== 'get-content'));
                                       onClearManualData?.('content');
                                     }}
+                                    title="Clear description"
                                     style={{
-                                      background: 'none',
-                                      border: 'none',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '3px',
+                                      padding: '2px 7px',
+                                      borderRadius: '5px',
+                                      border: isDark ? '1px solid rgba(239, 68, 68, 0.28)' : '1px solid rgba(239, 68, 68, 0.25)',
+                                      backgroundColor: isDark ? 'rgba(239, 68, 68, 0.08)' : '#FEE2E2',
                                       color: '#EF4444',
                                       fontSize: '0.6875rem',
-                                      cursor: 'pointer',
-                                      padding: 0,
                                       fontWeight: 500,
+                                      cursor: 'pointer',
+                                      whiteSpace: 'nowrap',
+                                      transition: 'all 0.15s ease',
                                     }}
                                   >
-                                    Clear
+                                    <FiTrash2 size={11} />
+                                    <span>Clear</span>
                                   </button>
                                 )}
                                 <button
@@ -12741,20 +12987,22 @@ export const FacebookWorkflowCanvas = forwardRef<
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'space-between',
-                              padding: '10px 12px',
+                              padding: '8px 12px',
+                              gap: '8px',
                               borderBottom: isDark
                                 ? '1px solid rgba(255, 255, 255, 0.06)'
                                 : '1px solid rgba(15, 23, 42, 0.06)',
                             }}
                           >
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0, flexShrink: 0 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}>
                                 <span
                                   style={{
                                     fontSize: '0.8125rem',
                                     fontWeight: 600,
                                     letterSpacing: '-0.01em',
                                     color: 'var(--text-primary)',
+                                    whiteSpace: 'nowrap',
                                     fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif',
                                   }}
                                 >
@@ -12769,6 +13017,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                       backgroundColor: isDark ? 'rgba(16, 185, 129, 0.14)' : '#DCFCE7',
                                       padding: '1px 6px',
                                       borderRadius: '6px',
+                                      whiteSpace: 'nowrap',
                                     }}
                                   >
                                     ✓ Ready
@@ -12782,6 +13031,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                       backgroundColor: isDark ? 'rgba(56, 189, 248, 0.14)' : '#E0F2FE',
                                       padding: '1px 6px',
                                       borderRadius: '6px',
+                                      whiteSpace: 'nowrap',
                                     }}
                                   >
                                     ● Extracting...
@@ -12794,6 +13044,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                     fontSize: '0.6875rem',
                                     color: 'var(--text-muted)',
                                     fontWeight: 400,
+                                    whiteSpace: 'nowrap',
                                   }}
                                 >
                                   {rawContent.length} characters · {rawContent.trim().split(/\s+/).filter(Boolean).length} words
@@ -12801,7 +13052,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                               )}
                             </div>
 
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0, whiteSpace: 'nowrap' }}>
                               {rawContent && (
                                 <button
                                   type="button"
@@ -12820,18 +13071,19 @@ export const FacebookWorkflowCanvas = forwardRef<
                                     display: 'inline-flex',
                                     alignItems: 'center',
                                     gap: '4px',
-                                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
+                                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#F1F5F9',
                                     border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                                    borderRadius: '6px',
-                                    padding: '4px 8px',
-                                    fontSize: '0.71875rem',
+                                    borderRadius: '5px',
+                                    padding: '3px 8px',
+                                    fontSize: '0.6875rem',
                                     fontWeight: 500,
                                     color: 'var(--text-secondary)',
                                     cursor: 'pointer',
+                                    whiteSpace: 'nowrap',
                                     transition: 'all 0.15s ease',
                                   }}
                                 >
-                                  <FiEdit3 size={12} />
+                                  <FiEdit3 size={11} />
                                   <span>Edit</span>
                                 </button>
                               )}
@@ -12847,24 +13099,25 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   style={{
                                     display: 'inline-flex',
                                     alignItems: 'center',
-                                    gap: '5px',
+                                    gap: '4px',
                                     backgroundColor: copiedTextSuccess
                                       ? (isDark ? 'rgba(16, 185, 129, 0.16)' : '#DCFCE7')
-                                      : (isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9'),
+                                      : (isDark ? 'rgba(255, 255, 255, 0.05)' : '#F1F5F9'),
                                     border: copiedTextSuccess
                                       ? '1px solid rgba(16, 185, 129, 0.35)'
                                       : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
-                                    borderRadius: '6px',
-                                    padding: '4px 10px',
-                                    fontSize: '0.71875rem',
+                                    borderRadius: '5px',
+                                    padding: '3px 8px',
+                                    fontSize: '0.6875rem',
                                     fontWeight: 600,
                                     fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif',
                                     color: copiedTextSuccess ? '#10B981' : 'var(--text-primary)',
                                     cursor: 'pointer',
+                                    whiteSpace: 'nowrap',
                                     transition: 'all 0.15s ease',
                                   }}
                                 >
-                                  {copiedTextSuccess ? <FiCheck size={12} /> : <FiCopy size={12} />}
+                                  {copiedTextSuccess ? <FiCheck size={11} /> : <FiCopy size={11} />}
                                   <span>{copiedTextSuccess ? 'Copied' : 'Copy'}</span>
                                 </button>
                               )}
@@ -12933,20 +13186,22 @@ export const FacebookWorkflowCanvas = forwardRef<
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'space-between',
-                              padding: '10px 12px',
+                              padding: '8px 12px',
+                              gap: '8px',
                               borderBottom: isDark
                                 ? '1px solid rgba(255, 255, 255, 0.06)'
                                 : '1px solid rgba(15, 23, 42, 0.06)',
                             }}
                           >
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0, flexShrink: 0 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}>
                                 <span
                                   style={{
                                     fontSize: '0.8125rem',
                                     fontWeight: 600,
                                     letterSpacing: '-0.01em',
                                     color: 'var(--text-primary)',
+                                    whiteSpace: 'nowrap',
                                     fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif',
                                   }}
                                 >
@@ -12961,9 +13216,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                                       backgroundColor: isDark ? 'rgba(16, 185, 129, 0.14)' : '#DCFCE7',
                                       padding: '1px 6px',
                                       borderRadius: '6px',
+                                      whiteSpace: 'nowrap',
                                     }}
                                   >
-                                    ✓ Manual Ready
+                                    ✓ Ready
                                   </span>
                                 ) : (
                                   <span
@@ -12974,6 +13230,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                       backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.05)',
                                       padding: '1px 6px',
                                       borderRadius: '6px',
+                                      whiteSpace: 'nowrap',
                                     }}
                                   >
                                     Empty
@@ -12985,13 +13242,14 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   fontSize: '0.6875rem',
                                   color: 'var(--text-muted)',
                                   fontWeight: 400,
+                                  whiteSpace: 'nowrap',
                                 }}
                               >
                                 {currentManualText.length} characters · {currentManualText.trim().split(/\s+/).filter(Boolean).length} words
                               </span>
                             </div>
 
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0, whiteSpace: 'nowrap' }}>
                               {/* Reset to Extracted content if rawContent exists */}
                               {Boolean(rawContent && rawContent.trim() && rawContent !== currentManualText) && (
                                 <button
@@ -13006,23 +13264,25 @@ export const FacebookWorkflowCanvas = forwardRef<
                                       },
                                     });
                                   }}
-                                  title="Copy original extracted content into this manual box"
+                                  title="Restore original extracted content"
                                   style={{
                                     display: 'inline-flex',
                                     alignItems: 'center',
-                                    gap: '4px',
-                                    padding: '4px 8px',
-                                    borderRadius: '6px',
+                                    gap: '3px',
+                                    padding: '3px 7px',
+                                    borderRadius: '5px',
                                     border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
                                     backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#F1F5F9',
                                     color: 'var(--text-secondary)',
-                                    fontSize: '0.71875rem',
+                                    fontSize: '0.6875rem',
                                     fontWeight: 500,
                                     cursor: 'pointer',
+                                    whiteSpace: 'nowrap',
+                                    transition: 'all 0.15s ease',
                                   }}
                                 >
                                   <FiRefreshCw size={11} />
-                                  <span>Use Extracted</span>
+                                  <span>Extracted</span>
                                 </button>
                               )}
 
@@ -13052,14 +13312,16 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   display: 'inline-flex',
                                   alignItems: 'center',
                                   gap: '4px',
-                                  padding: '4px 8px',
-                                  borderRadius: '6px',
+                                  padding: '3px 7px',
+                                  borderRadius: '5px',
                                   border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
                                   backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#F1F5F9',
                                   color: 'var(--text-secondary)',
-                                  fontSize: '0.71875rem',
+                                  fontSize: '0.6875rem',
                                   fontWeight: 500,
                                   cursor: 'pointer',
+                                  whiteSpace: 'nowrap',
+                                  transition: 'all 0.15s ease',
                                 }}
                               >
                                 <FiClipboard size={11} />
@@ -13080,17 +13342,25 @@ export const FacebookWorkflowCanvas = forwardRef<
                                       },
                                     });
                                   }}
+                                  title="Clear manual content"
                                   style={{
-                                    background: 'none',
-                                    border: 'none',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '3px',
+                                    padding: '3px 7px',
+                                    borderRadius: '5px',
+                                    border: isDark ? '1px solid rgba(239, 68, 68, 0.28)' : '1px solid rgba(239, 68, 68, 0.25)',
+                                    backgroundColor: isDark ? 'rgba(239, 68, 68, 0.08)' : '#FEE2E2',
                                     color: '#EF4444',
-                                    fontSize: '0.71875rem',
-                                    cursor: 'pointer',
-                                    padding: '4px 6px',
+                                    fontSize: '0.6875rem',
                                     fontWeight: 500,
+                                    cursor: 'pointer',
+                                    whiteSpace: 'nowrap',
+                                    transition: 'all 0.15s ease',
                                   }}
                                 >
-                                  Clear
+                                  <FiTrash2 size={11} />
+                                  <span>Clear</span>
                                 </button>
                               )}
 
@@ -13103,26 +13373,28 @@ export const FacebookWorkflowCanvas = forwardRef<
                                     setCopiedTextSuccess(true);
                                     setTimeout(() => setCopiedTextSuccess(false), 2000);
                                   }}
+                                  title="Copy content to clipboard"
                                   style={{
                                     display: 'inline-flex',
                                     alignItems: 'center',
-                                    gap: '5px',
+                                    gap: '4px',
                                     backgroundColor: copiedTextSuccess
                                       ? (isDark ? 'rgba(16, 185, 129, 0.16)' : '#DCFCE7')
-                                      : (isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9'),
+                                      : (isDark ? 'rgba(255, 255, 255, 0.05)' : '#F1F5F9'),
                                     border: copiedTextSuccess
                                       ? '1px solid rgba(16, 185, 129, 0.35)'
                                       : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
-                                    borderRadius: '6px',
-                                    padding: '4px 10px',
-                                    fontSize: '0.71875rem',
+                                    borderRadius: '5px',
+                                    padding: '3px 8px',
+                                    fontSize: '0.6875rem',
                                     fontWeight: 600,
                                     color: copiedTextSuccess ? '#10B981' : 'var(--text-primary)',
                                     cursor: 'pointer',
+                                    whiteSpace: 'nowrap',
                                     transition: 'all 0.15s ease',
                                   }}
                                 >
-                                  {copiedTextSuccess ? <FiCheck size={12} /> : <FiCopy size={12} />}
+                                  {copiedTextSuccess ? <FiCheck size={11} /> : <FiCopy size={11} />}
                                   <span>{copiedTextSuccess ? 'Copied' : 'Copy'}</span>
                                 </button>
                               )}
@@ -17610,6 +17882,7 @@ export const FacebookWorkflowCanvas = forwardRef<
         const isAccountNode = Boolean(currentDest.accountId);
         const isPageAccount = isAccountNode;
         const hasPlusButton = !isAccountNode && (isFb || isIg || isTiktok || currentDest.targetMode === 'social_media');
+        const activeDestError = getNodeErrorMessage(activeDestId) || getNodeErrorMessage('destination');
 
         // Upstream connection detection via reverse graph BFS
         const upstreamIds = new Set<string>();
@@ -17759,6 +18032,47 @@ export const FacebookWorkflowCanvas = forwardRef<
                 gap: '1rem',
               }}
             >
+              {/* Active Destination Error Banner */}
+              {activeDestError && (
+                <div
+                  style={{
+                    padding: '0.75rem 0.875rem',
+                    borderRadius: '8px',
+                    backgroundColor: isDark ? 'rgba(239, 68, 68, 0.12)' : '#FEF2F2',
+                    border: isDark ? '1px solid rgba(239, 68, 68, 0.35)' : '1px solid #FCA5A5',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '6px',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <FiAlertTriangle size={15} color="#EF4444" />
+                      <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#EF4444' }}>
+                        Destination Error
+                      </span>
+                    </div>
+                    <span
+                      style={{
+                        fontSize: '0.625rem',
+                        fontWeight: 600,
+                        padding: '1px 6px',
+                        borderRadius: '4px',
+                        backgroundColor: isDark ? 'rgba(239, 68, 68, 0.2)' : '#FEE2E2',
+                        color: '#EF4444',
+                      }}
+                    >
+                      Action Required
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: isDark ? '#FCA5A5' : '#B91C1C', lineHeight: 1.45, wordBreak: 'break-word', fontWeight: 500 }}>
+                    {activeDestError}
+                  </div>
+                  <div style={{ fontSize: '0.6875rem', color: isDark ? '#CBD5E1' : '#475569', lineHeight: 1.4, borderTop: isDark ? '1px solid rgba(239, 68, 68, 0.2)' : '1px solid rgba(239, 68, 68, 0.15)', paddingTop: '6px' }}>
+                    {getDiagnosticTip(activeDestError)}
+                  </div>
+                </div>
+              )}
               {/* Connect Next Step Quick Button (top) */}
               {hasPlusButton &&
                 renderCenteredConnectButton(

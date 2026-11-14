@@ -203,11 +203,25 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
 
     // When upstream is an Enhance node, merge with the first step's photos!
     if (isUpstreamEnhance || imageSource === 'enhance') {
-      const totalPhotos = images && images.length > 0 ? images.length : 6;
+      const hasEnhanced = Object.keys(enhancedPhotos || {}).length > 0;
+      const enhancedIndices = Object.keys(enhancedPhotos || {}).map(Number).filter((n) => !isNaN(n));
+      const maxEnhanced = enhancedIndices.length > 0 ? Math.max(...enhancedIndices) + 1 : 0;
+      const totalPhotos = Math.max(images?.length || 0, maxEnhanced, 6);
+
       for (let idx = 0; idx < totalPhotos; idx++) {
         const photoNum = idx + 1;
         const rawImg = images?.[idx];
-        const enhancedUrl = enhancedPhotos?.[idx] || enhancedPhotos?.[photoNum];
+        const enhancedUrl =
+          (enhancedPhotos as any)?.[idx] ||
+          (enhancedPhotos as any)?.[photoNum] ||
+          (enhancedPhotos as any)?.[String(idx)] ||
+          (enhancedPhotos as any)?.[String(photoNum)];
+
+        // If enhanced results exist, ONLY include the images that are actually enhanced!
+        if (hasEnhanced && !enhancedUrl) {
+          continue;
+        }
+
         const rawUrl = rawImg
           ? (rawImg.stored_url
               ? (rawImg.stored_url.startsWith('http') ? rawImg.stored_url : `http://localhost:8085${rawImg.stored_url}`)
@@ -276,10 +290,13 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
   });
 
   useEffect(() => {
-    if (currentSourceList.length > 0 && selectedIndices.length === 0) {
-      const all = currentSourceList.map((p) => p.index);
-      setSelectedIndices(all);
-      onUpdateBox(box.id, { selectedImageIndices: all });
+    if (currentSourceList.length > 0) {
+      const validIndices = selectedIndices.filter((idx) => currentSourceList.some((p) => p.index === idx));
+      if (selectedIndices.length === 0 || validIndices.length === 0 || validIndices.length !== selectedIndices.length) {
+        const next = validIndices.length > 0 ? validIndices : currentSourceList.map((p) => p.index);
+        setSelectedIndices(next);
+        onUpdateBox(box.id, { selectedImageIndices: next });
+      }
     }
   }, [currentSourceList.length]);
 
@@ -321,10 +338,12 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
         label: `${heroLabel} (1 Photo)`,
       });
     }
-    if (hasIncomingEnhance || enhanceNode) {
+    if (isUpstreamEnhance || hasIncomingEnhance || enhanceNode) {
+      const enhanceCount = Object.keys(enhancedPhotos || {}).length;
+      const displayCount = enhanceCount > 0 ? enhanceCount : (images?.length || 12);
       opts.push({
         value: 'enhance',
-        label: `${enhanceLabel} (${images.length || 12} Photos)`,
+        label: `${enhanceLabel} (${displayCount} Photos)`,
       });
     }
     opts.push({
@@ -336,7 +355,7 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
       label: 'All Available Media',
     });
     return opts;
-  }, [connections, box.id, workflowBoxes, heroNode, enhanceNode, heroLabel, enhanceLabel, images.length]);
+  }, [connections, box.id, workflowBoxes, heroNode, enhanceNode, heroLabel, enhanceLabel, images.length, enhancedPhotos, isUpstreamEnhance]);
 
   const handleSelectFormat = (format: CropStudioFormat) => {
     setSelectedFormatId(format.id);

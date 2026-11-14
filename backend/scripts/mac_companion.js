@@ -189,6 +189,7 @@ function saveImageThreadsToDisk() {
 
 loadImageThreadsFromDisk();
 
+let lastActiveListingCode = '';
 let activeWatchDir = defaultProcessingDir;
 let processedFiles = new Set();
 let registeredProfiles = [];   // [{ profileKey, profileName, tabGroups, paired_at }]
@@ -2100,6 +2101,7 @@ function mergeTabGroups(scannedGroups, liveGroups) {
 
         let { profile_key, tab_ids, jobs, property_id, listing_code } = payload;
         const safeListingCode = listing_code || payload.listingCode || (payload.property_metadata && payload.property_metadata.listing_code) || '';
+        if (safeListingCode) lastActiveListingCode = safeListingCode;
         const safeTabIds = (tab_ids && tab_ids.length > 0) ? tab_ids : [1, 2, 3, 4];
 
         automationState = {
@@ -2194,7 +2196,13 @@ function mergeTabGroups(scannedGroups, liveGroups) {
       try {
         const payload = JSON.parse(body || '{}');
         const imageUrl = payload.url || '';
-        const filename = (payload.filename || `fb_hero_${Date.now()}.png`).replace(/[\/\\]/g, '_').trim();
+        let filename = (payload.filename || `fb_hero_${Date.now()}.png`).replace(/[\/\\]/g, '_').trim();
+        const incomingListingCode = (payload.listingCode || payload.listing_code || lastActiveListingCode || '').trim();
+        if (incomingListingCode) lastActiveListingCode = incomingListingCode;
+        if (incomingListingCode && filename.match(/^enhanced_(\d+)_/i)) {
+          const pos = filename.match(/^enhanced_(\d+)_/i)[1];
+          filename = `${incomingListingCode}-${pos}.png`;
+        }
         const condoName = payload.condo_name || '';
 
         if (!imageUrl) {
@@ -2450,14 +2458,23 @@ function mergeTabGroups(scannedGroups, liveGroups) {
     req.on('end', () => {
       try {
         const payload = JSON.parse(body || '{}');
+        const normalized = {
+          ...payload,
+          propertyId: payload.propertyId || payload.property_id || '',
+          listingCode: (payload.listingCode || payload.listing_code || '').trim(),
+          property_id: payload.propertyId || payload.property_id || '',
+          listing_code: (payload.listingCode || payload.listing_code || '').trim(),
+          targetPositions: payload.targetPositions || payload.target_positions || [],
+        };
+        if (normalized.listingCode) lastActiveListingCode = normalized.listingCode;
         pushPendingCommand({
           action: 'RECOVER_MISSING_IMAGES',
-          payload,
+          payload: normalized,
           created_at: new Date().toISOString(),
         });
-        console.log('[COMPANION] 🔄 Queued RECOVER_MISSING_IMAGES command for extension:', payload);
+        console.log('[COMPANION] 🔄 Queued RECOVER_MISSING_IMAGES command for extension:', normalized);
         res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-        res.end(JSON.stringify({ status: 'queued', payload }));
+        res.end(JSON.stringify({ status: 'queued', payload: normalized }));
       } catch (err) {
         res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
         res.end(JSON.stringify({ error: err.message }));
@@ -3121,7 +3138,9 @@ function mergeTabGroups(scannedGroups, liveGroups) {
           if (listingPrefix) {
             if (listingPrefix.toLowerCase() !== filterLower) continue;
           } else if (!lower.includes(filterLower)) {
-            if (!reqPropertyId || !f.includes(reqPropertyId)) continue;
+            // Also accept recently created enhanced_X files within the last 3 hours
+            const isRecentEnhanced = mEnhanced && (Date.now() - stat.mtimeMs < 3 * 60 * 60 * 1000);
+            if (!isRecentEnhanced && (!reqPropertyId || !f.includes(reqPropertyId))) continue;
           }
         } else if (reqPropertyId && !f.includes(reqPropertyId)) {
           continue;
@@ -3139,7 +3158,9 @@ function mergeTabGroups(scannedGroups, liveGroups) {
         };
 
         const key = imgObj.position;
-        if (!seenPositions.has(key) || stat.mtimeMs > seenPositions.get(key).mtime) {
+        const existing = seenPositions.get(key);
+        // Prefer matching listing prefix over generic enhanced_X, or newer mtime
+        if (!existing || (item.listingPrefix && !existing.listingPrefix) || stat.mtimeMs > existing.mtime) {
           seenPositions.set(key, imgObj);
         }
       }

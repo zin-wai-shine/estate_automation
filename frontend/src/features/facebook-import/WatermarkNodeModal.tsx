@@ -548,12 +548,12 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
   const mergedEnhancedPhotos = useMemo(() => {
     // Merge enhancedPhotos and companionEnhanced, normalizing all enhanced image URLs
     const merged: Record<number, string> = {};
-    const maxPhotos = effectiveImageList?.length || 6;
+    const maxAllowed = Math.max(effectiveImageList?.length || 0, 99);
     const sourceObj = { ...(enhancedPhotos || {}), ...companionEnhanced };
     Object.entries(sourceObj).forEach(([k, url]) => {
       const num = Number(k);
-      // Strictly ignore any image index beyond the first step's photos
-      if (num >= maxPhotos) return;
+      // Strictly ignore any image index beyond valid bounds
+      if (isNaN(num) || num < 0 || num > maxAllowed) return;
       if (!url) return;
       let clean = url;
       if (clean.includes('localhost:8085/storage/')) {
@@ -584,11 +584,25 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
 
     // When upstream is an Enhance node, merge with the first step's photos!
     if (isUpstreamEnhance || imageSource === 'enhance') {
-      const totalPhotos = effectiveImageList && effectiveImageList.length > 0 ? effectiveImageList.length : 6;
+      const hasEnhanced = Object.keys(mergedEnhancedPhotos).length > 0;
+      const enhancedIndices = Object.keys(mergedEnhancedPhotos).map(Number).filter((n) => !isNaN(n));
+      const maxEnhanced = enhancedIndices.length > 0 ? Math.max(...enhancedIndices) + 1 : 0;
+      const totalPhotos = Math.max(effectiveImageList?.length || 0, maxEnhanced, 6);
+
       for (let idx = 0; idx < totalPhotos; idx++) {
         const photoNum = idx + 1;
         const rawImg = effectiveImageList?.[idx];
-        const enhancedUrl = mergedEnhancedPhotos[idx] || mergedEnhancedPhotos[photoNum];
+        const enhancedUrl =
+          mergedEnhancedPhotos[idx] ||
+          mergedEnhancedPhotos[photoNum] ||
+          (mergedEnhancedPhotos as any)[String(idx)] ||
+          (mergedEnhancedPhotos as any)[String(photoNum)];
+
+        // If enhanced results exist, ONLY include the images that are actually enhanced!
+        if (hasEnhanced && !enhancedUrl) {
+          continue;
+        }
+
         const rawUrl = rawImg
           ? (rawImg.stored_url
               ? (rawImg.stored_url.startsWith('http') ? rawImg.stored_url : `http://localhost:8085${rawImg.stored_url}`)
@@ -685,12 +699,14 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
   useEffect(() => {
     if (currentSourceList.length > 0) {
       const isCustomExplicit = (box as any).isCustomPicked === true;
+      const validIndices = selectedIndices.filter((idx) => currentSourceList.some((p) => p.index === idx));
       const shouldSelectAll =
         selectedIndices.length === 0 ||
         !isCustomExplicit ||
-        !selectedIndices.some((idx) => currentSourceList.some((p) => p.index === idx));
+        validIndices.length === 0 ||
+        validIndices.length !== selectedIndices.length;
 
-      if (shouldSelectAll && selectedIndices.length !== currentSourceList.length) {
+      if (shouldSelectAll && (selectedIndices.length !== currentSourceList.length || validIndices.length !== selectedIndices.length)) {
         const all = currentSourceList.map((p) => p.index);
         setSelectedIndices(all);
         onUpdateBox(box.id, { selectedImageIndices: all });
@@ -884,12 +900,13 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
   const sourceOptions: SelectOption[] = useMemo(() => {
     const getImagesCount = effectiveImageList.length;
     const enhanceCount = Object.keys(mergedEnhancedPhotos).length;
+    const displayEnhanceCount = enhanceCount > 0 ? enhanceCount : (getImagesCount || 12);
     const heroCount = effectiveHeroImage ? 1 : (effectiveImageList.length > 0 ? 1 : 0);
-    const totalCount = getImagesCount + (effectiveHeroImage ? 1 : 0);
+    const totalCount = (enhanceCount > 0 ? enhanceCount : getImagesCount) + (effectiveHeroImage ? 1 : 0);
 
     return [
       { value: 'get_images', label: `Get Images (${getImagesCount} ${getImagesCount === 1 ? 'Photo' : 'Photos'})` },
-      { value: 'enhance', label: `${enhanceLabel} (${enhanceCount} ${enhanceCount === 1 ? 'Photo' : 'Photos'})` },
+      { value: 'enhance', label: `${enhanceLabel} (${displayEnhanceCount} ${displayEnhanceCount === 1 ? 'Photo' : 'Photos'})` },
       { value: 'generate', label: `${heroLabel} (${heroCount} ${heroCount === 1 ? 'Photo' : 'Photos'})` },
       { value: 'all', label: `All Photos (${totalCount} ${totalCount === 1 ? 'Photo' : 'Photos'})` },
     ];

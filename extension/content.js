@@ -752,7 +752,7 @@
     const threadUrl = window.location.href;
 
     // Memorize image thread immediately
-    if (position && threadUrl && threadUrl.includes('/c/')) {
+    if (position && threadUrl && (threadUrl.includes('chatgpt.com') || threadUrl.includes('chat.openai.com'))) {
       chrome.runtime.sendMessage({
         action: 'MEMORIZE_IMAGE_THREAD',
         position,
@@ -777,10 +777,10 @@
       }
     }
 
-    // Convert blob: URL to data: URL if needed, so companion direct save can write to disk without network failure
-    if (companionUrl.startsWith('blob:') || (!companionUrl.startsWith('data:') && finalUrl.startsWith('blob:'))) {
+    // Convert remote (e.g. files.oaiusercontent.com) or blob: URL to data: URL in tab context with credentials
+    if (!companionUrl.startsWith('data:') && finalUrl) {
       try {
-        const bResp = await fetch(finalUrl);
+        const bResp = await fetch(finalUrl, { credentials: 'include' });
         if (bResp.ok) {
           const bBlob = await bResp.blob();
           companionUrl = await new Promise((res) => {
@@ -788,10 +788,39 @@
             reader.onloadend = () => res(reader.result);
             reader.readAsDataURL(bBlob);
           });
+          console.log('[BOLTHAVEN] ✓ Converted image to data URL via in-tab fetch');
         }
       } catch (e) {
-        console.warn('[BOLTHAVEN] Could not convert blob to data URL for companion save:', e.message);
+        console.warn('[BOLTHAVEN] In-tab fetch to data URL note:', e.message);
       }
+    }
+
+    // Secondary fallback: test with anonymous Image element to export data URL
+    if (!companionUrl.startsWith('data:') && finalUrl && (finalUrl.startsWith('http:') || finalUrl.startsWith('https:'))) {
+      try {
+        const dataUrlFromImg = await new Promise((resolve) => {
+          const testImg = new Image();
+          testImg.crossOrigin = 'anonymous';
+          testImg.onload = () => {
+            try {
+              const c = document.createElement('canvas');
+              c.width = testImg.naturalWidth;
+              c.height = testImg.naturalHeight;
+              const cx = c.getContext('2d');
+              cx.drawImage(testImg, 0, 0);
+              resolve(c.toDataURL('image/png'));
+            } catch (_) {
+              resolve(null);
+            }
+          };
+          testImg.onerror = () => resolve(null);
+          testImg.src = finalUrl;
+        });
+        if (dataUrlFromImg) {
+          companionUrl = dataUrlFromImg;
+          console.log('[BOLTHAVEN] ✓ Converted image via anonymous Image element to data URL');
+        }
+      } catch (_) {}
     }
 
     // Tier 1: Primary Serialized Background Download (fetches via extension host permissions + saves via Node Companion + chrome.downloads)
@@ -2072,7 +2101,7 @@
 
           // Memorize the ChatGPT chat thread URL for this exact image position
           const currentChatUrl = window.location.href;
-          if (currentChatUrl && currentChatUrl.includes('/c/')) {
+          if (currentChatUrl && (currentChatUrl.includes('chatgpt.com') || currentChatUrl.includes('chat.openai.com'))) {
             chrome.runtime.sendMessage({
               action: 'MEMORIZE_IMAGE_THREAD',
               position: pos,
@@ -3237,7 +3266,7 @@
 
           // Memorize this thread URL immediately
           const threadUrl = window.location.href;
-          if (threadUrl && threadUrl.includes('/c/')) {
+          if (threadUrl && (threadUrl.includes('chatgpt.com') || threadUrl.includes('chat.openai.com'))) {
             chrome.runtime.sendMessage({
               action: 'MEMORIZE_IMAGE_THREAD',
               position: pos,

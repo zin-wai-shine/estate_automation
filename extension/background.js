@@ -139,7 +139,9 @@ async function handleSerializedDownload(request) {
 
 async function recoverMissingDownloads(payload = {}) {
   console.log('[BOLTHAVEN EXT] 🔄 Running Serial Recovery for Missing Downloads...');
-  const { propertyId, listingCode, targetPositions } = payload;
+  const propertyId = payload.propertyId || payload.property_id || '';
+  const listingCode = (payload.listingCode || payload.listing_code || automation.listingCode || (automation.originalJobs?.[0]?.listing_code) || '').trim();
+  const targetPositions = payload.targetPositions || payload.target_positions;
 
   // 1. Fetch currently downloaded enhanced images from companion
   let downloadedImages = [];
@@ -180,7 +182,7 @@ async function recoverMissingDownloads(payload = {}) {
     return { success: true, missing: [], recovered: 0 };
   }
 
-  console.log(`[BOLTHAVEN EXT] 🔍 Detected ${missingPositions.length} missing image(s): [${missingPositions.join(', ')}]`);
+  console.log(`[BOLTHAVEN EXT] 🔍 Detected ${missingPositions.length} missing image(s): [${missingPositions.join(', ')}] (Listing: "${listingCode}")`);
 
   // 2. Fetch memorized threads from companion
   let threads = {};
@@ -201,50 +203,78 @@ async function recoverMissingDownloads(payload = {}) {
 
     console.log(`[BOLTHAVEN EXT] Checking missing Image #${pos}... (Thread: ${threadUrl || 'unknown'})`);
 
-    let tabId = null;
+    const candidateTabIds = [];
     const allTabs = await chrome.tabs.query({});
 
-    // Check if an existing open tab has this URL
+    // 1. Memorized thread URL
     if (threadUrl) {
       const matchingTab = allTabs.find((t) => t.url === threadUrl || (t.url && threadUrl.includes(t.url)));
       if (matchingTab) {
-        tabId = matchingTab.id;
+        candidateTabIds.push(matchingTab.id);
+      } else {
+        try {
+          const newTab = await chrome.tabs.create({ url: threadUrl, active: false });
+          candidateTabIds.push(newTab.id);
+          await delay(3500);
+        } catch (e) {}
       }
     }
 
-    // If tab is not open, open it
-    if (!tabId && threadUrl) {
-      try {
-        const newTab = await chrome.tabs.create({ url: threadUrl, active: false });
-        tabId = newTab.id;
-        await delay(3500); // Wait for page to load
-      } catch (e) {}
+    // 2. Open tabs in worker tab groups (e.g. Enhance IMG group)
+    try {
+      const groups = await chrome.tabGroups.query({});
+      const enhanceGroup = groups.find((g) => (g.title || '').toLowerCase().includes('enhance'));
+      if (enhanceGroup) {
+        const groupTabs = allTabs.filter((t) => t.groupId === enhanceGroup.id);
+        for (const gt of groupTabs) {
+          if (gt.id && !candidateTabIds.includes(gt.id)) candidateTabIds.push(gt.id);
+        }
+      }
+    } catch (_) {}
+
+    // 3. Active tab if on ChatGPT
+    const activeChatTabs = allTabs.filter((t) => t.active && t.url && (t.url.includes('chatgpt.com') || t.url.includes('chat.openai.com')));
+    for (const at of activeChatTabs) {
+      if (at.id && !candidateTabIds.includes(at.id)) candidateTabIds.push(at.id);
+    }
+
+    // 4. Any other open ChatGPT tab
+    const chatTabs = allTabs.filter((t) => t.url && (t.url.includes('chatgpt.com') || t.url.includes('chat.openai.com')));
+    for (const ct of chatTabs) {
+      if (ct.id && !candidateTabIds.includes(ct.id)) candidateTabIds.push(ct.id);
     }
 
     let downloaded = false;
-    if (tabId) {
-      await ensureContentScriptInjected(tabId);
-      await delay(500);
+    const effectiveFilename = threadInfo?.filename || (listingCode ? `${listingCode}-${pos}.png` : `enhanced_${pos}_${Date.now()}.png`);
 
-      // Ask the tab to find and download the enhanced image on screen!
-      const dlRes = await new Promise((resolve) => {
-        chrome.tabs.sendMessage(tabId, {
-          action: 'DOWNLOAD_CURRENT_ENHANCED_IMAGE',
-          position: pos,
-          listingCode: listingCode || threadInfo?.listingCode || '',
-          filename: threadInfo?.filename,
-        }, (res) => {
-          if (chrome.runtime.lastError) resolve({ success: false, error: chrome.runtime.lastError.message });
-          else resolve(res || { success: false });
+    for (const cTabId of candidateTabIds) {
+      try {
+        await ensureContentScriptInjected(cTabId);
+        await delay(300);
+
+        // Ask the tab to find and download the enhanced image on screen!
+        const dlRes = await new Promise((resolve) => {
+          chrome.tabs.sendMessage(cTabId, {
+            action: 'DOWNLOAD_CURRENT_ENHANCED_IMAGE',
+            position: pos,
+            listingCode: listingCode,
+            filename: effectiveFilename,
+          }, (res) => {
+            if (chrome.runtime.lastError) resolve({ success: false, error: chrome.runtime.lastError.message });
+            else resolve(res || { success: false });
+          });
         });
-      });
 
-      if (dlRes && dlRes.success) {
-        downloaded = true;
-        recoveredCount++;
-        console.log(`[BOLTHAVEN EXT] ✓ Successfully recovered & downloaded Image #${pos}!`);
-      } else {
-        console.log(`[BOLTHAVEN EXT] Tab had no ready enhanced image for #${pos}:`, dlRes?.error);
+        if (dlRes && dlRes.success) {
+          downloaded = true;
+          recoveredCount++;
+          console.log(`[BOLTHAVEN EXT] ✓ Successfully recovered & downloaded Image #${pos} from tab ${cTabId}!`);
+          break; // Stop querying other tabs once downloaded
+        } else {
+          console.log(`[BOLTHAVEN EXT] Tab ${cTabId} had no ready enhanced image for #${pos}:`, dlRes?.error);
+        }
+      } catch (tabErr) {
+        console.warn(`[BOLTHAVEN EXT] Candidate tab ${cTabId} error for #${pos}:`, tabErr.message);
       }
     }
 
@@ -255,8 +285,8 @@ async function recoverMissingDownloads(payload = {}) {
 
   notifyProgress();
 
-  // If some images could not be downloaded from open tabs and need to be generated again:
-  if (stillMissing.length > 0 && payload.autoWorkMissing !== false && automation.originalJobs && automation.originalJobs.length > 0) {
+  // If some images could not be downloaded from open tabs and explicitly requested to re-generate:
+  if (stillMissing.length > 0 && payload.autoWorkMissing === true && automation.originalJobs && automation.originalJobs.length > 0) {
     const missingJobs = automation.originalJobs.filter((j) => {
       const p = j.original_position || j.index || 1;
       return stillMissing.includes(p);

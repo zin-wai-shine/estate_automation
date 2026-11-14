@@ -849,7 +849,10 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             property_id: propertyContext?.id || '',
+            propertyId: propertyContext?.id || '',
             listing_code: (propertyContext?.listingCode || '').trim(),
+            listingCode: (propertyContext?.listingCode || '').trim(),
+            autoWorkMissing: false,
           }),
         });
       } catch (e) {}
@@ -898,29 +901,35 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           property_id: propertyContext?.id || '',
+          propertyId: propertyContext?.id || '',
           listing_code: (propertyContext?.listingCode || '').trim(),
+          listingCode: (propertyContext?.listingCode || '').trim(),
           targetPositions: [position],
+          autoWorkMissing: false,
         }),
       });
-      await new Promise((r) => setTimeout(r, 1000));
-      const freshList = await fetchEnhancedDownloadedImages(propertyContext?.id, propertyContext?.listingCode);
-      const newTs = Date.now();
-      setCacheBustTimestamp(newTs);
-      if (freshList && freshList.length > 0) {
-        const valid = freshList.filter((img) => (img.position || 1) <= (receivedImages.length || 99));
-        if (valid.length > 0) {
-          const cacheBusted = valid.map((img) => ({
-            ...img,
-            url: img.url.includes('?') ? `${img.url}&_cb=${newTs}` : `${img.url}?_cb=${newTs}`,
-          }));
-          setEnhancedImages(cacheBusted);
-          if (onEnhancedPhotosUpdate) {
-            const map: Record<number, string> = {};
-            cacheBusted.forEach((img) => {
-              const pos0 = (img.position || 1) - 1;
-              map[pos0] = img.backend_url || img.url;
-            });
-            onEnhancedPhotosUpdate(map);
+      for (let i = 0; i < 4; i++) {
+        await new Promise((r) => setTimeout(r, 800));
+        const freshList = await fetchEnhancedDownloadedImages(propertyContext?.id, propertyContext?.listingCode);
+        if (freshList && freshList.length > 0) {
+          const valid = freshList.filter((img) => (img.position || 1) <= (receivedImages.length || 99));
+          if (valid.some((img) => img.position === position)) {
+            const newTs = Date.now();
+            setCacheBustTimestamp(newTs);
+            const cacheBusted = valid.map((img) => ({
+              ...img,
+              url: img.url.includes('?') ? `${img.url}&_cb=${newTs}` : `${img.url}?_cb=${newTs}`,
+            }));
+            setEnhancedImages(cacheBusted);
+            if (onEnhancedPhotosUpdate) {
+              const map: Record<number, string> = {};
+              cacheBusted.forEach((img) => {
+                const pos0 = (img.position || 1) - 1;
+                map[pos0] = img.backend_url || img.url;
+              });
+              onEnhancedPhotosUpdate(map);
+            }
+            break;
           }
         }
       }
@@ -5462,8 +5471,16 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
             border: '1px solid rgba(16, 185, 129, 0.35)',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '6px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap', flexShrink: 0 }}>
               <div
                 style={{
                   width: '18px',
@@ -5476,15 +5493,31 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                   justifyContent: 'center',
                   fontSize: '11px',
                   fontWeight: 700,
+                  flexShrink: 0,
                 }}
               >
                 ✓
               </div>
-              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#10B981' }}>
+              <span
+                style={{
+                  fontSize: '0.75rem',
+                  fontWeight: 700,
+                  color: '#10B981',
+                  whiteSpace: 'nowrap',
+                }}
+              >
                 Enhanced Images ({enhancedImages.length} Photos)
               </span>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                flexWrap: 'wrap',
+                marginLeft: 'auto',
+              }}
+            >
               {missingPositions.length > 0 && enhancedImages.length > 0 && !isAutomating && !isRunningTwoStage && (
                 <Button
                   size="sm"
@@ -5493,45 +5526,69 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                   onClick={async () => {
                     setIsRecovering(true);
                     try {
-                      // 1. First trigger fast serial download recovery from memorized tabs
+                      // 1. Fast serial download recovery from memorized tabs & open ChatGPT tabs
                       await fetch('http://127.0.0.1:9224/recover-missing-images', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                           property_id: propertyContext?.id || '',
+                          propertyId: propertyContext?.id || '',
                           listing_code: (propertyContext?.listingCode || '').trim(),
+                          listingCode: (propertyContext?.listingCode || '').trim(),
                           targetPositions: missingPositions,
+                          autoWorkMissing: false,
                         }),
                       });
-                      // Wait for serial downloads to process
-                      await new Promise((r) => setTimeout(r, 2200));
-                      const refreshedList = await fetchEnhancedDownloadedImages(propertyContext?.id, propertyContext?.listingCode);
-                      const refreshedPositions = new Set((refreshedList || []).map((img) => img.position));
-                      const remainingMissing = missingPositions.filter((p) => !refreshedPositions.has(p));
-                      if (remainingMissing.length > 0) {
-                        // 2. Automatically queue and work remaining missing images across tabs!
-                        setSelectedGroupName(currentGroup.name || boxConfig.browserGroupName || 'Enhance IMG');
-                        await handleStartGroupAutomation(remainingMissing);
+                      // Poll for newly recovered images across up to 6 seconds
+                      for (let i = 0; i < 6; i++) {
+                        await new Promise((r) => setTimeout(r, 1000));
+                        const refreshedList = await fetchEnhancedDownloadedImages(propertyContext?.id, propertyContext?.listingCode);
+                        if (refreshedList && refreshedList.length > 0) {
+                          const refreshedPositions = new Set(refreshedList.map((img) => img.position));
+                          const remainingMissing = missingPositions.filter((p) => !refreshedPositions.has(p));
+                          if (remainingMissing.length === 0) {
+                            const newTs = Date.now();
+                            setCacheBustTimestamp(newTs);
+                            const cacheBusted = refreshedList.map((img) => ({
+                              ...img,
+                              url: img.url.includes('?') ? `${img.url}&_cb=${newTs}` : `${img.url}?_cb=${newTs}`,
+                            }));
+                            setEnhancedImages(cacheBusted);
+                            if (onEnhancedPhotosUpdate) {
+                              const map: Record<number, string> = {};
+                              cacheBusted.forEach((img) => {
+                                const pos0 = (img.position || 1) - 1;
+                                map[pos0] = img.backend_url || img.url;
+                              });
+                              onEnhancedPhotosUpdate(map);
+                            }
+                            break;
+                          }
+                        }
                       }
+                      await loadQueue();
                     } catch (e) {
+                      console.warn('Recovery error:', e);
                     } finally {
                       setIsRecovering(false);
                     }
                   }}
                   style={{
-                    padding: '2px 8px',
+                    padding: '2px 7px',
                     fontSize: '0.625rem',
                     display: 'inline-flex',
                     alignItems: 'center',
-                    gap: '4px',
+                    gap: '3px',
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
                     borderColor: 'rgba(239, 68, 68, 0.45)',
                     color: '#EF4444',
                     backgroundColor: 'rgba(239, 68, 68, 0.08)',
                   }}
                   title={`Missing ${missingPositions.length} photo(s): ${missingPositions.map((p) => `#${p}`).join(', ')}. Click to recover and re-queue missing photos!`}
                 >
-                  <FiRefreshCw size={11} className={isRecovering ? 'animate-spin' : ''} />
-                  <span>Recover Missing ({missingPositions.length})</span>
+                  <FiRefreshCw size={10} className={isRecovering ? 'animate-spin' : ''} />
+                  <span>Recover ({missingPositions.length})</span>
                 </Button>
               )}
               {/* Re-get Enhanced Images Button */}
@@ -5541,18 +5598,20 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                 disabled={isRegettingImages}
                 onClick={handleRegetEnhancedImages}
                 style={{
-                  padding: '2px 8px',
+                  padding: '2px 7px',
                   fontSize: '0.625rem',
                   display: 'inline-flex',
                   alignItems: 'center',
-                  gap: '4px',
+                  gap: '3px',
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0,
                   borderColor: regetFeedback ? 'rgba(16, 185, 129, 0.45)' : undefined,
                   color: regetFeedback ? '#10B981' : 'var(--text-primary)',
                   backgroundColor: regetFeedback ? (isDark ? 'rgba(16, 185, 129, 0.12)' : '#DEF7EC') : undefined,
                 }}
                 title="Re-get and sync all enhanced photos from your drive / downloads"
               >
-                <FiRefreshCw size={11} className={isRegettingImages ? 'animate-spin' : ''} />
+                <FiRefreshCw size={10} className={isRegettingImages ? 'animate-spin' : ''} />
                 <span>{regetFeedback || 'Re-get'}</span>
               </Button>
 
@@ -5563,16 +5622,18 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                   fetch('http://127.0.0.1:9224/reveal-file').catch(() => {});
                 }}
                 style={{
-                  padding: '2px 8px',
+                  padding: '2px 7px',
                   fontSize: '0.625rem',
                   display: 'inline-flex',
                   alignItems: 'center',
-                  gap: '4px',
+                  gap: '3px',
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0,
                   borderColor: 'rgba(16, 185, 129, 0.35)',
                 }}
                 title="Open Downloads folder in macOS Finder"
               >
-                <FiFolder size={11} style={{ color: '#10B981' }} />
+                <FiFolder size={10} style={{ color: '#10B981' }} />
                 <span>Downloads</span>
               </Button>
             </div>
@@ -5772,11 +5833,11 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
 
         return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '6px' }}>
+              <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
                 Smart Image Queue ({displayQueueItems.length} Images)
               </label>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap', marginLeft: 'auto' }}>
                 {missingPositions.length > 0 && enhancedImages.length > 0 && !isAutomating && !isRunningTwoStage && !isHeroNode && (
                   <Button
                     size="sm"
