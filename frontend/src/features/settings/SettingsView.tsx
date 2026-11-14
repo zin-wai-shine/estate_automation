@@ -8,6 +8,7 @@ import { Modal } from '../../components/ui/Modal';
 import { CustomDropdown } from '../../components/ui/CustomDropdown';
 import type { DropdownOption } from '../../components/ui/CustomDropdown';
 import { BrowserPreviewModal } from '../../components/ui/BrowserPreviewModal';
+import { AIModelsSettingsSection } from './AIModelsSettingsSection';
 import {
   FiMoon,
   FiSun,
@@ -34,17 +35,27 @@ import {
 
 interface SettingsViewProps {
   onNavigateToFacebookLogin?: () => void;
+  initialSection?: SettingsSection;
 }
 
-type SettingsSection = 'facebook' | 'strategy' | 'profile' | 'system';
+type SettingsSection = 'facebook' | 'strategy' | 'profile' | 'system' | 'ai_models';
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
   onNavigateToFacebookLogin = () => {},
+  initialSection,
 }) => {
   const { user, logout } = useAuth();
   const { theme, setTheme, accentColor, setAccentColor } = useTheme();
 
-  const [activeSection, setActiveSection] = useState<SettingsSection>('facebook');
+  const [activeSection, setActiveSection] = useState<SettingsSection>(() => {
+    if (initialSection) return initialSection;
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get('tab') as SettingsSection;
+    if (tab && ['facebook', 'strategy', 'profile', 'system', 'ai_models'].includes(tab)) {
+      return tab;
+    }
+    return 'facebook';
+  });
   const [importStrategy, setImportStrategy] = useState('AUTO_WITH_MANUAL_FALLBACK');
   const [isBrowserModalOpen, setIsBrowserModalOpen] = useState(false);
   const [isFbConnected, setIsFbConnected] = useState<boolean>(false);
@@ -178,6 +189,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       id: 'system',
       label: 'Appearance & Health',
       icon: <FiCpu style={{ color: '#F59E0B' }} />,
+    },
+    {
+      id: 'ai_models',
+      label: 'AI Models & History',
+      icon: <FiCpu style={{ color: '#3B82F6' }} />,
     },
   ];
 
@@ -743,6 +759,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Section 5: AI Models & History */}
+        {activeSection === 'ai_models' && (
+          <div style={{ width: '100%' }}>
+            <AIModelsSettingsSection />
           </div>
         )}
       </div>

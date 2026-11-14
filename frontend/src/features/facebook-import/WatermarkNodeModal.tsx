@@ -585,40 +585,34 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     // When upstream is an Enhance node, merge with the first step's photos!
     if (isUpstreamEnhance || imageSource === 'enhance') {
       const hasEnhanced = Object.keys(mergedEnhancedPhotos).length > 0;
+      if (!hasEnhanced) {
+        return [];
+      }
       const enhancedIndices = Object.keys(mergedEnhancedPhotos).map(Number).filter((n) => !isNaN(n));
       const maxEnhanced = enhancedIndices.length > 0 ? Math.max(...enhancedIndices) + 1 : 0;
-      const totalPhotos = Math.max(effectiveImageList?.length || 0, maxEnhanced, 6);
+      const totalPhotos = Math.max(effectiveImageList?.length || 0, maxEnhanced);
 
       for (let idx = 0; idx < totalPhotos; idx++) {
         const photoNum = idx + 1;
-        const rawImg = effectiveImageList?.[idx];
         const enhancedUrl =
           mergedEnhancedPhotos[idx] ||
           mergedEnhancedPhotos[photoNum] ||
           (mergedEnhancedPhotos as any)[String(idx)] ||
           (mergedEnhancedPhotos as any)[String(photoNum)];
 
-        // If enhanced results exist, ONLY include the images that are actually enhanced!
-        if (hasEnhanced && !enhancedUrl) {
+        // Only include actual enhanced photos! Never fallback to raw un-enhanced photos!
+        if (!enhancedUrl) {
           continue;
         }
-
-        const rawUrl = rawImg
-          ? (rawImg.stored_url
-              ? (rawImg.stored_url.startsWith('http') ? rawImg.stored_url : `http://localhost:8085${rawImg.stored_url}`)
-              : rawImg.source_url)
-          : '';
-        const finalUrl = enhancedUrl || rawUrl;
-        if (!finalUrl) continue;
 
         rawList.push({
           id: `enh-${photoNum}`,
           index: photoNum,
           displayNumber: photoNum,
-          url: finalUrl,
+          url: enhancedUrl,
           source: 'enhance',
-          label: enhancedUrl ? `Enhanced #${photoNum}` : `Photo #${photoNum}`,
-          isEnhanced: Boolean(enhancedUrl),
+          label: `Enhanced #${photoNum}`,
+          isEnhanced: true,
         });
       }
 
@@ -659,21 +653,6 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
           source: 'generate',
           label: effectiveHeroImage.condoName ? `${effectiveHeroImage.condoName} Hero` : `${heroLabel} #1`,
         });
-      } else if (imageSource === 'generate') {
-        const firstRaw = effectiveImageList?.[0];
-        if (firstRaw) {
-          const url = firstRaw.stored_url
-            ? (firstRaw.stored_url.startsWith('http') ? firstRaw.stored_url : `http://localhost:8085${firstRaw.stored_url}`)
-            : firstRaw.source_url;
-          rawList.push({
-            id: 'hero-target-1',
-            index: 1,
-            displayNumber: 1,
-            url,
-            source: 'generate',
-            label: `${heroLabel} Target Photo #1`,
-          });
-        }
       }
     }
 
@@ -900,13 +879,12 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
   const sourceOptions: SelectOption[] = useMemo(() => {
     const getImagesCount = effectiveImageList.length;
     const enhanceCount = Object.keys(mergedEnhancedPhotos).length;
-    const displayEnhanceCount = enhanceCount > 0 ? enhanceCount : (getImagesCount || 12);
-    const heroCount = effectiveHeroImage ? 1 : (effectiveImageList.length > 0 ? 1 : 0);
-    const totalCount = (enhanceCount > 0 ? enhanceCount : getImagesCount) + (effectiveHeroImage ? 1 : 0);
+    const heroCount = (effectiveHeroImage && effectiveHeroImage.url) ? 1 : 0;
+    const totalCount = (enhanceCount > 0 ? enhanceCount : getImagesCount) + heroCount;
 
     return [
       { value: 'get_images', label: `Get Images (${getImagesCount} ${getImagesCount === 1 ? 'Photo' : 'Photos'})` },
-      { value: 'enhance', label: `${enhanceLabel} (${displayEnhanceCount} ${displayEnhanceCount === 1 ? 'Photo' : 'Photos'})` },
+      { value: 'enhance', label: `${enhanceLabel} (${enhanceCount} ${enhanceCount === 1 ? 'Photo' : 'Photos'})` },
       { value: 'generate', label: `${heroLabel} (${heroCount} ${heroCount === 1 ? 'Photo' : 'Photos'})` },
       { value: 'all', label: `All Photos (${totalCount} ${totalCount === 1 ? 'Photo' : 'Photos'})` },
     ];
@@ -1061,7 +1039,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
               {currentFormat?.name || 'Crop Format'}
             </div>
             <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-              {currentFormat?.targetWidth} × {currentFormat?.targetHeight} px • Source: {imageSource === 'generate' ? `${heroLabel} (${effectiveHeroImage ? '1 Photo' : '0 Photos'})` : imageSource === 'enhance' ? `${enhanceLabel} (${activePhotosToFormat.length} Photos)` : `Get Images (${activePhotosToFormat.length} Photos)`}
+              {currentFormat?.targetWidth} × {currentFormat?.targetHeight} px • Source: {imageSource === 'generate' ? `${heroLabel} (${(effectiveHeroImage && effectiveHeroImage.url) ? '1 Photo' : '0 Photos'})` : imageSource === 'enhance' ? `${enhanceLabel} (${activePhotosToFormat.length} Photos)` : `Get Images (${activePhotosToFormat.length} Photos)`}
             </div>
           </div>
         </div>

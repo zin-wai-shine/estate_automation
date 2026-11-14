@@ -2322,25 +2322,20 @@ export const CreateWorkflowView: React.FC = () => {
             );
           const isTabGroupBox = (b: any) => isChromeTabGroupAIBox(b) || (b as any).processType === 'chrome_tab_group';
           const isProfileBox = (b: any) => isChromeProfileAIBox(b) || (b as any).processType === 'chrome_profile';
-          const isBoxAutoRunPre = box.autoRun !== false && (box as any).enableAutoRun !== false;
           const enabledProfilesPre = (cfg.aiBoxes || []).filter(
             (b: any) =>
               areBoxesConnectedPre(box.id, b.id) &&
               isProfileBox(b) &&
-              b.enabled !== false &&
-              b.autoRun !== false &&
-              (b as any).enableAutoRun !== false
+              b.enabled !== false
           );
           hasRunnableBrowserTarget =
-            isBoxAutoRunPre &&
+            enabledProfilesPre.length === 0 ||
             enabledProfilesPre.some((pb: any) =>
               (cfg.aiBoxes || []).some(
                 (b: any) =>
                   (areBoxesConnectedPre(pb.id, b.id) || areBoxesConnectedPre(box.id, b.id)) &&
                   isTabGroupBox(b) &&
-                  b.enabled !== false &&
-                  b.autoRun !== false &&
-                  (b as any).enableAutoRun !== false
+                  b.enabled !== false
               )
             );
         }
@@ -2426,13 +2421,23 @@ export const CreateWorkflowView: React.FC = () => {
                 }
               }
             } else {
-              for (let i = 0; i < imageList.length; i++) {
-                const img = imageList[i];
-                const rawUrl = img.stored_url
-                  ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
-                  : img.source_url;
-                if (rawUrl) imagesToFormat.push({ index: img.index ?? i, url: rawUrl });
+              // Upstream enhance has not run or produced photos yet. Never fallback to raw un-enhanced photos!
+              console.log(`[Workflow] Skipping watermark/format [${box.title || box.id}] because upstream Enhance IMG has not produced photos.`);
+            }
+          } else if (box.imageSource === 'generate') {
+            let heroUrl = '';
+            try {
+              const rawHero = typeof localStorage !== 'undefined' ? localStorage.getItem('bolthaven_last_hero_image') : null;
+              if (rawHero) {
+                const parsed = JSON.parse(rawHero);
+                if (parsed?.url) heroUrl = parsed.url;
               }
+            } catch (_) {}
+
+            if (heroUrl) {
+              imagesToFormat.push({ index: 0, url: heroUrl });
+            } else {
+              console.log(`[Workflow] Skipping watermark/format [${box.title || box.id}] because upstream Hero generator has not produced photos.`);
             }
           } else {
             for (let i = 0; i < imageList.length; i++) {
@@ -2451,6 +2456,11 @@ export const CreateWorkflowView: React.FC = () => {
             if (matched.length > 0) {
               finalImagesToFormat = matched;
             }
+          }
+
+          if (finalImagesToFormat.length === 0) {
+            console.log(`[Workflow] Format box [${box.title || box.id}] has 0 images to format. Leaving node idle.`);
+            return true;
           }
 
           for (const item of finalImagesToFormat) {
@@ -2677,26 +2687,18 @@ export const CreateWorkflowView: React.FC = () => {
             propId: string
           ): Promise<boolean> => {
             const isTabGroupEnabled = connectedTabGroupBox ? connectedTabGroupBox.enabled !== false : true;
-            const isTabGroupAutoRun = connectedTabGroupBox
-              ? connectedTabGroupBox.autoRun !== false && (connectedTabGroupBox as any).enableAutoRun !== false
-              : true;
-            const isProfileAutoRun = connectedProfileBox
-              ? connectedProfileBox.autoRun !== false && (connectedProfileBox as any).enableAutoRun !== false
-              : true;
-            const isBoxAutoRun = box.autoRun !== false && (box as any).enableAutoRun !== false;
-
             const groupName = connectedTabGroupBox?.browserGroupName || connectedTabGroupBox?.title || (box as any).browserGroupName || 'Enhance IMG';
             const tabGroupNodeId: string = connectedTabGroupBox?.id || box.id;
 
-            if (!isTabGroupEnabled || !isTabGroupAutoRun || !isProfileAutoRun || !isBoxAutoRun) {
+            if (!isTabGroupEnabled) {
               console.log(
-                `[Workflow] Tab Group [${groupName}] auto-run is disabled (enabled=${isTabGroupEnabled}, tabGroupAutoRun=${isTabGroupAutoRun}, profileAutoRun=${isProfileAutoRun}, boxAutoRun=${isBoxAutoRun}). Skipping browser execution.`
+                `[Workflow] Tab Group [${groupName}] is disabled. Skipping.`
               );
               updateBranchNodes(
                 [],
                 [tabGroupNodeId],
                 [],
-                `⏸️ Auto-run disabled for [${groupName}]. Skipped.`
+                `⏸️ [${groupName}] is disabled. Skipped.`
               );
               await delay(200);
               return true;
@@ -3042,9 +3044,9 @@ export const CreateWorkflowView: React.FC = () => {
               }
 
               updateBranchNodes(
-                [],
                 [tabGroupNodeId],
                 [],
+                [tabGroupNodeId, ...(connectedProfileBox?.id ? [connectedProfileBox.id] : []), box.id],
                 `✓ Phase 1 complete: All ${totalImages} images enhanced and downloaded!`
               );
               await delay(600);
@@ -3239,9 +3241,9 @@ export const CreateWorkflowView: React.FC = () => {
                           } catch (e) {}
                         }
                         updateBranchNodes(
-                          [],
                           [tabGroupNodeId],
                           [],
+                          [tabGroupNodeId, ...(connectedProfileBox?.id ? [connectedProfileBox.id] : []), box.id],
                           `✓ Complete: Hero Image generated & downloaded in [${stagingGroupTarget}]!`
                         );
                       } else if (st.state.step === 'error') {
@@ -3267,9 +3269,7 @@ export const CreateWorkflowView: React.FC = () => {
                 (b: any) =>
                   areBoxesConnected(profileBox.id, b.id) &&
                   (isChromeTabGroupAIBox(b) || (b as any).processType === 'chrome_tab_group') &&
-                  b.enabled !== false &&
-                  b.autoRun !== false &&
-                  (b as any).enableAutoRun !== false
+                  b.enabled !== false
               );
               const targets: any[] = profileTabGroups.length > 0
                 ? profileTabGroups
@@ -3277,9 +3277,7 @@ export const CreateWorkflowView: React.FC = () => {
                     (b: any) =>
                       areBoxesConnected(box.id, b.id) &&
                       (isChromeTabGroupAIBox(b) || (b as any).processType === 'chrome_tab_group') &&
-                      b.enabled !== false &&
-                      b.autoRun !== false &&
-                      (b as any).enableAutoRun !== false
+                      b.enabled !== false
                   );
               if (targets.length === 0) return true;
               // Unique queue id per profile so parallel profiles never share one image queue

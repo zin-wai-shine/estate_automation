@@ -204,40 +204,34 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
     // When upstream is an Enhance node, merge with the first step's photos!
     if (isUpstreamEnhance || imageSource === 'enhance') {
       const hasEnhanced = Object.keys(enhancedPhotos || {}).length > 0;
+      if (!hasEnhanced) {
+        return [];
+      }
       const enhancedIndices = Object.keys(enhancedPhotos || {}).map(Number).filter((n) => !isNaN(n));
       const maxEnhanced = enhancedIndices.length > 0 ? Math.max(...enhancedIndices) + 1 : 0;
-      const totalPhotos = Math.max(images?.length || 0, maxEnhanced, 6);
+      const totalPhotos = Math.max(images?.length || 0, maxEnhanced);
 
       for (let idx = 0; idx < totalPhotos; idx++) {
         const photoNum = idx + 1;
-        const rawImg = images?.[idx];
         const enhancedUrl =
           (enhancedPhotos as any)?.[idx] ||
           (enhancedPhotos as any)?.[photoNum] ||
           (enhancedPhotos as any)?.[String(idx)] ||
           (enhancedPhotos as any)?.[String(photoNum)];
 
-        // If enhanced results exist, ONLY include the images that are actually enhanced!
-        if (hasEnhanced && !enhancedUrl) {
+        // Only include actual enhanced photos! Never fallback to raw un-enhanced photos!
+        if (!enhancedUrl) {
           continue;
         }
-
-        const rawUrl = rawImg
-          ? (rawImg.stored_url
-              ? (rawImg.stored_url.startsWith('http') ? rawImg.stored_url : `http://localhost:8085${rawImg.stored_url}`)
-              : rawImg.source_url)
-          : '';
-        const finalUrl = enhancedUrl || rawUrl;
-        if (!finalUrl) continue;
 
         rawList.push({
           id: `enh-${photoNum}`,
           index: photoNum,
           displayNumber: photoNum,
-          url: finalUrl,
+          url: enhancedUrl,
           source: 'enhance',
-          label: enhancedUrl ? `Enhanced #${photoNum}` : `Photo #${photoNum}`,
-          isEnhanced: Boolean(enhancedUrl),
+          label: `Enhanced #${photoNum}`,
+          isEnhanced: true,
         });
       }
 
@@ -333,17 +327,17 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
     );
 
     if (hasIncomingHero || heroNode) {
+      const heroCount = (effectiveHeroImage && effectiveHeroImage.url) ? 1 : 0;
       opts.push({
         value: 'generate',
-        label: `${heroLabel} (1 Photo)`,
+        label: `${heroLabel} (${heroCount} Photo${heroCount === 1 ? '' : 's'})`,
       });
     }
     if (isUpstreamEnhance || hasIncomingEnhance || enhanceNode) {
       const enhanceCount = Object.keys(enhancedPhotos || {}).length;
-      const displayCount = enhanceCount > 0 ? enhanceCount : (images?.length || 12);
       opts.push({
         value: 'enhance',
-        label: `${enhanceLabel} (${displayCount} Photos)`,
+        label: `${enhanceLabel} (${enhanceCount} Photo${enhanceCount === 1 ? '' : 's'})`,
       });
     }
     opts.push({
@@ -787,6 +781,8 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
             >
               {box.enabled === false
                 ? `⏸️ 0 of ${currentSourceList.length} (Bypassed)`
+                : currentSourceList.length === 0
+                ? '0 Photos (Waiting for source)'
                 : `✓ ${activePhotosToFormat.length} of ${currentSourceList.length} Selected`}
             </span>
           </div>
@@ -804,6 +800,36 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
               placeholder="Select image source..."
             />
           </div>
+
+          {/* Empty state when upstream node has no photos yet */}
+          {currentSourceList.length === 0 && (
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '16px 12px',
+                borderRadius: '8px',
+                border: isDark ? '1px dashed #30363D' : '1px dashed #E2E8F0',
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)',
+                gap: '6px',
+                marginTop: '4px',
+                textAlign: 'center',
+              }}
+            >
+              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                No Photos Available
+              </span>
+              <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>
+                {imageSource === 'enhance' || isUpstreamEnhance
+                  ? `The upstream ${enhanceLabel} node has not enhanced photos yet. Run Enhance IMG first.`
+                  : imageSource === 'generate'
+                  ? `The upstream ${heroLabel} node has not generated a photo yet.`
+                  : 'No photos available from Get Images.'}
+              </span>
+            </div>
+          )}
 
           {/* Photo Selection Grid if multiple available */}
           {currentSourceList.length > 1 && (

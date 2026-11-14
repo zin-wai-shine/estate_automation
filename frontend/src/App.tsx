@@ -19,7 +19,6 @@ import { AutoPostView } from './features/autopost/AutoPostView';
 import { PostHistoryView } from './features/autopost/PostHistoryView';
 import { AuthManagerView } from './features/autopost/AuthManagerView';
 import { WatermarkView } from './features/watermark/WatermarkView';
-import { AIModelsHistoryView } from './features/ai-models/AIModelsHistoryView';
 import { N8NAutomationView } from './features/n8n/N8NAutomationView';
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
 import type { Property } from './types';
@@ -197,7 +196,7 @@ const MainApp: React.FC = () => {
           <Route path="/remaining-posts" element={<RemainingPostsView onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
           <Route path="/auto-post" element={<AutoPostView onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
           <Route path="/watermark" element={<WatermarkView />} />
-          <Route path="/ai-models" element={<AIModelsHistoryView />} />
+          <Route path="/ai-models" element={<SettingsView initialSection="ai_models" onNavigateToFacebookLogin={() => navigate('/settings/facebook-login')} />} />
           <Route path="/post-history" element={<PostHistoryView onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
           <Route path="/auth-manager" element={<AuthManagerView onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
           <Route path="/facebook-tokens" element={<AuthManagerView onNavigateTab={(tab) => navigate(`/${tab}`)} />} />

@@ -3,7 +3,6 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { 
-  FiHome, 
   FiPlusSquare, 
   FiSettings, 
   FiFileText, 
@@ -12,7 +11,6 @@ import {
   FiX, 
   FiZap, 
   FiGitBranch, 
-  FiInbox, 
   FiSidebar, 
   FiLayers,
   FiShare2,
@@ -20,13 +18,11 @@ import {
   FiKey,
   FiShield,
   FiScissors,
-  FiCpu,
   FiServer,
   FiSearch,
   FiCompass,
   FiSliders,
 } from 'react-icons/fi';
-import { FaFacebook } from 'react-icons/fa';
 import { getRemainingPostsCount, subscribeRemainingPosts } from '../../features/remaining-posts/remainingPostsStorage';
 
 interface NavItem {
@@ -149,13 +145,6 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
   // Structured sidebar navigation matching modern clean UI
   const navSections: NavSection[] = [
     {
-      title: 'Workspace',
-      items: [
-        { id: 'dashboard', label: 'Dashboard', icon: <FiHome /> },
-        { id: 'inbox', label: 'Property Inbox', icon: <FiInbox /> },
-      ],
-    },
-    {
       title: 'Facebook Property Scan',
       items: [
         { id: 'property-leads', label: 'Property Leads', icon: <FiSearch /> },
@@ -167,16 +156,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     {
       title: 'Automation & AI',
       items: [
-        { id: 'facebook-import', label: 'Facebook Import', icon: <FaFacebook /> },
-        {
-          id: 'remaining-posts',
-          label: 'Remaining Posts',
-          icon: <FiLayers />,
-          badge: remainingPostsCount > 0 ? remainingPostsCount : undefined,
-        },
         { id: 'create-workflow', label: 'Create Workflow', icon: <FiGitBranch /> },
         { id: 'n8n-automation', label: 'n8n Automation', icon: <FiServer /> },
-        { id: 'ai-models', label: 'AI Models & History', icon: <FiCpu /> },
         { id: 'add-url', label: 'Add URL', icon: <FiPlusSquare /> },
         { id: 'prompts', label: 'Prompt Templates', icon: <FiFileText /> },
       ],
@@ -193,7 +174,6 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
       title: 'System & Tools',
       items: [
         { id: 'watermark', label: 'Crop & Cut Studio', icon: <FiScissors /> },
-        { id: 'testing', label: 'Testing Lab', icon: <FiZap /> },
         { id: 'settings', label: 'Settings', icon: <FiSettings /> },
       ],
     },
@@ -670,131 +650,49 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
           </nav>
         </div>
 
-        {/* Sidebar Footer Section */}
-        <div style={{ borderTop: '1px solid var(--border-color)', backgroundColor: 'var(--bg-secondary)' }}>
-          {/* User Settings Row */}
-          <div style={{ padding: isCollapsed ? '0.5rem 0.375rem' : '0.5rem 0.625rem' }}>
-            <a
-              href="/settings"
-              target={isCurrentlyInCanvas ? '_blank' : undefined}
-              rel={isCurrentlyInCanvas ? 'noopener noreferrer' : undefined}
-              onClick={(e) => handleNavClick(e, 'settings')}
-              title={
-                isCurrentlyInCanvas
-                  ? 'Open Settings in new tab (keeps Canvas open)'
-                  : isCollapsed
-                  ? (user?.name || 'Settings')
-                  : undefined
-              }
+        {/* Sidebar Footer Section (Collapse Button) */}
+        {!isMobile && (
+          <div style={{ borderTop: '1px solid var(--border-color)', backgroundColor: 'var(--bg-secondary)', padding: '0.375rem 0.625rem' }}>
+            <button
+              type="button"
+              onClick={() => {
+                if (isCanvasMode) {
+                  setIsCanvasSidebarVisible(false);
+                } else {
+                  toggleCollapse();
+                }
+              }}
               style={{
                 width: '100%',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: isCollapsed ? 'center' : 'space-between',
-                padding: isCollapsed ? '0.45rem 0' : '0.5rem 0.625rem',
-                borderRadius: '0.5rem',
-                backgroundColor: activeTab === 'settings' 
-                  ? (isDark ? 'rgba(59, 130, 246, 0.15)' : 'rgba(37, 99, 235, 0.08)')
-                  : 'var(--bg-surface)',
-                border: activeTab === 'settings'
-                  ? `1px solid ${isDark ? 'rgba(59, 130, 246, 0.3)' : 'rgba(37, 99, 235, 0.22)'}`
-                  : '1px solid var(--border-color)',
-                color: activeTab === 'settings' 
-                  ? (isDark ? '#FFFFFF' : '#1D4ED8') 
-                  : 'var(--text-primary)',
+                justifyContent: (isCollapsed || isCanvasMode) ? 'center' : 'flex-start',
+                gap: '0.5rem',
+                padding: '0.5rem 0.625rem',
+                color: 'var(--text-muted)',
+                fontSize: '0.75rem',
+                fontWeight: 500,
+                border: 'none',
+                background: 'transparent',
                 cursor: 'pointer',
-                transition: 'all 0.12s ease',
-                textDecoration: 'none',
-                boxSizing: 'border-box',
+                borderRadius: '0.375rem',
+                transition: 'color 0.15s ease',
               }}
               onMouseEnter={(e) => {
-                if (activeTab !== 'settings') {
-                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)';
-                }
+                e.currentTarget.style.color = 'var(--text-primary)';
+                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.04)';
               }}
               onMouseLeave={(e) => {
-                if (activeTab !== 'settings') {
-                  e.currentTarget.style.backgroundColor = 'var(--bg-surface)';
-                }
+                e.currentTarget.style.color = 'var(--text-muted)';
+                e.currentTarget.style.backgroundColor = 'transparent';
               }}
+              title={isCanvasMode ? 'Hide sidebar' : (isCollapsed ? 'Expand sidebar' : 'Collapse sidebar')}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <div
-                  style={{
-                    width: '26px',
-                    height: '26px',
-                    borderRadius: '50%',
-                    background: isDark ? 'linear-gradient(135deg, #3B82F6 0%, #8B5CF6 100%)' : 'linear-gradient(135deg, #2563EB 0%, #7C3AED 100%)',
-                    color: '#FFFFFF',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '0.75rem',
-                    fontWeight: 600,
-                    flexShrink: 0,
-                  }}
-                >
-                  {user?.name?.[0] || 'U'}
-                </div>
-                {!isCollapsed && (
-                  <div style={{ textAlign: 'left', overflow: 'hidden' }}>
-                    <p style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.1, margin: 0, whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
-                      {user?.name || 'Administrator'}
-                    </p>
-                    <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>Settings</span>
-                  </div>
-                )}
-              </div>
-              {!isCollapsed && (
-                <FiSettings style={{ color: activeTab === 'settings' ? (isDark ? '#60A5FA' : '#2563EB') : 'var(--text-muted)', fontSize: '0.875rem' }} />
-              )}
-            </a>
+              <FiSidebar style={{ fontSize: '0.9375rem', flexShrink: 0 }} />
+              {!isCollapsed && !isCanvasMode && <span>Collapse sidebar</span>}
+            </button>
           </div>
-
-          {/* Collapse Sidebar Button */}
-          {!isMobile && (
-            <div style={{ padding: '0.25rem 0.625rem 0.625rem', borderTop: '1px solid var(--border-color)' }}>
-              <button
-                type="button"
-                onClick={() => {
-                  if (isCanvasMode) {
-                    setIsCanvasSidebarVisible(false);
-                  } else {
-                    toggleCollapse();
-                  }
-                }}
-                style={{
-                  width: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: (isCollapsed || isCanvasMode) ? 'center' : 'flex-start',
-                  gap: '0.5rem',
-                  padding: '0.5rem 0.625rem',
-                  color: 'var(--text-muted)',
-                  fontSize: '0.75rem',
-                  fontWeight: 500,
-                  border: 'none',
-                  background: 'transparent',
-                  cursor: 'pointer',
-                  borderRadius: '0.375rem',
-                  transition: 'color 0.15s ease',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.color = 'var(--text-primary)';
-                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.04)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.color = 'var(--text-muted)';
-                  e.currentTarget.style.backgroundColor = 'transparent';
-                }}
-                title={isCanvasMode ? 'Hide sidebar' : (isCollapsed ? 'Expand sidebar' : 'Collapse sidebar')}
-              >
-                <FiSidebar style={{ fontSize: '0.9375rem', flexShrink: 0 }} />
-                {!isCollapsed && !isCanvasMode && <span>Collapse sidebar</span>}
-              </button>
-            </div>
-          )}
-        </div>
+        )}
       </aside>
 
       {/* Main Right Content Area */}

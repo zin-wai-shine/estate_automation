@@ -2365,10 +2365,9 @@ const CANVAS_NODE_ACTION_CSS = `
   position: absolute;
   inset: -5px;
   border-radius: 21px;
-  border: 1.5px dashed var(--ring, #388BFD);
+  border: none;
   opacity: 0;
-  transform: scale(0.94);
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  display: none !important;
   pointer-events: none;
 }
 .canvas-node.is-circle::before {
@@ -2377,29 +2376,24 @@ const CANVAS_NODE_ACTION_CSS = `
 .canvas-node.is-trigger::before {
   border-radius: 41px 20px 20px 41px !important;
 }
-.canvas-node.is-selected::before {
-  opacity: 0.8 !important;
-  border-color: #388BFD !important;
-  border-style: solid !important;
-  border-width: 1.5px !important;
-  transform: scale(1) !important;
-  box-shadow: none !important;
-}
-.canvas-node.is-circle.is-selected::before {
-  border-radius: 50% !important;
-}
-.canvas-node.is-trigger.is-selected::before {
-  border-radius: 41px 20px 20px 41px !important;
-}
+/* No double border on click or hover: only show the inside border */
+.canvas-node.is-selected::before,
+.canvas-node.is-circle.is-selected::before,
+.canvas-node.is-trigger.is-selected::before,
+.canvas-node.is-selected:hover::before,
+.canvas-node.is-selected.is-hovered::before,
 .canvas-node:hover::before,
 .canvas-node.is-hovered::before {
-  opacity: 0.6;
-  transform: scale(1);
+  display: none !important;
+  opacity: 0 !important;
+  border: none !important;
+  box-shadow: none !important;
 }
 .canvas-node.is-receptive::before {
-  opacity: 0.7;
-  border-color: var(--receptive-color, #D97706);
-  transform: scale(1.02);
+  display: block !important;
+  opacity: 0.75 !important;
+  border: 1.5px dashed var(--receptive-color, #D97706) !important;
+  transform: scale(1.02) !important;
 }
 .canvas-node.is-running::before {
   display: none !important;
@@ -3469,7 +3463,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     onToggleAutoSave,
     onUndo,
     canUndo = false,
-    onUseInFacebookImport,
+    onUseInFacebookImport: _onUseInFacebookImport,
     isGeneralSettingsOpen,
     onToggleGeneralSettings,
     formatName,
@@ -3745,9 +3739,53 @@ export const FacebookWorkflowCanvas = forwardRef<
       return 'idle';
     }
 
-    // Auto-complete Enhance node if enhanced images have been downloaded
+    // Check AI boxes (Watermark / Crop Format, Enhance, Google Sheet, etc.)
     const targetBox = config.aiBoxes?.find((b) => b.id === nodeId);
     if (targetBox) {
+      const isWatermark = isWatermarkAIBox(targetBox);
+      if (isWatermark) {
+        // If connected from an Enhance node or imageSource === 'enhance', ensure enhanced images actually exist!
+        const isUpstreamEnhance = (config.connections || []).some((c: any) => {
+          if (c.toNodeId === targetBox.id) {
+            const upBox = (config.aiBoxes || []).find((b) => b.id === c.fromNodeId);
+            return upBox && (isExternalBrowserAIBox(upBox) || upBox.processType === 'image_enhance' || upBox.title?.toLowerCase().includes('enhance') || upBox.browserGroupName?.toLowerCase().includes('enhance'));
+          }
+          return false;
+        }) || targetBox.imageSource === 'enhance';
+
+        if (isUpstreamEnhance && Object.keys(allEnhancedPhotos || {}).length === 0) {
+          return 'idle';
+        }
+
+        // If connected from Hero node or imageSource === 'generate', ensure hero image actually exists!
+        const isUpstreamHero = (config.connections || []).some((c: any) => {
+          if (c.toNodeId === targetBox.id) {
+            const upBox = (config.aiBoxes || []).find((b) => b.id === c.fromNodeId);
+            return upBox && (upBox.title?.toLowerCase().includes('hero') || upBox.browserGroupName?.toLowerCase().includes('hero') || (upBox as any).tabGroupMode === 'generate');
+          }
+          return false;
+        }) || targetBox.imageSource === 'generate';
+
+        let hasHeroPhoto = false;
+        try {
+          const rawHero = typeof localStorage !== 'undefined' ? localStorage.getItem('bolthaven_last_hero_image') : null;
+          if (rawHero) {
+            const parsed = JSON.parse(rawHero);
+            if (parsed?.url) hasHeroPhoto = true;
+          }
+        } catch (_) {}
+
+        if (isUpstreamHero && !hasHeroPhoto) {
+          return 'idle';
+        }
+
+        // If configured with get_images, ensure images exist
+        if (targetBox.imageSource === 'get_images' && (effectiveImages?.length || 0) === 0) {
+          return 'idle';
+        }
+      }
+
+      // Auto-complete Enhance node if enhanced images have been downloaded
       const isEnhanceBox =
         targetBox.tabGroupMode === 'enhance' ||
         targetBox.processKind === 'enhance_images' ||
@@ -3755,6 +3793,49 @@ export const FacebookWorkflowCanvas = forwardRef<
         targetBox.browserGroupName?.toLowerCase().includes('enhance');
       if (isEnhanceBox && Object.keys(allEnhancedPhotos).length > 0 && !executionState?.hasError) {
         return 'success';
+      }
+
+      // Auto-complete FB Hero / Generate Tab Group node if hero photo has been generated
+      const isHeroBox =
+        targetBox.tabGroupMode === 'generate' ||
+        targetBox.title?.toLowerCase().includes('hero') ||
+        targetBox.browserGroupName?.toLowerCase().includes('hero');
+      let hasHeroPhoto = false;
+      try {
+        const rawHero = typeof localStorage !== 'undefined' ? localStorage.getItem('bolthaven_last_hero_image') : null;
+        if (rawHero) {
+          const parsed = JSON.parse(rawHero);
+          if (parsed?.url) hasHeroPhoto = true;
+        }
+      } catch (_) {}
+      if (isHeroBox && hasHeroPhoto && !executionState?.hasError) {
+        return 'success';
+      }
+
+      // Auto-complete Chrome Profile or External Browser if downstream execution completed
+      const isChromeProfile = isChromeProfileAIBox(targetBox);
+      const isExternalBrowser = isExternalBrowserAIBox(targetBox);
+      if ((isChromeProfile || isExternalBrowser) && !executionState?.hasError) {
+        const hasEnhanced = Object.keys(allEnhancedPhotos).length > 0;
+        if (hasEnhanced || hasHeroPhoto) {
+          return 'success';
+        }
+      }
+    }
+
+    // Check Combine Boxes: if all incoming nodes have no data / not completed, remain idle
+    const targetCombineBox = config.combineBoxes?.find((cb) => cb.id === nodeId);
+    if (targetCombineBox) {
+      const incomingConns = (config.connections || []).filter((c) => c.toNodeId === nodeId && isNodeEffectivelyEnabled(c.fromNodeId));
+      if (incomingConns.length > 0) {
+        const anyIncomingCompleted = incomingConns.some((c) => {
+          if (c.fromNodeId === 'get-content') return Boolean(effectiveRawContent && effectiveRawContent.trim().length > 0);
+          if (c.fromNodeId === 'get-images') return (effectiveImages?.length || 0) > 0;
+          return executionState?.completedNodeIds?.includes(c.fromNodeId) || locallyCompletedNodeIds.includes(c.fromNodeId);
+        });
+        if (!anyIncomingCompleted) {
+          return 'idle';
+        }
       }
     }
 
@@ -3989,6 +4070,15 @@ export const FacebookWorkflowCanvas = forwardRef<
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [selectedBoxId, setSelectedBoxId] = useState<string | null>(null);
   const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
+  const [selectionBox, setSelectionBox] = useState<{
+    startX: number;
+    startY: number;
+    currentX: number;
+    currentY: number;
+  } | null>(null);
+  const [isSelecting, setIsSelecting] = useState(false);
+  const initialSelectedBeforeDragRef = useRef<Set<string>>(new Set());
+  const shiftToggledNodeRef = useRef<string | null>(null);
   const [isSimulating, setIsSimulating] = useState(false);
   const [simulationStep, setSimulationStep] = useState<number>(-1);
   const [simulationMessage, setSimulationMessage] = useState<string | null>(null);
@@ -4519,7 +4609,7 @@ export const FacebookWorkflowCanvas = forwardRef<
             ? boxAssets.length
             : isImages
               ? (images?.length || 0)
-              : (allEnhancedPhotos ? Object.keys(allEnhancedPhotos).length : images?.length || 0);
+              : 0;
           return {
             id: c.fromNodeId,
             title: isImages ? 'Get Images' : fromBox?.title || c.fromNodeId,
@@ -4619,31 +4709,25 @@ export const FacebookWorkflowCanvas = forwardRef<
                 });
               }
             });
-          } else {
-            photoList.forEach((img, idx) => {
-              const rawUrl = normalizeMediaUrl(img.stored_url || img.source_url || (img as any).url);
-              sourcePhotos.push({
-                url: rawUrl || '',
-                photoIndex: idx,
-                isEnhanced: false,
-              });
-            });
           }
+          // If enhance has not produced photos, sourcePhotos remains empty! Never fallback to raw un-enhanced photos!
         } else if (cropBox.imageSource === 'get_images' || (cropBox.imageSource as string) === 'get-images') {
           photoList.forEach((img, idx) => {
             const rawUrl = normalizeMediaUrl(img.stored_url || img.source_url || (img as any).url);
             sourcePhotos.push({ url: rawUrl || '', photoIndex: idx, isEnhanced: false });
           });
         } else {
-          // Default: if enhanced photos exist and box is connected from enhance, use enhanced only!
+          // Default: if box is connected from enhance, ONLY use enhanced photos!
           const hasEnhanced = Object.keys(allEnhancedPhotos || {}).length > 0;
-          if (hasEnhanced && isConnectedFromEnhance) {
-            photoList.forEach((_img, idx) => {
-              const enhUrl = allEnhancedPhotos?.[idx] || allEnhancedPhotos?.[idx + 1];
-              if (enhUrl) {
-                sourcePhotos.push({ url: enhUrl, photoIndex: idx, isEnhanced: true });
-              }
-            });
+          if (isConnectedFromEnhance) {
+            if (hasEnhanced) {
+              photoList.forEach((_img, idx) => {
+                const enhUrl = allEnhancedPhotos?.[idx] || allEnhancedPhotos?.[idx + 1];
+                if (enhUrl) {
+                  sourcePhotos.push({ url: enhUrl, photoIndex: idx, isEnhanced: true });
+                }
+              });
+            }
           } else if (photoList.length > 0) {
             photoList.forEach((img, idx) => {
               const enhUrl = allEnhancedPhotos?.[idx] || allEnhancedPhotos?.[idx + 1];
@@ -8424,9 +8508,23 @@ export const FacebookWorkflowCanvas = forwardRef<
     }
     canvasMouseDownCoord.current = { x: e.clientX, y: e.clientY };
     setQuickAddPopover(null);
-    if (!e.shiftKey) {
-      setSelectedNodeIds(new Set());
+
+    // Shift + Drag on canvas: Start Marquee Selection Box
+    if (e.shiftKey) {
+      if (canvasRef.current) {
+        const rect = canvasRef.current.getBoundingClientRect();
+        const cx = (e.clientX - rect.left - config.panOffset.x) / config.zoom;
+        const cy = (e.clientY - rect.top - config.panOffset.y) / config.zoom;
+        setSelectionBox({ startX: cx, startY: cy, currentX: cx, currentY: cy });
+        setIsSelecting(true);
+        initialSelectedBeforeDragRef.current = new Set(selectedNodeIds);
+      }
+      return;
     }
+
+    // Normal click without Shift: deselect existing nodes and pan
+    setSelectedNodeIds(new Set());
+    setSelectedBoxId(null);
     if (dragWire) {
       setDragWire(null);
       return;
@@ -8456,7 +8554,11 @@ export const FacebookWorkflowCanvas = forwardRef<
         return;
       }
     }
-    // Stationary click on canvas background dismisses any open sidebar / drawer / popover
+    // Stationary click on canvas background dismisses any open sidebar / drawer / popover & clears selection
+    if (!e.shiftKey) {
+      setSelectedNodeIds(new Set());
+      setSelectedBoxId(null);
+    }
     if (activeModalNode || connectDrawerNode) {
       handleCloseModal();
     }
@@ -8474,6 +8576,71 @@ export const FacebookWorkflowCanvas = forwardRef<
       const cx = (e.clientX - rect.left - config.panOffset.x) / config.zoom;
       const cy = (e.clientY - rect.top - config.panOffset.y) / config.zoom;
       setDragWire((prev) => (prev ? { ...prev, currentX: cx, currentY: cy } : null));
+      return;
+    }
+
+    // Marquee Selection Box Dragging
+    if (isSelecting && selectionBox && canvasRef.current) {
+      const rect = canvasRef.current.getBoundingClientRect();
+      const cx = (e.clientX - rect.left - config.panOffset.x) / config.zoom;
+      const cy = (e.clientY - rect.top - config.panOffset.y) / config.zoom;
+      setSelectionBox((prev) => (prev ? { ...prev, currentX: cx, currentY: cy } : null));
+
+      const boxLeft = Math.min(selectionBox.startX, cx);
+      const boxTop = Math.min(selectionBox.startY, cy);
+      const boxRight = Math.max(selectionBox.startX, cx);
+      const boxBottom = Math.max(selectionBox.startY, cy);
+
+      const isNodeIntersecting = (nodeLeft: number, nodeTop: number, nodeW = 72, nodeH = 72) => {
+        const nodeRight = nodeLeft + nodeW;
+        const nodeBottom = nodeTop + nodeH;
+        return nodeLeft <= boxRight && nodeRight >= boxLeft && nodeTop <= boxBottom && nodeBottom >= boxTop;
+      };
+
+      const newlySelected = new Set<string>();
+
+      // Check trigger
+      if (config.trigger && isNodeIntersecting(config.trigger.x, config.trigger.y, 72, 72)) {
+        newlySelected.add('trigger');
+      }
+
+      // Check get-content
+      if (config.getContent && isNodeIntersecting(config.getContent.x, config.getContent.y, 72, 72)) {
+        newlySelected.add('get-content');
+      }
+
+      // Check get-images
+      if (config.getImages && isNodeIntersecting(config.getImages.x, config.getImages.y, 72, 72)) {
+        newlySelected.add('get-images');
+      }
+
+      // Check aiBoxes
+      (config.aiBoxes || []).forEach((b) => {
+        const isWide = isExternalBrowserAIBox(b) || (isTextAIBox(b, config.connections) && !isTextFormatAIBox(b));
+        const w = isWide ? 216 : 72;
+        const h = 72;
+        if (isNodeIntersecting(b.x, b.y, w, h)) {
+          newlySelected.add(b.id);
+        }
+      });
+
+      // Check combineBoxes
+      (config.combineBoxes || []).forEach((cb) => {
+        if (isNodeIntersecting(cb.x, cb.y, 72, 72)) {
+          newlySelected.add(cb.id);
+        }
+      });
+
+      // Check destinations
+      getNormalizedDestinations(config).forEach((d) => {
+        if (isNodeIntersecting(d.x, d.y, 72, 72)) {
+          newlySelected.add(d.id);
+          if (d.id === 'destination') newlySelected.add('destination');
+        }
+      });
+
+      const combined = new Set([...initialSelectedBeforeDragRef.current, ...newlySelected]);
+      setSelectedNodeIds(combined);
       return;
     }
 
@@ -8660,6 +8827,10 @@ export const FacebookWorkflowCanvas = forwardRef<
       setDragWire(null);
     }
     if (isPanning) setIsPanning(false);
+    if (isSelecting) {
+      setIsSelecting(false);
+      setSelectionBox(null);
+    }
 
     const activeDragId = draggedNodeIdRef.current || draggedNodeId;
     if (activeDragId) {
@@ -8712,6 +8883,7 @@ export const FacebookWorkflowCanvas = forwardRef<
       persistTimerRef.current = null;
     }
     if (e.shiftKey) {
+      shiftToggledNodeRef.current = nodeId;
       setSelectedNodeIds((prev) => {
         const next = new Set(prev);
         if (next.has(nodeId)) {
@@ -8721,13 +8893,16 @@ export const FacebookWorkflowCanvas = forwardRef<
         }
         return next;
       });
+      setSelectedBoxId(nodeId);
     } else {
+      shiftToggledNodeRef.current = null;
       setSelectedNodeIds((prev) => {
         if (prev.has(nodeId)) {
           return prev;
         }
         return new Set([nodeId]);
       });
+      setSelectedBoxId(nodeId);
     }
     draggedNodeIdRef.current = nodeId;
     setDraggedNodeId(nodeId);
@@ -8741,7 +8916,7 @@ export const FacebookWorkflowCanvas = forwardRef<
   // Prevents node movement from getting stuck or losing cursor when moving quickly over child elements or canvas borders
   useEffect(() => {
     const isDragging = Boolean(draggedNodeIdRef.current || draggedNodeId);
-    if (!isDragging && !isPanning && !dragWire) return;
+    if (!isDragging && !isPanning && !dragWire && !isSelecting) return;
 
     const onWindowMouseMove = (e: MouseEvent) => {
       handleCanvasMouseMove(e as any);
@@ -8758,7 +8933,7 @@ export const FacebookWorkflowCanvas = forwardRef<
       window.removeEventListener('mousemove', onWindowMouseMove);
       window.removeEventListener('mouseup', onWindowMouseUp);
     };
-  }, [draggedNodeId, isPanning, Boolean(dragWire)]);
+  }, [draggedNodeId, isPanning, Boolean(dragWire), isSelecting]);
 
   // Single click: Select the node for viewing/dragging, but do NOT open the sidebar drawer
   const handleNodeClick = (node: ActiveModalNode, e: React.MouseEvent) => {
@@ -8776,10 +8951,24 @@ export const FacebookWorkflowCanvas = forwardRef<
       else if (node.type === 'combine') nodeId = node.combineId || (node as any).id;
       else if (node.type === 'destination') nodeId = node.destinationId || 'destination';
       if (nodeId) {
-        if (!e.shiftKey) {
+        if (e.shiftKey) {
+          if (shiftToggledNodeRef.current !== nodeId) {
+            setSelectedNodeIds((prev) => {
+              const next = new Set(prev);
+              if (next.has(nodeId)) {
+                next.delete(nodeId);
+              } else {
+                next.add(nodeId);
+              }
+              return next;
+            });
+          }
+          setSelectedBoxId(nodeId);
+        } else {
           setSelectedNodeIds(new Set([nodeId]));
+          setSelectedBoxId(nodeId);
         }
-        setSelectedBoxId(nodeId);
+        shiftToggledNodeRef.current = null;
       }
     }
   };
@@ -8985,7 +9174,7 @@ export const FacebookWorkflowCanvas = forwardRef<
           border: 'none',
           borderRadius: 0,
           overflow: 'hidden',
-          cursor: isPanning ? 'grabbing' : 'default',
+          cursor: isPanning ? 'grabbing' : isSelecting ? 'crosshair' : 'default',
           userSelect: 'none',
           boxShadow: isDark ? 'inset 0 0 40px rgba(0, 0, 0, 0.8)' : 'inset 0 0 20px rgba(0, 0, 0, 0.03)',
         }}
@@ -9131,6 +9320,24 @@ export const FacebookWorkflowCanvas = forwardRef<
             transition: 'none',
           }}
         >
+          {/* Marquee Rubberband Selection Box */}
+          {selectionBox && (
+            <div
+              style={{
+                position: 'absolute',
+                left: `${Math.min(selectionBox.startX, selectionBox.currentX)}px`,
+                top: `${Math.min(selectionBox.startY, selectionBox.currentY)}px`,
+                width: `${Math.abs(selectionBox.currentX - selectionBox.startX)}px`,
+                height: `${Math.abs(selectionBox.currentY - selectionBox.startY)}px`,
+                border: '1.5px solid #388BFD',
+                backgroundColor: 'rgba(56, 139, 253, 0.14)',
+                borderRadius: '2px',
+                pointerEvents: 'none',
+                zIndex: 9999,
+              }}
+            />
+          )}
+
           {/* SVG Connection Lines */}
           <svg
             style={{
@@ -9766,6 +9973,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                       ? PRIMARY_NODE_COLOR
                       : (isDark ? '#30363D' : '#D0D7DE')
                   }
+                  strokeWidth={activeModalNode?.type === 'trigger' || selectedNodeIds.has('trigger') ? 2.25 : 1.75}
                   socketDotColor={
                     activeModalNode?.type === 'trigger'
                       ? PRIMARY_NODE_COLOR
@@ -9925,6 +10133,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                         ? RECEPTIVE_COLOR
                         : (isDark ? '#30363D' : '#D0D7DE')
                   }
+                  strokeWidth={activeModalNode?.type === 'get-content' || selectedNodeIds.has('get-content') ? 2.25 : 1.75}
                   socketDotColor={
                     activeModalNode?.type === 'get-content'
                       ? PRIMARY_NODE_COLOR
@@ -10109,6 +10318,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                         ? RECEPTIVE_COLOR
                         : (isDark ? '#30363D' : '#D0D7DE')
                   }
+                  strokeWidth={activeModalNode?.type === 'get-images' || selectedNodeIds.has('get-images') ? 2.25 : 1.75}
                   socketDotColor={
                     activeModalNode?.type === 'get-images'
                       ? PRIMARY_NODE_COLOR
@@ -10253,7 +10463,7 @@ export const FacebookWorkflowCanvas = forwardRef<
             const isSelected =
               (activeModalNode?.type === 'ai-box' && activeModalNode.boxId === box.id) ||
               selectedNodeIds.has(box.id) ||
-              selectedBoxId === box.id;
+              (selectedBoxId === box.id && (selectedNodeIds.size === 0 || selectedNodeIds.has(box.id)));
             const isWatermark = isWatermarkAIBox(box);
             const isImageNode = isImageAIBox(box, config.connections) || isWatermark;
             const isGoogle = !isImageNode && (box.provider === 'google_ai' || isImageModel(box.model, box.provider) || (!box.provider && !box.model?.startsWith('runware:')));
@@ -10337,6 +10547,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   width={nodeWidth}
                   height={CIRCLE_SIZE}
                   strokeColor={strokeColor}
+                  strokeWidth={isSelected ? 2.25 : 1.75}
                   strokeDasharray={strokeDasharray}
                   socketDotColor={isBoxReceptive ? RECEPTIVE_COLOR : (isDark ? '#8B949E' : '#64748B')}
                   isConnectedInput={isBoxInputConnected}
@@ -10980,6 +11191,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 <MergedNodeShape
                   sockets="both"
                   strokeColor={cbStrokeColor}
+                  strokeWidth={cbIsSelected ? 2.25 : 1.75}
                   socketDotColor={isCbReceptive ? RECEPTIVE_COLOR : isDark ? '#8B949E' : '#64748B'}
                   isConnectedInput={cbConnsIn.length > 0}
                   isConnectedOutput={cbConnsOut.length > 0}
@@ -11180,6 +11392,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   isCircle={isAccountNode}
                   sockets={isAccountNode ? 'left' : (isFb || isIg || isTiktok || destNode.targetMode === 'social_media' ? 'both' : 'left')}
                   strokeColor={strokeThemeColor}
+                  strokeWidth={isSelected ? 2.25 : 1.75}
                   socketDotColor={isDestReceptive ? RECEPTIVE_COLOR : isDark ? '#8B949E' : '#64748B'}
                   isConnectedInput={true}
                   isConnectedOutput={false}
@@ -12977,7 +13190,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                             flexDirection: 'column',
                             borderRadius: '8px',
                             border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF',
+                            backgroundColor: isDark ? '#1C2128' : '#FFFFFF',
                             overflow: 'hidden',
                           }}
                         >
@@ -13176,7 +13389,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                             flexDirection: 'column',
                             borderRadius: '8px',
                             border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF',
+                            backgroundColor: isDark ? '#1C2128' : '#FFFFFF',
                             overflow: 'hidden',
                           }}
                         >
@@ -13512,7 +13725,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                           flexDirection: 'column',
                           borderRadius: '8px',
                           border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF',
+                          backgroundColor: isDark ? '#1C2128' : '#FFFFFF',
                           overflow: 'hidden',
                           marginTop: '0.25rem',
                         }}
@@ -13780,7 +13993,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                 ? boxAssets.length
                                 : isImages
                                   ? (effectiveImages?.length || 0)
-                                  : (allEnhancedPhotos ? Object.keys(allEnhancedPhotos).length : effectiveImages?.length || 0);
+                                  : 0;
 
                               const boxThumbnails: string[] = [];
                               for (const a of boxAssets) {
@@ -13789,7 +14002,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   if (boxThumbnails.length >= 3) break;
                                 }
                               }
-                              if (boxThumbnails.length === 0 && effectiveImages && effectiveImages.length > 0) {
+                              if (boxThumbnails.length === 0 && isImages && effectiveImages && effectiveImages.length > 0) {
                                 for (const img of effectiveImages) {
                                   const u = normalizeMediaUrl(img.stored_url || img.source_url || (img as any).url);
                                   if (u && !boxThumbnails.includes(u)) {
@@ -13857,7 +14070,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                     borderBottom: isCardOverThis && dragOverCardPos === 'bottom' ? '2px solid #6366F1' : (isDark ? '1px solid #30363D' : '1px solid #E2E8F0'),
                                     backgroundColor: isCardOverThis
                                       ? (isDark ? 'rgba(99, 102, 241, 0.08)' : 'rgba(99, 102, 241, 0.04)')
-                                      : (isDark ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF'),
+                                      : (isDark ? '#1C2128' : '#FFFFFF'),
                                     opacity: isCardBeingDragged ? 0.45 : 1,
                                     boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 2px rgba(0,0,0,0.04)',
                                     transition: 'border-color 0.15s ease, background-color 0.15s ease, opacity 0.15s ease',
@@ -14391,7 +14604,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                     borderBottom: isCardOverThis && dragOverCardPos === 'bottom' ? '2px solid #6366F1' : (isDark ? '1px solid #30363D' : '1px solid #E2E8F0'),
                                     backgroundColor: isCardOverThis
                                       ? (isDark ? 'rgba(99, 102, 241, 0.08)' : 'rgba(99, 102, 241, 0.04)')
-                                      : (isDark ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF'),
+                                      : (isDark ? '#1C2128' : '#FFFFFF'),
                                     opacity: isCardBeingDragged ? 0.45 : 1,
                                     boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 2px rgba(0,0,0,0.04)',
                                     transition: 'border-color 0.15s ease, background-color 0.15s ease, opacity 0.15s ease',
@@ -14490,7 +14703,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                       flexDirection: 'column',
                                       borderRadius: '6px',
                                       border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.015)' : '#F8FAFC',
+                                      backgroundColor: isDark ? '#161B22' : '#F8FAFC',
                                       overflow: 'hidden',
                                     }}
                                   >
@@ -14843,7 +15056,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   borderBottom: isCardOverThis && dragOverCardPos === 'bottom' ? '2px solid #6366F1' : (isDark ? '1px solid #30363D' : '1px solid #E2E8F0'),
                                   backgroundColor: isCardOverThis
                                     ? (isDark ? 'rgba(99, 102, 241, 0.08)' : 'rgba(99, 102, 241, 0.04)')
-                                    : (isDark ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF'),
+                                    : (isDark ? '#1C2128' : '#FFFFFF'),
                                   opacity: isCardBeingDragged ? 0.45 : 1,
                                   transition: 'border-color 0.15s ease, background-color 0.15s ease, opacity 0.15s ease',
                                 }}
@@ -21749,7 +21962,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 padding: '0.75rem',
                 borderRadius: '8px',
                 border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#F8FAFC',
+                backgroundColor: isDark ? '#1C2128' : '#F8FAFC',
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', flex: 1, minWidth: 0 }}>
@@ -21931,7 +22144,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 padding: '0.75rem',
                 borderRadius: '8px',
                 border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#F8FAFC',
+                backgroundColor: isDark ? '#1C2128' : '#F8FAFC',
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', flex: 1, minWidth: 0 }}>
@@ -21998,7 +22211,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 padding: '0.75rem',
                 borderRadius: '8px',
                 border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#F8FAFC',
+                backgroundColor: isDark ? '#1C2128' : '#F8FAFC',
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', flex: 1, minWidth: 0 }}>
@@ -22059,7 +22272,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 padding: '0.75rem',
                 borderRadius: '8px',
                 border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#F8FAFC',
+                backgroundColor: isDark ? '#1C2128' : '#F8FAFC',
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', flex: 1, minWidth: 0 }}>
@@ -22120,7 +22333,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 padding: '0.75rem',
                 borderRadius: '8px',
                 border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#F8FAFC',
+                backgroundColor: isDark ? '#1C2128' : '#F8FAFC',
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', flex: 1, minWidth: 0 }}>
@@ -22181,7 +22394,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 padding: '0.75rem',
                 borderRadius: '8px',
                 border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#F8FAFC',
+                backgroundColor: isDark ? '#1C2128' : '#F8FAFC',
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', flex: 1, minWidth: 0 }}>
@@ -22243,7 +22456,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 padding: '0.75rem',
                 borderRadius: '8px',
                 border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#F8FAFC',
+                backgroundColor: isDark ? '#1C2128' : '#F8FAFC',
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', flex: 1, minWidth: 0 }}>
@@ -22502,73 +22715,45 @@ export const FacebookWorkflowCanvas = forwardRef<
         >
           {/* Section 1: Workflow Actions */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
-            {onUseInFacebookImport && (
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={onUseInFacebookImport}
-                leftIcon={<FiArrowRight />}
-                style={{
-                  width: '100%',
-                  height: '36px',
-                  fontSize: '0.8125rem',
-                  fontWeight: 600,
-                  backgroundColor: '#1877F2',
-                  borderColor: '#1877F2',
-                  color: '#FFFFFF',
-                  borderRadius: '6px',
-                  boxShadow: 'none',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                Use in Facebook Import
-              </Button>
-            )}
-
             <button
               type="button"
               onClick={onSaveFormat}
               style={{
                 width: '100%',
-                height: '34px',
+                height: '36px',
                 padding: '0 12px',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: '6px',
-                fontSize: '0.75rem',
-                fontWeight: 500,
+                gap: '8px',
+                fontSize: '0.8125rem',
+                fontWeight: 600,
                 borderRadius: '6px',
-                backgroundColor: isSaveSuccess
-                  ? 'var(--status-success-bg, rgba(34, 197, 94, 0.12))'
-                  : 'var(--bg-surface)',
-                color: isSaveSuccess ? 'var(--status-success, #16a34a)' : 'var(--text-primary)',
-                border: isSaveSuccess
-                  ? '1px solid var(--status-success, #16a34a)'
-                  : '1px solid var(--border-color)',
+                backgroundColor: isSaveSuccess ? '#10B981' : '#1877F2',
+                color: '#FFFFFF',
+                border: isSaveSuccess ? '1px solid #10B981' : '1px solid #1877F2',
                 cursor: 'pointer',
                 transition: 'all 0.15s ease',
                 outline: 'none',
+                boxShadow: 'none',
               }}
               onMouseEnter={(e) => {
                 if (!isSaveSuccess) {
-                  e.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)';
-                  e.currentTarget.style.borderColor = 'var(--border-color-hover)';
+                  e.currentTarget.style.backgroundColor = '#166FE5';
+                  e.currentTarget.style.borderColor = '#166FE5';
                 }
               }}
               onMouseLeave={(e) => {
                 if (!isSaveSuccess) {
-                  e.currentTarget.style.backgroundColor = 'var(--bg-surface)';
-                  e.currentTarget.style.borderColor = 'var(--border-color)';
+                  e.currentTarget.style.backgroundColor = '#1877F2';
+                  e.currentTarget.style.borderColor = '#1877F2';
                 }
               }}
             >
               {isSaveSuccess ? (
-                <FiCheck size={13} style={{ color: 'var(--status-success, #16a34a)' }} />
+                <FiCheck size={14} style={{ color: '#FFFFFF' }} />
               ) : (
-                <FiSave size={13} style={{ color: 'var(--accent-primary)' }} />
+                <FiSave size={14} style={{ color: '#FFFFFF' }} />
               )}
               <span>{isSaveSuccess ? 'Format Saved!' : 'Save Format'}</span>
             </button>

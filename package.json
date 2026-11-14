@@ -1,0 +1,10 @@
+{
+  "name": "bolthaven-property-automation",
+  "version": "1.0.0",
+  "private": true,
+  "description": "BoltHaven Real Estate Automation Workflow Platform",
+  "scripts": {
+    "desktop": "npm --prefix frontend run desktop",
+    "companion": "node backend/scripts/mac_companion.js"
+  }
+}
